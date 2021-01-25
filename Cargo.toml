@@ -11,3 +11,4 @@ license = "MIT"
 categories = ["multimedia::audio"]
 
 [dependencies]
+cpal = "0.13.1"
