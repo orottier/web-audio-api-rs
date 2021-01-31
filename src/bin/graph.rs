@@ -1,12 +1,33 @@
 use std::collections::HashMap;
+use std::f64::consts::PI;
+use std::fmt::Debug;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct NodeIndex(usize);
 
 #[derive(Debug)]
+pub struct Connection {
+    pub channel: usize,
+}
+
+#[derive(Debug)]
+struct Node {
+    processor: Box<dyn AudioNode>,
+    buffer: Vec<f32>,
+}
+
+impl Node {
+    fn process(&mut self, inputs: &[&[f32]], timestamp: f64, sample_rate: u32) {
+        self.processor
+            .process(inputs, &mut self.buffer, timestamp, sample_rate)
+    }
+}
+
+#[derive(Debug)]
 pub struct Graph {
     increment: usize,
-    nodes: HashMap<NodeIndex, AudioNode>,
+    nodes: HashMap<NodeIndex, Node>,
     edges: HashMap<(NodeIndex, NodeIndex), Connection>,
 
     marked: Vec<NodeIndex>,
@@ -14,31 +35,63 @@ pub struct Graph {
 }
 
 #[derive(Debug)]
-pub struct AudioNode {
-    pub name: String,
-    pub buffer: String,
-}
-
-impl AudioNode {
-    pub fn new(name: String) -> Self {
-        Self {
-            name,
-            buffer: String::new(),
-        }
-    }
-
-    pub fn set_buffer(&mut self, buf: String) {
-        self.buffer = buf;
-    }
+pub struct OscillatorNode {
+    frequency: AtomicU32,
 }
 
 #[derive(Debug)]
-pub struct Connection {
-    pub channel: usize,
+pub struct DestinationNode {
+    pub channels: usize,
+}
+
+pub trait AudioNode: Debug {
+    fn process(&mut self, inputs: &[&[f32]], output: &mut [f32], timestamp: f64, sample_rate: u32);
+}
+
+impl AudioNode for OscillatorNode {
+    fn process(
+        &mut self,
+        _inputs: &[&[f32]],
+        output: &mut [f32],
+        timestamp: f64,
+        sample_rate: u32,
+    ) {
+        let freq = self.frequency.load(Ordering::SeqCst) as f64;
+        (0..output.len())
+            .map(move |i| timestamp + i as f64 / sample_rate as f64)
+            .map(move |t| (2. * PI * freq * t).sin() as f32)
+            .zip(output.iter_mut())
+            .for_each(|(value, dest)| *dest = value);
+    }
+}
+
+impl AudioNode for DestinationNode {
+    fn process(
+        &mut self,
+        inputs: &[&[f32]],
+        output: &mut [f32],
+        _timestamp: f64,
+        _sample_rate: u32,
+    ) {
+        // clear slice, it may be re-used
+        for d in output.iter_mut() {
+            *d = 0.;
+        }
+
+        // mix signal from all child nodes, prevent allocations
+        for input in inputs.iter() {
+            let frames = output.chunks_mut(self.channels);
+            for (frame, v) in frames.zip(input.iter()) {
+                for sample in frame.iter_mut() {
+                    *sample += v;
+                }
+            }
+        }
+    }
 }
 
 impl Graph {
-    pub fn new(root: AudioNode) -> Self {
+    pub fn new<N: AudioNode + 'static>(root: N) -> Self {
         let mut graph = Graph {
             increment: 0,
             nodes: HashMap::new(),
@@ -56,11 +109,15 @@ impl Graph {
         NodeIndex(0)
     }
 
-    pub fn add_node(&mut self, node: AudioNode) -> NodeIndex {
+    pub fn add_node<N: AudioNode + 'static>(&mut self, node: N) -> NodeIndex {
         let index = NodeIndex(self.increment);
         self.increment += 1;
 
-        self.nodes.insert(index, node);
+        let processor = Box::new(node);
+        // todo, size should be dependent on number of channels
+        let buffer = vec![0.; 128];
+
+        self.nodes.insert(index, Node { processor, buffer });
 
         index
     }
@@ -124,7 +181,7 @@ impl Graph {
         self.marked = marked;
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self, data: &mut [f32]) {
         // split (mut) borrows
         let ordered = &self.ordered;
         let edges = &self.edges;
@@ -136,7 +193,7 @@ impl Graph {
             // remove node from map, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
 
-            edges
+            let input_bufs: Vec<_> = edges
                 .iter()
                 .filter_map(
                     move |((s, d), e)| {
@@ -147,38 +204,38 @@ impl Graph {
                         }
                     },
                 )
-                .for_each(|(input_index, connection)| {
+                .map(|(input_index, _connection)| {
                     dbg!(("has connected", input_index));
-                    let input = nodes.get(input_index).unwrap();
+                    nodes.get(input_index).unwrap().buffer.as_slice()
+                })
+                .collect();
 
-                    node.buffer.push_str(&input.buffer);
-                    for _ in 0..connection.channel {
-                        node.buffer.push_str(">");
-                    }
-                });
+            node.process(&input_bufs, 0., 44100);
 
+            // re-insert node in graph
             nodes.insert(*index, node);
         });
+
+        // copy destination node's buffer into output
+        // todo, prevent this memcpy with some buffer ref magic
+        data.copy_from_slice(&nodes.get(&NodeIndex(0)).unwrap().buffer);
     }
 }
 
 pub fn main() {
-    let dest = AudioNode::new("dest".into());
+    let dest = DestinationNode { channels: 2 };
     let mut graph = Graph::new(dest);
 
-    let mut source = AudioNode::new("source".into());
-    source.set_buffer("12345".to_string());
-
-    let s = graph.add_node(source);
-    let m = graph.add_node(AudioNode::new("mid".into()));
-    dbg!((s, m));
-
-    graph.add_edge(s, m, Connection { channel: 1 });
+    let osc = OscillatorNode {
+        frequency: AtomicU32::new(440),
+    };
+    let s = graph.add_node(osc);
     graph.add_edge(s, graph.root(), Connection { channel: 1 });
-    graph.add_edge(m, graph.root(), Connection { channel: 2 });
 
     dbg!(graph.ordered_nodes());
 
-    graph.render();
-    dbg!(graph);
+    // todo, we actually need a 256 size buffer
+    let mut data = vec![0.; 128];
+    graph.render(&mut data);
+    dbg!(data);
 }
