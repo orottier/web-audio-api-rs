@@ -1,4 +1,5 @@
 pub mod context;
+pub mod graph;
 pub mod node;
 
 #[cfg(test)]

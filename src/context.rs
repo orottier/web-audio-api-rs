@@ -1,61 +1,19 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Sample, SampleFormat};
+use cpal::SampleFormat;
 use cpal::{Stream, StreamConfig};
 
-use crate::node::{OscillatorNode, OscillatorNodeInner};
-
-use std::sync::Arc;
-use std::sync::Mutex;
+use crate::graph::{AudioNode, Graph};
+use crate::node::{DestinationNode, OscillatorNode};
 
 /// The AudioContext interface represents an audio-processing graph built from audio modules linked
 /// together, each represented by an AudioNode. An audio context controls both the creation of the
 /// nodes it contains and the execution of the audio processing, or decoding. You need to create an
 /// AudioContext before you do anything else, as everything happens inside a context.
 pub struct AudioContext {
-    stream: Stream,
+    stream: Stream, // todo should be in render thread?
     sample_rate: u32,
-    channels: u32,
-    graph: Arc<Mutex<AudioGraph>>,
-}
-
-pub struct AudioGraph {
-    timestamp: f64,
-    pub children: Vec<Arc<OscillatorNodeInner>>,
-}
-
-impl AudioGraph {
-    fn build_output<T: Sample>(
-        &mut self,
-        data: &mut [T],
-        _info: &cpal::OutputCallbackInfo,
-        sample_rate: u32,
-        channels: u32,
-    ) {
-        // assume mono input, stereo output
-        let channels = channels as usize;
-        let len = data.len() / channels;
-
-        // clear slice, it may be re-used
-        for d in data.iter_mut() {
-            *d = Sample::from(&0.);
-        }
-
-        // mix signal from all child nodes, prevent allocations
-        for c in &self.children {
-            let frames = data.chunks_mut(channels);
-            let mono = c.signal(self.timestamp, len, sample_rate);
-
-            for (frame, v) in frames.zip(mono) {
-                for sample in frame.iter_mut() {
-                    let value = Sample::from(&(v + sample.to_f32()));
-                    *sample = value;
-                }
-            }
-        }
-
-        // progress (fake) time
-        self.timestamp += len as f64 / sample_rate as f64;
-    }
+    channels: usize,
+    render_channel: (), // sender
 }
 
 impl AudioContext {
@@ -81,23 +39,16 @@ impl AudioContext {
         let config: StreamConfig = supported_config.into();
 
         let sample_rate = config.sample_rate.0;
-        let channels = config.channels as u32;
+        let channels = config.channels as usize;
 
-        let graph = Arc::new(Mutex::new(AudioGraph {
-            timestamp: 0.,
-            children: vec![],
-        }));
+        // construct graph for the render thread
+        let dest = DestinationNode { channels };
+        let mut graph = Graph::new(dest, sample_rate);
 
-        let stream_graph = graph.clone();
         let stream = match sample_format {
-            SampleFormat::F32 => device.build_output_stream(
-                &config,
-                move |d, c| {
-                    let mut graph = stream_graph.lock().unwrap();
-                    graph.build_output::<f32>(d, c, sample_rate, channels)
-                },
-                err_fn,
-            ),
+            SampleFormat::F32 => {
+                device.build_output_stream(&config, move |data, _c| graph.render(data), err_fn)
+            }
             _ => unimplemented!(),
         }
         .unwrap();
@@ -106,9 +57,9 @@ impl AudioContext {
 
         Self {
             stream,
-            graph,
             channels,
             sample_rate,
+            render_channel: (),
         }
     }
 
@@ -124,6 +75,7 @@ impl AudioContext {
         self.stream.play().unwrap()
     }
 
+    /*
     /// Creates an OscillatorNode, a source representing a periodic waveform. It basically
     /// generates a tone.
     pub fn create_oscillator(&self) -> crate::node::OscillatorNode {
@@ -136,4 +88,5 @@ impl AudioContext {
         // todo actually return an AudioDestinationNode
         self.graph.as_ref()
     }
+    */
 }
