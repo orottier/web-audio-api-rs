@@ -1,6 +1,10 @@
+const BUFFER_SIZE: u32 = 512;
+
 pub mod context;
-pub mod graph;
 pub mod node;
+
+pub(crate) mod control;
+pub(crate) mod graph;
 
 #[cfg(test)]
 mod tests {

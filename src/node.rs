@@ -1,15 +1,59 @@
 use std::f64::consts::PI;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
-use crate::graph::AudioNode;
+use crate::context::AudioContext;
+use crate::graph::Render;
 
-#[derive(Debug)]
-pub struct OscillatorNode {
-    frequency: AtomicU32,
+pub trait AudioNode {
+    fn id(&self) -> u64;
+    fn context(&self) -> &AudioContext;
+
+    fn connect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
+        if !std::ptr::eq(self.context(), dest.context()) {
+            panic!("attempting to connect nodes from different contexts");
+        }
+
+        self.context().connect(self.id(), dest.id(), 0);
+
+        dest
+    }
 }
 
-impl AudioNode for OscillatorNode {
+/// Audio source generating a periodic waveform
+pub struct OscillatorNode<'a> {
+    pub context: &'a AudioContext,
+    pub id: u64,
+    pub frequency: Arc<AtomicU32>,
+}
+
+impl<'a> AudioNode for OscillatorNode<'a> {
+    fn context(&self) -> &AudioContext {
+        self.context
+    }
+
+    fn id(&self) -> u64 {
+        self.id
+    }
+}
+
+impl<'a> OscillatorNode<'a> {
+    pub fn frequency(&self) -> u32 {
+        self.frequency.load(Ordering::SeqCst)
+    }
+
+    pub fn set_frequency(&self, freq: u32) {
+        self.frequency.store(freq, Ordering::SeqCst);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct OscillatorRenderer {
+    pub frequency: Arc<AtomicU32>,
+}
+
+impl Render for OscillatorRenderer {
     fn process(
         &mut self,
         _inputs: &[&[f32]],
@@ -26,12 +70,19 @@ impl AudioNode for OscillatorNode {
     }
 }
 
-#[derive(Debug)]
-pub struct DestinationNode {
+/// Representing the final audio destination and is what the user will ultimately hear.
+pub struct DestinationNode<'a> {
+    pub context: &'a AudioContext,
+    pub id: u64,
     pub channels: usize,
 }
 
-impl AudioNode for DestinationNode {
+#[derive(Debug)]
+pub(crate) struct DestinationRenderer {
+    pub channels: usize,
+}
+
+impl Render for DestinationRenderer {
     fn process(
         &mut self,
         inputs: &[&[f32]],
@@ -44,14 +95,21 @@ impl AudioNode for DestinationNode {
             *d = 0.;
         }
 
-        // mix signal from all child nodes, prevent allocations
+        // sum signal from all child nodes
         for input in inputs.iter() {
-            let frames = output.chunks_mut(self.channels);
-            for (frame, v) in frames.zip(input.iter()) {
-                for sample in frame.iter_mut() {
-                    *sample += v;
-                }
+            for (i, o) in input.iter().zip(output.iter_mut()) {
+                *o += i;
             }
         }
+    }
+}
+
+impl<'a> AudioNode for DestinationNode<'a> {
+    fn context(&self) -> &AudioContext {
+        self.context
+    }
+
+    fn id(&self) -> u64 {
+        self.id
     }
 }

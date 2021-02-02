@@ -1,8 +1,71 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::mpsc::Receiver;
+
+use crate::control::ControlMessage;
+
+/// Operations running off the system-level audio callback
+pub(crate) struct RenderThread {
+    graph: Graph,
+    sample_rate: u32,
+    channels: usize,
+    timestamp: f64,
+    receiver: Receiver<ControlMessage>,
+}
+
+impl RenderThread {
+    pub fn new<N: Render + 'static>(
+        root: N,
+        sample_rate: u32,
+        channels: usize,
+        receiver: Receiver<ControlMessage>,
+    ) -> Self {
+        Self {
+            graph: Graph::new(root),
+            sample_rate,
+            channels,
+            timestamp: 0.,
+            receiver,
+        }
+    }
+
+    fn handle_control_messages(&mut self) {
+        for msg in self.receiver.try_iter() {
+            match msg {
+                ControlMessage::RegisterNode { id, node, buffer } => {
+                    self.graph.add_node(NodeIndex(id), node, buffer);
+                }
+                ControlMessage::ConnectNode { from, to, channel } => {
+                    let conn = Connection { channel };
+                    self.graph.add_edge(NodeIndex(from), NodeIndex(to), conn);
+                }
+            }
+        }
+    }
+
+    pub fn render(&mut self, data: &mut [f32]) {
+        self.handle_control_messages();
+
+        // render audio data
+        let len = data.len() / self.channels;
+        let rendered = self.graph.render(self.timestamp, self.sample_rate, len);
+
+        for (frame, value) in data.chunks_mut(self.channels).zip(rendered) {
+            let value = cpal::Sample::from::<f32>(value);
+
+            // for now, make stereo sound from mono
+            for sample in frame.iter_mut() {
+                *sample = value;
+            }
+        }
+
+        // update time
+        self.timestamp += len as f64 / self.sample_rate as f64;
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct NodeIndex(usize);
+pub struct NodeIndex(u64);
 
 #[derive(Debug)]
 pub struct Connection {
@@ -11,66 +74,50 @@ pub struct Connection {
 
 #[derive(Debug)]
 struct Node {
-    processor: Box<dyn AudioNode>,
+    processor: Box<dyn Render>,
     buffer: Vec<f32>,
 }
 
 impl Node {
-    fn process(&mut self, inputs: &[&[f32]], timestamp: f64, sample_rate: u32) {
+    fn process(&mut self, inputs: &[&[f32]], timestamp: f64, sample_rate: u32, len: usize) {
         self.processor
-            .process(inputs, &mut self.buffer, timestamp, sample_rate)
+            .process(inputs, &mut self.buffer[0..len], timestamp, sample_rate)
     }
 }
 
 #[derive(Debug)]
-pub struct Graph {
-    increment: usize,
+pub(crate) struct Graph {
     nodes: HashMap<NodeIndex, Node>,
     edges: HashMap<(NodeIndex, NodeIndex), Connection>,
 
     marked: Vec<NodeIndex>,
     ordered: Vec<NodeIndex>,
-
-    sample_rate: u32,
-    timestamp: f64,
 }
 
-pub trait AudioNode: Debug + Send {
+pub trait Render: Debug + Send {
     fn process(&mut self, inputs: &[&[f32]], output: &mut [f32], timestamp: f64, sample_rate: u32);
 }
 
 impl Graph {
-    pub fn new<N: AudioNode + 'static>(root: N, sample_rate: u32) -> Self {
+    pub fn new<N: Render + 'static>(root: N) -> Self {
+        let root_index = NodeIndex(0);
+
         let mut graph = Graph {
-            increment: 0,
             nodes: HashMap::new(),
             edges: HashMap::new(),
-            ordered: vec![NodeIndex(0)],
-            marked: vec![NodeIndex(0)],
-            timestamp: 0.,
-            sample_rate,
+            ordered: vec![root_index],
+            marked: vec![root_index],
         };
 
-        graph.add_node(root);
+        // todo, size should be dependent on number of channels
+        let buffer = vec![0.; crate::BUFFER_SIZE as usize];
+        graph.add_node(root_index, Box::new(root), buffer);
 
         graph
     }
 
-    pub fn root(&self) -> NodeIndex {
-        NodeIndex(0)
-    }
-
-    pub fn add_node<N: AudioNode + 'static>(&mut self, node: N) -> NodeIndex {
-        let index = NodeIndex(self.increment);
-        self.increment += 1;
-
-        let processor = Box::new(node);
-        // todo, size should be dependent on number of channels
-        let buffer = vec![0.; 128];
-
+    pub fn add_node(&mut self, index: NodeIndex, processor: Box<dyn Render>, buffer: Vec<f32>) {
         self.nodes.insert(index, Node { processor, buffer });
-
-        index
     }
 
     pub fn add_edge(&mut self, source: NodeIndex, dest: NodeIndex, data: Connection) {
@@ -86,16 +133,6 @@ impl Graph {
             .map(|(&(s, _d), e)| (s, e))
     }
 
-    pub fn children_mut(
-        &mut self,
-        node: NodeIndex,
-    ) -> impl Iterator<Item = (NodeIndex, &mut Connection)> {
-        self.edges
-            .iter_mut()
-            .filter(move |(&(_s, d), _e)| d == node)
-            .map(|(&(s, _d), e)| (s, e))
-    }
-
     fn visit(&self, n: NodeIndex, marked: &mut Vec<NodeIndex>, ordered: &mut Vec<NodeIndex>) {
         if marked.contains(&n) {
             return;
@@ -104,10 +141,6 @@ impl Graph {
         self.children(n)
             .for_each(|c| self.visit(c.0, marked, ordered));
         ordered.insert(0, n);
-    }
-
-    pub fn ordered_nodes(&self) -> &[NodeIndex] {
-        &self.ordered
     }
 
     fn order_nodes(&mut self) {
@@ -132,17 +165,13 @@ impl Graph {
         self.marked = marked;
     }
 
-    pub fn render(&mut self, data: &mut [f32]) {
+    pub fn render(&mut self, timestamp: f64, sample_rate: u32, len: usize) -> &[f32] {
         // split (mut) borrows
         let ordered = &self.ordered;
         let edges = &self.edges;
-        let timestamp = self.timestamp;
-        let sample_rate = self.sample_rate;
         let nodes = &mut self.nodes;
 
         ordered.iter().for_each(|index| {
-            dbg!(("iterate ordered", index));
-
             // remove node from map, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
 
@@ -157,22 +186,16 @@ impl Graph {
                         }
                     },
                 )
-                .map(|(input_index, _connection)| {
-                    dbg!(("has connected", input_index));
-                    nodes.get(input_index).unwrap().buffer.as_slice()
-                })
+                .map(|(input_index, _connection)| &nodes.get(input_index).unwrap().buffer[0..len])
                 .collect();
 
-            node.process(&input_bufs, timestamp, sample_rate);
+            node.process(&input_bufs, timestamp, sample_rate, len);
 
             // re-insert node in graph
             nodes.insert(*index, node);
         });
 
-        // copy destination node's buffer into output
-        // todo, prevent this memcpy with some buffer ref magic
-        data.copy_from_slice(&nodes.get(&NodeIndex(0)).unwrap().buffer);
-
-        self.timestamp += data.len() as f64 / self.sample_rate as f64
+        // return buffer of destination node
+        &nodes.get(&NodeIndex(0)).unwrap().buffer[0..len]
     }
 }

@@ -2,18 +2,28 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
 use cpal::{Stream, StreamConfig};
 
-use crate::graph::{AudioNode, Graph};
-use crate::node::{DestinationNode, OscillatorNode};
+use crate::control::ControlMessage;
+use crate::graph::RenderThread;
+use crate::node::{DestinationNode, DestinationRenderer, OscillatorNode, OscillatorRenderer};
+
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Sender};
+use std::sync::Arc;
 
 /// The AudioContext interface represents an audio-processing graph built from audio modules linked
 /// together, each represented by an AudioNode. An audio context controls both the creation of the
-/// nodes it contains and the execution of the audio processing, or decoding. You need to create an
-/// AudioContext before you do anything else, as everything happens inside a context.
+/// nodes it contains and the execution of the audio processing, or decoding.
 pub struct AudioContext {
+    /// cpal stream (play/pause functionality)
     stream: Stream, // todo should be in render thread?
+    /// sample rate in Hertz
     sample_rate: u32,
+    /// number of speaker output channels
     channels: usize,
-    render_channel: (), // sender
+    /// incrementing id to assign to audio nodes
+    node_id_inc: AtomicU64,
+    /// mpsc channel from control to render thread
+    render_channel: Sender<ControlMessage>,
 }
 
 impl AudioContext {
@@ -36,18 +46,24 @@ impl AudioContext {
 
         let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
         let sample_format = supported_config.sample_format();
-        let config: StreamConfig = supported_config.into();
+
+        // set max buffer size, note: this defines only the upper bound (on my machine!)
+        let mut config: StreamConfig = supported_config.into();
+        config.buffer_size = cpal::BufferSize::Fixed(crate::BUFFER_SIZE);
+
+        dbg!(&config);
 
         let sample_rate = config.sample_rate.0;
         let channels = config.channels as usize;
 
         // construct graph for the render thread
-        let dest = DestinationNode { channels };
-        let mut graph = Graph::new(dest, sample_rate);
+        let dest = DestinationRenderer { channels };
+        let (sender, receiver) = mpsc::channel();
+        let mut render = RenderThread::new(dest, sample_rate, channels, receiver);
 
         let stream = match sample_format {
             SampleFormat::F32 => {
-                device.build_output_stream(&config, move |data, _c| graph.render(data), err_fn)
+                device.build_output_stream(&config, move |data, _c| render.render(data), err_fn)
             }
             _ => unimplemented!(),
         }
@@ -57,9 +73,10 @@ impl AudioContext {
 
         Self {
             stream,
-            channels,
             sample_rate,
-            render_channel: (),
+            channels,
+            node_id_inc: AtomicU64::new(1),
+            render_channel: sender,
         }
     }
 
@@ -75,18 +92,53 @@ impl AudioContext {
         self.stream.play().unwrap()
     }
 
-    /*
     /// Creates an OscillatorNode, a source representing a periodic waveform. It basically
     /// generates a tone.
     pub fn create_oscillator(&self) -> crate::node::OscillatorNode {
-        OscillatorNode::new(440)
+        let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
+        let frequency = Arc::new(AtomicU32::new(440));
+
+        let render = OscillatorRenderer {
+            frequency: frequency.clone(),
+        };
+        let message = ControlMessage::RegisterNode {
+            id,
+            node: Box::new(render),
+            buffer: vec![0.; crate::BUFFER_SIZE as usize],
+        };
+        self.render_channel.send(message).unwrap();
+
+        OscillatorNode {
+            context: &self,
+            id,
+            frequency,
+        }
+    }
+
+    pub(crate) fn connect(&self, from: u64, to: u64, channel: usize) {
+        println!("connecting {} to {}", from, to);
+        let message = ControlMessage::ConnectNode { from, to, channel };
+        self.render_channel.send(message).unwrap();
     }
 
     /// Returns an AudioDestinationNode representing the final destination of all audio in the
     /// context. It can be thought of as the audio-rendering device.
-    pub fn destination(&mut self) -> &Mutex<AudioGraph> {
-        // todo actually return an AudioDestinationNode
-        self.graph.as_ref()
+    pub fn destination(&self) -> DestinationNode {
+        DestinationNode {
+            context: &self,
+            id: 0,
+            channels: self.channels,
+        }
     }
-    */
+
+    /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+}
+
+impl Default for AudioContext {
+    fn default() -> Self {
+        Self::new()
+    }
 }
