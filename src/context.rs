@@ -4,6 +4,7 @@ use cpal::{Stream, StreamConfig};
 
 use crate::control::ControlMessage;
 use crate::graph::RenderThread;
+use crate::node;
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
@@ -93,12 +94,21 @@ impl AudioContext {
 
     /// Creates an OscillatorNode, a source representing a periodic waveform. It basically
     /// generates a tone.
-    pub fn create_oscillator(&self) -> crate::node::OscillatorNode {
-        let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
-        let frequency = Arc::new(AtomicU32::new(440));
+    pub fn create_oscillator(&self) -> node::OscillatorNode {
+        self.create_oscillator_with(node::OscillatorOptions::default())
+    }
 
-        let render = crate::node::OscillatorRenderer {
+    pub(crate) fn create_oscillator_with(
+        &self,
+        options: node::OscillatorOptions,
+    ) -> node::OscillatorNode {
+        let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
+        let frequency = Arc::new(AtomicU32::new(options.frequency));
+        let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
+
+        let render = node::OscillatorRenderer {
             frequency: frequency.clone(),
+            type_: type_.clone(),
         };
         let message = ControlMessage::RegisterNode {
             id,
@@ -107,19 +117,20 @@ impl AudioContext {
         };
         self.render_channel.send(message).unwrap();
 
-        crate::node::OscillatorNode {
+        node::OscillatorNode {
             context: &self,
             id,
             frequency,
+            type_,
         }
     }
 
     /// Creates an GainNode, to control audio volume
-    pub fn create_gain(&self) -> crate::node::GainNode {
+    pub fn create_gain(&self) -> node::GainNode {
         let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
         let gain = Arc::new(AtomicU32::new(100));
 
-        let render = crate::node::GainRenderer { gain: gain.clone() };
+        let render = node::GainRenderer { gain: gain.clone() };
         let message = ControlMessage::RegisterNode {
             id,
             node: Box::new(render),
@@ -127,7 +138,7 @@ impl AudioContext {
         };
         self.render_channel.send(message).unwrap();
 
-        crate::node::GainNode {
+        node::GainNode {
             context: &self,
             id,
             gain,
@@ -142,8 +153,8 @@ impl AudioContext {
 
     /// Returns an AudioDestinationNode representing the final destination of all audio in the
     /// context. It can be thought of as the audio-rendering device.
-    pub fn destination(&self) -> crate::node::DestinationNode {
-        crate::node::DestinationNode {
+    pub fn destination(&self) -> node::DestinationNode {
+        node::DestinationNode {
             context: &self,
             id: 0,
             channels: self.channels,

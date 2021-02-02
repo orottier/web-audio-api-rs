@@ -21,11 +21,54 @@ pub trait AudioNode {
     }
 }
 
+pub struct OscillatorOptions {
+    pub type_: OscillatorType,
+    pub frequency: u32,
+}
+
+impl Default for OscillatorOptions {
+    fn default() -> Self {
+        Self {
+            type_: OscillatorType::default(),
+            frequency: 440,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum OscillatorType {
+    Sine,
+    Square,
+    Sawtooth,
+    Triangle,
+    Custom,
+}
+
+impl Default for OscillatorType {
+    fn default() -> Self {
+        OscillatorType::Sine
+    }
+}
+
+impl From<u32> for OscillatorType {
+    fn from(i: u32) -> Self {
+        match i {
+            0 => OscillatorType::Sine,
+            1 => OscillatorType::Square,
+            2 => OscillatorType::Sawtooth,
+            3 => OscillatorType::Triangle,
+            4 => OscillatorType::Custom,
+            _ => unreachable!(),
+        }
+    }
+}
+
 /// Audio source generating a periodic waveform
 pub struct OscillatorNode<'a> {
-    pub context: &'a AudioContext,
-    pub id: u64,
-    pub frequency: Arc<AtomicU32>,
+    pub(crate) context: &'a AudioContext,
+    pub(crate) id: u64,
+    pub(crate) frequency: Arc<AtomicU32>,
+    pub(crate) type_: Arc<AtomicU32>,
 }
 
 impl<'a> AudioNode for OscillatorNode<'a> {
@@ -39,6 +82,10 @@ impl<'a> AudioNode for OscillatorNode<'a> {
 }
 
 impl<'a> OscillatorNode<'a> {
+    pub fn new(context: &'a AudioContext, options: OscillatorOptions) -> Self {
+        context.create_oscillator_with(options)
+    }
+
     pub fn frequency(&self) -> u32 {
         self.frequency.load(Ordering::SeqCst)
     }
@@ -46,11 +93,20 @@ impl<'a> OscillatorNode<'a> {
     pub fn set_frequency(&self, freq: u32) {
         self.frequency.store(freq, Ordering::SeqCst);
     }
+
+    pub fn type_(&self) -> OscillatorType {
+        self.type_.load(Ordering::SeqCst).into()
+    }
+
+    pub fn set_type(&self, type_: OscillatorType) {
+        self.type_.store(type_ as u32, Ordering::SeqCst);
+    }
 }
 
 #[derive(Debug)]
 pub(crate) struct OscillatorRenderer {
     pub frequency: Arc<AtomicU32>,
+    pub type_: Arc<AtomicU32>,
 }
 
 impl Render for OscillatorRenderer {
@@ -62,11 +118,21 @@ impl Render for OscillatorRenderer {
         sample_rate: u32,
     ) {
         let freq = self.frequency.load(Ordering::SeqCst) as f64;
-        (0..output.len())
-            .map(move |i| timestamp + i as f64 / sample_rate as f64)
-            .map(move |t| (2. * PI * freq * t).sin() as f32)
-            .zip(output.iter_mut())
-            .for_each(|(value, dest)| *dest = value);
+        let type_ = self.type_.load(Ordering::SeqCst).into();
+
+        let ts = (0..output.len()).map(move |i| timestamp + i as f64 / sample_rate as f64);
+        let io = ts.zip(output.iter_mut());
+
+        match type_ {
+            OscillatorType::Sine => io.for_each(|(i, o)| *o = (2. * PI * freq * i).sin() as f32),
+            OscillatorType::Square => {
+                io.for_each(|(i, o)| *o = if (freq * i).fract() < 0.5 { 1. } else { -1. })
+            }
+            OscillatorType::Sawtooth => {
+                io.for_each(|(i, o)| *o = 2. * ((freq * i).fract() - 0.5) as f32)
+            }
+            _ => todo!(),
+        }
     }
 }
 
