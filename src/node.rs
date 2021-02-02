@@ -113,3 +113,51 @@ impl<'a> AudioNode for DestinationNode<'a> {
         self.id
     }
 }
+
+/// AudioNode for volume control
+pub struct GainNode<'a> {
+    pub context: &'a AudioContext,
+    pub id: u64,
+    pub gain: Arc<AtomicU32>,
+}
+
+impl<'a> AudioNode for GainNode<'a> {
+    fn context(&self) -> &AudioContext {
+        self.context
+    }
+
+    fn id(&self) -> u64 {
+        self.id
+    }
+}
+
+impl<'a> GainNode<'a> {
+    pub fn gain(&self) -> f32 {
+        self.gain.load(Ordering::SeqCst) as f32 / 100.
+    }
+
+    pub fn set_gain(&self, gain: f32) {
+        self.gain.store((gain * 100.) as u32, Ordering::SeqCst);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct GainRenderer {
+    pub gain: Arc<AtomicU32>,
+}
+
+impl Render for GainRenderer {
+    fn process(
+        &mut self,
+        inputs: &[&[f32]],
+        output: &mut [f32],
+        _timestamp: f64,
+        _sample_rate: u32,
+    ) {
+        let gain = self.gain.load(Ordering::SeqCst) as f32 / 100.;
+        inputs[0]
+            .iter()
+            .zip(output.iter_mut())
+            .for_each(|(value, dest)| *dest = value * gain);
+    }
+}

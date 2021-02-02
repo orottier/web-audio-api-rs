@@ -4,7 +4,6 @@ use cpal::{Stream, StreamConfig};
 
 use crate::control::ControlMessage;
 use crate::graph::RenderThread;
-use crate::node::{DestinationNode, DestinationRenderer, OscillatorNode, OscillatorRenderer};
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
@@ -57,7 +56,7 @@ impl AudioContext {
         let channels = config.channels as usize;
 
         // construct graph for the render thread
-        let dest = DestinationRenderer { channels };
+        let dest = crate::node::DestinationRenderer { channels };
         let (sender, receiver) = mpsc::channel();
         let mut render = RenderThread::new(dest, sample_rate, channels, receiver);
 
@@ -98,7 +97,7 @@ impl AudioContext {
         let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
         let frequency = Arc::new(AtomicU32::new(440));
 
-        let render = OscillatorRenderer {
+        let render = crate::node::OscillatorRenderer {
             frequency: frequency.clone(),
         };
         let message = ControlMessage::RegisterNode {
@@ -108,10 +107,30 @@ impl AudioContext {
         };
         self.render_channel.send(message).unwrap();
 
-        OscillatorNode {
+        crate::node::OscillatorNode {
             context: &self,
             id,
             frequency,
+        }
+    }
+
+    /// Creates an GainNode, to control audio volume
+    pub fn create_gain(&self) -> crate::node::GainNode {
+        let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
+        let gain = Arc::new(AtomicU32::new(100));
+
+        let render = crate::node::GainRenderer { gain: gain.clone() };
+        let message = ControlMessage::RegisterNode {
+            id,
+            node: Box::new(render),
+            buffer: vec![0.; crate::BUFFER_SIZE as usize],
+        };
+        self.render_channel.send(message).unwrap();
+
+        crate::node::GainNode {
+            context: &self,
+            id,
+            gain,
         }
     }
 
@@ -123,8 +142,8 @@ impl AudioContext {
 
     /// Returns an AudioDestinationNode representing the final destination of all audio in the
     /// context. It can be thought of as the audio-rendering device.
-    pub fn destination(&self) -> DestinationNode {
-        DestinationNode {
+    pub fn destination(&self) -> crate::node::DestinationNode {
+        crate::node::DestinationNode {
             context: &self,
             id: 0,
             channels: self.channels,
