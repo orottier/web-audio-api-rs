@@ -138,9 +138,9 @@ impl Render for OscillatorRenderer {
 
 /// Representing the final audio destination and is what the user will ultimately hear.
 pub struct DestinationNode<'a> {
-    pub context: &'a AudioContext,
-    pub id: u64,
-    pub channels: usize,
+    pub(crate) context: &'a AudioContext,
+    pub(crate) id: u64,
+    pub(crate) channels: usize,
 }
 
 #[derive(Debug)]
@@ -180,11 +180,21 @@ impl<'a> AudioNode for DestinationNode<'a> {
     }
 }
 
+pub struct GainOptions {
+    pub gain: f32,
+}
+
+impl Default for GainOptions {
+    fn default() -> Self {
+        Self { gain: 1. }
+    }
+}
+
 /// AudioNode for volume control
 pub struct GainNode<'a> {
-    pub context: &'a AudioContext,
-    pub id: u64,
-    pub gain: Arc<AtomicU32>,
+    pub(crate) context: &'a AudioContext,
+    pub(crate) id: u64,
+    pub(crate) gain: Arc<AtomicU32>,
 }
 
 impl<'a> AudioNode for GainNode<'a> {
@@ -198,6 +208,10 @@ impl<'a> AudioNode for GainNode<'a> {
 }
 
 impl<'a> GainNode<'a> {
+    pub fn new(context: &'a AudioContext, options: GainOptions) -> Self {
+        context.create_gain_with(options)
+    }
+
     pub fn gain(&self) -> f32 {
         self.gain.load(Ordering::SeqCst) as f32 / 100.
     }

@@ -127,8 +127,12 @@ impl AudioContext {
 
     /// Creates an GainNode, to control audio volume
     pub fn create_gain(&self) -> node::GainNode {
+        self.create_gain_with(node::GainOptions::default())
+    }
+
+    pub(crate) fn create_gain_with(&self, options: node::GainOptions) -> node::GainNode {
         let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
-        let gain = Arc::new(AtomicU32::new(100));
+        let gain = Arc::new(AtomicU32::new((options.gain * 100.) as u32));
 
         let render = node::GainRenderer { gain: gain.clone() };
         let message = ControlMessage::RegisterNode {
