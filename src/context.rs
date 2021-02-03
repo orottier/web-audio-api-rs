@@ -149,6 +149,37 @@ impl AudioContext {
         }
     }
 
+    /// Creates a DelayNode, delaying the audio signal
+    pub fn create_delay(&self) -> node::DelayNode {
+        self.create_delay_with(node::DelayOptions::default())
+    }
+
+    pub(crate) fn create_delay_with(&self, options: node::DelayOptions) -> node::DelayNode {
+        let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
+        let render_quanta = Arc::new(AtomicU32::new(options.render_quanta));
+
+        let cap = (options.render_quanta * crate::BUFFER_SIZE) as usize;
+        let delay_buffer = Vec::with_capacity(cap);
+        let render = node::DelayRenderer {
+            render_quanta: render_quanta.clone(),
+            delay_buffer,
+            index: 0,
+        };
+
+        let message = ControlMessage::RegisterNode {
+            id,
+            node: Box::new(render),
+            buffer: vec![0.; crate::BUFFER_SIZE as usize],
+        };
+        self.render_channel.send(message).unwrap();
+
+        node::DelayNode {
+            context: &self,
+            id,
+            render_quanta,
+        }
+    }
+
     pub(crate) fn connect(&self, from: u64, to: u64, channel: usize) {
         println!("connecting {} to {}", from, to);
         let message = ControlMessage::ConnectNode { from, to, channel };

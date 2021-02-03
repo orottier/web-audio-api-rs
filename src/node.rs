@@ -241,3 +241,82 @@ impl Render for GainRenderer {
             .for_each(|(value, dest)| *dest = value * gain);
     }
 }
+
+#[derive(Default)]
+pub struct DelayOptions {
+    // todo: actually delay by time
+    pub render_quanta: u32,
+}
+
+pub struct DelayNode<'a> {
+    pub(crate) context: &'a AudioContext,
+    pub(crate) id: u64,
+    pub(crate) render_quanta: Arc<AtomicU32>,
+}
+
+impl<'a> AudioNode for DelayNode<'a> {
+    fn context(&self) -> &AudioContext {
+        self.context
+    }
+
+    fn id(&self) -> u64 {
+        self.id
+    }
+}
+
+impl<'a> DelayNode<'a> {
+    pub fn new(context: &'a AudioContext, options: DelayOptions) -> Self {
+        context.create_delay_with(options)
+    }
+
+    pub fn render_quanta(&self) -> u32 {
+        self.render_quanta.load(Ordering::SeqCst)
+    }
+
+    pub fn set_render_quanta(&self, render_quanta: u32) {
+        self.render_quanta.store(render_quanta, Ordering::SeqCst);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct DelayRenderer {
+    pub render_quanta: Arc<AtomicU32>,
+    pub delay_buffer: Vec<f32>,
+    pub index: usize,
+}
+
+impl Render for DelayRenderer {
+    fn process(
+        &mut self,
+        inputs: &[&[f32]],
+        output: &mut [f32],
+        _timestamp: f64,
+        _sample_rate: u32,
+    ) {
+        let quanta = self.render_quanta.load(Ordering::SeqCst) as usize;
+        let size = crate::BUFFER_SIZE as usize;
+
+        if quanta == 0 {
+            // when no delay is set, simply copy input to output
+            output.copy_from_slice(inputs[0]);
+        } else if self.delay_buffer.len() < quanta * size {
+            // still filling buffer
+            self.delay_buffer.extend_from_slice(inputs[0]);
+            // clear slice, it may be re-used
+            for d in output.iter_mut() {
+                *d = 0.;
+            }
+        } else {
+            let start = self.index * size;
+            let end = start + size;
+
+            // copy delayed audio to output
+            output.copy_from_slice(&self.delay_buffer[start..end]);
+            // store current input in place
+            self.delay_buffer[start..end].copy_from_slice(inputs[0]);
+
+            // progress index
+            self.index = (self.index + 1) % quanta;
+        }
+    }
+}
