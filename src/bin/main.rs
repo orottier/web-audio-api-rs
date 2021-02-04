@@ -1,5 +1,6 @@
 use web_audio_api::context::AsBaseAudioContext;
 use web_audio_api::context::AudioContext;
+use web_audio_api::node::AudioScheduledSourceNode;
 use web_audio_api::node::{AudioNode, OscillatorNode, OscillatorOptions, OscillatorType};
 
 fn main() {
@@ -13,7 +14,7 @@ fn main() {
     opts.type_ = OscillatorType::Sawtooth;
     let osc = OscillatorNode::new(&context, opts);
     osc.connect(&gain1);
-    //osc.start();
+    osc.start_at(0.5);
 
     let gain2 = context.create_gain();
     gain2.set_gain(0.5);
@@ -22,7 +23,7 @@ fn main() {
     let osc2 = context.create_oscillator();
     osc2.set_frequency(445);
     osc2.connect(&gain2);
-    //osc2.start();
+    osc2.start_at(0.5);
 
     std::thread::sleep(std::time::Duration::from_secs(2));
 

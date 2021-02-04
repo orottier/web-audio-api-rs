@@ -1,11 +1,16 @@
+//! AudioNode
+
 use std::f64::consts::PI;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AsBaseAudioContext, BaseAudioContext};
 use crate::graph::Render;
 
+/// This interface represents audio sources, the audio destination, and intermediate processing
+/// modules. These modules can be connected together to form processing graphs for rendering audio
+/// to the audio hardware. Each node can have inputs and/or outputs.
 pub trait AudioNode {
     fn id(&self) -> u64;
     fn context(&self) -> &BaseAudioContext;
@@ -21,6 +26,75 @@ pub trait AudioNode {
     }
 }
 
+/// Helper struct to start and stop audio streams
+#[derive(Clone, Debug)]
+pub struct Scheduler {
+    start: Arc<AtomicU64>,
+    stop: Arc<AtomicU64>,
+}
+
+impl Scheduler {
+    pub fn new() -> Self {
+        Self {
+            start: Arc::new(AtomicU64::new(u64::MAX)),
+            stop: Arc::new(AtomicU64::new(u64::MAX)),
+        }
+    }
+
+    pub fn is_active(&self, frame: u64) -> bool {
+        frame >= self.start.load(Ordering::SeqCst) && frame < self.stop.load(Ordering::SeqCst)
+    }
+
+    pub fn start(&self, start: u64) {
+        self.start.store(start, Ordering::SeqCst);
+    }
+
+    pub fn stop(&self, stop: u64) {
+        self.stop.store(stop, Ordering::SeqCst);
+    }
+}
+
+/// Trait for types that have a Scheduler
+pub trait Scheduled {
+    fn scheduler(&self) -> &Scheduler;
+
+    fn is_active(&self, frame: u64) -> bool {
+        self.scheduler().is_active(frame)
+    }
+
+    fn start(&self, start: u64) {
+        self.scheduler().start(start)
+    }
+
+    fn stop(&self, stop: u64) {
+        self.scheduler().stop(stop)
+    }
+}
+
+/// Interface of source nodes, controlling start and stop times.
+/// The node will emit silence before it is started, and after it has ended.
+pub trait AudioScheduledSourceNode: AudioNode + Scheduled {
+    /// Schedules a sound to playback at an exact time.
+    fn start_at(&self, timestamp: f64) {
+        let frame = (timestamp * self.context().sample_rate() as f64) as u64;
+        self.scheduler().start(frame);
+    }
+    /// Schedules a sound to stop playback at an exact time.
+    fn stop_at(&self, timestamp: f64) {
+        let frame = (timestamp * self.context().sample_rate() as f64) as u64;
+        self.scheduler().stop(frame);
+    }
+    /// Play immediately
+    fn start(&self) {
+        self.start_at(0.);
+    }
+    /// Stop immediately
+    fn stop(&self) {
+        self.stop_at(0.);
+    }
+}
+
+/// Options for constructing an OscillatorNode
 pub struct OscillatorOptions {
     pub type_: OscillatorType,
     pub frequency: u32,
@@ -35,6 +109,7 @@ impl Default for OscillatorOptions {
     }
 }
 
+/// Waveform of an oscillator
 #[derive(Copy, Clone)]
 pub enum OscillatorType {
     Sine,
@@ -69,7 +144,16 @@ pub struct OscillatorNode<'a> {
     pub(crate) id: u64,
     pub(crate) frequency: Arc<AtomicU32>,
     pub(crate) type_: Arc<AtomicU32>,
+    pub(crate) scheduler: Scheduler,
 }
+
+impl<'a> Scheduled for OscillatorNode<'a> {
+    fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
+    }
+}
+
+impl<'a> AudioScheduledSourceNode for OscillatorNode<'a> {}
 
 impl<'a> AudioNode for OscillatorNode<'a> {
     fn context(&self) -> &BaseAudioContext {
@@ -107,6 +191,13 @@ impl<'a> OscillatorNode<'a> {
 pub(crate) struct OscillatorRenderer {
     pub frequency: Arc<AtomicU32>,
     pub type_: Arc<AtomicU32>,
+    pub scheduler: Scheduler,
+}
+
+impl Scheduled for OscillatorRenderer {
+    fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
+    }
 }
 
 impl Render for OscillatorRenderer {
@@ -117,6 +208,14 @@ impl Render for OscillatorRenderer {
         timestamp: f64,
         sample_rate: u32,
     ) {
+        let frame = (timestamp * sample_rate as f64) as u64;
+
+        // todo, sub-quantum start/stop
+        if !self.is_active(frame) {
+            output.iter_mut().for_each(|o| *o = 0.);
+            return;
+        }
+
         let freq = self.frequency.load(Ordering::SeqCst) as f64;
         let type_ = self.type_.load(Ordering::SeqCst).into();
 
@@ -180,6 +279,7 @@ impl<'a> AudioNode for DestinationNode<'a> {
     }
 }
 
+/// Options for constructing a GainNode
 pub struct GainOptions {
     pub gain: f32,
 }
@@ -242,12 +342,14 @@ impl Render for GainRenderer {
     }
 }
 
+/// Options for constructing a DelayNode
 #[derive(Default)]
 pub struct DelayOptions {
     // todo: actually delay by time
     pub render_quanta: u32,
 }
 
+/// Node that delays the incoming audio signal by a certain amount
 pub struct DelayNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: u64,

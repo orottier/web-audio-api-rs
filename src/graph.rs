@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
 use crate::control::ControlMessage;
@@ -9,7 +10,7 @@ pub(crate) struct RenderThread {
     graph: Graph,
     sample_rate: u32,
     channels: usize,
-    timestamp: f64,
+    frames_played: AtomicU64,
     receiver: Receiver<ControlMessage>,
 }
 
@@ -24,7 +25,7 @@ impl RenderThread {
             graph: Graph::new(root),
             sample_rate,
             channels,
-            timestamp: 0.,
+            frames_played: AtomicU64::new(0),
             receiver,
         }
     }
@@ -44,12 +45,18 @@ impl RenderThread {
     }
 
     pub fn render(&mut self, data: &mut [f32]) {
+        // handle addition/removal of nodes/edges
         self.handle_control_messages();
 
-        // render audio data
+        // update time
         let len = data.len() / self.channels;
-        let rendered = self.graph.render(self.timestamp, self.sample_rate, len);
+        let timestamp = self.frames_played.fetch_add(len as u64, Ordering::SeqCst) as f64
+            / self.sample_rate as f64;
 
+        // render audio graph
+        let rendered = self.graph.render(timestamp, self.sample_rate, len);
+
+        // upmix rendered audio into output slice
         for (frame, value) in data.chunks_mut(self.channels).zip(rendered) {
             let value = cpal::Sample::from::<f32>(value);
 
@@ -58,9 +65,6 @@ impl RenderThread {
                 *sample = value;
             }
         }
-
-        // update time
-        self.timestamp += len as f64 / self.sample_rate as f64;
     }
 }
 

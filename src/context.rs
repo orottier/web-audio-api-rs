@@ -1,3 +1,5 @@
+//! AudioContext
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
 use cpal::{Stream, StreamConfig};
@@ -22,8 +24,11 @@ pub struct BaseAudioContext {
     node_id_inc: AtomicU64,
     /// mpsc channel from control to render thread
     render_channel: Sender<ControlMessage>,
+    /// number of frames played
+    frames_played: AtomicU64,
 }
 
+/// Retrieve the BaseAudioContext from the concrete AudioContext
 pub trait AsBaseAudioContext {
     fn base(&self) -> &BaseAudioContext;
 
@@ -56,7 +61,13 @@ pub trait AsBaseAudioContext {
 
     /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
     fn sample_rate(&self) -> u32 {
-        self.base().sample_rate
+        self.base().sample_rate()
+    }
+
+    /// This is the time in seconds of the sample frame immediately following the last sample-frame
+    /// in the block of audio most recently processed by the context’s rendering graph.
+    fn current_time(&self) -> f64 {
+        self.base().current_time()
     }
 }
 
@@ -144,6 +155,7 @@ impl AudioContext {
             channels,
             node_id_inc: AtomicU64::new(1),
             render_channel: sender,
+            frames_played: AtomicU64::new(0),
         };
 
         Self { base, stream }
@@ -163,6 +175,17 @@ impl AudioContext {
 }
 
 impl BaseAudioContext {
+    /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    /// This is the time in seconds of the sample frame immediately following the last sample-frame
+    /// in the block of audio most recently processed by the context’s rendering graph.
+    pub fn current_time(&self) -> f64 {
+        self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64
+    }
+
     pub(crate) fn create_oscillator_with(
         &self,
         options: node::OscillatorOptions,
@@ -171,9 +194,12 @@ impl BaseAudioContext {
         let frequency = Arc::new(AtomicU32::new(options.frequency));
         let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
 
+        let scheduler = node::Scheduler::new();
+
         let render = node::OscillatorRenderer {
             frequency: frequency.clone(),
             type_: type_.clone(),
+            scheduler: scheduler.clone(),
         };
         let message = ControlMessage::RegisterNode {
             id,
@@ -187,6 +213,7 @@ impl BaseAudioContext {
             id,
             frequency,
             type_,
+            scheduler,
         }
     }
 
@@ -259,6 +286,7 @@ impl OfflineAudioContext {
             channels,
             node_id_inc: AtomicU64::new(1),
             render_channel: sender,
+            frames_played: AtomicU64::new(0),
         };
 
         // pre-allocate enough space (todo, round to multiple of channels * buffer_size?)
