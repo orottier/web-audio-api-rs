@@ -266,6 +266,16 @@ impl BaseAudioContext {
         let message = ControlMessage::ConnectNode { from, to, channel };
         self.render_channel.send(message).unwrap();
     }
+
+    pub(crate) fn disconnect(&self, from: u64, to: u64) {
+        let message = ControlMessage::DisconnectNode { from, to };
+        self.render_channel.send(message).unwrap();
+    }
+
+    pub(crate) fn disconnect_all(&self, from: u64) {
+        let message = ControlMessage::DisconnectAll { from };
+        self.render_channel.send(message).unwrap();
+    }
 }
 
 impl Default for AudioContext {

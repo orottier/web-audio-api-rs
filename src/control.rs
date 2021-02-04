@@ -13,4 +13,13 @@ pub(crate) enum ControlMessage {
         to: u64,
         channel: usize,
     },
+
+    DisconnectNode {
+        from: u64,
+        to: u64,
+    },
+
+    DisconnectAll {
+        from: u64,
+    },
 }

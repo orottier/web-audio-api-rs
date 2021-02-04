@@ -13,8 +13,11 @@ use crate::graph::Render;
 /// to the audio hardware. Each node can have inputs and/or outputs.
 pub trait AudioNode {
     fn id(&self) -> u64;
+
+    /// The BaseAudioContext which owns this AudioNode.
     fn context(&self) -> &BaseAudioContext;
 
+    /// Connect the output of this AudioNode to the input of another node.
     fn connect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
         if !std::ptr::eq(self.context(), dest.context()) {
             panic!("attempting to connect nodes from different contexts");
@@ -23,6 +26,22 @@ pub trait AudioNode {
         self.context().connect(self.id(), dest.id(), 0);
 
         dest
+    }
+
+    /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
+    fn disconnect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
+        if !std::ptr::eq(self.context(), dest.context()) {
+            panic!("attempting to disconnect nodes from different contexts");
+        }
+
+        self.context().disconnect(self.id(), dest.id());
+
+        dest
+    }
+
+    /// Disconnects all outgoing connections from the AudioNode.
+    fn disconnect_all(&self) {
+        self.context().disconnect_all(self.id());
     }
 }
 

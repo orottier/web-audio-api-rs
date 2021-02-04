@@ -40,6 +40,12 @@ impl RenderThread {
                     let conn = Connection { channel };
                     self.graph.add_edge(NodeIndex(from), NodeIndex(to), conn);
                 }
+                ControlMessage::DisconnectNode { from, to } => {
+                    self.graph.remove_edge(NodeIndex(from), NodeIndex(to));
+                }
+                ControlMessage::DisconnectAll { from } => {
+                    self.graph.remove_edges_from(NodeIndex(from));
+                }
             }
         }
     }
@@ -130,6 +136,18 @@ impl Graph {
         self.order_nodes();
     }
 
+    pub fn remove_edge(&mut self, source: NodeIndex, dest: NodeIndex) {
+        self.edges.remove(&(source, dest));
+
+        self.order_nodes();
+    }
+
+    pub fn remove_edges_from(&mut self, source: NodeIndex) {
+        self.edges.retain(|&(s, _d), _v| s != source);
+
+        self.order_nodes();
+    }
+
     pub fn children(&self, node: NodeIndex) -> impl Iterator<Item = (NodeIndex, &Connection)> {
         self.edges
             .iter()
@@ -201,5 +219,64 @@ impl Graph {
 
         // return buffer of destination node
         &nodes.get(&NodeIndex(0)).unwrap().buffer[0..len]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    struct TestNode {}
+
+    impl Render for TestNode {
+        fn process(&mut self, _: &[&[f32]], _: &mut [f32], _: f64, _: u32) {}
+    }
+
+    #[test]
+    fn test_add_remove() {
+        let mut graph = Graph::new(TestNode {});
+
+        let node = Box::new(TestNode {});
+        graph.add_node(NodeIndex(1), node.clone(), vec![]);
+        graph.add_node(NodeIndex(2), node.clone(), vec![]);
+        graph.add_node(NodeIndex(3), node.clone(), vec![]);
+
+        graph.add_edge(NodeIndex(1), NodeIndex(0), Connection { channel: 1 });
+        graph.add_edge(NodeIndex(2), NodeIndex(1), Connection { channel: 1 });
+        graph.add_edge(NodeIndex(3), NodeIndex(0), Connection { channel: 1 });
+
+        // sorting is not deterministic, can be either of these two
+        if graph.ordered != &[NodeIndex(3), NodeIndex(2), NodeIndex(1), NodeIndex(0)] {
+            assert_eq!(
+                graph.ordered,
+                vec![NodeIndex(2), NodeIndex(1), NodeIndex(3), NodeIndex(0)]
+            );
+        }
+
+        graph.remove_edge(NodeIndex(1), NodeIndex(0));
+        assert_eq!(graph.ordered, vec![NodeIndex(3), NodeIndex(0)]);
+    }
+
+    #[test]
+    fn test_remove_all() {
+        let mut graph = Graph::new(TestNode {});
+
+        let node = Box::new(TestNode {});
+        graph.add_node(NodeIndex(1), node.clone(), vec![]);
+        graph.add_node(NodeIndex(2), node.clone(), vec![]);
+
+        graph.add_edge(NodeIndex(1), NodeIndex(0), Connection { channel: 1 });
+        graph.add_edge(NodeIndex(2), NodeIndex(0), Connection { channel: 1 });
+        graph.add_edge(NodeIndex(2), NodeIndex(1), Connection { channel: 1 });
+
+        assert_eq!(
+            graph.ordered,
+            vec![NodeIndex(2), NodeIndex(1), NodeIndex(0)]
+        );
+
+        graph.remove_edges_from(NodeIndex(2));
+
+        assert_eq!(graph.ordered, vec![NodeIndex(1), NodeIndex(0)]);
     }
 }
