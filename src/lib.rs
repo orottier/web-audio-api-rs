@@ -1,4 +1,4 @@
-const BUFFER_SIZE: u32 = 512;
+pub const BUFFER_SIZE: u32 = 512;
 
 pub mod context;
 pub mod node;

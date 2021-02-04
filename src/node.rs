@@ -3,12 +3,12 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use crate::context::AudioContext;
+use crate::context::{AsBaseAudioContext, BaseAudioContext};
 use crate::graph::Render;
 
 pub trait AudioNode {
     fn id(&self) -> u64;
-    fn context(&self) -> &AudioContext;
+    fn context(&self) -> &BaseAudioContext;
 
     fn connect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
         if !std::ptr::eq(self.context(), dest.context()) {
@@ -65,14 +65,14 @@ impl From<u32> for OscillatorType {
 
 /// Audio source generating a periodic waveform
 pub struct OscillatorNode<'a> {
-    pub(crate) context: &'a AudioContext,
+    pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: u64,
     pub(crate) frequency: Arc<AtomicU32>,
     pub(crate) type_: Arc<AtomicU32>,
 }
 
 impl<'a> AudioNode for OscillatorNode<'a> {
-    fn context(&self) -> &AudioContext {
+    fn context(&self) -> &BaseAudioContext {
         self.context
     }
 
@@ -82,8 +82,8 @@ impl<'a> AudioNode for OscillatorNode<'a> {
 }
 
 impl<'a> OscillatorNode<'a> {
-    pub fn new(context: &'a AudioContext, options: OscillatorOptions) -> Self {
-        context.create_oscillator_with(options)
+    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: OscillatorOptions) -> Self {
+        context.base().create_oscillator_with(options)
     }
 
     pub fn frequency(&self) -> u32 {
@@ -138,7 +138,7 @@ impl Render for OscillatorRenderer {
 
 /// Representing the final audio destination and is what the user will ultimately hear.
 pub struct DestinationNode<'a> {
-    pub(crate) context: &'a AudioContext,
+    pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: u64,
     pub(crate) channels: usize,
 }
@@ -171,7 +171,7 @@ impl Render for DestinationRenderer {
 }
 
 impl<'a> AudioNode for DestinationNode<'a> {
-    fn context(&self) -> &AudioContext {
+    fn context(&self) -> &BaseAudioContext {
         self.context
     }
 
@@ -192,13 +192,13 @@ impl Default for GainOptions {
 
 /// AudioNode for volume control
 pub struct GainNode<'a> {
-    pub(crate) context: &'a AudioContext,
+    pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: u64,
     pub(crate) gain: Arc<AtomicU32>,
 }
 
 impl<'a> AudioNode for GainNode<'a> {
-    fn context(&self) -> &AudioContext {
+    fn context(&self) -> &BaseAudioContext {
         self.context
     }
 
@@ -208,8 +208,8 @@ impl<'a> AudioNode for GainNode<'a> {
 }
 
 impl<'a> GainNode<'a> {
-    pub fn new(context: &'a AudioContext, options: GainOptions) -> Self {
-        context.create_gain_with(options)
+    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: GainOptions) -> Self {
+        context.base().create_gain_with(options)
     }
 
     pub fn gain(&self) -> f32 {
@@ -249,13 +249,13 @@ pub struct DelayOptions {
 }
 
 pub struct DelayNode<'a> {
-    pub(crate) context: &'a AudioContext,
+    pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: u64,
     pub(crate) render_quanta: Arc<AtomicU32>,
 }
 
 impl<'a> AudioNode for DelayNode<'a> {
-    fn context(&self) -> &AudioContext {
+    fn context(&self) -> &BaseAudioContext {
         self.context
     }
 
@@ -265,8 +265,8 @@ impl<'a> AudioNode for DelayNode<'a> {
 }
 
 impl<'a> DelayNode<'a> {
-    pub fn new(context: &'a AudioContext, options: DelayOptions) -> Self {
-        context.create_delay_with(options)
+    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: DelayOptions) -> Self {
+        context.base().create_delay_with(options)
     }
 
     pub fn render_quanta(&self) -> u32 {

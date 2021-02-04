@@ -10,12 +10,10 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
 
-/// The AudioContext interface represents an audio-processing graph built from audio modules linked
-/// together, each represented by an AudioNode. An audio context controls both the creation of the
-/// nodes it contains and the execution of the audio processing, or decoding.
-pub struct AudioContext {
-    /// cpal stream (play/pause functionality)
-    stream: Stream, // todo should be in render thread?
+/// The BaseAudioContext interface represents an audio-processing graph built from audio modules
+/// linked together, each represented by an AudioNode. An audio context controls both the creation
+/// of the nodes it contains and the execution of the audio processing, or decoding.
+pub struct BaseAudioContext {
     /// sample rate in Hertz
     sample_rate: u32,
     /// number of speaker output channels
@@ -24,6 +22,76 @@ pub struct AudioContext {
     node_id_inc: AtomicU64,
     /// mpsc channel from control to render thread
     render_channel: Sender<ControlMessage>,
+}
+
+pub trait AsBaseAudioContext {
+    fn base(&self) -> &BaseAudioContext;
+
+    /// Creates an OscillatorNode, a source representing a periodic waveform. It basically
+    /// generates a tone.
+    fn create_oscillator(&self) -> node::OscillatorNode {
+        self.base()
+            .create_oscillator_with(node::OscillatorOptions::default())
+    }
+
+    /// Creates an GainNode, to control audio volume
+    fn create_gain(&self) -> node::GainNode {
+        self.base().create_gain_with(node::GainOptions::default())
+    }
+
+    /// Creates a DelayNode, delaying the audio signal
+    fn create_delay(&self) -> node::DelayNode {
+        self.base().create_delay_with(node::DelayOptions::default())
+    }
+
+    /// Returns an AudioDestinationNode representing the final destination of all audio in the
+    /// context. It can be thought of as the audio-rendering device.
+    fn destination(&self) -> node::DestinationNode {
+        node::DestinationNode {
+            context: self.base(),
+            id: 0,
+            channels: self.base().channels,
+        }
+    }
+
+    /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
+    fn sample_rate(&self) -> u32 {
+        self.base().sample_rate
+    }
+}
+
+/// This interface represents an audio graph whose AudioDestinationNode is routed to a real-time
+/// output device that produces a signal directed at the user.
+pub struct AudioContext {
+    base: BaseAudioContext,
+
+    /// cpal stream (play/pause functionality)
+    stream: Stream, // todo should be in render thread?
+}
+
+impl AsBaseAudioContext for AudioContext {
+    fn base(&self) -> &BaseAudioContext {
+        &self.base
+    }
+}
+
+/// The OfflineAudioContext doesn't render the audio to the device hardware; instead, it generates
+/// it, as fast as it can, and outputs the result to an AudioBuffer.
+pub struct OfflineAudioContext {
+    base: BaseAudioContext,
+
+    /// the size of the buffer in sample-frames
+    length: usize,
+    /// the rendered audio data
+    buffer: Vec<f32>,
+    /// the rendering 'thread', fully controlled by the offline context
+    render: RenderThread,
+}
+
+impl AsBaseAudioContext for OfflineAudioContext {
+    fn base(&self) -> &BaseAudioContext {
+        &self.base
+    }
 }
 
 impl AudioContext {
@@ -71,13 +139,14 @@ impl AudioContext {
 
         stream.play().unwrap();
 
-        Self {
-            stream,
+        let base = BaseAudioContext {
             sample_rate,
             channels,
             node_id_inc: AtomicU64::new(1),
             render_channel: sender,
-        }
+        };
+
+        Self { base, stream }
     }
 
     /// Suspends the progression of time in the audio context, temporarily halting audio hardware
@@ -91,13 +160,9 @@ impl AudioContext {
     pub fn resume(&self) {
         self.stream.play().unwrap()
     }
+}
 
-    /// Creates an OscillatorNode, a source representing a periodic waveform. It basically
-    /// generates a tone.
-    pub fn create_oscillator(&self) -> node::OscillatorNode {
-        self.create_oscillator_with(node::OscillatorOptions::default())
-    }
-
+impl BaseAudioContext {
     pub(crate) fn create_oscillator_with(
         &self,
         options: node::OscillatorOptions,
@@ -125,11 +190,6 @@ impl AudioContext {
         }
     }
 
-    /// Creates an GainNode, to control audio volume
-    pub fn create_gain(&self) -> node::GainNode {
-        self.create_gain_with(node::GainOptions::default())
-    }
-
     pub(crate) fn create_gain_with(&self, options: node::GainOptions) -> node::GainNode {
         let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
         let gain = Arc::new(AtomicU32::new((options.gain * 100.) as u32));
@@ -147,11 +207,6 @@ impl AudioContext {
             id,
             gain,
         }
-    }
-
-    /// Creates a DelayNode, delaying the audio signal
-    pub fn create_delay(&self) -> node::DelayNode {
-        self.create_delay_with(node::DelayOptions::default())
     }
 
     pub(crate) fn create_delay_with(&self, options: node::DelayOptions) -> node::DelayNode {
@@ -181,29 +236,51 @@ impl AudioContext {
     }
 
     pub(crate) fn connect(&self, from: u64, to: u64, channel: usize) {
-        println!("connecting {} to {}", from, to);
         let message = ControlMessage::ConnectNode { from, to, channel };
         self.render_channel.send(message).unwrap();
-    }
-
-    /// Returns an AudioDestinationNode representing the final destination of all audio in the
-    /// context. It can be thought of as the audio-rendering device.
-    pub fn destination(&self) -> node::DestinationNode {
-        node::DestinationNode {
-            context: &self,
-            id: 0,
-            channels: self.channels,
-        }
-    }
-
-    /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
-    pub fn sample_rate(&self) -> u32 {
-        self.sample_rate
     }
 }
 
 impl Default for AudioContext {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl OfflineAudioContext {
+    pub fn new(channels: usize, length: usize, sample_rate: u32) -> Self {
+        // construct graph for the render thread
+        let dest = crate::node::DestinationRenderer { channels };
+        let (sender, receiver) = mpsc::channel();
+        let render = RenderThread::new(dest, sample_rate, channels, receiver);
+
+        let base = BaseAudioContext {
+            sample_rate,
+            channels,
+            node_id_inc: AtomicU64::new(1),
+            render_channel: sender,
+        };
+
+        // pre-allocate enough space (todo, round to multiple of channels * buffer_size?)
+        let buffer = vec![0.; length];
+
+        Self {
+            base,
+            length,
+            buffer,
+            render,
+        }
+    }
+
+    pub fn start_rendering(&mut self) -> &[f32] {
+        for quantum in self.buffer.chunks_mut(crate::BUFFER_SIZE as usize) {
+            self.render.render(quantum)
+        }
+
+        self.buffer.as_slice()
+    }
+
+    pub fn length(&self) -> usize {
+        self.length
     }
 }
