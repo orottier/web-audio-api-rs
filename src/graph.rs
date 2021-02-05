@@ -9,7 +9,7 @@ use crate::control::ControlMessage;
 pub(crate) struct RenderThread {
     graph: Graph,
     sample_rate: u32,
-    channels: usize,
+    channels: u32,
     frames_played: AtomicU64,
     receiver: Receiver<ControlMessage>,
 }
@@ -18,7 +18,7 @@ impl RenderThread {
     pub fn new<N: Render + 'static>(
         root: N,
         sample_rate: u32,
-        channels: usize,
+        channels: u32,
         receiver: Receiver<ControlMessage>,
     ) -> Self {
         Self {
@@ -32,18 +32,25 @@ impl RenderThread {
 
     fn handle_control_messages(&mut self) {
         for msg in self.receiver.try_iter() {
+            use ControlMessage::*;
+
             match msg {
-                ControlMessage::RegisterNode { id, node, buffer } => {
+                RegisterNode { id, node, buffer } => {
                     self.graph.add_node(NodeIndex(id), node, buffer);
                 }
-                ControlMessage::ConnectNode { from, to, channel } => {
-                    let conn = Connection { channel };
+                ConnectNode {
+                    from,
+                    to,
+                    input,
+                    output,
+                } => {
+                    let conn = Connection { input, output };
                     self.graph.add_edge(NodeIndex(from), NodeIndex(to), conn);
                 }
-                ControlMessage::DisconnectNode { from, to } => {
+                DisconnectNode { from, to } => {
                     self.graph.remove_edge(NodeIndex(from), NodeIndex(to));
                 }
-                ControlMessage::DisconnectAll { from } => {
+                DisconnectAll { from } => {
                     self.graph.remove_edges_from(NodeIndex(from));
                 }
             }
@@ -55,7 +62,7 @@ impl RenderThread {
         self.handle_control_messages();
 
         // update time
-        let len = data.len() / self.channels;
+        let len = data.len() / self.channels as usize;
         let timestamp = self.frames_played.fetch_add(len as u64, Ordering::SeqCst) as f64
             / self.sample_rate as f64;
 
@@ -63,7 +70,7 @@ impl RenderThread {
         let rendered = self.graph.render(timestamp, self.sample_rate, len);
 
         // upmix rendered audio into output slice
-        for (frame, value) in data.chunks_mut(self.channels).zip(rendered) {
+        for (frame, value) in data.chunks_mut(self.channels as usize).zip(rendered) {
             let value = cpal::Sample::from::<f32>(value);
 
             // for now, make stereo sound from mono
@@ -77,9 +84,10 @@ impl RenderThread {
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct NodeIndex(u64);
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Connection {
-    pub channel: usize,
+    pub input: u32,
+    pub output: u32,
 }
 
 #[derive(Debug)]
@@ -242,9 +250,9 @@ mod tests {
         graph.add_node(NodeIndex(2), node.clone(), vec![]);
         graph.add_node(NodeIndex(3), node.clone(), vec![]);
 
-        graph.add_edge(NodeIndex(1), NodeIndex(0), Connection { channel: 1 });
-        graph.add_edge(NodeIndex(2), NodeIndex(1), Connection { channel: 1 });
-        graph.add_edge(NodeIndex(3), NodeIndex(0), Connection { channel: 1 });
+        graph.add_edge(NodeIndex(1), NodeIndex(0), Connection::default());
+        graph.add_edge(NodeIndex(2), NodeIndex(1), Connection::default());
+        graph.add_edge(NodeIndex(3), NodeIndex(0), Connection::default());
 
         // sorting is not deterministic, can be either of these two
         if graph.ordered != &[NodeIndex(3), NodeIndex(2), NodeIndex(1), NodeIndex(0)] {
@@ -266,9 +274,9 @@ mod tests {
         graph.add_node(NodeIndex(1), node.clone(), vec![]);
         graph.add_node(NodeIndex(2), node.clone(), vec![]);
 
-        graph.add_edge(NodeIndex(1), NodeIndex(0), Connection { channel: 1 });
-        graph.add_edge(NodeIndex(2), NodeIndex(0), Connection { channel: 1 });
-        graph.add_edge(NodeIndex(2), NodeIndex(1), Connection { channel: 1 });
+        graph.add_edge(NodeIndex(1), NodeIndex(0), Connection::default());
+        graph.add_edge(NodeIndex(2), NodeIndex(0), Connection::default());
+        graph.add_edge(NodeIndex(2), NodeIndex(1), Connection::default());
 
         assert_eq!(
             graph.ordered,

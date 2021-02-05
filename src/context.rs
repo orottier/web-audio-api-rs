@@ -19,7 +19,7 @@ pub struct BaseAudioContext {
     /// sample rate in Hertz
     sample_rate: u32,
     /// number of speaker output channels
-    channels: usize,
+    channels: u32,
     /// incrementing id to assign to audio nodes
     node_id_inc: AtomicU64,
     /// mpsc channel from control to render thread
@@ -55,7 +55,6 @@ pub trait AsBaseAudioContext {
         node::DestinationNode {
             context: self.base(),
             id: 0,
-            channels: self.base().channels,
         }
     }
 
@@ -133,10 +132,10 @@ impl AudioContext {
         dbg!(&config);
 
         let sample_rate = config.sample_rate.0;
-        let channels = config.channels as usize;
+        let channels = config.channels as u32;
 
         // construct graph for the render thread
-        let dest = crate::node::DestinationRenderer { channels };
+        let dest = crate::node::DestinationRenderer {};
         let (sender, receiver) = mpsc::channel();
         let mut render = RenderThread::new(dest, sample_rate, channels, receiver);
 
@@ -184,6 +183,11 @@ impl BaseAudioContext {
     /// in the block of audio most recently processed by the context’s rendering graph.
     pub fn current_time(&self) -> f64 {
         self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64
+    }
+
+    /// Number of channels for the audio destination
+    pub fn channels(&self) -> u32 {
+        self.channels
     }
 
     pub(crate) fn create_oscillator_with(
@@ -262,8 +266,13 @@ impl BaseAudioContext {
         }
     }
 
-    pub(crate) fn connect(&self, from: u64, to: u64, channel: usize) {
-        let message = ControlMessage::ConnectNode { from, to, channel };
+    pub(crate) fn connect(&self, from: u64, to: u64, output: u32, input: u32) {
+        let message = ControlMessage::ConnectNode {
+            from,
+            to,
+            output,
+            input,
+        };
         self.render_channel.send(message).unwrap();
     }
 
@@ -285,9 +294,9 @@ impl Default for AudioContext {
 }
 
 impl OfflineAudioContext {
-    pub fn new(channels: usize, length: usize, sample_rate: u32) -> Self {
+    pub fn new(channels: u32, length: usize, sample_rate: u32) -> Self {
         // construct graph for the render thread
-        let dest = crate::node::DestinationRenderer { channels };
+        let dest = crate::node::DestinationRenderer {};
         let (sender, receiver) = mpsc::channel();
         let render = RenderThread::new(dest, sample_rate, channels, receiver);
 

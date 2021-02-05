@@ -11,7 +11,8 @@ pub(crate) enum ControlMessage {
     ConnectNode {
         from: u64,
         to: u64,
-        channel: usize,
+        input: u32,
+        output: u32,
     },
 
     DisconnectNode {

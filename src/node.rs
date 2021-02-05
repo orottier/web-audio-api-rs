@@ -23,9 +23,29 @@ pub trait AudioNode {
             panic!("attempting to connect nodes from different contexts");
         }
 
-        self.context().connect(self.id(), dest.id(), 0);
+        self.context().connect(self.id(), dest.id(), 0, 0);
 
         dest
+    }
+
+    /// Connect a specific output of this AudioNode to a specific input of another node.
+    fn connect_at<'a>(
+        &self,
+        dest: &'a dyn AudioNode,
+        output: u32,
+        input: u32,
+    ) -> Result<&'a dyn AudioNode, crate::IndexSizeError> {
+        if !std::ptr::eq(self.context(), dest.context()) {
+            panic!("attempting to connect nodes from different contexts");
+        }
+
+        if self.number_of_outputs() < output || dest.number_of_inputs() < input {
+            return Err(crate::IndexSizeError {});
+        }
+
+        self.context().connect(self.id(), dest.id(), output, input);
+
+        Ok(dest)
     }
 
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
@@ -43,6 +63,11 @@ pub trait AudioNode {
     fn disconnect_all(&self) {
         self.context().disconnect_all(self.id());
     }
+
+    /// The number of inputs feeding into the AudioNode. For source nodes, this will be 0.
+    fn number_of_inputs(&self) -> u32;
+    /// The number of outputs coming out of the AudioNode.
+    fn number_of_outputs(&self) -> u32;
 }
 
 /// Helper struct to start and stop audio streams
@@ -70,6 +95,12 @@ impl Scheduler {
 
     pub fn stop(&self, stop: u64) {
         self.stop.store(stop, Ordering::SeqCst);
+    }
+}
+
+impl Default for Scheduler {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -146,12 +177,14 @@ impl Default for OscillatorType {
 
 impl From<u32> for OscillatorType {
     fn from(i: u32) -> Self {
+        use OscillatorType::*;
+
         match i {
-            0 => OscillatorType::Sine,
-            1 => OscillatorType::Square,
-            2 => OscillatorType::Sawtooth,
-            3 => OscillatorType::Triangle,
-            4 => OscillatorType::Custom,
+            0 => Sine,
+            1 => Square,
+            2 => Sawtooth,
+            3 => Triangle,
+            4 => Custom,
             _ => unreachable!(),
         }
     }
@@ -181,6 +214,13 @@ impl<'a> AudioNode for OscillatorNode<'a> {
 
     fn id(&self) -> u64 {
         self.id
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        0
+    }
+    fn number_of_outputs(&self) -> u32 {
+        1
     }
 }
 
@@ -241,14 +281,12 @@ impl Render for OscillatorRenderer {
         let ts = (0..output.len()).map(move |i| timestamp + i as f64 / sample_rate as f64);
         let io = ts.zip(output.iter_mut());
 
+        use OscillatorType::*;
+
         match type_ {
-            OscillatorType::Sine => io.for_each(|(i, o)| *o = (2. * PI * freq * i).sin() as f32),
-            OscillatorType::Square => {
-                io.for_each(|(i, o)| *o = if (freq * i).fract() < 0.5 { 1. } else { -1. })
-            }
-            OscillatorType::Sawtooth => {
-                io.for_each(|(i, o)| *o = 2. * ((freq * i).fract() - 0.5) as f32)
-            }
+            Sine => io.for_each(|(i, o)| *o = (2. * PI * freq * i).sin() as f32),
+            Square => io.for_each(|(i, o)| *o = if (freq * i).fract() < 0.5 { 1. } else { -1. }),
+            Sawtooth => io.for_each(|(i, o)| *o = 2. * ((freq * i).fract() - 0.5) as f32),
             _ => todo!(),
         }
     }
@@ -258,13 +296,10 @@ impl Render for OscillatorRenderer {
 pub struct DestinationNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: u64,
-    pub(crate) channels: usize,
 }
 
 #[derive(Debug)]
-pub(crate) struct DestinationRenderer {
-    pub channels: usize,
-}
+pub(crate) struct DestinationRenderer {}
 
 impl Render for DestinationRenderer {
     fn process(
@@ -296,6 +331,13 @@ impl<'a> AudioNode for DestinationNode<'a> {
     fn id(&self) -> u64 {
         self.id
     }
+
+    fn number_of_inputs(&self) -> u32 {
+        1
+    }
+    fn number_of_outputs(&self) -> u32 {
+        0
+    }
 }
 
 /// Options for constructing a GainNode
@@ -323,6 +365,13 @@ impl<'a> AudioNode for GainNode<'a> {
 
     fn id(&self) -> u64 {
         self.id
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        1
+    }
+    fn number_of_outputs(&self) -> u32 {
+        1
     }
 }
 
@@ -382,6 +431,13 @@ impl<'a> AudioNode for DelayNode<'a> {
 
     fn id(&self) -> u64 {
         self.id
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        1
+    }
+    fn number_of_outputs(&self) -> u32 {
+        1
     }
 }
 
