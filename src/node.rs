@@ -5,14 +5,15 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use crate::context::{AsBaseAudioContext, BaseAudioContext};
+use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules. These modules can be connected together to form processing graphs for rendering audio
 /// to the audio hardware. Each node can have inputs and/or outputs.
 pub trait AudioNode {
-    fn id(&self) -> u64;
+    fn id(&self) -> &AudioNodeId;
+    fn to_render(&self) -> Box<dyn Render>;
 
     /// The BaseAudioContext which owns this AudioNode.
     fn context(&self) -> &BaseAudioContext;
@@ -193,7 +194,7 @@ impl From<u32> for OscillatorType {
 /// Audio source generating a periodic waveform
 pub struct OscillatorNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: u64,
+    pub(crate) id: AudioNodeId,
     pub(crate) frequency: Arc<AtomicU32>,
     pub(crate) type_: Arc<AtomicU32>,
     pub(crate) scheduler: Scheduler,
@@ -212,8 +213,18 @@ impl<'a> AudioNode for OscillatorNode<'a> {
         self.context
     }
 
-    fn id(&self) -> u64 {
-        self.id
+    fn to_render(&self) -> Box<dyn Render> {
+        let render = OscillatorRenderer {
+            frequency: self.frequency.clone(),
+            type_: self.type_.clone(),
+            scheduler: self.scheduler.clone(),
+        };
+
+        Box::new(render)
+    }
+
+    fn id(&self) -> &AudioNodeId {
+        &self.id
     }
 
     fn number_of_inputs(&self) -> u32 {
@@ -226,7 +237,19 @@ impl<'a> AudioNode for OscillatorNode<'a> {
 
 impl<'a> OscillatorNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, options: OscillatorOptions) -> Self {
-        context.base().create_oscillator_with(options)
+        context.base().register(move |id| {
+            let frequency = Arc::new(AtomicU32::new(options.frequency));
+            let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
+            let scheduler = Scheduler::new();
+
+            OscillatorNode {
+                context: context.base(),
+                id,
+                frequency,
+                type_,
+                scheduler,
+            }
+        })
     }
 
     pub fn frequency(&self) -> u32 {
@@ -295,7 +318,7 @@ impl Render for OscillatorRenderer {
 /// Representing the final audio destination and is what the user will ultimately hear.
 pub struct DestinationNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: u64,
+    pub(crate) id: AudioNodeId,
 }
 
 #[derive(Debug)]
@@ -328,8 +351,12 @@ impl<'a> AudioNode for DestinationNode<'a> {
         self.context
     }
 
-    fn id(&self) -> u64 {
-        self.id
+    fn id(&self) -> &AudioNodeId {
+        &self.id
+    }
+
+    fn to_render(&self) -> Box<dyn Render> {
+        todo!()
     }
 
     fn number_of_inputs(&self) -> u32 {
@@ -354,7 +381,7 @@ impl Default for GainOptions {
 /// AudioNode for volume control
 pub struct GainNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: u64,
+    pub(crate) id: AudioNodeId,
     pub(crate) gain: Arc<AtomicU32>,
 }
 
@@ -363,8 +390,15 @@ impl<'a> AudioNode for GainNode<'a> {
         self.context
     }
 
-    fn id(&self) -> u64 {
-        self.id
+    fn id(&self) -> &AudioNodeId {
+        &self.id
+    }
+
+    fn to_render(&self) -> Box<dyn Render> {
+        let render = GainRenderer {
+            gain: self.gain.clone(),
+        };
+        Box::new(render)
     }
 
     fn number_of_inputs(&self) -> u32 {
@@ -377,7 +411,15 @@ impl<'a> AudioNode for GainNode<'a> {
 
 impl<'a> GainNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, options: GainOptions) -> Self {
-        context.base().create_gain_with(options)
+        context.base().register(move |id| {
+            let gain = Arc::new(AtomicU32::new((options.gain * 100.) as u32));
+
+            GainNode {
+                context: context.base(),
+                id,
+                gain,
+            }
+        })
     }
 
     pub fn gain(&self) -> f32 {
@@ -420,7 +462,7 @@ pub struct DelayOptions {
 /// Node that delays the incoming audio signal by a certain amount
 pub struct DelayNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: u64,
+    pub(crate) id: AudioNodeId,
     pub(crate) render_quanta: Arc<AtomicU32>,
 }
 
@@ -429,8 +471,22 @@ impl<'a> AudioNode for DelayNode<'a> {
         self.context
     }
 
-    fn id(&self) -> u64 {
-        self.id
+    fn id(&self) -> &AudioNodeId {
+        &self.id
+    }
+
+    fn to_render(&self) -> Box<dyn Render> {
+        let render_quanta = self.render_quanta.load(Ordering::SeqCst);
+        let cap = (render_quanta * crate::BUFFER_SIZE) as usize;
+        let delay_buffer = Vec::with_capacity(cap);
+
+        let render = DelayRenderer {
+            render_quanta: self.render_quanta.clone(),
+            delay_buffer,
+            index: 0,
+        };
+
+        Box::new(render)
     }
 
     fn number_of_inputs(&self) -> u32 {
@@ -443,7 +499,15 @@ impl<'a> AudioNode for DelayNode<'a> {
 
 impl<'a> DelayNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, options: DelayOptions) -> Self {
-        context.base().create_delay_with(options)
+        context.base().register(move |id| {
+            let render_quanta = Arc::new(AtomicU32::new(options.render_quanta));
+
+            DelayNode {
+                context: context.base(),
+                id,
+                render_quanta,
+            }
+        })
     }
 
     pub fn render_quanta(&self) -> u32 {

@@ -8,9 +8,8 @@ use crate::control::ControlMessage;
 use crate::graph::RenderThread;
 use crate::node;
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
-use std::sync::Arc;
 
 /// The BaseAudioContext interface represents an audio-processing graph built from audio modules
 /// linked together, each represented by an AudioNode. An audio context controls both the creation
@@ -35,18 +34,17 @@ pub trait AsBaseAudioContext {
     /// Creates an OscillatorNode, a source representing a periodic waveform. It basically
     /// generates a tone.
     fn create_oscillator(&self) -> node::OscillatorNode {
-        self.base()
-            .create_oscillator_with(node::OscillatorOptions::default())
+        node::OscillatorNode::new(self.base(), node::OscillatorOptions::default())
     }
 
     /// Creates an GainNode, to control audio volume
     fn create_gain(&self) -> node::GainNode {
-        self.base().create_gain_with(node::GainOptions::default())
+        node::GainNode::new(self.base(), node::GainOptions::default())
     }
 
     /// Creates a DelayNode, delaying the audio signal
     fn create_delay(&self) -> node::DelayNode {
-        self.base().create_delay_with(node::DelayOptions::default())
+        node::DelayNode::new(self.base(), node::DelayOptions::default())
     }
 
     /// Returns an AudioDestinationNode representing the final destination of all audio in the
@@ -54,7 +52,7 @@ pub trait AsBaseAudioContext {
     fn destination(&self) -> node::DestinationNode {
         node::DestinationNode {
             context: self.base(),
-            id: 0,
+            id: AudioNodeId(0),
         }
     }
 
@@ -67,6 +65,12 @@ pub trait AsBaseAudioContext {
     /// in the block of audio most recently processed by the context’s rendering graph.
     fn current_time(&self) -> f64 {
         self.base().current_time()
+    }
+}
+
+impl AsBaseAudioContext for BaseAudioContext {
+    fn base(&self) -> &BaseAudioContext {
+        &self
     }
 }
 
@@ -173,6 +177,9 @@ impl AudioContext {
     }
 }
 
+/// Unique identifier for audio nodes. Used for internal bookkeeping
+pub struct AudioNodeId(u64);
+
 impl BaseAudioContext {
     /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
     pub fn sample_rate(&self) -> u32 {
@@ -190,99 +197,46 @@ impl BaseAudioContext {
         self.channels
     }
 
-    pub(crate) fn create_oscillator_with(
-        &self,
-        options: node::OscillatorOptions,
-    ) -> node::OscillatorNode {
+    pub(crate) fn register<T: node::AudioNode, F: FnOnce(AudioNodeId) -> T>(&self, f: F) -> T {
+        // create unique identifier for this node
         let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
-        let frequency = Arc::new(AtomicU32::new(options.frequency));
-        let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
+        let node_id = AudioNodeId(id);
 
-        let scheduler = node::Scheduler::new();
+        // create the node and its renderer
+        let node = (f)(node_id);
+        let render = node.to_render();
 
-        let render = node::OscillatorRenderer {
-            frequency: frequency.clone(),
-            type_: type_.clone(),
-            scheduler: scheduler.clone(),
-        };
+        // pass the renderer to the audio graph
         let message = ControlMessage::RegisterNode {
             id,
-            node: Box::new(render),
+            node: render,
             buffer: vec![0.; crate::BUFFER_SIZE as usize],
         };
         self.render_channel.send(message).unwrap();
 
-        node::OscillatorNode {
-            context: &self,
-            id,
-            frequency,
-            type_,
-            scheduler,
-        }
+        node
     }
 
-    pub(crate) fn create_gain_with(&self, options: node::GainOptions) -> node::GainNode {
-        let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
-        let gain = Arc::new(AtomicU32::new((options.gain * 100.) as u32));
-
-        let render = node::GainRenderer { gain: gain.clone() };
-        let message = ControlMessage::RegisterNode {
-            id,
-            node: Box::new(render),
-            buffer: vec![0.; crate::BUFFER_SIZE as usize],
-        };
-        self.render_channel.send(message).unwrap();
-
-        node::GainNode {
-            context: &self,
-            id,
-            gain,
-        }
-    }
-
-    pub(crate) fn create_delay_with(&self, options: node::DelayOptions) -> node::DelayNode {
-        let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
-        let render_quanta = Arc::new(AtomicU32::new(options.render_quanta));
-
-        let cap = (options.render_quanta * crate::BUFFER_SIZE) as usize;
-        let delay_buffer = Vec::with_capacity(cap);
-        let render = node::DelayRenderer {
-            render_quanta: render_quanta.clone(),
-            delay_buffer,
-            index: 0,
-        };
-
-        let message = ControlMessage::RegisterNode {
-            id,
-            node: Box::new(render),
-            buffer: vec![0.; crate::BUFFER_SIZE as usize],
-        };
-        self.render_channel.send(message).unwrap();
-
-        node::DelayNode {
-            context: &self,
-            id,
-            render_quanta,
-        }
-    }
-
-    pub(crate) fn connect(&self, from: u64, to: u64, output: u32, input: u32) {
+    pub(crate) fn connect(&self, from: &AudioNodeId, to: &AudioNodeId, output: u32, input: u32) {
         let message = ControlMessage::ConnectNode {
-            from,
-            to,
+            from: from.0,
+            to: to.0,
             output,
             input,
         };
         self.render_channel.send(message).unwrap();
     }
 
-    pub(crate) fn disconnect(&self, from: u64, to: u64) {
-        let message = ControlMessage::DisconnectNode { from, to };
+    pub(crate) fn disconnect(&self, from: &AudioNodeId, to: &AudioNodeId) {
+        let message = ControlMessage::DisconnectNode {
+            from: from.0,
+            to: to.0,
+        };
         self.render_channel.send(message).unwrap();
     }
 
-    pub(crate) fn disconnect_all(&self, from: u64) {
-        let message = ControlMessage::DisconnectAll { from };
+    pub(crate) fn disconnect_all(&self, from: &AudioNodeId) {
+        let message = ControlMessage::DisconnectAll { from: from.0 };
         self.render_channel.send(message).unwrap();
     }
 }
