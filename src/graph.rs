@@ -35,8 +35,15 @@ impl RenderThread {
             use ControlMessage::*;
 
             match msg {
-                RegisterNode { id, node, buffer } => {
-                    self.graph.add_node(NodeIndex(id), node, buffer);
+                RegisterNode {
+                    id,
+                    node,
+                    inputs,
+                    outputs,
+                    buffers,
+                } => {
+                    self.graph
+                        .add_node(NodeIndex(id), node, inputs, outputs, buffers);
                 }
                 ConnectNode {
                     from,
@@ -93,13 +100,15 @@ pub struct Connection {
 #[derive(Debug)]
 struct Node {
     processor: Box<dyn Render>,
-    buffer: Vec<f32>,
+    inputs: usize,
+    outputs: usize,
+    buffers: Vec<Vec<f32>>,
 }
 
 impl Node {
     fn process(&mut self, inputs: &[&[f32]], timestamp: f64, sample_rate: u32, len: usize) {
         self.processor
-            .process(inputs, &mut self.buffer[0..len], timestamp, sample_rate)
+            .process(inputs, &mut self.buffers[..], timestamp, sample_rate)
     }
 }
 
@@ -113,7 +122,13 @@ pub(crate) struct Graph {
 }
 
 pub trait Render: Debug + Send {
-    fn process(&mut self, inputs: &[&[f32]], output: &mut [f32], timestamp: f64, sample_rate: u32);
+    fn process(
+        &mut self,
+        inputs: &[&[f32]],
+        outputs: &mut [Vec<f32>],
+        timestamp: f64,
+        sample_rate: u32,
+    );
 }
 
 impl Graph {
@@ -127,15 +142,34 @@ impl Graph {
             marked: vec![root_index],
         };
 
-        // todo, size should be dependent on number of channels
-        let buffer = vec![0.; crate::BUFFER_SIZE as usize];
-        graph.add_node(root_index, Box::new(root), buffer);
+        // assume root node always has 1 input and 1 output (todo)
+        let inputs = 1;
+        let outputs = 1;
+        let buffers = vec![vec![0.; crate::BUFFER_SIZE as usize]; outputs];
+
+        graph.add_node(root_index, Box::new(root), inputs, outputs, buffers);
 
         graph
     }
 
-    pub fn add_node(&mut self, index: NodeIndex, processor: Box<dyn Render>, buffer: Vec<f32>) {
-        self.nodes.insert(index, Node { processor, buffer });
+    pub fn add_node(
+        &mut self,
+        index: NodeIndex,
+        processor: Box<dyn Render>,
+        inputs: usize,
+        outputs: usize,
+        buffers: Vec<Vec<f32>>,
+    ) {
+        assert_eq!(outputs, buffers.len());
+        self.nodes.insert(
+            index,
+            Node {
+                processor,
+                buffers,
+                inputs,
+                outputs,
+            },
+        );
     }
 
     pub fn add_edge(&mut self, source: NodeIndex, dest: NodeIndex, data: Connection) {
@@ -216,7 +250,8 @@ impl Graph {
                         }
                     },
                 )
-                .map(|(input_index, _connection)| &nodes.get(input_index).unwrap().buffer[0..len])
+                // todo, sum values per input
+                .map(|(input_index, _connection)| &nodes.get(input_index).unwrap().buffers[0][..])
                 .collect();
 
             node.process(&input_bufs, timestamp, sample_rate, len);
@@ -226,7 +261,8 @@ impl Graph {
         });
 
         // return buffer of destination node
-        &nodes.get(&NodeIndex(0)).unwrap().buffer[0..len]
+        // assume only 1 output (todo)
+        &nodes.get(&NodeIndex(0)).unwrap().buffers[0][..]
     }
 }
 
@@ -238,7 +274,7 @@ mod tests {
     struct TestNode {}
 
     impl Render for TestNode {
-        fn process(&mut self, _: &[&[f32]], _: &mut [f32], _: f64, _: u32) {}
+        fn process(&mut self, _: &[&[f32]], _: &mut [Vec<f32>], _: f64, _: u32) {}
     }
 
     #[test]

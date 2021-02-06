@@ -286,10 +286,13 @@ impl Render for OscillatorRenderer {
     fn process(
         &mut self,
         _inputs: &[&[f32]],
-        output: &mut [f32],
+        outputs: &mut [Vec<f32>],
         timestamp: f64,
         sample_rate: u32,
     ) {
+        // single output node
+        let output = &mut outputs[0];
+
         let frame = (timestamp * sample_rate as f64) as u64;
 
         // todo, sub-quantum start/stop
@@ -328,10 +331,13 @@ impl Render for DestinationRenderer {
     fn process(
         &mut self,
         inputs: &[&[f32]],
-        output: &mut [f32],
+        outputs: &mut [Vec<f32>],
         _timestamp: f64,
         _sample_rate: u32,
     ) {
+        // single output node
+        let output = &mut outputs[0];
+
         // clear slice, it may be re-used
         for d in output.iter_mut() {
             *d = 0.;
@@ -363,7 +369,7 @@ impl<'a> AudioNode for DestinationNode<'a> {
         1
     }
     fn number_of_outputs(&self) -> u32 {
-        0
+        1 // todo, should be 0 actually, but we need it to copy into cpal for now
     }
 }
 
@@ -440,10 +446,13 @@ impl Render for GainRenderer {
     fn process(
         &mut self,
         inputs: &[&[f32]],
-        output: &mut [f32],
+        outputs: &mut [Vec<f32>],
         _timestamp: f64,
         _sample_rate: u32,
     ) {
+        // single output node
+        let output = &mut outputs[0];
+
         let gain = self.gain.load(Ordering::SeqCst) as f32 / 100.;
         inputs[0]
             .iter()
@@ -530,10 +539,13 @@ impl Render for DelayRenderer {
     fn process(
         &mut self,
         inputs: &[&[f32]],
-        output: &mut [f32],
+        outputs: &mut [Vec<f32>],
         _timestamp: f64,
         _sample_rate: u32,
     ) {
+        // single output node
+        let output = &mut outputs[0];
+
         let quanta = self.render_quanta.load(Ordering::SeqCst) as usize;
         let size = crate::BUFFER_SIZE as usize;
 

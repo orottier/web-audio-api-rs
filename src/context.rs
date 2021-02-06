@@ -206,11 +206,18 @@ impl BaseAudioContext {
         let node = (f)(node_id);
         let render = node.to_render();
 
+        // allocate enough buffers on the control thread
+        let inputs = node.number_of_inputs() as usize;
+        let outputs = node.number_of_outputs() as usize;
+        let buffers = vec![vec![0.; crate::BUFFER_SIZE as usize]; outputs];
+
         // pass the renderer to the audio graph
         let message = ControlMessage::RegisterNode {
             id,
             node: render,
-            buffer: vec![0.; crate::BUFFER_SIZE as usize],
+            inputs,
+            outputs,
+            buffers,
         };
         self.render_channel.send(message).unwrap();
 

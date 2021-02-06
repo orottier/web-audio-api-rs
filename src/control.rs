@@ -5,7 +5,9 @@ pub(crate) enum ControlMessage {
     RegisterNode {
         id: u64,
         node: Box<dyn Render>,
-        buffer: Vec<f32>,
+        inputs: usize,
+        outputs: usize,
+        buffers: Vec<Vec<f32>>,
     },
 
     ConnectNode {
