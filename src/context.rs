@@ -4,7 +4,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
 use cpal::{Stream, StreamConfig};
 
-use crate::buffer::AudioBuffer;
+use crate::buffer::ChannelData;
 use crate::control::ControlMessage;
 use crate::graph::RenderThread;
 use crate::node;
@@ -210,7 +210,7 @@ impl BaseAudioContext {
         // allocate enough buffers on the control thread
         let inputs = node.number_of_inputs() as usize;
         let outputs = node.number_of_outputs() as usize;
-        let buffers = vec![AudioBuffer::new(crate::BUFFER_SIZE as usize); outputs];
+        let buffers = vec![ChannelData::new(crate::BUFFER_SIZE as usize); outputs];
 
         // pass the renderer to the audio graph
         let message = ControlMessage::RegisterNode {

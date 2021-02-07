@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use crate::buffer::AudioBuffer;
+use crate::buffer::ChannelData;
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
 
@@ -286,8 +286,8 @@ impl Scheduled for OscillatorRenderer {
 impl Render for OscillatorRenderer {
     fn process(
         &mut self,
-        _inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        _inputs: &[&ChannelData],
+        outputs: &mut [ChannelData],
         timestamp: f64,
         sample_rate: u32,
     ) {
@@ -331,8 +331,8 @@ pub(crate) struct DestinationRenderer {}
 impl Render for DestinationRenderer {
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[&ChannelData],
+        outputs: &mut [ChannelData],
         _timestamp: f64,
         _sample_rate: u32,
     ) {
@@ -446,8 +446,8 @@ pub(crate) struct GainRenderer {
 impl Render for GainRenderer {
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[&ChannelData],
+        outputs: &mut [ChannelData],
         _timestamp: f64,
         _sample_rate: u32,
     ) {
@@ -539,8 +539,8 @@ pub(crate) struct DelayRenderer {
 impl Render for DelayRenderer {
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[&ChannelData],
+        outputs: &mut [ChannelData],
         _timestamp: f64,
         _sample_rate: u32,
     ) {

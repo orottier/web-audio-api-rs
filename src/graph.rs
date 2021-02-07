@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
-use crate::buffer::AudioBuffer;
+use crate::buffer::ChannelData;
 use crate::control::ControlMessage;
 
 /// Operations running off the system-level audio callback
@@ -97,11 +97,11 @@ struct Node {
     processor: Box<dyn Render>,
     inputs: usize,
     outputs: usize,
-    buffers: Vec<AudioBuffer>,
+    buffers: Vec<ChannelData>,
 }
 
 impl Node {
-    fn process(&mut self, inputs: &[&AudioBuffer], timestamp: f64, sample_rate: u32, len: usize) {
+    fn process(&mut self, inputs: &[&ChannelData], timestamp: f64, sample_rate: u32, len: usize) {
         self.processor
             .process(inputs, &mut self.buffers[..], timestamp, sample_rate)
     }
@@ -121,8 +121,8 @@ pub(crate) struct Graph {
 pub trait Render: Debug + Send {
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[&ChannelData],
+        outputs: &mut [ChannelData],
         timestamp: f64,
         sample_rate: u32,
     );
@@ -142,7 +142,7 @@ impl Graph {
         // assume root node always has 1 input and 1 output (todo)
         let inputs = 1;
         let outputs = 1;
-        let buffers = vec![AudioBuffer::new(crate::BUFFER_SIZE as usize); outputs];
+        let buffers = vec![ChannelData::new(crate::BUFFER_SIZE as usize); outputs];
 
         graph.add_node(root_index, Box::new(root), inputs, outputs, buffers);
 
@@ -155,7 +155,7 @@ impl Graph {
         processor: Box<dyn Render>,
         inputs: usize,
         outputs: usize,
-        buffers: Vec<AudioBuffer>,
+        buffers: Vec<ChannelData>,
     ) {
         assert_eq!(outputs, buffers.len());
         self.nodes.insert(
@@ -226,7 +226,7 @@ impl Graph {
         self.marked = marked;
     }
 
-    pub fn render(&mut self, timestamp: f64, sample_rate: u32, len: usize) -> &AudioBuffer {
+    pub fn render(&mut self, timestamp: f64, sample_rate: u32, len: usize) -> &ChannelData {
         // split (mut) borrows
         let ordered = &self.ordered;
         let edges = &self.edges;
@@ -237,7 +237,7 @@ impl Graph {
             let mut node = nodes.remove(index).unwrap();
 
             // todo prevent all these allocations
-            let mut input_bufs = vec![AudioBuffer::new(crate::BUFFER_SIZE as usize); node.inputs];
+            let mut input_bufs = vec![ChannelData::new(crate::BUFFER_SIZE as usize); node.inputs];
             edges
                 .iter()
                 .filter_map(
@@ -276,7 +276,7 @@ mod tests {
     struct TestNode {}
 
     impl Render for TestNode {
-        fn process(&mut self, _: &[&AudioBuffer], _: &mut [AudioBuffer], _: f64, _: u32) {}
+        fn process(&mut self, _: &[&ChannelData], _: &mut [ChannelData], _: f64, _: u32) {}
     }
 
     #[test]
@@ -284,9 +284,9 @@ mod tests {
         let mut graph = Graph::new(TestNode {});
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![AudioBuffer::new(0)]);
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![AudioBuffer::new(0)]);
-        graph.add_node(NodeIndex(3), node.clone(), 1, 1, vec![AudioBuffer::new(0)]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![ChannelData::new(0)]);
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![ChannelData::new(0)]);
+        graph.add_node(NodeIndex(3), node.clone(), 1, 1, vec![ChannelData::new(0)]);
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
@@ -309,8 +309,8 @@ mod tests {
         let mut graph = Graph::new(TestNode {});
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![AudioBuffer::new(0)]);
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![AudioBuffer::new(0)]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![ChannelData::new(0)]);
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![ChannelData::new(0)]);
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));
