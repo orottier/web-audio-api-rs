@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
@@ -48,11 +48,11 @@ impl RenderThread {
                 ConnectNode {
                     from,
                     to,
-                    input,
                     output,
+                    input,
                 } => {
-                    let conn = Connection { input, output };
-                    self.graph.add_edge(NodeIndex(from), NodeIndex(to), conn);
+                    self.graph
+                        .add_edge((NodeIndex(from), output), (NodeIndex(to), input));
                 }
                 DisconnectNode { from, to } => {
                     self.graph.remove_edge(NodeIndex(from), NodeIndex(to));
@@ -91,12 +91,6 @@ impl RenderThread {
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct NodeIndex(u64);
 
-#[derive(Debug, Default)]
-pub struct Connection {
-    pub input: u32,
-    pub output: u32,
-}
-
 #[derive(Debug)]
 struct Node {
     processor: Box<dyn Render>,
@@ -115,7 +109,9 @@ impl Node {
 #[derive(Debug)]
 pub(crate) struct Graph {
     nodes: HashMap<NodeIndex, Node>,
-    edges: HashMap<(NodeIndex, NodeIndex), Connection>,
+
+    // connections, from (node,output) to (node,input)
+    edges: HashSet<((NodeIndex, u32), (NodeIndex, u32))>,
 
     marked: Vec<NodeIndex>,
     ordered: Vec<NodeIndex>,
@@ -137,7 +133,7 @@ impl Graph {
 
         let mut graph = Graph {
             nodes: HashMap::new(),
-            edges: HashMap::new(),
+            edges: HashSet::new(),
             ordered: vec![root_index],
             marked: vec![root_index],
         };
@@ -172,29 +168,29 @@ impl Graph {
         );
     }
 
-    pub fn add_edge(&mut self, source: NodeIndex, dest: NodeIndex, data: Connection) {
-        self.edges.insert((source, dest), data);
+    pub fn add_edge(&mut self, source: (NodeIndex, u32), dest: (NodeIndex, u32)) {
+        self.edges.insert((source, dest));
 
         self.order_nodes();
     }
 
     pub fn remove_edge(&mut self, source: NodeIndex, dest: NodeIndex) {
-        self.edges.remove(&(source, dest));
+        self.edges.retain(|&(s, d)| s.0 != source || d.0 != dest);
 
         self.order_nodes();
     }
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
-        self.edges.retain(|&(s, _d), _v| s != source);
+        self.edges.retain(|&(s, _d)| s.0 != source);
 
         self.order_nodes();
     }
 
-    pub fn children(&self, node: NodeIndex) -> impl Iterator<Item = (NodeIndex, &Connection)> {
+    pub fn children(&self, node: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
         self.edges
             .iter()
-            .filter(move |(&(_s, d), _e)| d == node)
-            .map(|(&(s, _d), e)| (s, e))
+            .filter(move |&(_s, d)| d.0 == node)
+            .map(|&(s, _d)| s.0)
     }
 
     fn visit(&self, n: NodeIndex, marked: &mut Vec<NodeIndex>, ordered: &mut Vec<NodeIndex>) {
@@ -203,7 +199,7 @@ impl Graph {
         }
         marked.push(n);
         self.children(n)
-            .for_each(|c| self.visit(c.0, marked, ordered));
+            .for_each(|c| self.visit(c, marked, ordered));
         ordered.insert(0, n);
     }
 
@@ -239,22 +235,31 @@ impl Graph {
             // remove node from map, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
 
-            let input_bufs: Vec<_> = edges
+            // todo prevent all these allocations
+            let mut input_bufs = vec![vec![0.; crate::BUFFER_SIZE as usize]; node.inputs];
+            edges
                 .iter()
                 .filter_map(
-                    move |((s, d), e)| {
-                        if d == index {
-                            Some((s, e))
+                    move |(s, d)| {
+                        if d.0 == *index {
+                            Some((s, d.1))
                         } else {
                             None
                         }
                     },
                 )
-                // todo, sum values per input
-                .map(|(input_index, _connection)| &nodes.get(input_index).unwrap().buffers[0][..])
-                .collect();
+                .for_each(|(&(node_index, output), input)| {
+                    let node = &nodes.get(&node_index).unwrap();
+                    let signal = &node.buffers[output as usize];
 
-            node.process(&input_bufs, timestamp, sample_rate, len);
+                    input_bufs[input as usize]
+                        .iter_mut()
+                        .zip(signal.iter())
+                        .for_each(|(o, i)| *o += i)
+                });
+            let input_bufs: Vec<_> = input_bufs.iter().map(|v| v.as_slice()).collect();
+
+            node.process(&input_bufs[..], timestamp, sample_rate, len);
 
             // re-insert node in graph
             nodes.insert(*index, node);
@@ -282,13 +287,13 @@ mod tests {
         let mut graph = Graph::new(TestNode {});
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), vec![]);
-        graph.add_node(NodeIndex(2), node.clone(), vec![]);
-        graph.add_node(NodeIndex(3), node.clone(), vec![]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![vec![]]);
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![vec![]]);
+        graph.add_node(NodeIndex(3), node.clone(), 1, 1, vec![vec![]]);
 
-        graph.add_edge(NodeIndex(1), NodeIndex(0), Connection::default());
-        graph.add_edge(NodeIndex(2), NodeIndex(1), Connection::default());
-        graph.add_edge(NodeIndex(3), NodeIndex(0), Connection::default());
+        graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
+        graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
+        graph.add_edge((NodeIndex(3), 0), (NodeIndex(0), 0));
 
         // sorting is not deterministic, can be either of these two
         if graph.ordered != &[NodeIndex(3), NodeIndex(2), NodeIndex(1), NodeIndex(0)] {
@@ -307,12 +312,12 @@ mod tests {
         let mut graph = Graph::new(TestNode {});
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), vec![]);
-        graph.add_node(NodeIndex(2), node.clone(), vec![]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![vec![]]);
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![vec![]]);
 
-        graph.add_edge(NodeIndex(1), NodeIndex(0), Connection::default());
-        graph.add_edge(NodeIndex(2), NodeIndex(0), Connection::default());
-        graph.add_edge(NodeIndex(2), NodeIndex(1), Connection::default());
+        graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
+        graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));
+        graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
 
         assert_eq!(
             graph.ordered,
