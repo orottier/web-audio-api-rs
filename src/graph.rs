@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
+use crate::buffer::AudioBuffer;
 use crate::control::ControlMessage;
 
 /// Operations running off the system-level audio callback
@@ -77,7 +78,7 @@ impl RenderThread {
         let rendered = self.graph.render(timestamp, self.sample_rate, len);
 
         // upmix rendered audio into output slice
-        for (frame, value) in data.chunks_mut(self.channels as usize).zip(rendered) {
+        for (frame, value) in data.chunks_mut(self.channels as usize).zip(rendered.iter()) {
             let value = cpal::Sample::from::<f32>(value);
 
             // for now, make stereo sound from mono
@@ -96,11 +97,11 @@ struct Node {
     processor: Box<dyn Render>,
     inputs: usize,
     outputs: usize,
-    buffers: Vec<Vec<f32>>,
+    buffers: Vec<AudioBuffer>,
 }
 
 impl Node {
-    fn process(&mut self, inputs: &[&[f32]], timestamp: f64, sample_rate: u32, len: usize) {
+    fn process(&mut self, inputs: &[&AudioBuffer], timestamp: f64, sample_rate: u32, len: usize) {
         self.processor
             .process(inputs, &mut self.buffers[..], timestamp, sample_rate)
     }
@@ -120,8 +121,8 @@ pub(crate) struct Graph {
 pub trait Render: Debug + Send {
     fn process(
         &mut self,
-        inputs: &[&[f32]],
-        outputs: &mut [Vec<f32>],
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         timestamp: f64,
         sample_rate: u32,
     );
@@ -141,7 +142,7 @@ impl Graph {
         // assume root node always has 1 input and 1 output (todo)
         let inputs = 1;
         let outputs = 1;
-        let buffers = vec![vec![0.; crate::BUFFER_SIZE as usize]; outputs];
+        let buffers = vec![AudioBuffer::new(crate::BUFFER_SIZE as usize); outputs];
 
         graph.add_node(root_index, Box::new(root), inputs, outputs, buffers);
 
@@ -154,7 +155,7 @@ impl Graph {
         processor: Box<dyn Render>,
         inputs: usize,
         outputs: usize,
-        buffers: Vec<Vec<f32>>,
+        buffers: Vec<AudioBuffer>,
     ) {
         assert_eq!(outputs, buffers.len());
         self.nodes.insert(
@@ -225,7 +226,7 @@ impl Graph {
         self.marked = marked;
     }
 
-    pub fn render(&mut self, timestamp: f64, sample_rate: u32, len: usize) -> &[f32] {
+    pub fn render(&mut self, timestamp: f64, sample_rate: u32, len: usize) -> &AudioBuffer {
         // split (mut) borrows
         let ordered = &self.ordered;
         let edges = &self.edges;
@@ -236,7 +237,7 @@ impl Graph {
             let mut node = nodes.remove(index).unwrap();
 
             // todo prevent all these allocations
-            let mut input_bufs = vec![vec![0.; crate::BUFFER_SIZE as usize]; node.inputs];
+            let mut input_bufs = vec![AudioBuffer::new(crate::BUFFER_SIZE as usize); node.inputs];
             edges
                 .iter()
                 .filter_map(
@@ -251,13 +252,9 @@ impl Graph {
                 .for_each(|(&(node_index, output), input)| {
                     let node = &nodes.get(&node_index).unwrap();
                     let signal = &node.buffers[output as usize];
-
-                    input_bufs[input as usize]
-                        .iter_mut()
-                        .zip(signal.iter())
-                        .for_each(|(o, i)| *o += i)
+                    input_bufs[input as usize].add(signal);
                 });
-            let input_bufs: Vec<_> = input_bufs.iter().map(|v| v.as_slice()).collect();
+            let input_bufs: Vec<_> = input_bufs.iter().collect();
 
             node.process(&input_bufs[..], timestamp, sample_rate, len);
 
@@ -267,7 +264,7 @@ impl Graph {
 
         // return buffer of destination node
         // assume only 1 output (todo)
-        &nodes.get(&NodeIndex(0)).unwrap().buffers[0][..]
+        &nodes.get(&NodeIndex(0)).unwrap().buffers[0]
     }
 }
 
@@ -279,7 +276,7 @@ mod tests {
     struct TestNode {}
 
     impl Render for TestNode {
-        fn process(&mut self, _: &[&[f32]], _: &mut [Vec<f32>], _: f64, _: u32) {}
+        fn process(&mut self, _: &[&AudioBuffer], _: &mut [AudioBuffer], _: f64, _: u32) {}
     }
 
     #[test]
@@ -287,9 +284,9 @@ mod tests {
         let mut graph = Graph::new(TestNode {});
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![vec![]]);
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![vec![]]);
-        graph.add_node(NodeIndex(3), node.clone(), 1, 1, vec![vec![]]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![AudioBuffer::new(0)]);
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![AudioBuffer::new(0)]);
+        graph.add_node(NodeIndex(3), node.clone(), 1, 1, vec![AudioBuffer::new(0)]);
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
@@ -312,8 +309,8 @@ mod tests {
         let mut graph = Graph::new(TestNode {});
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![vec![]]);
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![vec![]]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![AudioBuffer::new(0)]);
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![AudioBuffer::new(0)]);
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));

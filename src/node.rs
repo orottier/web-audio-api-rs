@@ -1,10 +1,11 @@
-//! AudioNode
+//! The AudioNode interface and concrete types
 
 use std::f64::consts::PI;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
+use crate::buffer::AudioBuffer;
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
 
@@ -285,8 +286,8 @@ impl Scheduled for OscillatorRenderer {
 impl Render for OscillatorRenderer {
     fn process(
         &mut self,
-        _inputs: &[&[f32]],
-        outputs: &mut [Vec<f32>],
+        _inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         timestamp: f64,
         sample_rate: u32,
     ) {
@@ -330,8 +331,8 @@ pub(crate) struct DestinationRenderer {}
 impl Render for DestinationRenderer {
     fn process(
         &mut self,
-        inputs: &[&[f32]],
-        outputs: &mut [Vec<f32>],
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         _timestamp: f64,
         _sample_rate: u32,
     ) {
@@ -445,8 +446,8 @@ pub(crate) struct GainRenderer {
 impl Render for GainRenderer {
     fn process(
         &mut self,
-        inputs: &[&[f32]],
-        outputs: &mut [Vec<f32>],
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         _timestamp: f64,
         _sample_rate: u32,
     ) {
@@ -531,15 +532,15 @@ impl<'a> DelayNode<'a> {
 #[derive(Debug)]
 pub(crate) struct DelayRenderer {
     pub render_quanta: Arc<AtomicU32>,
-    pub delay_buffer: Vec<f32>,
+    pub delay_buffer: Vec<f32>, // todo, make AudioBuffer
     pub index: usize,
 }
 
 impl Render for DelayRenderer {
     fn process(
         &mut self,
-        inputs: &[&[f32]],
-        outputs: &mut [Vec<f32>],
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         _timestamp: f64,
         _sample_rate: u32,
     ) {
@@ -551,10 +552,13 @@ impl Render for DelayRenderer {
 
         if quanta == 0 {
             // when no delay is set, simply copy input to output
-            output.copy_from_slice(inputs[0]);
+            output
+                .iter_mut()
+                .zip(inputs[0].iter())
+                .for_each(|(o, i)| *o = *i);
         } else if self.delay_buffer.len() < quanta * size {
             // still filling buffer
-            self.delay_buffer.extend_from_slice(inputs[0]);
+            self.delay_buffer.extend_from_slice(inputs[0].as_slice());
             // clear slice, it may be re-used
             for d in output.iter_mut() {
                 *d = 0.;
@@ -564,9 +568,11 @@ impl Render for DelayRenderer {
             let end = start + size;
 
             // copy delayed audio to output
-            output.copy_from_slice(&self.delay_buffer[start..end]);
+            output
+                .as_mut_slice()
+                .copy_from_slice(&self.delay_buffer[start..end]);
             // store current input in place
-            self.delay_buffer[start..end].copy_from_slice(inputs[0]);
+            self.delay_buffer[start..end].copy_from_slice(inputs[0].as_slice());
 
             // progress index
             self.index = (self.index + 1) % quanta;

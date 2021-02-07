@@ -1,3 +1,4 @@
+use crate::buffer::AudioBuffer;
 use crate::graph::Render;
 
 /// Commands from the control thread to the render thread
@@ -7,7 +8,7 @@ pub(crate) enum ControlMessage {
         node: Box<dyn Render>,
         inputs: usize,
         outputs: usize,
-        buffers: Vec<Vec<f32>>,
+        buffers: Vec<AudioBuffer>,
     },
 
     ConnectNode {
