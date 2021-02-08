@@ -9,12 +9,43 @@ use crate::buffer::ChannelData;
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
 
+/// How channels must be matched between the node's inputs and outputs.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum ChannelCountMode {
+    /// `computedNumberOfChannels` is the maximum of the number of channels of all connections to an
+    /// input. In this mode channelCount is ignored.
+    Max,
+    /// `computedNumberOfChannels` is determined as for "max" and then clamped to a maximum value of
+    /// the given channelCount.
+    ClampedMax,
+    /// `computedNumberOfChannels` is the exact value as specified by the channelCount.
+    Explicit,
+}
+
+/// The meaning of the channels, defining how audio up-mixing and down-mixing will happen.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum ChannelInterpretation {
+    Speakers,
+    Discrete,
+}
+
+/// Config for up/down-mixing of channels for audio nodes
+#[derive(Clone)]
+pub struct ChannelConfig {
+    count: usize,
+    mode: ChannelCountMode,
+    interpretation: ChannelInterpretation,
+}
+
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules. These modules can be connected together to form processing graphs for rendering audio
 /// to the audio hardware. Each node can have inputs and/or outputs.
 pub trait AudioNode {
     fn id(&self) -> &AudioNodeId;
     fn to_render(&self) -> Box<dyn Render>;
+    fn channel_config(&self) -> &ChannelConfig {
+        todo!()
+    }
 
     /// The BaseAudioContext which owns this AudioNode.
     fn context(&self) -> &BaseAudioContext;
@@ -70,6 +101,22 @@ pub trait AudioNode {
     fn number_of_inputs(&self) -> u32;
     /// The number of outputs coming out of the AudioNode.
     fn number_of_outputs(&self) -> u32;
+
+    /// Represents an enumerated value describing the way channels must be matched between the
+    /// node's inputs and outputs.
+    fn channel_count_mode(&self) -> ChannelCountMode {
+        self.channel_config().mode
+    }
+    /// Represents an enumerated value describing the meaning of the channels. This interpretation
+    /// will define how audio up-mixing and down-mixing will happen.
+    fn channel_interpretation(&self) -> ChannelInterpretation {
+        self.channel_config().interpretation
+    }
+    /// Represents an integer used to determine how many channels are used when up-mixing and
+    /// down-mixing connections to any inputs to the node.
+    fn channel_count(&self) -> usize {
+        self.channel_config().count
+    }
 }
 
 /// Helper struct to start and stop audio streams
