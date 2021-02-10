@@ -3,8 +3,8 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
 use cpal::{Stream, StreamConfig};
+use node::ChannelConfig;
 
-use crate::buffer::ChannelData;
 use crate::control::ControlMessage;
 use crate::graph::RenderThread;
 use crate::node;
@@ -51,9 +51,15 @@ pub trait AsBaseAudioContext {
     /// Returns an AudioDestinationNode representing the final destination of all audio in the
     /// context. It can be thought of as the audio-rendering device.
     fn destination(&self) -> node::DestinationNode {
+        // todo, store in context actually
         node::DestinationNode {
             context: self.base(),
             id: AudioNodeId(0),
+            channel_config: ChannelConfig {
+                count: 2,
+                mode: node::ChannelCountMode::Explicit,
+                interpretation: node::ChannelInterpretation::Speakers,
+            },
         }
     }
 
@@ -138,11 +144,16 @@ impl AudioContext {
 
         let sample_rate = config.sample_rate.0;
         let channels = config.channels as u32;
+        let channel_config = ChannelConfig {
+            count: channels as usize,
+            mode: node::ChannelCountMode::Explicit,
+            interpretation: node::ChannelInterpretation::Speakers,
+        };
 
         // construct graph for the render thread
         let dest = crate::node::DestinationRenderer {};
         let (sender, receiver) = mpsc::channel();
-        let mut render = RenderThread::new(dest, sample_rate, channels, receiver);
+        let mut render = RenderThread::new(dest, sample_rate, channel_config, receiver);
 
         let stream = match sample_format {
             SampleFormat::F32 => {
@@ -207,18 +218,13 @@ impl BaseAudioContext {
         let node = (f)(node_id);
         let render = node.to_render();
 
-        // allocate enough buffers on the control thread
-        let inputs = node.number_of_inputs() as usize;
-        let outputs = node.number_of_outputs() as usize;
-        let buffers = vec![ChannelData::new(crate::BUFFER_SIZE as usize); outputs];
-
         // pass the renderer to the audio graph
         let message = ControlMessage::RegisterNode {
             id,
             node: render,
-            inputs,
-            outputs,
-            buffers,
+            inputs: node.number_of_inputs() as usize,
+            outputs: node.number_of_outputs() as usize,
+            channel_config: node.channel_config_raw().clone(),
         };
         self.render_channel.send(message).unwrap();
 
@@ -260,7 +266,14 @@ impl OfflineAudioContext {
         // construct graph for the render thread
         let dest = crate::node::DestinationRenderer {};
         let (sender, receiver) = mpsc::channel();
-        let render = RenderThread::new(dest, sample_rate, channels, receiver);
+
+        let channel_config = ChannelConfig {
+            count: channels as usize,
+            mode: node::ChannelCountMode::Explicit,
+            interpretation: node::ChannelInterpretation::Speakers,
+        };
+
+        let render = RenderThread::new(dest, sample_rate, channel_config, receiver);
 
         let base = BaseAudioContext {
             sample_rate,

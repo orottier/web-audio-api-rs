@@ -5,12 +5,12 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use crate::buffer::ChannelData;
+use crate::buffer::AudioBuffer;
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
 
 /// How channels must be matched between the node's inputs and outputs.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ChannelCountMode {
     /// `computedNumberOfChannels` is the maximum of the number of channels of all connections to an
     /// input. In this mode channelCount is ignored.
@@ -23,18 +23,18 @@ pub enum ChannelCountMode {
 }
 
 /// The meaning of the channels, defining how audio up-mixing and down-mixing will happen.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ChannelInterpretation {
     Speakers,
     Discrete,
 }
 
 /// Config for up/down-mixing of channels for audio nodes
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ChannelConfig {
-    count: usize,
-    mode: ChannelCountMode,
-    interpretation: ChannelInterpretation,
+    pub count: usize,
+    pub mode: ChannelCountMode,
+    pub interpretation: ChannelInterpretation,
 }
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
@@ -43,9 +43,8 @@ pub struct ChannelConfig {
 pub trait AudioNode {
     fn id(&self) -> &AudioNodeId;
     fn to_render(&self) -> Box<dyn Render>;
-    fn channel_config(&self) -> &ChannelConfig {
-        todo!()
-    }
+    fn channel_config_raw(&self) -> &ChannelConfig;
+    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig;
 
     /// The BaseAudioContext which owns this AudioNode.
     fn context(&self) -> &BaseAudioContext;
@@ -105,17 +104,17 @@ pub trait AudioNode {
     /// Represents an enumerated value describing the way channels must be matched between the
     /// node's inputs and outputs.
     fn channel_count_mode(&self) -> ChannelCountMode {
-        self.channel_config().mode
+        self.channel_config_raw().mode
     }
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
     /// will define how audio up-mixing and down-mixing will happen.
     fn channel_interpretation(&self) -> ChannelInterpretation {
-        self.channel_config().interpretation
+        self.channel_config_raw().interpretation
     }
     /// Represents an integer used to determine how many channels are used when up-mixing and
     /// down-mixing connections to any inputs to the node.
     fn channel_count(&self) -> usize {
-        self.channel_config().count
+        self.channel_config_raw().count
     }
 }
 
@@ -197,6 +196,7 @@ pub trait AudioScheduledSourceNode: AudioNode + Scheduled {
 pub struct OscillatorOptions {
     pub type_: OscillatorType,
     pub frequency: u32,
+    pub channel_config: ChannelConfig,
 }
 
 impl Default for OscillatorOptions {
@@ -204,6 +204,11 @@ impl Default for OscillatorOptions {
         Self {
             type_: OscillatorType::default(),
             frequency: 440,
+            channel_config: ChannelConfig {
+                count: 2,
+                mode: ChannelCountMode::Max,
+                interpretation: ChannelInterpretation::Speakers,
+            },
         }
     }
 }
@@ -243,6 +248,7 @@ impl From<u32> for OscillatorType {
 pub struct OscillatorNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
+    pub(crate) channel_config: ChannelConfig,
     pub(crate) frequency: Arc<AtomicU32>,
     pub(crate) type_: Arc<AtomicU32>,
     pub(crate) scheduler: Scheduler,
@@ -275,6 +281,13 @@ impl<'a> AudioNode for OscillatorNode<'a> {
         &self.id
     }
 
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
+        &mut self.channel_config
+    }
+
     fn number_of_inputs(&self) -> u32 {
         0
     }
@@ -293,6 +306,7 @@ impl<'a> OscillatorNode<'a> {
             OscillatorNode {
                 context: context.base(),
                 id,
+                channel_config: options.channel_config,
                 frequency,
                 type_,
                 scheduler,
@@ -333,36 +347,44 @@ impl Scheduled for OscillatorRenderer {
 impl Render for OscillatorRenderer {
     fn process(
         &mut self,
-        _inputs: &[&ChannelData],
-        outputs: &mut [ChannelData],
+        _inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         timestamp: f64,
         sample_rate: u32,
     ) {
         // single output node
         let output = &mut outputs[0];
 
+        // re-use previous buffer
+        output.make_mono();
+        let len = output.len();
+
         let frame = (timestamp * sample_rate as f64) as u64;
 
         // todo, sub-quantum start/stop
         if !self.is_active(frame) {
-            output.iter_mut().for_each(|o| *o = 0.);
+            output.make_silent();
             return;
         }
 
         let freq = self.frequency.load(Ordering::SeqCst) as f64;
         let type_ = self.type_.load(Ordering::SeqCst).into();
 
-        let ts = (0..output.len()).map(move |i| timestamp + i as f64 / sample_rate as f64);
-        let io = ts.zip(output.iter_mut());
+        output.modify_channels(|buffer| {
+            let ts = (0..len).map(move |i| timestamp + i as f64 / sample_rate as f64);
+            let io = ts.zip(buffer.iter_mut());
 
-        use OscillatorType::*;
+            use OscillatorType::*;
 
-        match type_ {
-            Sine => io.for_each(|(i, o)| *o = (2. * PI * freq * i).sin() as f32),
-            Square => io.for_each(|(i, o)| *o = if (freq * i).fract() < 0.5 { 1. } else { -1. }),
-            Sawtooth => io.for_each(|(i, o)| *o = 2. * ((freq * i).fract() - 0.5) as f32),
-            _ => todo!(),
-        }
+            match type_ {
+                Sine => io.for_each(|(i, o)| *o = (2. * PI * freq * i).sin() as f32),
+                Square => {
+                    io.for_each(|(i, o)| *o = if (freq * i).fract() < 0.5 { 1. } else { -1. })
+                }
+                Sawtooth => io.for_each(|(i, o)| *o = 2. * ((freq * i).fract() - 0.5) as f32),
+                _ => todo!(),
+            }
+        })
     }
 }
 
@@ -370,6 +392,7 @@ impl Render for OscillatorRenderer {
 pub struct DestinationNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
+    pub(crate) channel_config: ChannelConfig,
 }
 
 #[derive(Debug)]
@@ -378,25 +401,17 @@ pub(crate) struct DestinationRenderer {}
 impl Render for DestinationRenderer {
     fn process(
         &mut self,
-        inputs: &[&ChannelData],
-        outputs: &mut [ChannelData],
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         _timestamp: f64,
         _sample_rate: u32,
     ) {
-        // single output node
+        // single input/output node
+        let input = inputs[0];
         let output = &mut outputs[0];
 
-        // clear slice, it may be re-used
-        for d in output.iter_mut() {
-            *d = 0.;
-        }
-
-        // sum signal from all child nodes
-        for input in inputs.iter() {
-            for (i, o) in input.iter().zip(output.iter_mut()) {
-                *o += i;
-            }
-        }
+        // todo, actually fill cpal buffer here
+        *output = input.clone();
     }
 }
 
@@ -407,6 +422,13 @@ impl<'a> AudioNode for DestinationNode<'a> {
 
     fn id(&self) -> &AudioNodeId {
         &self.id
+    }
+
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
+        &mut self.channel_config
     }
 
     fn to_render(&self) -> Box<dyn Render> {
@@ -424,11 +446,19 @@ impl<'a> AudioNode for DestinationNode<'a> {
 /// Options for constructing a GainNode
 pub struct GainOptions {
     pub gain: f32,
+    pub channel_config: ChannelConfig,
 }
 
 impl Default for GainOptions {
     fn default() -> Self {
-        Self { gain: 1. }
+        Self {
+            gain: 1.,
+            channel_config: ChannelConfig {
+                count: 2,
+                mode: ChannelCountMode::Max,
+                interpretation: ChannelInterpretation::Speakers,
+            },
+        }
     }
 }
 
@@ -436,6 +466,7 @@ impl Default for GainOptions {
 pub struct GainNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
+    pub(crate) channel_config: ChannelConfig,
     pub(crate) gain: Arc<AtomicU32>,
 }
 
@@ -446,6 +477,13 @@ impl<'a> AudioNode for GainNode<'a> {
 
     fn id(&self) -> &AudioNodeId {
         &self.id
+    }
+
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
+        &mut self.channel_config
     }
 
     fn to_render(&self) -> Box<dyn Render> {
@@ -471,6 +509,7 @@ impl<'a> GainNode<'a> {
             GainNode {
                 context: context.base(),
                 id,
+                channel_config: options.channel_config,
                 gain,
             }
         })
@@ -493,27 +532,41 @@ pub(crate) struct GainRenderer {
 impl Render for GainRenderer {
     fn process(
         &mut self,
-        inputs: &[&ChannelData],
-        outputs: &mut [ChannelData],
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         _timestamp: f64,
         _sample_rate: u32,
     ) {
-        // single output node
+        // single input/output node
+        let input = inputs[0];
         let output = &mut outputs[0];
 
         let gain = self.gain.load(Ordering::SeqCst) as f32 / 100.;
-        inputs[0]
-            .iter()
-            .zip(output.iter_mut())
-            .for_each(|(value, dest)| *dest = value * gain);
+
+        *output = input.clone();
+
+        output.modify_channels(|channel| channel.iter_mut().for_each(|value| *value *= gain));
     }
 }
 
 /// Options for constructing a DelayNode
-#[derive(Default)]
 pub struct DelayOptions {
     // todo: actually delay by time
     pub render_quanta: u32,
+    pub channel_config: ChannelConfig,
+}
+
+impl Default for DelayOptions {
+    fn default() -> Self {
+        Self {
+            render_quanta: 0,
+            channel_config: ChannelConfig {
+                count: 2,
+                mode: ChannelCountMode::Max,
+                interpretation: ChannelInterpretation::Speakers,
+            },
+        }
+    }
 }
 
 /// Node that delays the incoming audio signal by a certain amount
@@ -521,6 +574,7 @@ pub struct DelayNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
     pub(crate) render_quanta: Arc<AtomicU32>,
+    pub(crate) channel_config: ChannelConfig,
 }
 
 impl<'a> AudioNode for DelayNode<'a> {
@@ -530,6 +584,13 @@ impl<'a> AudioNode for DelayNode<'a> {
 
     fn id(&self) -> &AudioNodeId {
         &self.id
+    }
+
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
+        &mut self.channel_config
     }
 
     fn to_render(&self) -> Box<dyn Render> {
@@ -562,6 +623,7 @@ impl<'a> DelayNode<'a> {
             DelayNode {
                 context: context.base(),
                 id,
+                channel_config: options.channel_config,
                 render_quanta,
             }
         })
@@ -579,48 +641,34 @@ impl<'a> DelayNode<'a> {
 #[derive(Debug)]
 pub(crate) struct DelayRenderer {
     pub render_quanta: Arc<AtomicU32>,
-    pub delay_buffer: Vec<f32>, // todo, make AudioBuffer
+    pub delay_buffer: Vec<AudioBuffer>,
     pub index: usize,
 }
 
 impl Render for DelayRenderer {
     fn process(
         &mut self,
-        inputs: &[&ChannelData],
-        outputs: &mut [ChannelData],
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         _timestamp: f64,
         _sample_rate: u32,
     ) {
-        // single output node
+        // single input/output node
+        let input = inputs[0];
         let output = &mut outputs[0];
 
         let quanta = self.render_quanta.load(Ordering::SeqCst) as usize;
-        let size = crate::BUFFER_SIZE as usize;
 
         if quanta == 0 {
             // when no delay is set, simply copy input to output
-            output
-                .iter_mut()
-                .zip(inputs[0].iter())
-                .for_each(|(o, i)| *o = *i);
-        } else if self.delay_buffer.len() < quanta * size {
+            *output = input.clone();
+        } else if self.delay_buffer.len() < quanta {
             // still filling buffer
-            self.delay_buffer.extend_from_slice(inputs[0].as_slice());
-            // clear slice, it may be re-used
-            for d in output.iter_mut() {
-                *d = 0.;
-            }
+            self.delay_buffer.push(input.clone());
+            // clear output, it may have been re-used
+            output.make_silent();
         } else {
-            let start = self.index * size;
-            let end = start + size;
-
-            // copy delayed audio to output
-            output
-                .as_mut_slice()
-                .copy_from_slice(&self.delay_buffer[start..end]);
-            // store current input in place
-            self.delay_buffer[start..end].copy_from_slice(inputs[0].as_slice());
-
+            *output = std::mem::replace(&mut self.delay_buffer[self.index], input.clone());
             // progress index
             self.index = (self.index + 1) % quanta;
         }

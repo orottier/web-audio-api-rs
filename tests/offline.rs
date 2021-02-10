@@ -13,6 +13,7 @@ fn test_start_stop() {
     let opts = OscillatorOptions {
         type_: OscillatorType::Square,
         frequency: 0, // constant signal
+        ..Default::default()
     };
     let osc = OscillatorNode::new(&context, opts);
     osc.connect(&context.destination());
@@ -43,6 +44,7 @@ fn test_delayed_constant_source() {
     let opts = OscillatorOptions {
         type_: OscillatorType::Square,
         frequency: 0, // constant signal
+        ..Default::default()
     };
     let osc = OscillatorNode::new(&context, opts);
     osc.connect(&delay);

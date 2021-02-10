@@ -3,14 +3,15 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
-use crate::buffer::ChannelData;
 use crate::control::ControlMessage;
+use crate::node::ChannelConfig;
+use crate::{buffer::AudioBuffer, node::ChannelCountMode};
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
     graph: Graph,
     sample_rate: u32,
-    channels: u32,
+    channels: usize,
     frames_played: AtomicU64,
     receiver: Receiver<ControlMessage>,
 }
@@ -19,11 +20,13 @@ impl RenderThread {
     pub fn new<N: Render + 'static>(
         root: N,
         sample_rate: u32,
-        channels: u32,
+        channel_config: ChannelConfig,
         receiver: Receiver<ControlMessage>,
     ) -> Self {
+        let channels = channel_config.count;
+
         Self {
-            graph: Graph::new(root),
+            graph: Graph::new(root, channel_config),
             sample_rate,
             channels,
             frames_played: AtomicU64::new(0),
@@ -41,10 +44,10 @@ impl RenderThread {
                     node,
                     inputs,
                     outputs,
-                    buffers,
+                    channel_config,
                 } => {
                     self.graph
-                        .add_node(NodeIndex(id), node, inputs, outputs, buffers);
+                        .add_node(NodeIndex(id), node, inputs, outputs, channel_config);
                 }
                 ConnectNode {
                     from,
@@ -75,14 +78,22 @@ impl RenderThread {
             / self.sample_rate as f64;
 
         // render audio graph
-        let rendered = self.graph.render(timestamp, self.sample_rate, len);
+        let rendered = self.graph.render(timestamp, self.sample_rate);
 
-        // upmix rendered audio into output slice
-        for (frame, value) in data.chunks_mut(self.channels as usize).zip(rendered.iter()) {
-            let value = cpal::Sample::from::<f32>(value);
+        // todo, we need to handle silence specifically here, because channel_data is not properly implemented
+        if matches!(rendered, AudioBuffer::Silence(_, _)) {
+            for o in data {
+                *o = cpal::Sample::from::<f32>(&0.);
+            }
+            return;
+        }
 
-            // for now, make stereo sound from mono
-            for sample in frame.iter_mut() {
+        // copy rendered audio into output slice
+        for i in 0..self.channels {
+            let output = data.iter_mut().skip(i).step_by(self.channels);
+            let channel = rendered.channel_data(i).iter();
+            for (sample, input) in output.zip(channel) {
+                let value = cpal::Sample::from::<f32>(input);
                 *sample = value;
             }
         }
@@ -95,13 +106,14 @@ pub struct NodeIndex(u64);
 #[derive(Debug)]
 struct Node {
     processor: Box<dyn Render>,
+    buffers: Vec<AudioBuffer>,
     inputs: usize,
     outputs: usize,
-    buffers: Vec<ChannelData>,
+    channel_config: ChannelConfig,
 }
 
 impl Node {
-    fn process(&mut self, inputs: &[&ChannelData], timestamp: f64, sample_rate: u32, len: usize) {
+    fn process(&mut self, inputs: &[&AudioBuffer], timestamp: f64, sample_rate: u32) {
         self.processor
             .process(inputs, &mut self.buffers[..], timestamp, sample_rate)
     }
@@ -121,15 +133,15 @@ pub(crate) struct Graph {
 pub trait Render: Debug + Send {
     fn process(
         &mut self,
-        inputs: &[&ChannelData],
-        outputs: &mut [ChannelData],
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         timestamp: f64,
         sample_rate: u32,
     );
 }
 
 impl Graph {
-    pub fn new<N: Render + 'static>(root: N) -> Self {
+    pub fn new<N: Render + 'static>(root: N, channel_config: ChannelConfig) -> Self {
         let root_index = NodeIndex(0);
 
         let mut graph = Graph {
@@ -142,9 +154,8 @@ impl Graph {
         // assume root node always has 1 input and 1 output (todo)
         let inputs = 1;
         let outputs = 1;
-        let buffers = vec![ChannelData::new(crate::BUFFER_SIZE as usize); outputs];
 
-        graph.add_node(root_index, Box::new(root), inputs, outputs, buffers);
+        graph.add_node(root_index, Box::new(root), inputs, outputs, channel_config);
 
         graph
     }
@@ -155,16 +166,17 @@ impl Graph {
         processor: Box<dyn Render>,
         inputs: usize,
         outputs: usize,
-        buffers: Vec<ChannelData>,
+        channel_config: ChannelConfig,
     ) {
-        assert_eq!(outputs, buffers.len());
+        let channels = 1; //todo
         self.nodes.insert(
             index,
             Node {
                 processor,
-                buffers,
+                buffers: vec![AudioBuffer::Silence(channels, crate::BUFFER_SIZE as usize); outputs],
                 inputs,
                 outputs,
+                channel_config,
             },
         );
     }
@@ -226,7 +238,7 @@ impl Graph {
         self.marked = marked;
     }
 
-    pub fn render(&mut self, timestamp: f64, sample_rate: u32, len: usize) -> &ChannelData {
+    pub fn render(&mut self, timestamp: f64, sample_rate: u32) -> &AudioBuffer {
         // split (mut) borrows
         let ordered = &self.ordered;
         let edges = &self.edges;
@@ -235,9 +247,11 @@ impl Graph {
         ordered.iter().for_each(|index| {
             // remove node from map, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
-
-            // todo prevent all these allocations
-            let mut input_bufs = vec![ChannelData::new(crate::BUFFER_SIZE as usize); node.inputs];
+            // initial channel count
+            let channels = node.channel_config.count;
+            // mix all inputs together
+            let mut input_bufs =
+                vec![AudioBuffer::Silence(channels, crate::BUFFER_SIZE as usize); node.inputs];
             edges
                 .iter()
                 .filter_map(
@@ -250,13 +264,29 @@ impl Graph {
                     },
                 )
                 .for_each(|(&(node_index, output), input)| {
-                    let node = &nodes.get(&node_index).unwrap();
+                    let node = nodes.get(&node_index).unwrap();
                     let signal = &node.buffers[output as usize];
-                    input_bufs[input as usize].add(signal);
+                    input_bufs[input as usize] += signal.clone();
                 });
-            let input_bufs: Vec<_> = input_bufs.iter().collect();
 
-            node.process(&input_bufs[..], timestamp, sample_rate, len);
+            let input_bufs: Vec<_> = input_bufs
+                .iter_mut()
+                .map(|input_buf| {
+                    // up/down-mix to the desired channel count
+                    let cur_channels = input_buf.number_of_channels();
+                    let new_channels = match node.channel_config.mode {
+                        ChannelCountMode::Max => cur_channels,
+                        ChannelCountMode::Explicit => node.channel_config.count,
+                        ChannelCountMode::ClampedMax => cur_channels.min(node.channel_config.count),
+                    };
+                    input_buf.mix(new_channels);
+
+                    // return immutable refs
+                    &*input_buf
+                })
+                .collect();
+
+            node.process(&input_bufs[..], timestamp, sample_rate);
 
             // re-insert node in graph
             nodes.insert(*index, node);
@@ -276,17 +306,22 @@ mod tests {
     struct TestNode {}
 
     impl Render for TestNode {
-        fn process(&mut self, _: &[&ChannelData], _: &mut [ChannelData], _: f64, _: u32) {}
+        fn process(&mut self, _: &[&AudioBuffer], _: &mut [AudioBuffer], _: f64, _: u32) {}
     }
 
     #[test]
     fn test_add_remove() {
-        let mut graph = Graph::new(TestNode {});
+        let config = ChannelConfig {
+            count: 2,
+            mode: crate::node::ChannelCountMode::Explicit,
+            interpretation: crate::node::ChannelInterpretation::Speakers,
+        };
+        let mut graph = Graph::new(TestNode {}, config.clone());
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![ChannelData::new(0)]);
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![ChannelData::new(0)]);
-        graph.add_node(NodeIndex(3), node.clone(), 1, 1, vec![ChannelData::new(0)]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone());
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone());
+        graph.add_node(NodeIndex(3), node.clone(), 1, 1, config.clone());
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
@@ -306,11 +341,16 @@ mod tests {
 
     #[test]
     fn test_remove_all() {
-        let mut graph = Graph::new(TestNode {});
+        let config = ChannelConfig {
+            count: 2,
+            mode: crate::node::ChannelCountMode::Explicit,
+            interpretation: crate::node::ChannelInterpretation::Speakers,
+        };
+        let mut graph = Graph::new(TestNode {}, config.clone());
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, vec![ChannelData::new(0)]);
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, vec![ChannelData::new(0)]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone());
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone());
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));

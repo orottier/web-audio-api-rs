@@ -1,5 +1,5 @@
-use crate::buffer::ChannelData;
 use crate::graph::Render;
+use crate::node::ChannelConfig;
 
 /// Commands from the control thread to the render thread
 pub(crate) enum ControlMessage {
@@ -8,7 +8,7 @@ pub(crate) enum ControlMessage {
         node: Box<dyn Render>,
         inputs: usize,
         outputs: usize,
-        buffers: Vec<ChannelData>,
+        channel_config: ChannelConfig,
     },
 
     ConnectNode {
