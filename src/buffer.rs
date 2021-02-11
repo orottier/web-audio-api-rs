@@ -61,11 +61,11 @@ impl AudioBuffer {
     }
 
     /// Get the samples from this specific channel
-    pub fn channel_data(&self, channel: usize) -> &ChannelData {
+    pub fn channel_data(&self, channel: usize) -> Option<&ChannelData> {
         match &self {
-            Silence(_, _) => todo!(),
-            Mono(data, _) => data,
-            Multi(data) => &data[channel],
+            Silence(_, _) => None,
+            Mono(data, _) => Some(data),
+            Multi(data) => data.get(channel),
         }
     }
 
@@ -137,7 +137,11 @@ impl std::ops::Add for AudioBuffer {
         };
 
         // mutate the Multi signal with values from the other
-        (0..channels).for_each(|i| (multi[i].add(other.channel_data(i))));
+        (0..channels).for_each(|i| {
+            if let Some(data) = other.channel_data(i) {
+                multi[i].add(data)
+            }
+        });
 
         Multi(multi)
     }

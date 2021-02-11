@@ -48,6 +48,24 @@ pub trait AsBaseAudioContext {
         node::DelayNode::new(self.base(), node::DelayOptions::default())
     }
 
+    /// Creates a ChannelSplitterNode
+    fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
+        let opts = node::ChannelSplitterOptions {
+            number_of_outputs,
+            ..Default::default()
+        };
+        node::ChannelSplitterNode::new(self.base(), opts)
+    }
+
+    /// Creates a ChannelMergerNode
+    fn create_channel_merger(&self, number_of_inputs: u32) -> node::ChannelMergerNode {
+        let opts = node::ChannelMergerOptions {
+            number_of_inputs,
+            ..Default::default()
+        };
+        node::ChannelMergerNode::new(self.base(), opts)
+    }
+
     /// Returns an AudioDestinationNode representing the final destination of all audio in the
     /// context. It can be thought of as the audio-rendering device.
     fn destination(&self) -> node::DestinationNode {

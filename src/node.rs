@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use crate::buffer::AudioBuffer;
+use crate::buffer::{AudioBuffer, ChannelData};
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
 
@@ -672,5 +672,231 @@ impl Render for DelayRenderer {
             // progress index
             self.index = (self.index + 1) % quanta;
         }
+    }
+}
+
+/// Options for constructing a ChannelSplitterNode
+pub struct ChannelSplitterOptions {
+    pub number_of_outputs: u32,
+    pub channel_config: ChannelConfig,
+}
+
+impl Default for ChannelSplitterOptions {
+    fn default() -> Self {
+        Self {
+            number_of_outputs: 6,
+            channel_config: ChannelConfig {
+                count: 6, // must be same as number_of_outputs
+                mode: ChannelCountMode::Explicit,
+                interpretation: ChannelInterpretation::Discrete,
+            },
+        }
+    }
+}
+
+/// AudioNode for accessing the individual channels of an audio stream in the routing graph
+pub struct ChannelSplitterNode<'a> {
+    pub(crate) context: &'a BaseAudioContext,
+    pub(crate) id: AudioNodeId,
+    pub(crate) channel_config: ChannelConfig,
+    pub(crate) number_of_outputs: Arc<AtomicU32>,
+}
+
+impl<'a> AudioNode for ChannelSplitterNode<'a> {
+    fn context(&self) -> &BaseAudioContext {
+        self.context
+    }
+
+    fn id(&self) -> &AudioNodeId {
+        &self.id
+    }
+
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
+        // Disallow setting channel config
+        // https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints
+        // todo, not panic?
+        panic!("Cannot edit channel config of ChannelSplitterNode")
+    }
+
+    fn to_render(&self) -> Box<dyn Render> {
+        let render = ChannelSplitterRenderer {
+            number_of_outputs: self.number_of_outputs.clone(),
+        };
+        Box::new(render)
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        1
+    }
+    fn number_of_outputs(&self) -> u32 {
+        self.number_of_outputs.load(Ordering::SeqCst)
+    }
+}
+
+impl<'a> ChannelSplitterNode<'a> {
+    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: ChannelSplitterOptions) -> Self {
+        context.base().register(move |id| {
+            let number_of_outputs = Arc::new(AtomicU32::new(options.number_of_outputs));
+
+            ChannelSplitterNode {
+                context: context.base(),
+                id,
+                channel_config: options.channel_config,
+                number_of_outputs,
+            }
+        })
+    }
+
+    pub fn set_number_of_outputs(&self, number_of_outputs: u32) {
+        self.number_of_outputs
+            .store(number_of_outputs, Ordering::SeqCst);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ChannelSplitterRenderer {
+    pub number_of_outputs: Arc<AtomicU32>,
+}
+
+impl Render for ChannelSplitterRenderer {
+    fn process(
+        &mut self,
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
+        _timestamp: f64,
+        _sample_rate: u32,
+    ) {
+        // single input node
+        let input = inputs[0];
+
+        // assert number of outputs was correctly set by renderer
+        let number_of_outputs = self.number_of_outputs.load(Ordering::SeqCst) as usize;
+        assert_eq!(number_of_outputs, outputs.len());
+
+        for (i, output) in outputs.iter_mut().enumerate() {
+            if i < input.number_of_channels() {
+                if let Some(channel_data) = input.channel_data(i) {
+                    *output = AudioBuffer::Mono(channel_data.clone(), 1);
+                } else {
+                    *output = AudioBuffer::Silence(input.len(), 1);
+                }
+            } else {
+                *output = AudioBuffer::Silence(input.len(), 1);
+            }
+        }
+    }
+}
+
+/// Options for constructing a ChannelMergerNode
+pub struct ChannelMergerOptions {
+    pub number_of_inputs: u32,
+    pub channel_config: ChannelConfig,
+}
+
+impl Default for ChannelMergerOptions {
+    fn default() -> Self {
+        Self {
+            number_of_inputs: 6,
+            channel_config: ChannelConfig {
+                count: 1,
+                mode: ChannelCountMode::Explicit,
+                interpretation: ChannelInterpretation::Speakers,
+            },
+        }
+    }
+}
+
+/// AudioNode for combining channels from multiple audio streams into a single audio stream.
+pub struct ChannelMergerNode<'a> {
+    pub(crate) context: &'a BaseAudioContext,
+    pub(crate) id: AudioNodeId,
+    pub(crate) channel_config: ChannelConfig,
+    pub(crate) number_of_inputs: Arc<AtomicU32>,
+}
+
+impl<'a> AudioNode for ChannelMergerNode<'a> {
+    fn context(&self) -> &BaseAudioContext {
+        self.context
+    }
+
+    fn id(&self) -> &AudioNodeId {
+        &self.id
+    }
+
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
+        // Disallow setting channel config
+        // https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints
+        // todo, not panic?
+        panic!("Cannot edit channel config of ChannelMergerNode")
+    }
+
+    fn to_render(&self) -> Box<dyn Render> {
+        let render = ChannelMergerRenderer {
+            number_of_inputs: self.number_of_inputs.clone(),
+        };
+        Box::new(render)
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        self.number_of_inputs.load(Ordering::SeqCst)
+    }
+    fn number_of_outputs(&self) -> u32 {
+        1
+    }
+}
+
+impl<'a> ChannelMergerNode<'a> {
+    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: ChannelMergerOptions) -> Self {
+        context.base().register(move |id| {
+            let number_of_inputs = Arc::new(AtomicU32::new(options.number_of_inputs));
+
+            ChannelMergerNode {
+                context: context.base(),
+                id,
+                channel_config: options.channel_config,
+                number_of_inputs,
+            }
+        })
+    }
+
+    pub fn set_number_of_inputs(&self, number_of_inputs: u32) {
+        self.number_of_inputs
+            .store(number_of_inputs, Ordering::SeqCst);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ChannelMergerRenderer {
+    pub number_of_inputs: Arc<AtomicU32>,
+}
+
+impl Render for ChannelMergerRenderer {
+    fn process(
+        &mut self,
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
+        _timestamp: f64,
+        _sample_rate: u32,
+    ) {
+        // single output node
+        let output = &mut outputs[0];
+
+        let number_of_inputs = self.number_of_inputs.load(Ordering::SeqCst) as usize;
+        let silence = ChannelData::new(output.len());
+        let mut channels = vec![silence; number_of_inputs];
+
+        for (input, channel) in inputs.iter().zip(channels.iter_mut()) {
+            if let Some(channel_data) = input.channel_data(0) {
+                *channel = channel_data.clone();
+            }
+        }
+
+        *output = AudioBuffer::Multi(channels.into_boxed_slice());
     }
 }

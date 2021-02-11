@@ -80,21 +80,19 @@ impl RenderThread {
         // render audio graph
         let rendered = self.graph.render(timestamp, self.sample_rate);
 
-        // todo, we need to handle silence specifically here, because channel_data is not properly implemented
-        if matches!(rendered, AudioBuffer::Silence(_, _)) {
-            for o in data {
-                *o = cpal::Sample::from::<f32>(&0.);
-            }
-            return;
-        }
-
         // copy rendered audio into output slice
         for i in 0..self.channels {
             let output = data.iter_mut().skip(i).step_by(self.channels);
-            let channel = rendered.channel_data(i).iter();
-            for (sample, input) in output.zip(channel) {
-                let value = cpal::Sample::from::<f32>(input);
-                *sample = value;
+            if let Some(channel_data) = rendered.channel_data(i) {
+                let channel = channel_data.iter();
+                for (sample, input) in output.zip(channel) {
+                    let value = cpal::Sample::from::<f32>(input);
+                    *sample = value;
+                }
+            } else {
+                for o in output {
+                    *o = cpal::Sample::from::<f32>(&0.);
+                }
             }
         }
     }
