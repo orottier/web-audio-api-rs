@@ -171,7 +171,7 @@ impl Graph {
             index,
             Node {
                 processor,
-                buffers: vec![AudioBuffer::Silence(channels, crate::BUFFER_SIZE as usize); outputs],
+                buffers: vec![AudioBuffer::new(channels, crate::BUFFER_SIZE as usize); outputs],
                 inputs,
                 outputs,
                 channel_config,
@@ -249,7 +249,7 @@ impl Graph {
             let channels = node.channel_config.count;
             // mix all inputs together
             let mut input_bufs =
-                vec![AudioBuffer::Silence(channels, crate::BUFFER_SIZE as usize); node.inputs];
+                vec![AudioBuffer::new(channels, crate::BUFFER_SIZE as usize); node.inputs];
             edges
                 .iter()
                 .filter_map(

@@ -6,7 +6,11 @@ use std::sync::Arc;
 ///
 /// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug)]
-pub enum AudioBuffer {
+pub struct AudioBuffer {
+    inner: AudioBufferType,
+}
+#[derive(Clone, Debug)]
+enum AudioBufferType {
     /// n channels with m samples of silence
     Silence(usize, usize),
     /// n identical channels
@@ -15,28 +19,61 @@ pub enum AudioBuffer {
     Multi(Box<[ChannelData]>), // todo, make [ChannelData; 32] fixed size array
 }
 
-use AudioBuffer::*;
+use AudioBufferType::*;
 
 impl AudioBuffer {
+    /// Create a silent audiobuffer with given channel and samples count.
+    ///
+    /// This function does not allocate.
+    pub fn new(channels: usize, len: usize) -> Self {
+        Self {
+            inner: Silence(channels, len),
+        }
+    }
+
+    /// Create a mono audiobuffer (single channel)
+    pub fn from_mono(data: ChannelData, channels: usize) -> Self {
+        Self {
+            inner: Mono(data, channels),
+        }
+    }
+
+    /// Create a multi-channel audiobuffer
+    pub fn from_channels(data: Vec<ChannelData>) -> Self {
+        Self {
+            inner: Multi(data.into_boxed_slice()),
+        }
+    }
+
     /// Up/Down-mix to the desired number of channels
     pub fn mix(&self, channels: usize) -> Self {
         // short circuit silence and mono
-        let data = match &self {
-            Silence(_, len) => return Silence(channels, *len),
-            Mono(data, _) => return Mono(data.clone(), channels),
+        let data = match &self.inner {
+            Silence(_, len) => {
+                return Self {
+                    inner: Silence(channels, *len),
+                }
+            }
+            Mono(data, _) => {
+                return Self {
+                    inner: Mono(data.clone(), channels),
+                }
+            }
             Multi(data) => data,
         };
 
         match (data.len(), channels) {
             (n, m) if n == m => self.clone(),
-            (1, c) => Mono(data[0].clone(), c),
+            (1, c) => Self {
+                inner: Mono(data[0].clone(), c),
+            },
             (2, 1) => {
                 let mut l = data[0].clone();
                 l.iter_mut()
                     .zip(data[1].iter())
                     .for_each(|(l, r)| *l = 0.5 * (*l + r));
 
-                Mono(l, 1)
+                Self { inner: Mono(l, 1) }
             }
             _ => todo!(),
         }
@@ -44,7 +81,7 @@ impl AudioBuffer {
 
     /// Number of channels in this AudioBuffer
     pub fn number_of_channels(&self) -> usize {
-        match &self {
+        match &self.inner {
             Silence(c, _) => *c,
             Mono(_, c) => *c,
             Multi(data) => data.len(),
@@ -52,8 +89,8 @@ impl AudioBuffer {
     }
 
     /// Number of samples per channel in this AudioBuffer
-    pub fn len(&self) -> usize {
-        match &self {
+    pub fn sample_len(&self) -> usize {
+        match &self.inner {
             Silence(_, len) => *len,
             Mono(data, _) => data.len(),
             Multi(data) => data[0].len(),
@@ -62,7 +99,7 @@ impl AudioBuffer {
 
     /// Get the samples from this specific channel
     pub fn channel_data(&self, channel: usize) -> Option<&ChannelData> {
-        match &self {
+        match &self.inner {
             Silence(_, _) => None,
             Mono(data, _) => Some(data),
             Multi(data) => data.get(channel),
@@ -71,36 +108,36 @@ impl AudioBuffer {
 
     /// Convert this buffer to silence, maintaining the channel and sample counts
     pub fn make_silent(&mut self) {
-        match self {
+        match &mut self.inner {
             Silence(_, _) => (),
-            Mono(data, channels) => *self = Silence(*channels, data.len()),
-            Multi(data) => *self = Silence(data.len(), data[0].len()),
+            Mono(data, channels) => self.inner = Silence(*channels, data.len()),
+            Multi(data) => self.inner = Silence(data.len(), data[0].len()),
         }
     }
 
     /// Convert this buffer to a mono sound, maintaining the channel and sample counts.
     pub fn make_mono(&mut self) {
-        let len = self.len();
+        let len = self.sample_len();
         let channels = self.number_of_channels();
 
-        match self {
+        match &mut self.inner {
             Silence(_, _) => {
-                *self = Mono(ChannelData::new(len), channels);
+                self.inner = Mono(ChannelData::new(len), channels);
             }
             Mono(_data, _) => (),
             Multi(data) => {
-                *self = Mono(data[0].clone(), channels);
+                self.inner = Mono(data[0].clone(), channels);
             }
         }
     }
 
     /// Modify every channel in the same way
     pub fn modify_channels<F: Fn(&mut ChannelData)>(&mut self, fun: F) {
-        if matches!(&self, Silence(_, _)) {
+        if matches!(&self.inner, Silence(_, _)) {
             self.make_mono();
         }
 
-        match self {
+        match &mut self.inner {
             Silence(_, _) => unreachable!(),
             Mono(data, _) => (fun)(data),
             Multi(data) => data.iter_mut().for_each(fun),
@@ -125,15 +162,17 @@ impl std::ops::Add for AudioBuffer {
         }
 
         // early exit for simple cases, or determine which signal is Multi
-        let (mut multi, other) = match (self, other) {
-            (Silence(_, _), o) => return o,
-            (s, Silence(_, _)) => return s,
+        let (mut multi, other) = match (self.inner, other.inner) {
+            (Silence(_, _), inner) => return Self { inner },
+            (inner, Silence(_, _)) => return Self { inner },
             (Mono(mut s, _), Mono(o, _)) => {
                 s.add(&o);
-                return Mono(s, channels);
+                return Self {
+                    inner: Mono(s, channels),
+                };
             }
-            (Multi(data), other) => (data, other),
-            (other, Multi(data)) => (data, other),
+            (Multi(data), inner) => (data, Self { inner }),
+            (inner, Multi(data)) => (data, Self { inner }),
         };
 
         // mutate the Multi signal with values from the other
@@ -143,7 +182,9 @@ impl std::ops::Add for AudioBuffer {
             }
         });
 
-        Multi(multi)
+        Self {
+            inner: Multi(multi),
+        }
     }
 }
 
@@ -153,7 +194,9 @@ impl std::ops::AddAssign for AudioBuffer {
     }
 }
 
-/// Single channel audio samples, basically wraps a `Vec<f32>`
+/// Single channel audio samples, basically wraps a `Arc<Vec<f32>>`
+///
+/// ChannelData has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug)]
 pub struct ChannelData {
     data: Arc<Box<[f32]>>,

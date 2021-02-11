@@ -357,7 +357,7 @@ impl Render for OscillatorRenderer {
 
         // re-use previous buffer
         output.make_mono();
-        let len = output.len();
+        let len = output.sample_len();
 
         let frame = (timestamp * sample_rate as f64) as u64;
 
@@ -779,12 +779,12 @@ impl Render for ChannelSplitterRenderer {
         for (i, output) in outputs.iter_mut().enumerate() {
             if i < input.number_of_channels() {
                 if let Some(channel_data) = input.channel_data(i) {
-                    *output = AudioBuffer::Mono(channel_data.clone(), 1);
+                    *output = AudioBuffer::from_mono(channel_data.clone(), 1);
                 } else {
-                    *output = AudioBuffer::Silence(input.len(), 1);
+                    *output = AudioBuffer::new(input.sample_len(), 1);
                 }
             } else {
-                *output = AudioBuffer::Silence(input.len(), 1);
+                *output = AudioBuffer::new(input.sample_len(), 1);
             }
         }
     }
@@ -888,7 +888,7 @@ impl Render for ChannelMergerRenderer {
         let output = &mut outputs[0];
 
         let number_of_inputs = self.number_of_inputs.load(Ordering::SeqCst) as usize;
-        let silence = ChannelData::new(output.len());
+        let silence = ChannelData::new(output.sample_len());
         let mut channels = vec![silence; number_of_inputs];
 
         for (input, channel) in inputs.iter().zip(channels.iter_mut()) {
@@ -897,6 +897,6 @@ impl Render for ChannelMergerRenderer {
             }
         }
 
-        *output = AudioBuffer::Multi(channels.into_boxed_slice());
+        *output = AudioBuffer::from_channels(channels);
     }
 }
