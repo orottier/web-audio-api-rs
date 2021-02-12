@@ -264,7 +264,9 @@ impl Graph {
                 .for_each(|(&(node_index, output), input)| {
                     let node = nodes.get(&node_index).unwrap();
                     let signal = &node.buffers[output as usize];
-                    input_bufs[input as usize] += signal.clone();
+
+                    input_bufs[input as usize] = input_bufs[input as usize]
+                        .add(signal, node.channel_config.interpretation());
                 });
 
             let input_bufs: Vec<_> = input_bufs
@@ -279,7 +281,7 @@ impl Graph {
                             cur_channels.min(node.channel_config.count())
                         }
                     };
-                    input_buf.mix(new_channels);
+                    input_buf.mix(new_channels, node.channel_config.interpretation());
 
                     // return immutable refs
                     &*input_buf

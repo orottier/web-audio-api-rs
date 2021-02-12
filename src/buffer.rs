@@ -47,20 +47,69 @@ impl AudioBuffer {
     }
 
     /// Up/Down-mix to the desired number of channels
-    pub fn mix(&self, channels: usize) -> Self {
-        // short circuit silence and mono
+    pub fn mix(&self, channels: usize, interpretation: ChannelInterpretation) -> Self {
+        // handle silence
+        if let Silence(_, len) = &self.inner {
+            return Self {
+                inner: Silence(channels, *len),
+            };
+        }
+
+        // handle mono
+        if let Mono(data, prev_channels) = &self.inner {
+            if interpretation == ChannelInterpretation::Discrete {
+                // discret layout: no mixing required
+                if *prev_channels >= channels {
+                    return Self {
+                        inner: Mono(data.clone(), channels),
+                    };
+                } else {
+                    let mut new = Vec::with_capacity(channels);
+                    for _ in 0..*prev_channels {
+                        new.push(data.clone());
+                    }
+                    let silence = ChannelData::new(self.sample_len());
+                    for _ in *prev_channels..channels {
+                        new.push(silence.clone());
+                    }
+                    return Self::from_channels(new);
+                }
+            } else {
+                // speaker layout: mixing required
+                match channels {
+                    1 | 2 => {
+                        return Self {
+                            inner: Mono(data.clone(), channels),
+                        }
+                    }
+                    4 => {
+                        let silence = ChannelData::new(self.sample_len());
+                        return Self::from_channels(vec![
+                            data.clone(),
+                            data.clone(),
+                            silence.clone(),
+                            silence,
+                        ]);
+                    }
+                    6 => {
+                        let silence = ChannelData::new(self.sample_len());
+                        return Self::from_channels(vec![
+                            silence.clone(),
+                            silence.clone(),
+                            data.clone(),
+                            silence.clone(),
+                            silence,
+                        ]);
+                    }
+
+                    _ => panic!("unknown speaker configuration {}", channels),
+                }
+            }
+        }
+
         let data = match &self.inner {
-            Silence(_, len) => {
-                return Self {
-                    inner: Silence(channels, *len),
-                }
-            }
-            Mono(data, _) => {
-                return Self {
-                    inner: Mono(data.clone(), channels),
-                }
-            }
             Multi(data) => data,
+            _ => unreachable!(),
         };
 
         match (data.len(), channels) {
@@ -146,36 +195,33 @@ impl AudioBuffer {
             Multi(data) => data.iter_mut().for_each(fun),
         }
     }
-}
 
-impl std::ops::Add for AudioBuffer {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
+    pub fn add(&self, other: &Self, interpretation: ChannelInterpretation) -> Self {
         // mix buffers to the max channel count
         let channels_self = self.number_of_channels();
         let channels_other = other.number_of_channels();
         let channels = channels_self.max(channels_other);
 
         if channels_self > channels_other {
-            other.mix(channels_self);
+            other.mix(channels_self, interpretation);
         }
         if channels_self < channels_other {
-            self.mix(channels_other);
+            self.mix(channels_other, interpretation);
         }
 
         // early exit for simple cases, or determine which signal is Multi
-        let (mut multi, other) = match (self.inner, other.inner) {
-            (Silence(_, _), inner) => return Self { inner },
-            (inner, Silence(_, _)) => return Self { inner },
-            (Mono(mut s, _), Mono(o, _)) => {
-                s.add(&o);
+        let (mut multi, other) = match (&self.inner, &other.inner) {
+            (Silence(_, _), _) => return other.clone(),
+            (_, Silence(_, _)) => return self.clone(),
+            (Mono(s, _), Mono(o, _)) => {
+                let mut new = s.clone();
+                new.add(&o);
                 return Self {
-                    inner: Mono(s, channels),
+                    inner: Mono(new, channels),
                 };
             }
-            (Multi(data), inner) => (data, Self { inner }),
-            (inner, Multi(data)) => (data, Self { inner }),
+            (Multi(data), _) => (data.clone(), other),
+            (_, Multi(data)) => (data.clone(), self),
         };
 
         // mutate the Multi signal with values from the other
@@ -188,12 +234,6 @@ impl std::ops::Add for AudioBuffer {
         Self {
             inner: Multi(multi),
         }
-    }
-}
-
-impl std::ops::AddAssign for AudioBuffer {
-    fn add_assign(&mut self, other: Self) {
-        *self = self.clone() + other;
     }
 }
 

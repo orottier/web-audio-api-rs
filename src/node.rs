@@ -668,7 +668,6 @@ pub struct ChannelSplitterNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
     pub(crate) channel_config: ChannelConfig,
-    pub(crate) number_of_outputs: Arc<AtomicU32>,
 }
 
 impl<'a> AudioNode for ChannelSplitterNode<'a> {
@@ -695,7 +694,7 @@ impl<'a> AudioNode for ChannelSplitterNode<'a> {
 
     fn to_render(&self) -> Box<dyn Render> {
         let render = ChannelSplitterRenderer {
-            number_of_outputs: self.number_of_outputs.clone(),
+            number_of_outputs: self.channel_count() as _,
         };
         Box::new(render)
     }
@@ -704,33 +703,27 @@ impl<'a> AudioNode for ChannelSplitterNode<'a> {
         1
     }
     fn number_of_outputs(&self) -> u32 {
-        self.number_of_outputs.load(Ordering::SeqCst)
+        self.channel_count() as _
     }
 }
 
 impl<'a> ChannelSplitterNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: ChannelSplitterOptions) -> Self {
+    pub fn new<C: AsBaseAudioContext>(context: &'a C, mut options: ChannelSplitterOptions) -> Self {
         context.base().register(move |id| {
-            let number_of_outputs = Arc::new(AtomicU32::new(options.number_of_outputs));
+            options.channel_config.count = options.number_of_outputs as _;
 
             ChannelSplitterNode {
                 context: context.base(),
                 id,
                 channel_config: options.channel_config.into(),
-                number_of_outputs,
             }
         })
-    }
-
-    pub fn set_number_of_outputs(&self, number_of_outputs: u32) {
-        self.number_of_outputs
-            .store(number_of_outputs, Ordering::SeqCst);
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct ChannelSplitterRenderer {
-    pub number_of_outputs: Arc<AtomicU32>,
+    pub number_of_outputs: usize,
 }
 
 impl Render for ChannelSplitterRenderer {
@@ -745,8 +738,7 @@ impl Render for ChannelSplitterRenderer {
         let input = inputs[0];
 
         // assert number of outputs was correctly set by renderer
-        let number_of_outputs = self.number_of_outputs.load(Ordering::SeqCst) as usize;
-        assert_eq!(number_of_outputs, outputs.len());
+        assert_eq!(self.number_of_outputs, outputs.len());
 
         for (i, output) in outputs.iter_mut().enumerate() {
             if i < input.number_of_channels() {
@@ -786,7 +778,6 @@ pub struct ChannelMergerNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
     pub(crate) channel_config: ChannelConfig,
-    pub(crate) number_of_inputs: Arc<AtomicU32>,
 }
 
 impl<'a> AudioNode for ChannelMergerNode<'a> {
@@ -813,13 +804,13 @@ impl<'a> AudioNode for ChannelMergerNode<'a> {
 
     fn to_render(&self) -> Box<dyn Render> {
         let render = ChannelMergerRenderer {
-            number_of_inputs: self.number_of_inputs.clone(),
+            number_of_inputs: self.channel_config.count(),
         };
         Box::new(render)
     }
 
     fn number_of_inputs(&self) -> u32 {
-        self.number_of_inputs.load(Ordering::SeqCst)
+        self.channel_count() as _
     }
     fn number_of_outputs(&self) -> u32 {
         1
@@ -827,28 +818,22 @@ impl<'a> AudioNode for ChannelMergerNode<'a> {
 }
 
 impl<'a> ChannelMergerNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: ChannelMergerOptions) -> Self {
+    pub fn new<C: AsBaseAudioContext>(context: &'a C, mut options: ChannelMergerOptions) -> Self {
         context.base().register(move |id| {
-            let number_of_inputs = Arc::new(AtomicU32::new(options.number_of_inputs));
+            options.channel_config.count = options.number_of_inputs as _;
 
             ChannelMergerNode {
                 context: context.base(),
                 id,
                 channel_config: options.channel_config.into(),
-                number_of_inputs,
             }
         })
-    }
-
-    pub fn set_number_of_inputs(&self, number_of_inputs: u32) {
-        self.number_of_inputs
-            .store(number_of_inputs, Ordering::SeqCst);
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct ChannelMergerRenderer {
-    pub number_of_inputs: Arc<AtomicU32>,
+    pub number_of_inputs: usize,
 }
 
 impl Render for ChannelMergerRenderer {
@@ -862,9 +847,8 @@ impl Render for ChannelMergerRenderer {
         // single output node
         let output = &mut outputs[0];
 
-        let number_of_inputs = self.number_of_inputs.load(Ordering::SeqCst) as usize;
         let silence = ChannelData::new(output.sample_len());
-        let mut channels = vec![silence; number_of_inputs];
+        let mut channels = vec![silence; self.number_of_inputs];
 
         for (input, channel) in inputs.iter().zip(channels.iter_mut()) {
             if let Some(channel_data) = input.channel_data(0) {
