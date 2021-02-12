@@ -3,8 +3,8 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
 use cpal::{Stream, StreamConfig};
-use node::ChannelConfig;
 
+use crate::buffer::{ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::control::ControlMessage;
 use crate::graph::RenderThread;
 use crate::node;
@@ -73,11 +73,12 @@ pub trait AsBaseAudioContext {
         node::DestinationNode {
             context: self.base(),
             id: AudioNodeId(0),
-            channel_config: ChannelConfig {
+            channel_config: ChannelConfigOptions {
                 count: 2,
-                mode: node::ChannelCountMode::Explicit,
-                interpretation: node::ChannelInterpretation::Speakers,
-            },
+                mode: ChannelCountMode::Explicit,
+                interpretation: ChannelInterpretation::Speakers,
+            }
+            .into(),
         }
     }
 
@@ -162,11 +163,12 @@ impl AudioContext {
 
         let sample_rate = config.sample_rate.0;
         let channels = config.channels as u32;
-        let channel_config = ChannelConfig {
+        let channel_config = ChannelConfigOptions {
             count: channels as usize,
-            mode: node::ChannelCountMode::Explicit,
-            interpretation: node::ChannelInterpretation::Speakers,
-        };
+            mode: ChannelCountMode::Explicit,
+            interpretation: ChannelInterpretation::Speakers,
+        }
+        .into();
 
         // construct graph for the render thread
         let dest = crate::node::DestinationRenderer {};
@@ -285,11 +287,12 @@ impl OfflineAudioContext {
         let dest = crate::node::DestinationRenderer {};
         let (sender, receiver) = mpsc::channel();
 
-        let channel_config = ChannelConfig {
+        let channel_config = ChannelConfigOptions {
             count: channels as usize,
-            mode: node::ChannelCountMode::Explicit,
-            interpretation: node::ChannelInterpretation::Speakers,
-        };
+            mode: ChannelCountMode::Explicit,
+            interpretation: ChannelInterpretation::Speakers,
+        }
+        .into();
 
         let render = RenderThread::new(dest, sample_rate, channel_config, receiver);
 

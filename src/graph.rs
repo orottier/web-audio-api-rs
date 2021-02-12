@@ -3,9 +3,9 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
+use crate::buffer::ChannelConfig;
 use crate::control::ControlMessage;
-use crate::node::ChannelConfig;
-use crate::{buffer::AudioBuffer, node::ChannelCountMode};
+use crate::{buffer::AudioBuffer, buffer::ChannelCountMode};
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
@@ -23,7 +23,7 @@ impl RenderThread {
         channel_config: ChannelConfig,
         receiver: Receiver<ControlMessage>,
     ) -> Self {
-        let channels = channel_config.count;
+        let channels = channel_config.count();
 
         Self {
             graph: Graph::new(root, channel_config),
@@ -246,7 +246,7 @@ impl Graph {
             // remove node from map, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
             // initial channel count
-            let channels = node.channel_config.count;
+            let channels = node.channel_config.count();
             // mix all inputs together
             let mut input_bufs =
                 vec![AudioBuffer::new(channels, crate::BUFFER_SIZE as usize); node.inputs];
@@ -272,10 +272,12 @@ impl Graph {
                 .map(|input_buf| {
                     // up/down-mix to the desired channel count
                     let cur_channels = input_buf.number_of_channels();
-                    let new_channels = match node.channel_config.mode {
+                    let new_channels = match node.channel_config.count_mode() {
                         ChannelCountMode::Max => cur_channels,
-                        ChannelCountMode::Explicit => node.channel_config.count,
-                        ChannelCountMode::ClampedMax => cur_channels.min(node.channel_config.count),
+                        ChannelCountMode::Explicit => node.channel_config.count(),
+                        ChannelCountMode::ClampedMax => {
+                            cur_channels.min(node.channel_config.count())
+                        }
                     };
                     input_buf.mix(new_channels);
 
@@ -309,11 +311,12 @@ mod tests {
 
     #[test]
     fn test_add_remove() {
-        let config = ChannelConfig {
+        let config: ChannelConfig = crate::buffer::ChannelConfigOptions {
             count: 2,
-            mode: crate::node::ChannelCountMode::Explicit,
-            interpretation: crate::node::ChannelInterpretation::Speakers,
-        };
+            mode: crate::buffer::ChannelCountMode::Explicit,
+            interpretation: crate::buffer::ChannelInterpretation::Speakers,
+        }
+        .into();
         let mut graph = Graph::new(TestNode {}, config.clone());
 
         let node = Box::new(TestNode {});
@@ -339,11 +342,12 @@ mod tests {
 
     #[test]
     fn test_remove_all() {
-        let config = ChannelConfig {
+        let config: ChannelConfig = crate::buffer::ChannelConfigOptions {
             count: 2,
-            mode: crate::node::ChannelCountMode::Explicit,
-            interpretation: crate::node::ChannelInterpretation::Speakers,
-        };
+            mode: crate::buffer::ChannelCountMode::Explicit,
+            interpretation: crate::buffer::ChannelInterpretation::Speakers,
+        }
+        .into();
         let mut graph = Graph::new(TestNode {}, config.clone());
 
         let node = Box::new(TestNode {});

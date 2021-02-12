@@ -6,36 +6,9 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crate::buffer::{AudioBuffer, ChannelData};
+use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
-
-/// How channels must be matched between the node's inputs and outputs.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum ChannelCountMode {
-    /// `computedNumberOfChannels` is the maximum of the number of channels of all connections to an
-    /// input. In this mode channelCount is ignored.
-    Max,
-    /// `computedNumberOfChannels` is determined as for "max" and then clamped to a maximum value of
-    /// the given channelCount.
-    ClampedMax,
-    /// `computedNumberOfChannels` is the exact value as specified by the channelCount.
-    Explicit,
-}
-
-/// The meaning of the channels, defining how audio up-mixing and down-mixing will happen.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum ChannelInterpretation {
-    Speakers,
-    Discrete,
-}
-
-/// Config for up/down-mixing of channels for audio nodes
-#[derive(Clone, Debug)]
-pub struct ChannelConfig {
-    pub count: usize,
-    pub mode: ChannelCountMode,
-    pub interpretation: ChannelInterpretation,
-}
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules. These modules can be connected together to form processing graphs for rendering audio
@@ -44,7 +17,6 @@ pub trait AudioNode {
     fn id(&self) -> &AudioNodeId;
     fn to_render(&self) -> Box<dyn Render>;
     fn channel_config_raw(&self) -> &ChannelConfig;
-    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig;
 
     /// The BaseAudioContext which owns this AudioNode.
     fn context(&self) -> &BaseAudioContext;
@@ -104,17 +76,26 @@ pub trait AudioNode {
     /// Represents an enumerated value describing the way channels must be matched between the
     /// node's inputs and outputs.
     fn channel_count_mode(&self) -> ChannelCountMode {
-        self.channel_config_raw().mode
+        self.channel_config_raw().count_mode()
+    }
+    fn set_channel_count_mode(&self, v: ChannelCountMode) {
+        self.channel_config_raw().set_count_mode(v)
     }
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
     /// will define how audio up-mixing and down-mixing will happen.
     fn channel_interpretation(&self) -> ChannelInterpretation {
-        self.channel_config_raw().interpretation
+        self.channel_config_raw().interpretation()
+    }
+    fn set_channel_interpretation(&self, v: ChannelInterpretation) {
+        self.channel_config_raw().set_interpretation(v)
     }
     /// Represents an integer used to determine how many channels are used when up-mixing and
     /// down-mixing connections to any inputs to the node.
     fn channel_count(&self) -> usize {
-        self.channel_config_raw().count
+        self.channel_config_raw().count()
+    }
+    fn set_channel_count(&self, v: usize) {
+        self.channel_config_raw().set_count(v)
     }
 }
 
@@ -196,7 +177,7 @@ pub trait AudioScheduledSourceNode: AudioNode + Scheduled {
 pub struct OscillatorOptions {
     pub type_: OscillatorType,
     pub frequency: u32,
-    pub channel_config: ChannelConfig,
+    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for OscillatorOptions {
@@ -204,7 +185,7 @@ impl Default for OscillatorOptions {
         Self {
             type_: OscillatorType::default(),
             frequency: 440,
-            channel_config: ChannelConfig {
+            channel_config: ChannelConfigOptions {
                 count: 2,
                 mode: ChannelCountMode::Max,
                 interpretation: ChannelInterpretation::Speakers,
@@ -284,9 +265,6 @@ impl<'a> AudioNode for OscillatorNode<'a> {
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
     }
-    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
-        &mut self.channel_config
-    }
 
     fn number_of_inputs(&self) -> u32 {
         0
@@ -306,7 +284,7 @@ impl<'a> OscillatorNode<'a> {
             OscillatorNode {
                 context: context.base(),
                 id,
-                channel_config: options.channel_config,
+                channel_config: options.channel_config.into(),
                 frequency,
                 type_,
                 scheduler,
@@ -427,9 +405,6 @@ impl<'a> AudioNode for DestinationNode<'a> {
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
     }
-    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
-        &mut self.channel_config
-    }
 
     fn to_render(&self) -> Box<dyn Render> {
         todo!()
@@ -446,14 +421,14 @@ impl<'a> AudioNode for DestinationNode<'a> {
 /// Options for constructing a GainNode
 pub struct GainOptions {
     pub gain: f32,
-    pub channel_config: ChannelConfig,
+    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for GainOptions {
     fn default() -> Self {
         Self {
             gain: 1.,
-            channel_config: ChannelConfig {
+            channel_config: ChannelConfigOptions {
                 count: 2,
                 mode: ChannelCountMode::Max,
                 interpretation: ChannelInterpretation::Speakers,
@@ -482,9 +457,6 @@ impl<'a> AudioNode for GainNode<'a> {
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
     }
-    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
-        &mut self.channel_config
-    }
 
     fn to_render(&self) -> Box<dyn Render> {
         let render = GainRenderer {
@@ -509,7 +481,7 @@ impl<'a> GainNode<'a> {
             GainNode {
                 context: context.base(),
                 id,
-                channel_config: options.channel_config,
+                channel_config: options.channel_config.into(),
                 gain,
             }
         })
@@ -553,14 +525,14 @@ impl Render for GainRenderer {
 pub struct DelayOptions {
     // todo: actually delay by time
     pub render_quanta: u32,
-    pub channel_config: ChannelConfig,
+    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for DelayOptions {
     fn default() -> Self {
         Self {
             render_quanta: 0,
-            channel_config: ChannelConfig {
+            channel_config: ChannelConfigOptions {
                 count: 2,
                 mode: ChannelCountMode::Max,
                 interpretation: ChannelInterpretation::Speakers,
@@ -588,9 +560,6 @@ impl<'a> AudioNode for DelayNode<'a> {
 
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
-    }
-    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
-        &mut self.channel_config
     }
 
     fn to_render(&self) -> Box<dyn Render> {
@@ -623,7 +592,7 @@ impl<'a> DelayNode<'a> {
             DelayNode {
                 context: context.base(),
                 id,
-                channel_config: options.channel_config,
+                channel_config: options.channel_config.into(),
                 render_quanta,
             }
         })
@@ -678,14 +647,14 @@ impl Render for DelayRenderer {
 /// Options for constructing a ChannelSplitterNode
 pub struct ChannelSplitterOptions {
     pub number_of_outputs: u32,
-    pub channel_config: ChannelConfig,
+    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for ChannelSplitterOptions {
     fn default() -> Self {
         Self {
             number_of_outputs: 6,
-            channel_config: ChannelConfig {
+            channel_config: ChannelConfigOptions {
                 count: 6, // must be same as number_of_outputs
                 mode: ChannelCountMode::Explicit,
                 interpretation: ChannelInterpretation::Discrete,
@@ -714,11 +683,14 @@ impl<'a> AudioNode for ChannelSplitterNode<'a> {
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
     }
-    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
-        // Disallow setting channel config
-        // https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints
-        // todo, not panic?
-        panic!("Cannot edit channel config of ChannelSplitterNode")
+    fn set_channel_count(&self, _v: usize) {
+        panic!("Cannot edit channel count of ChannelSplitterNode")
+    }
+    fn set_channel_count_mode(&self, _v: ChannelCountMode) {
+        panic!("Cannot edit channel count mode of ChannelSplitterNode")
+    }
+    fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
+        panic!("Cannot edit channel interpretation of ChannelSplitterNode")
     }
 
     fn to_render(&self) -> Box<dyn Render> {
@@ -744,7 +716,7 @@ impl<'a> ChannelSplitterNode<'a> {
             ChannelSplitterNode {
                 context: context.base(),
                 id,
-                channel_config: options.channel_config,
+                channel_config: options.channel_config.into(),
                 number_of_outputs,
             }
         })
@@ -779,7 +751,7 @@ impl Render for ChannelSplitterRenderer {
         for (i, output) in outputs.iter_mut().enumerate() {
             if i < input.number_of_channels() {
                 if let Some(channel_data) = input.channel_data(i) {
-                    *output = AudioBuffer::from_mono(channel_data.clone(), 1);
+                    *output = AudioBuffer::from_mono(channel_data.clone());
                 } else {
                     *output = AudioBuffer::new(input.sample_len(), 1);
                 }
@@ -793,14 +765,14 @@ impl Render for ChannelSplitterRenderer {
 /// Options for constructing a ChannelMergerNode
 pub struct ChannelMergerOptions {
     pub number_of_inputs: u32,
-    pub channel_config: ChannelConfig,
+    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for ChannelMergerOptions {
     fn default() -> Self {
         Self {
             number_of_inputs: 6,
-            channel_config: ChannelConfig {
+            channel_config: ChannelConfigOptions {
                 count: 1,
                 mode: ChannelCountMode::Explicit,
                 interpretation: ChannelInterpretation::Speakers,
@@ -829,11 +801,14 @@ impl<'a> AudioNode for ChannelMergerNode<'a> {
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
     }
-    fn channel_config_raw_mut(&mut self) -> &mut ChannelConfig {
-        // Disallow setting channel config
-        // https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints
-        // todo, not panic?
-        panic!("Cannot edit channel config of ChannelMergerNode")
+    fn set_channel_count(&self, _v: usize) {
+        panic!("Cannot edit channel count of ChannelMergerNode")
+    }
+    fn set_channel_count_mode(&self, _v: ChannelCountMode) {
+        panic!("Cannot edit channel count mode of ChannelMergerNode")
+    }
+    fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
+        panic!("Cannot edit channel interpretation of ChannelMergerNode")
     }
 
     fn to_render(&self) -> Box<dyn Render> {
@@ -859,7 +834,7 @@ impl<'a> ChannelMergerNode<'a> {
             ChannelMergerNode {
                 context: context.base(),
                 id,
-                channel_config: options.channel_config,
+                channel_config: options.channel_config.into(),
                 number_of_inputs,
             }
         })

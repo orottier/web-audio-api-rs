@@ -1,5 +1,5 @@
+use crate::buffer::ChannelConfig;
 use crate::graph::Render;
-use crate::node::ChannelConfig;
 
 /// Commands from the control thread to the render thread
 pub(crate) enum ControlMessage {
