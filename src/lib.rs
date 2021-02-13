@@ -4,6 +4,7 @@ pub const BUFFER_SIZE: u32 = 512;
 pub mod buffer;
 pub mod context;
 pub mod node;
+pub mod param;
 
 pub(crate) mod control;
 pub(crate) mod graph;
