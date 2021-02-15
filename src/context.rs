@@ -6,7 +6,7 @@ use cpal::{Stream, StreamConfig};
 
 use crate::buffer::{ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::control::ControlMessage;
-use crate::graph::RenderThread;
+use crate::graph::{Render, RenderThread};
 use crate::node;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -229,14 +229,16 @@ impl BaseAudioContext {
         self.channels
     }
 
-    pub(crate) fn register<T: node::AudioNode, F: FnOnce(AudioNodeId) -> T>(&self, f: F) -> T {
+    pub(crate) fn register<T: node::AudioNode, F: FnOnce(AudioNodeId) -> (T, Box<dyn Render>)>(
+        &self,
+        f: F,
+    ) -> T {
         // create unique identifier for this node
         let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
         let node_id = AudioNodeId(id);
 
         // create the node and its renderer
-        let node = (f)(node_id);
-        let render = node.to_render();
+        let (node, render) = (f)(node_id);
 
         // pass the renderer to the audio graph
         let message = ControlMessage::RegisterNode {

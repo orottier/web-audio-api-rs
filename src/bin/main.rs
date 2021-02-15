@@ -10,7 +10,8 @@ fn main() {
     merge.connect(&context.destination());
 
     let gain = context.create_gain();
-    gain.set_gain(0.1);
+    gain.gain().set_value(0.1);
+    gain.gain().set_value_at_time(0.9, 2.);
     gain.connect_at(&merge, 0, 0).unwrap();
 
     let split = context.create_channel_splitter(2);

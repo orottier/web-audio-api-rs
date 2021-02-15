@@ -5,17 +5,20 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use crate::buffer::{AudioBuffer, ChannelData};
 use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
+use crate::param::AudioParam;
+use crate::{
+    buffer::{AudioBuffer, ChannelData},
+    param::{AudioParamOptions, AudioParamRenderer},
+};
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules. These modules can be connected together to form processing graphs for rendering audio
 /// to the audio hardware. Each node can have inputs and/or outputs.
 pub trait AudioNode {
     fn id(&self) -> &AudioNodeId;
-    fn to_render(&self) -> Box<dyn Render>;
     fn channel_config_raw(&self) -> &ChannelConfig;
 
     /// The BaseAudioContext which owns this AudioNode.
@@ -248,16 +251,6 @@ impl<'a> AudioNode for OscillatorNode<'a> {
         self.context
     }
 
-    fn to_render(&self) -> Box<dyn Render> {
-        let render = OscillatorRenderer {
-            frequency: self.frequency.clone(),
-            type_: self.type_.clone(),
-            scheduler: self.scheduler.clone(),
-        };
-
-        Box::new(render)
-    }
-
     fn id(&self) -> &AudioNodeId {
         &self.id
     }
@@ -281,14 +274,21 @@ impl<'a> OscillatorNode<'a> {
             let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
             let scheduler = Scheduler::new();
 
-            OscillatorNode {
+            let render = OscillatorRenderer {
+                frequency: frequency.clone(),
+                type_: type_.clone(),
+                scheduler: scheduler.clone(),
+            };
+            let node = OscillatorNode {
                 context: context.base(),
                 id,
                 channel_config: options.channel_config.into(),
                 frequency,
                 type_,
                 scheduler,
-            }
+            };
+
+            (node, Box::new(render))
         })
     }
 
@@ -406,10 +406,6 @@ impl<'a> AudioNode for DestinationNode<'a> {
         &self.channel_config
     }
 
-    fn to_render(&self) -> Box<dyn Render> {
-        todo!()
-    }
-
     fn number_of_inputs(&self) -> u32 {
         1
     }
@@ -442,7 +438,7 @@ pub struct GainNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
     pub(crate) channel_config: ChannelConfig,
-    pub(crate) gain: Arc<AtomicU32>,
+    pub(crate) gain: AudioParam,
 }
 
 impl<'a> AudioNode for GainNode<'a> {
@@ -458,13 +454,6 @@ impl<'a> AudioNode for GainNode<'a> {
         &self.channel_config
     }
 
-    fn to_render(&self) -> Box<dyn Render> {
-        let render = GainRenderer {
-            gain: self.gain.clone(),
-        };
-        Box::new(render)
-    }
-
     fn number_of_inputs(&self) -> u32 {
         1
     }
@@ -476,29 +465,39 @@ impl<'a> AudioNode for GainNode<'a> {
 impl<'a> GainNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, options: GainOptions) -> Self {
         context.base().register(move |id| {
-            let gain = Arc::new(AtomicU32::new((options.gain * 100.) as u32));
+            let context = context.base();
 
-            GainNode {
-                context: context.base(),
+            let param_opts = AudioParamOptions {
+                min_value: f32::MIN,
+                max_value: f32::MAX,
+                default_value: 1.,
+                automation_rate: crate::param::AutomationRate::A,
+            };
+            let (param, render) = crate::param::audio_param_pair(param_opts);
+
+            param.set_value_at_time(options.gain, 0.);
+
+            let render = GainRenderer { gain: render };
+
+            let node = GainNode {
+                context,
                 id,
                 channel_config: options.channel_config.into(),
-                gain,
-            }
+                gain: param,
+            };
+
+            (node, Box::new(render))
         })
     }
 
-    pub fn gain(&self) -> f32 {
-        self.gain.load(Ordering::SeqCst) as f32 / 100.
-    }
-
-    pub fn set_gain(&self, gain: f32) {
-        self.gain.store((gain * 100.) as u32, Ordering::SeqCst);
+    pub fn gain(&self) -> &AudioParam {
+        &self.gain
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct GainRenderer {
-    pub gain: Arc<AtomicU32>,
+    pub gain: AudioParamRenderer,
 }
 
 impl Render for GainRenderer {
@@ -506,18 +505,24 @@ impl Render for GainRenderer {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        _timestamp: f64,
-        _sample_rate: u32,
+        timestamp: f64,
+        sample_rate: u32,
     ) {
         // single input/output node
         let input = inputs[0];
         let output = &mut outputs[0];
 
-        let gain = self.gain.load(Ordering::SeqCst) as f32 / 100.;
+        let dt = 1. / sample_rate as f64;
+        let gain_values = self.gain.tick(timestamp, dt, input.sample_len());
 
         *output = input.clone();
 
-        output.modify_channels(|channel| channel.iter_mut().for_each(|value| *value *= gain));
+        output.modify_channels(|channel| {
+            channel
+                .iter_mut()
+                .zip(gain_values.iter())
+                .for_each(|(value, g)| *value *= g)
+        });
     }
 }
 
@@ -562,20 +567,6 @@ impl<'a> AudioNode for DelayNode<'a> {
         &self.channel_config
     }
 
-    fn to_render(&self) -> Box<dyn Render> {
-        let render_quanta = self.render_quanta.load(Ordering::SeqCst);
-        let cap = (render_quanta * crate::BUFFER_SIZE) as usize;
-        let delay_buffer = Vec::with_capacity(cap);
-
-        let render = DelayRenderer {
-            render_quanta: self.render_quanta.clone(),
-            delay_buffer,
-            index: 0,
-        };
-
-        Box::new(render)
-    }
-
     fn number_of_inputs(&self) -> u32 {
         1
     }
@@ -589,12 +580,23 @@ impl<'a> DelayNode<'a> {
         context.base().register(move |id| {
             let render_quanta = Arc::new(AtomicU32::new(options.render_quanta));
 
-            DelayNode {
+            let cap = (options.render_quanta * crate::BUFFER_SIZE) as usize;
+            let delay_buffer = Vec::with_capacity(cap);
+
+            let render = DelayRenderer {
+                render_quanta: render_quanta.clone(),
+                delay_buffer,
+                index: 0,
+            };
+
+            let node = DelayNode {
                 context: context.base(),
                 id,
                 channel_config: options.channel_config.into(),
                 render_quanta,
-            }
+            };
+
+            (node, Box::new(render))
         })
     }
 
@@ -692,13 +694,6 @@ impl<'a> AudioNode for ChannelSplitterNode<'a> {
         panic!("Cannot edit channel interpretation of ChannelSplitterNode")
     }
 
-    fn to_render(&self) -> Box<dyn Render> {
-        let render = ChannelSplitterRenderer {
-            number_of_outputs: self.channel_count() as _,
-        };
-        Box::new(render)
-    }
-
     fn number_of_inputs(&self) -> u32 {
         1
     }
@@ -712,11 +707,17 @@ impl<'a> ChannelSplitterNode<'a> {
         context.base().register(move |id| {
             options.channel_config.count = options.number_of_outputs as _;
 
-            ChannelSplitterNode {
+            let node = ChannelSplitterNode {
                 context: context.base(),
                 id,
                 channel_config: options.channel_config.into(),
-            }
+            };
+
+            let render = ChannelSplitterRenderer {
+                number_of_outputs: node.channel_count() as _,
+            };
+
+            (node, Box::new(render))
         })
     }
 }
@@ -802,13 +803,6 @@ impl<'a> AudioNode for ChannelMergerNode<'a> {
         panic!("Cannot edit channel interpretation of ChannelMergerNode")
     }
 
-    fn to_render(&self) -> Box<dyn Render> {
-        let render = ChannelMergerRenderer {
-            number_of_inputs: self.channel_config.count(),
-        };
-        Box::new(render)
-    }
-
     fn number_of_inputs(&self) -> u32 {
         self.channel_count() as _
     }
@@ -822,11 +816,17 @@ impl<'a> ChannelMergerNode<'a> {
         context.base().register(move |id| {
             options.channel_config.count = options.number_of_inputs as _;
 
-            ChannelMergerNode {
+            let node = ChannelMergerNode {
                 context: context.base(),
                 id,
                 channel_config: options.channel_config.into(),
-            }
+            };
+
+            let render = ChannelMergerRenderer {
+                number_of_inputs: node.channel_config.count(),
+            };
+
+            (node, Box::new(render))
         })
     }
 }

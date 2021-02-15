@@ -1,6 +1,9 @@
 //! AudioParam interface
 
 use std::collections::BinaryHeap;
+use std::sync::atomic::AtomicU32;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 
 /// Precision of value calculation per render quantum
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -19,8 +22,10 @@ pub struct AudioParamOptions {
     pub max_value: f32,
 }
 
+#[derive(Debug)]
 enum AutomationEvent {
-    SetValueAtTime(f32, f64),
+    SetValueAtTime { v: f32, start: f64 },
+    LinearRampToValueAtTime { v: f32, start: f64, end: f64 },
 }
 
 use AutomationEvent::*;
@@ -28,13 +33,15 @@ use AutomationEvent::*;
 impl AutomationEvent {
     fn time(&self) -> f64 {
         match &self {
-            SetValueAtTime(_, t) => *t,
+            SetValueAtTime { start, .. } => *start,
+            LinearRampToValueAtTime { end, .. } => *end,
         }
     }
 
     fn value(&self) -> f32 {
         match &self {
-            SetValueAtTime(v, _) => *v,
+            SetValueAtTime { v, .. } => *v,
+            LinearRampToValueAtTime { v, .. } => *v,
         }
     }
 }
@@ -60,8 +67,16 @@ impl std::cmp::Ord for AutomationEvent {
 }
 
 /// AudioParam controls an individual aspect of an AudioNode's functionality, such as volume.
+#[derive(Debug)]
 pub struct AudioParam {
+    value: Arc<AtomicU32>,
+    sender: Sender<AutomationEvent>,
+}
+#[derive(Debug)]
+pub struct AudioParamRenderer {
     value: f32,
+    shared_value: Arc<AtomicU32>,
+    receiver: Receiver<AutomationEvent>,
     automation_rate: AutomationRate,
     default_value: f32,
     min_value: f32,
@@ -69,20 +84,47 @@ pub struct AudioParam {
     events: BinaryHeap<AutomationEvent>,
 }
 
-impl From<AudioParamOptions> for AudioParam {
-    fn from(opts: AudioParamOptions) -> Self {
-        AudioParam {
-            value: opts.default_value,
-            automation_rate: opts.automation_rate,
-            default_value: opts.default_value,
-            min_value: opts.min_value,
-            max_value: opts.max_value,
-            events: BinaryHeap::new(),
-        }
-    }
+pub fn audio_param_pair(opts: AudioParamOptions) -> (AudioParam, AudioParamRenderer) {
+    let (sender, receiver) = mpsc::channel();
+    let value_as_int = u32::from_be(opts.default_value.to_bits());
+    let shared_value = Arc::new(AtomicU32::new(value_as_int));
+
+    let param = AudioParam {
+        value: shared_value.clone(),
+        sender,
+    };
+
+    let render = AudioParamRenderer {
+        value: opts.default_value,
+        shared_value,
+        receiver,
+        automation_rate: opts.automation_rate,
+        default_value: opts.default_value,
+        min_value: opts.min_value,
+        max_value: opts.max_value,
+        events: BinaryHeap::new(),
+    };
+
+    (param, render)
 }
 
 impl AudioParam {
+    pub fn set_value(&self, v: f32) {
+        self.sender.send(SetValueAtTime { v, start: 0. }).unwrap()
+    }
+
+    pub fn set_value_at_time(&self, v: f32, start: f64) {
+        self.sender.send(SetValueAtTime { v, start }).unwrap()
+    }
+
+    pub fn linear_ramp_to_value_at_time(&self, v: f32, end: f64) {
+        self.sender
+            .send(LinearRampToValueAtTime { v, start: 0., end })
+            .unwrap()
+    }
+}
+
+impl AudioParamRenderer {
     pub fn value(&self) -> f32 {
         if self.value.is_nan() {
             self.default_value
@@ -96,18 +138,15 @@ impl AudioParam {
         // todo, `set_value_at_time(v, context.current_time())`
     }
 
-    pub fn set_value_at_time(&mut self, v: f32, t: f64) {
-        self.events.push(SetValueAtTime(v, t))
-    }
-
     pub fn tick(&mut self, ts: f64, dt: f64, count: usize) -> Vec<f32> {
+        for event in self.receiver.try_iter() {
+            self.events.push(event);
+        }
+
         let next = match self.events.peek() {
             None => return vec![self.value(); count],
             Some(event) => event,
         };
-
-        // we should have processed all earlier events in the previous call
-        assert!(next.time() > ts);
 
         let max_ts = ts + dt * count as f64;
         if next.time() > max_ts {
@@ -124,19 +163,23 @@ impl AudioParam {
 
         loop {
             let next = self.events.pop().unwrap();
-            let end_index = ((next.time() - ts) / dt) as usize;
 
-            // never trust floats
-            let end_index = end_index.min(count);
+            // we should have processed all earlier events in the previous call,
+            // but new events could have been added, clamp it to `ts`
+            let time = next.time().max(ts);
+
+            let end_index = ((time - ts) / dt) as usize;
+            let end_index = end_index.min(count); // never trust floats
 
             for _ in result.len()..end_index {
+                // todo, actual value calculation
                 result.push(self.value());
             }
-
-            self.value = next.value();
+            self.value = next.value(); // todo
 
             if !matches!(self.events.peek(), Some(e) if e.time() <= max_ts) {
                 for _ in result.len()..count {
+                    // todo, actual value calculation (when ramp-to-value)
                     result.push(self.value());
                 }
                 break;
@@ -160,16 +203,16 @@ mod tests {
             min_value: -10.,
             max_value: 10.,
         };
-        let mut param: AudioParam = opts.into();
+        let (param, mut render) = audio_param_pair(opts);
 
         param.set_value_at_time(5., 2.0);
         param.set_value_at_time(12., 8.0); // should clamp
         param.set_value_at_time(8., 10.0); // should not occur 1st run
 
-        let vs = param.tick(0., 1., 10);
+        let vs = render.tick(0., 1., 10);
         assert_eq!(vs, vec![0., 0., 5., 5., 5., 5., 5., 5., 10., 10.]);
 
-        let vs = param.tick(10., 1., 10);
+        let vs = render.tick(10., 1., 10);
         assert_eq!(vs, vec![8.; 10]);
     }
 
@@ -181,16 +224,16 @@ mod tests {
             min_value: -10.,
             max_value: 10.,
         };
-        let mut param: AudioParam = opts.into();
+        let (param, mut render) = audio_param_pair(opts);
 
         param.set_value_at_time(5., 2.0);
         param.set_value_at_time(12., 8.0); // should clamp
         param.set_value_at_time(8., 10.0); // should not occur 1st run
 
-        let vs = param.tick(0., 1., 10);
+        let vs = render.tick(0., 1., 10);
         assert_eq!(vs, vec![0.; 10]);
 
-        let vs = param.tick(10., 1., 10);
+        let vs = render.tick(10., 1., 10);
         assert_eq!(vs, vec![8.; 10]);
     }
 }
