@@ -1,6 +1,6 @@
 //! The AudioNode interface and concrete types
 
-use std::f64::consts::PI;
+use std::f32::consts::PI;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -179,7 +179,7 @@ pub trait AudioScheduledSourceNode: AudioNode + Scheduled {
 /// Options for constructing an OscillatorNode
 pub struct OscillatorOptions {
     pub type_: OscillatorType,
-    pub frequency: u32,
+    pub frequency: f32,
     pub channel_config: ChannelConfigOptions,
 }
 
@@ -187,7 +187,7 @@ impl Default for OscillatorOptions {
     fn default() -> Self {
         Self {
             type_: OscillatorType::default(),
-            frequency: 440,
+            frequency: 440.,
             channel_config: ChannelConfigOptions {
                 count: 2,
                 mode: ChannelCountMode::Max,
@@ -233,7 +233,7 @@ pub struct OscillatorNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
     pub(crate) channel_config: ChannelConfig,
-    pub(crate) frequency: Arc<AtomicU32>,
+    pub(crate) frequency: AudioParam,
     pub(crate) type_: Arc<AtomicU32>,
     pub(crate) scheduler: Scheduler,
 }
@@ -270,12 +270,21 @@ impl<'a> AudioNode for OscillatorNode<'a> {
 impl<'a> OscillatorNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, options: OscillatorOptions) -> Self {
         context.base().register(move |id| {
-            let frequency = Arc::new(AtomicU32::new(options.frequency));
+            let nyquist = context.base().sample_rate() as f32 / 2.;
+            let param_opts = AudioParamOptions {
+                min_value: -nyquist,
+                max_value: nyquist,
+                default_value: 440.,
+                automation_rate: crate::param::AutomationRate::A,
+            };
+            let (f_param, f_render) = crate::param::audio_param_pair(param_opts);
+            f_param.set_value(options.frequency);
+
             let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
             let scheduler = Scheduler::new();
 
             let render = OscillatorRenderer {
-                frequency: frequency.clone(),
+                frequency: f_render,
                 type_: type_.clone(),
                 scheduler: scheduler.clone(),
             };
@@ -283,7 +292,7 @@ impl<'a> OscillatorNode<'a> {
                 context: context.base(),
                 id,
                 channel_config: options.channel_config.into(),
-                frequency,
+                frequency: f_param,
                 type_,
                 scheduler,
             };
@@ -292,12 +301,8 @@ impl<'a> OscillatorNode<'a> {
         })
     }
 
-    pub fn frequency(&self) -> u32 {
-        self.frequency.load(Ordering::SeqCst)
-    }
-
-    pub fn set_frequency(&self, freq: u32) {
-        self.frequency.store(freq, Ordering::SeqCst);
+    pub fn frequency(&self) -> &AudioParam {
+        &self.frequency
     }
 
     pub fn type_(&self) -> OscillatorType {
@@ -311,7 +316,7 @@ impl<'a> OscillatorNode<'a> {
 
 #[derive(Debug)]
 pub(crate) struct OscillatorRenderer {
-    pub frequency: Arc<AtomicU32>,
+    pub frequency: AudioParamRenderer,
     pub type_: Arc<AtomicU32>,
     pub scheduler: Scheduler,
 }
@@ -345,21 +350,24 @@ impl Render for OscillatorRenderer {
             return;
         }
 
-        let freq = self.frequency.load(Ordering::SeqCst) as f64;
+        let dt = 1. / sample_rate as f64;
+        let freq_values = self.frequency.tick(timestamp, dt, len);
+        let freq = freq_values[0]; // force a-rate processing
+
         let type_ = self.type_.load(Ordering::SeqCst).into();
 
         output.modify_channels(|buffer| {
-            let ts = (0..len).map(move |i| timestamp + i as f64 / sample_rate as f64);
+            let ts = (0..len).map(move |i| timestamp as f32 + i as f32 / sample_rate as f32);
             let io = ts.zip(buffer.iter_mut());
 
             use OscillatorType::*;
 
             match type_ {
-                Sine => io.for_each(|(i, o)| *o = (2. * PI * freq * i).sin() as f32),
+                Sine => io.for_each(|(i, o)| *o = (2. * PI * freq * i).sin()),
                 Square => {
                     io.for_each(|(i, o)| *o = if (freq * i).fract() < 0.5 { 1. } else { -1. })
                 }
-                Sawtooth => io.for_each(|(i, o)| *o = 2. * ((freq * i).fract() - 0.5) as f32),
+                Sawtooth => io.for_each(|(i, o)| *o = 2. * ((freq * i).fract() - 0.5)),
                 _ => todo!(),
             }
         })
