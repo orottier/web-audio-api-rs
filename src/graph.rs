@@ -247,7 +247,10 @@ impl Graph {
             let channels = node.channel_config.count();
             // mix all inputs together
             let mut input_bufs =
-                vec![AudioBuffer::new(channels, crate::BUFFER_SIZE as usize, sample_rate); node.inputs];
+                vec![
+                    AudioBuffer::new(channels, crate::BUFFER_SIZE as usize, sample_rate);
+                    node.inputs
+                ];
             edges
                 .iter()
                 .filter_map(

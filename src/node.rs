@@ -912,11 +912,18 @@ impl<'a> MediaElementAudioSourceNode<'a> {
                 channel_config: options.channel_config.into(),
             };
 
+            // todo, stream audio instead of buffering fully
             let mut buffers = vec![];
             while let Ok(Some(buffer)) = options.media.stream_chunk() {
-                // todo, resample, cut to right sized chunks
                 buffers.push(buffer);
             }
+
+            // todo, proper resampling
+            let buffers = buffers
+                .into_iter()
+                .collect::<AudioBuffer>() // concat all chunks
+                .split(crate::BUFFER_SIZE); // split full buffer into right sized chunks
+
             let render = MediaElementAudioSourceRenderer { buffers };
 
             (node, Box::new(render))
