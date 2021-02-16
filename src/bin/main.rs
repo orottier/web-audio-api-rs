@@ -1,30 +1,27 @@
+use std::fs::File;
+
+use web_audio_api::buffer::{ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use web_audio_api::context::AsBaseAudioContext;
 use web_audio_api::context::AudioContext;
-use web_audio_api::node::AudioScheduledSourceNode;
+use web_audio_api::media::OggVorbisDecoder;
 use web_audio_api::node::{AudioNode, OscillatorNode, OscillatorOptions, OscillatorType};
+use web_audio_api::node::{
+    AudioScheduledSourceNode, MediaElementAudioSourceNode, MediaElementAudioSourceNodeOptions,
+};
 
 fn main() {
+    let media = OggVorbisDecoder::try_new(File::open("music.ogg").unwrap()).unwrap();
     let context = AudioContext::new();
-
-    let merge = context.create_channel_merger(2);
-    merge.connect(&context.destination());
-
-    let gain = context.create_gain();
-    gain.gain().set_value(0.1);
-    gain.gain().set_value_at_time(0.9, 2.);
-    gain.connect_at(&merge, 0, 0).unwrap();
-
-    let split = context.create_channel_splitter(2);
-    split.connect(&gain);
-    split.connect_at(&merge, 0, 1).unwrap();
-
-    let opts = OscillatorOptions {
-        type_: OscillatorType::Sine,
-        ..Default::default()
+    let opts = MediaElementAudioSourceNodeOptions {
+        media,
+        channel_config: ChannelConfigOptions {
+            count: 2,
+            mode: ChannelCountMode::Max,
+            interpretation: ChannelInterpretation::Speakers,
+        },
     };
-    let osc = OscillatorNode::new(&context, opts);
-    osc.connect(&split);
-    osc.start();
+    let osc = MediaElementAudioSourceNode::new(&context, opts);
+    osc.connect(&context.destination());
 
     std::thread::sleep(std::time::Duration::from_secs(4));
 }

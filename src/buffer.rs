@@ -253,6 +253,12 @@ impl ChannelData {
         Self { data }
     }
 
+    pub fn from(data: Vec<f32>) -> Self {
+        Self {
+            data: Arc::new(data.into_boxed_slice()),
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.data.len()
     }

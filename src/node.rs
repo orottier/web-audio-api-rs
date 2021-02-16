@@ -5,14 +5,14 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
+use crate::buffer::{
+    AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelData,
+    ChannelInterpretation,
+};
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
-use crate::param::AudioParam;
-use crate::{
-    buffer::{AudioBuffer, ChannelData},
-    param::{AudioParamOptions, AudioParamRenderer},
-};
+use crate::media::MediaElement;
+use crate::param::{AudioParam, AudioParamOptions, AudioParamRenderer};
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules. These modules can be connected together to form processing graphs for rendering audio
@@ -865,5 +865,85 @@ impl Render for ChannelMergerRenderer {
         }
 
         *output = AudioBuffer::from_channels(channels);
+    }
+}
+
+/// Options for constructing a MediaElementAudioSourceNode
+pub struct MediaElementAudioSourceNodeOptions<MediaElement> {
+    pub media: MediaElement,
+    pub channel_config: ChannelConfigOptions,
+}
+
+/// An audio source from external media files (.ogg, .wav, .mp3)
+pub struct MediaElementAudioSourceNode<'a> {
+    pub(crate) context: &'a BaseAudioContext,
+    pub(crate) id: AudioNodeId,
+    pub(crate) channel_config: ChannelConfig,
+}
+
+impl<'a> AudioNode for MediaElementAudioSourceNode<'a> {
+    fn context(&self) -> &BaseAudioContext {
+        self.context
+    }
+    fn id(&self) -> &AudioNodeId {
+        &self.id
+    }
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        0
+    }
+    fn number_of_outputs(&self) -> u32 {
+        1
+    }
+}
+
+impl<'a> MediaElementAudioSourceNode<'a> {
+    pub fn new<C: AsBaseAudioContext, M: MediaElement>(
+        context: &'a C,
+        mut options: MediaElementAudioSourceNodeOptions<M>,
+    ) -> Self {
+        context.base().register(move |id| {
+            let node = MediaElementAudioSourceNode {
+                context: context.base(),
+                id,
+                channel_config: options.channel_config.into(),
+            };
+
+            let mut buffers = vec![];
+            while let Ok(Some(buffer)) = options.media.stream_chunk() {
+                // todo, resample, cut to right sized chunks
+                buffers.push(buffer);
+            }
+            let render = MediaElementAudioSourceRenderer { buffers };
+
+            (node, Box::new(render))
+        })
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct MediaElementAudioSourceRenderer {
+    pub buffers: Vec<AudioBuffer>,
+}
+
+impl Render for MediaElementAudioSourceRenderer {
+    fn process(
+        &mut self,
+        _inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
+        _timestamp: f64,
+        _sample_rate: u32,
+    ) {
+        // single output node
+        let output = &mut outputs[0];
+
+        if self.buffers.is_empty() {
+            *output = AudioBuffer::new(output.number_of_channels(), output.sample_len());
+        } else {
+            *output = self.buffers.remove(0);
+        }
     }
 }

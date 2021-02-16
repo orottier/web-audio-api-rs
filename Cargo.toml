@@ -12,3 +12,4 @@ categories = ["multimedia::audio"]
 
 [dependencies]
 cpal = "0.13.1"
+lewton = "0.10.2"
