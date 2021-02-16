@@ -32,7 +32,8 @@ impl MediaElement for OggVorbisDecoder {
 
         let result = maybe_packet.map(|packet| {
             let channel_data: Vec<_> = packet.into_iter().map(ChannelData::from).collect();
-            AudioBuffer::from_channels(channel_data)
+            let sample_rate = self.stream.ident_hdr.audio_sample_rate;
+            AudioBuffer::from_channels(channel_data, sample_rate)
         });
 
         Ok(result)

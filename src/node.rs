@@ -741,7 +741,7 @@ impl Render for ChannelSplitterRenderer {
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         _timestamp: f64,
-        _sample_rate: u32,
+        sample_rate: u32,
     ) {
         // single input node
         let input = inputs[0];
@@ -752,12 +752,12 @@ impl Render for ChannelSplitterRenderer {
         for (i, output) in outputs.iter_mut().enumerate() {
             if i < input.number_of_channels() {
                 if let Some(channel_data) = input.channel_data(i) {
-                    *output = AudioBuffer::from_mono(channel_data.clone());
+                    *output = AudioBuffer::from_mono(channel_data.clone(), sample_rate);
                 } else {
-                    *output = AudioBuffer::new(input.sample_len(), 1);
+                    *output = AudioBuffer::new(input.sample_len(), 1, sample_rate);
                 }
             } else {
-                *output = AudioBuffer::new(input.sample_len(), 1);
+                *output = AudioBuffer::new(input.sample_len(), 1, sample_rate);
             }
         }
     }
@@ -850,7 +850,7 @@ impl Render for ChannelMergerRenderer {
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         _timestamp: f64,
-        _sample_rate: u32,
+        sample_rate: u32,
     ) {
         // single output node
         let output = &mut outputs[0];
@@ -864,7 +864,7 @@ impl Render for ChannelMergerRenderer {
             }
         }
 
-        *output = AudioBuffer::from_channels(channels);
+        *output = AudioBuffer::from_channels(channels, sample_rate);
     }
 }
 
@@ -935,13 +935,17 @@ impl Render for MediaElementAudioSourceRenderer {
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         _timestamp: f64,
-        _sample_rate: u32,
+        sample_rate: u32,
     ) {
         // single output node
         let output = &mut outputs[0];
 
         if self.buffers.is_empty() {
-            *output = AudioBuffer::new(output.number_of_channels(), output.sample_len());
+            *output = AudioBuffer::new(
+                output.number_of_channels(),
+                output.sample_len(),
+                sample_rate,
+            );
         } else {
             *output = self.buffers.remove(0);
         }

@@ -8,8 +8,10 @@ use std::sync::Arc;
 /// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug)]
 pub struct AudioBuffer {
-    inner: AudioBufferType,
+    data: AudioBufferType,
+    sample_rate: u32,
 }
+
 #[derive(Clone, Debug)]
 enum AudioBufferType {
     /// n channels with m samples of silence
@@ -26,42 +28,47 @@ impl AudioBuffer {
     /// Create a silent audiobuffer with given channel and samples count.
     ///
     /// This function does not allocate.
-    pub fn new(channels: usize, len: usize) -> Self {
+    pub fn new(channels: usize, len: usize, sample_rate: u32) -> Self {
         Self {
-            inner: Silence(channels, len),
+            data: Silence(channels, len),
+            sample_rate,
         }
     }
 
     /// Create a mono audiobuffer (single channel)
-    pub fn from_mono(data: ChannelData) -> Self {
+    pub fn from_mono(data: ChannelData, sample_rate: u32) -> Self {
         Self {
-            inner: Mono(data, 1),
+            data: Mono(data, 1),
+            sample_rate,
         }
     }
 
     /// Create a multi-channel audiobuffer
-    pub fn from_channels(data: Vec<ChannelData>) -> Self {
+    pub fn from_channels(data: Vec<ChannelData>, sample_rate: u32) -> Self {
         Self {
-            inner: Multi(data.into_boxed_slice()),
+            data: Multi(data.into_boxed_slice()),
+            sample_rate,
         }
     }
 
     /// Up/Down-mix to the desired number of channels
     pub fn mix(&self, channels: usize, interpretation: ChannelInterpretation) -> Self {
         // handle silence
-        if let Silence(_, len) = &self.inner {
+        if let Silence(_, len) = &self.data {
             return Self {
-                inner: Silence(channels, *len),
+                data: Silence(channels, *len),
+                sample_rate: self.sample_rate,
             };
         }
 
         // handle mono
-        if let Mono(data, prev_channels) = &self.inner {
+        if let Mono(data, prev_channels) = &self.data {
             if interpretation == ChannelInterpretation::Discrete {
                 // discret layout: no mixing required
                 if *prev_channels >= channels {
                     return Self {
-                        inner: Mono(data.clone(), channels),
+                        data: Mono(data.clone(), channels),
+                        sample_rate: self.sample_rate,
                     };
                 } else {
                     let mut new = Vec::with_capacity(channels);
@@ -72,34 +79,36 @@ impl AudioBuffer {
                     for _ in *prev_channels..channels {
                         new.push(silence.clone());
                     }
-                    return Self::from_channels(new);
+                    return Self::from_channels(new, self.sample_rate);
                 }
             } else {
                 // speaker layout: mixing required
                 match channels {
                     1 | 2 => {
                         return Self {
-                            inner: Mono(data.clone(), channels),
+                            data: Mono(data.clone(), channels),
+                            sample_rate: self.sample_rate,
                         }
                     }
                     4 => {
                         let silence = ChannelData::new(self.sample_len());
-                        return Self::from_channels(vec![
-                            data.clone(),
-                            data.clone(),
-                            silence.clone(),
-                            silence,
-                        ]);
+                        return Self::from_channels(
+                            vec![data.clone(), data.clone(), silence.clone(), silence],
+                            self.sample_rate,
+                        );
                     }
                     6 => {
                         let silence = ChannelData::new(self.sample_len());
-                        return Self::from_channels(vec![
-                            silence.clone(),
-                            silence.clone(),
-                            data.clone(),
-                            silence.clone(),
-                            silence,
-                        ]);
+                        return Self::from_channels(
+                            vec![
+                                silence.clone(),
+                                silence.clone(),
+                                data.clone(),
+                                silence.clone(),
+                                silence,
+                            ],
+                            self.sample_rate,
+                        );
                     }
 
                     _ => panic!("unknown speaker configuration {}", channels),
@@ -107,7 +116,7 @@ impl AudioBuffer {
             }
         }
 
-        let data = match &self.inner {
+        let data = match &self.data {
             Multi(data) => data,
             _ => unreachable!(),
         };
@@ -115,7 +124,8 @@ impl AudioBuffer {
         match (data.len(), channels) {
             (n, m) if n == m => self.clone(),
             (1, c) => Self {
-                inner: Mono(data[0].clone(), c),
+                data: Mono(data[0].clone(), c),
+                sample_rate: self.sample_rate,
             },
             (2, 1) => {
                 let mut l = data[0].clone();
@@ -123,7 +133,10 @@ impl AudioBuffer {
                     .zip(data[1].iter())
                     .for_each(|(l, r)| *l = 0.5 * (*l + r));
 
-                Self { inner: Mono(l, 1) }
+                Self {
+                    data: Mono(l, 1),
+                    sample_rate: self.sample_rate,
+                }
             }
             _ => todo!(),
         }
@@ -131,7 +144,7 @@ impl AudioBuffer {
 
     /// Number of channels in this AudioBuffer
     pub fn number_of_channels(&self) -> usize {
-        match &self.inner {
+        match &self.data {
             Silence(c, _) => *c,
             Mono(_, c) => *c,
             Multi(data) => data.len(),
@@ -140,18 +153,23 @@ impl AudioBuffer {
 
     /// Number of samples per channel in this AudioBuffer
     pub fn sample_len(&self) -> usize {
-        match &self.inner {
+        match &self.data {
             Silence(_, len) => *len,
             Mono(data, _) => data.len(),
             Multi(data) => data[0].len(),
         }
     }
 
+    /// Sample rate of this AudioBuffer in Hertz
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
     /// Get the samples from this specific channel.
     ///
     /// Returns `None` if this channel is silent or not present
     pub fn channel_data(&self, channel: usize) -> Option<&ChannelData> {
-        match &self.inner {
+        match &self.data {
             Silence(_, _) => None,
             Mono(data, _) => Some(data),
             Multi(data) => data.get(channel),
@@ -160,10 +178,10 @@ impl AudioBuffer {
 
     /// Convert this buffer to silence, maintaining the channel and sample counts
     pub fn make_silent(&mut self) {
-        match &mut self.inner {
+        match &mut self.data {
             Silence(_, _) => (),
-            Mono(data, channels) => self.inner = Silence(*channels, data.len()),
-            Multi(data) => self.inner = Silence(data.len(), data[0].len()),
+            Mono(data, channels) => self.data = Silence(*channels, data.len()),
+            Multi(data) => self.data = Silence(data.len(), data[0].len()),
         }
     }
 
@@ -172,31 +190,37 @@ impl AudioBuffer {
         let len = self.sample_len();
         let channels = self.number_of_channels();
 
-        match &mut self.inner {
+        match &mut self.data {
             Silence(_, _) => {
-                self.inner = Mono(ChannelData::new(len), channels);
+                self.data = Mono(ChannelData::new(len), channels);
             }
             Mono(_data, _) => (),
             Multi(data) => {
-                self.inner = Mono(data[0].clone(), channels);
+                self.data = Mono(data[0].clone(), channels);
             }
         }
     }
 
     /// Modify every channel in the same way
     pub fn modify_channels<F: Fn(&mut ChannelData)>(&mut self, fun: F) {
-        if matches!(&self.inner, Silence(_, _)) {
+        if matches!(&self.data, Silence(_, _)) {
             self.make_mono();
         }
 
-        match &mut self.inner {
+        match &mut self.data {
             Silence(_, _) => unreachable!(),
             Mono(data, _) => (fun)(data),
             Multi(data) => data.iter_mut().for_each(fun),
         }
     }
 
+    /// Sum two AudioBuffers
+    ///
+    /// This function will panic if the sample_length and sample_rate are not equal
     pub fn add(&self, other: &Self, interpretation: ChannelInterpretation) -> Self {
+        assert_eq!(self.sample_rate, other.sample_rate);
+        assert_eq!(self.sample_len(), other.sample_len());
+
         // mix buffers to the max channel count
         let channels_self = self.number_of_channels();
         let channels_other = other.number_of_channels();
@@ -210,14 +234,15 @@ impl AudioBuffer {
         }
 
         // early exit for simple cases, or determine which signal is Multi
-        let (mut multi, other) = match (&self.inner, &other.inner) {
+        let (mut multi, other) = match (&self.data, &other.data) {
             (Silence(_, _), _) => return other.clone(),
             (_, Silence(_, _)) => return self.clone(),
             (Mono(s, _), Mono(o, _)) => {
                 let mut new = s.clone();
                 new.add(&o);
                 return Self {
-                    inner: Mono(new, channels),
+                    data: Mono(new, channels),
+                    sample_rate: self.sample_rate,
                 };
             }
             (Multi(data), _) => (data.clone(), other),
@@ -232,7 +257,8 @@ impl AudioBuffer {
         });
 
         Self {
-            inner: Multi(multi),
+            data: Multi(multi),
+            sample_rate: self.sample_rate,
         }
     }
 }
