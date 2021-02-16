@@ -101,7 +101,6 @@ impl RenderThread {
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct NodeIndex(u64);
 
-#[derive(Debug)]
 struct Node {
     processor: Box<dyn Render>,
     buffers: Vec<AudioBuffer>,
@@ -117,7 +116,6 @@ impl Node {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct Graph {
     nodes: HashMap<NodeIndex, Node>,
 
@@ -128,7 +126,7 @@ pub(crate) struct Graph {
     ordered: Vec<NodeIndex>,
 }
 
-pub trait Render: Debug + Send {
+pub trait Render: Send {
     fn process(
         &mut self,
         inputs: &[&AudioBuffer],
