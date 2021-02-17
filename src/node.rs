@@ -869,8 +869,8 @@ impl Render for ChannelMergerRenderer {
 }
 
 /// Options for constructing a MediaElementAudioSourceNode
-pub struct MediaElementAudioSourceNodeOptions<MediaElement> {
-    pub media: MediaElement,
+pub struct MediaElementAudioSourceNodeOptions<M> {
+    pub media: M,
     pub channel_config: ChannelConfigOptions,
 }
 
@@ -903,7 +903,7 @@ impl<'a> AudioNode for MediaElementAudioSourceNode<'a> {
 impl<'a> MediaElementAudioSourceNode<'a> {
     pub fn new<C: AsBaseAudioContext, M: MediaElement>(
         context: &'a C,
-        mut options: MediaElementAudioSourceNodeOptions<M>,
+        options: MediaElementAudioSourceNodeOptions<M>,
     ) -> Self {
         context.base().register(move |id| {
             let node = MediaElementAudioSourceNode {
@@ -912,18 +912,12 @@ impl<'a> MediaElementAudioSourceNode<'a> {
                 channel_config: options.channel_config.into(),
             };
 
-            // todo, stream audio instead of buffering fully
-            let mut buffers = vec![];
-            while let Ok(Some(buffer)) = options.media.stream_chunk() {
-                buffers.push(buffer);
-            }
-
-            // todo, proper resampling
-            let buffers = buffers
-                .into_iter()
-                .collect::<AudioBuffer>() // concat all chunks
-                .split(crate::BUFFER_SIZE); // split full buffer into right sized chunks
-
+            let resampler = crate::buffer::Resampler::new(
+                crate::BUFFER_SIZE,
+                context.base().sample_rate(),
+                options.media,
+            );
+            let buffers: Vec<_> = resampler.collect();
             let render = MediaElementAudioSourceRenderer { buffers };
 
             (node, Box::new(render))

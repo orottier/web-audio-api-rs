@@ -9,33 +9,40 @@ use lewton::VorbisError;
 
 use crate::buffer::{AudioBuffer, ChannelData};
 
-/// Interface for external media decoding
-pub trait MediaElement {
-    /// Decode a single audio chunk, return `None` at end of stream
-    fn stream_chunk(&mut self) -> Result<Option<AudioBuffer>, Box<dyn Error>>;
-}
+/// Interface for external media decoding.
+///
+/// This is a trait alias for `Iterator<Item = Result<AudioBuffer, Box<dyn Error>>>`
+pub trait MediaElement: Iterator<Item = Result<AudioBuffer, Box<dyn Error>>> {}
+impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error>>>> MediaElement for M {}
 
 /// Ogg Vorbis (.ogg) file decoder
+///
+/// It implements the `MediaElement` trait so can be used inside a `MediaElementAudioSourceNode`
 pub struct OggVorbisDecoder {
     stream: OggStreamReader<BufReader<File>>,
 }
 
 impl OggVorbisDecoder {
+    /// Try to construct a new instance from a `File`
     pub fn try_new(file: File) -> Result<Self, VorbisError> {
         OggStreamReader::new(BufReader::new(file)).map(|stream| Self { stream })
     }
 }
 
-impl MediaElement for OggVorbisDecoder {
-    fn stream_chunk(&mut self) -> Result<Option<AudioBuffer>, Box<dyn Error>> {
-        let maybe_packet: Option<Vec<Vec<f32>>> = self.stream.read_dec_packet_generic()?;
+impl Iterator for OggVorbisDecoder {
+    type Item = Result<AudioBuffer, Box<dyn Error>>;
 
-        let result = maybe_packet.map(|packet| {
-            let channel_data: Vec<_> = packet.into_iter().map(ChannelData::from).collect();
-            let sample_rate = self.stream.ident_hdr.audio_sample_rate;
-            AudioBuffer::from_channels(channel_data, sample_rate)
-        });
+    fn next(&mut self) -> Option<Self::Item> {
+        let packet: Vec<Vec<f32>> = match self.stream.read_dec_packet_generic() {
+            Err(e) => return Some(Err(Box::new(e))),
+            Ok(None) => return None,
+            Ok(Some(packet)) => packet,
+        };
 
-        Ok(result)
+        let channel_data: Vec<_> = packet.into_iter().map(ChannelData::from).collect();
+        let sample_rate = self.stream.ident_hdr.audio_sample_rate;
+        let result = AudioBuffer::from_channels(channel_data, sample_rate);
+
+        Some(Ok(result))
     }
 }

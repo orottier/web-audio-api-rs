@@ -11,7 +11,7 @@ pub(crate) mod control;
 pub(crate) mod graph;
 
 /// Input/output with this index does not exist
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct IndexSizeError {}
 
 use std::fmt;
