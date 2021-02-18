@@ -347,6 +347,51 @@ impl AudioBuffer {
 
         AudioBuffer::from_channels(channels, sample_rate)
     }
+
+    /// Resample to the desired sample rate.
+    ///
+    /// This changes the sample_length of the buffer.
+    ///
+    /// ```
+    /// use web_audio_api::buffer::{ChannelData, AudioBuffer};
+    ///
+    /// let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
+    /// let mut buffer = AudioBuffer::from_channels(vec![channel], 48_000);
+    ///
+    /// // upmix from 48k to 96k Hertz sample rate
+    /// buffer.resample(96_000);
+    ///
+    /// assert_eq!(
+    ///     buffer.channel_data(0).unwrap(),
+    ///     &ChannelData::from(vec![1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,])
+    /// );
+    ///
+    /// assert_eq!(buffer.sample_rate(), 96_000);
+    /// ```
+    pub fn resample(&mut self, sample_rate: u32) {
+        if self.sample_rate() == sample_rate {
+            return;
+        }
+
+        let rate = sample_rate as f32 / self.sample_rate as f32;
+        self.modify_channels(|channel_data| {
+            let mut current = 0;
+            let resampled = channel_data
+                .data
+                .iter()
+                .enumerate()
+                .flat_map(|(i, v)| {
+                    let target = ((i + 1) as f32 * rate) as usize;
+                    let take = target - current.min(target);
+                    current += take;
+                    std::iter::repeat(*v).take(take)
+                })
+                .collect();
+            channel_data.data = Arc::new(resampled);
+        });
+
+        self.sample_rate = sample_rate;
+    }
 }
 
 /// Single channel audio samples, basically wraps a `Arc<Vec<f32>>`
@@ -579,7 +624,10 @@ impl<M: MediaElement> Iterator for Resampler<M> {
             None => match self.input.next() {
                 None => return None,
                 Some(Err(_e)) => return None, // todo
-                Some(Ok(data)) => data,
+                Some(Ok(mut data)) => {
+                    data.resample(self.sample_rate);
+                    data
+                }
             },
             Some(data) => data,
         };
@@ -589,7 +637,10 @@ impl<M: MediaElement> Iterator for Resampler<M> {
             match self.input.next() {
                 None => return Some(buffer),
                 Some(Err(_e)) => return None, // todo
-                Some(Ok(data)) => buffer.extend(&data),
+                Some(Ok(mut data)) => {
+                    data.resample(self.sample_rate);
+                    buffer.extend(&data)
+                }
             }
         }
 
@@ -639,6 +690,30 @@ mod tests {
             split[1].channel_data(0).unwrap().as_slice(),
             &[0., 0., 1., 1., 1., 1., 1.]
         );
+    }
+
+    #[test]
+    fn test_resample_upmix() {
+        let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
+        let mut buffer = AudioBuffer::from_channels(vec![channel], 100);
+        buffer.resample(200);
+        assert_eq!(
+            buffer.channel_data(0).unwrap(),
+            &ChannelData::from(vec![1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,])
+        );
+        assert_eq!(buffer.sample_rate(), 200);
+    }
+
+    #[test]
+    fn test_resample_downmix() {
+        let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
+        let mut input_buf = AudioBuffer::from_channels(vec![channel], 200);
+        input_buf.resample(100);
+        assert_eq!(
+            input_buf.channel_data(0).unwrap(),
+            &ChannelData::from(vec![2., 4.])
+        );
+        assert_eq!(buffer.sample_rate(), 100);
     }
 
     #[test]
