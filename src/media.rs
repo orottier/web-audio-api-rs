@@ -8,6 +8,7 @@ use lewton::inside_ogg::OggStreamReader;
 use lewton::VorbisError;
 
 use crate::buffer::{AudioBuffer, ChannelData};
+use crate::SampleRate;
 
 /// Interface for external media decoding.
 ///
@@ -40,7 +41,7 @@ impl Iterator for OggVorbisDecoder {
         };
 
         let channel_data: Vec<_> = packet.into_iter().map(ChannelData::from).collect();
-        let sample_rate = self.stream.ident_hdr.audio_sample_rate;
+        let sample_rate = SampleRate(self.stream.ident_hdr.audio_sample_rate);
         let result = AudioBuffer::from_channels(channel_data, sample_rate);
 
         Some(Ok(result))

@@ -5,12 +5,13 @@ use std::sync::mpsc::Receiver;
 
 use crate::buffer::{ChannelConfig, ChannelData};
 use crate::control::ControlMessage;
+use crate::SampleRate;
 use crate::{buffer::AudioBuffer, buffer::ChannelCountMode};
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
     graph: Graph,
-    sample_rate: u32,
+    sample_rate: SampleRate,
     channels: usize,
     frames_played: AtomicU64,
     receiver: Receiver<ControlMessage>,
@@ -19,7 +20,7 @@ pub(crate) struct RenderThread {
 impl RenderThread {
     pub fn new<N: Render + 'static>(
         root: N,
-        sample_rate: u32,
+        sample_rate: SampleRate,
         channel_config: ChannelConfig,
         receiver: Receiver<ControlMessage>,
     ) -> Self {
@@ -82,7 +83,7 @@ impl RenderThread {
         // update time
         let len = data.len() / self.channels as usize;
         let timestamp = self.frames_played.fetch_add(len as u64, Ordering::SeqCst) as f64
-            / self.sample_rate as f64;
+            / self.sample_rate.0 as f64;
 
         // render audio graph
         let rendered = self.graph.render(timestamp, self.sample_rate);
@@ -117,7 +118,7 @@ struct Node {
 }
 
 impl Node {
-    fn process(&mut self, inputs: &[&AudioBuffer], timestamp: f64, sample_rate: u32) {
+    fn process(&mut self, inputs: &[&AudioBuffer], timestamp: f64, sample_rate: SampleRate) {
         self.processor
             .process(inputs, &mut self.buffers[..], timestamp, sample_rate)
     }
@@ -139,7 +140,7 @@ pub trait Render: Send {
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         timestamp: f64,
-        sample_rate: u32,
+        sample_rate: SampleRate,
     );
 }
 
@@ -147,7 +148,7 @@ impl Graph {
     pub fn new<N: Render + 'static>(
         root: N,
         channel_config: ChannelConfig,
-        sample_rate: u32,
+        sample_rate: SampleRate,
     ) -> Self {
         let root_index = NodeIndex(0);
 
@@ -258,7 +259,7 @@ impl Graph {
         self.marked = marked;
     }
 
-    pub fn render(&mut self, timestamp: f64, sample_rate: u32) -> &AudioBuffer {
+    pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer {
         // split (mut) borrows
         let ordered = &self.ordered;
         let edges = &self.edges;
@@ -333,7 +334,7 @@ mod tests {
     struct TestNode {}
 
     impl Render for TestNode {
-        fn process(&mut self, _: &[&AudioBuffer], _: &mut [AudioBuffer], _: f64, _: u32) {}
+        fn process(&mut self, _: &[&AudioBuffer], _: &mut [AudioBuffer], _: f64, _: SampleRate) {}
     }
 
     #[test]
@@ -344,7 +345,7 @@ mod tests {
             interpretation: crate::buffer::ChannelInterpretation::Speakers,
         }
         .into();
-        let mut graph = Graph::new(TestNode {}, config.clone(), 44_100);
+        let mut graph = Graph::new(TestNode {}, config.clone(), SampleRate(44_100));
 
         let node = Box::new(TestNode {});
         graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone(), vec![]);
@@ -375,7 +376,7 @@ mod tests {
             interpretation: crate::buffer::ChannelInterpretation::Speakers,
         }
         .into();
-        let mut graph = Graph::new(TestNode {}, config.clone(), 44_100);
+        let mut graph = Graph::new(TestNode {}, config.clone(), SampleRate(44_100));
 
         let node = Box::new(TestNode {});
         graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone(), vec![]);

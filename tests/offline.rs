@@ -2,12 +2,12 @@ use web_audio_api::context::AsBaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::node::AudioScheduledSourceNode;
 use web_audio_api::node::{AudioNode, OscillatorNode, OscillatorOptions, OscillatorType};
-use web_audio_api::BUFFER_SIZE;
+use web_audio_api::{SampleRate, BUFFER_SIZE};
 
 #[test]
 fn test_start_stop() {
     let len = (BUFFER_SIZE * 4) as usize;
-    let mut context = OfflineAudioContext::new(1, len, BUFFER_SIZE);
+    let mut context = OfflineAudioContext::new(1, len, SampleRate(BUFFER_SIZE));
     assert_eq!(context.length(), len);
 
     let opts = OscillatorOptions {
@@ -34,7 +34,7 @@ fn test_start_stop() {
 #[test]
 fn test_delayed_constant_source() {
     let len = (BUFFER_SIZE * 4) as usize;
-    let mut context = OfflineAudioContext::new(1, len, 44_100);
+    let mut context = OfflineAudioContext::new(1, len, SampleRate(44_100));
     assert_eq!(context.length(), len);
 
     let delay = context.create_delay();

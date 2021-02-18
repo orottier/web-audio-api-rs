@@ -13,6 +13,7 @@ use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
 use crate::media::MediaElement;
 use crate::param::{AudioParam, AudioParamOptions, AudioParamRenderer};
+use crate::SampleRate;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules. These modules can be connected together to form processing graphs for rendering audio
@@ -158,12 +159,12 @@ pub trait Scheduled {
 pub trait AudioScheduledSourceNode: AudioNode + Scheduled {
     /// Schedules a sound to playback at an exact time.
     fn start_at(&self, timestamp: f64) {
-        let frame = (timestamp * self.context().sample_rate() as f64) as u64;
+        let frame = (timestamp * self.context().sample_rate().0 as f64) as u64;
         self.scheduler().start(frame);
     }
     /// Schedules a sound to stop playback at an exact time.
     fn stop_at(&self, timestamp: f64) {
-        let frame = (timestamp * self.context().sample_rate() as f64) as u64;
+        let frame = (timestamp * self.context().sample_rate().0 as f64) as u64;
         self.scheduler().stop(frame);
     }
     /// Play immediately
@@ -270,7 +271,7 @@ impl<'a> AudioNode for OscillatorNode<'a> {
 impl<'a> OscillatorNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, options: OscillatorOptions) -> Self {
         context.base().register(move |id| {
-            let nyquist = context.base().sample_rate() as f32 / 2.;
+            let nyquist = context.base().sample_rate().0 as f32 / 2.;
             let param_opts = AudioParamOptions {
                 min_value: -nyquist,
                 max_value: nyquist,
@@ -333,7 +334,7 @@ impl Render for OscillatorRenderer {
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         timestamp: f64,
-        sample_rate: u32,
+        sample_rate: SampleRate,
     ) {
         // single output node
         let output = &mut outputs[0];
@@ -342,7 +343,7 @@ impl Render for OscillatorRenderer {
         output.make_mono();
         let len = output.sample_len();
 
-        let frame = (timestamp * sample_rate as f64) as u64;
+        let frame = (timestamp * sample_rate.0 as f64) as u64;
 
         // todo, sub-quantum start/stop
         if !self.is_active(frame) {
@@ -350,14 +351,14 @@ impl Render for OscillatorRenderer {
             return;
         }
 
-        let dt = 1. / sample_rate as f64;
+        let dt = 1. / sample_rate.0 as f64;
         let freq_values = self.frequency.tick(timestamp, dt, len);
         let freq = freq_values[0]; // force a-rate processing
 
         let type_ = self.type_.load(Ordering::SeqCst).into();
 
         output.modify_channels(|buffer| {
-            let ts = (0..len).map(move |i| timestamp as f32 + i as f32 / sample_rate as f32);
+            let ts = (0..len).map(move |i| timestamp as f32 + i as f32 / sample_rate.0 as f32);
             let io = ts.zip(buffer.iter_mut());
 
             use OscillatorType::*;
@@ -390,7 +391,7 @@ impl Render for DestinationRenderer {
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         _timestamp: f64,
-        _sample_rate: u32,
+        _sample_rate: SampleRate,
     ) {
         // single input/output node
         let input = inputs[0];
@@ -514,13 +515,13 @@ impl Render for GainRenderer {
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         timestamp: f64,
-        sample_rate: u32,
+        sample_rate: SampleRate,
     ) {
         // single input/output node
         let input = inputs[0];
         let output = &mut outputs[0];
 
-        let dt = 1. / sample_rate as f64;
+        let dt = 1. / sample_rate.0 as f64;
         let gain_values = self.gain.tick(timestamp, dt, input.sample_len());
 
         *output = input.clone();
@@ -630,7 +631,7 @@ impl Render for DelayRenderer {
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         _timestamp: f64,
-        _sample_rate: u32,
+        _sample_rate: SampleRate,
     ) {
         // single input/output node
         let input = inputs[0];
@@ -741,7 +742,7 @@ impl Render for ChannelSplitterRenderer {
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         _timestamp: f64,
-        sample_rate: u32,
+        sample_rate: SampleRate,
     ) {
         // single input node
         let input = inputs[0];
@@ -850,7 +851,7 @@ impl Render for ChannelMergerRenderer {
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         _timestamp: f64,
-        sample_rate: u32,
+        sample_rate: SampleRate,
     ) {
         // single output node
         let output = &mut outputs[0];
@@ -913,8 +914,8 @@ impl<'a> MediaElementAudioSourceNode<'a> {
             };
 
             let resampler = crate::buffer::Resampler::new(
-                crate::BUFFER_SIZE,
                 context.base().sample_rate(),
+                crate::BUFFER_SIZE,
                 options.media,
             );
             let buffers: Vec<_> = resampler.collect();
@@ -936,7 +937,7 @@ impl Render for MediaElementAudioSourceRenderer {
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         _timestamp: f64,
-        sample_rate: u32,
+        sample_rate: SampleRate,
     ) {
         // single output node
         let output = &mut outputs[0];

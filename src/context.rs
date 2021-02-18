@@ -10,6 +10,7 @@ use crate::buffer::{
 use crate::control::ControlMessage;
 use crate::graph::{Render, RenderThread};
 use crate::node;
+use crate::SampleRate;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
@@ -19,7 +20,7 @@ use std::sync::mpsc::{self, Sender};
 /// of the nodes it contains and the execution of the audio processing, or decoding.
 pub struct BaseAudioContext {
     /// sample rate in Hertz
-    sample_rate: u32,
+    sample_rate: SampleRate,
     /// number of speaker output channels
     channels: u32,
     /// incrementing id to assign to audio nodes
@@ -85,7 +86,7 @@ pub trait AsBaseAudioContext {
     }
 
     /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
-    fn sample_rate(&self) -> u32 {
+    fn sample_rate(&self) -> SampleRate {
         self.base().sample_rate()
     }
 
@@ -163,7 +164,7 @@ impl AudioContext {
 
         dbg!(&config);
 
-        let sample_rate = config.sample_rate.0;
+        let sample_rate = SampleRate(config.sample_rate.0);
         let channels = config.channels as u32;
         let channel_config = ChannelConfigOptions {
             count: channels as usize,
@@ -216,14 +217,14 @@ pub struct AudioNodeId(u64);
 
 impl BaseAudioContext {
     /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
-    pub fn sample_rate(&self) -> u32 {
+    pub fn sample_rate(&self) -> SampleRate {
         self.sample_rate
     }
 
     /// This is the time in seconds of the sample frame immediately following the last sample-frame
     /// in the block of audio most recently processed by the context’s rendering graph.
     pub fn current_time(&self) -> f64 {
-        self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64
+        self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate.0 as f64
     }
 
     /// Number of channels for the audio destination
@@ -296,7 +297,7 @@ impl Default for AudioContext {
 }
 
 impl OfflineAudioContext {
-    pub fn new(channels: u32, length: usize, sample_rate: u32) -> Self {
+    pub fn new(channels: u32, length: usize, sample_rate: SampleRate) -> Self {
         // construct graph for the render thread
         let dest = crate::node::DestinationRenderer {};
         let (sender, receiver) = mpsc::channel();
