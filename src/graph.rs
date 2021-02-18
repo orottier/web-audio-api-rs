@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
-use crate::buffer::ChannelConfig;
+use crate::buffer::{ChannelConfig, ChannelData};
 use crate::control::ControlMessage;
 use crate::{buffer::AudioBuffer, buffer::ChannelCountMode};
 
@@ -26,7 +26,7 @@ impl RenderThread {
         let channels = channel_config.count();
 
         Self {
-            graph: Graph::new(root, channel_config),
+            graph: Graph::new(root, channel_config, sample_rate),
             sample_rate,
             channels,
             frames_played: AtomicU64::new(0),
@@ -45,9 +45,16 @@ impl RenderThread {
                     inputs,
                     outputs,
                     channel_config,
+                    buffers,
                 } => {
-                    self.graph
-                        .add_node(NodeIndex(id), node, inputs, outputs, channel_config);
+                    self.graph.add_node(
+                        NodeIndex(id),
+                        node,
+                        inputs,
+                        outputs,
+                        channel_config,
+                        buffers,
+                    );
                 }
                 ConnectNode {
                     from,
@@ -137,7 +144,11 @@ pub trait Render: Send {
 }
 
 impl Graph {
-    pub fn new<N: Render + 'static>(root: N, channel_config: ChannelConfig) -> Self {
+    pub fn new<N: Render + 'static>(
+        root: N,
+        channel_config: ChannelConfig,
+        sample_rate: u32,
+    ) -> Self {
         let root_index = NodeIndex(0);
 
         let mut graph = Graph {
@@ -151,7 +162,20 @@ impl Graph {
         let inputs = 1;
         let outputs = 1;
 
-        graph.add_node(root_index, Box::new(root), inputs, outputs, channel_config);
+        // pre-allocate buffers
+        let number_of_channels = channel_config.count();
+        let buffer_channel = ChannelData::new(crate::BUFFER_SIZE as usize);
+        let buffer =
+            AudioBuffer::from_channels(vec![buffer_channel; number_of_channels], sample_rate);
+
+        graph.add_node(
+            root_index,
+            Box::new(root),
+            inputs,
+            outputs,
+            channel_config,
+            vec![buffer],
+        );
 
         graph
     }
@@ -163,13 +187,13 @@ impl Graph {
         inputs: usize,
         outputs: usize,
         channel_config: ChannelConfig,
+        buffers: Vec<AudioBuffer>,
     ) {
-        let channels = 1; //todo
         self.nodes.insert(
             index,
             Node {
                 processor,
-                buffers: vec![AudioBuffer::new(channels, crate::BUFFER_SIZE as usize, 0); outputs],
+                buffers,
                 inputs,
                 outputs,
                 channel_config,
@@ -320,12 +344,12 @@ mod tests {
             interpretation: crate::buffer::ChannelInterpretation::Speakers,
         }
         .into();
-        let mut graph = Graph::new(TestNode {}, config.clone());
+        let mut graph = Graph::new(TestNode {}, config.clone(), 44_100);
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone());
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone());
-        graph.add_node(NodeIndex(3), node.clone(), 1, 1, config.clone());
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone(), vec![]);
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone(), vec![]);
+        graph.add_node(NodeIndex(3), node.clone(), 1, 1, config.clone(), vec![]);
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
@@ -351,11 +375,11 @@ mod tests {
             interpretation: crate::buffer::ChannelInterpretation::Speakers,
         }
         .into();
-        let mut graph = Graph::new(TestNode {}, config.clone());
+        let mut graph = Graph::new(TestNode {}, config.clone(), 44_100);
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone());
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone());
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone(), vec![]);
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone(), vec![]);
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));

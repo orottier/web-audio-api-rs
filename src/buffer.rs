@@ -521,6 +521,8 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
 /// A `MediaElement` can be wrapped inside a `Resampler` to yield AudioBuffers of the desired sample_rate and length
 ///
 /// ```
+/// use web_audio_api::buffer::{ChannelData, AudioBuffer, Resampler};
+///
 /// // construct an input of 3 chunks of 5 samples
 /// let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
 /// let input_buf = AudioBuffer::from_channels(vec![channel], 44_100);

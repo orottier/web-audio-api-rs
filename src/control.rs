@@ -1,4 +1,4 @@
-use crate::buffer::ChannelConfig;
+use crate::buffer::{AudioBuffer, ChannelConfig};
 use crate::graph::Render;
 
 /// Commands from the control thread to the render thread
@@ -9,6 +9,7 @@ pub(crate) enum ControlMessage {
         inputs: usize,
         outputs: usize,
         channel_config: ChannelConfig,
+        buffers: Vec<AudioBuffer>,
     },
 
     ConnectNode {

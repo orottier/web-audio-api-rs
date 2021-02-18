@@ -4,7 +4,9 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
 use cpal::{Stream, StreamConfig};
 
-use crate::buffer::{ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
+use crate::buffer::{
+    AudioBuffer, ChannelConfigOptions, ChannelCountMode, ChannelData, ChannelInterpretation,
+};
 use crate::control::ControlMessage;
 use crate::graph::{Render, RenderThread};
 use crate::node;
@@ -240,6 +242,15 @@ impl BaseAudioContext {
         // create the node and its renderer
         let (node, render) = (f)(node_id);
 
+        // pre-allocate buffers
+        let number_of_channels = node.channel_count();
+        let buffer_channel = ChannelData::new(crate::BUFFER_SIZE as usize);
+        let buffer = AudioBuffer::from_channels(
+            vec![buffer_channel; number_of_channels],
+            self.sample_rate(),
+        );
+        let buffers = vec![buffer; node.number_of_outputs() as usize];
+
         // pass the renderer to the audio graph
         let message = ControlMessage::RegisterNode {
             id,
@@ -247,6 +258,7 @@ impl BaseAudioContext {
             inputs: node.number_of_inputs() as usize,
             outputs: node.number_of_outputs() as usize,
             channel_config: node.channel_config_raw().clone(),
+            buffers,
         };
         self.render_channel.send(message).unwrap();
 
