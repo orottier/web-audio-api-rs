@@ -273,7 +273,7 @@ impl BaseAudioContext {
             vec![buffer_channel; number_of_channels],
             self.sample_rate(),
         );
-        let buffers = vec![buffer; node.number_of_outputs() as usize];
+        let buffers = vec![buffer; node.number_of_inputs().max(node.number_of_outputs()) as usize];
 
         // pass the renderer to the audio graph
         let message = ControlMessage::RegisterNode {

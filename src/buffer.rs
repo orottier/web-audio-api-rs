@@ -56,6 +56,10 @@ impl AudioBuffer {
 
     /// Up/Down-mix to the desired number of channels
     pub fn mix(&self, channels: usize, interpretation: ChannelInterpretation) -> Self {
+        if self.number_of_channels() == channels {
+            return self.clone();
+        }
+
         // handle silence
         if let Silence(_, len) = &self.data {
             return Self {
@@ -250,18 +254,13 @@ impl AudioBuffer {
         let channels_self = self.number_of_channels();
         let channels_other = other.number_of_channels();
         let channels = channels_self.max(channels_other);
-
-        if channels_self > channels_other {
-            other.mix(channels_self, interpretation);
-        }
-        if channels_self < channels_other {
-            self.mix(channels_other, interpretation);
-        }
+        let self_mixed = self.mix(channels, interpretation);
+        let other_mixed = other.mix(channels, interpretation);
 
         // early exit for simple cases, or determine which signal is Multi
-        let (mut multi, other) = match (&self.data, &other.data) {
-            (Silence(_, _), _) => return other.clone(),
-            (_, Silence(_, _)) => return self.clone(),
+        let (mut multi, other) = match (&self_mixed.data, &other_mixed.data) {
+            (Silence(_, _), _) => return other_mixed.clone(),
+            (_, Silence(_, _)) => return self_mixed.clone(),
             (Mono(s, _), Mono(o, _)) => {
                 let mut new = s.clone();
                 new.add(&o);
@@ -270,9 +269,11 @@ impl AudioBuffer {
                     sample_rate: self.sample_rate,
                 };
             }
-            (Multi(data), _) => (data.clone(), other),
-            (_, Multi(data)) => (data.clone(), self),
+            (Multi(data), _) => (data.clone(), other_mixed),
+            (_, Multi(data)) => (data.clone(), self_mixed),
         };
+
+        assert_eq!(multi.len(), channels);
 
         // mutate the Multi signal with values from the other
         (0..channels).for_each(|i| {
