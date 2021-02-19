@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::buffer::{
     AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelData,
-    ChannelInterpretation,
+    ChannelInterpretation, Resampler,
 };
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
@@ -913,43 +913,108 @@ impl<'a> MediaElementAudioSourceNode<'a> {
                 channel_config: options.channel_config.into(),
             };
 
-            let resampler = crate::buffer::Resampler::new(
+            let resampler = Resampler::new(
                 context.base().sample_rate(),
                 crate::BUFFER_SIZE,
                 options.media,
             );
-            let buffers: Vec<_> = resampler.collect();
-            let render = MediaElementAudioSourceRenderer { buffers };
+            let render = AudioBufferRenderer { resampler };
 
             (node, Box::new(render))
         })
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct MediaElementAudioSourceRenderer {
-    pub buffers: Vec<AudioBuffer>,
+pub(crate) struct AudioBufferRenderer<R> {
+    pub resampler: Resampler<R>,
 }
 
-impl Render for MediaElementAudioSourceRenderer {
+impl<R: MediaElement> Render for AudioBufferRenderer<R> {
     fn process(
         &mut self,
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         _timestamp: f64,
-        sample_rate: SampleRate,
+        _sample_rate: SampleRate,
     ) {
         // single output node
         let output = &mut outputs[0];
 
-        if self.buffers.is_empty() {
-            *output = AudioBuffer::new(
-                output.number_of_channels(),
-                output.sample_len(),
-                sample_rate,
-            );
-        } else {
-            *output = self.buffers.remove(0);
+        match self.resampler.next() {
+            None => output.make_silent(),
+            Some(buffer) => *output = buffer,
         }
+    }
+}
+
+/// Options for constructing a AudioBufferSourceNode
+pub struct AudioBufferSourceNodeOptions {
+    pub buffer: Option<AudioBuffer>,
+    pub channel_config: ChannelConfigOptions,
+}
+
+impl Default for AudioBufferSourceNodeOptions {
+    fn default() -> Self {
+        Self {
+            buffer: None,
+            channel_config: ChannelConfigOptions {
+                count: 2,
+                mode: ChannelCountMode::Max,
+                interpretation: ChannelInterpretation::Speakers,
+            },
+        }
+    }
+}
+
+/// An audio source from an in-memory audio asset in an AudioBuffer
+pub struct AudioBufferSourceNode<'a> {
+    pub(crate) context: &'a BaseAudioContext,
+    pub(crate) id: AudioNodeId,
+    pub(crate) channel_config: ChannelConfig,
+}
+
+impl<'a> AudioNode for AudioBufferSourceNode<'a> {
+    fn context(&self) -> &BaseAudioContext {
+        self.context
+    }
+    fn id(&self) -> &AudioNodeId {
+        &self.id
+    }
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        0
+    }
+    fn number_of_outputs(&self) -> u32 {
+        1
+    }
+}
+
+impl<'a> AudioBufferSourceNode<'a> {
+    pub fn new<C: AsBaseAudioContext>(
+        context: &'a C,
+        options: AudioBufferSourceNodeOptions,
+    ) -> Self {
+        context.base().register(move |id| {
+            let node = AudioBufferSourceNode {
+                context: context.base(),
+                id,
+                channel_config: options.channel_config.into(),
+            };
+
+            let buffer = options.buffer.unwrap_or_else(|| {
+                AudioBuffer::new(1, crate::BUFFER_SIZE as usize, SampleRate(44_100))
+            });
+            let resampler = crate::buffer::Resampler::new(
+                context.base().sample_rate(),
+                crate::BUFFER_SIZE,
+                std::iter::once(Ok(buffer)),
+            );
+            let render = AudioBufferRenderer { resampler };
+
+            (node, Box::new(render))
+        })
     }
 }

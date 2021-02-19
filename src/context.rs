@@ -9,6 +9,7 @@ use crate::buffer::{
 };
 use crate::control::ControlMessage;
 use crate::graph::{Render, RenderThread};
+use crate::media::MediaElement;
 use crate::node;
 use crate::SampleRate;
 
@@ -38,17 +39,17 @@ pub trait AsBaseAudioContext {
     /// Creates an OscillatorNode, a source representing a periodic waveform. It basically
     /// generates a tone.
     fn create_oscillator(&self) -> node::OscillatorNode {
-        node::OscillatorNode::new(self.base(), node::OscillatorOptions::default())
+        node::OscillatorNode::new(self.base(), Default::default())
     }
 
     /// Creates an GainNode, to control audio volume
     fn create_gain(&self) -> node::GainNode {
-        node::GainNode::new(self.base(), node::GainOptions::default())
+        node::GainNode::new(self.base(), Default::default())
     }
 
     /// Creates a DelayNode, delaying the audio signal
     fn create_delay(&self) -> node::DelayNode {
-        node::DelayNode::new(self.base(), node::DelayOptions::default())
+        node::DelayNode::new(self.base(), Default::default())
     }
 
     /// Creates a ChannelSplitterNode
@@ -67,6 +68,28 @@ pub trait AsBaseAudioContext {
             ..Default::default()
         };
         node::ChannelMergerNode::new(self.base(), opts)
+    }
+
+    /// Creates a MediaElementAudioSourceNode given an MediaElement
+    fn create_media_element_source<M: MediaElement>(
+        &self,
+        media: M,
+    ) -> node::MediaElementAudioSourceNode {
+        let channel_config = ChannelConfigOptions {
+            count: 1,
+            mode: ChannelCountMode::Explicit,
+            interpretation: ChannelInterpretation::Speakers,
+        };
+        let opts = node::MediaElementAudioSourceNodeOptions {
+            media,
+            channel_config,
+        };
+        node::MediaElementAudioSourceNode::new(self.base(), opts)
+    }
+
+    /// Creates an AudioBufferSourceNode
+    fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
+        node::AudioBufferSourceNode::new(self.base(), Default::default())
     }
 
     /// Returns an AudioDestinationNode representing the final destination of all audio in the
