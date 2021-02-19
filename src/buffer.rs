@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::media::MediaElement;
+use crate::media::MediaStream;
 use crate::SampleRate;
 
 /// Memory-resident audio asset, basically a matrix of channels * samples
@@ -609,7 +609,7 @@ pub struct Resampler<I> {
     buffer: Option<AudioBuffer>,
 }
 
-impl<M: MediaElement> Resampler<M> {
+impl<M: MediaStream> Resampler<M> {
     pub fn new(sample_rate: SampleRate, sample_len: u32, input: M) -> Self {
         Self {
             sample_rate,
@@ -620,7 +620,7 @@ impl<M: MediaElement> Resampler<M> {
     }
 }
 
-impl<M: MediaElement> Iterator for Resampler<M> {
+impl<M: MediaStream> Iterator for Resampler<M> {
     type Item = AudioBuffer;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -34,11 +34,11 @@ use crate::SampleRate;
 /// let context = AudioContext::new();
 /// let node = context.create_media_element_source(media);
 /// ```
-pub trait MediaElement:
+pub trait MediaStream:
     Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'static
 {
 }
-impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'static> MediaElement
+impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'static> MediaStream
     for M
 {
 }

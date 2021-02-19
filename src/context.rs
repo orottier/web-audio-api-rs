@@ -9,7 +9,7 @@ use crate::buffer::{
 };
 use crate::control::ControlMessage;
 use crate::graph::{Render, RenderThread};
-use crate::media::MediaElement;
+use crate::media::MediaStream;
 use crate::node;
 use crate::SampleRate;
 
@@ -71,7 +71,7 @@ pub trait AsBaseAudioContext {
     }
 
     /// Creates a MediaElementAudioSourceNode given an MediaElement
-    fn create_media_element_source<M: MediaElement>(
+    fn create_media_element_source<M: MediaStream>(
         &self,
         media: M,
     ) -> node::MediaElementAudioSourceNode {

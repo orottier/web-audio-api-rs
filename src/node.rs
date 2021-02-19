@@ -11,7 +11,7 @@ use crate::buffer::{
 };
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
-use crate::media::MediaElement;
+use crate::media::MediaStream;
 use crate::param::{AudioParam, AudioParamOptions, AudioParamRenderer};
 use crate::SampleRate;
 
@@ -902,7 +902,7 @@ impl<'a> AudioNode for MediaElementAudioSourceNode<'a> {
 }
 
 impl<'a> MediaElementAudioSourceNode<'a> {
-    pub fn new<C: AsBaseAudioContext, M: MediaElement>(
+    pub fn new<C: AsBaseAudioContext, M: MediaStream>(
         context: &'a C,
         options: MediaElementAudioSourceNodeOptions<M>,
     ) -> Self {
@@ -929,7 +929,7 @@ pub(crate) struct AudioBufferRenderer<R> {
     pub resampler: Resampler<R>,
 }
 
-impl<R: MediaElement> Render for AudioBufferRenderer<R> {
+impl<R: MediaStream> Render for AudioBufferRenderer<R> {
     fn process(
         &mut self,
         _inputs: &[&AudioBuffer],
