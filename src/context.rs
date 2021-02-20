@@ -9,7 +9,7 @@ use crate::buffer::{
 };
 use crate::control::ControlMessage;
 use crate::graph::{Render, RenderThread};
-use crate::media::MediaStream;
+use crate::media::{MediaElement, MediaStream};
 use crate::node;
 use crate::SampleRate;
 
@@ -70,10 +70,27 @@ pub trait AsBaseAudioContext {
         node::ChannelMergerNode::new(self.base(), opts)
     }
 
-    /// Creates a MediaElementAudioSourceNode given an MediaElement
-    fn create_media_element_source<M: MediaStream>(
+    /// Creates a MediaStreamAudioSourceNode from a MediaElement
+    fn create_media_stream_source<M: MediaStream>(
         &self,
         media: M,
+    ) -> node::MediaStreamAudioSourceNode {
+        let channel_config = ChannelConfigOptions {
+            count: 1,
+            mode: ChannelCountMode::Explicit,
+            interpretation: ChannelInterpretation::Speakers,
+        };
+        let opts = node::MediaStreamAudioSourceNodeOptions {
+            media,
+            channel_config,
+        };
+        node::MediaStreamAudioSourceNode::new(self.base(), opts)
+    }
+
+    /// Creates a MediaElementAudioSourceNode from a MediaElement
+    fn create_media_element_source<M: MediaStream>(
+        &self,
+        media: MediaElement<M>,
     ) -> node::MediaElementAudioSourceNode {
         let channel_config = ChannelConfigOptions {
             count: 1,

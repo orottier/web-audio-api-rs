@@ -11,7 +11,7 @@ use crate::buffer::{
 };
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
 use crate::graph::Render;
-use crate::media::MediaStream;
+use crate::media::{MediaElement, MediaStream};
 use crate::param::{AudioParam, AudioParamOptions, AudioParamRenderer};
 use crate::SampleRate;
 
@@ -869,9 +869,65 @@ impl Render for ChannelMergerRenderer {
     }
 }
 
+/// Options for constructing a MediaStreamAudioSourceNode
+pub struct MediaStreamAudioSourceNodeOptions<M> {
+    pub media: M,
+    pub channel_config: ChannelConfigOptions,
+}
+
+/// An audio source from external media files (.ogg, .wav, .mp3)
+pub struct MediaStreamAudioSourceNode<'a> {
+    pub(crate) context: &'a BaseAudioContext,
+    pub(crate) id: AudioNodeId,
+    pub(crate) channel_config: ChannelConfig,
+}
+
+impl<'a> AudioNode for MediaStreamAudioSourceNode<'a> {
+    fn context(&self) -> &BaseAudioContext {
+        self.context
+    }
+    fn id(&self) -> &AudioNodeId {
+        &self.id
+    }
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        0
+    }
+    fn number_of_outputs(&self) -> u32 {
+        1
+    }
+}
+
+impl<'a> MediaStreamAudioSourceNode<'a> {
+    pub fn new<C: AsBaseAudioContext, M: MediaStream>(
+        context: &'a C,
+        options: MediaStreamAudioSourceNodeOptions<M>,
+    ) -> Self {
+        context.base().register(move |id| {
+            let node = MediaStreamAudioSourceNode {
+                context: context.base(),
+                id,
+                channel_config: options.channel_config.into(),
+            };
+
+            let resampler = Resampler::new(
+                context.base().sample_rate(),
+                crate::BUFFER_SIZE,
+                options.media,
+            );
+            let render = AudioBufferRenderer { resampler };
+
+            (node, Box::new(render))
+        })
+    }
+}
+
 /// Options for constructing a MediaElementAudioSourceNode
 pub struct MediaElementAudioSourceNodeOptions<M> {
-    pub media: M,
+    pub media: MediaElement<M>,
     pub channel_config: ChannelConfigOptions,
 }
 

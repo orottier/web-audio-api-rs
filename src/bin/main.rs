@@ -1,18 +1,28 @@
 use std::fs::File;
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-use web_audio_api::media::OggVorbisDecoder;
+use web_audio_api::media::{MediaElement, OggVorbisDecoder};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
     let context = AudioContext::new();
 
-    // play background music
+    // setup background music:
+    // read from local file
     let file = File::open("sample.ogg").unwrap();
-    let media = OggVorbisDecoder::try_new(file).unwrap();
+    // decode file to media stream
+    let stream = OggVorbisDecoder::try_new(file).unwrap();
+    // wrap stream in MediaElement, so we can control it (loop, play/pause)
+    let mut media = MediaElement::new(stream);
+    media.set_loop(true);
+    // register as media element in the audio context
     let background = context.create_media_element_source(media);
+    // use a gain node to control volume
     let gain = context.create_gain();
-    gain.gain().set_value(0.5); // play at low volume
+    // play at low volume
+    gain.gain().set_value(0.5);
+    // connect the media node to the gain node
     background.connect(&gain);
+    // connect the gain node to the destination node (speakers)
     gain.connect(&context.destination());
 
     // mix in an oscillator sound
