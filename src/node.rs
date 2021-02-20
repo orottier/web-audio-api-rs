@@ -190,6 +190,48 @@ pub trait AudioScheduledSourceNode: AudioNode + Schedule {
 
 impl<M: AudioNode + Schedule> AudioScheduledSourceNode for M {}
 
+/// Helper struct to control audio streams
+#[derive(Clone, Debug)]
+pub struct Controller {
+    scheduler: Arc<Scheduler>,
+    offset: Arc<AtomicU64>,
+    duration: Arc<AtomicU64>,
+    loop_start: Arc<AtomicU64>,
+    loop_end: Arc<AtomicU64>,
+    //playback_rate: Arc<AudioParam>,
+}
+
+impl Schedule for Controller {
+    fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
+    }
+}
+
+impl Controller {
+    /// Create a new Controller. It will not be active
+    pub fn new() -> Self {
+        Self {
+            scheduler: Arc::new(Scheduler::new()),
+            offset: Arc::new(AtomicU64::new(0)),
+            duration: Arc::new(AtomicU64::new(u64::MAX)),
+            loop_start: Arc::new(AtomicU64::new(u64::MAX)),
+            loop_end: Arc::new(AtomicU64::new(u64::MAX)),
+            //playback_rate: ... create audio param pair
+        }
+    }
+}
+
+impl Default for Controller {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Trait for types that have a [`Controller`]
+pub trait Control {
+    fn controller(&self) -> &Controller;
+}
+
 /// Options for constructing an OscillatorNode
 pub struct OscillatorOptions {
     pub type_: OscillatorType,
