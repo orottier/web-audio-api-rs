@@ -111,6 +111,7 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
+    /// Create a new Scheduler. Initial playback state will be: inactive.
     pub fn new() -> Self {
         Self {
             start: Arc::new(AtomicU64::new(u64::MAX)),
@@ -118,14 +119,17 @@ impl Scheduler {
         }
     }
 
+    /// Check if the stream should be active at this frame
     pub fn is_active(&self, frame: u64) -> bool {
         frame >= self.start.load(Ordering::SeqCst) && frame < self.stop.load(Ordering::SeqCst)
     }
 
+    /// Schedule playback start at this frame
     pub fn start(&self, start: u64) {
         self.start.store(start, Ordering::SeqCst);
     }
 
+    /// Stop playback at this frame
     pub fn stop(&self, stop: u64) {
         self.stop.store(stop, Ordering::SeqCst);
     }
@@ -137,18 +141,23 @@ impl Default for Scheduler {
     }
 }
 
-/// Trait for types that have a Scheduler
-pub trait Scheduled {
+/// Trait for types that have a [`Scheduler`]
+///
+/// Note: an impl of [`AudioNode`] `+` [`Schedule`] = [`AudioScheduledSourceNode`]
+pub trait Schedule {
     fn scheduler(&self) -> &Scheduler;
 
+    /// Check if the stream should be active at this frame
     fn is_active(&self, frame: u64) -> bool {
         self.scheduler().is_active(frame)
     }
 
+    /// Schedule playback start at this frame
     fn start(&self, start: u64) {
         self.scheduler().start(start)
     }
 
+    /// Stop playback at this frame
     fn stop(&self, stop: u64) {
         self.scheduler().stop(stop)
     }
@@ -156,7 +165,9 @@ pub trait Scheduled {
 
 /// Interface of source nodes, controlling start and stop times.
 /// The node will emit silence before it is started, and after it has ended.
-pub trait AudioScheduledSourceNode: AudioNode + Scheduled {
+///
+/// Note: an impl of [`AudioNode`] `+` [`Schedule`] = [`AudioScheduledSourceNode`]
+pub trait AudioScheduledSourceNode: AudioNode + Schedule {
     /// Schedules a sound to playback at an exact time.
     fn start_at(&self, timestamp: f64) {
         let frame = (timestamp * self.context().sample_rate().0 as f64) as u64;
@@ -176,6 +187,8 @@ pub trait AudioScheduledSourceNode: AudioNode + Scheduled {
         self.stop_at(0.);
     }
 }
+
+impl<M: AudioNode + Schedule> AudioScheduledSourceNode for M {}
 
 /// Options for constructing an OscillatorNode
 pub struct OscillatorOptions {
@@ -239,13 +252,11 @@ pub struct OscillatorNode<'a> {
     pub(crate) scheduler: Scheduler,
 }
 
-impl<'a> Scheduled for OscillatorNode<'a> {
+impl<'a> Schedule for OscillatorNode<'a> {
     fn scheduler(&self) -> &Scheduler {
         &self.scheduler
     }
 }
-
-impl<'a> AudioScheduledSourceNode for OscillatorNode<'a> {}
 
 impl<'a> AudioNode for OscillatorNode<'a> {
     fn context(&self) -> &BaseAudioContext {
@@ -322,7 +333,7 @@ pub(crate) struct OscillatorRenderer {
     pub scheduler: Scheduler,
 }
 
-impl Scheduled for OscillatorRenderer {
+impl Schedule for OscillatorRenderer {
     fn scheduler(&self) -> &Scheduler {
         &self.scheduler
     }
@@ -918,7 +929,11 @@ impl<'a> MediaStreamAudioSourceNode<'a> {
                 crate::BUFFER_SIZE,
                 options.media,
             );
-            let render = AudioBufferRenderer { resampler };
+            let scheduler = Scheduler::new(); // not used for stream
+            let render = AudioBufferRenderer {
+                resampler,
+                scheduler,
+            };
 
             (node, Box::new(render))
         })
@@ -936,6 +951,13 @@ pub struct MediaElementAudioSourceNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
     pub(crate) channel_config: ChannelConfig,
+    pub(crate) scheduler: Scheduler,
+}
+
+impl<'a> Schedule for MediaElementAudioSourceNode<'a> {
+    fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
+    }
 }
 
 impl<'a> AudioNode for MediaElementAudioSourceNode<'a> {
@@ -963,10 +985,12 @@ impl<'a> MediaElementAudioSourceNode<'a> {
         options: MediaElementAudioSourceNodeOptions<M>,
     ) -> Self {
         context.base().register(move |id| {
+            let scheduler = Scheduler::new();
             let node = MediaElementAudioSourceNode {
                 context: context.base(),
                 id,
                 channel_config: options.channel_config.into(),
+                scheduler: scheduler.clone(),
             };
 
             let resampler = Resampler::new(
@@ -974,7 +998,10 @@ impl<'a> MediaElementAudioSourceNode<'a> {
                 crate::BUFFER_SIZE,
                 options.media,
             );
-            let render = AudioBufferRenderer { resampler };
+            let render = AudioBufferRenderer {
+                resampler,
+                scheduler,
+            };
 
             (node, Box::new(render))
         })
@@ -983,6 +1010,13 @@ impl<'a> MediaElementAudioSourceNode<'a> {
 
 pub(crate) struct AudioBufferRenderer<R> {
     pub resampler: Resampler<R>,
+    pub scheduler: Scheduler,
+}
+
+impl<R> Schedule for AudioBufferRenderer<R> {
+    fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
+    }
 }
 
 impl<R: MediaStream> Render for AudioBufferRenderer<R> {
@@ -990,11 +1024,18 @@ impl<R: MediaStream> Render for AudioBufferRenderer<R> {
         &mut self,
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        _timestamp: f64,
-        _sample_rate: SampleRate,
+        timestamp: f64,
+        sample_rate: SampleRate,
     ) {
         // single output node
         let output = &mut outputs[0];
+
+        let frame = (timestamp * sample_rate.0 as f64) as u64;
+        // todo, sub-quantum start/stop
+        if !self.is_active(frame) {
+            output.make_silent();
+            return;
+        }
 
         match self.resampler.next() {
             None => output.make_silent(),
@@ -1027,6 +1068,13 @@ pub struct AudioBufferSourceNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
     pub(crate) channel_config: ChannelConfig,
+    pub(crate) scheduler: Scheduler,
+}
+
+impl<'a> Schedule for AudioBufferSourceNode<'a> {
+    fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
+    }
 }
 
 impl<'a> AudioNode for AudioBufferSourceNode<'a> {
@@ -1054,10 +1102,12 @@ impl<'a> AudioBufferSourceNode<'a> {
         options: AudioBufferSourceNodeOptions,
     ) -> Self {
         context.base().register(move |id| {
+            let scheduler = Scheduler::new();
             let node = AudioBufferSourceNode {
                 context: context.base(),
                 id,
                 channel_config: options.channel_config.into(),
+                scheduler: scheduler.clone(),
             };
 
             let buffer = options.buffer.unwrap_or_else(|| {
@@ -1068,7 +1118,10 @@ impl<'a> AudioBufferSourceNode<'a> {
                 crate::BUFFER_SIZE,
                 std::iter::once(Ok(buffer)),
             );
-            let render = AudioBufferRenderer { resampler };
+            let render = AudioBufferRenderer {
+                resampler,
+                scheduler,
+            };
 
             (node, Box::new(render))
         })
