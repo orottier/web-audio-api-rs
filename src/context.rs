@@ -7,9 +7,9 @@ use cpal::{Stream, StreamConfig};
 use crate::buffer::{
     AudioBuffer, ChannelConfigOptions, ChannelCountMode, ChannelData, ChannelInterpretation,
 };
-use crate::control::ControlMessage;
 use crate::graph::{Render, RenderThread};
 use crate::media::{MediaElement, MediaStream};
+use crate::message::ControlMessage;
 use crate::node;
 use crate::SampleRate;
 

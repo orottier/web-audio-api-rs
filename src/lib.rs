@@ -5,7 +5,8 @@
 //! use std::fs::File;
 //! use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 //! use web_audio_api::media::{MediaElement, OggVorbisDecoder};
-//! use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+//! use web_audio_api::node::AudioNode;
+//! use web_audio_api::control::AudioScheduledSourceNode;
 //!
 //! let context = AudioContext::new();
 //!
@@ -27,6 +28,8 @@
 //! background.connect(&gain);
 //! // connect the gain node to the destination node (speakers)
 //! gain.connect(&context.destination());
+//! // start playback
+//! background.start();
 //!
 //! // mix in an oscillator sound
 //! let osc = context.create_oscillator();
@@ -42,12 +45,13 @@ pub const BUFFER_SIZE: u32 = 512;
 
 pub mod buffer;
 pub mod context;
+pub mod control;
 pub mod media;
 pub mod node;
 pub mod param;
 
-pub(crate) mod control;
 pub(crate) mod graph;
+pub(crate) mod message;
 
 /// Number of samples processed per second (Hertz) for a single channel of audio
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

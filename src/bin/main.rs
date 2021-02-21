@@ -1,7 +1,8 @@
 use std::fs::File;
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+use web_audio_api::control::AudioScheduledSourceNode;
 use web_audio_api::media::{MediaElement, OggVorbisDecoder};
-use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+use web_audio_api::node::AudioNode;
 
 fn main() {
     let context = AudioContext::new();
@@ -24,6 +25,8 @@ fn main() {
     background.connect(&gain);
     // connect the gain node to the destination node (speakers)
     gain.connect(&context.destination());
+    // start playback
+    background.start();
 
     // mix in an oscillator sound
     let osc = context.create_oscillator();

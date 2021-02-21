@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
 use crate::buffer::{ChannelConfig, ChannelData};
-use crate::control::ControlMessage;
+use crate::message::ControlMessage;
 use crate::SampleRate;
 use crate::{buffer::AudioBuffer, buffer::ChannelCountMode};
 
