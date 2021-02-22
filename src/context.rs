@@ -1,8 +1,10 @@
 //! The BaseAudioContext interface and the AudioContext and OfflineAudioContext types
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::SampleFormat;
-use cpal::{Stream, StreamConfig};
+#[cfg(not(test))]
+use cpal::{
+    traits::{DeviceTrait, HostTrait, StreamTrait},
+    SampleFormat, Stream, StreamConfig,
+};
 
 use crate::buffer::{
     AudioBuffer, ChannelConfigOptions, ChannelCountMode, ChannelData, ChannelInterpretation,
@@ -149,7 +151,8 @@ pub struct AudioContext {
     base: BaseAudioContext,
 
     /// cpal stream (play/pause functionality)
-    stream: Stream, // todo should be in render thread?
+    #[cfg(not(test))] // in tests, do not set up a cpal Stream
+    stream: Stream,
 }
 
 impl AsBaseAudioContext for AudioContext {
@@ -180,6 +183,7 @@ impl AsBaseAudioContext for OfflineAudioContext {
 impl AudioContext {
     /// Creates and returns a new AudioContext object.
     /// This will play live audio on the default output
+    #[cfg(not(test))]
     pub fn new() -> Self {
         let host = cpal::default_host();
 
@@ -239,15 +243,34 @@ impl AudioContext {
         Self { base, stream }
     }
 
+    #[cfg(test)] // in tests, do not set up a cpal Stream
+    pub fn new() -> Self {
+        let sample_rate = SampleRate(44_100);
+        let channels = 2;
+        let (sender, _receiver) = mpsc::channel();
+
+        let base = BaseAudioContext {
+            sample_rate,
+            channels,
+            node_id_inc: AtomicU64::new(1),
+            render_channel: sender,
+            frames_played: AtomicU64::new(0),
+        };
+
+        Self { base }
+    }
+
     /// Suspends the progression of time in the audio context, temporarily halting audio hardware
     /// access and reducing CPU/battery usage in the process.
     pub fn suspend(&self) {
+        #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.pause().unwrap()
     }
 
     /// Resumes the progression of time in an audio context that has previously been
     /// suspended/paused.
     pub fn resume(&self) {
+        #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.play().unwrap()
     }
 }
