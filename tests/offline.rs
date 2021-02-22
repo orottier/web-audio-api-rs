@@ -1,7 +1,8 @@
 use web_audio_api::context::AsBaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
-use web_audio_api::control::AudioScheduledSourceNode;
-use web_audio_api::node::{AudioNode, OscillatorNode, OscillatorOptions, OscillatorType};
+use web_audio_api::node::{
+    AudioNode, AudioScheduledSourceNode, OscillatorNode, OscillatorOptions, OscillatorType,
+};
 use web_audio_api::{SampleRate, BUFFER_SIZE};
 
 #[test]

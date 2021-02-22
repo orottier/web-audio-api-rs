@@ -10,7 +10,7 @@ use crate::buffer::{
     ChannelInterpretation, Resampler,
 };
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
-use crate::control::{Schedule, Scheduler};
+use crate::control::Scheduler;
 use crate::graph::Render;
 use crate::media::{MediaElement, MediaStream};
 use crate::param::{AudioParam, AudioParamOptions, AudioParamRenderer};
@@ -104,6 +104,32 @@ pub trait AudioNode {
     }
 }
 
+/// Interface of source nodes, controlling start and stop times.
+/// The node will emit silence before it is started, and after it has ended.
+pub trait AudioScheduledSourceNode {
+    fn scheduler(&self) -> &Scheduler;
+
+    /// Schedule playback start at this timestamp
+    fn start_at(&self, start: f64) {
+        self.scheduler().start_at(start)
+    }
+
+    /// Stop playback at this timestamp
+    fn stop_at(&self, stop: f64) {
+        self.scheduler().stop_at(stop)
+    }
+
+    /// Play immediately
+    fn start(&self) {
+        self.start_at(0.);
+    }
+
+    /// Stop immediately
+    fn stop(&self) {
+        self.stop_at(0.);
+    }
+}
+
 /// Options for constructing an OscillatorNode
 pub struct OscillatorOptions {
     pub type_: OscillatorType,
@@ -166,7 +192,7 @@ pub struct OscillatorNode<'a> {
     pub(crate) scheduler: Scheduler,
 }
 
-impl<'a> Schedule for OscillatorNode<'a> {
+impl<'a> AudioScheduledSourceNode for OscillatorNode<'a> {
     fn scheduler(&self) -> &Scheduler {
         &self.scheduler
     }
@@ -247,12 +273,6 @@ pub(crate) struct OscillatorRenderer {
     pub scheduler: Scheduler,
 }
 
-impl Schedule for OscillatorRenderer {
-    fn scheduler(&self) -> &Scheduler {
-        &self.scheduler
-    }
-}
-
 impl Render for OscillatorRenderer {
     fn process(
         &mut self,
@@ -268,10 +288,8 @@ impl Render for OscillatorRenderer {
         output.make_mono();
         let len = output.sample_len();
 
-        let frame = (timestamp * sample_rate.0 as f64) as u64;
-
         // todo, sub-quantum start/stop
-        if !self.is_active(frame) {
+        if !self.scheduler.is_active(timestamp) {
             output.make_silent();
             return;
         }
@@ -868,7 +886,7 @@ pub struct MediaElementAudioSourceNode<'a> {
     pub(crate) scheduler: Scheduler,
 }
 
-impl<'a> Schedule for MediaElementAudioSourceNode<'a> {
+impl<'a> AudioScheduledSourceNode for MediaElementAudioSourceNode<'a> {
     fn scheduler(&self) -> &Scheduler {
         &self.scheduler
     }
@@ -927,26 +945,19 @@ pub(crate) struct AudioBufferRenderer<R> {
     pub scheduler: Scheduler,
 }
 
-impl<R> Schedule for AudioBufferRenderer<R> {
-    fn scheduler(&self) -> &Scheduler {
-        &self.scheduler
-    }
-}
-
 impl<R: MediaStream> Render for AudioBufferRenderer<R> {
     fn process(
         &mut self,
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
         timestamp: f64,
-        sample_rate: SampleRate,
+        _sample_rate: SampleRate,
     ) {
         // single output node
         let output = &mut outputs[0];
 
-        let frame = (timestamp * sample_rate.0 as f64) as u64;
         // todo, sub-quantum start/stop
-        if !self.is_active(frame) {
+        if !self.scheduler.is_active(timestamp) {
             output.make_silent();
             return;
         }
@@ -985,7 +996,7 @@ pub struct AudioBufferSourceNode<'a> {
     pub(crate) scheduler: Scheduler,
 }
 
-impl<'a> Schedule for AudioBufferSourceNode<'a> {
+impl<'a> AudioScheduledSourceNode for AudioBufferSourceNode<'a> {
     fn scheduler(&self) -> &Scheduler {
         &self.scheduler
     }
