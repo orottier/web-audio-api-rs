@@ -100,6 +100,34 @@ impl Controller {
             //playback_rate: ... create audio param pair
         }
     }
+
+    pub fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
+    }
+
+    pub fn loop_(&self) -> bool {
+        self.loop_.load(Ordering::SeqCst)
+    }
+
+    pub fn set_loop(&self, loop_: bool) {
+        self.loop_.store(loop_, Ordering::SeqCst);
+    }
+
+    pub fn loop_start(&self) -> f64 {
+        self.loop_start.load()
+    }
+
+    pub fn set_loop_start(&self, loop_start: f64) {
+        self.loop_start.store(loop_start);
+    }
+
+    pub fn loop_end(&self) -> f64 {
+        self.loop_end.load()
+    }
+
+    pub fn set_loop_end(&self, loop_end: f64) {
+        self.loop_end.store(loop_end);
+    }
 }
 
 impl Default for Controller {

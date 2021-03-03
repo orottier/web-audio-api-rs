@@ -8,6 +8,7 @@ use lewton::inside_ogg::OggStreamReader;
 use lewton::VorbisError;
 
 use crate::buffer::{AudioBuffer, ChannelData};
+use crate::control::{Controller, Scheduler};
 use crate::SampleRate;
 
 /// Interface for media decoding.
@@ -58,6 +59,7 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::buffer::{AudioBuffer, ChannelData};
 /// use web_audio_api::media::MediaElement;
+/// use crate::web_audio_api::node::AudioControllableSourceNode;
 ///
 /// // create a new buffer: 20 samples of silence
 /// let silence = AudioBuffer::from_channels(vec![ChannelData::from(vec![0.; 20])], SampleRate(44_100));
@@ -85,7 +87,22 @@ pub struct MediaElement<S> {
     buffer: Vec<AudioBuffer>,
     buffer_complete: bool,
     buffer_index: usize,
-    loop_: bool,
+    controller: Controller,
+    timestamp: f64,
+}
+
+use crate::node::AudioControllableSourceNode;
+impl<S> AudioControllableSourceNode for MediaElement<S> {
+    fn controller(&self) -> &Controller {
+        &self.controller
+    }
+}
+
+use crate::node::AudioScheduledSourceNode;
+impl<S> AudioScheduledSourceNode for MediaElement<S> {
+    fn scheduler(&self) -> &Scheduler {
+        &self.controller.scheduler()
+    }
 }
 
 impl<S: MediaStream> MediaElement<S> {
@@ -95,23 +112,12 @@ impl<S: MediaStream> MediaElement<S> {
             buffer: vec![],
             buffer_complete: false,
             buffer_index: 0,
-            loop_: false,
+            controller: Controller::new(),
+            timestamp: 0.,
         }
     }
 
-    pub fn loop_(&self) -> bool {
-        self.loop_
-    }
-
-    pub fn set_loop(&mut self, loop_: bool) {
-        self.loop_ = loop_;
-    }
-}
-
-impl<S: MediaStream> Iterator for MediaElement<S> {
-    type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    fn load_next(&mut self) -> Option<Result<AudioBuffer, Box<dyn Error + Send>>> {
         if !self.buffer_complete {
             match self.input.next() {
                 Some(Err(e)) => {
@@ -122,20 +128,70 @@ impl<S: MediaStream> Iterator for MediaElement<S> {
                 }
                 Some(Ok(data)) => {
                     self.buffer.push(data.clone());
+                    self.timestamp += data.duration();
                     return Some(Ok(data));
                 }
                 None => {
                     self.buffer_complete = true;
+                    return None;
                 }
             }
         }
-        if !self.loop_ || self.buffer.is_empty() {
+
+        None
+    }
+
+    pub fn seek(&mut self, ts: f64) {
+        if ts == 0. {
+            self.timestamp = 0.;
+            self.buffer_index = 0;
+            return;
+        }
+
+        self.timestamp = 0.;
+        for (i, buf) in self.buffer.iter().enumerate() {
+            self.buffer_index = i;
+            self.timestamp += buf.duration();
+            if self.timestamp >= ts {
+                return;
+            }
+        }
+
+        while let Some(Ok(buf)) = self.load_next() {
+            self.timestamp += buf.duration();
+            if self.timestamp >= ts {
+                return;
+            }
+        }
+    }
+}
+
+impl<S: MediaStream> Iterator for MediaElement<S> {
+    type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.loop_() && self.timestamp > self.loop_end() {
+            self.seek(self.loop_start());
+        }
+
+        if let Some(data) = self.buffer.get(self.buffer_index) {
+            self.buffer_index += 1;
+            self.timestamp += data.duration();
+            return Some(Ok(data.clone()));
+        }
+
+        if let Some(data) = self.load_next() {
+            self.buffer_index += 1;
+            return Some(data);
+        }
+
+        if !self.loop_() || self.buffer.is_empty() {
             return None;
         }
-        let index = self.buffer_index;
-        self.buffer_index = (self.buffer_index + 1) % self.buffer.len();
 
-        Some(Ok(self.buffer[index].clone()))
+        self.seek(self.loop_start());
+
+        self.next()
     }
 }
 

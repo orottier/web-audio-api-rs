@@ -25,6 +25,7 @@ enum AudioBufferType {
     Multi(Box<[ChannelData]>), // todo, make [ChannelData; 32] fixed size array
 }
 
+use std::error::Error;
 use AudioBufferType::*;
 
 impl AudioBuffer {
@@ -170,6 +171,11 @@ impl AudioBuffer {
     /// Sample rate of this AudioBuffer in Hertz
     pub fn sample_rate(&self) -> SampleRate {
         self.sample_rate
+    }
+
+    /// Duration in seconds of the AudioBuffer
+    pub fn duration(&self) -> f64 {
+        self.sample_len() as f64 / self.sample_rate.0 as f64
     }
 
     /// Get the samples from this specific channel.
@@ -581,7 +587,7 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
 /// let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
 ///
 /// // first chunk contains 10 samples
-/// let next = resampler.next().unwrap();
+/// let next = resampler.next().unwrap().unwrap();
 /// assert_eq!(next.sample_len(), 10);
 /// assert_eq!(next.channel_data(0).unwrap(), &ChannelData::from(vec![
 ///     1., 2., 3., 4., 5.,
@@ -589,7 +595,7 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
 /// ]));
 ///
 /// // second chunk contains 5 samples
-/// let next = resampler.next().unwrap();
+/// let next = resampler.next().unwrap().unwrap();
 /// assert_eq!(next.sample_len(), 5);
 /// assert_eq!(next.channel_data(0).unwrap(), &ChannelData::from(vec![
 ///     1., 2., 3., 4., 5.,
@@ -621,13 +627,13 @@ impl<M: MediaStream> Resampler<M> {
 }
 
 impl<M: MediaStream> Iterator for Resampler<M> {
-    type Item = AudioBuffer;
+    type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut buffer = match self.buffer.take() {
             None => match self.input.next() {
                 None => return None,
-                Some(Err(_e)) => return None, // todo
+                Some(Err(e)) => return Some(Err(e)),
                 Some(Ok(mut data)) => {
                     data.resample(self.sample_rate);
                     data
@@ -639,8 +645,8 @@ impl<M: MediaStream> Iterator for Resampler<M> {
         while (buffer.sample_len() as u32) < self.sample_len {
             // buffer is smaller than desired len
             match self.input.next() {
-                None => return Some(buffer),
-                Some(Err(_e)) => return None, // todo
+                None => return Some(Ok(buffer)),
+                Some(Err(e)) => return Some(Err(e)),
                 Some(Ok(mut data)) => {
                     data.resample(self.sample_rate);
                     buffer.extend(&data)
@@ -649,12 +655,12 @@ impl<M: MediaStream> Iterator for Resampler<M> {
         }
 
         if buffer.sample_len() as u32 == self.sample_len {
-            return Some(buffer);
+            return Some(Ok(buffer));
         }
 
         self.buffer = Some(buffer.split_off(self.sample_len));
 
-        Some(buffer)
+        Some(Ok(buffer))
     }
 }
 
@@ -727,14 +733,14 @@ mod tests {
         let input = vec![input_buf; 3].into_iter().map(|b| Ok(b));
         let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
 
-        let next = resampler.next().unwrap();
+        let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 10);
         assert_eq!(
             next.channel_data(0).unwrap(),
             &ChannelData::from(vec![1., 2., 3., 4., 5., 1., 2., 3., 4., 5.,])
         );
 
-        let next = resampler.next().unwrap();
+        let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 5);
         assert_eq!(
             next.channel_data(0).unwrap(),
@@ -754,14 +760,14 @@ mod tests {
         let input = vec![input_buf].into_iter();
         let mut resampler = Resampler::new(SampleRate(44_100), 5, input);
 
-        let next = resampler.next().unwrap();
+        let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 5);
         assert_eq!(
             next.channel_data(0).unwrap(),
             &ChannelData::from(vec![1., 2., 3., 4., 5.,])
         );
 
-        let next = resampler.next().unwrap();
+        let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 5);
         assert_eq!(
             next.channel_data(0).unwrap(),

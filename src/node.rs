@@ -10,7 +10,7 @@ use crate::buffer::{
     ChannelInterpretation, Resampler,
 };
 use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
-use crate::control::Scheduler;
+use crate::control::{Controller, Scheduler};
 use crate::graph::Render;
 use crate::media::{MediaElement, MediaStream};
 use crate::param::{AudioParam, AudioParamOptions, AudioParamRenderer};
@@ -127,6 +127,35 @@ pub trait AudioScheduledSourceNode {
     /// Stop immediately
     fn stop(&self) {
         self.stop_at(0.);
+    }
+}
+
+/// Interface of source nodes, controlling pause/loop/offsets.
+pub trait AudioControllableSourceNode {
+    fn controller(&self) -> &Controller;
+
+    fn loop_(&self) -> bool {
+        self.controller().loop_()
+    }
+
+    fn set_loop(&self, loop_: bool) {
+        self.controller().set_loop(loop_)
+    }
+
+    fn loop_start(&self) -> f64 {
+        self.controller().loop_start()
+    }
+
+    fn set_loop_start(&self, loop_start: f64) {
+        self.controller().set_loop_start(loop_start)
+    }
+
+    fn loop_end(&self) -> f64 {
+        self.controller().loop_end()
+    }
+
+    fn set_loop_end(&self, loop_end: f64) {
+        self.controller().set_loop_end(loop_end)
     }
 }
 
@@ -861,11 +890,7 @@ impl<'a> MediaStreamAudioSourceNode<'a> {
                 crate::BUFFER_SIZE,
                 options.media,
             );
-            let scheduler = Scheduler::new(); // not used for stream
-            let render = AudioBufferRenderer {
-                resampler,
-                scheduler,
-            };
+            let render = AudioBufferRenderer { stream: resampler };
 
             (node, Box::new(render))
         })
@@ -874,7 +899,7 @@ impl<'a> MediaStreamAudioSourceNode<'a> {
 
 /// Options for constructing a MediaElementAudioSourceNode
 pub struct MediaElementAudioSourceNodeOptions<M> {
-    pub media: MediaElement<M>,
+    pub media: M,
     pub channel_config: ChannelConfigOptions,
 }
 
@@ -883,12 +908,17 @@ pub struct MediaElementAudioSourceNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
     pub(crate) channel_config: ChannelConfig,
-    pub(crate) scheduler: Scheduler,
+    pub(crate) controller: Controller,
 }
 
 impl<'a> AudioScheduledSourceNode for MediaElementAudioSourceNode<'a> {
     fn scheduler(&self) -> &Scheduler {
-        &self.scheduler
+        &self.controller.scheduler()
+    }
+}
+impl<'a> AudioControllableSourceNode for MediaElementAudioSourceNode<'a> {
+    fn controller(&self) -> &Controller {
+        &self.controller
     }
 }
 
@@ -917,23 +947,25 @@ impl<'a> MediaElementAudioSourceNode<'a> {
         options: MediaElementAudioSourceNodeOptions<M>,
     ) -> Self {
         context.base().register(move |id| {
-            let scheduler = Scheduler::new();
-            let node = MediaElementAudioSourceNode {
-                context: context.base(),
-                id,
-                channel_config: options.channel_config.into(),
-                scheduler: scheduler.clone(),
-            };
-
+            // wrap media input in resampler
             let resampler = Resampler::new(
                 context.base().sample_rate(),
                 crate::BUFFER_SIZE,
                 options.media,
             );
-            let render = AudioBufferRenderer {
-                resampler,
-                scheduler,
+
+            // wrap resampler in media-element (for loop/play/pause)
+            let media = MediaElement::new(resampler);
+
+            // setup user facing audio node
+            let node = MediaElementAudioSourceNode {
+                context: context.base(),
+                id,
+                channel_config: options.channel_config.into(),
+                controller: media.controller().clone(),
             };
+
+            let render = AudioBufferRenderer { stream: media };
 
             (node, Box::new(render))
         })
@@ -941,8 +973,7 @@ impl<'a> MediaElementAudioSourceNode<'a> {
 }
 
 pub(crate) struct AudioBufferRenderer<R> {
-    pub resampler: Resampler<R>,
-    pub scheduler: Scheduler,
+    pub stream: R,
 }
 
 impl<R: MediaStream> Render for AudioBufferRenderer<R> {
@@ -950,21 +981,16 @@ impl<R: MediaStream> Render for AudioBufferRenderer<R> {
         &mut self,
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        timestamp: f64,
+        _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
         // single output node
         let output = &mut outputs[0];
 
-        // todo, sub-quantum start/stop
-        if !self.scheduler.is_active(timestamp) {
-            output.make_silent();
-            return;
-        }
-
-        match self.resampler.next() {
+        match self.stream.next() {
             None => output.make_silent(),
-            Some(buffer) => *output = buffer,
+            Some(Err(_e)) => output.make_silent(),
+            Some(Ok(buffer)) => *output = buffer,
         }
     }
 }
@@ -993,12 +1019,17 @@ pub struct AudioBufferSourceNode<'a> {
     pub(crate) context: &'a BaseAudioContext,
     pub(crate) id: AudioNodeId,
     pub(crate) channel_config: ChannelConfig,
-    pub(crate) scheduler: Scheduler,
+    pub(crate) controller: Controller,
 }
 
 impl<'a> AudioScheduledSourceNode for AudioBufferSourceNode<'a> {
     fn scheduler(&self) -> &Scheduler {
-        &self.scheduler
+        &self.controller.scheduler()
+    }
+}
+impl<'a> AudioControllableSourceNode for AudioBufferSourceNode<'a> {
+    fn controller(&self) -> &Controller {
+        &self.controller
     }
 }
 
@@ -1027,26 +1058,30 @@ impl<'a> AudioBufferSourceNode<'a> {
         options: AudioBufferSourceNodeOptions,
     ) -> Self {
         context.base().register(move |id| {
-            let scheduler = Scheduler::new();
-            let node = AudioBufferSourceNode {
-                context: context.base(),
-                id,
-                channel_config: options.channel_config.into(),
-                scheduler: scheduler.clone(),
-            };
-
+            // unwrap_or_default buffer
             let buffer = options.buffer.unwrap_or_else(|| {
                 AudioBuffer::new(1, crate::BUFFER_SIZE as usize, SampleRate(44_100))
             });
-            let resampler = crate::buffer::Resampler::new(
+
+            // wrap input in resampler
+            let resampler = Resampler::new(
                 context.base().sample_rate(),
                 crate::BUFFER_SIZE,
                 std::iter::once(Ok(buffer)),
             );
-            let render = AudioBufferRenderer {
-                resampler,
-                scheduler,
+
+            // wrap resampler in media-element (for loop/play/pause)
+            let media = MediaElement::new(resampler);
+
+            // setup user facing audio node
+            let node = AudioBufferSourceNode {
+                context: context.base(),
+                id,
+                channel_config: options.channel_config.into(),
+                controller: media.controller().clone(),
             };
+
+            let render = AudioBufferRenderer { stream: media };
 
             (node, Box::new(render))
         })
