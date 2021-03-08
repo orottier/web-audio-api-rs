@@ -9,7 +9,7 @@ use crate::buffer::{
     AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelData,
     ChannelInterpretation, Resampler,
 };
-use crate::context::{AsBaseAudioContext, AudioNodeId, BaseAudioContext};
+use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioNodeId, BaseAudioContext};
 use crate::control::{Controller, Scheduler};
 use crate::graph::Render;
 use crate::media::{MediaElement, MediaStream};
@@ -20,11 +20,17 @@ use crate::SampleRate;
 /// modules. These modules can be connected together to form processing graphs for rendering audio
 /// to the audio hardware. Each node can have inputs and/or outputs.
 pub trait AudioNode {
-    fn id(&self) -> &AudioNodeId;
+    fn registration(&self) -> &AudioContextRegistration;
+
+    fn id(&self) -> &AudioNodeId {
+        self.registration().id()
+    }
     fn channel_config_raw(&self) -> &ChannelConfig;
 
     /// The BaseAudioContext which owns this AudioNode.
-    fn context(&self) -> &BaseAudioContext;
+    fn context(&self) -> &BaseAudioContext {
+        self.registration().context()
+    }
 
     /// Connect the output of this AudioNode to the input of another node.
     fn connect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
@@ -213,8 +219,7 @@ impl From<u32> for OscillatorType {
 
 /// Audio source generating a periodic waveform
 pub struct OscillatorNode<'a> {
-    pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: AudioNodeId,
+    pub(crate) registration: AudioContextRegistration<'a>,
     pub(crate) channel_config: ChannelConfig,
     pub(crate) frequency: AudioParam,
     pub(crate) type_: Arc<AtomicU32>,
@@ -228,12 +233,8 @@ impl<'a> AudioScheduledSourceNode for OscillatorNode<'a> {
 }
 
 impl<'a> AudioNode for OscillatorNode<'a> {
-    fn context(&self) -> &BaseAudioContext {
-        self.context
-    }
-
-    fn id(&self) -> &AudioNodeId {
-        &self.id
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
     }
 
     fn channel_config_raw(&self) -> &ChannelConfig {
@@ -250,7 +251,7 @@ impl<'a> AudioNode for OscillatorNode<'a> {
 
 impl<'a> OscillatorNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, options: OscillatorOptions) -> Self {
-        context.base().register(move |id| {
+        context.base().register(move |registration| {
             let nyquist = context.base().sample_rate().0 as f32 / 2.;
             let param_opts = AudioParamOptions {
                 min_value: -nyquist,
@@ -270,8 +271,7 @@ impl<'a> OscillatorNode<'a> {
                 scheduler: scheduler.clone(),
             };
             let node = OscillatorNode {
-                context: context.base(),
-                id,
+                registration,
                 channel_config: options.channel_config.into(),
                 frequency: f_param,
                 type_,
@@ -345,12 +345,15 @@ impl Render for OscillatorRenderer {
             }
         })
     }
+
+    fn tail_time(&self) -> bool {
+        true
+    }
 }
 
 /// Representing the final audio destination and is what the user will ultimately hear.
 pub struct DestinationNode<'a> {
-    pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: AudioNodeId,
+    pub(crate) registration: AudioContextRegistration<'a>,
     pub(crate) channel_config: ChannelConfig,
 }
 
@@ -372,15 +375,15 @@ impl Render for DestinationRenderer {
         // todo, actually fill cpal buffer here
         *output = input.clone();
     }
+
+    fn tail_time(&self) -> bool {
+        false
+    }
 }
 
 impl<'a> AudioNode for DestinationNode<'a> {
-    fn context(&self) -> &BaseAudioContext {
-        self.context
-    }
-
-    fn id(&self) -> &AudioNodeId {
-        &self.id
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
     }
 
     fn channel_config_raw(&self) -> &ChannelConfig {
@@ -416,19 +419,14 @@ impl Default for GainOptions {
 
 /// AudioNode for volume control
 pub struct GainNode<'a> {
-    pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: AudioNodeId,
+    pub(crate) registration: AudioContextRegistration<'a>,
     pub(crate) channel_config: ChannelConfig,
     pub(crate) gain: AudioParam,
 }
 
 impl<'a> AudioNode for GainNode<'a> {
-    fn context(&self) -> &BaseAudioContext {
-        self.context
-    }
-
-    fn id(&self) -> &AudioNodeId {
-        &self.id
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
     }
 
     fn channel_config_raw(&self) -> &ChannelConfig {
@@ -445,9 +443,7 @@ impl<'a> AudioNode for GainNode<'a> {
 
 impl<'a> GainNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, options: GainOptions) -> Self {
-        context.base().register(move |id| {
-            let context = context.base();
-
+        context.base().register(move |registration| {
             let param_opts = AudioParamOptions {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
@@ -461,8 +457,7 @@ impl<'a> GainNode<'a> {
             let render = GainRenderer { gain: render };
 
             let node = GainNode {
-                context,
-                id,
+                registration,
                 channel_config: options.channel_config.into(),
                 gain: param,
             };
@@ -505,6 +500,10 @@ impl Render for GainRenderer {
                 .for_each(|(value, g)| *value *= g)
         });
     }
+
+    fn tail_time(&self) -> bool {
+        false
+    }
 }
 
 /// Options for constructing a DelayNode
@@ -529,19 +528,14 @@ impl Default for DelayOptions {
 
 /// Node that delays the incoming audio signal by a certain amount
 pub struct DelayNode<'a> {
-    pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: AudioNodeId,
+    pub(crate) registration: AudioContextRegistration<'a>,
     pub(crate) render_quanta: Arc<AtomicU32>,
     pub(crate) channel_config: ChannelConfig,
 }
 
 impl<'a> AudioNode for DelayNode<'a> {
-    fn context(&self) -> &BaseAudioContext {
-        self.context
-    }
-
-    fn id(&self) -> &AudioNodeId {
-        &self.id
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
     }
 
     fn channel_config_raw(&self) -> &ChannelConfig {
@@ -558,7 +552,7 @@ impl<'a> AudioNode for DelayNode<'a> {
 
 impl<'a> DelayNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, options: DelayOptions) -> Self {
-        context.base().register(move |id| {
+        context.base().register(move |registration| {
             let render_quanta = Arc::new(AtomicU32::new(options.render_quanta));
 
             let cap = (options.render_quanta * crate::BUFFER_SIZE) as usize;
@@ -571,8 +565,7 @@ impl<'a> DelayNode<'a> {
             };
 
             let node = DelayNode {
-                context: context.base(),
-                id,
+                registration,
                 channel_config: options.channel_config.into(),
                 render_quanta,
             };
@@ -625,6 +618,11 @@ impl Render for DelayRenderer {
             self.index = (self.index + 1) % quanta;
         }
     }
+
+    fn tail_time(&self) -> bool {
+        // todo: return false when all inputs disconnected and buffer exhausted
+        true
+    }
 }
 
 /// Options for constructing a ChannelSplitterNode
@@ -648,18 +646,13 @@ impl Default for ChannelSplitterOptions {
 
 /// AudioNode for accessing the individual channels of an audio stream in the routing graph
 pub struct ChannelSplitterNode<'a> {
-    pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: AudioNodeId,
+    pub(crate) registration: AudioContextRegistration<'a>,
     pub(crate) channel_config: ChannelConfig,
 }
 
 impl<'a> AudioNode for ChannelSplitterNode<'a> {
-    fn context(&self) -> &BaseAudioContext {
-        self.context
-    }
-
-    fn id(&self) -> &AudioNodeId {
-        &self.id
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
     }
 
     fn channel_config_raw(&self) -> &ChannelConfig {
@@ -685,12 +678,11 @@ impl<'a> AudioNode for ChannelSplitterNode<'a> {
 
 impl<'a> ChannelSplitterNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, mut options: ChannelSplitterOptions) -> Self {
-        context.base().register(move |id| {
+        context.base().register(move |registration| {
             options.channel_config.count = options.number_of_outputs as _;
 
             let node = ChannelSplitterNode {
-                context: context.base(),
-                id,
+                registration,
                 channel_config: options.channel_config.into(),
             };
 
@@ -734,6 +726,10 @@ impl Render for ChannelSplitterRenderer {
             }
         }
     }
+
+    fn tail_time(&self) -> bool {
+        false
+    }
 }
 
 /// Options for constructing a ChannelMergerNode
@@ -757,18 +753,13 @@ impl Default for ChannelMergerOptions {
 
 /// AudioNode for combining channels from multiple audio streams into a single audio stream.
 pub struct ChannelMergerNode<'a> {
-    pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: AudioNodeId,
+    pub(crate) registration: AudioContextRegistration<'a>,
     pub(crate) channel_config: ChannelConfig,
 }
 
 impl<'a> AudioNode for ChannelMergerNode<'a> {
-    fn context(&self) -> &BaseAudioContext {
-        self.context
-    }
-
-    fn id(&self) -> &AudioNodeId {
-        &self.id
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
     }
 
     fn channel_config_raw(&self) -> &ChannelConfig {
@@ -794,12 +785,11 @@ impl<'a> AudioNode for ChannelMergerNode<'a> {
 
 impl<'a> ChannelMergerNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, mut options: ChannelMergerOptions) -> Self {
-        context.base().register(move |id| {
+        context.base().register(move |registration| {
             options.channel_config.count = options.number_of_inputs as _;
 
             let node = ChannelMergerNode {
-                context: context.base(),
-                id,
+                registration,
                 channel_config: options.channel_config.into(),
             };
 
@@ -839,6 +829,10 @@ impl Render for ChannelMergerRenderer {
 
         *output = AudioBuffer::from_channels(channels, sample_rate);
     }
+
+    fn tail_time(&self) -> bool {
+        false
+    }
 }
 
 /// Options for constructing a MediaStreamAudioSourceNode
@@ -849,18 +843,15 @@ pub struct MediaStreamAudioSourceNodeOptions<M> {
 
 /// An audio source from external media files (.ogg, .wav, .mp3)
 pub struct MediaStreamAudioSourceNode<'a> {
-    pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: AudioNodeId,
+    pub(crate) registration: AudioContextRegistration<'a>,
     pub(crate) channel_config: ChannelConfig,
 }
 
 impl<'a> AudioNode for MediaStreamAudioSourceNode<'a> {
-    fn context(&self) -> &BaseAudioContext {
-        self.context
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
     }
-    fn id(&self) -> &AudioNodeId {
-        &self.id
-    }
+
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
     }
@@ -878,10 +869,9 @@ impl<'a> MediaStreamAudioSourceNode<'a> {
         context: &'a C,
         options: MediaStreamAudioSourceNodeOptions<M>,
     ) -> Self {
-        context.base().register(move |id| {
+        context.base().register(move |registration| {
             let node = MediaStreamAudioSourceNode {
-                context: context.base(),
-                id,
+                registration,
                 channel_config: options.channel_config.into(),
             };
 
@@ -890,7 +880,7 @@ impl<'a> MediaStreamAudioSourceNode<'a> {
                 crate::BUFFER_SIZE,
                 options.media,
             );
-            let render = AudioBufferRenderer { stream: resampler };
+            let render = AudioBufferRenderer::new(resampler);
 
             (node, Box::new(render))
         })
@@ -905,8 +895,7 @@ pub struct MediaElementAudioSourceNodeOptions<M> {
 
 /// An audio source from external media files (.ogg, .wav, .mp3)
 pub struct MediaElementAudioSourceNode<'a> {
-    pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: AudioNodeId,
+    pub(crate) registration: AudioContextRegistration<'a>,
     pub(crate) channel_config: ChannelConfig,
     pub(crate) controller: Controller,
 }
@@ -923,11 +912,8 @@ impl<'a> AudioControllableSourceNode for MediaElementAudioSourceNode<'a> {
 }
 
 impl<'a> AudioNode for MediaElementAudioSourceNode<'a> {
-    fn context(&self) -> &BaseAudioContext {
-        self.context
-    }
-    fn id(&self) -> &AudioNodeId {
-        &self.id
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
     }
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
@@ -946,7 +932,7 @@ impl<'a> MediaElementAudioSourceNode<'a> {
         context: &'a C,
         options: MediaElementAudioSourceNodeOptions<M>,
     ) -> Self {
-        context.base().register(move |id| {
+        context.base().register(move |registration| {
             // wrap media input in resampler
             let resampler = Resampler::new(
                 context.base().sample_rate(),
@@ -959,13 +945,12 @@ impl<'a> MediaElementAudioSourceNode<'a> {
 
             // setup user facing audio node
             let node = MediaElementAudioSourceNode {
-                context: context.base(),
-                id,
+                registration,
                 channel_config: options.channel_config.into(),
                 controller: media.controller().clone(),
             };
 
-            let render = AudioBufferRenderer { stream: media };
+            let render = AudioBufferRenderer::new(media);
 
             (node, Box::new(render))
         })
@@ -973,7 +958,17 @@ impl<'a> MediaElementAudioSourceNode<'a> {
 }
 
 pub(crate) struct AudioBufferRenderer<R> {
-    pub stream: R,
+    stream: R,
+    finished: bool,
+}
+
+impl<R> AudioBufferRenderer<R> {
+    fn new(stream: R) -> Self {
+        Self {
+            stream,
+            finished: false,
+        }
+    }
 }
 
 impl<R: MediaStream> Render for AudioBufferRenderer<R> {
@@ -987,11 +982,16 @@ impl<R: MediaStream> Render for AudioBufferRenderer<R> {
         // single output node
         let output = &mut outputs[0];
 
-        match self.stream.next() {
-            None => output.make_silent(),
-            Some(Err(_e)) => output.make_silent(),
-            Some(Ok(buffer)) => *output = buffer,
+        if let Some(Ok(buffer)) = self.stream.next() {
+            *output = buffer;
+        } else {
+            self.finished = true;
+            output.make_silent()
         }
+    }
+
+    fn tail_time(&self) -> bool {
+        !self.finished
     }
 }
 
@@ -1016,8 +1016,7 @@ impl Default for AudioBufferSourceNodeOptions {
 
 /// An audio source from an in-memory audio asset in an AudioBuffer
 pub struct AudioBufferSourceNode<'a> {
-    pub(crate) context: &'a BaseAudioContext,
-    pub(crate) id: AudioNodeId,
+    pub(crate) registration: AudioContextRegistration<'a>,
     pub(crate) channel_config: ChannelConfig,
     pub(crate) controller: Controller,
 }
@@ -1034,12 +1033,10 @@ impl<'a> AudioControllableSourceNode for AudioBufferSourceNode<'a> {
 }
 
 impl<'a> AudioNode for AudioBufferSourceNode<'a> {
-    fn context(&self) -> &BaseAudioContext {
-        self.context
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
     }
-    fn id(&self) -> &AudioNodeId {
-        &self.id
-    }
+
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
     }
@@ -1057,7 +1054,7 @@ impl<'a> AudioBufferSourceNode<'a> {
         context: &'a C,
         options: AudioBufferSourceNodeOptions,
     ) -> Self {
-        context.base().register(move |id| {
+        context.base().register(move |registration| {
             // unwrap_or_default buffer
             let buffer = options.buffer.unwrap_or_else(|| {
                 AudioBuffer::new(1, crate::BUFFER_SIZE as usize, SampleRate(44_100))
@@ -1075,13 +1072,12 @@ impl<'a> AudioBufferSourceNode<'a> {
 
             // setup user facing audio node
             let node = AudioBufferSourceNode {
-                context: context.base(),
-                id,
+                registration,
                 channel_config: options.channel_config.into(),
                 controller: media.controller().clone(),
             };
 
-            let render = AudioBufferRenderer { stream: media };
+            let render = AudioBufferRenderer::new(media);
 
             (node, Box::new(render))
         })

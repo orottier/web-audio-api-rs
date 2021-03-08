@@ -7,7 +7,6 @@ pub(crate) enum ControlMessage {
         id: u64,
         node: Box<dyn Render>,
         inputs: usize,
-        outputs: usize,
         channel_config: ChannelConfig,
         buffers: Vec<AudioBuffer>,
     },
@@ -26,5 +25,9 @@ pub(crate) enum ControlMessage {
 
     DisconnectAll {
         from: u64,
+    },
+
+    FreeWhenFinished {
+        id: u64,
     },
 }

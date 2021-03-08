@@ -44,18 +44,11 @@ impl RenderThread {
                     id,
                     node,
                     inputs,
-                    outputs,
                     channel_config,
                     buffers,
                 } => {
-                    self.graph.add_node(
-                        NodeIndex(id),
-                        node,
-                        inputs,
-                        outputs,
-                        channel_config,
-                        buffers,
-                    );
+                    self.graph
+                        .add_node(NodeIndex(id), node, inputs, channel_config, buffers);
                 }
                 ConnectNode {
                     from,
@@ -71,6 +64,9 @@ impl RenderThread {
                 }
                 DisconnectAll { from } => {
                     self.graph.remove_edges_from(NodeIndex(from));
+                }
+                FreeWhenFinished { id } => {
+                    self.graph.mark_free_when_finished(NodeIndex(id));
                 }
             }
         }
@@ -109,18 +105,53 @@ impl RenderThread {
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct NodeIndex(u64);
 
+/// Renderer Node in the Audio Graph
 struct Node {
+    /// Renderer: converts inputs to outputs
     processor: Box<dyn Render>,
+    /// Output buffers, consumed by subsequent Nodes in this graph
     buffers: Vec<AudioBuffer>,
+    /// Number of inputs for the processor
     inputs: usize,
-    outputs: usize,
+    /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
+
+    // lifecycle management flags:
+    /// Indicates if the control thread has dropped this Node
+    free_when_finished: bool,
+    /// Indicates if the Node has had any inputs in the current render quantum
+    has_inputs_connected: bool,
+    /// Indicates if the output of this Node was consumed in the current render quantum
+    has_outputs_connected: bool,
 }
 
 impl Node {
+    /// Render an audio quantum
     fn process(&mut self, inputs: &[&AudioBuffer], timestamp: f64, sample_rate: SampleRate) {
         self.processor
             .process(inputs, &mut self.buffers[..], timestamp, sample_rate)
+    }
+
+    /// Determine if this node is done playing and can be removed from the audio graph
+    fn can_free(&self) -> bool {
+        // Only drop when the Control thread has dropped its handle.
+        // Otherwise the node can be reconnected/restarted etc.
+        if !self.free_when_finished {
+            return false;
+        }
+
+        // Drop, if the node has no outputs connected
+        if !self.has_outputs_connected {
+            return true;
+        }
+
+        // Drop, when the node does not have any inputs connected,
+        // and if the processor reports it won't yield output.
+        if !self.has_inputs_connected && !self.processor.tail_time() {
+            return true;
+        }
+
+        false
     }
 }
 
@@ -142,6 +173,8 @@ pub trait Render: Send {
         timestamp: f64,
         sample_rate: SampleRate,
     );
+
+    fn tail_time(&self) -> bool;
 }
 
 impl Graph {
@@ -159,24 +192,16 @@ impl Graph {
             marked: vec![root_index],
         };
 
-        // assume root node always has 1 input and 1 output (todo)
+        // assume root node always has 1 input
         let inputs = 1;
-        let outputs = 1;
-
-        // pre-allocate buffers
+        // and 1 output: pre-allocate single buffer
         let number_of_channels = channel_config.count();
         let buffer_channel = ChannelData::new(crate::BUFFER_SIZE as usize);
-        let buffer =
-            AudioBuffer::from_channels(vec![buffer_channel; number_of_channels], sample_rate);
+        let channels = vec![buffer_channel; number_of_channels];
+        let buffer = AudioBuffer::from_channels(channels, sample_rate);
+        let buffers = vec![buffer];
 
-        graph.add_node(
-            root_index,
-            Box::new(root),
-            inputs,
-            outputs,
-            channel_config,
-            vec![buffer],
-        );
+        graph.add_node(root_index, Box::new(root), inputs, channel_config, buffers);
 
         graph
     }
@@ -186,7 +211,6 @@ impl Graph {
         index: NodeIndex,
         processor: Box<dyn Render>,
         inputs: usize,
-        outputs: usize,
         channel_config: ChannelConfig,
         buffers: Vec<AudioBuffer>,
     ) {
@@ -196,8 +220,10 @@ impl Graph {
                 processor,
                 buffers,
                 inputs,
-                outputs,
                 channel_config,
+                free_when_finished: false,
+                has_inputs_connected: true,
+                has_outputs_connected: true,
             },
         );
     }
@@ -218,6 +244,10 @@ impl Graph {
         self.edges.retain(|&(s, _d)| s.0 != source);
 
         self.order_nodes();
+    }
+
+    fn mark_free_when_finished(&mut self, index: NodeIndex) {
+        self.nodes.get_mut(&index).unwrap().free_when_finished = true;
     }
 
     pub fn children(&self, node: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
@@ -265,11 +295,16 @@ impl Graph {
         let edges = &self.edges;
         let nodes = &mut self.nodes;
 
+        // we will drop audio nodes if they are finished running
+        let mut drop_nodes = vec![];
+
         ordered.iter().for_each(|index| {
             // remove node from map, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
             // initial channel count
             let channels = node.channel_config.count();
+            // for lifecycle management, check if any inputs are present
+            let mut has_inputs_connected = false;
             // mix all inputs together
             let mut input_bufs =
                 vec![
@@ -293,6 +328,8 @@ impl Graph {
 
                     input_bufs[input as usize] = input_bufs[input as usize]
                         .add(signal, node.channel_config.interpretation());
+
+                    has_inputs_connected = true;
                 });
 
             let input_bufs: Vec<_> = input_bufs
@@ -316,13 +353,24 @@ impl Graph {
 
             node.process(&input_bufs[..], timestamp, sample_rate);
 
+            // check if the Node has reached end of lifecycle
+            node.has_inputs_connected = has_inputs_connected;
+            if node.can_free() {
+                drop_nodes.push(*index);
+            }
+
             // re-insert node in graph
             nodes.insert(*index, node);
         });
 
+        for index in drop_nodes {
+            self.remove_edges_from(index);
+            self.nodes.remove(&index);
+        }
+
         // return buffer of destination node
         // assume only 1 output (todo)
-        &nodes.get(&NodeIndex(0)).unwrap().buffers[0]
+        &self.nodes.get(&NodeIndex(0)).unwrap().buffers[0]
     }
 }
 
@@ -335,6 +383,9 @@ mod tests {
 
     impl Render for TestNode {
         fn process(&mut self, _: &[&AudioBuffer], _: &mut [AudioBuffer], _: f64, _: SampleRate) {}
+        fn tail_time(&self) -> bool {
+            false
+        }
     }
 
     #[test]
@@ -348,9 +399,9 @@ mod tests {
         let mut graph = Graph::new(TestNode {}, config.clone(), SampleRate(44_100));
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone(), vec![]);
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone(), vec![]);
-        graph.add_node(NodeIndex(3), node.clone(), 1, 1, config.clone(), vec![]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, config.clone(), vec![]);
+        graph.add_node(NodeIndex(2), node.clone(), 1, config.clone(), vec![]);
+        graph.add_node(NodeIndex(3), node.clone(), 1, config.clone(), vec![]);
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
@@ -379,8 +430,8 @@ mod tests {
         let mut graph = Graph::new(TestNode {}, config.clone(), SampleRate(44_100));
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone(), vec![]);
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone(), vec![]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, config.clone(), vec![]);
+        graph.add_node(NodeIndex(2), node.clone(), 1, config.clone(), vec![]);
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));

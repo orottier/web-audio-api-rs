@@ -114,10 +114,12 @@ pub trait AsBaseAudioContext {
     /// Returns an AudioDestinationNode representing the final destination of all audio in the
     /// context. It can be thought of as the audio-rendering device.
     fn destination(&self) -> node::DestinationNode {
-        // todo, store in context actually
-        node::DestinationNode {
-            context: self.base(),
+        let registration = AudioContextRegistration {
             id: AudioNodeId(0),
+            context: &self.base(),
+        };
+        node::DestinationNode {
+            registration,
             channel_config: ChannelConfigOptions {
                 count: 2,
                 mode: ChannelCountMode::Explicit,
@@ -278,6 +280,30 @@ impl AudioContext {
 /// Unique identifier for audio nodes. Used for internal bookkeeping
 pub struct AudioNodeId(u64);
 
+pub struct AudioContextRegistration<'a> {
+    context: &'a BaseAudioContext,
+    id: AudioNodeId,
+}
+
+impl<'a> AudioContextRegistration<'a> {
+    pub fn id(&self) -> &AudioNodeId {
+        &self.id
+    }
+    pub fn context(&self) -> &BaseAudioContext {
+        self.context
+    }
+}
+
+impl<'a> Drop for AudioContextRegistration<'a> {
+    fn drop(&mut self) {
+        // todo: make sure we do not drop the destination node
+        if self.id.0 != 0 {
+            let message = ControlMessage::FreeWhenFinished { id: self.id.0 };
+            self.context.render_channel.send(message).unwrap();
+        }
+    }
+}
+
 impl BaseAudioContext {
     /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
     pub fn sample_rate(&self) -> SampleRate {
@@ -295,16 +321,24 @@ impl BaseAudioContext {
         self.channels
     }
 
-    pub(crate) fn register<T: node::AudioNode, F: FnOnce(AudioNodeId) -> (T, Box<dyn Render>)>(
-        &self,
+    pub(crate) fn register<
+        'a,
+        T: node::AudioNode,
+        F: FnOnce(AudioContextRegistration<'a>) -> (T, Box<dyn Render>),
+    >(
+        &'a self,
         f: F,
     ) -> T {
         // create unique identifier for this node
         let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
         let node_id = AudioNodeId(id);
+        let registration = AudioContextRegistration {
+            id: node_id,
+            context: &self,
+        };
 
         // create the node and its renderer
-        let (node, render) = (f)(node_id);
+        let (node, render) = (f)(registration);
 
         // pre-allocate buffers
         let number_of_channels = node.channel_count();
@@ -320,7 +354,6 @@ impl BaseAudioContext {
             id,
             node: render,
             inputs: node.number_of_inputs() as usize,
-            outputs: node.number_of_outputs() as usize,
             channel_config: node.channel_config_raw().clone(),
             buffers,
         };

@@ -11,16 +11,18 @@ fn test_start_stop() {
     let mut context = OfflineAudioContext::new(1, len, SampleRate(BUFFER_SIZE));
     assert_eq!(context.length(), len);
 
-    let opts = OscillatorOptions {
-        type_: OscillatorType::Square,
-        frequency: 0., // constant signal
-        ..Default::default()
-    };
-    let osc = OscillatorNode::new(&context, opts);
-    osc.connect(&context.destination());
+    {
+        let opts = OscillatorOptions {
+            type_: OscillatorType::Square,
+            frequency: 0., // constant signal
+            ..Default::default()
+        };
+        let osc = OscillatorNode::new(&context, opts);
+        osc.connect(&context.destination());
 
-    osc.start_at(1.);
-    osc.stop_at(3.);
+        osc.start_at(1.);
+        osc.stop_at(3.);
+    }
 
     let output = context.start_rendering();
 
@@ -38,18 +40,20 @@ fn test_delayed_constant_source() {
     let mut context = OfflineAudioContext::new(1, len, SampleRate(44_100));
     assert_eq!(context.length(), len);
 
-    let delay = context.create_delay();
-    delay.set_render_quanta(2);
-    delay.connect(&context.destination());
+    {
+        let delay = context.create_delay();
+        delay.set_render_quanta(2);
+        delay.connect(&context.destination());
 
-    let opts = OscillatorOptions {
-        type_: OscillatorType::Square,
-        frequency: 0., // constant signal
-        ..Default::default()
-    };
-    let osc = OscillatorNode::new(&context, opts);
-    osc.connect(&delay);
-    osc.start();
+        let opts = OscillatorOptions {
+            type_: OscillatorType::Square,
+            frequency: 0., // constant signal
+            ..Default::default()
+        };
+        let osc = OscillatorNode::new(&context, opts);
+        osc.connect(&delay);
+        osc.start();
+    }
 
     let output = context.start_rendering();
 
