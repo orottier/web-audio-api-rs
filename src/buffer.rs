@@ -594,11 +594,12 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
 ///     1., 2., 3., 4., 5.,
 /// ]));
 ///
-/// // second chunk contains 5 samples
+/// // second chunk contains 5 samples of signal, and 5 silent
 /// let next = resampler.next().unwrap().unwrap();
-/// assert_eq!(next.sample_len(), 5);
+/// assert_eq!(next.sample_len(), 10);
 /// assert_eq!(next.channel_data(0).unwrap(), &ChannelData::from(vec![
 ///     1., 2., 3., 4., 5.,
+///     0., 0., 0., 0., 0.,
 /// ]));
 ///
 /// // no further chunks
@@ -645,7 +646,16 @@ impl<M: MediaStream> Iterator for Resampler<M> {
         while (buffer.sample_len() as u32) < self.sample_len {
             // buffer is smaller than desired len
             match self.input.next() {
-                None => return Some(Ok(buffer)),
+                None => {
+                    let padding = AudioBuffer::new(
+                        buffer.number_of_channels(),
+                        self.sample_len as usize - buffer.sample_len(),
+                        self.sample_rate,
+                    );
+                    buffer.extend(&padding);
+
+                    return Some(Ok(buffer));
+                }
                 Some(Err(e)) => return Some(Err(e)),
                 Some(Ok(mut data)) => {
                     data.resample(self.sample_rate);
@@ -741,10 +751,10 @@ mod tests {
         );
 
         let next = resampler.next().unwrap().unwrap();
-        assert_eq!(next.sample_len(), 5);
+        assert_eq!(next.sample_len(), 10);
         assert_eq!(
             next.channel_data(0).unwrap(),
-            &ChannelData::from(vec![1., 2., 3., 4., 5.,])
+            &ChannelData::from(vec![1., 2., 3., 4., 5., 0., 0., 0., 0., 0.])
         );
 
         assert!(resampler.next().is_none());
