@@ -40,7 +40,7 @@
 //! ```
 
 /// Render quantum size (audio graph is rendered in blocks of this size)
-pub const BUFFER_SIZE: u32 = 512;
+pub const BUFFER_SIZE: u32 = 128;
 
 pub mod buffer;
 pub mod context;

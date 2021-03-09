@@ -17,4 +17,19 @@ much more.
 
 [Docs](https://docs.rs/web-audio-api)
 
-todo
+## Planning
+
+- v0.\*: getting the basics out, stabilize API
+- v1.\*: feature completeness, performance
+- v2.\*: full spec compliance
+
+## Spec compliance
+
+Current deviations
+
+- function names use snake\_case
+- getters/setters instead of exposed attributes
+- some control-render communication is done with atomics instread of message passing
+- function that should return Promises are now blocking
+- no AudioWorklet functionality, users should implement the relevant traits instead
+- ...
