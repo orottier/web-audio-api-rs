@@ -48,6 +48,7 @@ pub mod control;
 pub mod media;
 pub mod node;
 pub mod param;
+pub mod process;
 
 pub(crate) mod graph;
 pub(crate) mod message;

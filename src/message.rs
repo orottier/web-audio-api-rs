@@ -1,11 +1,11 @@
 use crate::buffer::{AudioBuffer, ChannelConfig};
-use crate::graph::Render;
+use crate::process::AudioProcessor;
 
 /// Commands from the control thread to the render thread
 pub(crate) enum ControlMessage {
     RegisterNode {
         id: u64,
-        node: Box<dyn Render>,
+        node: Box<dyn AudioProcessor>,
         inputs: usize,
         channel_config: ChannelConfig,
         buffers: Vec<AudioBuffer>,

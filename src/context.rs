@@ -1,5 +1,8 @@
 //! The BaseAudioContext interface and the AudioContext and OfflineAudioContext types
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Sender};
+
 #[cfg(not(test))]
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -9,14 +12,12 @@ use cpal::{
 use crate::buffer::{
     AudioBuffer, ChannelConfigOptions, ChannelCountMode, ChannelData, ChannelInterpretation,
 };
-use crate::graph::{Render, RenderThread};
+use crate::graph::RenderThread;
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node;
+use crate::process::AudioProcessor;
 use crate::SampleRate;
-
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Sender};
 
 /// The BaseAudioContext interface represents an audio-processing graph built from audio modules
 /// linked together, each represented by an AudioNode. An audio context controls both the creation
@@ -220,7 +221,7 @@ impl AudioContext {
         .into();
 
         // construct graph for the render thread
-        let dest = crate::node::DestinationRenderer {};
+        let dest = node::DestinationRenderer {};
         let (sender, receiver) = mpsc::channel();
         let mut render = RenderThread::new(dest, sample_rate, channel_config, receiver);
 
@@ -280,6 +281,11 @@ impl AudioContext {
 /// Unique identifier for audio nodes. Used for internal bookkeeping
 pub struct AudioNodeId(u64);
 
+/// Handle of the [`node::AudioNode`] to its associated [`BaseAudioContext`].
+///
+/// This allows for communication with the render thread and lifetime management.
+///
+/// The only way to construct this object is by calling [`BaseAudioContext::register`]
 pub struct AudioContextRegistration<'a> {
     context: &'a BaseAudioContext,
     id: AudioNodeId,
@@ -321,10 +327,13 @@ impl BaseAudioContext {
         self.channels
     }
 
-    pub(crate) fn register<
+    /// Construct a new pair of [`node::AudioNode`] and [`AudioProcessor`]
+    ///
+    /// The AudioNode lives in the user-facing control thread. The Processor is sent to the render thread.
+    pub fn register<
         'a,
         T: node::AudioNode,
-        F: FnOnce(AudioContextRegistration<'a>) -> (T, Box<dyn Render>),
+        F: FnOnce(AudioContextRegistration<'a>) -> (T, Box<dyn AudioProcessor>),
     >(
         &'a self,
         f: F,
@@ -395,7 +404,7 @@ impl Default for AudioContext {
 impl OfflineAudioContext {
     pub fn new(channels: u32, length: usize, sample_rate: SampleRate) -> Self {
         // construct graph for the render thread
-        let dest = crate::node::DestinationRenderer {};
+        let dest = node::DestinationRenderer {};
         let (sender, receiver) = mpsc::channel();
 
         let channel_config = ChannelConfigOptions {

@@ -5,6 +5,7 @@ use std::sync::mpsc::Receiver;
 
 use crate::buffer::{ChannelConfig, ChannelData};
 use crate::message::ControlMessage;
+use crate::process::AudioProcessor;
 use crate::SampleRate;
 use crate::{buffer::AudioBuffer, buffer::ChannelCountMode};
 
@@ -18,7 +19,7 @@ pub(crate) struct RenderThread {
 }
 
 impl RenderThread {
-    pub fn new<N: Render + 'static>(
+    pub fn new<N: AudioProcessor + 'static>(
         root: N,
         sample_rate: SampleRate,
         channel_config: ChannelConfig,
@@ -108,7 +109,7 @@ pub struct NodeIndex(u64);
 /// Renderer Node in the Audio Graph
 struct Node {
     /// Renderer: converts inputs to outputs
-    processor: Box<dyn Render>,
+    processor: Box<dyn AudioProcessor>,
     /// Output buffers, consumed by subsequent Nodes in this graph
     buffers: Vec<AudioBuffer>,
     /// Number of inputs for the processor
@@ -165,20 +166,8 @@ pub(crate) struct Graph {
     ordered: Vec<NodeIndex>,
 }
 
-pub trait Render: Send {
-    fn process(
-        &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
-        timestamp: f64,
-        sample_rate: SampleRate,
-    );
-
-    fn tail_time(&self) -> bool;
-}
-
 impl Graph {
-    pub fn new<N: Render + 'static>(
+    pub fn new<N: AudioProcessor + 'static>(
         root: N,
         channel_config: ChannelConfig,
         sample_rate: SampleRate,
@@ -209,7 +198,7 @@ impl Graph {
     pub fn add_node(
         &mut self,
         index: NodeIndex,
-        processor: Box<dyn Render>,
+        processor: Box<dyn AudioProcessor>,
         inputs: usize,
         channel_config: ChannelConfig,
         buffers: Vec<AudioBuffer>,
@@ -381,7 +370,7 @@ mod tests {
     #[derive(Debug, Clone)]
     struct TestNode {}
 
-    impl Render for TestNode {
+    impl AudioProcessor for TestNode {
         fn process(&mut self, _: &[&AudioBuffer], _: &mut [AudioBuffer], _: f64, _: SampleRate) {}
         fn tail_time(&self) -> bool {
             false
