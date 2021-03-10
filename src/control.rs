@@ -1,41 +1,9 @@
 //! User controls for audio playback (play/pause/loop)
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-/// Atomic float, only `load` and `store` are supported, no arithmetics
-#[derive(Debug)]
-struct AtomicF64 {
-    inner: AtomicU64,
-}
-
-impl AtomicF64 {
-    pub fn new(v: f64) -> Self {
-        Self {
-            inner: AtomicU64::new(u64::from_ne_bytes(v.to_ne_bytes())),
-        }
-    }
-    pub fn load(&self) -> f64 {
-        f64::from_ne_bytes(self.inner.load(Ordering::SeqCst).to_ne_bytes())
-    }
-    pub fn store(&self, v: f64) {
-        self.inner
-            .store(u64::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_atomic_f64() {
-        let f = AtomicF64::new(2.0);
-        assert_eq!(f.load(), 2.0);
-        f.store(3.0);
-        assert_eq!(f.load(), 3.0);
-    }
-}
+use crate::AtomicF64;
 
 /// Helper struct to start and stop audio streams
 #[derive(Clone, Debug)]

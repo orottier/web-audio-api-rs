@@ -71,9 +71,45 @@ pub struct ChannelCount(pub u32);
 pub struct IndexSizeError {}
 
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 impl fmt::Display for IndexSizeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
     }
 }
 impl std::error::Error for IndexSizeError {}
+
+/// Atomic float, only `load` and `store` are supported, no arithmetics
+#[derive(Debug)]
+pub(crate) struct AtomicF64 {
+    inner: AtomicU64,
+}
+
+impl AtomicF64 {
+    pub fn new(v: f64) -> Self {
+        Self {
+            inner: AtomicU64::new(u64::from_ne_bytes(v.to_ne_bytes())),
+        }
+    }
+    pub fn load(&self) -> f64 {
+        f64::from_ne_bytes(self.inner.load(Ordering::SeqCst).to_ne_bytes())
+    }
+    pub fn store(&self, v: f64) {
+        self.inner
+            .store(u64::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_atomic_f64() {
+        let f = AtomicF64::new(2.0);
+        assert_eq!(f.load(), 2.0);
+        f.store(3.0);
+        assert_eq!(f.load(), 3.0);
+    }
+}

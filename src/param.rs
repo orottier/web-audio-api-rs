@@ -1,7 +1,6 @@
 //! AudioParam interface
 
 use std::collections::BinaryHeap;
-use std::sync::atomic::AtomicU32;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 
@@ -28,6 +27,8 @@ enum AutomationEvent {
     LinearRampToValueAtTime { v: f32, start: f64, end: f64 },
 }
 
+use crate::context::AudioContextRegistration;
+use crate::AtomicF64;
 use AutomationEvent::*;
 
 impl AutomationEvent {
@@ -67,15 +68,16 @@ impl std::cmp::Ord for AutomationEvent {
 }
 
 /// AudioParam controls an individual aspect of an AudioNode's functionality, such as volume.
-#[derive(Debug)]
-pub struct AudioParam {
-    value: Arc<AtomicU32>,
+pub struct AudioParam<'a> {
+    registration: Option<AudioContextRegistration<'a>>,
+    value: Arc<AtomicF64>,
     sender: Sender<AutomationEvent>,
 }
+
 #[derive(Debug)]
-pub struct AudioParamRenderer {
+pub(crate) struct AudioParamProcessor {
     value: f32,
-    shared_value: Arc<AtomicU32>,
+    shared_value: Arc<AtomicF64>,
     receiver: Receiver<AutomationEvent>,
     automation_rate: AutomationRate,
     default_value: f32,
@@ -84,17 +86,19 @@ pub struct AudioParamRenderer {
     events: BinaryHeap<AutomationEvent>,
 }
 
-pub fn audio_param_pair(opts: AudioParamOptions) -> (AudioParam, AudioParamRenderer) {
+pub(crate) fn audio_param_pair(
+    opts: AudioParamOptions,
+) -> (AudioParam<'static>, AudioParamProcessor) {
     let (sender, receiver) = mpsc::channel();
-    let value_as_int = u32::from_be(opts.default_value.to_bits());
-    let shared_value = Arc::new(AtomicU32::new(value_as_int));
+    let shared_value = Arc::new(AtomicF64::new(opts.default_value as f64));
 
     let param = AudioParam {
+        registration: None,
         value: shared_value.clone(),
         sender,
     };
 
-    let render = AudioParamRenderer {
+    let render = AudioParamProcessor {
         value: opts.default_value,
         shared_value,
         receiver,
@@ -108,7 +112,10 @@ pub fn audio_param_pair(opts: AudioParamOptions) -> (AudioParam, AudioParamRende
     (param, render)
 }
 
-impl AudioParam {
+impl<'a> AudioParam<'a> {
+    pub fn value(&self) -> f32 {
+        self.value.load() as _
+    }
     pub fn set_value(&self, v: f32) {
         self.sender.send(SetValueAtTime { v, start: 0. }).unwrap()
     }
@@ -124,18 +131,13 @@ impl AudioParam {
     }
 }
 
-impl AudioParamRenderer {
+impl AudioParamProcessor {
     pub fn value(&self) -> f32 {
         if self.value.is_nan() {
             self.default_value
         } else {
             self.value.clamp(self.min_value, self.max_value)
         }
-    }
-
-    pub fn set_value(&mut self, v: f32) {
-        self.value = v;
-        // todo, `set_value_at_time(v, context.current_time())`
     }
 
     pub fn tick(&mut self, ts: f64, dt: f64, count: usize) -> Vec<f32> {
@@ -185,6 +187,8 @@ impl AudioParamRenderer {
                 break;
             }
         }
+
+        self.shared_value.store(self.value() as f64);
 
         assert_eq!(result.len(), count);
         result

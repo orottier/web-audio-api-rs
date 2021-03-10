@@ -12,7 +12,7 @@ use crate::buffer::{
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioNodeId, BaseAudioContext};
 use crate::control::{Controller, Scheduler};
 use crate::media::{MediaElement, MediaStream};
-use crate::param::{AudioParam, AudioParamOptions, AudioParamRenderer};
+use crate::param::{AudioParam, AudioParamOptions, AudioParamProcessor};
 use crate::process::AudioProcessor;
 use crate::SampleRate;
 
@@ -59,7 +59,7 @@ pub trait AudioNode {
             panic!("attempting to connect nodes from different contexts");
         }
 
-        if self.number_of_outputs() < output || dest.number_of_inputs() < input {
+        if self.number_of_outputs() <= output || dest.number_of_inputs() <= input {
             return Err(crate::IndexSizeError {});
         }
 
@@ -226,7 +226,7 @@ impl From<u32> for OscillatorType {
 pub struct OscillatorNode<'a> {
     pub(crate) registration: AudioContextRegistration<'a>,
     pub(crate) channel_config: ChannelConfig,
-    pub(crate) frequency: AudioParam,
+    pub(crate) frequency: AudioParam<'a>,
     pub(crate) type_: Arc<AtomicU32>,
     pub(crate) scheduler: Scheduler,
 }
@@ -302,7 +302,7 @@ impl<'a> OscillatorNode<'a> {
 
 #[derive(Debug)]
 pub(crate) struct OscillatorRenderer {
-    pub frequency: AudioParamRenderer,
+    pub frequency: AudioParamProcessor,
     pub type_: Arc<AtomicU32>,
     pub scheduler: Scheduler,
 }
@@ -426,7 +426,7 @@ impl Default for GainOptions {
 pub struct GainNode<'a> {
     pub(crate) registration: AudioContextRegistration<'a>,
     pub(crate) channel_config: ChannelConfig,
-    pub(crate) gain: AudioParam,
+    pub(crate) gain: AudioParam<'a>,
 }
 
 impl<'a> AudioNode for GainNode<'a> {
@@ -478,7 +478,7 @@ impl<'a> GainNode<'a> {
 
 #[derive(Debug)]
 pub(crate) struct GainRenderer {
-    pub gain: AudioParamRenderer,
+    pub gain: AudioParamProcessor,
 }
 
 impl AudioProcessor for GainRenderer {
