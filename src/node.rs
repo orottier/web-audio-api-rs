@@ -180,11 +180,7 @@ impl Default for OscillatorOptions {
         Self {
             type_: OscillatorType::default(),
             frequency: 440.,
-            channel_config: ChannelConfigOptions {
-                count: 2,
-                mode: ChannelCountMode::Max,
-                interpretation: ChannelInterpretation::Speakers,
-            },
+            channel_config: ChannelConfigOptions::default(),
         }
     }
 }
@@ -265,7 +261,6 @@ impl<'a> OscillatorNode<'a> {
             let (f_param, f_proc) = context
                 .base()
                 .create_audio_param(param_opts, registration.id());
-            dbg!(f_proc);
             f_param.set_value(options.frequency);
 
             let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
@@ -415,11 +410,7 @@ impl Default for GainOptions {
     fn default() -> Self {
         Self {
             gain: 1.,
-            channel_config: ChannelConfigOptions {
-                count: 2,
-                mode: ChannelCountMode::Max,
-                interpretation: ChannelInterpretation::Speakers,
-            },
+            channel_config: ChannelConfigOptions::default(),
         }
     }
 }
@@ -527,11 +518,7 @@ impl Default for DelayOptions {
     fn default() -> Self {
         Self {
             render_quanta: 0,
-            channel_config: ChannelConfigOptions {
-                count: 2,
-                mode: ChannelCountMode::Max,
-                interpretation: ChannelInterpretation::Speakers,
-            },
+            channel_config: ChannelConfigOptions::default(),
         }
     }
 }
@@ -1019,11 +1006,7 @@ impl Default for AudioBufferSourceNodeOptions {
     fn default() -> Self {
         Self {
             buffer: None,
-            channel_config: ChannelConfigOptions {
-                count: 2,
-                mode: ChannelCountMode::Max,
-                interpretation: ChannelInterpretation::Speakers,
-            },
+            channel_config: ChannelConfigOptions::default(),
         }
     }
 }
@@ -1095,5 +1078,105 @@ impl<'a> AudioBufferSourceNode<'a> {
 
             (node, Box::new(render))
         })
+    }
+}
+
+/// Options for constructing an ConstantSourceNode
+pub struct ConstantSourceOptions {
+    pub offset: f32,
+    pub channel_config: ChannelConfigOptions,
+}
+
+impl Default for ConstantSourceOptions {
+    fn default() -> Self {
+        Self {
+            offset: 1.,
+            channel_config: ChannelConfigOptions::default(),
+        }
+    }
+}
+
+/// Audio source whose output is nominally a constant value
+pub struct ConstantSourceNode<'a> {
+    pub(crate) registration: AudioContextRegistration<'a>,
+    pub(crate) channel_config: ChannelConfig,
+    pub(crate) offset: AudioParam<'a>,
+}
+
+impl<'a> AudioNode for ConstantSourceNode<'a> {
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
+    }
+
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        0
+    }
+    fn number_of_outputs(&self) -> u32 {
+        1
+    }
+}
+
+impl<'a> ConstantSourceNode<'a> {
+    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: ConstantSourceOptions) -> Self {
+        context.base().register(move |registration| {
+            let param_opts = AudioParamOptions {
+                min_value: f32::MIN,
+                max_value: f32::MAX,
+                default_value: 1.,
+                automation_rate: crate::param::AutomationRate::A,
+            };
+            let (param, proc) = context
+                .base()
+                .create_audio_param(param_opts, registration.id());
+            param.set_value(options.offset);
+
+            let render = ConstantSourceRenderer { offset: proc };
+            let node = ConstantSourceNode {
+                registration,
+                channel_config: options.channel_config.into(),
+                offset: param,
+            };
+
+            (node, Box::new(render))
+        })
+    }
+
+    pub fn offset(&self) -> &AudioParam {
+        &self.offset
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ConstantSourceRenderer {
+    pub offset: u64,
+}
+
+impl AudioProcessor for ConstantSourceRenderer {
+    fn process(
+        &mut self,
+        _inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
+        params: Params,
+        _timestamp: f64,
+        _sample_rate: SampleRate,
+    ) {
+        // single output node
+        let output = &mut outputs[0];
+
+        let offset_values = params.get(self.offset);
+        output.modify_channels(|buf| {
+            offset_values
+                .iter()
+                .zip(buf.iter_mut())
+                .for_each(|(i, o)| *o = *i)
+        })
+    }
+
+    fn tail_time(&self) -> bool {
+        true
     }
 }

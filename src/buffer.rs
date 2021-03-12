@@ -507,6 +507,16 @@ pub struct ChannelConfigOptions {
     pub interpretation: ChannelInterpretation,
 }
 
+impl Default for ChannelConfigOptions {
+    fn default() -> Self {
+        Self {
+            count: 2,
+            mode: ChannelCountMode::Max,
+            interpretation: ChannelInterpretation::Speakers,
+        }
+    }
+}
+
 /// Config for up/down-mixing of channels for audio nodes
 #[derive(Clone, Debug)]
 pub struct ChannelConfig {

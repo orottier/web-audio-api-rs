@@ -47,6 +47,11 @@ pub trait AsBaseAudioContext {
         node::OscillatorNode::new(self.base(), Default::default())
     }
 
+    /// Creates an ConstantSourceNode, a source representing a constant value
+    fn create_constant_source(&self) -> node::ConstantSourceNode {
+        node::ConstantSourceNode::new(self.base(), Default::default())
+    }
+
     /// Creates an GainNode, to control audio volume
     fn create_gain(&self) -> node::GainNode {
         node::GainNode::new(self.base(), Default::default())

@@ -45,14 +45,8 @@ fn test_delayed_constant_source() {
         delay.set_render_quanta(2);
         delay.connect(&context.destination());
 
-        let opts = OscillatorOptions {
-            type_: OscillatorType::Square,
-            frequency: 0., // constant signal
-            ..Default::default()
-        };
-        let osc = OscillatorNode::new(&context, opts);
-        osc.connect(&delay);
-        osc.start();
+        let source = context.create_constant_source();
+        source.connect(&delay);
     }
 
     let output = context.start_rendering();
@@ -73,28 +67,22 @@ fn test_audio_param_graph() {
         gain.gain().set_value(0.5); // intrinsic value
         gain.connect(&context.destination());
 
-        let opts = OscillatorOptions {
-            type_: OscillatorType::Square,
-            frequency: 0., // constant signal
-            ..Default::default()
-        };
-        let osc = OscillatorNode::new(&context, opts);
-        osc.connect(&gain);
-        osc.start();
+        let source = context.create_constant_source();
+        source.offset().set_value(0.8);
+        source.connect(&gain);
 
-        let opts2 = OscillatorOptions {
-            type_: OscillatorType::Square,
-            frequency: 0., // constant signal
-            ..Default::default()
-        };
-        let param_input = OscillatorNode::new(&context, opts2);
-        param_input.connect(gain.gain());
-        param_input.start();
+        let param_input1 = context.create_constant_source();
+        param_input1.offset().set_value(0.1);
+        param_input1.connect(gain.gain());
+
+        let param_input2 = context.create_constant_source();
+        param_input2.offset().set_value(0.3);
+        param_input2.connect(gain.gain());
     }
 
     let output = context.start_rendering();
 
-    // expect gain = 0.5 (intrinsic) + 1.0 (via constant source input)
-    let expected = vec![1.5; BUFFER_SIZE as usize];
+    // expect output = 0.8 (input) * ( 0.5 (intrinsic gain) + 0.4 (via 2 constant source input) )
+    let expected = vec![0.8 * 0.9; BUFFER_SIZE as usize];
     assert_eq!(output, expected.as_slice());
 }
