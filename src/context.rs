@@ -12,7 +12,7 @@ use cpal::{
 use crate::buffer::{
     AudioBuffer, ChannelConfigOptions, ChannelCountMode, ChannelData, ChannelInterpretation,
 };
-use crate::graph::RenderThread;
+use crate::graph::{NodeIndex, RenderThread};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node;
@@ -123,17 +123,17 @@ pub trait AsBaseAudioContext {
         &self,
         opts: AudioParamOptions,
         dest: &AudioNodeId,
-    ) -> (crate::param::AudioParam<'_>, u64) {
+    ) -> (crate::param::AudioParam<'_>, AudioParamId) {
         let param = self.base().register(move |registration| {
-            let (mut node, proc) = crate::param::audio_param_pair(opts);
-            node.registration = Some(registration);
+            let (node, proc) = crate::param::audio_param_pair(opts, registration);
 
             (node, Box::new(proc))
         });
 
+        // audio params are connected to the 'hidden' u32::MAX input. TODO make nicer
         self.base().connect(param.id(), dest, 0, u32::MAX);
 
-        let proc_id = param.id().0;
+        let proc_id = AudioParamId(param.id().0);
         (param, proc_id)
     }
 
@@ -164,6 +164,14 @@ pub trait AsBaseAudioContext {
     /// in the block of audio most recently processed by the context’s rendering graph.
     fn current_time(&self) -> f64 {
         self.base().current_time()
+    }
+
+    #[cfg(test)]
+    fn mock_registration(&self) -> AudioContextRegistration {
+        AudioContextRegistration {
+            id: AudioNodeId(0),
+            context: self.base(),
+        }
     }
 }
 
@@ -303,8 +311,22 @@ impl AudioContext {
     }
 }
 
-/// Unique identifier for audio nodes. Used for internal bookkeeping
+/// Unique identifier for audio nodes.
+///
+/// Used for internal bookkeeping.
 pub struct AudioNodeId(u64);
+
+/// Unique identifier for audio params.
+///
+/// Store these in your AudioProcessor to get access to AudioParam values.
+pub struct AudioParamId(u64);
+
+// bit contrived, but for type safety only the context lib can access the inner u64
+impl From<&AudioParamId> for NodeIndex {
+    fn from(i: &AudioParamId) -> Self {
+        NodeIndex(i.0)
+    }
+}
 
 /// Handle of the [`node::AudioNode`] to its associated [`BaseAudioContext`].
 ///

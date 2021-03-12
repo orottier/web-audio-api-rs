@@ -76,14 +76,14 @@ impl std::cmp::Ord for AutomationEvent {
 
 /// AudioParam controls an individual aspect of an AudioNode's functionality, such as volume.
 pub struct AudioParam<'a> {
-    pub registration: Option<AudioContextRegistration<'a>>,
+    registration: AudioContextRegistration<'a>,
     value: Arc<AtomicF64>,
     sender: Sender<AutomationEvent>,
 }
 
 impl<'a> AudioNode for AudioParam<'a> {
     fn registration(&self) -> &AudioContextRegistration<'a> {
-        self.registration.as_ref().unwrap()
+        &self.registration
     }
 
     fn channel_config_raw(&self) -> &ChannelConfig {
@@ -158,12 +158,13 @@ impl AudioProcessor for AudioParamProcessor {
 
 pub(crate) fn audio_param_pair(
     opts: AudioParamOptions,
-) -> (AudioParam<'static>, AudioParamProcessor) {
+    registration: AudioContextRegistration<'_>,
+) -> (AudioParam<'_>, AudioParamProcessor) {
     let (sender, receiver) = mpsc::channel();
     let shared_value = Arc::new(AtomicF64::new(opts.default_value as f64));
 
     let param = AudioParam {
-        registration: None,
+        registration,
         value: shared_value.clone(),
         sender,
     };
@@ -268,16 +269,18 @@ impl AudioParamProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
 
     #[test]
     fn test_steps_a_rate() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
         let opts = AudioParamOptions {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
             max_value: 10.,
         };
-        let (param, mut render) = audio_param_pair(opts);
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
         param.set_value_at_time(5., 2.0);
         param.set_value_at_time(12., 8.0); // should clamp
@@ -292,13 +295,14 @@ mod tests {
 
     #[test]
     fn test_steps_k_rate() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
         let opts = AudioParamOptions {
             automation_rate: AutomationRate::K,
             default_value: 0.,
             min_value: -10.,
             max_value: 10.,
         };
-        let (param, mut render) = audio_param_pair(opts);
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
         param.set_value_at_time(5., 2.0);
         param.set_value_at_time(12., 8.0); // should clamp

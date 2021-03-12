@@ -9,7 +9,9 @@ use crate::buffer::{
     AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelData,
     ChannelInterpretation, Resampler,
 };
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioNodeId, BaseAudioContext};
+use crate::context::{
+    AsBaseAudioContext, AudioContextRegistration, AudioNodeId, AudioParamId, BaseAudioContext,
+};
 use crate::control::{Controller, Scheduler};
 use crate::graph::Params;
 use crate::media::{MediaElement, MediaStream};
@@ -296,9 +298,8 @@ impl<'a> OscillatorNode<'a> {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct OscillatorRenderer {
-    pub frequency: u64,
+    pub frequency: AudioParamId,
     pub type_: Arc<AtomicU32>,
     pub scheduler: Scheduler,
 }
@@ -325,7 +326,7 @@ impl AudioProcessor for OscillatorRenderer {
             return;
         }
 
-        let freq_values = params.get(self.frequency);
+        let freq_values = params.get(&self.frequency);
         let freq = freq_values[0]; // force a-rate processing
 
         let type_ = self.type_.load(Ordering::SeqCst).into();
@@ -452,7 +453,6 @@ impl<'a> GainNode<'a> {
                 .base()
                 .create_audio_param(param_opts, registration.id());
 
-            dbg!(proc);
             param.set_value_at_time(options.gain, 0.);
 
             let render = GainRenderer { gain: proc };
@@ -472,9 +472,8 @@ impl<'a> GainNode<'a> {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct GainRenderer {
-    pub gain: u64,
+    pub gain: AudioParamId,
 }
 
 impl AudioProcessor for GainRenderer {
@@ -490,7 +489,7 @@ impl AudioProcessor for GainRenderer {
         let input = inputs[0];
         let output = &mut outputs[0];
 
-        let gain_values = params.get(self.gain);
+        let gain_values = params.get(&self.gain);
 
         *output = input.clone();
 
@@ -1150,9 +1149,8 @@ impl<'a> ConstantSourceNode<'a> {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct ConstantSourceRenderer {
-    pub offset: u64,
+    pub offset: AudioParamId,
 }
 
 impl AudioProcessor for ConstantSourceRenderer {
@@ -1167,7 +1165,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         // single output node
         let output = &mut outputs[0];
 
-        let offset_values = params.get(self.offset);
+        let offset_values = params.get(&self.offset);
         output.modify_channels(|buf| {
             offset_values
                 .iter()

@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
 use crate::buffer::{ChannelConfig, ChannelData};
+use crate::context::AudioParamId;
 use crate::message::ControlMessage;
 use crate::process::AudioProcessor;
 use crate::SampleRate;
@@ -104,7 +105,7 @@ impl RenderThread {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct NodeIndex(u64);
+pub struct NodeIndex(pub u64);
 
 /// Renderer Node in the Audio Graph
 struct Node {
@@ -172,8 +173,8 @@ pub struct Params<'a> {
 }
 
 impl<'a> Params<'a> {
-    pub fn get(&self, index: u64) -> &[f32] {
-        self.nodes.get(&NodeIndex(index)).expect("missing").buffers[0]
+    pub fn get(&self, index: &AudioParamId) -> &[f32] {
+        self.nodes.get(&index.into()).expect("missing").buffers[0]
             .channel_data(0)
             .expect("chan")
             .as_slice()
@@ -327,6 +328,7 @@ impl Graph {
             edges
                 .iter()
                 .filter_map(move |(s, d)| {
+                    // audio params are connected to the 'hidden' u32::MAX input, ignore them
                     if d.0 == *index && d.1 != u32::MAX {
                         Some((s, d.1))
                     } else {
