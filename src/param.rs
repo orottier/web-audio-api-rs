@@ -4,6 +4,17 @@ use std::collections::BinaryHeap;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 
+use AutomationEvent::*;
+
+use crate::buffer::{
+    AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelData,
+    ChannelInterpretation,
+};
+use crate::context::AudioContextRegistration;
+use crate::node::AudioNode;
+use crate::process::{AudioParamValues, AudioProcessor};
+use crate::{AtomicF64, SampleRate};
+
 /// Precision of value calculation per render quantum
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum AutomationRate {
@@ -13,7 +24,7 @@ pub enum AutomationRate {
     K,
 }
 
-/// Options for constructing an AudioParam
+/// Options for constructing an [`AudioParam`]
 pub struct AudioParamOptions {
     pub automation_rate: AutomationRate,
     pub default_value: f32,
@@ -26,17 +37,6 @@ enum AutomationEvent {
     SetValueAtTime { v: f32, start: f64 },
     LinearRampToValueAtTime { v: f32, start: f64, end: f64 },
 }
-
-use crate::buffer::{
-    AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelData,
-    ChannelInterpretation,
-};
-use crate::context::AudioContextRegistration;
-use crate::graph::Params;
-use crate::node::AudioNode;
-use crate::process::AudioProcessor;
-use crate::{AtomicF64, SampleRate};
-use AutomationEvent::*;
 
 impl AutomationEvent {
     fn time(&self) -> f64 {
@@ -137,7 +137,7 @@ impl AudioProcessor for AudioParamProcessor {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        _params: Params,
+        _params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
     ) {
@@ -268,8 +268,9 @@ impl AudioParamProcessor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::context::{AsBaseAudioContext, OfflineAudioContext};
+
+    use super::*;
 
     #[test]
     fn test_steps_a_rate() {

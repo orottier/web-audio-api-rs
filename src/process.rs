@@ -1,7 +1,10 @@
 //! Audio processing code that runs on the audio rendering thread
 
+use std::collections::HashMap;
+
 use crate::buffer::AudioBuffer;
-use crate::graph::Params;
+use crate::context::AudioParamId;
+use crate::graph::{Node, NodeIndex};
 use crate::SampleRate;
 
 /// Interface for audio processing code that runs on the audio rendering thread.
@@ -14,7 +17,7 @@ pub trait AudioProcessor: Send {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        params: Params,
+        params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
     );
@@ -25,4 +28,30 @@ pub trait AudioProcessor: Send {
     ///
     /// Tail time is `false` for nodes that only transform their inputs.
     fn tail_time(&self) -> bool;
+}
+
+/// Accessor for current [`crate::param::AudioParam`] values
+///
+/// Provided to implementations of [`AudioProcessor`] in the render thread
+pub struct AudioParamValues<'a> {
+    nodes: &'a HashMap<NodeIndex, Node>,
+}
+
+impl<'a> AudioParamValues<'a> {
+    pub(crate) fn from(nodes: &'a HashMap<NodeIndex, Node>) -> Self {
+        Self { nodes }
+    }
+
+    /// Get the computed values for the given [`crate::param::AudioParam`]
+    ///
+    /// For both A & K-rate params, it will provide a slice of length [`crate::BUFFER_SIZE`]
+    pub fn get(&self, index: &AudioParamId) -> &[f32] {
+        self.nodes
+            .get(&index.into())
+            .unwrap()
+            .get_buffer()
+            .channel_data(0)
+            .unwrap()
+            .as_slice()
+    }
 }

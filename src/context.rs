@@ -242,8 +242,6 @@ impl AudioContext {
         let mut config: StreamConfig = supported_config.into();
         config.buffer_size = cpal::BufferSize::Fixed(crate::BUFFER_SIZE);
 
-        dbg!(&config);
-
         let sample_rate = SampleRate(config.sample_rate.0);
         let channels = config.channels as u32;
         let channel_config = ChannelConfigOptions {

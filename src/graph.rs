@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
 use crate::buffer::{ChannelConfig, ChannelData};
-use crate::context::AudioParamId;
 use crate::message::ControlMessage;
+use crate::process::AudioParamValues;
 use crate::process::AudioProcessor;
 use crate::SampleRate;
 use crate::{buffer::AudioBuffer, buffer::ChannelCountMode};
@@ -108,7 +108,7 @@ impl RenderThread {
 pub struct NodeIndex(pub u64);
 
 /// Renderer Node in the Audio Graph
-struct Node {
+pub struct Node {
     /// Renderer: converts inputs to outputs
     processor: Box<dyn AudioProcessor>,
     /// Output buffers, consumed by subsequent Nodes in this graph
@@ -132,7 +132,7 @@ impl Node {
     fn process(
         &mut self,
         inputs: &[&AudioBuffer],
-        params: Params,
+        params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
     ) {
@@ -166,18 +166,10 @@ impl Node {
 
         false
     }
-}
 
-pub struct Params<'a> {
-    nodes: &'a HashMap<NodeIndex, Node>,
-}
-
-impl<'a> Params<'a> {
-    pub fn get(&self, index: &AudioParamId) -> &[f32] {
-        self.nodes.get(&index.into()).expect("missing").buffers[0]
-            .channel_data(0)
-            .expect("chan")
-            .as_slice()
+    /// Get the current buffer for AudioParam values
+    pub fn get_buffer(&self) -> &AudioBuffer {
+        self.buffers.get(0).unwrap()
     }
 }
 
@@ -364,7 +356,7 @@ impl Graph {
                 })
                 .collect();
 
-            let params = Params { nodes: &*nodes };
+            let params = AudioParamValues::from(&*nodes);
             node.process(&input_bufs[..], params, timestamp, sample_rate);
 
             // check if the Node has reached end of lifecycle
@@ -400,7 +392,7 @@ mod tests {
             &mut self,
             _: &[&AudioBuffer],
             _: &mut [AudioBuffer],
-            _: Params,
+            _: AudioParamValues,
             _: f64,
             _: SampleRate,
         ) {

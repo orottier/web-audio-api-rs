@@ -13,9 +13,9 @@ use crate::context::{
     AsBaseAudioContext, AudioContextRegistration, AudioNodeId, AudioParamId, BaseAudioContext,
 };
 use crate::control::{Controller, Scheduler};
-use crate::graph::Params;
 use crate::media::{MediaElement, MediaStream};
 use crate::param::{AudioParam, AudioParamOptions};
+use crate::process::AudioParamValues;
 use crate::process::AudioProcessor;
 use crate::SampleRate;
 
@@ -309,7 +309,7 @@ impl AudioProcessor for OscillatorRenderer {
         &mut self,
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        params: Params,
+        params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
     ) {
@@ -367,7 +367,7 @@ impl AudioProcessor for DestinationRenderer {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        _params: Params,
+        _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
@@ -481,7 +481,7 @@ impl AudioProcessor for GainRenderer {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        params: Params,
+        params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
@@ -591,7 +591,7 @@ impl AudioProcessor for DelayRenderer {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        _params: Params,
+        _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
@@ -702,7 +702,7 @@ impl AudioProcessor for ChannelSplitterRenderer {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        _params: Params,
+        _params: AudioParamValues,
         _timestamp: f64,
         sample_rate: SampleRate,
     ) {
@@ -810,7 +810,7 @@ impl AudioProcessor for ChannelMergerRenderer {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        _params: Params,
+        _params: AudioParamValues,
         _timestamp: f64,
         sample_rate: SampleRate,
     ) {
@@ -975,7 +975,7 @@ impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
         &mut self,
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        _params: Params,
+        _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
@@ -1158,7 +1158,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         &mut self,
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        params: Params,
+        params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {

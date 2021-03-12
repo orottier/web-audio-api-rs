@@ -27,6 +27,7 @@ much more.
 
 Current deviations
 
+- render quantum size = 256 (cpal limitation on OSX)
 - function names use snake\_case
 - getters/setters instead of exposed attributes
 - some control-render communication is done with atomics instread of message passing
