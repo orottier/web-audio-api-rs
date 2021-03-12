@@ -15,8 +15,7 @@ use crate::context::{
 use crate::control::{Controller, Scheduler};
 use crate::media::{MediaElement, MediaStream};
 use crate::param::{AudioParam, AudioParamOptions};
-use crate::process::AudioParamValues;
-use crate::process::AudioProcessor;
+use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
@@ -356,10 +355,9 @@ impl AudioProcessor for OscillatorRenderer {
 /// Representing the final audio destination and is what the user will ultimately hear.
 pub struct DestinationNode<'a> {
     pub(crate) registration: AudioContextRegistration<'a>,
-    pub(crate) channel_config: ChannelConfig,
+    pub(crate) channel_count: usize,
 }
 
-#[derive(Debug)]
 pub(crate) struct DestinationRenderer {}
 
 impl AudioProcessor for DestinationRenderer {
@@ -390,7 +388,16 @@ impl<'a> AudioNode for DestinationNode<'a> {
     }
 
     fn channel_config_raw(&self) -> &ChannelConfig {
-        &self.channel_config
+        unreachable!()
+    }
+
+    fn channel_config_cloned(&self) -> ChannelConfig {
+        ChannelConfigOptions {
+            count: self.channel_count,
+            mode: ChannelCountMode::Explicit,
+            interpretation: ChannelInterpretation::Speakers,
+        }
+        .into()
     }
 
     fn number_of_inputs(&self) -> u32 {
@@ -398,6 +405,32 @@ impl<'a> AudioNode for DestinationNode<'a> {
     }
     fn number_of_outputs(&self) -> u32 {
         1 // todo, should be 0 actually, but we need it to copy into cpal for now
+    }
+
+    fn channel_count_mode(&self) -> ChannelCountMode {
+        ChannelCountMode::Explicit
+    }
+
+    fn channel_interpretation(&self) -> ChannelInterpretation {
+        ChannelInterpretation::Speakers
+    }
+
+    fn channel_count(&self) -> usize {
+        self.channel_count
+    }
+}
+
+impl<'a> DestinationNode<'a> {
+    pub fn new<C: AsBaseAudioContext>(context: &'a C, channel_count: usize) -> Self {
+        context.base().register(move |registration| {
+            let node = Self {
+                registration,
+                channel_count,
+            };
+            let proc = DestinationRenderer {};
+
+            (node, Box::new(proc))
+        })
     }
 }
 

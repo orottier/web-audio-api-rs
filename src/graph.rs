@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
-use crate::buffer::{ChannelConfig, ChannelData};
+use crate::buffer::ChannelConfig;
 use crate::message::ControlMessage;
 use crate::process::AudioParamValues;
 use crate::process::AudioProcessor;
@@ -20,16 +20,13 @@ pub(crate) struct RenderThread {
 }
 
 impl RenderThread {
-    pub fn new<N: AudioProcessor + 'static>(
-        root: N,
+    pub fn new(
         sample_rate: SampleRate,
-        channel_config: ChannelConfig,
+        channels: usize,
         receiver: Receiver<ControlMessage>,
     ) -> Self {
-        let channels = channel_config.count();
-
         Self {
-            graph: Graph::new(root, channel_config, sample_rate),
+            graph: Graph::new(),
             sample_rate,
             channels,
             frames_played: AtomicU64::new(0),
@@ -184,32 +181,13 @@ pub(crate) struct Graph {
 }
 
 impl Graph {
-    pub fn new<N: AudioProcessor + 'static>(
-        root: N,
-        channel_config: ChannelConfig,
-        sample_rate: SampleRate,
-    ) -> Self {
-        let root_index = NodeIndex(0);
-
-        let mut graph = Graph {
+    pub fn new() -> Self {
+        Graph {
             nodes: HashMap::new(),
             edges: HashSet::new(),
-            ordered: vec![root_index],
-            marked: vec![root_index],
-        };
-
-        // assume root node always has 1 input
-        let inputs = 1;
-        // and 1 output: pre-allocate single buffer
-        let number_of_channels = channel_config.count();
-        let buffer_channel = ChannelData::new(crate::BUFFER_SIZE as usize);
-        let channels = vec![buffer_channel; number_of_channels];
-        let buffer = AudioBuffer::from_channels(channels, sample_rate);
-        let buffers = vec![buffer];
-
-        graph.add_node(root_index, Box::new(root), inputs, channel_config, buffers);
-
-        graph
+            ordered: vec![],
+            marked: vec![],
+        }
     }
 
     pub fn add_node(
@@ -410,7 +388,7 @@ mod tests {
             interpretation: crate::buffer::ChannelInterpretation::Speakers,
         }
         .into();
-        let mut graph = Graph::new(TestNode {}, config.clone(), SampleRate(44_100));
+        let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
         graph.add_node(NodeIndex(1), node.clone(), 1, config.clone(), vec![]);
@@ -441,7 +419,7 @@ mod tests {
             interpretation: crate::buffer::ChannelInterpretation::Speakers,
         }
         .into();
-        let mut graph = Graph::new(TestNode {}, config.clone(), SampleRate(44_100));
+        let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
         graph.add_node(NodeIndex(1), node.clone(), 1, config.clone(), vec![]);

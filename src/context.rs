@@ -3,6 +3,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
 
+const DESTINATION_NODE_ID: AudioNodeId = AudioNodeId(0);
+
 #[cfg(not(test))]
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -141,17 +143,12 @@ pub trait AsBaseAudioContext {
     /// context. It can be thought of as the audio-rendering device.
     fn destination(&self) -> node::DestinationNode {
         let registration = AudioContextRegistration {
-            id: AudioNodeId(0),
+            id: DESTINATION_NODE_ID,
             context: &self.base(),
         };
         node::DestinationNode {
             registration,
-            channel_config: ChannelConfigOptions {
-                count: 2,
-                mode: ChannelCountMode::Explicit,
-                interpretation: ChannelInterpretation::Speakers,
-            }
-            .into(),
+            channel_count: self.base().channels as usize,
         }
     }
 
@@ -244,18 +241,15 @@ impl AudioContext {
 
         let sample_rate = SampleRate(config.sample_rate.0);
         let channels = config.channels as u32;
-        let channel_config = ChannelConfigOptions {
-            count: channels as usize,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Speakers,
-        }
-        .into();
 
-        // construct graph for the render thread
-        let dest = node::DestinationRenderer {};
+        // communication channel to the render thread
         let (sender, receiver) = mpsc::channel();
-        let mut render = RenderThread::new(dest, sample_rate, channel_config, receiver);
 
+        // first, setup the base audio context
+        let base = BaseAudioContext::new(sample_rate, channels, sender);
+
+        // spawn the render thread
+        let mut render = RenderThread::new(sample_rate, channels as usize, receiver);
         let stream = match sample_format {
             SampleFormat::F32 => {
                 device.build_output_stream(&config, move |data, _c| render.render(data), err_fn)
@@ -266,14 +260,6 @@ impl AudioContext {
 
         stream.play().unwrap();
 
-        let base = BaseAudioContext {
-            sample_rate,
-            channels,
-            node_id_inc: AtomicU64::new(1),
-            render_channel: sender,
-            frames_played: AtomicU64::new(0),
-        };
-
         Self { base, stream }
     }
 
@@ -283,13 +269,7 @@ impl AudioContext {
         let channels = 2;
         let (sender, _receiver) = mpsc::channel();
 
-        let base = BaseAudioContext {
-            sample_rate,
-            channels,
-            node_id_inc: AtomicU64::new(1),
-            render_channel: sender,
-            frames_played: AtomicU64::new(0),
-        };
+        let base = BaseAudioContext::new(sample_rate, channels, sender);
 
         Self { base }
     }
@@ -312,11 +292,13 @@ impl AudioContext {
 /// Unique identifier for audio nodes.
 ///
 /// Used for internal bookkeeping.
+#[derive(Debug, PartialEq, Eq)]
 pub struct AudioNodeId(u64);
 
 /// Unique identifier for audio params.
 ///
 /// Store these in your AudioProcessor to get access to AudioParam values.
+#[derive(Debug, PartialEq, Eq)]
 pub struct AudioParamId(u64);
 
 // bit contrived, but for type safety only the context lib can access the inner u64
@@ -347,8 +329,8 @@ impl<'a> AudioContextRegistration<'a> {
 
 impl<'a> Drop for AudioContextRegistration<'a> {
     fn drop(&mut self) {
-        // todo: make sure we do not drop the destination node
-        if self.id.0 != 0 {
+        // do not drop magic nodes
+        if self.id != DESTINATION_NODE_ID {
             let message = ControlMessage::FreeWhenFinished { id: self.id.0 };
             self.context.render_channel.send(message).unwrap();
         }
@@ -356,6 +338,27 @@ impl<'a> Drop for AudioContextRegistration<'a> {
 }
 
 impl BaseAudioContext {
+    fn new(sample_rate: SampleRate, channels: u32, render_channel: Sender<ControlMessage>) -> Self {
+        let base = Self {
+            sample_rate,
+            channels,
+            render_channel,
+            node_id_inc: AtomicU64::new(0),
+            frames_played: AtomicU64::new(0),
+        };
+
+        {
+            // Register the destination node in the base context.
+            // We cannot store the destination node inside our context since it borrows base,
+            // but we can reconstruct a new instance on the fly when requested
+            let dest = node::DestinationNode::new(&base, channels as usize);
+            // We rely on this elsewhere:
+            assert_eq!(dest.registration.id, DESTINATION_NODE_ID);
+        }
+
+        base
+    }
+
     /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
     pub fn sample_rate(&self) -> SampleRate {
         self.sample_rate
@@ -448,26 +451,14 @@ impl Default for AudioContext {
 
 impl OfflineAudioContext {
     pub fn new(channels: u32, length: usize, sample_rate: SampleRate) -> Self {
-        // construct graph for the render thread
-        let dest = node::DestinationRenderer {};
+        // communication channel to the render thread
         let (sender, receiver) = mpsc::channel();
 
-        let channel_config = ChannelConfigOptions {
-            count: channels as usize,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Speakers,
-        }
-        .into();
+        // first, setup the base audio context
+        let base = BaseAudioContext::new(sample_rate, channels, sender);
 
-        let render = RenderThread::new(dest, sample_rate, channel_config, receiver);
-
-        let base = BaseAudioContext {
-            sample_rate,
-            channels,
-            node_id_inc: AtomicU64::new(1),
-            render_channel: sender,
-            frames_played: AtomicU64::new(0),
-        };
+        // setup the render 'thread', which will run inside the control thread
+        let render = RenderThread::new(sample_rate, channels as usize, receiver);
 
         // pre-allocate enough space (todo, round to multiple of channels * buffer_size?)
         let buffer = vec![0.; length];
