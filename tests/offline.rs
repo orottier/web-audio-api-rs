@@ -63,3 +63,38 @@ fn test_delayed_constant_source() {
 
     assert_eq!(output, expected.as_slice());
 }
+
+#[test]
+fn test_audio_param_graph() {
+    let len = BUFFER_SIZE as usize;
+    let mut context = OfflineAudioContext::new(1, len, SampleRate(BUFFER_SIZE));
+    {
+        let gain = context.create_gain();
+        gain.gain().set_value(0.5); // intrinsic value
+        gain.connect(&context.destination());
+
+        let opts = OscillatorOptions {
+            type_: OscillatorType::Square,
+            frequency: 0., // constant signal
+            ..Default::default()
+        };
+        let osc = OscillatorNode::new(&context, opts);
+        osc.connect(&gain);
+        osc.start();
+
+        let opts2 = OscillatorOptions {
+            type_: OscillatorType::Square,
+            frequency: 0., // constant signal
+            ..Default::default()
+        };
+        let param_input = OscillatorNode::new(&context, opts2);
+        param_input.connect(gain.gain());
+        param_input.start();
+    }
+
+    let output = context.start_rendering();
+
+    // expect gain = 0.5 (intrinsic) + 1.0 (via constant source input)
+    let expected = vec![1.5; BUFFER_SIZE as usize];
+    assert_eq!(output, expected.as_slice());
+}

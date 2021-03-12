@@ -27,8 +27,15 @@ enum AutomationEvent {
     LinearRampToValueAtTime { v: f32, start: f64, end: f64 },
 }
 
+use crate::buffer::{
+    AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelData,
+    ChannelInterpretation,
+};
 use crate::context::AudioContextRegistration;
-use crate::AtomicF64;
+use crate::graph::Params;
+use crate::node::AudioNode;
+use crate::process::AudioProcessor;
+use crate::{AtomicF64, SampleRate};
 use AutomationEvent::*;
 
 impl AutomationEvent {
@@ -69,9 +76,48 @@ impl std::cmp::Ord for AutomationEvent {
 
 /// AudioParam controls an individual aspect of an AudioNode's functionality, such as volume.
 pub struct AudioParam<'a> {
-    registration: Option<AudioContextRegistration<'a>>,
+    pub registration: Option<AudioContextRegistration<'a>>,
     value: Arc<AtomicF64>,
     sender: Sender<AutomationEvent>,
+}
+
+impl<'a> AudioNode for AudioParam<'a> {
+    fn registration(&self) -> &AudioContextRegistration<'a> {
+        self.registration.as_ref().unwrap()
+    }
+
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        unreachable!()
+    }
+
+    fn channel_config_cloned(&self) -> ChannelConfig {
+        ChannelConfigOptions {
+            count: 1,
+            mode: ChannelCountMode::Explicit,
+            interpretation: ChannelInterpretation::Discrete,
+        }
+        .into()
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        1
+    }
+
+    fn number_of_outputs(&self) -> u32 {
+        1
+    }
+
+    fn channel_count_mode(&self) -> ChannelCountMode {
+        ChannelCountMode::Explicit
+    }
+
+    fn channel_interpretation(&self) -> ChannelInterpretation {
+        ChannelInterpretation::Discrete
+    }
+
+    fn channel_count(&self) -> usize {
+        1
+    }
 }
 
 #[derive(Debug)]
@@ -84,6 +130,30 @@ pub(crate) struct AudioParamProcessor {
     min_value: f32,
     max_value: f32,
     events: BinaryHeap<AutomationEvent>,
+}
+
+impl AudioProcessor for AudioParamProcessor {
+    fn process(
+        &mut self,
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
+        _params: Params,
+        timestamp: f64,
+        sample_rate: SampleRate,
+    ) {
+        let input = inputs[0]; // single input mode
+        let sample_len = input.sample_len();
+
+        let intrinsic = self.tick(timestamp, 1. / sample_rate.0 as f64, sample_len);
+        let as_channel = ChannelData::from(intrinsic);
+        let buffer = AudioBuffer::from_mono(as_channel, sample_rate);
+
+        outputs[0] = input.add(&buffer, ChannelInterpretation::Discrete);
+    }
+
+    fn tail_time(&self) -> bool {
+        true // has intrinsic value
+    }
 }
 
 pub(crate) fn audio_param_pair(
@@ -140,7 +210,7 @@ impl AudioParamProcessor {
         }
     }
 
-    pub fn tick(&mut self, ts: f64, dt: f64, count: usize) -> Vec<f32> {
+    fn tick(&mut self, ts: f64, dt: f64, count: usize) -> Vec<f32> {
         for event in self.receiver.try_iter() {
             self.events.push(event);
         }

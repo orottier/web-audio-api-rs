@@ -128,9 +128,20 @@ struct Node {
 
 impl Node {
     /// Render an audio quantum
-    fn process(&mut self, inputs: &[&AudioBuffer], timestamp: f64, sample_rate: SampleRate) {
-        self.processor
-            .process(inputs, &mut self.buffers[..], timestamp, sample_rate)
+    fn process(
+        &mut self,
+        inputs: &[&AudioBuffer],
+        params: Params,
+        timestamp: f64,
+        sample_rate: SampleRate,
+    ) {
+        self.processor.process(
+            inputs,
+            &mut self.buffers[..],
+            params,
+            timestamp,
+            sample_rate,
+        )
     }
 
     /// Determine if this node is done playing and can be removed from the audio graph
@@ -153,6 +164,19 @@ impl Node {
         }
 
         false
+    }
+}
+
+pub struct Params<'a> {
+    nodes: &'a HashMap<NodeIndex, Node>,
+}
+
+impl<'a> Params<'a> {
+    pub fn get(&self, index: u64) -> &[f32] {
+        self.nodes.get(&NodeIndex(index)).expect("missing").buffers[0]
+            .channel_data(0)
+            .expect("chan")
+            .as_slice()
     }
 }
 
@@ -302,15 +326,13 @@ impl Graph {
                 ];
             edges
                 .iter()
-                .filter_map(
-                    move |(s, d)| {
-                        if d.0 == *index {
-                            Some((s, d.1))
-                        } else {
-                            None
-                        }
-                    },
-                )
+                .filter_map(move |(s, d)| {
+                    if d.0 == *index && d.1 != u32::MAX {
+                        Some((s, d.1))
+                    } else {
+                        None
+                    }
+                })
                 .for_each(|(&(node_index, output), input)| {
                     let node = nodes.get(&node_index).unwrap();
                     let signal = &node.buffers[output as usize];
@@ -340,7 +362,8 @@ impl Graph {
                 })
                 .collect();
 
-            node.process(&input_bufs[..], timestamp, sample_rate);
+            let params = Params { nodes: &*nodes };
+            node.process(&input_bufs[..], params, timestamp, sample_rate);
 
             // check if the Node has reached end of lifecycle
             node.has_inputs_connected = has_inputs_connected;
@@ -371,7 +394,15 @@ mod tests {
     struct TestNode {}
 
     impl AudioProcessor for TestNode {
-        fn process(&mut self, _: &[&AudioBuffer], _: &mut [AudioBuffer], _: f64, _: SampleRate) {}
+        fn process(
+            &mut self,
+            _: &[&AudioBuffer],
+            _: &mut [AudioBuffer],
+            _: Params,
+            _: f64,
+            _: SampleRate,
+        ) {
+        }
         fn tail_time(&self) -> bool {
             false
         }

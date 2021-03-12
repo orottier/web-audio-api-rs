@@ -16,6 +16,8 @@ use crate::graph::RenderThread;
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node;
+use crate::node::AudioNode;
+use crate::param::AudioParamOptions;
 use crate::process::AudioProcessor;
 use crate::SampleRate;
 
@@ -110,6 +112,24 @@ pub trait AsBaseAudioContext {
     /// Creates an AudioBufferSourceNode
     fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
         node::AudioBufferSourceNode::new(self.base(), Default::default())
+    }
+
+    fn create_audio_param(
+        &self,
+        opts: AudioParamOptions,
+        dest: &AudioNodeId,
+    ) -> (crate::param::AudioParam<'_>, u64) {
+        let param = self.base().register(move |registration| {
+            let (mut node, proc) = crate::param::audio_param_pair(opts);
+            node.registration = Some(registration);
+
+            (node, Box::new(proc))
+        });
+
+        self.base().connect(param.id(), dest, 0, u32::MAX);
+
+        let proc_id = param.id().0;
+        (param, proc_id)
     }
 
     /// Returns an AudioDestinationNode representing the final destination of all audio in the
@@ -363,7 +383,7 @@ impl BaseAudioContext {
             id,
             node: render,
             inputs: node.number_of_inputs() as usize,
-            channel_config: node.channel_config_raw().clone(),
+            channel_config: node.channel_config_cloned(),
             buffers,
         };
         self.render_channel.send(message).unwrap();

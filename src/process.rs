@@ -1,6 +1,7 @@
 //! Audio processing code that runs on the audio rendering thread
 
 use crate::buffer::AudioBuffer;
+use crate::graph::Params;
 use crate::SampleRate;
 
 /// Interface for audio processing code that runs on the audio rendering thread.
@@ -13,6 +14,7 @@ pub trait AudioProcessor: Send {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
+        params: Params,
         timestamp: f64,
         sample_rate: SampleRate,
     );

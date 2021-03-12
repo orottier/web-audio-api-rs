@@ -11,8 +11,9 @@ use crate::buffer::{
 };
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioNodeId, BaseAudioContext};
 use crate::control::{Controller, Scheduler};
+use crate::graph::Params;
 use crate::media::{MediaElement, MediaStream};
-use crate::param::{AudioParam, AudioParamOptions, AudioParamProcessor};
+use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::AudioProcessor;
 use crate::SampleRate;
 
@@ -31,6 +32,9 @@ pub trait AudioNode {
         self.registration().id()
     }
     fn channel_config_raw(&self) -> &ChannelConfig;
+    fn channel_config_cloned(&self) -> ChannelConfig {
+        self.channel_config_raw().clone()
+    }
 
     /// The BaseAudioContext which owns this AudioNode.
     fn context(&self) -> &BaseAudioContext {
@@ -39,13 +43,7 @@ pub trait AudioNode {
 
     /// Connect the output of this AudioNode to the input of another node.
     fn connect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
-        if !std::ptr::eq(self.context(), dest.context()) {
-            panic!("attempting to connect nodes from different contexts");
-        }
-
-        self.context().connect(self.id(), dest.id(), 0, 0);
-
-        dest
+        self.connect_at(dest, 0, 0).unwrap()
     }
 
     /// Connect a specific output of this AudioNode to a specific input of another node.
@@ -264,14 +262,17 @@ impl<'a> OscillatorNode<'a> {
                 default_value: 440.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (f_param, f_render) = crate::param::audio_param_pair(param_opts);
+            let (f_param, f_proc) = context
+                .base()
+                .create_audio_param(param_opts, registration.id());
+            dbg!(f_proc);
             f_param.set_value(options.frequency);
 
             let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
             let scheduler = Scheduler::new();
 
             let render = OscillatorRenderer {
-                frequency: f_render,
+                frequency: f_proc,
                 type_: type_.clone(),
                 scheduler: scheduler.clone(),
             };
@@ -302,7 +303,7 @@ impl<'a> OscillatorNode<'a> {
 
 #[derive(Debug)]
 pub(crate) struct OscillatorRenderer {
-    pub frequency: AudioParamProcessor,
+    pub frequency: u64,
     pub type_: Arc<AtomicU32>,
     pub scheduler: Scheduler,
 }
@@ -312,6 +313,7 @@ impl AudioProcessor for OscillatorRenderer {
         &mut self,
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
+        params: Params,
         timestamp: f64,
         sample_rate: SampleRate,
     ) {
@@ -328,8 +330,7 @@ impl AudioProcessor for OscillatorRenderer {
             return;
         }
 
-        let dt = 1. / sample_rate.0 as f64;
-        let freq_values = self.frequency.tick(timestamp, dt, len);
+        let freq_values = params.get(self.frequency);
         let freq = freq_values[0]; // force a-rate processing
 
         let type_ = self.type_.load(Ordering::SeqCst).into();
@@ -370,6 +371,7 @@ impl AudioProcessor for DestinationRenderer {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
+        _params: Params,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
@@ -455,11 +457,14 @@ impl<'a> GainNode<'a> {
                 default_value: 1.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (param, render) = crate::param::audio_param_pair(param_opts);
+            let (param, proc) = context
+                .base()
+                .create_audio_param(param_opts, registration.id());
 
+            dbg!(proc);
             param.set_value_at_time(options.gain, 0.);
 
-            let render = GainRenderer { gain: render };
+            let render = GainRenderer { gain: proc };
 
             let node = GainNode {
                 registration,
@@ -478,7 +483,7 @@ impl<'a> GainNode<'a> {
 
 #[derive(Debug)]
 pub(crate) struct GainRenderer {
-    pub gain: AudioParamProcessor,
+    pub gain: u64,
 }
 
 impl AudioProcessor for GainRenderer {
@@ -486,15 +491,15 @@ impl AudioProcessor for GainRenderer {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
-        timestamp: f64,
-        sample_rate: SampleRate,
+        params: Params,
+        _timestamp: f64,
+        _sample_rate: SampleRate,
     ) {
         // single input/output node
         let input = inputs[0];
         let output = &mut outputs[0];
 
-        let dt = 1. / sample_rate.0 as f64;
-        let gain_values = self.gain.tick(timestamp, dt, input.sample_len());
+        let gain_values = params.get(self.gain);
 
         *output = input.clone();
 
@@ -600,6 +605,7 @@ impl AudioProcessor for DelayRenderer {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
+        _params: Params,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
@@ -710,6 +716,7 @@ impl AudioProcessor for ChannelSplitterRenderer {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
+        _params: Params,
         _timestamp: f64,
         sample_rate: SampleRate,
     ) {
@@ -817,6 +824,7 @@ impl AudioProcessor for ChannelMergerRenderer {
         &mut self,
         inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
+        _params: Params,
         _timestamp: f64,
         sample_rate: SampleRate,
     ) {
@@ -981,6 +989,7 @@ impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
         &mut self,
         _inputs: &[&AudioBuffer],
         outputs: &mut [AudioBuffer],
+        _params: Params,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
