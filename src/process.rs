@@ -42,16 +42,14 @@ impl<'a> AudioParamValues<'a> {
         Self { nodes }
     }
 
+    pub(crate) fn get_raw(&self, index: &AudioParamId) -> &AudioBuffer {
+        self.nodes.get(&index.into()).unwrap().get_buffer()
+    }
+
     /// Get the computed values for the given [`crate::param::AudioParam`]
     ///
     /// For both A & K-rate params, it will provide a slice of length [`crate::BUFFER_SIZE`]
     pub fn get(&self, index: &AudioParamId) -> &[f32] {
-        self.nodes
-            .get(&index.into())
-            .unwrap()
-            .get_buffer()
-            .channel_data(0)
-            .unwrap()
-            .as_slice()
+        self.get_raw(index).channel_data(0).unwrap().as_slice()
     }
 }

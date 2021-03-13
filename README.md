@@ -30,6 +30,7 @@ Current deviations
 - render quantum size = 256 (cpal limitation on OSX)
 - function names use snake\_case
 - getters/setters instead of exposed attributes
+- deprecated functions are not implemented
 - some control-render communication is done with atomics instread of message passing
 - function that should return Promises are now blocking
 - no AudioWorklet functionality, users should implement the relevant traits instead

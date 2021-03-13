@@ -33,7 +33,7 @@ pub struct AudioParamOptions {
 }
 
 #[derive(Debug)]
-enum AutomationEvent {
+pub(crate) enum AutomationEvent {
     SetValueAtTime { v: f32, start: f64 },
     LinearRampToValueAtTime { v: f32, start: f64, end: f64 },
 }
@@ -199,6 +199,23 @@ impl<'a> AudioParam<'a> {
         self.sender
             .send(LinearRampToValueAtTime { v, start: 0., end })
             .unwrap()
+    }
+
+    // helper function to detach from context (for borrow reasons)
+    pub(crate) fn into_raw_parts(self) -> (Arc<AtomicF64>, Sender<AutomationEvent>) {
+        (self.value, self.sender)
+    }
+
+    // helper function to attach to context (for borrow reasons)
+    pub(crate) fn from_raw_parts(
+        registration: AudioContextRegistration<'a>,
+        parts: (Arc<AtomicF64>, Sender<AutomationEvent>),
+    ) -> Self {
+        Self {
+            registration,
+            value: parts.0,
+            sender: parts.1,
+        }
     }
 }
 

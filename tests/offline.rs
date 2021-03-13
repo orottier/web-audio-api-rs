@@ -86,3 +86,22 @@ fn test_audio_param_graph() {
     let expected = vec![0.8 * 0.9; BUFFER_SIZE as usize];
     assert_eq!(output, expected.as_slice());
 }
+
+#[test]
+fn test_listener() {
+    let len = BUFFER_SIZE as usize;
+    let mut context = OfflineAudioContext::new(1, len, SampleRate(BUFFER_SIZE));
+
+    {
+        let listener1 = context.listener();
+        let listener2 = context.listener();
+        listener1.position_x().set_value(1.);
+        listener2.position_y().set_value(2.);
+    }
+
+    let _ = context.start_rendering();
+
+    let listener = context.listener();
+    assert_eq!(listener.position_y().value(), 2.);
+    assert_eq!(listener.position_x().value(), 1.);
+}

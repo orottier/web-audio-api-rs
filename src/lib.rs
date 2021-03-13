@@ -49,6 +49,7 @@ pub mod media;
 pub mod node;
 pub mod param;
 pub mod process;
+pub mod spatial;
 
 pub(crate) mod graph;
 pub(crate) mod message;

@@ -1,9 +1,13 @@
 //! The BaseAudioContext interface and the AudioContext and OfflineAudioContext types
 
+use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
 
-const DESTINATION_NODE_ID: AudioNodeId = AudioNodeId(0);
+// magic node values
+const DESTINATION_NODE_ID: u64 = 0;
+const LISTENER_NODE_ID: u64 = 1;
+const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
 #[cfg(not(test))]
 use cpal::{
@@ -19,8 +23,9 @@ use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node;
 use crate::node::AudioNode;
-use crate::param::AudioParamOptions;
+use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::AudioProcessor;
+use crate::spatial::{AudioListener, AudioListenerParams};
 use crate::SampleRate;
 
 /// The BaseAudioContext interface represents an audio-processing graph built from audio modules
@@ -37,6 +42,8 @@ pub struct BaseAudioContext {
     render_channel: Sender<ControlMessage>,
     /// number of frames played
     frames_played: AtomicU64,
+    /// AudioListener fields
+    listener_params: Option<AudioListenerParams>,
 }
 
 /// Retrieve the BaseAudioContext from the concrete AudioContext
@@ -143,12 +150,33 @@ pub trait AsBaseAudioContext {
     /// context. It can be thought of as the audio-rendering device.
     fn destination(&self) -> node::DestinationNode {
         let registration = AudioContextRegistration {
-            id: DESTINATION_NODE_ID,
+            id: AudioNodeId(DESTINATION_NODE_ID),
             context: &self.base(),
         };
         node::DestinationNode {
             registration,
             channel_count: self.base().channels as usize,
+        }
+    }
+
+    /// Returns the AudioListener which is used for 3D spatialization
+    fn listener(&self) -> AudioListener {
+        let mut ids = LISTENER_PARAM_IDS.map(|i| AudioContextRegistration {
+            id: AudioNodeId(i),
+            context: self.base(),
+        });
+        let params = self.base().listener_params.as_ref().unwrap();
+
+        AudioListener {
+            position_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_x.clone()),
+            position_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_y.clone()),
+            position_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_z.clone()),
+            forward_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_x.clone()),
+            forward_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_y.clone()),
+            forward_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_z.clone()),
+            up_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_x.clone()),
+            up_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_y.clone()),
+            up_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_z.clone()),
         }
     }
 
@@ -292,13 +320,11 @@ impl AudioContext {
 /// Unique identifier for audio nodes.
 ///
 /// Used for internal bookkeeping.
-#[derive(Debug, PartialEq, Eq)]
 pub struct AudioNodeId(u64);
 
 /// Unique identifier for audio params.
 ///
 /// Store these in your AudioProcessor to get access to AudioParam values.
-#[derive(Debug, PartialEq, Eq)]
 pub struct AudioParamId(u64);
 
 // bit contrived, but for type safety only the context lib can access the inner u64
@@ -330,7 +356,11 @@ impl<'a> AudioContextRegistration<'a> {
 impl<'a> Drop for AudioContextRegistration<'a> {
     fn drop(&mut self) {
         // do not drop magic nodes
-        if self.id != DESTINATION_NODE_ID {
+        let magic = self.id.0 == DESTINATION_NODE_ID
+            || self.id.0 == LISTENER_NODE_ID
+            || LISTENER_PARAM_IDS.contains(&self.id.0);
+
+        if !magic {
             let message = ControlMessage::FreeWhenFinished { id: self.id.0 };
             self.context.render_channel.send(message).unwrap();
         }
@@ -345,16 +375,57 @@ impl BaseAudioContext {
             render_channel,
             node_id_inc: AtomicU64::new(0),
             frames_played: AtomicU64::new(0),
+            listener_params: None,
         };
 
-        {
-            // Register the destination node in the base context.
-            // We cannot store the destination node inside our context since it borrows base,
-            // but we can reconstruct a new instance on the fly when requested
+        let listener_params = {
+            // Register magical nodes.  We cannot store the destination node inside our context
+            // since it borrows base, but we can reconstruct a new instance on the fly when
+            // requested
+
             let dest = node::DestinationNode::new(&base, channels as usize);
-            // We rely on this elsewhere:
-            assert_eq!(dest.registration.id, DESTINATION_NODE_ID);
-        }
+            assert_eq!(dest.registration().id.0, DESTINATION_NODE_ID); // we rely on this elsewhere
+
+            let listener = crate::spatial::AudioListenerNode::new(&base);
+            assert_eq!(listener.registration().id.0, LISTENER_NODE_ID); // we rely on this elsewhere
+            assert_eq!(
+                base.node_id_inc.load(Ordering::SeqCst),
+                LISTENER_PARAM_IDS.end - 1
+            );
+
+            // hack: Connect the listener to the destination node to force it to render at each
+            // quantum. Abuse the magical u32::MAX port so it acts as an AudioParam and has no side
+            // effects
+            base.connect(listener.id(), dest.id(), 0, u32::MAX);
+
+            let listener_params = listener.to_fields();
+            let AudioListener {
+                position_x,
+                position_y,
+                position_z,
+                forward_x,
+                forward_y,
+                forward_z,
+                up_x,
+                up_y,
+                up_z,
+            } = listener_params;
+
+            AudioListenerParams {
+                position_x: position_x.into_raw_parts(),
+                position_y: position_y.into_raw_parts(),
+                position_z: position_z.into_raw_parts(),
+                forward_x: forward_x.into_raw_parts(),
+                forward_y: forward_y.into_raw_parts(),
+                forward_z: forward_z.into_raw_parts(),
+                up_x: up_x.into_raw_parts(),
+                up_y: up_y.into_raw_parts(),
+                up_z: up_z.into_raw_parts(),
+            }
+        };
+
+        let mut base = base;
+        base.listener_params = Some(listener_params);
 
         base
     }

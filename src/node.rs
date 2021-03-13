@@ -378,7 +378,7 @@ impl AudioProcessor for DestinationRenderer {
     }
 
     fn tail_time(&self) -> bool {
-        false
+        unreachable!() // will never drop in control thread
     }
 }
 
