@@ -219,11 +219,11 @@ impl From<u32> for OscillatorType {
 
 /// Audio source generating a periodic waveform
 pub struct OscillatorNode<'a> {
-    pub(crate) registration: AudioContextRegistration<'a>,
-    pub(crate) channel_config: ChannelConfig,
-    pub(crate) frequency: AudioParam<'a>,
-    pub(crate) type_: Arc<AtomicU32>,
-    pub(crate) scheduler: Scheduler,
+    registration: AudioContextRegistration<'a>,
+    channel_config: ChannelConfig,
+    frequency: AudioParam<'a>,
+    type_: Arc<AtomicU32>,
+    scheduler: Scheduler,
 }
 
 impl<'a> AudioScheduledSourceNode for OscillatorNode<'a> {
@@ -297,10 +297,10 @@ impl<'a> OscillatorNode<'a> {
     }
 }
 
-pub(crate) struct OscillatorRenderer {
-    pub frequency: AudioParamId,
-    pub type_: Arc<AtomicU32>,
-    pub scheduler: Scheduler,
+struct OscillatorRenderer {
+    frequency: AudioParamId,
+    type_: Arc<AtomicU32>,
+    scheduler: Scheduler,
 }
 
 impl AudioProcessor for OscillatorRenderer {
@@ -358,7 +358,7 @@ pub struct DestinationNode<'a> {
     pub(crate) channel_count: usize,
 }
 
-pub(crate) struct DestinationRenderer {}
+struct DestinationRenderer {}
 
 impl AudioProcessor for DestinationRenderer {
     fn process(
@@ -451,9 +451,9 @@ impl Default for GainOptions {
 
 /// AudioNode for volume control
 pub struct GainNode<'a> {
-    pub(crate) registration: AudioContextRegistration<'a>,
-    pub(crate) channel_config: ChannelConfig,
-    pub(crate) gain: AudioParam<'a>,
+    registration: AudioContextRegistration<'a>,
+    channel_config: ChannelConfig,
+    gain: AudioParam<'a>,
 }
 
 impl<'a> AudioNode for GainNode<'a> {
@@ -505,8 +505,8 @@ impl<'a> GainNode<'a> {
     }
 }
 
-pub(crate) struct GainRenderer {
-    pub gain: AudioParamId,
+struct GainRenderer {
+    gain: AudioParamId,
 }
 
 impl AudioProcessor for GainRenderer {
@@ -557,9 +557,9 @@ impl Default for DelayOptions {
 
 /// Node that delays the incoming audio signal by a certain amount
 pub struct DelayNode<'a> {
-    pub(crate) registration: AudioContextRegistration<'a>,
-    pub(crate) render_quanta: Arc<AtomicU32>,
-    pub(crate) channel_config: ChannelConfig,
+    registration: AudioContextRegistration<'a>,
+    render_quanta: Arc<AtomicU32>,
+    channel_config: ChannelConfig,
 }
 
 impl<'a> AudioNode for DelayNode<'a> {
@@ -613,10 +613,10 @@ impl<'a> DelayNode<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) struct DelayRenderer {
-    pub render_quanta: Arc<AtomicU32>,
-    pub delay_buffer: Vec<AudioBuffer>,
-    pub index: usize,
+struct DelayRenderer {
+    render_quanta: Arc<AtomicU32>,
+    delay_buffer: Vec<AudioBuffer>,
+    index: usize,
 }
 
 impl AudioProcessor for DelayRenderer {
@@ -676,8 +676,8 @@ impl Default for ChannelSplitterOptions {
 
 /// AudioNode for accessing the individual channels of an audio stream in the routing graph
 pub struct ChannelSplitterNode<'a> {
-    pub(crate) registration: AudioContextRegistration<'a>,
-    pub(crate) channel_config: ChannelConfig,
+    registration: AudioContextRegistration<'a>,
+    channel_config: ChannelConfig,
 }
 
 impl<'a> AudioNode for ChannelSplitterNode<'a> {
@@ -726,7 +726,7 @@ impl<'a> ChannelSplitterNode<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) struct ChannelSplitterRenderer {
+struct ChannelSplitterRenderer {
     pub number_of_outputs: usize,
 }
 
@@ -784,8 +784,8 @@ impl Default for ChannelMergerOptions {
 
 /// AudioNode for combining channels from multiple audio streams into a single audio stream.
 pub struct ChannelMergerNode<'a> {
-    pub(crate) registration: AudioContextRegistration<'a>,
-    pub(crate) channel_config: ChannelConfig,
+    registration: AudioContextRegistration<'a>,
+    channel_config: ChannelConfig,
 }
 
 impl<'a> AudioNode for ChannelMergerNode<'a> {
@@ -834,8 +834,8 @@ impl<'a> ChannelMergerNode<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) struct ChannelMergerRenderer {
-    pub number_of_inputs: usize,
+struct ChannelMergerRenderer {
+    number_of_inputs: usize,
 }
 
 impl AudioProcessor for ChannelMergerRenderer {
@@ -875,8 +875,8 @@ pub struct MediaStreamAudioSourceNodeOptions<M> {
 
 /// An audio source from external media files (.ogg, .wav, .mp3)
 pub struct MediaStreamAudioSourceNode<'a> {
-    pub(crate) registration: AudioContextRegistration<'a>,
-    pub(crate) channel_config: ChannelConfig,
+    registration: AudioContextRegistration<'a>,
+    channel_config: ChannelConfig,
 }
 
 impl<'a> AudioNode for MediaStreamAudioSourceNode<'a> {
@@ -927,9 +927,9 @@ pub struct MediaElementAudioSourceNodeOptions<M> {
 
 /// An audio source from external media files (.ogg, .wav, .mp3)
 pub struct MediaElementAudioSourceNode<'a> {
-    pub(crate) registration: AudioContextRegistration<'a>,
-    pub(crate) channel_config: ChannelConfig,
-    pub(crate) controller: Controller,
+    registration: AudioContextRegistration<'a>,
+    channel_config: ChannelConfig,
+    controller: Controller,
 }
 
 impl<'a> AudioScheduledSourceNode for MediaElementAudioSourceNode<'a> {
@@ -989,7 +989,7 @@ impl<'a> MediaElementAudioSourceNode<'a> {
     }
 }
 
-pub(crate) struct AudioBufferRenderer<R> {
+struct AudioBufferRenderer<R> {
     stream: R,
     finished: bool,
 }
@@ -1045,9 +1045,9 @@ impl Default for AudioBufferSourceNodeOptions {
 
 /// An audio source from an in-memory audio asset in an AudioBuffer
 pub struct AudioBufferSourceNode<'a> {
-    pub(crate) registration: AudioContextRegistration<'a>,
-    pub(crate) channel_config: ChannelConfig,
-    pub(crate) controller: Controller,
+    registration: AudioContextRegistration<'a>,
+    channel_config: ChannelConfig,
+    controller: Controller,
 }
 
 impl<'a> AudioScheduledSourceNode for AudioBufferSourceNode<'a> {
@@ -1130,9 +1130,9 @@ impl Default for ConstantSourceOptions {
 
 /// Audio source whose output is nominally a constant value
 pub struct ConstantSourceNode<'a> {
-    pub(crate) registration: AudioContextRegistration<'a>,
-    pub(crate) channel_config: ChannelConfig,
-    pub(crate) offset: AudioParam<'a>,
+    registration: AudioContextRegistration<'a>,
+    channel_config: ChannelConfig,
+    offset: AudioParam<'a>,
 }
 
 impl<'a> AudioNode for ConstantSourceNode<'a> {
@@ -1182,7 +1182,7 @@ impl<'a> ConstantSourceNode<'a> {
     }
 }
 
-pub(crate) struct ConstantSourceRenderer {
+struct ConstantSourceRenderer {
     pub offset: AudioParamId,
 }
 
