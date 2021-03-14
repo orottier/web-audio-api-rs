@@ -11,6 +11,7 @@ use crate::process::{AudioParamValues, AudioProcessor};
 use crate::AtomicF64;
 use crate::SampleRate;
 
+use std::f32::consts::PI;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
@@ -123,14 +124,24 @@ impl<'a> AudioListenerNode<'a> {
         context.base().register(move |registration| {
             let reg_id = registration.id();
             let base = context.base();
+
+            let forward_z_opts = AudioParamOptions {
+                default_value: -1.,
+                ..PARAM_OPTS
+            };
+            let up_y_opts = AudioParamOptions {
+                default_value: 1.,
+                ..PARAM_OPTS
+            };
+
             let (p1, v1) = base.create_audio_param(PARAM_OPTS, reg_id);
             let (p2, v2) = base.create_audio_param(PARAM_OPTS, reg_id);
             let (p3, v3) = base.create_audio_param(PARAM_OPTS, reg_id);
             let (p4, v4) = base.create_audio_param(PARAM_OPTS, reg_id);
             let (p5, v5) = base.create_audio_param(PARAM_OPTS, reg_id);
-            let (p6, v6) = base.create_audio_param(PARAM_OPTS, reg_id);
+            let (p6, v6) = base.create_audio_param(forward_z_opts, reg_id);
             let (p7, v7) = base.create_audio_param(PARAM_OPTS, reg_id);
-            let (p8, v8) = base.create_audio_param(PARAM_OPTS, reg_id);
+            let (p8, v8) = base.create_audio_param(up_y_opts, reg_id);
             let (p9, v9) = base.create_audio_param(PARAM_OPTS, reg_id);
 
             let node = Self {
@@ -217,4 +228,111 @@ pub(crate) struct AudioListenerParams {
     pub up_x: (Arc<AtomicF64>, Sender<AutomationEvent>),
     pub up_y: (Arc<AtomicF64>, Sender<AutomationEvent>),
     pub up_z: (Arc<AtomicF64>, Sender<AutomationEvent>),
+}
+
+use vecmath::{
+    vec3_cross, vec3_dot, vec3_normalized, vec3_scale, vec3_square_len, vec3_sub, Vector3,
+};
+
+pub fn azimuth_and_elevation(
+    source_position: Vector3<f32>,
+    listener_position: Vector3<f32>,
+    listener_forward: Vector3<f32>,
+    listener_up: Vector3<f32>,
+) -> (f32, f32) {
+    // Handle degenerate case if source and listener are at the same point.
+    if source_position == listener_position {
+        return (0., 0.);
+    }
+
+    // Calculate the source-listener vector.
+    let source_listener = vec3_normalized(vec3_sub(source_position, listener_position));
+
+    // Align axes.
+    let listener_right = vec3_cross(listener_forward, listener_up);
+
+    if vec3_square_len(listener_right) == 0. {
+        // Handle the case where listener’s 'up' and 'forward' vectors are linearly dependent, in
+        // which case 'right' cannot be determined
+        return (0., 0.);
+    }
+
+    // Determine a unit vector orthogonal to listener’s right, forward
+    let listener_right_norm = vec3_normalized(listener_right);
+    let listener_forward_norm = vec3_normalized(listener_forward);
+    let up = vec3_cross(listener_right_norm, listener_forward_norm);
+
+    let up_projection = vec3_dot(source_listener, up);
+    let projected_source =
+        vec3_normalized(vec3_sub(source_listener, vec3_scale(up, up_projection)));
+
+    let mut azimuth = 180. * vec3_dot(projected_source, listener_right_norm).acos() / PI;
+
+    // Source in front or behind the listener.
+    let front_back = vec3_dot(projected_source, listener_forward_norm);
+    if front_back < 0. {
+        azimuth = 360. - azimuth;
+    }
+
+    // Make azimuth relative to "forward" and not "right" listener vector.
+    if azimuth >= 0. && azimuth <= 270. {
+        azimuth = 90. - azimuth;
+    } else {
+        azimuth = 450. - azimuth;
+    }
+
+    let mut elevation = 90. - 180. * vec3_dot(source_listener, up).acos() / PI;
+
+    if elevation > 90. {
+        elevation = 180. - elevation;
+    } else if elevation < -90. {
+        elevation = -180. - elevation;
+    }
+
+    (azimuth, elevation)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_azimuth_elevation_equal_pos() {
+        let lp = [0., 0., 0.];
+        let lf = [0., 0., -1.];
+        let lu = [0., 1., 0.];
+
+        let pos = [0., 0., 0.];
+        let (azimuth, elevation) = azimuth_and_elevation(pos, lp, lf, lu);
+
+        assert_eq!(azimuth, 0.);
+        assert_eq!(elevation, 0.);
+    }
+
+    #[test]
+    fn test_azimuth_x() {
+        let lp = [0., 0., 0.];
+        let lf = [0., 0., -1.];
+        let lu = [0., 1., 0.];
+
+        let pos = [10., 0., 0.];
+        let (azimuth, _) = azimuth_and_elevation(pos, lp, lf, lu);
+        assert!((azimuth - 90.).abs() < 0.001);
+
+        let pos = [-10., 0., 0.];
+        let (azimuth, _) = azimuth_and_elevation(pos, lp, lf, lu);
+        assert!((azimuth + 90.).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_azimuth_y() {
+        let lp = [0., 0., 0.];
+        let lf = [0., 0., -1.];
+        let lu = [0., 1., 0.];
+
+        let pos = [0., -10., 0.];
+        let (azimuth, _) = azimuth_and_elevation(pos, lp, lf, lu);
+        dbg!(azimuth);
+        assert!((azimuth + 90.).abs() < 0.001);
+    }
 }

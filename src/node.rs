@@ -1218,6 +1218,12 @@ pub struct PannerOptions {
     pub position_x: f32,
     pub position_y: f32,
     pub position_z: f32,
+    pub forward_x: f32,
+    pub forward_y: f32,
+    pub forward_z: f32,
+    pub up_x: f32,
+    pub up_y: f32,
+    pub up_z: f32,
 }
 
 /// Positions / spatializes an incoming audio stream in three-dimensional space.
@@ -1251,18 +1257,18 @@ impl<'a> PannerNode<'a> {
         context.base().register(move |registration| {
             use crate::spatial::PARAM_OPTS;
             let id = registration.id();
-            let (position_x, render_x) = context.base().create_audio_param(PARAM_OPTS, id);
-            let (position_y, render_y) = context.base().create_audio_param(PARAM_OPTS, id);
-            let (position_z, render_z) = context.base().create_audio_param(PARAM_OPTS, id);
+            let (position_x, render_px) = context.base().create_audio_param(PARAM_OPTS, id);
+            let (position_y, render_py) = context.base().create_audio_param(PARAM_OPTS, id);
+            let (position_z, render_pz) = context.base().create_audio_param(PARAM_OPTS, id);
 
             position_x.set_value_at_time(options.position_x, 0.);
             position_y.set_value_at_time(options.position_y, 0.);
             position_z.set_value_at_time(options.position_z, 0.);
 
             let render = PannerRenderer {
-                position_x: render_x,
-                position_y: render_y,
-                position_z: render_z,
+                position_x: render_px,
+                position_y: render_py,
+                position_z: render_pz,
             };
 
             let node = PannerNode {
@@ -1310,13 +1316,60 @@ impl AudioProcessor for PannerRenderer {
         outputs: &mut [AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
-        _sample_rate: SampleRate,
+        sample_rate: SampleRate,
     ) {
-        // single input/output node
-        let input = inputs[0];
-        let output = &mut outputs[0];
+        // single input node, assume mono, not silent
+        let input = inputs[0].channel_data(0).unwrap();
 
-        todo!()
+        // a-rate processing for now
+
+        // source parameters (Panner)
+        let source_position_x = params.get(&self.position_x)[0];
+        let source_position_y = params.get(&self.position_y)[0];
+        let source_position_z = params.get(&self.position_z)[0];
+
+        // listener parameters (AudioListener)
+        let listener_position_x = inputs[1].channel_data(0).unwrap().as_slice()[0];
+        let listener_position_y = inputs[2].channel_data(0).unwrap().as_slice()[0];
+        let listener_position_z = inputs[3].channel_data(0).unwrap().as_slice()[0];
+        let listener_forward_x = inputs[4].channel_data(0).unwrap().as_slice()[0];
+        let listener_forward_y = inputs[5].channel_data(0).unwrap().as_slice()[0];
+        let listener_forward_z = inputs[6].channel_data(0).unwrap().as_slice()[0];
+        let listener_up_x = inputs[7].channel_data(0).unwrap().as_slice()[0];
+        let listener_up_y = inputs[8].channel_data(0).unwrap().as_slice()[0];
+        let listener_up_z = inputs[9].channel_data(0).unwrap().as_slice()[0];
+
+        let (mut azimuth, _elevation) = crate::spatial::azimuth_and_elevation(
+            [source_position_x, source_position_y, source_position_z],
+            [
+                listener_position_x,
+                listener_position_y,
+                listener_position_z,
+            ],
+            [listener_forward_x, listener_forward_y, listener_forward_z],
+            [listener_up_x, listener_up_y, listener_up_z],
+        );
+
+        // First, clamp azimuth to allowed range of [-180, 180].
+        azimuth = azimuth.max(-180.);
+        azimuth = azimuth.min(180.);
+        // Then wrap to range [-90, 90].
+        if azimuth < -90. {
+            azimuth = -180. - azimuth;
+        } else if azimuth > 90. {
+            azimuth = 180. - azimuth;
+        }
+
+        let x = (azimuth + 90.) / 180.;
+        let gain_l = (x * PI / 2.).cos();
+        let gain_r = (x * PI / 2.).sin();
+
+        let left: Vec<_> = input.iter().map(|&v| v * gain_l).collect();
+        let right: Vec<_> = input.iter().map(|&v| v * gain_r).collect();
+
+        let channels = vec![ChannelData::from(left), ChannelData::from(right)];
+        let buffer = AudioBuffer::from_channels(channels, sample_rate);
+        outputs[0] = buffer;
     }
 
     fn tail_time(&self) -> bool {
