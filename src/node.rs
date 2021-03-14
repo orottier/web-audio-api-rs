@@ -1211,3 +1211,115 @@ impl AudioProcessor for ConstantSourceRenderer {
         true
     }
 }
+
+/// Options for constructing a PannerNode
+#[derive(Default)]
+pub struct PannerOptions {
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+}
+
+/// Positions / spatializes an incoming audio stream in three-dimensional space.
+pub struct PannerNode<'a> {
+    registration: AudioContextRegistration<'a>,
+    channel_config: ChannelConfig,
+    position_x: AudioParam<'a>,
+    position_y: AudioParam<'a>,
+    position_z: AudioParam<'a>,
+}
+
+impl<'a> AudioNode for PannerNode<'a> {
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
+    }
+
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        1 + 9 // todo, user should not be able to see these ports
+    }
+    fn number_of_outputs(&self) -> u32 {
+        1
+    }
+}
+
+impl<'a> PannerNode<'a> {
+    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: PannerOptions) -> Self {
+        context.base().register(move |registration| {
+            use crate::spatial::PARAM_OPTS;
+            let id = registration.id();
+            let (position_x, render_x) = context.base().create_audio_param(PARAM_OPTS, id);
+            let (position_y, render_y) = context.base().create_audio_param(PARAM_OPTS, id);
+            let (position_z, render_z) = context.base().create_audio_param(PARAM_OPTS, id);
+
+            position_x.set_value_at_time(options.position_x, 0.);
+            position_y.set_value_at_time(options.position_y, 0.);
+            position_z.set_value_at_time(options.position_z, 0.);
+
+            let render = PannerRenderer {
+                position_x: render_x,
+                position_y: render_y,
+                position_z: render_z,
+            };
+
+            let node = PannerNode {
+                registration,
+                channel_config: ChannelConfigOptions {
+                    count: 2,
+                    mode: ChannelCountMode::ClampedMax,
+                    interpretation: ChannelInterpretation::Speakers,
+                }
+                .into(),
+                position_x,
+                position_y,
+                position_z,
+            };
+
+            context.base().connect_listener_to_panner(&node.id());
+
+            (node, Box::new(render))
+        })
+    }
+
+    pub fn position_x(&self) -> &AudioParam {
+        &self.position_x
+    }
+
+    pub fn position_y(&self) -> &AudioParam {
+        &self.position_y
+    }
+
+    pub fn position_z(&self) -> &AudioParam {
+        &self.position_z
+    }
+}
+
+struct PannerRenderer {
+    position_x: AudioParamId,
+    position_y: AudioParamId,
+    position_z: AudioParamId,
+}
+
+impl AudioProcessor for PannerRenderer {
+    fn process(
+        &mut self,
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
+        params: AudioParamValues,
+        _timestamp: f64,
+        _sample_rate: SampleRate,
+    ) {
+        // single input/output node
+        let input = inputs[0];
+        let output = &mut outputs[0];
+
+        todo!()
+    }
+
+    fn tail_time(&self) -> bool {
+        false // only for panning model HRTF
+    }
+}

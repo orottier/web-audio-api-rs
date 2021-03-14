@@ -128,6 +128,14 @@ pub trait AsBaseAudioContext {
         node::AudioBufferSourceNode::new(self.base(), Default::default())
     }
 
+    /// Creates a PannerNode
+    fn create_panner(&self) -> node::PannerNode {
+        node::PannerNode::new(self.base(), Default::default())
+    }
+
+    /// Create an AudioParam.
+    ///
+    /// Call this inside the `register` closure when setting up your AudioNode
     fn create_audio_param(
         &self,
         opts: AudioParamOptions,
@@ -511,6 +519,19 @@ impl BaseAudioContext {
     pub(crate) fn disconnect_all(&self, from: &AudioNodeId) {
         let message = ControlMessage::DisconnectAll { from: from.0 };
         self.render_channel.send(message).unwrap();
+    }
+
+    /// Attach the 9 AudioListener coordinates to a PannerNode
+    pub(crate) fn connect_listener_to_panner(&self, panner: &AudioNodeId) {
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 0, 1);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 1, 2);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 2, 3);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 3, 4);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 4, 5);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 5, 6);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 6, 7);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 7, 8);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 8, 9);
     }
 }
 

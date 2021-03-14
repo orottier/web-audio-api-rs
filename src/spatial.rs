@@ -15,7 +15,7 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
 /// AudioParam settings for the carthesian coordinates
-const PARAM_OPTS: AudioParamOptions = AudioParamOptions {
+pub(crate) const PARAM_OPTS: AudioParamOptions = AudioParamOptions {
     min_value: f32::MIN,
     max_value: f32::MAX,
     default_value: 0.,
