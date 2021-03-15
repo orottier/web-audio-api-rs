@@ -1329,25 +1329,21 @@ impl AudioProcessor for PannerRenderer {
         let source_position_z = params.get(&self.position_z)[0];
 
         // listener parameters (AudioListener)
-        let listener_position_x = inputs[1].channel_data(0).unwrap().as_slice()[0];
-        let listener_position_y = inputs[2].channel_data(0).unwrap().as_slice()[0];
-        let listener_position_z = inputs[3].channel_data(0).unwrap().as_slice()[0];
-        let listener_forward_x = inputs[4].channel_data(0).unwrap().as_slice()[0];
-        let listener_forward_y = inputs[5].channel_data(0).unwrap().as_slice()[0];
-        let listener_forward_z = inputs[6].channel_data(0).unwrap().as_slice()[0];
-        let listener_up_x = inputs[7].channel_data(0).unwrap().as_slice()[0];
-        let listener_up_y = inputs[8].channel_data(0).unwrap().as_slice()[0];
-        let listener_up_z = inputs[9].channel_data(0).unwrap().as_slice()[0];
+        let l_position_x = inputs[1].channel_data(0).unwrap().as_slice()[0];
+        let l_position_y = inputs[2].channel_data(0).unwrap().as_slice()[0];
+        let l_position_z = inputs[3].channel_data(0).unwrap().as_slice()[0];
+        let l_forward_x = inputs[4].channel_data(0).unwrap().as_slice()[0];
+        let l_forward_y = inputs[5].channel_data(0).unwrap().as_slice()[0];
+        let l_forward_z = inputs[6].channel_data(0).unwrap().as_slice()[0];
+        let l_up_x = inputs[7].channel_data(0).unwrap().as_slice()[0];
+        let l_up_y = inputs[8].channel_data(0).unwrap().as_slice()[0];
+        let l_up_z = inputs[9].channel_data(0).unwrap().as_slice()[0];
 
         let (mut azimuth, _elevation) = crate::spatial::azimuth_and_elevation(
             [source_position_x, source_position_y, source_position_z],
-            [
-                listener_position_x,
-                listener_position_y,
-                listener_position_z,
-            ],
-            [listener_forward_x, listener_forward_y, listener_forward_z],
-            [listener_up_x, listener_up_y, listener_up_z],
+            [l_position_x, l_position_y, l_position_z],
+            [l_forward_x, l_forward_y, l_forward_z],
+            [l_up_x, l_up_y, l_up_z],
         );
 
         // First, clamp azimuth to allowed range of [-180, 180].
@@ -1364,8 +1360,14 @@ impl AudioProcessor for PannerRenderer {
         let gain_l = (x * PI / 2.).cos();
         let gain_r = (x * PI / 2.).sin();
 
-        let left: Vec<_> = input.iter().map(|&v| v * gain_l).collect();
-        let right: Vec<_> = input.iter().map(|&v| v * gain_r).collect();
+        let distance = crate::spatial::distance(
+            [source_position_x, source_position_y, source_position_z],
+            [l_position_x, l_position_y, l_position_z],
+        );
+        let dist_gain = 1. / distance;
+
+        let left: Vec<_> = input.iter().map(|&v| v * gain_l * dist_gain).collect();
+        let right: Vec<_> = input.iter().map(|&v| v * gain_r * dist_gain).collect();
 
         let channels = vec![ChannelData::from(left), ChannelData::from(right)];
         let buffer = AudioBuffer::from_channels(channels, sample_rate);

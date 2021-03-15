@@ -1,4 +1,6 @@
 //! Spatialization/Panning primitives
+//!
+//! Required for panning algorithm, distance and cone effects of [`crate::node::PannerNode`]s
 
 use crate::buffer::{
     AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
@@ -231,9 +233,10 @@ pub(crate) struct AudioListenerParams {
 }
 
 use vecmath::{
-    vec3_cross, vec3_dot, vec3_normalized, vec3_scale, vec3_square_len, vec3_sub, Vector3,
+    vec3_cross, vec3_dot, vec3_len, vec3_normalized, vec3_scale, vec3_square_len, vec3_sub, Vector3,
 };
 
+/// Direction to source position measured from listener in 3D
 pub fn azimuth_and_elevation(
     source_position: Vector3<f32>,
     listener_position: Vector3<f32>,
@@ -296,6 +299,11 @@ pub fn azimuth_and_elevation(
     }
 
     (azimuth, elevation)
+}
+
+/// Distance between two points in 3D
+pub fn distance(source_position: Vector3<f32>, listener_position: Vector3<f32>) -> f32 {
+    vec3_len(vec3_sub(source_position, listener_position))
 }
 
 #[cfg(test)]

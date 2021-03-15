@@ -1,6 +1,6 @@
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 use web_audio_api::node::AudioScheduledSourceNode;
-use web_audio_api::node::{AudioNode, PannerNode, PannerOptions};
+use web_audio_api::node::AudioNode;
 
 fn main() {
     let context = AudioContext::new();
