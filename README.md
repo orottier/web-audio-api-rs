@@ -27,7 +27,6 @@ much more.
 
 Current deviations
 
-- render quantum size = 256 (cpal limitation on OSX)
 - function names use snake\_case
 - getters/setters instead of exposed attributes
 - deprecated functions are not implemented
