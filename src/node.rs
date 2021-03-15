@@ -750,10 +750,12 @@ impl AudioProcessor for ChannelSplitterRenderer {
                 if let Some(channel_data) = input.channel_data(i) {
                     *output = AudioBuffer::from_mono(channel_data.clone(), sample_rate);
                 } else {
-                    *output = AudioBuffer::new(input.sample_len(), 1, sample_rate);
+                    // silent input, emit silence
+                    *output = AudioBuffer::new(1, input.sample_len(), sample_rate);
                 }
             } else {
-                *output = AudioBuffer::new(input.sample_len(), 1, sample_rate);
+                // input does not have this channel filled, emit silence
+                *output = AudioBuffer::new(1, input.sample_len(), sample_rate);
             }
         }
     }
@@ -921,7 +923,7 @@ impl<'a> MediaStreamAudioSourceNode<'a> {
 
 /// Options for constructing a MediaElementAudioSourceNode
 pub struct MediaElementAudioSourceNodeOptions<M> {
-    pub media: M,
+    pub media: MediaElement<M>,
     pub channel_config: ChannelConfigOptions,
 }
 
@@ -965,6 +967,8 @@ impl<'a> MediaElementAudioSourceNode<'a> {
         options: MediaElementAudioSourceNodeOptions<M>,
     ) -> Self {
         context.base().register(move |registration| {
+            let controller = options.media.controller().clone();
+
             // wrap media input in resampler
             let resampler = Resampler::new(
                 context.base().sample_rate(),
@@ -972,17 +976,14 @@ impl<'a> MediaElementAudioSourceNode<'a> {
                 options.media,
             );
 
-            // wrap resampler in media-element (for loop/play/pause)
-            let media = MediaElement::new(resampler);
-
             // setup user facing audio node
             let node = MediaElementAudioSourceNode {
                 registration,
                 channel_config: options.channel_config.into(),
-                controller: media.controller().clone(),
+                controller,
             };
 
-            let render = AudioBufferRenderer::new(media);
+            let render = AudioBufferRenderer::new(resampler);
 
             (node, Box::new(render))
         })
