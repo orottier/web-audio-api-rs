@@ -262,9 +262,23 @@ pub fn azimuth_and_elevation(
     let listener_forward_norm = vec3_normalized(listener_forward);
     let up = vec3_cross(listener_right_norm, listener_forward_norm);
 
+    // Determine elevation first
+    let mut elevation = 90. - 180. * vec3_dot(source_listener, up).acos() / PI;
+    if elevation > 90. {
+        elevation = 180. - elevation;
+    } else if elevation < -90. {
+        elevation = -180. - elevation;
+    }
+
     let up_projection = vec3_dot(source_listener, up);
-    let projected_source =
-        vec3_normalized(vec3_sub(source_listener, vec3_scale(up, up_projection)));
+    let projected_source = vec3_sub(source_listener, vec3_scale(up, up_projection));
+
+    // this case is not handled by the spec, so I stole the solution from
+    // https://hg.mozilla.org/mozilla-central/rev/1100a5bc013b541c635bc42bd753531e95c952e4
+    if vec3_square_len(projected_source) == 0. {
+        return (0., elevation);
+    }
+    let projected_source = vec3_normalized(projected_source);
 
     let mut azimuth = 180. * vec3_dot(projected_source, listener_right_norm).acos() / PI;
 
@@ -281,14 +295,6 @@ pub fn azimuth_and_elevation(
         azimuth = 450. - azimuth;
     }
 
-    let mut elevation = 90. - 180. * vec3_dot(source_listener, up).acos() / PI;
-
-    if elevation > 90. {
-        elevation = 180. - elevation;
-    } else if elevation < -90. {
-        elevation = -180. - elevation;
-    }
-
     (azimuth, elevation)
 }
 
@@ -296,43 +302,55 @@ pub fn azimuth_and_elevation(
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_azimuth_elevation_equal_pos() {
-        let lp = [0., 0., 0.];
-        let lf = [0., 0., -1.];
-        let lu = [0., 1., 0.];
+    // listener coordinates/directions
+    const LP: [f32; 3] = [0., 0., 0.];
+    const LF: [f32; 3] = [0., 0., -1.];
+    const LU: [f32; 3] = [0., 1., 0.];
 
+    #[test]
+    fn azimuth_elevation_equal_pos() {
         let pos = [0., 0., 0.];
-        let (azimuth, elevation) = azimuth_and_elevation(pos, lp, lf, lu);
+        let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
 
         assert_eq!(azimuth, 0.);
         assert_eq!(elevation, 0.);
     }
 
     #[test]
-    fn test_azimuth_x() {
-        let lp = [0., 0., 0.];
-        let lf = [0., 0., -1.];
-        let lu = [0., 1., 0.];
+    fn azimuth_elevation_horizontal_plane() {
+        // horizontal plane is spanned by x-z axes
 
         let pos = [10., 0., 0.];
-        let (azimuth, _) = azimuth_and_elevation(pos, lp, lf, lu);
+        let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
         assert!((azimuth - 90.).abs() < 0.001);
+        assert_eq!(elevation, 0.);
 
         let pos = [-10., 0., 0.];
-        let (azimuth, _) = azimuth_and_elevation(pos, lp, lf, lu);
+        let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
         assert!((azimuth + 90.).abs() < 0.001);
+        assert_eq!(elevation, 0.);
+
+        let pos = [10., 0., -10.];
+        let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
+        assert!((azimuth - 45.).abs() < 0.001);
+        assert_eq!(elevation, 0.);
+
+        let pos = [-10., 0., -10.];
+        let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
+        assert!((azimuth + 45.).abs() < 0.001);
+        assert_eq!(elevation, 0.);
     }
 
     #[test]
-    fn test_azimuth_y() {
-        let lp = [0., 0., 0.];
-        let lf = [0., 0., -1.];
-        let lu = [0., 1., 0.];
-
+    fn azimuth_elevation_vertical() {
         let pos = [0., -10., 0.];
-        let (azimuth, _) = azimuth_and_elevation(pos, lp, lf, lu);
-        dbg!(azimuth);
-        assert!((azimuth + 90.).abs() < 0.001);
+        let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
+        assert_eq!(azimuth, 0.);
+        assert!((elevation + 90.).abs() < 0.001);
+
+        let pos = [0., 10., 0.];
+        let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
+        assert_eq!(azimuth, 0.);
+        assert!((elevation - 90.).abs() < 0.001);
     }
 }
