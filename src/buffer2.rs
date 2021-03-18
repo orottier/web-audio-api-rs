@@ -244,63 +244,75 @@ mod tests {
         let alloc = Alloc::with_capacity(2);
         assert_eq!(alloc.pool_size(), 2);
 
-        {
-            // take a buffer out of the pool
-            let a = alloc.allocate();
-            assert_eq!(*a.as_ref(), [0.; LEN]);
-            assert_eq!(alloc.pool_size(), 1);
+        alloc_counter::deny_alloc(|| {
+            {
+                // take a buffer out of the pool
+                let a = alloc.allocate();
+                assert_eq!(*a.as_ref(), [0.; LEN]);
+                assert_eq!(alloc.pool_size(), 1);
 
-            // mutating this buffer will not allocate
-            let mut a = a;
-            a.iter_mut().for_each(|v| *v += 1.);
-            assert_eq!(*a.as_ref(), [1.; LEN]);
-            assert_eq!(alloc.pool_size(), 1);
+                // mutating this buffer will not allocate
+                let mut a = a;
+                a.iter_mut().for_each(|v| *v += 1.);
+                assert_eq!(*a.as_ref(), [1.; LEN]);
+                assert_eq!(alloc.pool_size(), 1);
 
-            // clone this buffer, should not allocate
-            let mut b: ChannelData = a.clone();
-            assert_eq!(alloc.pool_size(), 1);
+                // clone this buffer, should not allocate
+                let mut b: ChannelData = a.clone();
+                assert_eq!(alloc.pool_size(), 1);
 
-            // mutate cloned buffer, this will allocate
-            b.iter_mut().for_each(|v| *v += 1.);
-            assert_eq!(alloc.pool_size(), 0);
-        }
+                // mutate cloned buffer, this will allocate
+                b.iter_mut().for_each(|v| *v += 1.);
+                assert_eq!(alloc.pool_size(), 0);
+            }
 
-        // all buffers are reclaimed
-        assert_eq!(alloc.pool_size(), 2);
-
-        {
-            let a = alloc.allocate();
-            let b = alloc.allocate();
-            let c = alloc.allocate();
-
-            // we can allocate beyond the pool size
-            assert_eq!(alloc.pool_size(), 0);
-
-            // dirty allocations
-            assert_eq!(*a.as_ref(), [1.; LEN]);
-            assert_eq!(*b.as_ref(), [2.; LEN]);
-            assert_eq!(*c.as_ref(), [0.; LEN]); // this one is fresh
-        }
-
-        // pool size is now 3 due to extra allocations
-        assert_eq!(alloc.pool_size(), 3);
-
-        {
-            // silence will not allocate at first
-            let mut a = alloc.silence();
-            assert!(a.is_silent());
-            assert_eq!(alloc.pool_size(), 3);
-
-            // deref mut will allocate
-            let a_vals = a.deref_mut();
+            // all buffers are reclaimed
             assert_eq!(alloc.pool_size(), 2);
 
-            // but should be silent, even though a dirty buffer is taken
-            assert_eq!(*a_vals, [0.; LEN]);
-            assert_eq!(*a_vals, [0.; LEN]);
+            let c = {
+                let a = alloc.allocate();
+                let b = alloc.allocate();
 
-            // is_silent is a superficial ptr check
-            assert_eq!(a.is_silent(), false);
-        }
+                let c = alloc_counter::allow_alloc(|| {
+                    // we can allocate beyond the pool size
+                    let c = alloc.allocate();
+                    assert_eq!(alloc.pool_size(), 0);
+                    c
+                });
+
+                // dirty allocations
+                assert_eq!(*a.as_ref(), [1.; LEN]);
+                assert_eq!(*b.as_ref(), [2.; LEN]);
+                assert_eq!(*c.as_ref(), [0.; LEN]); // this one is fresh
+
+                c
+            };
+
+            // dropping c will cause a re-allocation: the pool capacity is extended
+            alloc_counter::allow_alloc(move || {
+                std::mem::drop(c);
+            });
+
+            // pool size is now 3 due to extra allocations
+            assert_eq!(alloc.pool_size(), 3);
+
+            {
+                // silence will not allocate at first
+                let mut a = alloc.silence();
+                assert!(a.is_silent());
+                assert_eq!(alloc.pool_size(), 3);
+
+                // deref mut will allocate
+                let a_vals = a.deref_mut();
+                assert_eq!(alloc.pool_size(), 2);
+
+                // but should be silent, even though a dirty buffer is taken
+                assert_eq!(*a_vals, [0.; LEN]);
+                assert_eq!(*a_vals, [0.; LEN]);
+
+                // is_silent is a superficial ptr check
+                assert_eq!(a.is_silent(), false);
+            }
+        });
     }
 }

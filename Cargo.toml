@@ -14,6 +14,7 @@ categories = ["multimedia::audio"]
 cpal = "0.13.1"
 lewton = "0.10.2"
 vecmath = "1.0.0"
+alloc_counter = "0.0.4"
 
 [dev-dependencies]
 rand = "0.8.*"
