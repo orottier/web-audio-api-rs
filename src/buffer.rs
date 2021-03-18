@@ -72,7 +72,7 @@ impl AudioBuffer {
         // handle mono
         if let Mono(data, prev_channels) = &self.data {
             if interpretation == ChannelInterpretation::Discrete {
-                // discret layout: no mixing required
+                // discrete layout: no mixing required
                 if *prev_channels >= channels {
                     return Self {
                         data: Mono(data.clone(), channels),

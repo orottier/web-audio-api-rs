@@ -43,6 +43,7 @@
 pub const BUFFER_SIZE: u32 = 128;
 
 pub mod buffer;
+pub mod buffer2;
 pub mod context;
 pub mod control;
 pub mod media;
