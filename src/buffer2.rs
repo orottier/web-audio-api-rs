@@ -1,12 +1,21 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::buffer::ChannelInterpretation;
+/// The meaning of the channels, defining how audio up-mixing and down-mixing will happen.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum ChannelInterpretation {
+    Speakers,
+    Discrete,
+}
 
 const LEN: usize = crate::BUFFER_SIZE as usize;
 const MAX_CHANNELS: usize = 32;
 
 pub(crate) struct Alloc {
+    inner: Rc<AllocInner>,
+}
+
+struct AllocInner {
     pool: RefCell<Vec<Rc<[f32; LEN]>>>,
     zeroes: Rc<[f32; LEN]>,
 }
@@ -14,34 +23,39 @@ pub(crate) struct Alloc {
 impl Alloc {
     pub fn with_capacity(n: usize) -> Self {
         let pool: Vec<_> = (0..n).map(|_| Rc::new([0.; LEN])).collect();
+        let zeroes = Rc::new([0.; LEN]);
+
+        let inner = AllocInner {
+            pool: RefCell::new(pool),
+            zeroes,
+        };
 
         Self {
-            pool: RefCell::new(pool),
-            zeroes: Rc::new([0.; LEN]),
+            inner: Rc::new(inner),
         }
     }
 
-    fn push(&self, data: Rc<[f32; LEN]>) {
-        self.pool
-            .borrow_mut() // infallible when single threaded
-            .push(data);
-    }
-
-    pub fn silence(&self) -> ChannelData<'_> {
+    pub fn allocate(&self) -> ChannelData {
         ChannelData {
-            data: self.zeroes.clone(),
-            alloc: &self,
+            data: self.inner.allocate(),
+            alloc: Rc::clone(&self.inner),
         }
     }
 
-    pub fn allocate(&self) -> ChannelData<'_> {
+    pub fn silence(&self) -> ChannelData {
         ChannelData {
-            data: self.allocate_inner(),
-            alloc: &self,
+            data: Rc::clone(&self.inner.zeroes),
+            alloc: Rc::clone(&self.inner),
         }
     }
 
-    fn allocate_inner(&self) -> Rc<[f32; LEN]> {
+    pub fn pool_size(&self) -> usize {
+        self.inner.pool.borrow().len()
+    }
+}
+
+impl AllocInner {
+    fn allocate(&self) -> Rc<[f32; LEN]> {
         if let Some(rc) = self.pool.borrow_mut().pop() {
             // re-use from pool
             rc
@@ -51,21 +65,23 @@ impl Alloc {
         }
     }
 
-    pub fn pool_size(&self) -> usize {
-        self.pool.borrow().len()
+    fn push(&self, data: Rc<[f32; LEN]>) {
+        self.pool
+            .borrow_mut() // infallible when single threaded
+            .push(data);
     }
 }
 
 #[derive(Clone)]
-pub struct ChannelData<'a> {
+pub struct ChannelData {
     data: Rc<[f32; LEN]>,
-    alloc: &'a Alloc,
+    alloc: Rc<AllocInner>,
 }
 
-impl<'a> ChannelData<'a> {
+impl ChannelData {
     fn make_mut(&mut self) -> &mut [f32; LEN] {
         if Rc::strong_count(&self.data) != 1 {
-            let mut new = self.alloc.allocate_inner();
+            let mut new = self.alloc.allocate();
             Rc::make_mut(&mut new).copy_from_slice(self.data.deref());
             self.data = new;
         }
@@ -84,11 +100,18 @@ impl<'a> ChannelData<'a> {
     pub fn add(&mut self, other: &Self) {
         self.iter_mut().zip(other.iter()).for_each(|(a, b)| *a += b)
     }
+
+    pub fn silence(&self) -> Self {
+        ChannelData {
+            data: self.alloc.zeroes.clone(),
+            alloc: Rc::clone(&self.alloc),
+        }
+    }
 }
 
 use std::ops::{Deref, DerefMut};
 
-impl<'a> Deref for ChannelData<'a> {
+impl Deref for ChannelData {
     type Target = [f32; LEN];
 
     fn deref(&self) -> &Self::Target {
@@ -96,13 +119,13 @@ impl<'a> Deref for ChannelData<'a> {
     }
 }
 
-impl<'a> DerefMut for ChannelData<'a> {
+impl DerefMut for ChannelData {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.make_mut()
     }
 }
 
-impl<'a> std::ops::Drop for ChannelData<'a> {
+impl std::ops::Drop for ChannelData {
     fn drop(&mut self) {
         if Rc::strong_count(&self.data) == 1 {
             let rc = std::mem::replace(&mut self.data, self.alloc.zeroes.clone());
@@ -112,23 +135,47 @@ impl<'a> std::ops::Drop for ChannelData<'a> {
 }
 
 #[derive(Clone)]
-pub struct AudioBuffer<'a> {
-    channels: [ChannelData<'a>; MAX_CHANNELS],
+pub struct AudioBuffer {
+    channels: [ChannelData; MAX_CHANNELS],
     channel_count: u8,
 }
 
-impl<'a> AudioBuffer<'a> {
-    pub fn new(channel: ChannelData<'a>) -> Self {
+impl AudioBuffer {
+    pub fn new(channel: ChannelData) -> Self {
         // sorry..
         let channels = [
-            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
-            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
-            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
-            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
-            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
-            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
-            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
-            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
+            channel.clone(),
         ];
         Self {
             channels,
@@ -147,7 +194,7 @@ impl<'a> AudioBuffer<'a> {
     }
 
     /// Get the samples from this specific channel (mutable).
-    pub fn channel_data_mut(&mut self, channel: usize) -> &mut ChannelData<'a> {
+    pub fn channel_data_mut(&mut self, channel: usize) -> &mut ChannelData {
         &mut self.channels[channel]
     }
 
@@ -159,7 +206,7 @@ impl<'a> AudioBuffer<'a> {
             return self.clone();
         }
 
-        let silence = self.channels[0].alloc.silence();
+        let silence = self.channels[0].silence();
 
         // handle discrete interpretation
         if interpretation == ChannelInterpretation::Discrete {
@@ -216,7 +263,7 @@ impl<'a> AudioBuffer<'a> {
 
     /// Convert this buffer to silence
     pub fn make_silent(&mut self) {
-        let silence = self.channels[0].alloc.silence();
+        let silence = self.channels[0].silence();
 
         self.channel_count = 1;
         self.channels[0] = silence;
