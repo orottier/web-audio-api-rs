@@ -15,7 +15,7 @@ use crate::context::{
 use crate::control::{Controller, Scheduler};
 use crate::media::{MediaElement, MediaStream};
 use crate::param::{AudioParam, AudioParamOptions};
-use crate::process::{AudioParamValues, AudioProcessor};
+use crate::process::{AudioParamValues, AudioProcessor, AudioProcessor2};
 use crate::SampleRate;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
@@ -352,12 +352,11 @@ impl AudioProcessor for OscillatorRenderer {
     }
 }
 
-/*
-impl crate::process::AudioProcessor2 for OscillatorRenderer {
-    fn process<'a>(
+impl AudioProcessor2 for OscillatorRenderer {
+    fn process(
         &mut self,
-        _inputs: &[&crate::buffer2::AudioBuffer<'a>],
-        outputs: &mut [crate::buffer2::AudioBuffer<'a>],
+        _inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
@@ -380,16 +379,16 @@ impl crate::process::AudioProcessor2 for OscillatorRenderer {
         let type_ = self.type_.load(Ordering::SeqCst).into();
 
         let buffer = output.channel_data_mut(0);
-        let io = buffer.iter_mut().enumerate()
+        let io = buffer
+            .iter_mut()
+            .enumerate()
             .map(move |(i, v)| (timestamp as f32 + i as f32 / sample_rate.0 as f32, v));
 
         use OscillatorType::*;
 
         match type_ {
             Sine => io.for_each(|(t, o)| *o = (2. * PI * freq * t).sin()),
-            Square => {
-                io.for_each(|(t, o)| *o = if (freq * t).fract() < 0.5 { 1. } else { -1. })
-            }
+            Square => io.for_each(|(t, o)| *o = if (freq * t).fract() < 0.5 { 1. } else { -1. }),
             Sawtooth => io.for_each(|(t, o)| *o = 2. * ((freq * t).fract() - 0.5)),
             _ => todo!(),
         }
@@ -399,7 +398,6 @@ impl crate::process::AudioProcessor2 for OscillatorRenderer {
         true
     }
 }
-*/
 
 /// Representing the final audio destination and is what the user will ultimately hear.
 pub struct DestinationNode<'a> {
@@ -409,6 +407,7 @@ pub struct DestinationNode<'a> {
 
 struct DestinationRenderer {}
 
+impl AudioProcessor2 for DestinationRenderer {}
 impl AudioProcessor for DestinationRenderer {
     fn process(
         &mut self,
@@ -588,12 +587,11 @@ impl AudioProcessor for GainRenderer {
     }
 }
 
-/*
-impl crate::process::AudioProcessor2 for GainRenderer {
+impl AudioProcessor2 for GainRenderer {
     fn process<'a>(
         &mut self,
-        inputs: &[&crate::buffer2::AudioBuffer<'a>],
-        outputs: &mut [crate::buffer2::AudioBuffer<'a>],
+        inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -618,9 +616,6 @@ impl crate::process::AudioProcessor2 for GainRenderer {
         false
     }
 }
-*/
-
-/*
 
 /// Options for constructing a DelayNode
 pub struct DelayOptions {
@@ -702,6 +697,7 @@ struct DelayRenderer {
     index: usize,
 }
 
+impl AudioProcessor2 for DelayRenderer {}
 impl AudioProcessor for DelayRenderer {
     fn process(
         &mut self,
@@ -813,6 +809,7 @@ struct ChannelSplitterRenderer {
     pub number_of_outputs: usize,
 }
 
+impl AudioProcessor2 for ChannelSplitterRenderer {}
 impl AudioProcessor for ChannelSplitterRenderer {
     fn process(
         &mut self,
@@ -923,6 +920,7 @@ struct ChannelMergerRenderer {
     number_of_inputs: usize,
 }
 
+impl AudioProcessor2 for ChannelMergerRenderer {}
 impl AudioProcessor for ChannelMergerRenderer {
     fn process(
         &mut self,
@@ -1087,6 +1085,7 @@ impl<R> AudioBufferRenderer<R> {
     }
 }
 
+impl<R: MediaStream> AudioProcessor2 for AudioBufferRenderer<R> {}
 impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
     fn process(
         &mut self,
@@ -1270,6 +1269,7 @@ struct ConstantSourceRenderer {
     pub offset: AudioParamId,
 }
 
+impl AudioProcessor2 for ConstantSourceRenderer {}
 impl AudioProcessor for ConstantSourceRenderer {
     fn process(
         &mut self,
@@ -1295,8 +1295,6 @@ impl AudioProcessor for ConstantSourceRenderer {
         true
     }
 }
-
-*/
 
 /// Options for constructing a PannerNode
 #[derive(Default)]
@@ -1395,6 +1393,7 @@ struct PannerRenderer {
     position_z: AudioParamId,
 }
 
+impl AudioProcessor2 for PannerRenderer {}
 impl AudioProcessor for PannerRenderer {
     fn process(
         &mut self,

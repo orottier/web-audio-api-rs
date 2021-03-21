@@ -1,12 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// The meaning of the channels, defining how audio up-mixing and down-mixing will happen.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum ChannelInterpretation {
-    Speakers,
-    Discrete,
-}
+use crate::buffer::ChannelInterpretation;
 
 const LEN: usize = crate::BUFFER_SIZE as usize;
 const MAX_CHANNELS: usize = 32;

@@ -61,8 +61,6 @@ pub trait AsBaseAudioContext {
         node::GainNode::new(self.base(), Default::default())
     }
 
-    /*
-
     /// Creates an ConstantSourceNode, a source representing a constant value
     fn create_constant_source(&self) -> node::ConstantSourceNode {
         node::ConstantSourceNode::new(self.base(), Default::default())
@@ -129,8 +127,6 @@ pub trait AsBaseAudioContext {
     fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
         node::AudioBufferSourceNode::new(self.base(), Default::default())
     }
-
-    */
 
     /// Creates a PannerNode
     fn create_panner(&self) -> node::PannerNode {
@@ -234,8 +230,6 @@ impl AsBaseAudioContext for AudioContext {
     }
 }
 
-/*
-
 /// The OfflineAudioContext doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an AudioBuffer.
 pub struct OfflineAudioContext {
@@ -254,8 +248,6 @@ impl AsBaseAudioContext for OfflineAudioContext {
         &self.base
     }
 }
-
-*/
 
 impl AudioContext {
     /// Creates and returns a new AudioContext object.
@@ -540,7 +532,6 @@ impl Default for AudioContext {
     }
 }
 
-/*
 impl OfflineAudioContext {
     pub fn new(channels: u32, length: usize, sample_rate: SampleRate) -> Self {
         // communication channel to the render thread
@@ -575,4 +566,3 @@ impl OfflineAudioContext {
         self.length
     }
 }
-*/

@@ -42,9 +42,8 @@
 /// Render quantum size (audio graph is rendered in blocks of this size)
 pub const BUFFER_SIZE: u32 = 128;
 
-pub mod buffer2;
-/*
 pub mod buffer;
+pub mod buffer2;
 pub mod context;
 pub mod control;
 pub mod media;
@@ -55,12 +54,6 @@ pub mod spatial;
 
 pub(crate) mod graph;
 pub(crate) mod message;
-*/
-
-use alloc_counter::AllocCounterSystem;
-
-#[global_allocator]
-static A: AllocCounterSystem = AllocCounterSystem;
 
 /// Number of samples processed per second (Hertz) for a single channel of audio
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

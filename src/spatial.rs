@@ -9,7 +9,7 @@ use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId}
 use crate::node::AudioNode;
 use crate::param::AutomationEvent;
 use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
-use crate::process::{AudioParamValues, AudioProcessor};
+use crate::process::{AudioParamValues, AudioProcessor, AudioProcessor2};
 use crate::AtomicF64;
 use crate::SampleRate;
 
@@ -193,6 +193,7 @@ struct ListenerRenderer {
     up_z: AudioParamId,
 }
 
+impl AudioProcessor2 for ListenerRenderer {}
 impl AudioProcessor for ListenerRenderer {
     fn process(
         &mut self,

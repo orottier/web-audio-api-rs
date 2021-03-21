@@ -5,15 +5,15 @@ use std::sync::mpsc::Receiver;
 
 use crate::buffer::ChannelConfig;
 use crate::buffer2::Alloc;
+use crate::buffer2::AudioBuffer as AudioBuffer2;
 use crate::message::ControlMessage;
 use crate::process::{AudioParamValues, AudioProcessor2};
 use crate::SampleRate;
 use crate::{buffer::AudioBuffer, buffer::ChannelCountMode};
-use crate::buffer2::AudioBuffer as AudioBuffer2;
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
-    graph: Graph<'static>,
+    graph: Graph,
     sample_rate: SampleRate,
     channels: usize,
     frames_played: AtomicU64,
@@ -21,8 +21,8 @@ pub(crate) struct RenderThread {
 }
 
 // todo, write safe Send wrapper for fresh initialized RenderThread
-unsafe impl Send for RenderThread { }
-unsafe impl Sync for RenderThread { }
+unsafe impl Send for RenderThread {}
+//unsafe impl Sync for RenderThread { }
 
 impl RenderThread {
     pub fn new(
@@ -39,7 +39,7 @@ impl RenderThread {
         }
     }
 
-    fn handle_control_messages(&'static mut self) {
+    fn handle_control_messages(&mut self) {
         for msg in self.receiver.try_iter() {
             use ControlMessage::*;
 
@@ -76,7 +76,7 @@ impl RenderThread {
         }
     }
 
-    pub fn render(&'static mut self, data: &mut [f32]) {
+    pub fn render(&mut self, data: &mut [f32]) {
         // handle addition/removal of nodes/edges
         self.handle_control_messages();
 
@@ -104,11 +104,11 @@ impl RenderThread {
 pub struct NodeIndex(pub u64);
 
 /// Renderer Node in the Audio Graph
-pub struct Node<'a>{
+pub struct Node {
     /// Renderer: converts inputs to outputs
     processor: Box<dyn AudioProcessor2>,
     /// Output buffers, consumed by subsequent Nodes in this graph
-    buffers: Vec<AudioBuffer2<'a>>,
+    buffers: Vec<AudioBuffer2>,
     /// Number of inputs for the processor
     inputs: usize,
     /// Channel configuration: determines up/down-mixing of inputs
@@ -123,11 +123,11 @@ pub struct Node<'a>{
     has_outputs_connected: bool,
 }
 
-impl<'a> Node<'a> {
+impl Node {
     /// Render an audio quantum
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer2<'a>],
+        inputs: &[&AudioBuffer2],
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
@@ -164,13 +164,13 @@ impl<'a> Node<'a> {
     }
 
     /// Get the current buffer for AudioParam values
-    pub fn get_buffer(&self) -> &AudioBuffer2<'a> {
+    pub fn get_buffer(&self) -> &AudioBuffer2 {
         self.buffers.get(0).unwrap()
     }
 }
 
-pub(crate) struct Graph<'a> {
-    nodes: HashMap<NodeIndex, Node<'a>>,
+pub(crate) struct Graph {
+    nodes: HashMap<NodeIndex, Node>,
 
     // connections, from (node,output) to (node,input)
     edges: HashSet<((NodeIndex, u32), (NodeIndex, u32))>,
@@ -181,7 +181,7 @@ pub(crate) struct Graph<'a> {
     alloc: Alloc,
 }
 
-impl<'a> Graph<'a> {
+impl Graph {
     pub fn new() -> Self {
         Graph {
             nodes: HashMap::new(),
@@ -193,7 +193,7 @@ impl<'a> Graph<'a> {
     }
 
     pub fn add_node(
-        &'a mut self,
+        &mut self,
         index: NodeIndex,
         processor: Box<dyn AudioProcessor2>,
         inputs: usize,
@@ -276,10 +276,11 @@ impl<'a> Graph<'a> {
         self.marked = marked;
     }
 
-    pub fn render(&'a mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer2 {
+    pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer2 {
         // split (mut) borrows
         let ordered = &self.ordered;
         let edges = &self.edges;
+        let silence = self.alloc.silence();
         let nodes = &mut self.nodes;
 
         // we will drop audio nodes if they are finished running
@@ -293,7 +294,7 @@ impl<'a> Graph<'a> {
             // for lifecycle management, check if any inputs are present
             let mut has_inputs_connected = false;
             // mix all inputs together
-            let mut input_bufs = vec![AudioBuffer2::new(self.alloc.silence()); node.inputs];
+            let mut input_bufs = vec![AudioBuffer2::new(silence.clone()); node.inputs];
             edges
                 .iter()
                 .filter_map(move |(s, d)| {

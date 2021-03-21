@@ -12,7 +12,7 @@ use crate::buffer::{
 };
 use crate::context::AudioContextRegistration;
 use crate::node::AudioNode;
-use crate::process::{AudioParamValues, AudioProcessor};
+use crate::process::{AudioParamValues, AudioProcessor, AudioProcessor2};
 use crate::{AtomicF64, SampleRate};
 
 /// Precision of value calculation per render quantum
@@ -132,6 +132,7 @@ pub(crate) struct AudioParamProcessor {
     events: BinaryHeap<AutomationEvent>,
 }
 
+impl AudioProcessor2 for AudioParamProcessor {}
 impl AudioProcessor for AudioParamProcessor {
     fn process(
         &mut self,

@@ -32,10 +32,10 @@ pub trait AudioProcessor: Send {
 }
 
 pub trait AudioProcessor2: Send {
-    fn process<'a>(
+    fn process(
         &mut self,
-        inputs: &[&crate::buffer2::AudioBuffer<'a>],
-        outputs: &mut [crate::buffer2::AudioBuffer<'a>],
+        inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
@@ -47,17 +47,15 @@ pub trait AudioProcessor2: Send {
     }
 }
 
-impl<T> AudioProcessor2 for T where T: Send {}
-
 /// Accessor for current [`crate::param::AudioParam`] values
 ///
 /// Provided to implementations of [`AudioProcessor`] in the render thread
 pub struct AudioParamValues<'a> {
-    nodes: &'a HashMap<NodeIndex, Node<'a>>,
+    nodes: &'a HashMap<NodeIndex, Node>,
 }
 
 impl<'a> AudioParamValues<'a> {
-    pub(crate) fn from(nodes: &'a HashMap<NodeIndex, Node<'a>>) -> Self {
+    pub(crate) fn from(nodes: &'a HashMap<NodeIndex, Node>) -> Self {
         Self { nodes }
     }
 
