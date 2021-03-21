@@ -118,6 +118,24 @@ pub struct AudioBuffer<'a> {
 }
 
 impl<'a> AudioBuffer<'a> {
+    pub fn new(channel: ChannelData<'a>) -> Self {
+        // sorry..
+        let channels = [
+            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
+            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
+            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
+            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
+            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
+            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
+            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
+            channel.clone(), channel.clone(), channel.clone(), channel.clone(),
+        ];
+        Self {
+            channels,
+            channel_count: 1,
+        }
+    }
+
     /// Number of channels in this AudioBuffer
     pub fn number_of_channels(&self) -> usize {
         self.channel_count as _
@@ -126,6 +144,11 @@ impl<'a> AudioBuffer<'a> {
     /// Get the samples from this specific channel.
     pub fn channel_data(&self, channel: usize) -> &ChannelData {
         &self.channels[channel]
+    }
+
+    /// Get the samples from this specific channel (mutable).
+    pub fn channel_data_mut(&mut self, channel: usize) -> &mut ChannelData<'a> {
+        &mut self.channels[channel]
     }
 
     /// Up/Down-mix to the desired number of channels

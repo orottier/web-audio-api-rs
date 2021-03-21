@@ -352,6 +352,55 @@ impl AudioProcessor for OscillatorRenderer {
     }
 }
 
+/*
+impl crate::process::AudioProcessor2 for OscillatorRenderer {
+    fn process<'a>(
+        &mut self,
+        _inputs: &[&crate::buffer2::AudioBuffer<'a>],
+        outputs: &mut [crate::buffer2::AudioBuffer<'a>],
+        params: AudioParamValues,
+        timestamp: f64,
+        sample_rate: SampleRate,
+    ) {
+        // single output node
+        let output = &mut outputs[0];
+
+        // re-use previous buffer
+        output.force_mono();
+
+        // todo, sub-quantum start/stop
+        if !self.scheduler.is_active(timestamp) {
+            output.make_silent();
+            return;
+        }
+
+        let freq_values = params.get(&self.frequency);
+        let freq = freq_values[0]; // force a-rate processing
+
+        let type_ = self.type_.load(Ordering::SeqCst).into();
+
+        let buffer = output.channel_data_mut(0);
+        let io = buffer.iter_mut().enumerate()
+            .map(move |(i, v)| (timestamp as f32 + i as f32 / sample_rate.0 as f32, v));
+
+        use OscillatorType::*;
+
+        match type_ {
+            Sine => io.for_each(|(t, o)| *o = (2. * PI * freq * t).sin()),
+            Square => {
+                io.for_each(|(t, o)| *o = if (freq * t).fract() < 0.5 { 1. } else { -1. })
+            }
+            Sawtooth => io.for_each(|(t, o)| *o = 2. * ((freq * t).fract() - 0.5)),
+            _ => todo!(),
+        }
+    }
+
+    fn tail_time(&self) -> bool {
+        true
+    }
+}
+*/
+
 /// Representing the final audio destination and is what the user will ultimately hear.
 pub struct DestinationNode<'a> {
     pub(crate) registration: AudioContextRegistration<'a>,
@@ -538,6 +587,40 @@ impl AudioProcessor for GainRenderer {
         false
     }
 }
+
+/*
+impl crate::process::AudioProcessor2 for GainRenderer {
+    fn process<'a>(
+        &mut self,
+        inputs: &[&crate::buffer2::AudioBuffer<'a>],
+        outputs: &mut [crate::buffer2::AudioBuffer<'a>],
+        params: AudioParamValues,
+        _timestamp: f64,
+        _sample_rate: SampleRate,
+    ) {
+        // single input/output node
+        let input = inputs[0];
+        let output = &mut outputs[0];
+
+        let gain_values = params.get(&self.gain);
+
+        *output = input.clone();
+
+        output.modify_channels(|channel| {
+            channel
+                .iter_mut()
+                .zip(gain_values.iter())
+                .for_each(|(value, g)| *value *= g)
+        });
+    }
+
+    fn tail_time(&self) -> bool {
+        false
+    }
+}
+*/
+
+/*
 
 /// Options for constructing a DelayNode
 pub struct DelayOptions {
@@ -1212,6 +1295,8 @@ impl AudioProcessor for ConstantSourceRenderer {
         true
     }
 }
+
+*/
 
 /// Options for constructing a PannerNode
 #[derive(Default)]

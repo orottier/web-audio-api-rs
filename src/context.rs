@@ -24,7 +24,7 @@ use crate::message::ControlMessage;
 use crate::node;
 use crate::node::AudioNode;
 use crate::param::{AudioParam, AudioParamOptions};
-use crate::process::AudioProcessor;
+use crate::process::AudioProcessor2;
 use crate::spatial::{AudioListener, AudioListenerParams};
 use crate::SampleRate;
 
@@ -56,14 +56,16 @@ pub trait AsBaseAudioContext {
         node::OscillatorNode::new(self.base(), Default::default())
     }
 
-    /// Creates an ConstantSourceNode, a source representing a constant value
-    fn create_constant_source(&self) -> node::ConstantSourceNode {
-        node::ConstantSourceNode::new(self.base(), Default::default())
-    }
-
     /// Creates an GainNode, to control audio volume
     fn create_gain(&self) -> node::GainNode {
         node::GainNode::new(self.base(), Default::default())
+    }
+
+    /*
+
+    /// Creates an ConstantSourceNode, a source representing a constant value
+    fn create_constant_source(&self) -> node::ConstantSourceNode {
+        node::ConstantSourceNode::new(self.base(), Default::default())
     }
 
     /// Creates a DelayNode, delaying the audio signal
@@ -127,6 +129,8 @@ pub trait AsBaseAudioContext {
     fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
         node::AudioBufferSourceNode::new(self.base(), Default::default())
     }
+
+    */
 
     /// Creates a PannerNode
     fn create_panner(&self) -> node::PannerNode {
@@ -230,6 +234,8 @@ impl AsBaseAudioContext for AudioContext {
     }
 }
 
+/*
+
 /// The OfflineAudioContext doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an AudioBuffer.
 pub struct OfflineAudioContext {
@@ -248,6 +254,8 @@ impl AsBaseAudioContext for OfflineAudioContext {
         &self.base
     }
 }
+
+*/
 
 impl AudioContext {
     /// Creates and returns a new AudioContext object.
@@ -460,7 +468,7 @@ impl BaseAudioContext {
     pub fn register<
         'a,
         T: node::AudioNode,
-        F: FnOnce(AudioContextRegistration<'a>) -> (T, Box<dyn AudioProcessor>),
+        F: FnOnce(AudioContextRegistration<'a>) -> (T, Box<dyn AudioProcessor2>),
     >(
         &'a self,
         f: F,
@@ -476,22 +484,13 @@ impl BaseAudioContext {
         // create the node and its renderer
         let (node, render) = (f)(registration);
 
-        // pre-allocate buffers
-        let number_of_channels = node.channel_count();
-        let buffer_channel = ChannelData::new(crate::BUFFER_SIZE as usize);
-        let buffer = AudioBuffer::from_channels(
-            vec![buffer_channel; number_of_channels],
-            self.sample_rate(),
-        );
-        let buffers = vec![buffer; node.number_of_inputs().max(node.number_of_outputs()) as usize];
-
         // pass the renderer to the audio graph
         let message = ControlMessage::RegisterNode {
             id,
             node: render,
             inputs: node.number_of_inputs() as usize,
+            outputs: node.number_of_outputs() as usize,
             channel_config: node.channel_config_cloned(),
-            buffers,
         };
         self.render_channel.send(message).unwrap();
 
@@ -541,6 +540,7 @@ impl Default for AudioContext {
     }
 }
 
+/*
 impl OfflineAudioContext {
     pub fn new(channels: u32, length: usize, sample_rate: SampleRate) -> Self {
         // communication channel to the render thread
@@ -575,3 +575,4 @@ impl OfflineAudioContext {
         self.length
     }
 }
+*/

@@ -39,11 +39,6 @@
 //! //std::thread::sleep(std::time::Duration::from_secs(4));
 //! ```
 
-use alloc_counter::AllocCounterSystem;
-
-#[global_allocator]
-static A: AllocCounterSystem = AllocCounterSystem;
-
 /// Render quantum size (audio graph is rendered in blocks of this size)
 pub const BUFFER_SIZE: u32 = 128;
 

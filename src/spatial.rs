@@ -203,6 +203,7 @@ impl AudioProcessor for ListenerRenderer {
         _sample_rate: SampleRate,
     ) {
         // for now: persist param values in output, so PannerNodes have access
+        /*
         outputs[0] = params.get_raw(&self.position_x).clone();
         outputs[1] = params.get_raw(&self.position_y).clone();
         outputs[2] = params.get_raw(&self.position_z).clone();
@@ -212,6 +213,7 @@ impl AudioProcessor for ListenerRenderer {
         outputs[6] = params.get_raw(&self.up_x).clone();
         outputs[7] = params.get_raw(&self.up_y).clone();
         outputs[8] = params.get_raw(&self.up_z).clone();
+        */
     }
 
     fn tail_time(&self) -> bool {

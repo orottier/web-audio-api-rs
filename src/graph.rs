@@ -4,20 +4,25 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
 use crate::buffer::ChannelConfig;
+use crate::buffer2::Alloc;
 use crate::message::ControlMessage;
-use crate::process::AudioParamValues;
-use crate::process::AudioProcessor;
+use crate::process::{AudioParamValues, AudioProcessor2};
 use crate::SampleRate;
 use crate::{buffer::AudioBuffer, buffer::ChannelCountMode};
+use crate::buffer2::AudioBuffer as AudioBuffer2;
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
-    graph: Graph,
+    graph: Graph<'static>,
     sample_rate: SampleRate,
     channels: usize,
     frames_played: AtomicU64,
     receiver: Receiver<ControlMessage>,
 }
+
+// todo, write safe Send wrapper for fresh initialized RenderThread
+unsafe impl Send for RenderThread { }
+unsafe impl Sync for RenderThread { }
 
 impl RenderThread {
     pub fn new(
@@ -34,7 +39,7 @@ impl RenderThread {
         }
     }
 
-    fn handle_control_messages(&mut self) {
+    fn handle_control_messages(&'static mut self) {
         for msg in self.receiver.try_iter() {
             use ControlMessage::*;
 
@@ -43,11 +48,11 @@ impl RenderThread {
                     id,
                     node,
                     inputs,
+                    outputs,
                     channel_config,
-                    buffers,
                 } => {
                     self.graph
-                        .add_node(NodeIndex(id), node, inputs, channel_config, buffers);
+                        .add_node(NodeIndex(id), node, inputs, outputs, channel_config);
                 }
                 ConnectNode {
                     from,
@@ -71,7 +76,7 @@ impl RenderThread {
         }
     }
 
-    pub fn render(&mut self, data: &mut [f32]) {
+    pub fn render(&'static mut self, data: &mut [f32]) {
         // handle addition/removal of nodes/edges
         self.handle_control_messages();
 
@@ -86,16 +91,10 @@ impl RenderThread {
         // copy rendered audio into output slice
         for i in 0..self.channels {
             let output = data.iter_mut().skip(i).step_by(self.channels);
-            if let Some(channel_data) = rendered.channel_data(i) {
-                let channel = channel_data.iter();
-                for (sample, input) in output.zip(channel) {
-                    let value = cpal::Sample::from::<f32>(input);
-                    *sample = value;
-                }
-            } else {
-                for o in output {
-                    *o = cpal::Sample::from::<f32>(&0.);
-                }
+            let channel = rendered.channel_data(i).iter();
+            for (sample, input) in output.zip(channel) {
+                let value = cpal::Sample::from::<f32>(input);
+                *sample = value;
             }
         }
     }
@@ -105,11 +104,11 @@ impl RenderThread {
 pub struct NodeIndex(pub u64);
 
 /// Renderer Node in the Audio Graph
-pub struct Node {
+pub struct Node<'a>{
     /// Renderer: converts inputs to outputs
-    processor: Box<dyn AudioProcessor>,
+    processor: Box<dyn AudioProcessor2>,
     /// Output buffers, consumed by subsequent Nodes in this graph
-    buffers: Vec<AudioBuffer>,
+    buffers: Vec<AudioBuffer2<'a>>,
     /// Number of inputs for the processor
     inputs: usize,
     /// Channel configuration: determines up/down-mixing of inputs
@@ -124,11 +123,11 @@ pub struct Node {
     has_outputs_connected: bool,
 }
 
-impl Node {
+impl<'a> Node<'a> {
     /// Render an audio quantum
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer],
+        inputs: &[&AudioBuffer2<'a>],
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
@@ -165,39 +164,43 @@ impl Node {
     }
 
     /// Get the current buffer for AudioParam values
-    pub fn get_buffer(&self) -> &AudioBuffer {
+    pub fn get_buffer(&self) -> &AudioBuffer2<'a> {
         self.buffers.get(0).unwrap()
     }
 }
 
-pub(crate) struct Graph {
-    nodes: HashMap<NodeIndex, Node>,
+pub(crate) struct Graph<'a> {
+    nodes: HashMap<NodeIndex, Node<'a>>,
 
     // connections, from (node,output) to (node,input)
     edges: HashSet<((NodeIndex, u32), (NodeIndex, u32))>,
 
     marked: Vec<NodeIndex>,
     ordered: Vec<NodeIndex>,
+
+    alloc: Alloc,
 }
 
-impl Graph {
+impl<'a> Graph<'a> {
     pub fn new() -> Self {
         Graph {
             nodes: HashMap::new(),
             edges: HashSet::new(),
             ordered: vec![],
             marked: vec![],
+            alloc: Alloc::with_capacity(64),
         }
     }
 
     pub fn add_node(
-        &mut self,
+        &'a mut self,
         index: NodeIndex,
-        processor: Box<dyn AudioProcessor>,
+        processor: Box<dyn AudioProcessor2>,
         inputs: usize,
+        outputs: usize,
         channel_config: ChannelConfig,
-        buffers: Vec<AudioBuffer>,
     ) {
+        let buffers = vec![AudioBuffer2::new(self.alloc.allocate()); outputs];
         self.nodes.insert(
             index,
             Node {
@@ -273,7 +276,7 @@ impl Graph {
         self.marked = marked;
     }
 
-    pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer {
+    pub fn render(&'a mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer2 {
         // split (mut) borrows
         let ordered = &self.ordered;
         let edges = &self.edges;
@@ -290,11 +293,7 @@ impl Graph {
             // for lifecycle management, check if any inputs are present
             let mut has_inputs_connected = false;
             // mix all inputs together
-            let mut input_bufs =
-                vec![
-                    AudioBuffer::new(channels, crate::BUFFER_SIZE as usize, sample_rate);
-                    node.inputs
-                ];
+            let mut input_bufs = vec![AudioBuffer2::new(self.alloc.silence()); node.inputs];
             edges
                 .iter()
                 .filter_map(move |(s, d)| {
