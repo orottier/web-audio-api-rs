@@ -39,12 +39,9 @@ pub trait AudioProcessor2: Send {
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
-    ) {
-        todo!()
-    }
-    fn tail_time(&self) -> bool {
-        todo!()
-    }
+    );
+
+    fn tail_time(&self) -> bool;
 }
 
 /// Accessor for current [`crate::param::AudioParam`] values

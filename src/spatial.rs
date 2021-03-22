@@ -193,18 +193,16 @@ struct ListenerRenderer {
     up_z: AudioParamId,
 }
 
-impl AudioProcessor2 for ListenerRenderer {}
-impl AudioProcessor for ListenerRenderer {
+impl AudioProcessor2 for ListenerRenderer {
     fn process(
         &mut self,
-        _inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
         // for now: persist param values in output, so PannerNodes have access
-        /*
         outputs[0] = params.get_raw(&self.position_x).clone();
         outputs[1] = params.get_raw(&self.position_y).clone();
         outputs[2] = params.get_raw(&self.position_z).clone();
@@ -214,7 +212,6 @@ impl AudioProcessor for ListenerRenderer {
         outputs[6] = params.get_raw(&self.up_x).clone();
         outputs[7] = params.get_raw(&self.up_y).clone();
         outputs[8] = params.get_raw(&self.up_z).clone();
-        */
     }
 
     fn tail_time(&self) -> bool {

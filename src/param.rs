@@ -132,7 +132,36 @@ pub(crate) struct AudioParamProcessor {
     events: BinaryHeap<AutomationEvent>,
 }
 
-impl AudioProcessor2 for AudioParamProcessor {}
+impl AudioProcessor2 for AudioParamProcessor {
+    fn process<'a>(
+        &mut self,
+        inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
+        params: AudioParamValues,
+        timestamp: f64,
+        sample_rate: SampleRate,
+    ) {
+        let input = inputs[0]; // single input mode
+
+        let intrinsic = self.tick(
+            timestamp,
+            1. / sample_rate.0 as f64,
+            crate::BUFFER_SIZE as _,
+        );
+        let mut buffer = inputs[0].clone(); // get new buf
+        buffer.set_number_of_channels(1);
+        buffer
+            .channel_data_mut(0)
+            .copy_from_slice(intrinsic.as_slice());
+
+        outputs[0] = input.add(&buffer, ChannelInterpretation::Discrete);
+    }
+
+    fn tail_time(&self) -> bool {
+        true // has intrinsic value
+    }
+}
+
 impl AudioProcessor for AudioParamProcessor {
     fn process(
         &mut self,

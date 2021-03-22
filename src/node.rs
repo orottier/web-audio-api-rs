@@ -303,55 +303,6 @@ struct OscillatorRenderer {
     scheduler: Scheduler,
 }
 
-impl AudioProcessor for OscillatorRenderer {
-    fn process(
-        &mut self,
-        _inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
-        params: AudioParamValues,
-        timestamp: f64,
-        sample_rate: SampleRate,
-    ) {
-        // single output node
-        let output = &mut outputs[0];
-
-        // re-use previous buffer
-        output.make_mono();
-        let len = output.sample_len();
-
-        // todo, sub-quantum start/stop
-        if !self.scheduler.is_active(timestamp) {
-            output.make_silent();
-            return;
-        }
-
-        let freq_values = params.get(&self.frequency);
-        let freq = freq_values[0]; // force a-rate processing
-
-        let type_ = self.type_.load(Ordering::SeqCst).into();
-
-        output.modify_channels(|buffer| {
-            let ts = (0..len).map(move |i| timestamp as f32 + i as f32 / sample_rate.0 as f32);
-            let io = ts.zip(buffer.iter_mut());
-
-            use OscillatorType::*;
-
-            match type_ {
-                Sine => io.for_each(|(i, o)| *o = (2. * PI * freq * i).sin()),
-                Square => {
-                    io.for_each(|(i, o)| *o = if (freq * i).fract() < 0.5 { 1. } else { -1. })
-                }
-                Sawtooth => io.for_each(|(i, o)| *o = 2. * ((freq * i).fract() - 0.5)),
-                _ => todo!(),
-            }
-        })
-    }
-
-    fn tail_time(&self) -> bool {
-        true
-    }
-}
-
 impl AudioProcessor2 for OscillatorRenderer {
     fn process(
         &mut self,
@@ -407,12 +358,11 @@ pub struct DestinationNode<'a> {
 
 struct DestinationRenderer {}
 
-impl AudioProcessor2 for DestinationRenderer {}
-impl AudioProcessor for DestinationRenderer {
+impl AudioProcessor2 for DestinationRenderer {
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -557,36 +507,6 @@ struct GainRenderer {
     gain: AudioParamId,
 }
 
-impl AudioProcessor for GainRenderer {
-    fn process(
-        &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
-        params: AudioParamValues,
-        _timestamp: f64,
-        _sample_rate: SampleRate,
-    ) {
-        // single input/output node
-        let input = inputs[0];
-        let output = &mut outputs[0];
-
-        let gain_values = params.get(&self.gain);
-
-        *output = input.clone();
-
-        output.modify_channels(|channel| {
-            channel
-                .iter_mut()
-                .zip(gain_values.iter())
-                .for_each(|(value, g)| *value *= g)
-        });
-    }
-
-    fn tail_time(&self) -> bool {
-        false
-    }
-}
-
 impl AudioProcessor2 for GainRenderer {
     fn process<'a>(
         &mut self,
@@ -690,19 +610,18 @@ impl<'a> DelayNode<'a> {
     }
 }
 
-#[derive(Debug)]
 struct DelayRenderer {
     render_quanta: Arc<AtomicU32>,
-    delay_buffer: Vec<AudioBuffer>,
+    delay_buffer: Vec<crate::buffer2::AudioBuffer>,
     index: usize,
 }
+unsafe impl Send for DelayRenderer {}
 
-impl AudioProcessor2 for DelayRenderer {}
-impl AudioProcessor for DelayRenderer {
+impl AudioProcessor2 for DelayRenderer {
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -809,15 +728,14 @@ struct ChannelSplitterRenderer {
     pub number_of_outputs: usize,
 }
 
-impl AudioProcessor2 for ChannelSplitterRenderer {}
-impl AudioProcessor for ChannelSplitterRenderer {
+impl AudioProcessor2 for ChannelSplitterRenderer {
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
-        sample_rate: SampleRate,
+        _sample_rate: SampleRate,
     ) {
         // single input node
         let input = inputs[0];
@@ -826,16 +744,12 @@ impl AudioProcessor for ChannelSplitterRenderer {
         assert_eq!(self.number_of_outputs, outputs.len());
 
         for (i, output) in outputs.iter_mut().enumerate() {
+            output.force_mono();
             if i < input.number_of_channels() {
-                if let Some(channel_data) = input.channel_data(i) {
-                    *output = AudioBuffer::from_mono(channel_data.clone(), sample_rate);
-                } else {
-                    // silent input, emit silence
-                    *output = AudioBuffer::new(1, input.sample_len(), sample_rate);
-                }
+                *output.channel_data_mut(0) = input.channel_data(i).clone();
             } else {
                 // input does not have this channel filled, emit silence
-                *output = AudioBuffer::new(1, input.sample_len(), sample_rate);
+                output.make_silent();
             }
         }
     }
@@ -920,29 +834,21 @@ struct ChannelMergerRenderer {
     number_of_inputs: usize,
 }
 
-impl AudioProcessor2 for ChannelMergerRenderer {}
-impl AudioProcessor for ChannelMergerRenderer {
+impl AudioProcessor2 for ChannelMergerRenderer {
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
-        sample_rate: SampleRate,
+        _sample_rate: SampleRate,
     ) {
         // single output node
         let output = &mut outputs[0];
 
-        let silence = ChannelData::new(output.sample_len());
-        let mut channels = vec![silence; self.number_of_inputs];
-
-        for (input, channel) in inputs.iter().zip(channels.iter_mut()) {
-            if let Some(channel_data) = input.channel_data(0) {
-                *channel = channel_data.clone();
-            }
-        }
-
-        *output = AudioBuffer::from_channels(channels, sample_rate);
+        inputs.iter().enumerate().for_each(|(i, input)| {
+            *output.channel_data_mut(i) = input.channel_data(0).clone();
+        });
     }
 
     fn tail_time(&self) -> bool {
@@ -1085,12 +991,11 @@ impl<R> AudioBufferRenderer<R> {
     }
 }
 
-impl<R: MediaStream> AudioProcessor2 for AudioBufferRenderer<R> {}
-impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
+impl<R: MediaStream> AudioProcessor2 for AudioBufferRenderer<R> {
     fn process(
         &mut self,
-        _inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -1099,7 +1004,14 @@ impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
         let output = &mut outputs[0];
 
         if let Some(Ok(buffer)) = self.stream.next() {
-            *output = buffer;
+            let channels = buffer.number_of_channels();
+            output.set_number_of_channels(channels);
+            for i in 0..channels {
+                match buffer.channel_data(i) {
+                    None => *output.channel_data_mut(i) = output.channel_data(i).silence(),
+                    Some(c) => output.channel_data_mut(i).copy_from_slice(c.as_slice()),
+                }
+            }
         } else {
             self.finished = true;
             output.make_silent()
@@ -1269,12 +1181,11 @@ struct ConstantSourceRenderer {
     pub offset: AudioParamId,
 }
 
-impl AudioProcessor2 for ConstantSourceRenderer {}
-impl AudioProcessor for ConstantSourceRenderer {
+impl AudioProcessor2 for ConstantSourceRenderer {
     fn process(
         &mut self,
-        _inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        _inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -1283,12 +1194,9 @@ impl AudioProcessor for ConstantSourceRenderer {
         let output = &mut outputs[0];
 
         let offset_values = params.get(&self.offset);
-        output.modify_channels(|buf| {
-            offset_values
-                .iter()
-                .zip(buf.iter_mut())
-                .for_each(|(i, o)| *o = *i)
-        })
+
+        output.force_mono();
+        output.channel_data_mut(0).copy_from_slice(offset_values);
     }
 
     fn tail_time(&self) -> bool {
@@ -1393,18 +1301,19 @@ struct PannerRenderer {
     position_z: AudioParamId,
 }
 
-impl AudioProcessor2 for PannerRenderer {}
-impl AudioProcessor for PannerRenderer {
+impl AudioProcessor2 for PannerRenderer {
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[&crate::buffer2::AudioBuffer],
+        outputs: &mut [crate::buffer2::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
-        sample_rate: SampleRate,
+        _sample_rate: SampleRate,
     ) {
         // single input node, assume mono, not silent
-        let input = inputs[0].channel_data(0).unwrap();
+        let input = inputs[0].channel_data(0);
+        // single output node
+        let output = &mut outputs[0];
 
         // a-rate processing for now
 
@@ -1414,15 +1323,15 @@ impl AudioProcessor for PannerRenderer {
         let source_position_z = params.get(&self.position_z)[0];
 
         // listener parameters (AudioListener)
-        let l_position_x = inputs[1].channel_data(0).unwrap().as_slice()[0];
-        let l_position_y = inputs[2].channel_data(0).unwrap().as_slice()[0];
-        let l_position_z = inputs[3].channel_data(0).unwrap().as_slice()[0];
-        let l_forward_x = inputs[4].channel_data(0).unwrap().as_slice()[0];
-        let l_forward_y = inputs[5].channel_data(0).unwrap().as_slice()[0];
-        let l_forward_z = inputs[6].channel_data(0).unwrap().as_slice()[0];
-        let l_up_x = inputs[7].channel_data(0).unwrap().as_slice()[0];
-        let l_up_y = inputs[8].channel_data(0).unwrap().as_slice()[0];
-        let l_up_z = inputs[9].channel_data(0).unwrap().as_slice()[0];
+        let l_position_x = inputs[1].channel_data(0)[0];
+        let l_position_y = inputs[2].channel_data(0)[0];
+        let l_position_z = inputs[3].channel_data(0)[0];
+        let l_forward_x = inputs[4].channel_data(0)[0];
+        let l_forward_y = inputs[5].channel_data(0)[0];
+        let l_forward_z = inputs[6].channel_data(0)[0];
+        let l_up_x = inputs[7].channel_data(0)[0];
+        let l_up_y = inputs[8].channel_data(0)[0];
+        let l_up_z = inputs[9].channel_data(0)[0];
 
         let (mut azimuth, _elevation) = crate::spatial::azimuth_and_elevation(
             [source_position_x, source_position_y, source_position_z],
@@ -1451,12 +1360,20 @@ impl AudioProcessor for PannerRenderer {
         );
         let dist_gain = 1. / distance;
 
-        let left: Vec<_> = input.iter().map(|&v| v * gain_l * dist_gain).collect();
-        let right: Vec<_> = input.iter().map(|&v| v * gain_r * dist_gain).collect();
+        let left = input.iter().map(|&v| v * gain_l * dist_gain);
+        let right = input.iter().map(|&v| v * gain_r * dist_gain);
 
-        let channels = vec![ChannelData::from(left), ChannelData::from(right)];
-        let buffer = AudioBuffer::from_channels(channels, sample_rate);
-        outputs[0] = buffer;
+        output.set_number_of_channels(2);
+        output
+            .channel_data_mut(0)
+            .iter_mut()
+            .zip(left)
+            .for_each(|(o, i)| *o = i);
+        output
+            .channel_data_mut(1)
+            .iter_mut()
+            .zip(right)
+            .for_each(|(o, i)| *o = i);
     }
 
     fn tail_time(&self) -> bool {

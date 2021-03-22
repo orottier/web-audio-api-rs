@@ -6,7 +6,7 @@ use web_audio_api::context::{
 };
 use web_audio_api::node::AudioNode;
 use web_audio_api::param::{AudioParam, AudioParamOptions, AutomationRate};
-use web_audio_api::process::{AudioParamValues, AudioProcessor};
+use web_audio_api::process::{AudioParamValues, AudioProcessor2};
 use web_audio_api::SampleRate;
 
 /// Audio source node emitting white noise (random samples)
@@ -79,11 +79,11 @@ struct WhiteNoiseProcessor {
     amplitude: AudioParamId,
 }
 
-impl AudioProcessor for WhiteNoiseProcessor {
+impl AudioProcessor2 for WhiteNoiseProcessor {
     fn process(
         &mut self,
-        _inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        _inputs: &[&web_audio_api::buffer2::AudioBuffer],
+        outputs: &mut [web_audio_api::buffer2::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

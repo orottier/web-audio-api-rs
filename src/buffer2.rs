@@ -183,6 +183,15 @@ impl AudioBuffer {
         self.channel_count as _
     }
 
+    /// Set number of channels in this AudioBuffer
+    ///
+    /// Note: if the new number is higher than the previous, the new channels will be filled with
+    /// garbage.
+    pub fn set_number_of_channels(&mut self, n: usize) {
+        assert!(n <= MAX_CHANNELS);
+        self.channel_count = n as _;
+    }
+
     /// Get the samples from this specific channel.
     pub fn channel_data(&self, channel: usize) -> &ChannelData {
         &self.channels[channel]
