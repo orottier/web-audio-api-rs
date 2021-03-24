@@ -93,7 +93,11 @@ impl ChannelData {
 
     /// Sum two channels
     pub fn add(&mut self, other: &Self) {
-        self.iter_mut().zip(other.iter()).for_each(|(a, b)| *a += b)
+        if self.is_silent() {
+            *self = other.clone();
+        } else if !other.is_silent() {
+            self.iter_mut().zip(other.iter()).for_each(|(a, b)| *a += b)
+        }
     }
 
     pub fn silence(&self) -> Self {
@@ -203,63 +207,53 @@ impl AudioBuffer {
     }
 
     /// Up/Down-mix to the desired number of channels
-    pub fn mix(&self, channels: usize, interpretation: ChannelInterpretation) -> Self {
+    pub fn mix(&mut self, channels: usize, interpretation: ChannelInterpretation) {
         assert!(channels < MAX_CHANNELS);
 
         if self.number_of_channels() == channels {
-            return self.clone();
+            return;
         }
 
         let silence = self.channels[0].silence();
 
         // handle discrete interpretation
         if interpretation == ChannelInterpretation::Discrete {
-            let mut new = self.clone();
-
-            // downmix by setting channel_count
-            new.channel_count = channels as _;
-
             // upmix by filling with silence
             for i in (self.channel_count as usize)..channels {
-                new.channels[i] = silence.clone();
+                self.channels[i] = silence.clone();
             }
 
-            return new;
+            // downmix by setting channel_count
+            self.channel_count = channels as _;
+
+            return;
         }
 
         match (self.number_of_channels(), channels) {
             (1, 2) => {
-                let mut new = self.clone();
-                new.channel_count = 2;
-                new.channels[1] = new.channels[0].clone();
-                new
+                self.channel_count = 2;
+                self.channels[1] = self.channels[0].clone();
             }
             (1, 4) => {
-                let mut new = self.clone();
-                new.channel_count = 4;
-                new.channels[1] = new.channels[0].clone();
-                new.channels[2] = silence.clone();
-                new.channels[3] = silence.clone();
-                new
+                self.channel_count = 4;
+                self.channels[1] = self.channels[0].clone();
+                self.channels[2] = silence.clone();
+                self.channels[3] = silence.clone();
             }
             (1, 6) => {
-                let mut new = self.clone();
-                new.channels[2] = new.channels[0].clone();
-                new.channels[0] = silence.clone();
-                new.channels[1] = silence.clone();
-                new.channels[3] = silence.clone();
-                new.channels[4] = silence.clone();
-                new
+                self.channels[2] = self.channels[0].clone();
+                self.channels[0] = silence.clone();
+                self.channels[1] = silence.clone();
+                self.channels[3] = silence.clone();
+                self.channels[4] = silence.clone();
             }
             (2, 1) => {
-                let mut new = self.clone();
-                let right = new.channels[1].clone();
-                new.channel_count = 1;
-                new.channels[0]
+                let right = self.channels[1].clone();
+                self.channel_count = 1;
+                self.channels[0]
                     .iter_mut()
                     .zip(right.iter())
                     .for_each(|(l, r)| *l = (*l + *r) / 2.);
-                new
             }
             _ => todo!(),
         }
@@ -289,13 +283,18 @@ impl AudioBuffer {
     /// Sum two AudioBuffers
     ///
     /// If the channel counts differ, the buffer with lower count will be upmixed.
+    #[must_use]
     pub fn add(&self, other: &Self, interpretation: ChannelInterpretation) -> Self {
         // mix buffers to the max channel count
         let channels_self = self.number_of_channels();
         let channels_other = other.number_of_channels();
         let channels = channels_self.max(channels_other);
-        let mut self_mixed = self.mix(channels, interpretation);
-        let other_mixed = other.mix(channels, interpretation);
+
+        let mut self_mixed = self.clone();
+        self_mixed.mix(channels, interpretation);
+
+        let mut other_mixed = self.clone();
+        other_mixed.mix(channels, interpretation);
 
         self_mixed
             .channels

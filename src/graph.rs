@@ -289,8 +289,6 @@ impl Graph {
         ordered.iter().for_each(|index| {
             // remove node from map, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
-            // initial channel count
-            let channels = node.channel_config.count();
             // for lifecycle management, check if any inputs are present
             let mut has_inputs_connected = false;
             // mix all inputs together
