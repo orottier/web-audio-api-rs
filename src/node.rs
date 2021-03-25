@@ -845,6 +845,7 @@ impl AudioProcessor2 for ChannelMergerRenderer {
     ) {
         // single output node
         let output = &mut outputs[0];
+        output.set_number_of_channels(inputs.len());
 
         inputs.iter().enumerate().for_each(|(i, input)| {
             *output.channel_data_mut(i) = input.channel_data(0).clone();

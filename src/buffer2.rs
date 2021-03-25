@@ -1,3 +1,4 @@
+use arrayvec::ArrayVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -135,56 +136,20 @@ impl std::ops::Drop for ChannelData {
 
 #[derive(Clone)]
 pub struct AudioBuffer {
-    channels: [ChannelData; MAX_CHANNELS],
-    channel_count: u8,
+    channels: ArrayVec<[ChannelData; MAX_CHANNELS]>,
 }
 
 impl AudioBuffer {
     pub fn new(channel: ChannelData) -> Self {
-        // sorry..
-        let channels = [
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-            channel.clone(),
-        ];
-        Self {
-            channels,
-            channel_count: 1,
-        }
+        let mut channels = ArrayVec::new();
+        channels.push(channel);
+
+        Self { channels }
     }
 
     /// Number of channels in this AudioBuffer
     pub fn number_of_channels(&self) -> usize {
-        self.channel_count as _
+        self.channels.len()
     }
 
     /// Set number of channels in this AudioBuffer
@@ -193,7 +158,10 @@ impl AudioBuffer {
     /// garbage.
     pub fn set_number_of_channels(&mut self, n: usize) {
         assert!(n <= MAX_CHANNELS);
-        self.channel_count = n as _;
+        for i in self.number_of_channels()..n {
+            self.channels.push(self.channels[0].clone());
+        }
+        self.channels.truncate(n);
     }
 
     /// Get the samples from this specific channel.
@@ -219,41 +187,39 @@ impl AudioBuffer {
         // handle discrete interpretation
         if interpretation == ChannelInterpretation::Discrete {
             // upmix by filling with silence
-            for i in (self.channel_count as usize)..channels {
-                self.channels[i] = silence.clone();
+            for i in self.number_of_channels()..channels {
+                self.channels.push(silence.clone());
             }
 
-            // downmix by setting channel_count
-            self.channel_count = channels as _;
+            // downmix by truncating
+            self.channels.truncate(channels);
 
             return;
         }
 
         match (self.number_of_channels(), channels) {
             (1, 2) => {
-                self.channel_count = 2;
-                self.channels[1] = self.channels[0].clone();
+                self.channels.push(self.channels[0].clone());
             }
             (1, 4) => {
-                self.channel_count = 4;
-                self.channels[1] = self.channels[0].clone();
-                self.channels[2] = silence.clone();
-                self.channels[3] = silence.clone();
+                self.channels.push(self.channels[0].clone());
+                self.channels.push(silence.clone());
+                self.channels.push(silence.clone());
             }
             (1, 6) => {
-                self.channels[2] = self.channels[0].clone();
-                self.channels[0] = silence.clone();
-                self.channels[1] = silence.clone();
-                self.channels[3] = silence.clone();
-                self.channels[4] = silence.clone();
+                let main = std::mem::replace(&mut self.channels[0], silence.clone());
+                self.channels.push(silence.clone());
+                self.channels.push(main);
+                self.channels.push(silence.clone());
+                self.channels.push(silence.clone());
             }
             (2, 1) => {
                 let right = self.channels[1].clone();
-                self.channel_count = 1;
                 self.channels[0]
                     .iter_mut()
                     .zip(right.iter())
                     .for_each(|(l, r)| *l = (*l + *r) / 2.);
+                self.channels.truncate(1);
             }
             _ => todo!(),
         }
@@ -263,21 +229,18 @@ impl AudioBuffer {
     pub fn make_silent(&mut self) {
         let silence = self.channels[0].silence();
 
-        self.channel_count = 1;
         self.channels[0] = silence;
+        self.channels.truncate(1);
     }
 
     /// Convert to a single channel buffer, dropping excess channels
     pub fn force_mono(&mut self) {
-        self.channel_count = 1;
+        self.channels.truncate(1);
     }
 
     /// Modify every channel in the same way
     pub fn modify_channels<F: Fn(&mut ChannelData)>(&mut self, fun: F) {
-        self.channels
-            .iter_mut()
-            .take(self.channel_count as usize)
-            .for_each(fun)
+        self.channels.iter_mut().for_each(fun)
     }
 
     /// Sum two AudioBuffers
