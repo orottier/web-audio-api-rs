@@ -105,10 +105,10 @@ pub struct NodeIndex(pub u64);
 pub struct Node {
     /// Renderer: converts inputs to outputs
     processor: Box<dyn AudioProcessor>,
+    /// Input buffers
+    inputs: Vec<AudioBuffer>,
     /// Output buffers, consumed by subsequent Nodes in this graph
-    buffers: Vec<AudioBuffer>,
-    /// Number of inputs for the processor
-    inputs: usize,
+    outputs: Vec<AudioBuffer>,
     /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
 
@@ -123,16 +123,10 @@ pub struct Node {
 
 impl Node {
     /// Render an audio quantum
-    fn process(
-        &mut self,
-        inputs: &[&AudioBuffer],
-        params: AudioParamValues,
-        timestamp: f64,
-        sample_rate: SampleRate,
-    ) {
+    fn process(&mut self, params: AudioParamValues, timestamp: f64, sample_rate: SampleRate) {
         self.processor.process(
-            inputs,
-            &mut self.buffers[..],
+            &self.inputs[..],
+            &mut self.outputs[..],
             params,
             timestamp,
             sample_rate,
@@ -163,7 +157,7 @@ impl Node {
 
     /// Get the current buffer for AudioParam values
     pub fn get_buffer(&self) -> &AudioBuffer {
-        self.buffers.get(0).unwrap()
+        self.outputs.get(0).unwrap()
     }
 }
 
@@ -198,13 +192,16 @@ impl Graph {
         outputs: usize,
         channel_config: ChannelConfig,
     ) {
-        let buffers = vec![AudioBuffer::new(self.alloc.allocate()); outputs];
+        // todo, allocate on control thread, make single alloc..?
+        let inputs = vec![AudioBuffer::new(self.alloc.silence()); inputs];
+        let outputs = vec![AudioBuffer::new(self.alloc.silence()); outputs];
+
         self.nodes.insert(
             index,
             Node {
                 processor,
-                buffers,
                 inputs,
+                outputs,
                 channel_config,
                 free_when_finished: false,
                 has_inputs_connected: true,
@@ -278,7 +275,6 @@ impl Graph {
         // split (mut) borrows
         let ordered = &self.ordered;
         let edges = &self.edges;
-        let silence = self.alloc.silence();
         let nodes = &mut self.nodes;
 
         // we will drop audio nodes if they are finished running
@@ -290,7 +286,8 @@ impl Graph {
             // for lifecycle management, check if any inputs are present
             let mut has_inputs_connected = false;
             // mix all inputs together
-            let mut input_bufs = vec![AudioBuffer::new(silence.clone()); node.inputs];
+            node.inputs.iter_mut().for_each(|i| i.make_silent());
+
             edges
                 .iter()
                 .filter_map(move |(s, d)| {
@@ -302,36 +299,31 @@ impl Graph {
                     }
                 })
                 .for_each(|(&(node_index, output), input)| {
-                    let node = nodes.get(&node_index).unwrap();
-                    let signal = &node.buffers[output as usize];
+                    let input_node = nodes.get(&node_index).unwrap();
+                    let signal = &input_node.outputs[output as usize];
 
-                    input_bufs[input as usize] = input_bufs[input as usize]
+                    node.inputs[input as usize] = node.inputs[input as usize]
                         .add(signal, node.channel_config.interpretation());
 
                     has_inputs_connected = true;
                 });
 
-            let input_bufs: Vec<_> = input_bufs
-                .iter_mut()
-                .map(|input_buf| {
-                    // up/down-mix to the desired channel count
-                    let cur_channels = input_buf.number_of_channels();
-                    let new_channels = match node.channel_config.count_mode() {
-                        ChannelCountMode::Max => cur_channels,
-                        ChannelCountMode::Explicit => node.channel_config.count(),
-                        ChannelCountMode::ClampedMax => {
-                            cur_channels.min(node.channel_config.count())
-                        }
-                    };
-                    input_buf.mix(new_channels, node.channel_config.interpretation());
-
-                    // return immutable refs
-                    &*input_buf
-                })
-                .collect();
+            // up/down-mix to the desired channel count
+            let mode = node.channel_config.count_mode();
+            let count = node.channel_config.count();
+            let interpretation = node.channel_config.interpretation();
+            node.inputs.iter_mut().for_each(|input_buf| {
+                let cur_channels = input_buf.number_of_channels();
+                let new_channels = match mode {
+                    ChannelCountMode::Max => cur_channels,
+                    ChannelCountMode::Explicit => count,
+                    ChannelCountMode::ClampedMax => cur_channels.min(count),
+                };
+                input_buf.mix(new_channels, interpretation);
+            });
 
             let params = AudioParamValues::from(&*nodes);
-            node.process(&input_bufs[..], params, timestamp, sample_rate);
+            node.process(params, timestamp, sample_rate);
 
             // check if the Node has reached end of lifecycle
             node.has_inputs_connected = has_inputs_connected;
@@ -350,7 +342,7 @@ impl Graph {
 
         // return buffer of destination node
         // assume only 1 output (todo)
-        &self.nodes.get(&NodeIndex(0)).unwrap().buffers[0]
+        &self.nodes.get(&NodeIndex(0)).unwrap().outputs[0]
     }
 }
 
@@ -364,11 +356,11 @@ mod tests {
     impl AudioProcessor for TestNode {
         fn process(
             &mut self,
-            _: &[&AudioBuffer2],
-            _: &mut [AudioBuffer2],
-            _: AudioParamValues,
-            _: f64,
-            _: SampleRate,
+            _inputs: &[AudioBuffer],
+            _outputs: &mut [AudioBuffer],
+            _params: AudioParamValues,
+            _timestamp: f64,
+            _sample_rate: SampleRate,
         ) {
         }
         fn tail_time(&self) -> bool {

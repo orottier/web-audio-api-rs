@@ -306,7 +306,7 @@ struct OscillatorRenderer {
 impl AudioProcessor for OscillatorRenderer {
     fn process(
         &mut self,
-        _inputs: &[&crate::alloc::AudioBuffer],
+        _inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         timestamp: f64,
@@ -361,14 +361,14 @@ struct DestinationRenderer {}
 impl AudioProcessor for DestinationRenderer {
     fn process(
         &mut self,
-        inputs: &[&crate::alloc::AudioBuffer],
+        inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
         // single input/output node
-        let input = inputs[0];
+        let input = &inputs[0];
         let output = &mut outputs[0];
 
         // todo, actually fill cpal buffer here
@@ -510,14 +510,14 @@ struct GainRenderer {
 impl AudioProcessor for GainRenderer {
     fn process<'a>(
         &mut self,
-        inputs: &[&crate::alloc::AudioBuffer],
+        inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
         // single input/output node
-        let input = inputs[0];
+        let input = &inputs[0];
         let output = &mut outputs[0];
 
         let gain_values = params.get(&self.gain);
@@ -620,14 +620,14 @@ unsafe impl Send for DelayRenderer {}
 impl AudioProcessor for DelayRenderer {
     fn process(
         &mut self,
-        inputs: &[&crate::alloc::AudioBuffer],
+        inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
         // single input/output node
-        let input = inputs[0];
+        let input = &inputs[0];
         let output = &mut outputs[0];
 
         let quanta = self.render_quanta.load(Ordering::SeqCst) as usize;
@@ -731,14 +731,14 @@ struct ChannelSplitterRenderer {
 impl AudioProcessor for ChannelSplitterRenderer {
     fn process(
         &mut self,
-        inputs: &[&crate::alloc::AudioBuffer],
+        inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) {
         // single input node
-        let input = inputs[0];
+        let input = &inputs[0];
 
         // assert number of outputs was correctly set by renderer
         assert_eq!(self.number_of_outputs, outputs.len());
@@ -837,7 +837,7 @@ struct ChannelMergerRenderer {
 impl AudioProcessor for ChannelMergerRenderer {
     fn process(
         &mut self,
-        inputs: &[&crate::alloc::AudioBuffer],
+        inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
@@ -995,7 +995,7 @@ impl<R> AudioBufferRenderer<R> {
 impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
     fn process(
         &mut self,
-        _inputs: &[&crate::alloc::AudioBuffer],
+        _inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
@@ -1185,7 +1185,7 @@ struct ConstantSourceRenderer {
 impl AudioProcessor for ConstantSourceRenderer {
     fn process(
         &mut self,
-        _inputs: &[&crate::alloc::AudioBuffer],
+        _inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
@@ -1305,7 +1305,7 @@ struct PannerRenderer {
 impl AudioProcessor for PannerRenderer {
     fn process(
         &mut self,
-        inputs: &[&crate::alloc::AudioBuffer],
+        inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,

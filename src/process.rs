@@ -15,7 +15,7 @@ pub trait AudioProcessor: Send {
     /// Audio processing function
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer],
+        inputs: &[AudioBuffer],
         outputs: &mut [AudioBuffer],
         params: AudioParamValues,
         timestamp: f64,

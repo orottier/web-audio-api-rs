@@ -194,7 +194,7 @@ struct ListenerRenderer {
 impl AudioProcessor for ListenerRenderer {
     fn process(
         &mut self,
-        _inputs: &[&AudioBuffer],
+        _inputs: &[AudioBuffer],
         outputs: &mut [AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,

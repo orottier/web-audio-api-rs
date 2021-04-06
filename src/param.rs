@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use AutomationEvent::*;
 
+use crate::alloc::AudioBuffer;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::AudioContextRegistration;
 use crate::node::AudioNode;
@@ -132,13 +133,13 @@ pub(crate) struct AudioParamProcessor {
 impl AudioProcessor for AudioParamProcessor {
     fn process<'a>(
         &mut self,
-        inputs: &[&crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioBuffer],
+        outputs: &mut [AudioBuffer],
         _params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
     ) {
-        let input = inputs[0]; // single input mode
+        let input = &inputs[0]; // single input mode
 
         let intrinsic = self.tick(
             timestamp,
