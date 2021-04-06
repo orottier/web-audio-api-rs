@@ -1,3 +1,5 @@
+//! Optimized audio signal data structures, used in AudioProcessors
+
 use arrayvec::ArrayVec;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -5,7 +7,7 @@ use std::rc::Rc;
 use crate::buffer::ChannelInterpretation;
 
 const LEN: usize = crate::BUFFER_SIZE as usize;
-const MAX_CHANNELS: usize = 32;
+use crate::MAX_CHANNELS;
 
 pub(crate) struct Alloc {
     inner: Rc<AllocInner>,
@@ -69,6 +71,9 @@ impl AllocInner {
     }
 }
 
+/// Single channel audio samples, basically wraps a `Rc<[f32; BUFFER_SIZE]>`
+///
+/// ChannelData has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone)]
 pub struct ChannelData {
     data: Rc<[f32; LEN]>,

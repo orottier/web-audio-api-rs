@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::alloc::AudioBuffer as AudioBuffer2;
+use crate::alloc::AudioBuffer;
 use crate::context::AudioParamId;
 use crate::graph::{Node, NodeIndex};
 use crate::SampleRate;
@@ -11,16 +11,18 @@ use crate::SampleRate;
 ///
 /// Note that the AudioProcessor is typically constructed together with an `AudioNode`
 /// (the user facing object that lives in the control thread). See `[crate::context::BaseAudioContext::register]`.
-pub trait AudioProcessor2: Send {
+pub trait AudioProcessor: Send {
+    /// Audio processing function
     fn process(
         &mut self,
-        inputs: &[&crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
     );
 
+    /// Indicates if this node can have output when no inputs are connected
     fn tail_time(&self) -> bool;
 }
 
@@ -36,7 +38,7 @@ impl<'a> AudioParamValues<'a> {
         Self { nodes }
     }
 
-    pub(crate) fn get_raw(&self, index: &AudioParamId) -> &AudioBuffer2 {
+    pub(crate) fn get_raw(&self, index: &AudioParamId) -> &AudioBuffer {
         self.nodes.get(&index.into()).unwrap().get_buffer()
     }
 

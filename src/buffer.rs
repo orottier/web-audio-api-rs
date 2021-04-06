@@ -1,4 +1,4 @@
-//! Audio signal data structures
+//! General purpose audio signal data structures
 
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -39,114 +39,11 @@ impl AudioBuffer {
         }
     }
 
-    /// Create a mono audiobuffer (single channel)
-    pub fn from_mono(data: ChannelData, sample_rate: SampleRate) -> Self {
-        Self {
-            data: Mono(data, 1),
-            sample_rate,
-        }
-    }
-
     /// Create a multi-channel audiobuffer
     pub fn from_channels(data: Vec<ChannelData>, sample_rate: SampleRate) -> Self {
         Self {
             data: Multi(data.into_boxed_slice()),
             sample_rate,
-        }
-    }
-
-    /// Up/Down-mix to the desired number of channels
-    pub fn mix(&self, channels: usize, interpretation: ChannelInterpretation) -> Self {
-        if self.number_of_channels() == channels {
-            return self.clone();
-        }
-
-        // handle silence
-        if let Silence(_, len) = &self.data {
-            return Self {
-                data: Silence(channels, *len),
-                sample_rate: self.sample_rate,
-            };
-        }
-
-        // handle mono
-        if let Mono(data, prev_channels) = &self.data {
-            if interpretation == ChannelInterpretation::Discrete {
-                // discrete layout: no mixing required
-                if *prev_channels >= channels {
-                    return Self {
-                        data: Mono(data.clone(), channels),
-                        sample_rate: self.sample_rate,
-                    };
-                } else {
-                    let mut new = Vec::with_capacity(channels);
-                    for _ in 0..*prev_channels {
-                        new.push(data.clone());
-                    }
-                    let silence = ChannelData::new(self.sample_len());
-                    for _ in *prev_channels..channels {
-                        new.push(silence.clone());
-                    }
-                    return Self::from_channels(new, self.sample_rate);
-                }
-            } else {
-                // speaker layout: mixing required
-                match channels {
-                    1 | 2 => {
-                        return Self {
-                            data: Mono(data.clone(), channels),
-                            sample_rate: self.sample_rate,
-                        }
-                    }
-                    4 => {
-                        let silence = ChannelData::new(self.sample_len());
-                        return Self::from_channels(
-                            vec![data.clone(), data.clone(), silence.clone(), silence],
-                            self.sample_rate,
-                        );
-                    }
-                    6 => {
-                        let silence = ChannelData::new(self.sample_len());
-                        return Self::from_channels(
-                            vec![
-                                silence.clone(),
-                                silence.clone(),
-                                data.clone(),
-                                silence.clone(),
-                                silence,
-                            ],
-                            self.sample_rate,
-                        );
-                    }
-
-                    _ => panic!("unknown speaker configuration {}", channels),
-                }
-            }
-        }
-
-        let data = match &self.data {
-            Multi(data) => data,
-            _ => unreachable!(),
-        };
-
-        match (data.len(), channels) {
-            (n, m) if n == m => self.clone(),
-            (1, c) => Self {
-                data: Mono(data[0].clone(), c),
-                sample_rate: self.sample_rate,
-            },
-            (2, 1) => {
-                let mut l = data[0].clone();
-                l.iter_mut()
-                    .zip(data[1].iter())
-                    .for_each(|(l, r)| *l = 0.5 * (*l + r));
-
-                Self {
-                    data: Mono(l, 1),
-                    sample_rate: self.sample_rate,
-                }
-            }
-            _ => todo!(),
         }
     }
 
@@ -186,15 +83,6 @@ impl AudioBuffer {
             Silence(_, _) => None,
             Mono(data, _) => Some(data),
             Multi(data) => data.get(channel),
-        }
-    }
-
-    /// Convert this buffer to silence, maintaining the channel and sample counts
-    pub fn make_silent(&mut self) {
-        match &mut self.data {
-            Silence(_, _) => (),
-            Mono(data, channels) => self.data = Silence(*channels, data.len()),
-            Multi(data) => self.data = Silence(data.len(), data[0].len()),
         }
     }
 
@@ -249,51 +137,6 @@ impl AudioBuffer {
         }
     }
 
-    /// Sum two AudioBuffers
-    ///
-    /// This function will panic if the sample_length and sample_rate are not equal
-    pub fn add(&self, other: &Self, interpretation: ChannelInterpretation) -> Self {
-        assert_eq!(self.sample_rate, other.sample_rate);
-        assert_eq!(self.sample_len(), other.sample_len());
-
-        // mix buffers to the max channel count
-        let channels_self = self.number_of_channels();
-        let channels_other = other.number_of_channels();
-        let channels = channels_self.max(channels_other);
-        let self_mixed = self.mix(channels, interpretation);
-        let other_mixed = other.mix(channels, interpretation);
-
-        // early exit for simple cases, or determine which signal is Multi
-        let (mut multi, other) = match (&self_mixed.data, &other_mixed.data) {
-            (Silence(_, _), _) => return other_mixed.clone(),
-            (_, Silence(_, _)) => return self_mixed.clone(),
-            (Mono(s, _), Mono(o, _)) => {
-                let mut new = s.clone();
-                new.add(&o);
-                return Self {
-                    data: Mono(new, channels),
-                    sample_rate: self.sample_rate,
-                };
-            }
-            (Multi(data), _) => (data.clone(), other_mixed),
-            (_, Multi(data)) => (data.clone(), self_mixed),
-        };
-
-        assert_eq!(multi.len(), channels);
-
-        // mutate the Multi signal with values from the other
-        (0..channels).for_each(|i| {
-            if let Some(data) = other.channel_data(i) {
-                multi[i].add(data)
-            }
-        });
-
-        Self {
-            data: Multi(multi),
-            sample_rate: self.sample_rate,
-        }
-    }
-
     /// Extends an AudioBuffer with the contents of another.
     ///
     /// This function will panic if the sample_rate and channel_count are not equal
@@ -308,7 +151,7 @@ impl AudioBuffer {
                 let cur_channel_data = Arc::make_mut(&mut channel_data.data);
 
                 if let Some(data) = other.channel_data(channel) {
-                    cur_channel_data.extend(data.iter().copied());
+                    cur_channel_data.extend(data.as_slice());
                 } else {
                     cur_channel_data.extend(std::iter::repeat(0.).take(other.sample_len()));
                 }
@@ -433,24 +276,12 @@ impl ChannelData {
         self.data.is_empty()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &f32> {
-        self.data.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f32> {
-        Arc::make_mut(&mut self.data).iter_mut()
-    }
-
     pub fn as_slice(&self) -> &[f32] {
         &self.data[..]
     }
 
     pub fn as_mut_slice(&mut self) -> &mut [f32] {
         &mut Arc::make_mut(&mut self.data)[..]
-    }
-
-    pub fn add(&mut self, other: &Self) {
-        self.iter_mut().zip(other.iter()).for_each(|(a, b)| *a += b)
     }
 }
 

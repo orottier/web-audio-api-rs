@@ -9,7 +9,7 @@ use AutomationEvent::*;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::AudioContextRegistration;
 use crate::node::AudioNode;
-use crate::process::{AudioParamValues, AudioProcessor2};
+use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{AtomicF64, SampleRate};
 
 /// Precision of value calculation per render quantum
@@ -129,7 +129,7 @@ pub(crate) struct AudioParamProcessor {
     events: BinaryHeap<AutomationEvent>,
 }
 
-impl AudioProcessor2 for AudioParamProcessor {
+impl AudioProcessor for AudioParamProcessor {
     fn process<'a>(
         &mut self,
         inputs: &[&crate::alloc::AudioBuffer],

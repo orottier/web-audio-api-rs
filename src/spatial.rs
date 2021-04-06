@@ -2,12 +2,12 @@
 //!
 //! Required for panning algorithm, distance and cone effects of [`crate::node::PannerNode`]s
 
+use crate::alloc::AudioBuffer;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::node::AudioNode;
-use crate::param::AutomationEvent;
-use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
-use crate::process::{AudioParamValues, AudioProcessor2};
+use crate::param::{AudioParam, AudioParamOptions, AutomationEvent, AutomationRate};
+use crate::process::{AudioParamValues, AudioProcessor};
 use crate::AtomicF64;
 use crate::SampleRate;
 
@@ -191,11 +191,11 @@ struct ListenerRenderer {
     up_z: AudioParamId,
 }
 
-impl AudioProcessor2 for ListenerRenderer {
+impl AudioProcessor for ListenerRenderer {
     fn process(
         &mut self,
-        _inputs: &[&crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        _inputs: &[&AudioBuffer],
+        outputs: &mut [AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

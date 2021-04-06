@@ -22,7 +22,7 @@ use crate::message::ControlMessage;
 use crate::node;
 use crate::node::AudioNode;
 use crate::param::{AudioParam, AudioParamOptions};
-use crate::process::AudioProcessor2;
+use crate::process::AudioProcessor;
 use crate::spatial::{AudioListener, AudioListenerParams};
 use crate::SampleRate;
 
@@ -458,7 +458,7 @@ impl BaseAudioContext {
     pub fn register<
         'a,
         T: node::AudioNode,
-        F: FnOnce(AudioContextRegistration<'a>) -> (T, Box<dyn AudioProcessor2>),
+        F: FnOnce(AudioContextRegistration<'a>) -> (T, Box<dyn AudioProcessor>),
     >(
         &'a self,
         f: F,

@@ -15,7 +15,7 @@ use crate::context::{
 use crate::control::{Controller, Scheduler};
 use crate::media::{MediaElement, MediaStream};
 use crate::param::{AudioParam, AudioParamOptions};
-use crate::process::{AudioParamValues, AudioProcessor2};
+use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
@@ -24,7 +24,7 @@ use crate::SampleRate;
 /// These modules can be connected together to form processing graphs for rendering audio
 /// to the audio hardware. Each node can have inputs and/or outputs.
 ///
-/// Note that the AudioNode is typically constructed together with an `[crate::process::AudioProcessor2]`
+/// Note that the AudioNode is typically constructed together with an `[AudioProcessor]`
 /// (the object that lives the render thread). See `[BaseAudioContext::register]`.
 pub trait AudioNode {
     fn registration(&self) -> &AudioContextRegistration;
@@ -303,7 +303,7 @@ struct OscillatorRenderer {
     scheduler: Scheduler,
 }
 
-impl AudioProcessor2 for OscillatorRenderer {
+impl AudioProcessor for OscillatorRenderer {
     fn process(
         &mut self,
         _inputs: &[&crate::alloc::AudioBuffer],
@@ -358,7 +358,7 @@ pub struct DestinationNode<'a> {
 
 struct DestinationRenderer {}
 
-impl AudioProcessor2 for DestinationRenderer {
+impl AudioProcessor for DestinationRenderer {
     fn process(
         &mut self,
         inputs: &[&crate::alloc::AudioBuffer],
@@ -507,7 +507,7 @@ struct GainRenderer {
     gain: AudioParamId,
 }
 
-impl AudioProcessor2 for GainRenderer {
+impl AudioProcessor for GainRenderer {
     fn process<'a>(
         &mut self,
         inputs: &[&crate::alloc::AudioBuffer],
@@ -617,7 +617,7 @@ struct DelayRenderer {
 }
 unsafe impl Send for DelayRenderer {}
 
-impl AudioProcessor2 for DelayRenderer {
+impl AudioProcessor for DelayRenderer {
     fn process(
         &mut self,
         inputs: &[&crate::alloc::AudioBuffer],
@@ -728,7 +728,7 @@ struct ChannelSplitterRenderer {
     pub number_of_outputs: usize,
 }
 
-impl AudioProcessor2 for ChannelSplitterRenderer {
+impl AudioProcessor for ChannelSplitterRenderer {
     fn process(
         &mut self,
         inputs: &[&crate::alloc::AudioBuffer],
@@ -834,7 +834,7 @@ struct ChannelMergerRenderer {
     number_of_inputs: usize,
 }
 
-impl AudioProcessor2 for ChannelMergerRenderer {
+impl AudioProcessor for ChannelMergerRenderer {
     fn process(
         &mut self,
         inputs: &[&crate::alloc::AudioBuffer],
@@ -992,7 +992,7 @@ impl<R> AudioBufferRenderer<R> {
     }
 }
 
-impl<R: MediaStream> AudioProcessor2 for AudioBufferRenderer<R> {
+impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
     fn process(
         &mut self,
         _inputs: &[&crate::alloc::AudioBuffer],
@@ -1182,7 +1182,7 @@ struct ConstantSourceRenderer {
     pub offset: AudioParamId,
 }
 
-impl AudioProcessor2 for ConstantSourceRenderer {
+impl AudioProcessor for ConstantSourceRenderer {
     fn process(
         &mut self,
         _inputs: &[&crate::alloc::AudioBuffer],
@@ -1302,7 +1302,7 @@ struct PannerRenderer {
     position_z: AudioParamId,
 }
 
-impl AudioProcessor2 for PannerRenderer {
+impl AudioProcessor for PannerRenderer {
     fn process(
         &mut self,
         inputs: &[&crate::alloc::AudioBuffer],

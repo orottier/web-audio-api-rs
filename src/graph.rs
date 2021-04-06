@@ -3,12 +3,10 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
-use crate::alloc::Alloc;
-use crate::alloc::AudioBuffer as AudioBuffer2;
-use crate::buffer::ChannelConfig;
-use crate::buffer::ChannelCountMode;
+use crate::alloc::{Alloc, AudioBuffer};
+use crate::buffer::{ChannelConfig, ChannelCountMode};
 use crate::message::ControlMessage;
-use crate::process::{AudioParamValues, AudioProcessor2};
+use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
 
 /// Operations running off the system-level audio callback
@@ -106,9 +104,9 @@ pub struct NodeIndex(pub u64);
 /// Renderer Node in the Audio Graph
 pub struct Node {
     /// Renderer: converts inputs to outputs
-    processor: Box<dyn AudioProcessor2>,
+    processor: Box<dyn AudioProcessor>,
     /// Output buffers, consumed by subsequent Nodes in this graph
-    buffers: Vec<AudioBuffer2>,
+    buffers: Vec<AudioBuffer>,
     /// Number of inputs for the processor
     inputs: usize,
     /// Channel configuration: determines up/down-mixing of inputs
@@ -127,7 +125,7 @@ impl Node {
     /// Render an audio quantum
     fn process(
         &mut self,
-        inputs: &[&AudioBuffer2],
+        inputs: &[&AudioBuffer],
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
@@ -164,7 +162,7 @@ impl Node {
     }
 
     /// Get the current buffer for AudioParam values
-    pub fn get_buffer(&self) -> &AudioBuffer2 {
+    pub fn get_buffer(&self) -> &AudioBuffer {
         self.buffers.get(0).unwrap()
     }
 }
@@ -195,12 +193,12 @@ impl Graph {
     pub fn add_node(
         &mut self,
         index: NodeIndex,
-        processor: Box<dyn AudioProcessor2>,
+        processor: Box<dyn AudioProcessor>,
         inputs: usize,
         outputs: usize,
         channel_config: ChannelConfig,
     ) {
-        let buffers = vec![AudioBuffer2::new(self.alloc.allocate()); outputs];
+        let buffers = vec![AudioBuffer::new(self.alloc.allocate()); outputs];
         self.nodes.insert(
             index,
             Node {
@@ -276,7 +274,7 @@ impl Graph {
         self.marked = marked;
     }
 
-    pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer2 {
+    pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer {
         // split (mut) borrows
         let ordered = &self.ordered;
         let edges = &self.edges;
@@ -292,7 +290,7 @@ impl Graph {
             // for lifecycle management, check if any inputs are present
             let mut has_inputs_connected = false;
             // mix all inputs together
-            let mut input_bufs = vec![AudioBuffer2::new(silence.clone()); node.inputs];
+            let mut input_bufs = vec![AudioBuffer::new(silence.clone()); node.inputs];
             edges
                 .iter()
                 .filter_map(move |(s, d)| {
@@ -363,7 +361,7 @@ mod tests {
     #[derive(Debug, Clone)]
     struct TestNode {}
 
-    impl AudioProcessor2 for TestNode {
+    impl AudioProcessor for TestNode {
         fn process(
             &mut self,
             _: &[&AudioBuffer2],
