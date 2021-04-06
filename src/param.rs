@@ -152,7 +152,9 @@ impl AudioProcessor for AudioParamProcessor {
             .channel_data_mut(0)
             .copy_from_slice(intrinsic.as_slice());
 
-        outputs[0] = input.add(&buffer, ChannelInterpretation::Discrete);
+        buffer.add(&input, ChannelInterpretation::Discrete);
+
+        outputs[0] = buffer;
     }
 
     fn tail_time(&self) -> bool {

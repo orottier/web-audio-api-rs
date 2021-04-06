@@ -302,8 +302,7 @@ impl Graph {
                     let input_node = nodes.get(&node_index).unwrap();
                     let signal = &input_node.outputs[output as usize];
 
-                    node.inputs[input as usize] = node.inputs[input as usize]
-                        .add(signal, node.channel_config.interpretation());
+                    node.inputs[input as usize].add(signal, node.channel_config.interpretation());
 
                     has_inputs_connected = true;
                 });

@@ -255,27 +255,22 @@ impl AudioBuffer {
     /// Sum two AudioBuffers
     ///
     /// If the channel counts differ, the buffer with lower count will be upmixed.
-    #[must_use]
-    pub fn add(&self, other: &Self, interpretation: ChannelInterpretation) -> Self {
+    pub fn add(&mut self, other: &Self, interpretation: ChannelInterpretation) {
         // mix buffers to the max channel count
         let channels_self = self.number_of_channels();
         let channels_other = other.number_of_channels();
         let channels = channels_self.max(channels_other);
 
-        let mut self_mixed = self.clone();
-        self_mixed.mix(channels, interpretation);
+        self.mix(channels, interpretation);
 
         let mut other_mixed = other.clone();
         other_mixed.mix(channels, interpretation);
 
-        self_mixed
-            .channels
+        self.channels
             .iter_mut()
             .zip(other_mixed.channels.iter())
             .take(channels)
             .for_each(|(s, o)| s.add(o));
-
-        self_mixed
     }
 }
 
@@ -488,9 +483,9 @@ mod tests {
         signal2.copy_from_slice(&[2.; LEN]);
         let buffer2 = AudioBuffer::new(signal2);
 
-        let sum = buffer.add(&buffer2, ChannelInterpretation::Discrete);
-        assert_eq!(sum.number_of_channels(), 2);
-        assert_eq!(&sum.channel_data(0)[..], &[3.; LEN]);
-        assert_eq!(&sum.channel_data(1)[..], &[1.; LEN]);
+        buffer.add(&buffer2, ChannelInterpretation::Discrete);
+        assert_eq!(buffer.number_of_channels(), 2);
+        assert_eq!(&buffer.channel_data(0)[..], &[3.; LEN]);
+        assert_eq!(&buffer.channel_data(1)[..], &[1.; LEN]);
     }
 }
