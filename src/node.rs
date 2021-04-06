@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use crate::buffer::{
-    AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelData,
-    ChannelInterpretation, Resampler,
+    AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+    Resampler,
 };
 use crate::context::{
     AsBaseAudioContext, AudioContextRegistration, AudioNodeId, AudioParamId, BaseAudioContext,
@@ -15,7 +15,7 @@ use crate::context::{
 use crate::control::{Controller, Scheduler};
 use crate::media::{MediaElement, MediaStream};
 use crate::param::{AudioParam, AudioParamOptions};
-use crate::process::{AudioParamValues, AudioProcessor, AudioProcessor2};
+use crate::process::{AudioParamValues, AudioProcessor2};
 use crate::SampleRate;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
@@ -24,7 +24,7 @@ use crate::SampleRate;
 /// These modules can be connected together to form processing graphs for rendering audio
 /// to the audio hardware. Each node can have inputs and/or outputs.
 ///
-/// Note that the AudioNode is typically constructed together with an `[crate::process::AudioProcessor]`
+/// Note that the AudioNode is typically constructed together with an `[crate::process::AudioProcessor2]`
 /// (the object that lives the render thread). See `[BaseAudioContext::register]`.
 pub trait AudioNode {
     fn registration(&self) -> &AudioContextRegistration;
@@ -306,8 +306,8 @@ struct OscillatorRenderer {
 impl AudioProcessor2 for OscillatorRenderer {
     fn process(
         &mut self,
-        _inputs: &[&crate::buffer2::AudioBuffer],
-        outputs: &mut [crate::buffer2::AudioBuffer],
+        _inputs: &[&crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
@@ -361,8 +361,8 @@ struct DestinationRenderer {}
 impl AudioProcessor2 for DestinationRenderer {
     fn process(
         &mut self,
-        inputs: &[&crate::buffer2::AudioBuffer],
-        outputs: &mut [crate::buffer2::AudioBuffer],
+        inputs: &[&crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -510,8 +510,8 @@ struct GainRenderer {
 impl AudioProcessor2 for GainRenderer {
     fn process<'a>(
         &mut self,
-        inputs: &[&crate::buffer2::AudioBuffer],
-        outputs: &mut [crate::buffer2::AudioBuffer],
+        inputs: &[&crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -612,7 +612,7 @@ impl<'a> DelayNode<'a> {
 
 struct DelayRenderer {
     render_quanta: Arc<AtomicU32>,
-    delay_buffer: Vec<crate::buffer2::AudioBuffer>,
+    delay_buffer: Vec<crate::alloc::AudioBuffer>,
     index: usize,
 }
 unsafe impl Send for DelayRenderer {}
@@ -620,8 +620,8 @@ unsafe impl Send for DelayRenderer {}
 impl AudioProcessor2 for DelayRenderer {
     fn process(
         &mut self,
-        inputs: &[&crate::buffer2::AudioBuffer],
-        outputs: &mut [crate::buffer2::AudioBuffer],
+        inputs: &[&crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -731,8 +731,8 @@ struct ChannelSplitterRenderer {
 impl AudioProcessor2 for ChannelSplitterRenderer {
     fn process(
         &mut self,
-        inputs: &[&crate::buffer2::AudioBuffer],
-        outputs: &mut [crate::buffer2::AudioBuffer],
+        inputs: &[&crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -837,8 +837,8 @@ struct ChannelMergerRenderer {
 impl AudioProcessor2 for ChannelMergerRenderer {
     fn process(
         &mut self,
-        inputs: &[&crate::buffer2::AudioBuffer],
-        outputs: &mut [crate::buffer2::AudioBuffer],
+        inputs: &[&crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -995,8 +995,8 @@ impl<R> AudioBufferRenderer<R> {
 impl<R: MediaStream> AudioProcessor2 for AudioBufferRenderer<R> {
     fn process(
         &mut self,
-        inputs: &[&crate::buffer2::AudioBuffer],
-        outputs: &mut [crate::buffer2::AudioBuffer],
+        _inputs: &[&crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -1185,8 +1185,8 @@ struct ConstantSourceRenderer {
 impl AudioProcessor2 for ConstantSourceRenderer {
     fn process(
         &mut self,
-        _inputs: &[&crate::buffer2::AudioBuffer],
-        outputs: &mut [crate::buffer2::AudioBuffer],
+        _inputs: &[&crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -1305,8 +1305,8 @@ struct PannerRenderer {
 impl AudioProcessor2 for PannerRenderer {
     fn process(
         &mut self,
-        inputs: &[&crate::buffer2::AudioBuffer],
-        outputs: &mut [crate::buffer2::AudioBuffer],
+        inputs: &[&crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

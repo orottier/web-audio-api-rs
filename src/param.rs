@@ -6,13 +6,10 @@ use std::sync::Arc;
 
 use AutomationEvent::*;
 
-use crate::buffer::{
-    AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelData,
-    ChannelInterpretation,
-};
+use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::AudioContextRegistration;
 use crate::node::AudioNode;
-use crate::process::{AudioParamValues, AudioProcessor, AudioProcessor2};
+use crate::process::{AudioParamValues, AudioProcessor2};
 use crate::{AtomicF64, SampleRate};
 
 /// Precision of value calculation per render quantum
@@ -135,9 +132,9 @@ pub(crate) struct AudioParamProcessor {
 impl AudioProcessor2 for AudioParamProcessor {
     fn process<'a>(
         &mut self,
-        inputs: &[&crate::buffer2::AudioBuffer],
-        outputs: &mut [crate::buffer2::AudioBuffer],
-        params: AudioParamValues,
+        inputs: &[&crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
+        _params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
     ) {
@@ -149,34 +146,10 @@ impl AudioProcessor2 for AudioParamProcessor {
             crate::BUFFER_SIZE as _,
         );
         let mut buffer = inputs[0].clone(); // get new buf
-        buffer.set_number_of_channels(1);
+        buffer.force_mono();
         buffer
             .channel_data_mut(0)
             .copy_from_slice(intrinsic.as_slice());
-
-        outputs[0] = input.add(&buffer, ChannelInterpretation::Discrete);
-    }
-
-    fn tail_time(&self) -> bool {
-        true // has intrinsic value
-    }
-}
-
-impl AudioProcessor for AudioParamProcessor {
-    fn process(
-        &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
-        _params: AudioParamValues,
-        timestamp: f64,
-        sample_rate: SampleRate,
-    ) {
-        let input = inputs[0]; // single input mode
-        let sample_len = input.sample_len();
-
-        let intrinsic = self.tick(timestamp, 1. / sample_rate.0 as f64, sample_len);
-        let as_channel = ChannelData::from(intrinsic);
-        let buffer = AudioBuffer::from_mono(as_channel, sample_rate);
 
         outputs[0] = input.add(&buffer, ChannelInterpretation::Discrete);
     }

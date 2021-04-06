@@ -3,13 +3,13 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
+use crate::alloc::Alloc;
+use crate::alloc::AudioBuffer as AudioBuffer2;
 use crate::buffer::ChannelConfig;
-use crate::buffer2::Alloc;
-use crate::buffer2::AudioBuffer as AudioBuffer2;
+use crate::buffer::ChannelCountMode;
 use crate::message::ControlMessage;
 use crate::process::{AudioParamValues, AudioProcessor2};
 use crate::SampleRate;
-use crate::{buffer::AudioBuffer, buffer::ChannelCountMode};
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
@@ -363,11 +363,11 @@ mod tests {
     #[derive(Debug, Clone)]
     struct TestNode {}
 
-    impl AudioProcessor for TestNode {
+    impl AudioProcessor2 for TestNode {
         fn process(
             &mut self,
-            _: &[&AudioBuffer],
-            _: &mut [AudioBuffer],
+            _: &[&AudioBuffer2],
+            _: &mut [AudioBuffer2],
             _: AudioParamValues,
             _: f64,
             _: SampleRate,
@@ -389,9 +389,9 @@ mod tests {
         let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, config.clone(), vec![]);
-        graph.add_node(NodeIndex(2), node.clone(), 1, config.clone(), vec![]);
-        graph.add_node(NodeIndex(3), node.clone(), 1, config.clone(), vec![]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone());
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone());
+        graph.add_node(NodeIndex(3), node.clone(), 1, 1, config.clone());
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
@@ -420,8 +420,8 @@ mod tests {
         let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, config.clone(), vec![]);
-        graph.add_node(NodeIndex(2), node.clone(), 1, config.clone(), vec![]);
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone());
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone());
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));

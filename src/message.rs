@@ -1,4 +1,4 @@
-use crate::buffer::{AudioBuffer, ChannelConfig};
+use crate::buffer::ChannelConfig;
 use crate::process::AudioProcessor2;
 
 /// Commands from the control thread to the render thread

@@ -15,9 +15,7 @@ use cpal::{
     SampleFormat, Stream, StreamConfig,
 };
 
-use crate::buffer::{
-    AudioBuffer, ChannelConfigOptions, ChannelCountMode, ChannelData, ChannelInterpretation,
-};
+use crate::buffer::{ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::graph::{NodeIndex, RenderThread};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
@@ -406,7 +404,7 @@ impl BaseAudioContext {
             // effects
             base.connect(listener.id(), dest.id(), 0, u32::MAX);
 
-            let listener_params = listener.to_fields();
+            let listener_params = listener.into_fields();
             let AudioListener {
                 position_x,
                 position_y,

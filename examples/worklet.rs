@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use web_audio_api::buffer::{AudioBuffer, ChannelConfig, ChannelConfigOptions};
+use web_audio_api::buffer::{ChannelConfig, ChannelConfigOptions};
 use web_audio_api::context::{
     AsBaseAudioContext, AudioContext, AudioContextRegistration, AudioParamId,
 };
@@ -82,8 +82,8 @@ struct WhiteNoiseProcessor {
 impl AudioProcessor2 for WhiteNoiseProcessor {
     fn process(
         &mut self,
-        _inputs: &[&web_audio_api::buffer2::AudioBuffer],
-        outputs: &mut [web_audio_api::buffer2::AudioBuffer],
+        _inputs: &[&web_audio_api::alloc::AudioBuffer],
+        outputs: &mut [web_audio_api::alloc::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

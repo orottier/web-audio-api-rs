@@ -2,8 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::buffer::AudioBuffer;
-use crate::buffer2::AudioBuffer as AudioBuffer2;
+use crate::alloc::AudioBuffer as AudioBuffer2;
 use crate::context::AudioParamId;
 use crate::graph::{Node, NodeIndex};
 use crate::SampleRate;
@@ -12,30 +11,11 @@ use crate::SampleRate;
 ///
 /// Note that the AudioProcessor is typically constructed together with an `AudioNode`
 /// (the user facing object that lives in the control thread). See `[crate::context::BaseAudioContext::register]`.
-pub trait AudioProcessor: Send {
-    /// Render an audio quantum for the given timestamp and input buffers
-    fn process(
-        &mut self,
-        inputs: &[&AudioBuffer],
-        outputs: &mut [AudioBuffer],
-        params: AudioParamValues,
-        timestamp: f64,
-        sample_rate: SampleRate,
-    );
-
-    /// Indicate if this Node currently has tail-time, meaning it can provide output when no inputs are supplied.
-    ///
-    /// Tail time is `true` for source nodes (as long as they are still generating audio).
-    ///
-    /// Tail time is `false` for nodes that only transform their inputs.
-    fn tail_time(&self) -> bool;
-}
-
 pub trait AudioProcessor2: Send {
     fn process(
         &mut self,
-        inputs: &[&crate::buffer2::AudioBuffer],
-        outputs: &mut [crate::buffer2::AudioBuffer],
+        inputs: &[&crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,

@@ -45,6 +45,7 @@ impl Alloc {
         }
     }
 
+    #[cfg(test)]
     pub fn pool_size(&self) -> usize {
         self.inner.pool.borrow().len()
     }
@@ -134,6 +135,9 @@ impl std::ops::Drop for ChannelData {
     }
 }
 
+/// Memory-resident audio asset, basically a matrix of channels * samples
+///
+/// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone)]
 pub struct AudioBuffer {
     channels: ArrayVec<[ChannelData; MAX_CHANNELS]>,
@@ -158,7 +162,7 @@ impl AudioBuffer {
     /// garbage.
     pub fn set_number_of_channels(&mut self, n: usize) {
         assert!(n <= MAX_CHANNELS);
-        for i in self.number_of_channels()..n {
+        for _ in self.number_of_channels()..n {
             self.channels.push(self.channels[0].clone());
         }
         self.channels.truncate(n);
@@ -187,7 +191,7 @@ impl AudioBuffer {
         // handle discrete interpretation
         if interpretation == ChannelInterpretation::Discrete {
             // upmix by filling with silence
-            for i in self.number_of_channels()..channels {
+            for _ in self.number_of_channels()..channels {
                 self.channels.push(silence.clone());
             }
 
@@ -204,14 +208,14 @@ impl AudioBuffer {
             (1, 4) => {
                 self.channels.push(self.channels[0].clone());
                 self.channels.push(silence.clone());
-                self.channels.push(silence.clone());
+                self.channels.push(silence);
             }
             (1, 6) => {
                 let main = std::mem::replace(&mut self.channels[0], silence.clone());
                 self.channels.push(silence.clone());
                 self.channels.push(main);
                 self.channels.push(silence.clone());
-                self.channels.push(silence.clone());
+                self.channels.push(silence);
             }
             (2, 1) => {
                 let right = self.channels[1].clone();
@@ -256,7 +260,7 @@ impl AudioBuffer {
         let mut self_mixed = self.clone();
         self_mixed.mix(channels, interpretation);
 
-        let mut other_mixed = self.clone();
+        let mut other_mixed = other.clone();
         other_mixed.mix(channels, interpretation);
 
         self_mixed
@@ -350,5 +354,138 @@ mod tests {
                 assert_eq!(a.is_silent(), false);
             }
         });
+    }
+
+    #[test]
+    fn test_silence() {
+        let alloc = Alloc::with_capacity(1);
+        let silence = alloc.silence();
+        assert_eq!(&silence[..], &[0.; LEN]);
+        assert!(silence.is_silent());
+
+        // changing silence is possible
+        let mut changed = silence;
+        changed.iter_mut().for_each(|v| *v = 1.);
+        assert_eq!(&changed[..], &[1.; LEN]);
+        assert!(!changed.is_silent());
+
+        // but should not alter new silence
+        let silence = alloc.silence();
+        assert_eq!(&silence[..], &[0.; LEN]);
+        assert!(silence.is_silent());
+
+        // can also create silence from ChannelData
+        let from_channel = silence.silence();
+        assert_eq!(&from_channel[..], &[0.; LEN]);
+        assert!(from_channel.is_silent());
+    }
+
+    #[test]
+    fn test_channel_add() {
+        let alloc = Alloc::with_capacity(1);
+        let silence = alloc.silence();
+
+        let mut signal1 = alloc.silence();
+        signal1.copy_from_slice(&[1.; LEN]);
+
+        let mut signal2 = alloc.allocate();
+        signal2.copy_from_slice(&[2.; LEN]);
+
+        // test add silence to signal
+        signal1.add(&silence);
+        assert_eq!(&signal1[..], &[1.; LEN]);
+
+        // test add signal to silence
+        let mut sum = alloc.silence();
+        sum.add(&signal1);
+        assert_eq!(&sum[..], &[1.; LEN]);
+
+        // test add two signals
+        signal1.add(&signal2);
+        assert_eq!(&signal1[..], &[3.; LEN]);
+    }
+
+    #[test]
+    fn test_audiobuffer_channels() {
+        let alloc = Alloc::with_capacity(1);
+        let silence = alloc.silence();
+
+        let buffer = AudioBuffer::new(silence);
+        assert_eq!(buffer.number_of_channels(), 1);
+
+        let mut buffer = buffer;
+        buffer.set_number_of_channels(5);
+        assert_eq!(buffer.number_of_channels(), 5);
+        let _ = buffer.channel_data(4); // no panic
+
+        buffer.set_number_of_channels(2);
+        assert_eq!(buffer.number_of_channels(), 2);
+    }
+
+    #[test]
+    fn test_audiobuffer_mix_discrete() {
+        let alloc = Alloc::with_capacity(1);
+
+        let mut signal = alloc.silence();
+        signal.copy_from_slice(&[1.; LEN]);
+
+        let mut buffer = AudioBuffer::new(signal);
+
+        buffer.mix(1, ChannelInterpretation::Discrete);
+        assert_eq!(buffer.number_of_channels(), 1);
+        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+
+        buffer.mix(2, ChannelInterpretation::Discrete);
+        assert_eq!(buffer.number_of_channels(), 2);
+        // first channel unchanged, second channel silent
+        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+        assert_eq!(&buffer.channel_data(1)[..], &[0.; LEN]);
+
+        buffer.mix(1, ChannelInterpretation::Discrete);
+        assert_eq!(buffer.number_of_channels(), 1);
+        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+    }
+
+    #[test]
+    fn test_audiobuffer_mix_speakers() {
+        let alloc = Alloc::with_capacity(1);
+
+        let mut signal = alloc.silence();
+        signal.copy_from_slice(&[1.; LEN]);
+
+        let mut buffer = AudioBuffer::new(signal);
+
+        buffer.mix(1, ChannelInterpretation::Speakers);
+        assert_eq!(buffer.number_of_channels(), 1);
+        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+
+        buffer.mix(2, ChannelInterpretation::Speakers);
+        assert_eq!(buffer.number_of_channels(), 2);
+        // left and right equal
+        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+        assert_eq!(&buffer.channel_data(1)[..], &[1.; LEN]);
+
+        buffer.mix(1, ChannelInterpretation::Speakers);
+        assert_eq!(buffer.number_of_channels(), 1);
+        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+    }
+
+    #[test]
+    fn test_audiobuffer_add() {
+        let alloc = Alloc::with_capacity(1);
+
+        let mut signal = alloc.silence();
+        signal.copy_from_slice(&[1.; LEN]);
+        let mut buffer = AudioBuffer::new(signal);
+        buffer.mix(2, ChannelInterpretation::Speakers);
+
+        let mut signal2 = alloc.silence();
+        signal2.copy_from_slice(&[2.; LEN]);
+        let buffer2 = AudioBuffer::new(signal2);
+
+        let sum = buffer.add(&buffer2, ChannelInterpretation::Discrete);
+        assert_eq!(sum.number_of_channels(), 2);
+        assert_eq!(&sum.channel_data(0)[..], &[3.; LEN]);
+        assert_eq!(&sum.channel_data(1)[..], &[1.; LEN]);
     }
 }
