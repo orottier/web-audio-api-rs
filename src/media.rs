@@ -197,7 +197,7 @@ impl<S: MediaStream> Iterator for MediaElement<S> {
 
 /// Ogg Vorbis (.ogg) file decoder
 ///
-/// It implements the [`MediaElement`] trait so can be used inside a `MediaElementAudioSourceNode`
+/// It implements the [`MediaStream`] trait so can be used inside a `MediaElementAudioSourceNode`
 ///
 /// # Usage
 ///
@@ -242,6 +242,96 @@ impl Iterator for OggVorbisDecoder {
         let channel_data: Vec<_> = packet.into_iter().map(ChannelData::from).collect();
         let sample_rate = SampleRate(self.stream.ident_hdr.audio_sample_rate);
         let result = AudioBuffer::from_channels(channel_data, sample_rate);
+
+        Some(Ok(result))
+    }
+}
+
+/// WAV file decoder
+///
+/// It implements the [`MediaStream`] trait so can be used inside a `MediaElementAudioSourceNode`
+///
+/// # Usage
+///
+/// ``` rust
+/// use web_audio_api::media::WavDecoder;
+/// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
+/// use crate::web_audio_api::node::AudioNode;
+///
+/// // construct the decoder
+/// let file = std::fs::File::open("sample.wav").unwrap();
+/// let media = WavDecoder::try_new(file).unwrap();
+///
+/// // register the media node
+/// let context = AudioContext::new();
+/// let node = context.create_media_stream_source(media);
+///
+/// // play media
+/// node.connect(&context.destination());
+/// ```
+///
+pub struct WavDecoder {
+    //stream: hound::WavIntoSamples<BufReader<File>, f32>,
+    stream: Box<dyn Iterator<Item = Result<f32, hound::Error>> + Send>,
+    channels: u32,
+    sample_rate: SampleRate,
+}
+
+impl WavDecoder {
+    /// Try to construct a new instance from a [`File`]
+    pub fn try_new(file: File) -> Result<Self, hound::Error> {
+        hound::WavReader::new(BufReader::new(file)).map(|wav| {
+            let channels = wav.spec().channels as u32;
+            let sample_rate = SampleRate(wav.spec().sample_rate);
+
+            // convert samples to f32, always
+            let stream: Box<dyn Iterator<Item = Result<_, _>> + Send> =
+                match wav.spec().sample_format {
+                    hound::SampleFormat::Float => Box::new(wav.into_samples::<f32>()),
+                    hound::SampleFormat::Int => {
+                        let bits = wav.spec().bits_per_sample as f32;
+                        Box::new(
+                            wav.into_samples::<i32>()
+                                .map(move |r| r.map(|i| i as f32 / bits)),
+                        )
+                    }
+                };
+
+            Self {
+                stream,
+                channels,
+                sample_rate,
+            }
+        })
+    }
+}
+
+impl Iterator for WavDecoder {
+    type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // read data in chunks of channels * BUFFER_SIZE
+        let mut data = vec![vec![]; self.channels as usize];
+        for (i, res) in self
+            .stream
+            .by_ref()
+            .take((self.channels * crate::BUFFER_SIZE) as usize)
+            .enumerate()
+        {
+            match res {
+                Err(e) => return Some(Err(Box::new(e))),
+                Ok(v) => data[i % self.channels as usize].push(v),
+            }
+        }
+
+        // exhausted?
+        if data[0].is_empty() {
+            return None;
+        }
+
+        // convert data to AudioBuffer
+        let channels = data.into_iter().map(ChannelData::from).collect();
+        let result = AudioBuffer::from_channels(channels, self.sample_rate);
 
         Some(Ok(result))
     }

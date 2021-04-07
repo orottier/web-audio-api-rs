@@ -1004,18 +1004,32 @@ impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
         // single output node
         let output = &mut outputs[0];
 
-        if let Some(Ok(buffer)) = self.stream.next() {
-            let channels = buffer.number_of_channels();
-            output.set_number_of_channels(channels);
-            for i in 0..channels {
-                match buffer.channel_data(i) {
-                    None => *output.channel_data_mut(i) = output.channel_data(i).silence(),
-                    Some(c) => output.channel_data_mut(i).copy_from_slice(c.as_slice()),
+        match self.stream.next() {
+            Some(Ok(buffer)) => {
+                let channels = buffer.number_of_channels();
+                output.set_number_of_channels(channels);
+                for i in 0..channels {
+                    match buffer.channel_data(i) {
+                        None => *output.channel_data_mut(i) = output.channel_data(i).silence(),
+                        Some(c) => output.channel_data_mut(i).copy_from_slice(c.as_slice()),
+                    }
                 }
             }
-        } else {
-            self.finished = true;
-            output.make_silent()
+            Some(Err(e)) => {
+                // decoding error, stop playing
+                log::warn!("Error playing audio stream: {}", e);
+
+                self.finished = true;
+                output.make_silent()
+            }
+            None => {
+                // stream is finished
+                if !self.finished {
+                    log::debug!("Stream finished");
+                    self.finished = true;
+                }
+                output.make_silent()
+            }
         }
     }
 
