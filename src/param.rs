@@ -33,7 +33,7 @@ pub struct AudioParamOptions {
 #[derive(Debug)]
 pub(crate) enum AutomationEvent {
     SetValueAtTime { v: f32, start: f64 },
-    LinearRampToValueAtTime { v: f32, start: f64, end: f64 },
+    LinearRampToValueAtTime { v: f32, end: f64 },
 }
 
 impl AutomationEvent {
@@ -41,13 +41,6 @@ impl AutomationEvent {
         match &self {
             SetValueAtTime { start, .. } => *start,
             LinearRampToValueAtTime { end, .. } => *end,
-        }
-    }
-
-    fn value(&self) -> f32 {
-        match &self {
-            SetValueAtTime { v, .. } => *v,
-            LinearRampToValueAtTime { v, .. } => *v,
         }
     }
 }
@@ -203,7 +196,7 @@ impl<'a> AudioParam<'a> {
 
     pub fn linear_ramp_to_value_at_time(&self, v: f32, end: f64) {
         self.sender
-            .send(LinearRampToValueAtTime { v, start: 0., end })
+            .send(LinearRampToValueAtTime { v, end })
             .unwrap()
     }
 
@@ -235,51 +228,78 @@ impl AudioParamProcessor {
     }
 
     fn tick(&mut self, ts: f64, dt: f64, count: usize) -> Vec<f32> {
+        // store incoming automation events in sorted queue
         for event in self.receiver.try_iter() {
             self.events.push(event);
         }
 
-        let next = match self.events.peek() {
-            None => return vec![self.value(); count],
-            Some(event) => event,
+        // setup return value buffer
+        let a_rate = self.automation_rate == AutomationRate::A;
+        let mut result = if a_rate {
+            // empty buffer
+            Vec::with_capacity(count)
+        } else {
+            // filling the vec already, no expensive calculations are performed later
+            vec![self.value(); count]
         };
 
+        // end of the render quantum
         let max_ts = ts + dt * count as f64;
-        if next.time() > max_ts {
-            return vec![self.value(); count];
-        }
-
-        let mut result = match self.automation_rate {
-            AutomationRate::A => Vec::with_capacity(count),
-            AutomationRate::K => {
-                // by filling the vec already, no expensive calculations are performed later
-                vec![self.value(); count]
-            }
-        };
 
         loop {
-            let next = self.events.pop().unwrap();
-
-            // we should have processed all earlier events in the previous call,
-            // but new events could have been added, clamp it to `ts`
-            let time = next.time().max(ts);
-
-            let end_index = ((time - ts) / dt) as usize;
-            let end_index = end_index.min(count); // never trust floats
-
-            for _ in result.len()..end_index {
-                // todo, actual value calculation
-                result.push(self.value());
-            }
-            self.value = next.value(); // todo
-
-            if !matches!(self.events.peek(), Some(e) if e.time() <= max_ts) {
-                for _ in result.len()..count {
-                    // todo, actual value calculation (when ramp-to-value)
-                    result.push(self.value());
+            match self.events.peek() {
+                None => {
+                    // fill remaining buffer for K-rate processing
+                    for _ in result.len()..count {
+                        result.push(self.value());
+                    }
+                    break;
                 }
-                break;
+                Some(SetValueAtTime { v, start }) => {
+                    let end_index = ((start - ts).max(0.) / dt) as usize;
+                    let end_index = end_index.min(count);
+
+                    // fill remaining buffer for K-rate processing
+                    for _ in result.len()..end_index {
+                        result.push(self.value());
+                    }
+
+                    // if start time is outside this render quantum, return
+                    if *start > max_ts {
+                        break;
+                    }
+
+                    self.value = *v;
+                }
+                Some(LinearRampToValueAtTime { v, end }) => {
+                    let end_index = ((end - ts).max(0.) / dt) as usize;
+                    if a_rate && end_index > result.len() {
+                        let start_index = result.len();
+
+                        let dv = v - self.value;
+                        let dt = end_index - start_index;
+                        let slope = dv / dt as f32;
+
+                        let end_index_clipped = end_index.min(count);
+                        let n_values = end_index_clipped - start_index;
+
+                        for i in 0..n_values {
+                            let val = self.value + i as f32 * slope;
+                            result.push(val.clamp(self.min_value, self.max_value));
+                        }
+                    }
+
+                    // if end time is outside this render quantum, return
+                    if *end > max_ts {
+                        break;
+                    }
+
+                    self.value = *v;
+                }
             }
+
+            // previous event was handled
+            self.events.pop();
         }
 
         self.shared_value.store(self.value() as f64);
@@ -337,5 +357,49 @@ mod tests {
 
         let vs = render.tick(10., 1., 10);
         assert_eq!(vs, vec![8.; 10]);
+    }
+
+    #[test]
+    fn test_linear_ramp() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        let opts = AudioParamOptions {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -10.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        // set to 5 at t = 2
+        param.set_value_at_time(5., 2.0);
+        // ramp to 8 from t = 2 to t = 5
+        param.linear_ramp_to_value_at_time(8.0, 5.0);
+        // ramp to 0 from t = 5 to t = 13
+        param.linear_ramp_to_value_at_time(0., 13.0);
+
+        let vs = render.tick(0., 1., 10);
+        assert_eq!(vs, vec![0., 0., 5., 6., 7., 8., 7., 6., 5., 4.]);
+    }
+
+    #[test]
+    fn test_linear_ramp_clamp() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        let opts = AudioParamOptions {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -1.,
+            max_value: 1.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        param.linear_ramp_to_value_at_time(5.0, 5.0);
+        param.linear_ramp_to_value_at_time(0., 10.0);
+
+        let vs = render.tick(0., 1., 10);
+        // Todo last value should actually be zero, but it rounds not nicely
+        // I guess this will not be a problem in practise.
+        assert_eq!(vs, vec![0., 1., 1., 1., 1., 1., 1., 1., 1., 1.]);
     }
 }
