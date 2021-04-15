@@ -3,6 +3,8 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 
+use cpal::Sample;
+
 use crate::alloc::{Alloc, AudioBuffer};
 use crate::buffer::{ChannelConfig, ChannelCountMode};
 use crate::message::ControlMessage;
@@ -74,7 +76,7 @@ impl RenderThread {
         }
     }
 
-    pub fn render(&mut self, data: &mut [f32]) {
+    pub fn render<S: Sample>(&mut self, data: &mut [S]) {
         // handle addition/removal of nodes/edges
         self.handle_control_messages();
 
@@ -91,7 +93,7 @@ impl RenderThread {
             let output = data.iter_mut().skip(i).step_by(self.channels);
             let channel = rendered.channel_data(i).iter();
             for (sample, input) in output.zip(channel) {
-                let value = cpal::Sample::from::<f32>(input);
+                let value = Sample::from::<f32>(input);
                 *sample = value;
             }
         }

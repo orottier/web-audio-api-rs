@@ -285,10 +285,21 @@ impl AudioContext {
         // spawn the render thread
         let mut render = RenderThread::new(sample_rate, channels as usize, receiver);
         let stream = match sample_format {
-            SampleFormat::F32 => {
-                device.build_output_stream(&config, move |data, _c| render.render(data), err_fn)
-            }
-            _ => unimplemented!(),
+            SampleFormat::F32 => device.build_output_stream(
+                &config,
+                move |d: &mut [f32], _c| render.render(d),
+                err_fn,
+            ),
+            SampleFormat::U16 => device.build_output_stream(
+                &config,
+                move |d: &mut [u16], _c| render.render(d),
+                err_fn,
+            ),
+            SampleFormat::I16 => device.build_output_stream(
+                &config,
+                move |d: &mut [i16], _c| render.render(d),
+                err_fn,
+            ),
         }
         .unwrap();
 
