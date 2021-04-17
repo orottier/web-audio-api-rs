@@ -17,6 +17,7 @@ vecmath = "1.0.0"
 arrayvec = "0.5.2"
 hound = "3.4.0"
 log = "0.4.14"
+realfft = "1.1.0"
 
 [dev-dependencies]
 rand = "0.8.*"

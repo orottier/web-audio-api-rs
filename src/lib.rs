@@ -55,8 +55,9 @@ pub mod param;
 pub mod process;
 pub mod spatial;
 
-pub(crate) mod graph;
-pub(crate) mod message;
+mod analysis;
+mod graph;
+mod message;
 
 /// Number of samples processed per second (Hertz) for a single channel of audio
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

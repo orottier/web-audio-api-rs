@@ -2,7 +2,8 @@
 
 use std::f32::consts::PI;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
 
 use crate::buffer::{
@@ -1393,5 +1394,180 @@ impl AudioProcessor for PannerRenderer {
 
     fn tail_time(&self) -> bool {
         false // only for panning model HRTF
+    }
+}
+
+/// Options for constructing an AnalyserNode
+pub struct AnalyserOptions {
+    pub fft_size: usize,
+    /*
+    pub max_decibels: f32,
+    pub min_decibels: f32,
+    pub smoothing_constant: f32,
+    */
+    pub channel_config: ChannelConfigOptions,
+}
+
+impl Default for AnalyserOptions {
+    fn default() -> Self {
+        Self {
+            fft_size: 2048,
+            /*
+            max_decibels: -30.,
+            min_decibels: 100.,
+            smoothing_constant: 0.8,
+            */
+            channel_config: ChannelConfigOptions::default(),
+        }
+    }
+}
+
+enum AnalyserRequest {
+    FloatTime {
+        sender: SyncSender<Vec<f32>>,
+        buffer: Vec<f32>,
+    },
+    FloatFrequency {
+        sender: SyncSender<Vec<f32>>,
+        buffer: Vec<f32>,
+    },
+}
+
+/// Audio source whose output is nominally a constant value
+pub struct AnalyserNode<'a> {
+    registration: AudioContextRegistration<'a>,
+    channel_config: ChannelConfig,
+    fft_size: Arc<AtomicUsize>,
+    sender: SyncSender<AnalyserRequest>,
+    /*
+    max_decibels: f32,
+    min_decibels: f32,
+    smoothing_constant: f32,
+    */
+}
+
+impl<'a> AudioNode for AnalyserNode<'a> {
+    fn registration(&self) -> &AudioContextRegistration {
+        &self.registration
+    }
+
+    fn channel_config_raw(&self) -> &ChannelConfig {
+        &self.channel_config
+    }
+
+    fn number_of_inputs(&self) -> u32 {
+        1
+    }
+    fn number_of_outputs(&self) -> u32 {
+        1
+    }
+}
+
+impl<'a> AnalyserNode<'a> {
+    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: AnalyserOptions) -> Self {
+        context.base().register(move |registration| {
+            let fft_size = Arc::new(AtomicUsize::new(options.fft_size));
+
+            let (sender, receiver) = mpsc::sync_channel(0);
+
+            let render = AnalyserRenderer {
+                buffer: Vec::with_capacity(256),
+                index: 0,
+                fft_size: fft_size.clone(),
+                receiver,
+            };
+
+            let node = AnalyserNode {
+                registration,
+                channel_config: options.channel_config.into(),
+                fft_size,
+                sender,
+            };
+
+            (node, Box::new(render))
+        })
+    }
+
+    /// The size of the FFT used for frequency-domain analysis (in sample-frames)
+    pub fn fft_size(&self) -> usize {
+        self.fft_size.load(Ordering::SeqCst)
+    }
+
+    /// This MUST be a power of two in the range 32 to 32768
+    pub fn set_fft_size(&self, fft_size: usize) {
+        // todo assert size
+        self.fft_size.store(fft_size, Ordering::SeqCst);
+    }
+
+    /// Copies the current time domain data (waveform data) into the provided buffer
+    pub fn get_float_time_domain_data(&self, buffer: Vec<f32>) -> Vec<f32> {
+        let (sender, receiver) = mpsc::sync_channel(0);
+        let request = AnalyserRequest::FloatTime { sender, buffer };
+        self.sender.send(request).unwrap();
+        receiver.recv().unwrap()
+    }
+
+    /// Copies the current frequency data into the provided buffer
+    pub fn get_float_frequency_data(&self, buffer: Vec<f32>) -> Vec<f32> {
+        let (sender, receiver) = mpsc::sync_channel(0);
+        let request = AnalyserRequest::FloatFrequency { sender, buffer };
+        self.sender.send(request).unwrap();
+        receiver.recv().unwrap()
+    }
+}
+
+struct AnalyserRenderer {
+    pub buffer: Vec<crate::alloc::AudioBuffer>,
+    pub index: u8,
+    pub fft_size: Arc<AtomicUsize>,
+    pub receiver: Receiver<AnalyserRequest>,
+}
+
+// SAFETY:
+// AudioBuffer is not Send, but the buffer Vec is empty when we move it to the render thread.
+unsafe impl Send for AnalyserRenderer {}
+
+impl AudioProcessor for AnalyserRenderer {
+    fn process(
+        &mut self,
+        inputs: &[crate::alloc::AudioBuffer],
+        outputs: &mut [crate::alloc::AudioBuffer],
+        _params: AudioParamValues,
+        _timestamp: f64,
+        _sample_rate: SampleRate,
+    ) {
+        // single input/output node
+        let input = &inputs[0];
+        let output = &mut outputs[0];
+
+        // pass through input
+        *output = input.clone();
+
+        // add current input to ring buffer
+        let mut mono = input.clone();
+        mono.mix(1, ChannelInterpretation::Speakers);
+
+        if self.buffer.len() < 256 {
+            self.buffer.push(mono);
+        } else {
+            self.buffer[self.index as usize] = mono;
+        }
+        self.index = self.index.wrapping_add(1);
+
+        // check if any information was requested from the control thread
+        if let Ok(request) = self.receiver.try_recv() {
+            match request {
+                AnalyserRequest::FloatTime { sender, buffer } => {
+                    let _ = sender.send(buffer);
+                }
+                AnalyserRequest::FloatFrequency { sender, buffer } => {
+                    let _ = sender.send(buffer);
+                }
+            }
+        }
+    }
+
+    fn tail_time(&self) -> bool {
+        false
     }
 }

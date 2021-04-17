@@ -20,9 +20,12 @@ pub(crate) struct RenderThread {
     receiver: Receiver<ControlMessage>,
 }
 
-// todo, write safe Send wrapper for fresh initialized RenderThread
+// SAFETY:
+// The RenderThread is not Send since it contains AudioBuffers (which use Rc), but these are only
+// accessed within the same thread (the render thread). Due to the cpal constraints we can neither
+// move the RenderThread object into the render thread, nor can we initialize the Rc's in that
+// thread.
 unsafe impl Send for RenderThread {}
-//unsafe impl Sync for RenderThread { }
 
 impl RenderThread {
     pub fn new(
