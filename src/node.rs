@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
 
+use crate::analysis::Analyser;
 use crate::buffer::{
     AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
     Resampler,
@@ -631,7 +632,7 @@ impl AudioProcessor for DelayRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        let quanta = self.render_quanta.load(Ordering::SeqCst) as usize;
+        let quanta = self.render_quanta.load(Ordering::Relaxed) as usize;
 
         if quanta == 0 {
             // when no delay is set, simply copy input to output
@@ -1471,8 +1472,7 @@ impl<'a> AnalyserNode<'a> {
             let (sender, receiver) = mpsc::sync_channel(0);
 
             let render = AnalyserRenderer {
-                buffer: Vec::with_capacity(256),
-                index: 0,
+                analyser: Analyser::new(),
                 fft_size: fft_size.clone(),
                 receiver,
             };
@@ -1517,8 +1517,7 @@ impl<'a> AnalyserNode<'a> {
 }
 
 struct AnalyserRenderer {
-    pub buffer: Vec<crate::alloc::AudioBuffer>,
-    pub index: u8,
+    pub analyser: Analyser,
     pub fft_size: Arc<AtomicUsize>,
     pub receiver: Receiver<AnalyserRequest>,
 }
@@ -1546,18 +1545,17 @@ impl AudioProcessor for AnalyserRenderer {
         // add current input to ring buffer
         let mut mono = input.clone();
         mono.mix(1, ChannelInterpretation::Speakers);
-
-        if self.buffer.len() < 256 {
-            self.buffer.push(mono);
-        } else {
-            self.buffer[self.index as usize] = mono;
-        }
-        self.index = self.index.wrapping_add(1);
+        let mono_data = mono.channel_data(0).clone();
+        self.analyser.add_data(mono_data);
 
         // check if any information was requested from the control thread
         if let Ok(request) = self.receiver.try_recv() {
+            let fft_size = self.fft_size.load(Ordering::Relaxed);
             match request {
-                AnalyserRequest::FloatTime { sender, buffer } => {
+                AnalyserRequest::FloatTime { sender, mut buffer } => {
+                    self.analyser.get_float_time(&mut buffer[..], fft_size);
+
+                    // allow to fail when receiver is disconnected
                     let _ = sender.send(buffer);
                 }
                 AnalyserRequest::FloatFrequency { sender, buffer } => {
