@@ -60,7 +60,7 @@ impl AllocInner {
             rc
         } else {
             // allocate
-            Rc::new([0.; 128])
+            Rc::new([0.; LEN])
         }
     }
 

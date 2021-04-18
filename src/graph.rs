@@ -76,25 +76,32 @@ impl RenderThread {
         }
     }
 
-    pub fn render<S: Sample>(&mut self, data: &mut [S]) {
-        // handle addition/removal of nodes/edges
-        self.handle_control_messages();
+    pub fn render<S: Sample>(&mut self, buffer: &mut [S]) {
+        // The audio graph is rendered in chunks of BUFFER_SIZE frames.  But some audio backends
+        // may not be able to emit chunks of this size, hence the only requirement is that the
+        // actual buffer size is a multiple of BUFFER_SIZE.
+        let chunk_size = crate::BUFFER_SIZE as usize * self.channels as usize;
 
-        // update time
-        let len = data.len() / self.channels as usize;
-        let timestamp = self.frames_played.fetch_add(len as u64, Ordering::SeqCst) as f64
-            / self.sample_rate.0 as f64;
+        for data in buffer.chunks_exact_mut(chunk_size) {
+            // handle addition/removal of nodes/edges
+            self.handle_control_messages();
 
-        // render audio graph
-        let rendered = self.graph.render(timestamp, self.sample_rate);
+            // update time
+            let len = data.len() / self.channels as usize;
+            let timestamp = self.frames_played.fetch_add(len as u64, Ordering::SeqCst) as f64
+                / self.sample_rate.0 as f64;
 
-        // copy rendered audio into output slice
-        for i in 0..self.channels {
-            let output = data.iter_mut().skip(i).step_by(self.channels);
-            let channel = rendered.channel_data(i).iter();
-            for (sample, input) in output.zip(channel) {
-                let value = Sample::from::<f32>(input);
-                *sample = value;
+            // render audio graph
+            let rendered = self.graph.render(timestamp, self.sample_rate);
+
+            // copy rendered audio into output slice
+            for i in 0..self.channels {
+                let output = data.iter_mut().skip(i).step_by(self.channels);
+                let channel = rendered.channel_data(i).iter();
+                for (sample, input) in output.zip(channel) {
+                    let value = Sample::from::<f32>(input);
+                    *sample = value;
+                }
             }
         }
     }

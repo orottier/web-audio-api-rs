@@ -12,7 +12,7 @@ const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 #[cfg(not(test))]
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    SampleFormat, Stream, StreamConfig,
+    SampleFormat, Stream, StreamConfig, SupportedBufferSize,
 };
 
 use crate::buffer::{ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
@@ -25,6 +25,7 @@ use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::AudioProcessor;
 use crate::spatial::{AudioListener, AudioListenerParams};
 use crate::SampleRate;
+use crate::BUFFER_SIZE;
 
 /// The BaseAudioContext interface represents an audio-processing graph built from audio modules
 /// linked together, each represented by an AudioNode. An audio context controls both the creation
@@ -253,11 +254,9 @@ impl AudioContext {
     #[cfg(not(test))]
     pub fn new() -> Self {
         let host = cpal::default_host();
-
         let device = host
             .default_output_device()
             .expect("no output device available");
-
         let mut supported_configs_range = device
             .supported_output_configs()
             .expect("error while querying configs");
@@ -266,12 +265,20 @@ impl AudioContext {
             .expect("no supported config?!")
             .with_max_sample_rate();
 
-        let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
         let sample_format = supported_config.sample_format();
 
-        // set max buffer size, note: this defines only the upper bound (on my machine!)
+        // determine best buffer size. Spec requires BUFFER_SIZE, but that might not be available
+        let mut buffer_size = match supported_config.buffer_size() {
+            SupportedBufferSize::Range { min, .. } => crate::BUFFER_SIZE.max(*min),
+            SupportedBufferSize::Unknown => BUFFER_SIZE,
+        };
+        // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
+        // the desired number of frames.
+        buffer_size = (buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+
         let mut config: StreamConfig = supported_config.into();
-        config.buffer_size = cpal::BufferSize::Fixed(crate::BUFFER_SIZE);
+        config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+        log::debug!("Output {:?}", &config);
 
         let sample_rate = SampleRate(config.sample_rate.0);
         let channels = config.channels as u32;
@@ -284,6 +291,7 @@ impl AudioContext {
 
         // spawn the render thread
         let mut render = RenderThread::new(sample_rate, channels as usize, receiver);
+        let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
         let stream = match sample_format {
             SampleFormat::F32 => device.build_output_stream(
                 &config,
@@ -564,7 +572,7 @@ impl OfflineAudioContext {
     }
 
     pub fn start_rendering(&mut self) -> &[f32] {
-        for quantum in self.buffer.chunks_mut(crate::BUFFER_SIZE as usize) {
+        for quantum in self.buffer.chunks_mut(BUFFER_SIZE as usize) {
             self.render.render(quantum)
         }
 
