@@ -33,6 +33,7 @@ impl Alloc {
         }
     }
 
+    #[cfg(test)]
     pub fn allocate(&self) -> ChannelData {
         ChannelData {
             data: self.inner.allocate(),

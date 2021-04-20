@@ -241,13 +241,15 @@ pub fn azimuth_and_elevation(
     listener_forward: Vector3<f32>,
     listener_up: Vector3<f32>,
 ) -> (f32, f32) {
+    let relative_pos = vec3_sub(source_position, listener_position);
+
     // Handle degenerate case if source and listener are at the same point.
-    if source_position == listener_position {
+    if vec3_square_len(relative_pos) <= f32::MIN_POSITIVE {
         return (0., 0.);
     }
 
     // Calculate the source-listener vector.
-    let source_listener = vec3_normalized(vec3_sub(source_position, listener_position));
+    let source_listener = vec3_normalized(relative_pos);
 
     // Align axes.
     let listener_right = vec3_cross(listener_forward, listener_up);
@@ -290,7 +292,8 @@ pub fn azimuth_and_elevation(
     }
 
     // Make azimuth relative to "forward" and not "right" listener vector.
-    if azimuth >= 0. && azimuth <= 270. {
+    let max270 = std::ops::RangeInclusive::new(0., 270.);
+    if max270.contains(&azimuth) {
         azimuth = 90. - azimuth;
     } else {
         azimuth = 450. - azimuth;
