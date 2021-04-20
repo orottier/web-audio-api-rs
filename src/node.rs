@@ -1434,7 +1434,7 @@ enum AnalyserRequest {
     },
 }
 
-/// Audio source whose output is nominally a constant value
+/// Provides real-time frequency and time-domain analysis information
 pub struct AnalyserNode<'a> {
     registration: AudioContextRegistration<'a>,
     channel_config: ChannelConfig,
@@ -1486,6 +1486,11 @@ impl<'a> AnalyserNode<'a> {
 
             (node, Box::new(render))
         })
+    }
+
+    /// Half the FFT size
+    pub fn frequency_bin_count(&self) -> usize {
+        self.fft_size.load(Ordering::SeqCst) / 2
     }
 
     /// The size of the FFT used for frequency-domain analysis (in sample-frames)
@@ -1558,7 +1563,10 @@ impl AudioProcessor for AnalyserRenderer {
                     // allow to fail when receiver is disconnected
                     let _ = sender.send(buffer);
                 }
-                AnalyserRequest::FloatFrequency { sender, buffer } => {
+                AnalyserRequest::FloatFrequency { sender, mut buffer } => {
+                    self.analyser.get_float_frequency(&mut buffer[..], fft_size);
+
+                    // allow to fail when receiver is disconnected
                     let _ = sender.send(buffer);
                 }
             }

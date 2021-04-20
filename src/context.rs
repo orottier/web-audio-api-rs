@@ -132,6 +132,11 @@ pub trait AsBaseAudioContext {
         node::PannerNode::new(self.base(), Default::default())
     }
 
+    /// Creates a AnalyserNode
+    fn create_analyser(&self) -> node::AnalyserNode {
+        node::AnalyserNode::new(self.base(), Default::default())
+    }
+
     /// Create an AudioParam.
     ///
     /// Call this inside the `register` closure when setting up your AudioNode
