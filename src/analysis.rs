@@ -3,8 +3,23 @@ use crate::BUFFER_SIZE;
 
 use realfft::{num_complex::Complex, RealFftPlanner};
 
+use std::f32::consts::PI;
+
 const MAX_QUANTA: usize = 256;
 const MAX_SAMPLES: usize = MAX_QUANTA * BUFFER_SIZE as usize;
+
+/// Blackman window values iterator with alpha = 0.16
+pub fn generate_blackman(size: usize) -> impl Iterator<Item = f32> {
+    let alpha = 0.16;
+    let a0 = (1. - alpha) / 2.;
+    let a1 = 1. / 2.;
+    let a2 = alpha / 2.;
+
+    (0..size).map(move |i| {
+        a0 - a1 * (2. * PI * i as f32 / size as f32).cos()
+            + a2 * (4. * PI * i as f32 / size as f32).cos()
+    })
+}
 
 /// Ring buffer for time domain analysis
 struct TimeAnalyser {
@@ -57,7 +72,7 @@ impl TimeAnalyser {
     }
 }
 
-/// Analyser kerner for time domain and frequency data
+/// Analyser kernel for time domain and frequency data
 pub(crate) struct Analyser {
     time: TimeAnalyser,
 
@@ -65,20 +80,31 @@ pub(crate) struct Analyser {
     fft_input: Vec<f32>,
     fft_scratch: Vec<Complex<f32>>,
     fft_output: Vec<Complex<f32>>,
+
+    blackman: Vec<f32>,
 }
 
 impl Analyser {
-    /// Create a new analyser kernel with max capacity
-    pub fn new() -> Self {
+    /// Create a new analyser kernel
+    pub fn new(initial_fft_size: usize) -> Self {
         let mut fft_planner = RealFftPlanner::<f32>::new();
         let max_fft = fft_planner.plan_fft_forward(MAX_SAMPLES);
+
+        let fft_input = max_fft.make_input_vec();
+        let fft_scratch = max_fft.make_scratch_vec();
+        let fft_output = max_fft.make_output_vec();
+
+        // precalculate Blackman window values, reserve enough space for all input sizes
+        let mut blackman = Vec::with_capacity(fft_input.len());
+        generate_blackman(initial_fft_size).for_each(|v| blackman.push(v));
 
         Self {
             time: TimeAnalyser::new(),
             fft_planner,
-            fft_input: max_fft.make_input_vec(),
-            fft_scratch: max_fft.make_scratch_vec(),
-            fft_output: max_fft.make_output_vec(),
+            fft_input,
+            fft_scratch,
+            fft_output,
+            blackman,
         }
     }
 
@@ -97,6 +123,10 @@ impl Analyser {
         let r2c = self.fft_planner.plan_fft_forward(fft_size);
 
         // setup proper sized buffers
+        if self.blackman.len() != fft_size {
+            self.blackman.clear();
+            generate_blackman(fft_size).for_each(|v| self.blackman.push(v));
+        }
         let input = &mut self.fft_input[..fft_size];
         let output = &mut self.fft_output[..fft_size / 2 + 1];
         let scratch = &mut self.fft_scratch[..r2c.get_scratch_len()];
@@ -105,6 +135,10 @@ impl Analyser {
         self.time.get_float_time(input, fft_size);
 
         // blackman window
+        input
+            .iter_mut()
+            .zip(self.blackman.iter())
+            .for_each(|(i, b)| *i *= *b);
 
         // calculate frequency data
         r2c.process_with_scratch(input, output, scratch).unwrap();
@@ -179,7 +213,7 @@ mod tests {
     #[test]
     fn test_freq_domain() {
         let alloc = Alloc::with_capacity(256);
-        let mut analyser = Analyser::new();
+        let mut analyser = Analyser::new(LEN * 4);
         let mut buffer = vec![-1.; LEN * 4];
 
         // feed single data buffer
@@ -202,5 +236,24 @@ mod tests {
         // this should return other data now
         analyser.get_float_frequency(&mut buffer[..], LEN * 4);
         assert!(&buffer[0..LEN * 2 + 1] != &[f32::NEG_INFINITY; LEN * 2 + 1]);
+    }
+
+    #[test]
+    fn test_blackman() {
+        let values: Vec<f32> = generate_blackman(2048).collect();
+
+        let min = values
+            .iter()
+            .fold(1000., |min, &val| if val < min { val } else { min });
+        let max = values
+            .iter()
+            .fold(0., |max, &val| if val > max { val } else { max });
+        assert!(min < 0.01 && min > 0.);
+        assert!(max > 0.99 && max <= 1.);
+
+        let min_pos = values.iter().position(|&v| v == min).unwrap();
+        let max_pos = values.iter().position(|&v| v == max).unwrap();
+        assert_eq!(min_pos, 0);
+        assert_eq!(max_pos, 1024);
     }
 }

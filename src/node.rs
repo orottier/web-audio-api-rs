@@ -1472,7 +1472,7 @@ impl<'a> AnalyserNode<'a> {
             let (sender, receiver) = mpsc::sync_channel(0);
 
             let render = AnalyserRenderer {
-                analyser: Analyser::new(),
+                analyser: Analyser::new(options.fft_size),
                 fft_size: fft_size.clone(),
                 receiver,
             };
