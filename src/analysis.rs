@@ -81,6 +81,8 @@ pub(crate) struct Analyser {
     fft_scratch: Vec<Complex<f32>>,
     fft_output: Vec<Complex<f32>>,
 
+    previous_fft_size: usize,
+    previous_block: Vec<f32>,
     blackman: Vec<f32>,
 }
 
@@ -93,6 +95,7 @@ impl Analyser {
         let fft_input = max_fft.make_input_vec();
         let fft_scratch = max_fft.make_scratch_vec();
         let fft_output = max_fft.make_output_vec();
+        let previous_block = vec![0.; fft_output.len()];
 
         // precalculate Blackman window values, reserve enough space for all input sizes
         let mut blackman = Vec::with_capacity(fft_input.len());
@@ -104,6 +107,8 @@ impl Analyser {
             fft_input,
             fft_scratch,
             fft_output,
+            previous_fft_size: initial_fft_size,
+            previous_block,
             blackman,
         }
     }
@@ -119,17 +124,33 @@ impl Analyser {
     }
 
     /// Calculate the frequency data
-    pub fn get_float_frequency(&mut self, buffer: &mut [f32], fft_size: usize) {
+    pub fn get_float_frequency(
+        &mut self,
+        buffer: &mut [f32],
+        fft_size: usize,
+        smoothing_time_constant: f32,
+    ) {
+        // reset state after resizing
+        if self.previous_fft_size != fft_size {
+            // previous block data
+            self.previous_block[0..self.previous_fft_size]
+                .iter_mut()
+                .for_each(|v| *v = 0.);
+
+            // blackman window
+            self.blackman.clear();
+            generate_blackman(fft_size).for_each(|v| self.blackman.push(v));
+
+            self.previous_fft_size = fft_size;
+        }
+
         let r2c = self.fft_planner.plan_fft_forward(fft_size);
 
         // setup proper sized buffers
-        if self.blackman.len() != fft_size {
-            self.blackman.clear();
-            generate_blackman(fft_size).for_each(|v| self.blackman.push(v));
-        }
         let input = &mut self.fft_input[..fft_size];
         let output = &mut self.fft_output[..fft_size / 2 + 1];
         let scratch = &mut self.fft_scratch[..r2c.get_scratch_len()];
+        let previous_block = &mut self.previous_block[..fft_size];
 
         // put time domain data in fft_input
         self.time.get_float_time(input, fft_size);
@@ -143,14 +164,20 @@ impl Analyser {
         // calculate frequency data
         r2c.process_with_scratch(input, output, scratch).unwrap();
 
-        // smoothing
+        // smoothing over time
+        previous_block
+            .iter_mut()
+            .zip(output.iter())
+            .for_each(|(p, c)| {
+                *p = smoothing_time_constant * *p + (1. - smoothing_time_constant) * c.norm()
+            });
 
         // nomalizing, conversion to dB and fill buffer
         let norm = 20. * (fft_size as f32).sqrt().log10();
         buffer
             .iter_mut()
-            .zip(output.iter())
-            .for_each(|(b, o)| *b = 20. * o.norm().log10() - norm);
+            .zip(previous_block.iter())
+            .for_each(|(b, o)| *b = 20. * o.log10() - norm);
     }
 }
 

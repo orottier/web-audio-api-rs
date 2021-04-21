@@ -1401,10 +1401,10 @@ impl AudioProcessor for PannerRenderer {
 /// Options for constructing an AnalyserNode
 pub struct AnalyserOptions {
     pub fft_size: usize,
+    pub smoothing_time_constant: f32,
     /*
     pub max_decibels: f32,
     pub min_decibels: f32,
-    pub smoothing_constant: f32,
     */
     pub channel_config: ChannelConfigOptions,
 }
@@ -1413,10 +1413,10 @@ impl Default for AnalyserOptions {
     fn default() -> Self {
         Self {
             fft_size: 2048,
+            smoothing_time_constant: 0.8,
             /*
             max_decibels: -30.,
             min_decibels: 100.,
-            smoothing_constant: 0.8,
             */
             channel_config: ChannelConfigOptions::default(),
         }
@@ -1439,11 +1439,11 @@ pub struct AnalyserNode<'a> {
     registration: AudioContextRegistration<'a>,
     channel_config: ChannelConfig,
     fft_size: Arc<AtomicUsize>,
+    smoothing_time_constant: Arc<AtomicU32>,
     sender: SyncSender<AnalyserRequest>,
     /*
     max_decibels: f32,
     min_decibels: f32,
-    smoothing_constant: f32,
     */
 }
 
@@ -1468,12 +1468,16 @@ impl<'a> AnalyserNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, options: AnalyserOptions) -> Self {
         context.base().register(move |registration| {
             let fft_size = Arc::new(AtomicUsize::new(options.fft_size));
+            let smoothing_time_constant = Arc::new(AtomicU32::new(
+                (options.smoothing_time_constant * 100.) as u32,
+            ));
 
             let (sender, receiver) = mpsc::sync_channel(0);
 
             let render = AnalyserRenderer {
                 analyser: Analyser::new(options.fft_size),
                 fft_size: fft_size.clone(),
+                smoothing_time_constant: smoothing_time_constant.clone(),
                 receiver,
             };
 
@@ -1481,6 +1485,7 @@ impl<'a> AnalyserNode<'a> {
                 registration,
                 channel_config: options.channel_config.into(),
                 fft_size,
+                smoothing_time_constant,
                 sender,
             };
 
@@ -1504,6 +1509,18 @@ impl<'a> AnalyserNode<'a> {
         self.fft_size.store(fft_size, Ordering::SeqCst);
     }
 
+    /// Time averaging parameter with the last analysis frame.
+    pub fn smoothing_time_constant(&self) -> f32 {
+        self.smoothing_time_constant.load(Ordering::SeqCst) as f32 / 100.
+    }
+
+    /// Set smoothing time constant, this MUST be a value between 0 and 1
+    pub fn set_smoothing_time_constant(&self, v: f32) {
+        // todo assert range
+        self.smoothing_time_constant
+            .store((v * 100.) as u32, Ordering::SeqCst);
+    }
+
     /// Copies the current time domain data (waveform data) into the provided buffer
     pub fn get_float_time_domain_data(&self, buffer: Vec<f32>) -> Vec<f32> {
         let (sender, receiver) = mpsc::sync_channel(0);
@@ -1524,6 +1541,7 @@ impl<'a> AnalyserNode<'a> {
 struct AnalyserRenderer {
     pub analyser: Analyser,
     pub fft_size: Arc<AtomicUsize>,
+    pub smoothing_time_constant: Arc<AtomicU32>,
     pub receiver: Receiver<AnalyserRequest>,
 }
 
@@ -1564,7 +1582,13 @@ impl AudioProcessor for AnalyserRenderer {
                     let _ = sender.send(buffer);
                 }
                 AnalyserRequest::FloatFrequency { sender, mut buffer } => {
-                    self.analyser.get_float_frequency(&mut buffer[..], fft_size);
+                    let smoothing_time_constant =
+                        self.smoothing_time_constant.load(Ordering::Relaxed) as f32 / 100.;
+                    self.analyser.get_float_frequency(
+                        &mut buffer[..],
+                        fft_size,
+                        smoothing_time_constant,
+                    );
 
                     // allow to fail when receiver is disconnected
                     let _ = sender.send(buffer);
