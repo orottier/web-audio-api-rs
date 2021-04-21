@@ -1571,9 +1571,19 @@ impl AudioProcessor for AnalyserRenderer {
         let mono_data = mono.channel_data(0).clone();
         self.analyser.add_data(mono_data);
 
+        // calculate frequency domain every `fft_size` samples
+        let fft_size = self.fft_size.load(Ordering::Relaxed);
+        let resized = self.analyser.current_fft_size() != fft_size;
+        let complete_cycle = self.analyser.check_complete_cycle(fft_size);
+        if resized || complete_cycle {
+            let smoothing_time_constant =
+                self.smoothing_time_constant.load(Ordering::Relaxed) as f32 / 100.;
+            self.analyser
+                .calculate_float_frequency(fft_size, smoothing_time_constant);
+        }
+
         // check if any information was requested from the control thread
         if let Ok(request) = self.receiver.try_recv() {
-            let fft_size = self.fft_size.load(Ordering::Relaxed);
             match request {
                 AnalyserRequest::FloatTime { sender, mut buffer } => {
                     self.analyser.get_float_time(&mut buffer[..], fft_size);
@@ -1582,13 +1592,7 @@ impl AudioProcessor for AnalyserRenderer {
                     let _ = sender.send(buffer);
                 }
                 AnalyserRequest::FloatFrequency { sender, mut buffer } => {
-                    let smoothing_time_constant =
-                        self.smoothing_time_constant.load(Ordering::Relaxed) as f32 / 100.;
-                    self.analyser.get_float_frequency(
-                        &mut buffer[..],
-                        fft_size,
-                        smoothing_time_constant,
-                    );
+                    self.analyser.get_float_frequency(&mut buffer[..]);
 
                     // allow to fail when receiver is disconnected
                     let _ = sender.send(buffer);

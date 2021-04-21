@@ -25,6 +25,7 @@ pub fn generate_blackman(size: usize) -> impl Iterator<Item = f32> {
 struct TimeAnalyser {
     buffer: Vec<ChannelData>,
     index: u8,
+    previous_cycle_index: u8,
 }
 
 impl TimeAnalyser {
@@ -33,6 +34,7 @@ impl TimeAnalyser {
         Self {
             buffer: Vec::with_capacity(MAX_QUANTA),
             index: 0,
+            previous_cycle_index: 0,
         }
     }
 
@@ -44,6 +46,21 @@ impl TimeAnalyser {
             self.buffer[self.index as usize] = data;
         }
         self.index = self.index.wrapping_add(1);
+    }
+
+    /// Check if we have completed a full round of `fft_size` samples
+    fn check_complete_cycle(&mut self, fft_size: usize) -> bool {
+        // number of buffers processed since last complete cycle
+        let processed = self.index.wrapping_sub(self.previous_cycle_index);
+        let processed_samples = processed as usize * BUFFER_SIZE as usize;
+
+        // cycle is complete when divisible by fft_size
+        if processed_samples % fft_size == 0 {
+            self.previous_cycle_index = self.index;
+            return true;
+        }
+
+        false
     }
 
     /// Read out the ring buffer (max `fft_size` samples)
@@ -81,7 +98,7 @@ pub(crate) struct Analyser {
     fft_scratch: Vec<Complex<f32>>,
     fft_output: Vec<Complex<f32>>,
 
-    previous_fft_size: usize,
+    current_fft_size: usize,
     previous_block: Vec<f32>,
     blackman: Vec<f32>,
 }
@@ -107,10 +124,14 @@ impl Analyser {
             fft_input,
             fft_scratch,
             fft_output,
-            previous_fft_size: initial_fft_size,
+            current_fft_size: initial_fft_size,
             previous_block,
             blackman,
         }
+    }
+
+    pub fn current_fft_size(&self) -> usize {
+        self.current_fft_size
     }
 
     /// Add samples to the ring buffer
@@ -123,17 +144,29 @@ impl Analyser {
         self.time.get_float_time(buffer, fft_size);
     }
 
+    /// Check if we have completed a full round of `fft_size` samples
+    pub fn check_complete_cycle(&mut self, fft_size: usize) -> bool {
+        self.time.check_complete_cycle(fft_size)
+    }
+
+    /// Copy the frequency data
+    pub fn get_float_frequency(&mut self, buffer: &mut [f32]) {
+        let previous_block = &mut self.previous_block[..self.current_fft_size / 2 + 1];
+
+        // nomalizing, conversion to dB and fill buffer
+        let norm = 20. * (self.current_fft_size as f32).sqrt().log10();
+        buffer
+            .iter_mut()
+            .zip(previous_block.iter())
+            .for_each(|(b, o)| *b = 20. * o.log10() - norm);
+    }
+
     /// Calculate the frequency data
-    pub fn get_float_frequency(
-        &mut self,
-        buffer: &mut [f32],
-        fft_size: usize,
-        smoothing_time_constant: f32,
-    ) {
+    pub fn calculate_float_frequency(&mut self, fft_size: usize, smoothing_time_constant: f32) {
         // reset state after resizing
-        if self.previous_fft_size != fft_size {
+        if self.current_fft_size != fft_size {
             // previous block data
-            self.previous_block[0..self.previous_fft_size]
+            self.previous_block[0..fft_size / 2 + 1]
                 .iter_mut()
                 .for_each(|v| *v = 0.);
 
@@ -141,7 +174,7 @@ impl Analyser {
             self.blackman.clear();
             generate_blackman(fft_size).for_each(|v| self.blackman.push(v));
 
-            self.previous_fft_size = fft_size;
+            self.current_fft_size = fft_size;
         }
 
         let r2c = self.fft_planner.plan_fft_forward(fft_size);
@@ -150,7 +183,7 @@ impl Analyser {
         let input = &mut self.fft_input[..fft_size];
         let output = &mut self.fft_output[..fft_size / 2 + 1];
         let scratch = &mut self.fft_scratch[..r2c.get_scratch_len()];
-        let previous_block = &mut self.previous_block[..fft_size];
+        let previous_block = &mut self.previous_block[..fft_size / 2 + 1];
 
         // put time domain data in fft_input
         self.time.get_float_time(input, fft_size);
@@ -171,13 +204,6 @@ impl Analyser {
             .for_each(|(p, c)| {
                 *p = smoothing_time_constant * *p + (1. - smoothing_time_constant) * c.norm()
             });
-
-        // nomalizing, conversion to dB and fill buffer
-        let norm = 20. * (fft_size as f32).sqrt().log10();
-        buffer
-            .iter_mut()
-            .zip(previous_block.iter())
-            .for_each(|(b, o)| *b = 20. * o.log10() - norm);
     }
 }
 
@@ -238,16 +264,41 @@ mod tests {
     }
 
     #[test]
+    fn test_complete_cycle() {
+        let alloc = Alloc::with_capacity(256);
+        let mut analyser = TimeAnalyser::new();
+
+        // check values smaller than LEN
+        analyser.add_data(alloc.silence());
+        assert!(analyser.check_complete_cycle(32));
+
+        // check LEN
+        analyser.add_data(alloc.silence());
+        assert!(analyser.check_complete_cycle(LEN));
+
+        // check multiple of LEN
+        analyser.add_data(alloc.silence());
+        assert!(!analyser.check_complete_cycle(LEN * 2));
+        analyser.add_data(alloc.silence());
+        assert!(analyser.check_complete_cycle(LEN * 2));
+        analyser.add_data(alloc.silence());
+        assert!(!analyser.check_complete_cycle(LEN * 2));
+    }
+
+    #[test]
     fn test_freq_domain() {
         let alloc = Alloc::with_capacity(256);
-        let mut analyser = Analyser::new(LEN * 4);
-        let mut buffer = vec![-1.; LEN * 4];
+
+        let fft_size: usize = LEN * 4;
+        let mut analyser = Analyser::new(fft_size);
+        let mut buffer = vec![-1.; fft_size];
 
         // feed single data buffer
         analyser.add_data(alloc.silence());
 
         // get data, should be zero (negative infinity decibel)
-        analyser.get_float_frequency(&mut buffer[..], LEN * 4);
+        analyser.calculate_float_frequency(fft_size, 0.8);
+        analyser.get_float_frequency(&mut buffer[..]);
         assert_eq!(&buffer[0..LEN * 2 + 1], &[f32::NEG_INFINITY; LEN * 2 + 1]);
         // only N / 2 + 1 values should contain frequency data, rest is unaltered
         assert_eq!(&buffer[LEN * 2 + 1..], &[-1.; LEN * 2 - 1]);
@@ -261,7 +312,8 @@ mod tests {
         }
 
         // this should return other data now
-        analyser.get_float_frequency(&mut buffer[..], LEN * 4);
+        analyser.calculate_float_frequency(fft_size, 0.8);
+        analyser.get_float_frequency(&mut buffer[..]);
         assert!(&buffer[0..LEN * 2 + 1] != &[f32::NEG_INFINITY; LEN * 2 + 1]);
     }
 
