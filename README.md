@@ -20,7 +20,7 @@ much more.
 ## Planning
 
 - v0.\*: getting the basics out, stabilize API
-- v1.\*: feature completeness, performance
+- v1.\*: feature completeness
 - v2.\*: full spec compliance
 
 ## Spec compliance
