@@ -9,23 +9,21 @@ const DESTINATION_NODE_ID: u64 = 0;
 const LISTENER_NODE_ID: u64 = 1;
 const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
-#[cfg(not(test))]
-use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
-    SampleFormat, Stream, StreamConfig, SupportedBufferSize,
-};
-
 use crate::buffer::{ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::graph::{NodeIndex, RenderThread};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
-use crate::node;
-use crate::node::AudioNode;
+use crate::node::{self, AudioNode};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::AudioProcessor;
 use crate::spatial::{AudioListener, AudioListenerParams};
-use crate::SampleRate;
-use crate::BUFFER_SIZE;
+use crate::{SampleRate, BUFFER_SIZE};
+
+#[cfg(not(test))]
+use crate::io;
+
+#[cfg(not(test))]
+use cpal::{traits::StreamTrait, Stream};
 
 /// The BaseAudioContext interface represents an audio-processing graph built from audio modules
 /// linked together, each represented by an AudioNode. An audio context controls both the creation
@@ -258,32 +256,9 @@ impl AudioContext {
     /// This will play live audio on the default output
     #[cfg(not(test))]
     pub fn new() -> Self {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .expect("no output device available");
-        let mut supported_configs_range = device
-            .supported_output_configs()
-            .expect("error while querying configs");
-        let supported_config = supported_configs_range
-            .next()
-            .expect("no supported config?!")
-            .with_max_sample_rate();
-
-        let sample_format = supported_config.sample_format();
-
-        // determine best buffer size. Spec requires BUFFER_SIZE, but that might not be available
-        let mut buffer_size = match supported_config.buffer_size() {
-            SupportedBufferSize::Range { min, .. } => crate::BUFFER_SIZE.max(*min),
-            SupportedBufferSize::Unknown => BUFFER_SIZE,
-        };
-        // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
-        // the desired number of frames.
-        buffer_size = (buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
-
-        let mut config: StreamConfig = supported_config.into();
-        config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
-        log::debug!("Output {:?}", &config);
+        let io_builder = io::OutputBuilder::new();
+        let config = io_builder.config();
+        log::debug!("Output {:?}", config);
 
         let sample_rate = SampleRate(config.sample_rate.0);
         let channels = config.channels as u32;
@@ -295,28 +270,8 @@ impl AudioContext {
         let base = BaseAudioContext::new(sample_rate, channels, sender);
 
         // spawn the render thread
-        let mut render = RenderThread::new(sample_rate, channels as usize, receiver);
-        let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
-        let stream = match sample_format {
-            SampleFormat::F32 => device.build_output_stream(
-                &config,
-                move |d: &mut [f32], _c| render.render(d),
-                err_fn,
-            ),
-            SampleFormat::U16 => device.build_output_stream(
-                &config,
-                move |d: &mut [u16], _c| render.render(d),
-                err_fn,
-            ),
-            SampleFormat::I16 => device.build_output_stream(
-                &config,
-                move |d: &mut [i16], _c| render.render(d),
-                err_fn,
-            ),
-        }
-        .unwrap();
-
-        stream.play().unwrap();
+        let render = RenderThread::new(sample_rate, channels as usize, receiver);
+        let stream = io_builder.build(render);
 
         Self { base, stream }
     }

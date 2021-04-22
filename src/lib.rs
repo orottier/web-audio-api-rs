@@ -55,6 +55,9 @@ pub mod param;
 pub mod process;
 pub mod spatial;
 
+#[cfg(not(test))]
+mod io;
+
 mod analysis;
 mod graph;
 mod message;
