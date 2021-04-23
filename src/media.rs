@@ -1,4 +1,4 @@
-//! OGG, WAV and MP3 encoding/decoding
+//! Microphone input and OGG, WAV and MP3 decoding
 
 use std::error::Error;
 use std::fs::File;
@@ -21,10 +21,9 @@ use crate::io;
 #[cfg(not(test))]
 use cpal::{traits::StreamTrait, Sample, Stream};
 
-/// Interface for media decoding.
+/// Interface for media streaming.
 ///
-/// This is a trait alias for an [`AudioBuffer`] Iterator that can run in a separate thread, for
-/// example the [`OggVorbisDecoder`]
+/// This is a trait alias for an [`AudioBuffer`] Iterator, for example the [`OggVorbisDecoder`]
 ///
 /// Below is an example showing how to play the stream directly.
 ///
@@ -69,13 +68,13 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::buffer::{AudioBuffer, ChannelData};
 /// use web_audio_api::media::MediaElement;
-/// use crate::web_audio_api::node::AudioControllableSourceNode;
+/// use web_audio_api::node::AudioControllableSourceNode;
 ///
-/// // create a new buffer: 20 samples of silence
+/// // create a new buffer with a few samples of silence
 /// let silence = AudioBuffer::from_channels(vec![ChannelData::from(vec![0.; 20])], SampleRate(44_100));
 ///
 /// // create a sequence of this buffer
-/// let sequence = std::iter::repeat(silence).take(5);
+/// let sequence = std::iter::repeat(silence).take(3);
 ///
 /// // the sequence should actually yield `Result<AudioBuffer, _>`s
 /// let media = sequence.map(|b| Ok(b));
@@ -84,7 +83,8 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// let mut element = MediaElement::new(media);
 /// element.set_loop(true);
 ///
-/// for buf in element.take(3) {
+/// // the media element provides an infinite iterator now
+/// for buf in element.take(5) {
 ///     assert_eq!(
 ///         buf.unwrap().channel_data(0).unwrap(),
 ///         &ChannelData::from(vec![0.; 20])
@@ -116,6 +116,7 @@ impl<S> AudioScheduledSourceNode for MediaElement<S> {
 }
 
 impl<S: MediaStream> MediaElement<S> {
+    /// Create a new MediaElement by buffering a MediaStream
     pub fn new(input: S) -> Self {
         Self {
             input,
@@ -151,6 +152,7 @@ impl<S: MediaStream> MediaElement<S> {
         None
     }
 
+    /// Seek to a timestamp offset in the media buffer
     pub fn seek(&mut self, ts: f64) {
         if ts == 0. {
             self.timestamp = 0.;
@@ -205,6 +207,11 @@ impl<S: MediaStream> Iterator for MediaElement<S> {
     }
 }
 
+/// Microphone input stream
+///
+/// It implements the [`MediaStream`] trait so can be used inside a [`crate::node::MediaStreamAudioSourceNode`]
+///
+/// Check the `microphone.rs` example for usage.
 pub struct Microphone {
     receiver: Receiver<AudioBuffer>,
     channels: usize,
@@ -219,6 +226,7 @@ pub struct Microphone {
 unsafe impl Send for Microphone {}
 
 impl Microphone {
+    /// Setup the default microphone input stream
     #[cfg(not(test))]
     pub fn new() -> Self {
         let buffer = 1; // todo, use buffering to smooth frame drops
@@ -331,7 +339,7 @@ impl MicrophoneRender {
 /// ``` rust
 /// use web_audio_api::media::OggVorbisDecoder;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
-/// use crate::web_audio_api::node::AudioNode;
+/// use web_audio_api::node::AudioNode;
 ///
 /// // construct the decoder
 /// let file = std::fs::File::open("sample.ogg").unwrap();
@@ -383,7 +391,7 @@ impl Iterator for OggVorbisDecoder {
 /// ``` rust
 /// use web_audio_api::media::WavDecoder;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
-/// use crate::web_audio_api::node::AudioNode;
+/// use web_audio_api::node::AudioNode;
 ///
 /// // construct the decoder
 /// let file = std::fs::File::open("sample.wav").unwrap();

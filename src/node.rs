@@ -865,7 +865,7 @@ pub struct MediaStreamAudioSourceNodeOptions<M> {
     pub channel_config: ChannelConfigOptions,
 }
 
-/// An audio source from external media files (.ogg, .wav, .mp3)
+/// An audio source from media streams (microphone, or .ogg, .wav, .mp3 decoding)
 pub struct MediaStreamAudioSourceNode<'a> {
     registration: AudioContextRegistration<'a>,
     channel_config: ChannelConfig,

@@ -1,6 +1,6 @@
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-use web_audio_api::media::{MediaElement, Microphone};
-use web_audio_api::node::{AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode};
+use web_audio_api::media::Microphone;
+use web_audio_api::node::AudioNode;
 
 fn main() {
     env_logger::init();
