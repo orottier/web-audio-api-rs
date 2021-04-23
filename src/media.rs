@@ -3,13 +3,23 @@
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
+use std::sync::mpsc::{Receiver, TryRecvError};
 
 use lewton::inside_ogg::OggStreamReader;
 use lewton::VorbisError;
 
 use crate::buffer::{AudioBuffer, ChannelData};
 use crate::control::{Controller, Scheduler};
-use crate::SampleRate;
+use crate::{SampleRate, BUFFER_SIZE};
+
+#[cfg(not(test))]
+use std::sync::mpsc::{self, SyncSender};
+
+#[cfg(not(test))]
+use crate::io;
+
+#[cfg(not(test))]
+use cpal::{traits::StreamTrait, Sample, Stream};
 
 /// Interface for media decoding.
 ///
@@ -192,6 +202,123 @@ impl<S: MediaStream> Iterator for MediaElement<S> {
         self.seek(self.loop_start());
 
         self.next()
+    }
+}
+
+pub struct Microphone {
+    receiver: Receiver<AudioBuffer>,
+    channels: usize,
+    sample_rate: SampleRate,
+
+    #[cfg(not(test))]
+    stream: Stream,
+}
+
+// Todo, the Microphone struct is shipped to the render thread
+// but it contains a Stream which is not Send.
+unsafe impl Send for Microphone {}
+
+impl Microphone {
+    #[cfg(not(test))]
+    pub fn new() -> Self {
+        let buffer = 1; // todo, use buffering to smooth frame drops
+        let (sender, receiver) = mpsc::sync_channel(buffer);
+
+        let io_builder = io::InputBuilder::new();
+        let config = io_builder.config();
+        log::debug!("Input {:?}", config);
+
+        let sample_rate = SampleRate(config.sample_rate.0);
+        let channels = config.channels as usize;
+        let render = MicrophoneRender {
+            channels,
+            sample_rate,
+            sender,
+        };
+
+        let stream = io_builder.build(render);
+
+        Self {
+            receiver,
+            channels,
+            sample_rate,
+            stream,
+        }
+    }
+
+    /// Suspends the input stream, temporarily halting audio hardware access and reducing
+    /// CPU/battery usage in the process.
+    pub fn suspend(&self) {
+        #[cfg(not(test))] // in tests, do not set up a cpal Stream
+        self.stream.pause().unwrap()
+    }
+
+    /// Resumes the input stream that has previously been suspended/paused.
+    pub fn resume(&self) {
+        #[cfg(not(test))] // in tests, do not set up a cpal Stream
+        self.stream.play().unwrap()
+    }
+}
+
+#[cfg(not(test))]
+impl Default for Microphone {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Iterator for Microphone {
+    type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = match self.receiver.try_recv() {
+            Ok(buffer) => {
+                // new frame was ready
+                buffer
+            }
+            Err(TryRecvError::Empty) => {
+                // frame not received in time, emit silence
+                log::debug!("input frame delayed");
+                AudioBuffer::new(self.channels, BUFFER_SIZE as usize, self.sample_rate)
+            }
+            Err(TryRecvError::Disconnected) => {
+                // MicrophoneRender has stopped, close stream
+                return None;
+            }
+        };
+
+        Some(Ok(next))
+    }
+}
+
+#[cfg(not(test))]
+pub(crate) struct MicrophoneRender {
+    channels: usize,
+    sample_rate: SampleRate,
+    sender: SyncSender<AudioBuffer>,
+}
+
+#[cfg(not(test))]
+impl MicrophoneRender {
+    pub fn render<S: Sample>(&self, data: &[S]) {
+        let mut channels = Vec::with_capacity(self.channels);
+
+        // copy rendered audio into output slice
+        for i in 0..self.channels {
+            channels.push(ChannelData::from(
+                data.iter()
+                    .skip(i)
+                    .step_by(self.channels)
+                    .map(|v| v.to_f32())
+                    .collect(),
+            ));
+        }
+
+        let buffer = AudioBuffer::from_channels(channels, self.sample_rate);
+        let result = self.sender.try_send(buffer); // can fail (frame dropped)
+        if result.is_err() {
+            log::debug!("input frame dropped");
+        }
     }
 }
 
