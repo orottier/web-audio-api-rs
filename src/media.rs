@@ -32,7 +32,7 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 ///
 /// # Example
 ///
-/// ```rust
+/// ```no_run
 /// use web_audio_api::SampleRate;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::buffer::AudioBuffer;
@@ -336,7 +336,7 @@ impl MicrophoneRender {
 ///
 /// # Usage
 ///
-/// ``` rust
+/// ```no_run
 /// use web_audio_api::media::OggVorbisDecoder;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::node::AudioNode;
@@ -388,7 +388,7 @@ impl Iterator for OggVorbisDecoder {
 ///
 /// # Usage
 ///
-/// ``` rust
+/// ```no_run
 /// use web_audio_api::media::WavDecoder;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::node::AudioNode;
