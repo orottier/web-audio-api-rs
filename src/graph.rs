@@ -85,6 +85,9 @@ impl RenderThread {
         // actual buffer size is a multiple of BUFFER_SIZE.
         let chunk_size = crate::BUFFER_SIZE as usize * self.channels as usize;
 
+        // assert input was properly sized
+        debug_assert_eq!(buffer.len() % chunk_size, 0);
+
         for data in buffer.chunks_exact_mut(chunk_size) {
             // handle addition/removal of nodes/edges
             self.handle_control_messages();

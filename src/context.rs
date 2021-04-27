@@ -239,6 +239,8 @@ pub struct OfflineAudioContext {
 
     /// the size of the buffer in sample-frames
     length: usize,
+    /// the number of channels
+    channels: u32,
     /// the rendered audio data
     buffer: Vec<f32>,
     /// the rendering 'thread', fully controlled by the offline context
@@ -520,23 +522,25 @@ impl OfflineAudioContext {
         // setup the render 'thread', which will run inside the control thread
         let render = RenderThread::new(sample_rate, channels as usize, receiver);
 
-        // pre-allocate enough space (todo, round to multiple of channels * buffer_size?)
-        let buffer = vec![0.; length];
+        // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
+        // the desired number of frames.
+        let buffer_size = (length as u32 + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+        let channel_samples = buffer_size as usize * channels as usize;
+        let buffer = vec![0.; channel_samples];
 
         Self {
             base,
             length,
+            channels,
             buffer,
             render,
         }
     }
 
     pub fn start_rendering(&mut self) -> &[f32] {
-        for quantum in self.buffer.chunks_mut(BUFFER_SIZE as usize) {
-            self.render.render(quantum)
-        }
+        self.render.render(&mut self.buffer);
 
-        self.buffer.as_slice()
+        &self.buffer[..self.length * self.channels as usize]
     }
 
     pub fn length(&self) -> usize {

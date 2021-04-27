@@ -6,6 +6,30 @@ use web_audio_api::node::{
 use web_audio_api::{SampleRate, BUFFER_SIZE};
 
 #[test]
+fn test_offline_render() {
+    const LENGTH: usize = 555;
+
+    // not a multiple of BUFFER_SIZE
+    assert!(LENGTH % BUFFER_SIZE as usize != 0);
+
+    let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+    assert_eq!(context.length(), LENGTH);
+
+    {
+        let constant1 = context.create_constant_source();
+        constant1.offset().set_value(2.);
+        constant1.connect(&context.destination());
+
+        let constant2 = context.create_constant_source();
+        constant2.offset().set_value(-4.);
+        constant2.connect(&context.destination());
+    }
+
+    let result = context.start_rendering();
+    assert_eq!(result, &[-2.; LENGTH * 2]);
+}
+
+#[test]
 fn test_start_stop() {
     let len = (BUFFER_SIZE * 4) as usize;
     let mut context = OfflineAudioContext::new(1, len, SampleRate(BUFFER_SIZE));
