@@ -9,7 +9,7 @@ const DESTINATION_NODE_ID: u64 = 0;
 const LISTENER_NODE_ID: u64 = 1;
 const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
-use crate::buffer::{ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
+use crate::buffer::{AudioBuffer, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::graph::{NodeIndex, RenderThread};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
@@ -239,10 +239,6 @@ pub struct OfflineAudioContext {
 
     /// the size of the buffer in sample-frames
     length: usize,
-    /// the number of channels
-    channels: u32,
-    /// the rendered audio data
-    buffer: Vec<f32>,
     /// the rendering 'thread', fully controlled by the offline context
     render: RenderThread,
 }
@@ -522,25 +518,21 @@ impl OfflineAudioContext {
         // setup the render 'thread', which will run inside the control thread
         let render = RenderThread::new(sample_rate, channels as usize, receiver);
 
-        // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
-        // the desired number of frames.
-        let buffer_size = (length as u32 + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
-        let channel_samples = buffer_size as usize * channels as usize;
-        let buffer = vec![0.; channel_samples];
-
         Self {
             base,
             length,
-            channels,
-            buffer,
             render,
         }
     }
 
-    pub fn start_rendering(&mut self) -> &[f32] {
-        self.render.render(&mut self.buffer);
+    pub fn start_rendering(&mut self) -> AudioBuffer {
+        // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
+        // the desired number of frames.
+        let buffer_size = (self.length as u32 + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
 
-        &self.buffer[..self.length * self.channels as usize]
+        let mut buf = self.render.render_audiobuffer(buffer_size as usize);
+        let _split = buf.split_off(self.length as u32);
+        buf
     }
 
     pub fn length(&self) -> usize {

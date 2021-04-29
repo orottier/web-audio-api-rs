@@ -74,5 +74,5 @@ fn main() {
 
     let mut context = context;
     let output = context.start_rendering();
-    assert_eq!(output.len(), len);
+    assert_eq!(output.sample_len(), len);
 }

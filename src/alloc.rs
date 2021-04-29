@@ -141,7 +141,7 @@ impl std::ops::Drop for ChannelData {
     }
 }
 
-/// Memory-resident audio asset, basically a matrix of channels * samples
+/// Fixed length audio asset, basically a matrix of `channels * [f32; BUFFER_SIZE]`
 ///
 /// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone)]
@@ -177,6 +177,16 @@ impl AudioBuffer {
     /// Get the samples from this specific channel.
     pub fn channel_data(&self, channel: usize) -> &ChannelData {
         &self.channels[channel]
+    }
+
+    /// Slice of all channel data
+    pub fn channels(&self) -> &[ChannelData] {
+        &self.channels[..]
+    }
+
+    /// Slice of all channel data (mutable)
+    pub fn channels_mut(&mut self) -> &mut [ChannelData] {
+        &mut self.channels[..]
     }
 
     /// Get the samples from this specific channel (mutable).

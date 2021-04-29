@@ -3,6 +3,7 @@
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use crate::alloc::AudioBuffer as FixedAudioBuffer;
 use crate::media::MediaStream;
 use crate::SampleRate;
 
@@ -155,6 +156,19 @@ impl AudioBuffer {
                 } else {
                     cur_channel_data.extend(std::iter::repeat(0.).take(other.sample_len()));
                 }
+            })
+    }
+
+    /// Extends an AudioBuffer with an [`FixedAudioBuffer`]
+    ///
+    /// This assumes the sample_rate matches. No up/down-mixing is performed
+    pub fn extend_alloc(&mut self, other: &FixedAudioBuffer) {
+        self.channel_data_mut()
+            .iter_mut()
+            .zip(other.channels())
+            .for_each(|(channel, other_channel)| {
+                let cur_channel_data = Arc::make_mut(&mut channel.data);
+                cur_channel_data.extend_from_slice(&other_channel[..]);
             })
     }
 

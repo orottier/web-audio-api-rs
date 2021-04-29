@@ -9,7 +9,7 @@ use crate::alloc::{Alloc, AudioBuffer};
 use crate::buffer::{ChannelConfig, ChannelCountMode};
 use crate::message::ControlMessage;
 use crate::process::{AudioParamValues, AudioProcessor};
-use crate::SampleRate;
+use crate::{SampleRate, BUFFER_SIZE};
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
@@ -79,11 +79,36 @@ impl RenderThread {
         }
     }
 
+    pub fn render_audiobuffer(&mut self, length: usize) -> crate::buffer::AudioBuffer {
+        // assert input was properly sized
+        debug_assert_eq!(length % BUFFER_SIZE as usize, 0);
+
+        let mut buf = crate::buffer::AudioBuffer::new(self.channels, 0, self.sample_rate);
+
+        for _ in 0..length / BUFFER_SIZE as usize {
+            // handle addition/removal of nodes/edges
+            self.handle_control_messages();
+
+            // update time
+            let timestamp = self
+                .frames_played
+                .fetch_add(BUFFER_SIZE as u64, Ordering::SeqCst) as f64
+                / self.sample_rate.0 as f64;
+
+            // render audio graph
+            let rendered = self.graph.render(timestamp, self.sample_rate);
+
+            buf.extend_alloc(rendered);
+        }
+
+        buf
+    }
+
     pub fn render<S: Sample>(&mut self, buffer: &mut [S]) {
         // The audio graph is rendered in chunks of BUFFER_SIZE frames.  But some audio backends
         // may not be able to emit chunks of this size, hence the only requirement is that the
         // actual buffer size is a multiple of BUFFER_SIZE.
-        let chunk_size = crate::BUFFER_SIZE as usize * self.channels as usize;
+        let chunk_size = BUFFER_SIZE as usize * self.channels as usize;
 
         // assert input was properly sized
         debug_assert_eq!(buffer.len() % chunk_size, 0);
@@ -93,8 +118,9 @@ impl RenderThread {
             self.handle_control_messages();
 
             // update time
-            let len = data.len() / self.channels as usize;
-            let timestamp = self.frames_played.fetch_add(len as u64, Ordering::SeqCst) as f64
+            let timestamp = self
+                .frames_played
+                .fetch_add(BUFFER_SIZE as u64, Ordering::SeqCst) as f64
                 / self.sample_rate.0 as f64;
 
             // render audio graph
