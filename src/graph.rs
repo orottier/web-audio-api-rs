@@ -301,9 +301,10 @@ impl Graph {
         marked.resize(self.nodes.len(), NodeIndex(0));
         marked.clear();
 
-        // start by visiting the root node
-        let start = NodeIndex(0);
-        self.visit(start, &mut marked, &mut ordered);
+        // visit all registered nodes
+        for &i in self.nodes.keys() {
+            self.visit(i, &mut marked, &mut ordered);
+        }
 
         ordered.reverse();
 
@@ -408,62 +409,96 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_add_remove() {
-        let config: ChannelConfig = crate::buffer::ChannelConfigOptions {
+    fn config() -> ChannelConfig {
+        crate::buffer::ChannelConfigOptions {
             count: 2,
             mode: crate::buffer::ChannelCountMode::Explicit,
             interpretation: crate::buffer::ChannelInterpretation::Speakers,
         }
-        .into();
+        .into()
+    }
+
+    #[test]
+    fn test_add_remove() {
         let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone());
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone());
-        graph.add_node(NodeIndex(3), node.clone(), 1, 1, config.clone());
+        graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(3), node.clone(), 1, 1, config());
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
         graph.add_edge((NodeIndex(3), 0), (NodeIndex(0), 0));
 
-        // sorting is not deterministic, can be either of these two
-        if graph.ordered != &[NodeIndex(3), NodeIndex(2), NodeIndex(1), NodeIndex(0)] {
-            assert_eq!(
-                graph.ordered,
-                vec![NodeIndex(2), NodeIndex(1), NodeIndex(3), NodeIndex(0)]
-            );
-        }
+        // sorting is not deterministic, but this should uphold:
+        assert_eq!(graph.ordered.len(), 4); // all nodes present
+        assert_eq!(graph.ordered[3], NodeIndex(0)); // root node comes last
 
+        let pos1 = graph
+            .ordered
+            .iter()
+            .position(|&n| n == NodeIndex(1))
+            .unwrap();
+        let pos2 = graph
+            .ordered
+            .iter()
+            .position(|&n| n == NodeIndex(2))
+            .unwrap();
+        assert!(pos2 < pos1); // node 1 depends on node 2
+
+        // Detach node 1 (and thus node 2) from the root node
         graph.remove_edge(NodeIndex(1), NodeIndex(0));
-        assert_eq!(graph.ordered, vec![NodeIndex(3), NodeIndex(0)]);
+
+        // sorting is not deterministic, but this should uphold:
+        assert_eq!(graph.ordered.len(), 4); // all nodes present
+        let pos1 = graph
+            .ordered
+            .iter()
+            .position(|&n| n == NodeIndex(1))
+            .unwrap();
+        let pos2 = graph
+            .ordered
+            .iter()
+            .position(|&n| n == NodeIndex(2))
+            .unwrap();
+        assert!(pos2 < pos1); // node 1 depends on node 2
     }
 
     #[test]
     fn test_remove_all() {
-        let config: ChannelConfig = crate::buffer::ChannelConfigOptions {
-            count: 2,
-            mode: crate::buffer::ChannelCountMode::Explicit,
-            interpretation: crate::buffer::ChannelInterpretation::Speakers,
-        }
-        .into();
         let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config.clone());
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config.clone());
+        graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config());
 
+        // link 1->0, 1->2 and 2->0
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
+        graph.add_edge((NodeIndex(1), 0), (NodeIndex(2), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));
-        graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
 
         assert_eq!(
             graph.ordered,
-            vec![NodeIndex(2), NodeIndex(1), NodeIndex(0)]
+            vec![NodeIndex(1), NodeIndex(2), NodeIndex(0)]
         );
 
-        graph.remove_edges_from(NodeIndex(2));
+        graph.remove_edges_from(NodeIndex(1));
 
-        assert_eq!(graph.ordered, vec![NodeIndex(1), NodeIndex(0)]);
+        // sorting is not deterministic, but this should uphold:
+        assert_eq!(graph.ordered.len(), 3); // all nodes present
+        let pos0 = graph
+            .ordered
+            .iter()
+            .position(|&n| n == NodeIndex(0))
+            .unwrap();
+        let pos2 = graph
+            .ordered
+            .iter()
+            .position(|&n| n == NodeIndex(2))
+            .unwrap();
+        assert!(pos2 < pos0); // node 1 depends on node 0
     }
 }

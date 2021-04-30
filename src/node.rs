@@ -404,7 +404,7 @@ impl<'a> AudioNode for DestinationNode<'a> {
         1
     }
     fn number_of_outputs(&self) -> u32 {
-        1 // todo, should be 0 actually, but we need it to copy into cpal for now
+        1
     }
 
     fn channel_count_mode(&self) -> ChannelCountMode {
