@@ -87,22 +87,6 @@ impl AudioBuffer {
         }
     }
 
-    /// Convert this buffer to a mono sound, maintaining the channel and sample counts.
-    pub fn make_mono(&mut self) {
-        let len = self.sample_len();
-        let channels = self.number_of_channels();
-
-        match &mut self.data {
-            Silence(_, _) => {
-                self.data = Mono(ChannelData::new(len), channels);
-            }
-            Mono(_data, _) => (),
-            Multi(data) => {
-                self.data = Mono(data[0].clone(), channels);
-            }
-        }
-    }
-
     /// Convert to Multi type buffer, and return mutable channel data
     fn channel_data_mut(&mut self) -> &mut [ChannelData] {
         let sample_rate = self.sample_rate();
@@ -127,8 +111,9 @@ impl AudioBuffer {
 
     /// Modify every channel in the same way
     pub fn modify_channels<F: Fn(&mut ChannelData)>(&mut self, fun: F) {
-        if matches!(&self.data, Silence(_, _)) {
-            self.make_mono();
+        // convert silence to empty mono buffer
+        if let Silence(channels, len) = &self.data {
+            self.data = Mono(ChannelData::new(*len), *channels);
         }
 
         match &mut self.data {
