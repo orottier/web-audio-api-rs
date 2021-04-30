@@ -254,19 +254,22 @@ impl Graph {
     pub fn add_edge(&mut self, source: (NodeIndex, u32), dest: (NodeIndex, u32)) {
         self.edges.insert((source, dest));
 
-        self.order_nodes();
+        // void current ordering
+        self.ordered.clear();
     }
 
     pub fn remove_edge(&mut self, source: NodeIndex, dest: NodeIndex) {
         self.edges.retain(|&(s, d)| s.0 != source || d.0 != dest);
 
-        self.order_nodes();
+        // void current ordering
+        self.ordered.clear();
     }
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
         self.edges.retain(|&(s, _d)| s.0 != source);
 
-        self.order_nodes();
+        // void current ordering
+        self.ordered.clear();
     }
 
     fn mark_free_when_finished(&mut self, index: NodeIndex) {
@@ -314,6 +317,10 @@ impl Graph {
     }
 
     pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer {
+        if self.ordered.is_empty() {
+            self.order_nodes();
+        }
+
         // split (mut) borrows
         let ordered = &self.ordered;
         let edges = &self.edges;
@@ -432,6 +439,8 @@ mod tests {
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
         graph.add_edge((NodeIndex(3), 0), (NodeIndex(0), 0));
 
+        graph.order_nodes();
+
         // sorting is not deterministic, but this should uphold:
         assert_eq!(graph.ordered.len(), 4); // all nodes present
         assert_eq!(graph.ordered[3], NodeIndex(0)); // root node comes last
@@ -450,6 +459,7 @@ mod tests {
 
         // Detach node 1 (and thus node 2) from the root node
         graph.remove_edge(NodeIndex(1), NodeIndex(0));
+        graph.order_nodes();
 
         // sorting is not deterministic, but this should uphold:
         assert_eq!(graph.ordered.len(), 4); // all nodes present
@@ -480,12 +490,15 @@ mod tests {
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(2), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));
 
+        graph.order_nodes();
+
         assert_eq!(
             graph.ordered,
             vec![NodeIndex(1), NodeIndex(2), NodeIndex(0)]
         );
 
         graph.remove_edges_from(NodeIndex(1));
+        graph.order_nodes();
 
         // sorting is not deterministic, but this should uphold:
         assert_eq!(graph.ordered.len(), 3); // all nodes present
