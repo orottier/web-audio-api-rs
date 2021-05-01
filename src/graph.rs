@@ -203,14 +203,17 @@ impl Node {
 }
 
 pub(crate) struct Graph {
+    // actual audio graph
     nodes: HashMap<NodeIndex, Node>,
+    edges: HashSet<((NodeIndex, u32), (NodeIndex, u32))>, // (node,output) to (node,input)
 
-    // connections, from (node,output) to (node,input)
-    edges: HashSet<((NodeIndex, u32), (NodeIndex, u32))>,
-
+    // topological sorting
     marked: Vec<NodeIndex>,
+    marked_temp: Vec<NodeIndex>,
     ordered: Vec<NodeIndex>,
+    in_cycle: Vec<NodeIndex>,
 
+    // allocator for audio buffers
     alloc: Alloc,
 }
 
@@ -221,6 +224,8 @@ impl Graph {
             edges: HashSet::new(),
             ordered: vec![],
             marked: vec![],
+            marked_temp: vec![],
+            in_cycle: vec![],
             alloc: Alloc::with_capacity(64),
         }
     }
@@ -253,23 +258,17 @@ impl Graph {
 
     pub fn add_edge(&mut self, source: (NodeIndex, u32), dest: (NodeIndex, u32)) {
         self.edges.insert((source, dest));
-
-        // void current ordering
-        self.ordered.clear();
+        self.ordered.clear(); // void current ordering
     }
 
     pub fn remove_edge(&mut self, source: NodeIndex, dest: NodeIndex) {
         self.edges.retain(|&(s, d)| s.0 != source || d.0 != dest);
-
-        // void current ordering
-        self.ordered.clear();
+        self.ordered.clear(); // void current ordering
     }
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
         self.edges.retain(|&(s, _d)| s.0 != source);
-
-        // void current ordering
-        self.ordered.clear();
+        self.ordered.clear(); // void current ordering
     }
 
     fn mark_free_when_finished(&mut self, index: NodeIndex) {
@@ -283,37 +282,81 @@ impl Graph {
             .map(|&(s, _d)| s.0)
     }
 
-    fn visit(&self, n: NodeIndex, marked: &mut Vec<NodeIndex>, ordered: &mut Vec<NodeIndex>) {
+    /// Traverse node for topological sort
+    fn visit(
+        &self,
+        n: NodeIndex,
+        marked: &mut Vec<NodeIndex>,
+        marked_temp: &mut Vec<NodeIndex>,
+        ordered: &mut Vec<NodeIndex>,
+        in_cycle: &mut Vec<NodeIndex>,
+    ) {
+        // detect cycles
+        if let Some(pos) = marked_temp.iter().position(|&m| m == n) {
+            in_cycle.extend_from_slice(&marked_temp[pos..]);
+            return;
+        }
         if marked.contains(&n) {
             return;
         }
+
         marked.push(n);
+        marked_temp.push(n);
+
         self.children(n)
-            .for_each(|c| self.visit(c, marked, ordered));
+            .for_each(|c| self.visit(c, marked, marked_temp, ordered, in_cycle));
+
+        marked_temp.retain(|marked| *marked != n);
         ordered.insert(0, n);
     }
 
+    /// Perform a topological sort of the graph. Mute nodes that are in a cycle
     fn order_nodes(&mut self) {
-        // empty ordered_nodes, and temporarily move out of self (no allocs)
+        // For borrowck reasons, we need the `visit` call to be &self.
+        // So move out the bookkeeping Vecs, and pass them around as &mut.
         let mut ordered = std::mem::replace(&mut self.ordered, vec![]);
-        ordered.resize(self.nodes.len(), NodeIndex(0));
-        ordered.clear();
-
-        // empty marked_nodes, and temporarily move out of self (no allocs)
         let mut marked = std::mem::replace(&mut self.marked, vec![]);
-        marked.resize(self.nodes.len(), NodeIndex(0));
-        marked.clear();
+        let mut marked_temp = std::mem::replace(&mut self.marked_temp, vec![]);
+        let mut in_cycle = std::mem::replace(&mut self.in_cycle, vec![]);
 
-        // visit all registered nodes
-        for &i in self.nodes.keys() {
-            self.visit(i, &mut marked, &mut ordered);
+        // clear previous administration
+        ordered.clear();
+        marked.clear();
+        marked_temp.clear();
+        in_cycle.clear();
+
+        // visit all registered nodes, depth first search
+        self.nodes.keys().for_each(|&i| {
+            self.visit(
+                i,
+                &mut marked,
+                &mut marked_temp,
+                &mut ordered,
+                &mut in_cycle,
+            );
+        });
+
+        // remove cycles from ordered nodes, leaving the ordering in place
+        ordered.retain(|o| !in_cycle.contains(o));
+
+        // mute the nodes inside cycles by clearing their output
+        for key in in_cycle.iter() {
+            self.nodes
+                .get_mut(key)
+                .unwrap()
+                .outputs
+                .iter_mut()
+                .for_each(AudioBuffer::make_silent);
         }
 
+        // depth first search yields reverse order
         ordered.reverse();
 
-        // re-instate vecs to prevent new allocs
+        // re-instate vecs
         self.ordered = ordered;
         self.marked = marked;
+        self.marked_temp = marked_temp;
+        self.in_cycle = in_cycle;
     }
 
     pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer {
@@ -513,5 +556,40 @@ mod tests {
             .position(|&n| n == NodeIndex(2))
             .unwrap();
         assert!(pos2 < pos0); // node 1 depends on node 0
+    }
+
+    #[test]
+    fn test_cycle() {
+        let mut graph = Graph::new();
+
+        let node = Box::new(TestNode {});
+        graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(3), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(4), node.clone(), 1, 1, config());
+
+        // link 4->2, 2->1, 1->0, 1->2, 3->0
+        graph.add_edge((NodeIndex(4), 0), (NodeIndex(2), 0));
+        graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
+        graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
+        graph.add_edge((NodeIndex(1), 0), (NodeIndex(2), 0));
+        graph.add_edge((NodeIndex(3), 0), (NodeIndex(0), 0));
+
+        graph.order_nodes();
+
+        let pos0 = graph.ordered.iter().position(|&n| n == NodeIndex(0));
+        let pos1 = graph.ordered.iter().position(|&n| n == NodeIndex(1));
+        let pos2 = graph.ordered.iter().position(|&n| n == NodeIndex(2));
+        let pos3 = graph.ordered.iter().position(|&n| n == NodeIndex(3));
+        let pos4 = graph.ordered.iter().position(|&n| n == NodeIndex(4));
+
+        // cycle 1<>2 should be removed
+        assert_eq!(pos1, None);
+        assert_eq!(pos2, None);
+        // detached leg from cycle will still be renderd
+        assert!(pos4.is_some());
+        // a-cyclic part should be present
+        assert!(pos3.unwrap() < pos0.unwrap());
     }
 }

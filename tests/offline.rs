@@ -145,3 +145,35 @@ fn test_listener() {
     assert_eq!(listener.position_y().value(), 2.);
     assert_eq!(listener.position_x().value(), 1.);
 }
+
+#[test]
+fn test_cycle() {
+    let len = BUFFER_SIZE as usize;
+    let mut context = OfflineAudioContext::new(1, len, SampleRate(44_100));
+
+    {
+        let cycle1 = context.create_gain();
+        cycle1.connect(&context.destination());
+
+        let cycle2 = context.create_gain();
+        cycle2.connect(&cycle1);
+
+        // here we go
+        cycle1.connect(&cycle2);
+
+        let source_cycle = context.create_constant_source();
+        source_cycle.offset().set_value(1.);
+        source_cycle.connect(&cycle1);
+
+        let other = context.create_constant_source();
+        other.offset().set_value(2.);
+        other.connect(&context.destination());
+    }
+
+    let output = context.start_rendering();
+    // cycle should be muted, and other source should be processed
+    assert_eq!(
+        output.channel_data(0).unwrap().as_slice(),
+        &[2.; BUFFER_SIZE as usize]
+    );
+}
