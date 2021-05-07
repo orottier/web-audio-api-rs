@@ -75,6 +75,9 @@ impl RenderThread {
                 FreeWhenFinished { id } => {
                     self.graph.mark_free_when_finished(NodeIndex(id));
                 }
+                AudioParamEvent { to, event } => {
+                    to.send(event).expect("Audioparam disappeared unexpectedly")
+                }
             }
         }
     }

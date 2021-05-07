@@ -186,18 +186,20 @@ impl<'a> AudioParam<'a> {
     pub fn value(&self) -> f32 {
         self.value.load() as _
     }
+
     pub fn set_value(&self, v: f32) {
-        self.sender.send(SetValueAtTime { v, start: 0. }).unwrap()
+        let event = SetValueAtTime { v, start: 0. };
+        self.context().pass_audio_param_event(&self.sender, event);
     }
 
     pub fn set_value_at_time(&self, v: f32, start: f64) {
-        self.sender.send(SetValueAtTime { v, start }).unwrap()
+        let event = SetValueAtTime { v, start };
+        self.context().pass_audio_param_event(&self.sender, event);
     }
 
     pub fn linear_ramp_to_value_at_time(&self, v: f32, end: f64) {
-        self.sender
-            .send(LinearRampToValueAtTime { v, end })
-            .unwrap()
+        let event = LinearRampToValueAtTime { v, end };
+        self.context().pass_audio_param_event(&self.sender, event);
     }
 
     // helper function to detach from context (for borrow reasons)
@@ -315,6 +317,22 @@ mod tests {
 
     use super::*;
 
+    // Bypass AudioContext enveloping of control messages for simpler testing
+    impl<'a> AudioParam<'a> {
+        pub fn set_value_direct(&self, v: f32) {
+            let event = SetValueAtTime { v, start: 0. };
+            self.sender.send(event).unwrap()
+        }
+        pub fn set_value_at_time_direct(&self, v: f32, start: f64) {
+            let event = SetValueAtTime { v, start };
+            self.sender.send(event).unwrap()
+        }
+        pub fn linear_ramp_to_value_at_time_direct(&self, v: f32, end: f64) {
+            let event = LinearRampToValueAtTime { v, end };
+            self.sender.send(event).unwrap()
+        }
+    }
+
     #[test]
     fn test_steps_a_rate() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
@@ -326,9 +344,9 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(5., 2.0);
-        param.set_value_at_time(12., 8.0); // should clamp
-        param.set_value_at_time(8., 10.0); // should not occur 1st run
+        param.set_value_at_time_direct(5., 2.0);
+        param.set_value_at_time_direct(12., 8.0); // should clamp
+        param.set_value_at_time_direct(8., 10.0); // should not occur 1st run
 
         let vs = render.tick(0., 1., 10);
         assert_eq!(vs, vec![0., 0., 5., 5., 5., 5., 5., 5., 10., 10.]);
@@ -348,9 +366,9 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(5., 2.0);
-        param.set_value_at_time(12., 8.0); // should clamp
-        param.set_value_at_time(8., 10.0); // should not occur 1st run
+        param.set_value_at_time_direct(5., 2.0);
+        param.set_value_at_time_direct(12., 8.0); // should clamp
+        param.set_value_at_time_direct(8., 10.0); // should not occur 1st run
 
         let vs = render.tick(0., 1., 10);
         assert_eq!(vs, vec![0.; 10]);
@@ -372,11 +390,11 @@ mod tests {
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
         // set to 5 at t = 2
-        param.set_value_at_time(5., 2.0);
+        param.set_value_at_time_direct(5., 2.0);
         // ramp to 8 from t = 2 to t = 5
-        param.linear_ramp_to_value_at_time(8.0, 5.0);
+        param.linear_ramp_to_value_at_time_direct(8.0, 5.0);
         // ramp to 0 from t = 5 to t = 13
-        param.linear_ramp_to_value_at_time(0., 13.0);
+        param.linear_ramp_to_value_at_time_direct(0., 13.0);
 
         let vs = render.tick(0., 1., 10);
         assert_eq!(vs, vec![0., 0., 5., 6., 7., 8., 7., 6., 5., 4.]);
@@ -394,8 +412,8 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.linear_ramp_to_value_at_time(5.0, 5.0);
-        param.linear_ramp_to_value_at_time(0., 10.0);
+        param.linear_ramp_to_value_at_time_direct(5.0, 5.0);
+        param.linear_ramp_to_value_at_time_direct(0., 10.0);
 
         let vs = render.tick(0., 1., 10);
         // Todo last value should actually be zero, but it rounds not nicely

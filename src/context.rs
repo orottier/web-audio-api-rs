@@ -14,7 +14,7 @@ use crate::graph::{NodeIndex, RenderThread};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{self, AudioNode};
-use crate::param::{AudioParam, AudioParamOptions};
+use crate::param::{AudioParam, AudioParamOptions, AutomationEvent};
 use crate::process::AudioProcessor;
 use crate::spatial::{AudioListener, AudioListenerParams};
 use crate::{SampleRate, BUFFER_SIZE};
@@ -484,6 +484,22 @@ impl BaseAudioContext {
 
     pub(crate) fn disconnect_all(&self, from: &AudioNodeId) {
         let message = ControlMessage::DisconnectAll { from: from.0 };
+        self.render_channel.send(message).unwrap();
+    }
+
+    /// Pass an AudioParam AutomationEvent to the render thread
+    ///
+    /// This clunky setup (wrapping a Sender in a message sent by another Sender) ensures
+    /// automation events will never be handled out of order.
+    pub(crate) fn pass_audio_param_event(
+        &self,
+        to: &Sender<AutomationEvent>,
+        event: AutomationEvent,
+    ) {
+        let message = ControlMessage::AudioParamEvent {
+            to: to.clone(),
+            event,
+        };
         self.render_channel.send(message).unwrap();
     }
 

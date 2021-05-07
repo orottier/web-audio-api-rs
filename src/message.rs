@@ -1,5 +1,8 @@
 use crate::buffer::ChannelConfig;
+use crate::param::AutomationEvent;
 use crate::process::AudioProcessor;
+
+use std::sync::mpsc::Sender;
 
 /// Commands from the control thread to the render thread
 pub(crate) enum ControlMessage {
@@ -29,5 +32,10 @@ pub(crate) enum ControlMessage {
 
     FreeWhenFinished {
         id: u64,
+    },
+
+    AudioParamEvent {
+        to: Sender<AutomationEvent>,
+        event: AutomationEvent,
     },
 }

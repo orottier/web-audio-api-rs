@@ -33,5 +33,4 @@ Current deviations
 - some control-render communication is done with atomics instead of message passing
 - function that should return Promises are now blocking
 - no AudioWorklet functionality, users should implement the relevant traits instead
-- control messages and audio param changes may arrive out of order
 - ...
