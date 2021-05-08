@@ -69,12 +69,12 @@ fn test_start_stop() {
 #[test]
 fn test_delayed_constant_source() {
     let len = (BUFFER_SIZE * 4) as usize;
-    let mut context = OfflineAudioContext::new(1, len, SampleRate(44_100));
+    let mut context = OfflineAudioContext::new(1, len, SampleRate(BUFFER_SIZE));
     assert_eq!(context.length(), len);
 
     {
-        let delay = context.create_delay();
-        delay.set_render_quanta(2);
+        let delay = context.create_delay(10.);
+        delay.delay_time().set_value(2.);
         delay.connect(&context.destination());
 
         let source = context.create_constant_source();

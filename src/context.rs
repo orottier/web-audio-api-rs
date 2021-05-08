@@ -64,8 +64,12 @@ pub trait AsBaseAudioContext {
     }
 
     /// Creates a DelayNode, delaying the audio signal
-    fn create_delay(&self) -> node::DelayNode {
-        node::DelayNode::new(self.base(), Default::default())
+    fn create_delay(&self, max_delay_time: f32) -> node::DelayNode {
+        let opts = node::DelayOptions {
+            max_delay_time,
+            ..Default::default()
+        };
+        node::DelayNode::new(self.base(), opts)
     }
 
     /// Creates a ChannelSplitterNode

@@ -18,7 +18,7 @@ use crate::control::{Controller, Scheduler};
 use crate::media::{MediaElement, MediaStream};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::{AudioParamValues, AudioProcessor};
-use crate::SampleRate;
+use crate::{SampleRate, BUFFER_SIZE};
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules.
@@ -541,15 +541,16 @@ impl AudioProcessor for GainRenderer {
 
 /// Options for constructing a DelayNode
 pub struct DelayOptions {
-    // todo: actually delay by time
-    pub render_quanta: u32,
+    pub max_delay_time: f32,
+    pub delay_time: f32,
     pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for DelayOptions {
     fn default() -> Self {
         Self {
-            render_quanta: 0,
+            max_delay_time: 1.,
+            delay_time: 0.,
             channel_config: ChannelConfigOptions::default(),
         }
     }
@@ -558,7 +559,7 @@ impl Default for DelayOptions {
 /// Node that delays the incoming audio signal by a certain amount
 pub struct DelayNode<'a> {
     registration: AudioContextRegistration<'a>,
-    render_quanta: Arc<AtomicU32>,
+    delay_time: AudioParam<'a>,
     channel_config: ChannelConfig,
 }
 
@@ -582,13 +583,25 @@ impl<'a> AudioNode for DelayNode<'a> {
 impl<'a> DelayNode<'a> {
     pub fn new<C: AsBaseAudioContext>(context: &'a C, options: DelayOptions) -> Self {
         context.base().register(move |registration| {
-            let render_quanta = Arc::new(AtomicU32::new(options.render_quanta));
+            let param_opts = AudioParamOptions {
+                min_value: 0.,
+                max_value: options.max_delay_time,
+                default_value: 0.,
+                automation_rate: crate::param::AutomationRate::A,
+            };
+            let (param, proc) = context
+                .base()
+                .create_audio_param(param_opts, registration.id());
 
-            let cap = (options.render_quanta * crate::BUFFER_SIZE) as usize;
-            let delay_buffer = Vec::with_capacity(cap);
+            param.set_value_at_time(options.delay_time, 0.);
+
+            // allocate large enough buffer to store all delayed samples
+            let max_samples = options.max_delay_time * context.base().sample_rate().0 as f32;
+            let max_quanta = (max_samples.ceil() as u32 + BUFFER_SIZE - 1) / BUFFER_SIZE;
+            let delay_buffer = Vec::with_capacity(max_quanta as usize);
 
             let render = DelayRenderer {
-                render_quanta: render_quanta.clone(),
+                delay_time: proc,
                 delay_buffer,
                 index: 0,
             };
@@ -596,27 +609,27 @@ impl<'a> DelayNode<'a> {
             let node = DelayNode {
                 registration,
                 channel_config: options.channel_config.into(),
-                render_quanta,
+                delay_time: param,
             };
 
             (node, Box::new(render))
         })
     }
 
-    pub fn render_quanta(&self) -> u32 {
-        self.render_quanta.load(Ordering::SeqCst)
-    }
-
-    pub fn set_render_quanta(&self, render_quanta: u32) {
-        self.render_quanta.store(render_quanta, Ordering::SeqCst);
+    pub fn delay_time(&self) -> &AudioParam {
+        &self.delay_time
     }
 }
 
 struct DelayRenderer {
-    render_quanta: Arc<AtomicU32>,
+    delay_time: AudioParamId,
     delay_buffer: Vec<crate::alloc::AudioBuffer>,
     index: usize,
 }
+
+// SAFETY:
+// AudioBuffers are not Send but we promise the `delay_buffer` Vec is emtpy before we ship it to
+// the render thread.
 unsafe impl Send for DelayRenderer {}
 
 impl AudioProcessor for DelayRenderer {
@@ -624,15 +637,19 @@ impl AudioProcessor for DelayRenderer {
         &mut self,
         inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
-        _params: AudioParamValues,
+        params: AudioParamValues,
         _timestamp: f64,
-        _sample_rate: SampleRate,
+        sample_rate: SampleRate,
     ) {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        let quanta = self.render_quanta.load(Ordering::Relaxed) as usize;
+        // todo: a-rate processing
+        let delay = params.get(&self.delay_time)[0];
+
+        // calculate the delay in chunks of BUFFER_SIZE (todo: sub quantum delays)
+        let quanta = (delay * sample_rate.0 as f32) as usize / BUFFER_SIZE as usize;
 
         if quanta == 0 {
             // when no delay is set, simply copy input to output
@@ -899,11 +916,8 @@ impl<'a> MediaStreamAudioSourceNode<'a> {
                 channel_config: options.channel_config.into(),
             };
 
-            let resampler = Resampler::new(
-                context.base().sample_rate(),
-                crate::BUFFER_SIZE,
-                options.media,
-            );
+            let resampler =
+                Resampler::new(context.base().sample_rate(), BUFFER_SIZE, options.media);
             let render = AudioBufferRenderer::new(resampler);
 
             (node, Box::new(render))
@@ -960,11 +974,8 @@ impl<'a> MediaElementAudioSourceNode<'a> {
             let controller = options.media.controller().clone();
 
             // wrap media input in resampler
-            let resampler = Resampler::new(
-                context.base().sample_rate(),
-                crate::BUFFER_SIZE,
-                options.media,
-            );
+            let resampler =
+                Resampler::new(context.base().sample_rate(), BUFFER_SIZE, options.media);
 
             // setup user facing audio node
             let node = MediaElementAudioSourceNode {
@@ -1096,14 +1107,14 @@ impl<'a> AudioBufferSourceNode<'a> {
     ) -> Self {
         context.base().register(move |registration| {
             // unwrap_or_default buffer
-            let buffer = options.buffer.unwrap_or_else(|| {
-                AudioBuffer::new(1, crate::BUFFER_SIZE as usize, SampleRate(44_100))
-            });
+            let buffer = options
+                .buffer
+                .unwrap_or_else(|| AudioBuffer::new(1, BUFFER_SIZE as usize, SampleRate(44_100)));
 
             // wrap input in resampler
             let resampler = Resampler::new(
                 context.base().sample_rate(),
-                crate::BUFFER_SIZE,
+                BUFFER_SIZE,
                 std::iter::once(Ok(buffer)),
             );
 

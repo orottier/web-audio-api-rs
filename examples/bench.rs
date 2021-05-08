@@ -42,8 +42,8 @@ fn main() {
         };
 
         let next_dest = {
-            let delay = context.create_delay();
-            delay.set_render_quanta(i as u32);
+            let delay = context.create_delay(1.);
+            delay.delay_time().set_value(i as f32 / 100.);
             delay.connect(&next_dest);
 
             delay
