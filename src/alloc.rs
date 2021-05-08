@@ -175,23 +175,27 @@ impl AudioBuffer {
     }
 
     /// Get the samples from this specific channel.
-    pub fn channel_data(&self, channel: usize) -> &ChannelData {
-        &self.channels[channel]
+    ///
+    /// Panics if the index is greater than the available number of channels
+    pub fn channel_data(&self, index: usize) -> &ChannelData {
+        &self.channels[index]
     }
 
-    /// Slice of all channel data
+    /// Get the samples (mutable) from this specific channel.
+    ///
+    /// Panics if the index is greater than the available number of channels
+    pub fn channel_data_mut(&mut self, index: usize) -> &mut ChannelData {
+        &mut self.channels[index]
+    }
+
+    /// Channel data as slice
     pub fn channels(&self) -> &[ChannelData] {
         &self.channels[..]
     }
 
-    /// Slice of all channel data (mutable)
+    /// Channel data as slice (mutable)
     pub fn channels_mut(&mut self) -> &mut [ChannelData] {
         &mut self.channels[..]
-    }
-
-    /// Get the samples from this specific channel (mutable).
-    pub fn channel_data_mut(&mut self, channel: usize) -> &mut ChannelData {
-        &mut self.channels[channel]
     }
 
     /// Up/Down-mix to the desired number of channels
@@ -260,6 +264,7 @@ impl AudioBuffer {
 
     /// Modify every channel in the same way
     pub fn modify_channels<F: Fn(&mut ChannelData)>(&mut self, fun: F) {
+        // todo, optimize for Rcs that are equal
         self.channels.iter_mut().for_each(fun)
     }
 

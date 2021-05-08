@@ -1010,12 +1010,11 @@ impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
             Some(Ok(buffer)) => {
                 let channels = buffer.number_of_channels();
                 output.set_number_of_channels(channels);
-                for i in 0..channels {
-                    match buffer.channel_data(i) {
-                        None => *output.channel_data_mut(i) = output.channel_data(i).silence(),
-                        Some(c) => output.channel_data_mut(i).copy_from_slice(c.as_slice()),
-                    }
-                }
+                output
+                    .channels_mut()
+                    .iter_mut()
+                    .zip(buffer.channels())
+                    .for_each(|(o, i)| o.copy_from_slice(i.as_slice()));
             }
             Some(Err(e)) => {
                 // decoding error, stop playing
