@@ -10,17 +10,17 @@ use web_audio_api::process::{AudioParamValues, AudioProcessor};
 use web_audio_api::SampleRate;
 
 /// Audio source node emitting white noise (random samples)
-struct WhiteNoiseNode<'a> {
+struct WhiteNoiseNode {
     /// handle to the audio context, required for all audio nodes
-    registration: AudioContextRegistration<'a>,
+    registration: AudioContextRegistration,
     /// channel configuration (for up/down-mixing of inputs), required for all audio nodes
     channel_config: ChannelConfig,
     /// audio param controlling the volume (for educational purpose, use a GainNode otherwise)
-    amplitude: AudioParam<'a>,
+    amplitude: AudioParam,
 }
 
 // implement required methods for AudioNode trait
-impl<'a> AudioNode for WhiteNoiseNode<'a> {
+impl AudioNode for WhiteNoiseNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -40,9 +40,9 @@ impl<'a> AudioNode for WhiteNoiseNode<'a> {
     }
 }
 
-impl<'a> WhiteNoiseNode<'a> {
+impl WhiteNoiseNode {
     /// Construct a new WhiteNoiseNode
-    fn new<C: AsBaseAudioContext>(context: &'a C) -> Self {
+    fn new<C: AsBaseAudioContext>(context: &C) -> Self {
         context.base().register(move |registration| {
             // setup the amplitude audio param
             let param_opts = AudioParamOptions {

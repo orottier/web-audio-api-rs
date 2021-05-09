@@ -3,6 +3,7 @@
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
+use std::sync::Arc;
 
 // magic node values
 const DESTINATION_NODE_ID: u64 = 0;
@@ -28,7 +29,18 @@ use cpal::{traits::StreamTrait, Stream};
 /// The BaseAudioContext interface represents an audio-processing graph built from audio modules
 /// linked together, each represented by an AudioNode. An audio context controls both the creation
 /// of the nodes it contains and the execution of the audio processing, or decoding.
+#[derive(Clone)]
 pub struct BaseAudioContext {
+    inner: Arc<BaseAudioContextInner>,
+}
+
+impl PartialEq for BaseAudioContext {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+struct BaseAudioContextInner {
     /// sample rate in Hertz
     sample_rate: SampleRate,
     /// number of speaker output channels
@@ -146,7 +158,7 @@ pub trait AsBaseAudioContext {
         &self,
         opts: AudioParamOptions,
         dest: &AudioNodeId,
-    ) -> (crate::param::AudioParam<'_>, AudioParamId) {
+    ) -> (crate::param::AudioParam, AudioParamId) {
         let param = self.base().register(move |registration| {
             let (node, proc) = crate::param::audio_param_pair(opts, registration);
 
@@ -165,11 +177,11 @@ pub trait AsBaseAudioContext {
     fn destination(&self) -> node::DestinationNode {
         let registration = AudioContextRegistration {
             id: AudioNodeId(DESTINATION_NODE_ID),
-            context: &self.base(),
+            context: self.base().clone(),
         };
         node::DestinationNode {
             registration,
-            channel_count: self.base().channels as usize,
+            channel_count: self.base().channels() as usize,
         }
     }
 
@@ -177,9 +189,9 @@ pub trait AsBaseAudioContext {
     fn listener(&self) -> AudioListener {
         let mut ids = LISTENER_PARAM_IDS.map(|i| AudioContextRegistration {
             id: AudioNodeId(i),
-            context: self.base(),
+            context: self.base().clone(),
         });
-        let params = self.base().listener_params.as_ref().unwrap();
+        let params = self.base().inner.listener_params.as_ref().unwrap();
 
         AudioListener {
             position_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_x.clone()),
@@ -209,7 +221,7 @@ pub trait AsBaseAudioContext {
     fn mock_registration(&self) -> AudioContextRegistration {
         AudioContextRegistration {
             id: AudioNodeId(0),
-            context: self.base(),
+            context: self.base().clone(),
         }
     }
 }
@@ -314,7 +326,7 @@ pub struct AudioNodeId(u64);
 /// Store these in your AudioProcessor to get access to AudioParam values.
 pub struct AudioParamId(u64);
 
-// bit contrived, but for type safety only the context lib can access the inner u64
+// bit contrived, but for type safety only the context mod can access the inner u64
 impl From<&AudioParamId> for NodeIndex {
     fn from(i: &AudioParamId) -> Self {
         NodeIndex(i.0)
@@ -326,21 +338,21 @@ impl From<&AudioParamId> for NodeIndex {
 /// This allows for communication with the render thread and lifetime management.
 ///
 /// The only way to construct this object is by calling [`BaseAudioContext::register`]
-pub struct AudioContextRegistration<'a> {
-    context: &'a BaseAudioContext,
+pub struct AudioContextRegistration {
+    context: BaseAudioContext,
     id: AudioNodeId,
 }
 
-impl<'a> AudioContextRegistration<'a> {
+impl AudioContextRegistration {
     pub fn id(&self) -> &AudioNodeId {
         &self.id
     }
     pub fn context(&self) -> &BaseAudioContext {
-        self.context
+        &self.context
     }
 }
 
-impl<'a> Drop for AudioContextRegistration<'a> {
+impl Drop for AudioContextRegistration {
     fn drop(&mut self) {
         // do not drop magic nodes
         let magic = self.id.0 == DESTINATION_NODE_ID
@@ -349,14 +361,14 @@ impl<'a> Drop for AudioContextRegistration<'a> {
 
         if !magic {
             let message = ControlMessage::FreeWhenFinished { id: self.id.0 };
-            self.context.render_channel.send(message).unwrap();
+            self.context.inner.render_channel.send(message).unwrap();
         }
     }
 }
 
 impl BaseAudioContext {
     fn new(sample_rate: SampleRate, channels: u32, render_channel: Sender<ControlMessage>) -> Self {
-        let base = Self {
+        let base_inner = BaseAudioContextInner {
             sample_rate,
             channels,
             render_channel,
@@ -364,21 +376,17 @@ impl BaseAudioContext {
             frames_played: AtomicU64::new(0),
             listener_params: None,
         };
+        let base = BaseAudioContext {
+            inner: Arc::new(base_inner),
+        };
 
         let listener_params = {
-            // Register magical nodes.  We cannot store the destination node inside our context
-            // since it borrows base, but we can reconstruct a new instance on the fly when
-            // requested
+            // Register magical nodes. We should not store the nodes inside our context since that
+            // will create a cyclic reference, but we can reconstruct a new instance on the fly
+            // when requested
 
             let dest = node::DestinationNode::new(&base, channels as usize);
-            assert_eq!(dest.registration().id.0, DESTINATION_NODE_ID); // we rely on this elsewhere
-
             let listener = crate::spatial::AudioListenerNode::new(&base);
-            assert_eq!(listener.registration().id.0, LISTENER_NODE_ID); // we rely on this elsewhere
-            assert_eq!(
-                base.node_id_inc.load(Ordering::SeqCst),
-                LISTENER_PARAM_IDS.end - 1
-            );
 
             // hack: Connect the listener to the destination node to force it to render at each
             // quantum. Abuse the magical u32::MAX port so it acts as an AudioParam and has no side
@@ -409,47 +417,47 @@ impl BaseAudioContext {
                 up_y: up_y.into_raw_parts(),
                 up_z: up_z.into_raw_parts(),
             }
-        };
+        }; // nodes will drop now, so base.inner has no copies anymore
 
         let mut base = base;
-        base.listener_params = Some(listener_params);
+        let mut inner_mut = Arc::get_mut(&mut base.inner).unwrap();
+        inner_mut.listener_params = Some(listener_params);
 
         base
     }
 
     /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
     pub fn sample_rate(&self) -> SampleRate {
-        self.sample_rate
+        self.inner.sample_rate
     }
 
     /// This is the time in seconds of the sample frame immediately following the last sample-frame
     /// in the block of audio most recently processed by the context’s rendering graph.
     pub fn current_time(&self) -> f64 {
-        self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate.0 as f64
+        self.inner.frames_played.load(Ordering::SeqCst) as f64 / self.inner.sample_rate.0 as f64
     }
 
     /// Number of channels for the audio destination
     pub fn channels(&self) -> u32 {
-        self.channels
+        self.inner.channels
     }
 
     /// Construct a new pair of [`node::AudioNode`] and [`AudioProcessor`]
     ///
     /// The AudioNode lives in the user-facing control thread. The Processor is sent to the render thread.
     pub fn register<
-        'a,
         T: node::AudioNode,
-        F: FnOnce(AudioContextRegistration<'a>) -> (T, Box<dyn AudioProcessor>),
+        F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
     >(
-        &'a self,
+        &self,
         f: F,
     ) -> T {
         // create unique identifier for this node
-        let id = self.node_id_inc.fetch_add(1, Ordering::SeqCst);
+        let id = self.inner.node_id_inc.fetch_add(1, Ordering::SeqCst);
         let node_id = AudioNodeId(id);
         let registration = AudioContextRegistration {
             id: node_id,
-            context: &self,
+            context: self.clone(),
         };
 
         // create the node and its renderer
@@ -463,7 +471,7 @@ impl BaseAudioContext {
             outputs: node.number_of_outputs() as usize,
             channel_config: node.channel_config_cloned(),
         };
-        self.render_channel.send(message).unwrap();
+        self.inner.render_channel.send(message).unwrap();
 
         node
     }
@@ -475,7 +483,7 @@ impl BaseAudioContext {
             output,
             input,
         };
-        self.render_channel.send(message).unwrap();
+        self.inner.render_channel.send(message).unwrap();
     }
 
     pub(crate) fn disconnect(&self, from: &AudioNodeId, to: &AudioNodeId) {
@@ -483,12 +491,12 @@ impl BaseAudioContext {
             from: from.0,
             to: to.0,
         };
-        self.render_channel.send(message).unwrap();
+        self.inner.render_channel.send(message).unwrap();
     }
 
     pub(crate) fn disconnect_all(&self, from: &AudioNodeId) {
         let message = ControlMessage::DisconnectAll { from: from.0 };
-        self.render_channel.send(message).unwrap();
+        self.inner.render_channel.send(message).unwrap();
     }
 
     /// Pass an AudioParam AutomationEvent to the render thread
@@ -504,7 +512,7 @@ impl BaseAudioContext {
             to: to.clone(),
             event,
         };
-        self.render_channel.send(message).unwrap();
+        self.inner.render_channel.send(message).unwrap();
     }
 
     /// Attach the 9 AudioListener coordinates to a PannerNode

@@ -66,14 +66,14 @@ impl std::cmp::Ord for AutomationEvent {
 }
 
 /// AudioParam controls an individual aspect of an AudioNode's functionality, such as volume.
-pub struct AudioParam<'a> {
-    registration: AudioContextRegistration<'a>,
+pub struct AudioParam {
+    registration: AudioContextRegistration,
     value: Arc<AtomicF64>,
     sender: Sender<AutomationEvent>,
 }
 
-impl<'a> AudioNode for AudioParam<'a> {
-    fn registration(&self) -> &AudioContextRegistration<'a> {
+impl AudioNode for AudioParam {
+    fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
 
@@ -124,7 +124,7 @@ pub(crate) struct AudioParamProcessor {
 }
 
 impl AudioProcessor for AudioParamProcessor {
-    fn process<'a>(
+    fn process(
         &mut self,
         inputs: &[AudioBuffer],
         outputs: &mut [AudioBuffer],
@@ -157,8 +157,8 @@ impl AudioProcessor for AudioParamProcessor {
 
 pub(crate) fn audio_param_pair(
     opts: AudioParamOptions,
-    registration: AudioContextRegistration<'_>,
-) -> (AudioParam<'_>, AudioParamProcessor) {
+    registration: AudioContextRegistration,
+) -> (AudioParam, AudioParamProcessor) {
     let (sender, receiver) = mpsc::channel();
     let shared_value = Arc::new(AtomicF64::new(opts.default_value as f64));
 
@@ -182,7 +182,7 @@ pub(crate) fn audio_param_pair(
     (param, render)
 }
 
-impl<'a> AudioParam<'a> {
+impl AudioParam {
     pub fn value(&self) -> f32 {
         self.value.load() as _
     }
@@ -209,7 +209,7 @@ impl<'a> AudioParam<'a> {
 
     // helper function to attach to context (for borrow reasons)
     pub(crate) fn from_raw_parts(
-        registration: AudioContextRegistration<'a>,
+        registration: AudioContextRegistration,
         parts: (Arc<AtomicF64>, Sender<AutomationEvent>),
     ) -> Self {
         Self {
@@ -318,7 +318,7 @@ mod tests {
     use super::*;
 
     // Bypass AudioContext enveloping of control messages for simpler testing
-    impl<'a> AudioParam<'a> {
+    impl AudioParam {
         pub fn set_value_direct(&self, v: f32) {
             let event = SetValueAtTime { v, start: 0. };
             self.sender.send(event).unwrap()

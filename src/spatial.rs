@@ -26,19 +26,19 @@ pub(crate) const PARAM_OPTS: AudioParamOptions = AudioParamOptions {
 /// Represents the position and orientation of the person listening to the audio scene
 ///
 /// All PannerNode objects spatialize in relation to the [`crate::context::BaseAudioContext`]'s listener.
-pub struct AudioListener<'a> {
-    pub(crate) position_x: AudioParam<'a>,
-    pub(crate) position_y: AudioParam<'a>,
-    pub(crate) position_z: AudioParam<'a>,
-    pub(crate) forward_x: AudioParam<'a>,
-    pub(crate) forward_y: AudioParam<'a>,
-    pub(crate) forward_z: AudioParam<'a>,
-    pub(crate) up_x: AudioParam<'a>,
-    pub(crate) up_y: AudioParam<'a>,
-    pub(crate) up_z: AudioParam<'a>,
+pub struct AudioListener {
+    pub(crate) position_x: AudioParam,
+    pub(crate) position_y: AudioParam,
+    pub(crate) position_z: AudioParam,
+    pub(crate) forward_x: AudioParam,
+    pub(crate) forward_y: AudioParam,
+    pub(crate) forward_z: AudioParam,
+    pub(crate) up_x: AudioParam,
+    pub(crate) up_y: AudioParam,
+    pub(crate) up_z: AudioParam,
 }
 
-impl<'a> AudioListener<'a> {
+impl AudioListener {
     pub fn position_x(&self) -> &AudioParam {
         &self.position_x
     }
@@ -75,13 +75,13 @@ impl<'a> AudioListener<'a> {
 ///
 /// The AudioListener is always connected to the DestinationNode so each render quantum its
 /// positions are recalculated.
-pub(crate) struct AudioListenerNode<'a> {
-    registration: AudioContextRegistration<'a>,
-    fields: AudioListener<'a>,
+pub(crate) struct AudioListenerNode {
+    registration: AudioContextRegistration,
+    fields: AudioListener,
 }
 
-impl<'a> AudioNode for AudioListenerNode<'a> {
-    fn registration(&self) -> &AudioContextRegistration<'a> {
+impl AudioNode for AudioListenerNode {
+    fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
 
@@ -119,8 +119,8 @@ impl<'a> AudioNode for AudioListenerNode<'a> {
     }
 }
 
-impl<'a> AudioListenerNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C) -> Self {
+impl AudioListenerNode {
+    pub fn new<C: AsBaseAudioContext>(context: &C) -> Self {
         context.base().register(move |registration| {
             let reg_id = registration.id();
             let base = context.base();
@@ -174,7 +174,7 @@ impl<'a> AudioListenerNode<'a> {
         })
     }
 
-    pub fn into_fields(self) -> AudioListener<'a> {
+    pub fn into_fields(self) -> AudioListener {
         self.fields
     }
 }

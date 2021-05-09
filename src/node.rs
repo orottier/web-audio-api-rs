@@ -56,7 +56,7 @@ pub trait AudioNode {
         output: u32,
         input: u32,
     ) -> Result<&'a dyn AudioNode, crate::IndexSizeError> {
-        if !std::ptr::eq(self.context(), dest.context()) {
+        if self.context() != dest.context() {
             panic!("attempting to connect nodes from different contexts");
         }
 
@@ -71,7 +71,7 @@ pub trait AudioNode {
 
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
     fn disconnect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
-        if !std::ptr::eq(self.context(), dest.context()) {
+        if self.context() != dest.context() {
             panic!("attempting to disconnect nodes from different contexts");
         }
 
@@ -220,21 +220,21 @@ impl From<u32> for OscillatorType {
 }
 
 /// Audio source generating a periodic waveform
-pub struct OscillatorNode<'a> {
-    registration: AudioContextRegistration<'a>,
+pub struct OscillatorNode {
+    registration: AudioContextRegistration,
     channel_config: ChannelConfig,
-    frequency: AudioParam<'a>,
+    frequency: AudioParam,
     type_: Arc<AtomicU32>,
     scheduler: Scheduler,
 }
 
-impl<'a> AudioScheduledSourceNode for OscillatorNode<'a> {
+impl AudioScheduledSourceNode for OscillatorNode {
     fn scheduler(&self) -> &Scheduler {
         &self.scheduler
     }
 }
 
-impl<'a> AudioNode for OscillatorNode<'a> {
+impl AudioNode for OscillatorNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -251,8 +251,8 @@ impl<'a> AudioNode for OscillatorNode<'a> {
     }
 }
 
-impl<'a> OscillatorNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: OscillatorOptions) -> Self {
+impl OscillatorNode {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: OscillatorOptions) -> Self {
         context.base().register(move |registration| {
             let nyquist = context.base().sample_rate().0 as f32 / 2.;
             let param_opts = AudioParamOptions {
@@ -353,8 +353,8 @@ impl AudioProcessor for OscillatorRenderer {
 }
 
 /// Representing the final audio destination and is what the user will ultimately hear.
-pub struct DestinationNode<'a> {
-    pub(crate) registration: AudioContextRegistration<'a>,
+pub struct DestinationNode {
+    pub(crate) registration: AudioContextRegistration,
     pub(crate) channel_count: usize,
 }
 
@@ -382,7 +382,7 @@ impl AudioProcessor for DestinationRenderer {
     }
 }
 
-impl<'a> AudioNode for DestinationNode<'a> {
+impl AudioNode for DestinationNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -420,8 +420,8 @@ impl<'a> AudioNode for DestinationNode<'a> {
     }
 }
 
-impl<'a> DestinationNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C, channel_count: usize) -> Self {
+impl DestinationNode {
+    pub fn new<C: AsBaseAudioContext>(context: &C, channel_count: usize) -> Self {
         context.base().register(move |registration| {
             let node = Self {
                 registration,
@@ -450,13 +450,13 @@ impl Default for GainOptions {
 }
 
 /// AudioNode for volume control
-pub struct GainNode<'a> {
-    registration: AudioContextRegistration<'a>,
+pub struct GainNode {
+    registration: AudioContextRegistration,
     channel_config: ChannelConfig,
-    gain: AudioParam<'a>,
+    gain: AudioParam,
 }
 
-impl<'a> AudioNode for GainNode<'a> {
+impl AudioNode for GainNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -473,8 +473,8 @@ impl<'a> AudioNode for GainNode<'a> {
     }
 }
 
-impl<'a> GainNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: GainOptions) -> Self {
+impl GainNode {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: GainOptions) -> Self {
         context.base().register(move |registration| {
             let param_opts = AudioParamOptions {
                 min_value: f32::MIN,
@@ -510,7 +510,7 @@ struct GainRenderer {
 }
 
 impl AudioProcessor for GainRenderer {
-    fn process<'a>(
+    fn process(
         &mut self,
         inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
@@ -557,13 +557,13 @@ impl Default for DelayOptions {
 }
 
 /// Node that delays the incoming audio signal by a certain amount
-pub struct DelayNode<'a> {
-    registration: AudioContextRegistration<'a>,
-    delay_time: AudioParam<'a>,
+pub struct DelayNode {
+    registration: AudioContextRegistration,
+    delay_time: AudioParam,
     channel_config: ChannelConfig,
 }
 
-impl<'a> AudioNode for DelayNode<'a> {
+impl AudioNode for DelayNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -580,8 +580,8 @@ impl<'a> AudioNode for DelayNode<'a> {
     }
 }
 
-impl<'a> DelayNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: DelayOptions) -> Self {
+impl DelayNode {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: DelayOptions) -> Self {
         context.base().register(move |registration| {
             let param_opts = AudioParamOptions {
                 min_value: 0.,
@@ -692,12 +692,12 @@ impl Default for ChannelSplitterOptions {
 }
 
 /// AudioNode for accessing the individual channels of an audio stream in the routing graph
-pub struct ChannelSplitterNode<'a> {
-    registration: AudioContextRegistration<'a>,
+pub struct ChannelSplitterNode {
+    registration: AudioContextRegistration,
     channel_config: ChannelConfig,
 }
 
-impl<'a> AudioNode for ChannelSplitterNode<'a> {
+impl AudioNode for ChannelSplitterNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -723,8 +723,8 @@ impl<'a> AudioNode for ChannelSplitterNode<'a> {
     }
 }
 
-impl<'a> ChannelSplitterNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C, mut options: ChannelSplitterOptions) -> Self {
+impl ChannelSplitterNode {
+    pub fn new<C: AsBaseAudioContext>(context: &C, mut options: ChannelSplitterOptions) -> Self {
         context.base().register(move |registration| {
             options.channel_config.count = options.number_of_outputs as _;
 
@@ -798,12 +798,12 @@ impl Default for ChannelMergerOptions {
 }
 
 /// AudioNode for combining channels from multiple audio streams into a single audio stream.
-pub struct ChannelMergerNode<'a> {
-    registration: AudioContextRegistration<'a>,
+pub struct ChannelMergerNode {
+    registration: AudioContextRegistration,
     channel_config: ChannelConfig,
 }
 
-impl<'a> AudioNode for ChannelMergerNode<'a> {
+impl AudioNode for ChannelMergerNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -829,8 +829,8 @@ impl<'a> AudioNode for ChannelMergerNode<'a> {
     }
 }
 
-impl<'a> ChannelMergerNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C, mut options: ChannelMergerOptions) -> Self {
+impl ChannelMergerNode {
+    pub fn new<C: AsBaseAudioContext>(context: &C, mut options: ChannelMergerOptions) -> Self {
         context.base().register(move |registration| {
             options.channel_config.count = options.number_of_inputs as _;
 
@@ -883,12 +883,12 @@ pub struct MediaStreamAudioSourceNodeOptions<M> {
 }
 
 /// An audio source from media streams (microphone, or .ogg, .wav, .mp3 decoding)
-pub struct MediaStreamAudioSourceNode<'a> {
-    registration: AudioContextRegistration<'a>,
+pub struct MediaStreamAudioSourceNode {
+    registration: AudioContextRegistration,
     channel_config: ChannelConfig,
 }
 
-impl<'a> AudioNode for MediaStreamAudioSourceNode<'a> {
+impl AudioNode for MediaStreamAudioSourceNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -905,9 +905,9 @@ impl<'a> AudioNode for MediaStreamAudioSourceNode<'a> {
     }
 }
 
-impl<'a> MediaStreamAudioSourceNode<'a> {
+impl MediaStreamAudioSourceNode {
     pub fn new<C: AsBaseAudioContext, M: MediaStream>(
-        context: &'a C,
+        context: &C,
         options: MediaStreamAudioSourceNodeOptions<M>,
     ) -> Self {
         context.base().register(move |registration| {
@@ -932,24 +932,24 @@ pub struct MediaElementAudioSourceNodeOptions<M> {
 }
 
 /// An audio source from external media files (.ogg, .wav, .mp3)
-pub struct MediaElementAudioSourceNode<'a> {
-    registration: AudioContextRegistration<'a>,
+pub struct MediaElementAudioSourceNode {
+    registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     controller: Controller,
 }
 
-impl<'a> AudioScheduledSourceNode for MediaElementAudioSourceNode<'a> {
+impl AudioScheduledSourceNode for MediaElementAudioSourceNode {
     fn scheduler(&self) -> &Scheduler {
         &self.controller.scheduler()
     }
 }
-impl<'a> AudioControllableSourceNode for MediaElementAudioSourceNode<'a> {
+impl AudioControllableSourceNode for MediaElementAudioSourceNode {
     fn controller(&self) -> &Controller {
         &self.controller
     }
 }
 
-impl<'a> AudioNode for MediaElementAudioSourceNode<'a> {
+impl AudioNode for MediaElementAudioSourceNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -965,9 +965,9 @@ impl<'a> AudioNode for MediaElementAudioSourceNode<'a> {
     }
 }
 
-impl<'a> MediaElementAudioSourceNode<'a> {
+impl MediaElementAudioSourceNode {
     pub fn new<C: AsBaseAudioContext, M: MediaStream>(
-        context: &'a C,
+        context: &C,
         options: MediaElementAudioSourceNodeOptions<M>,
     ) -> Self {
         context.base().register(move |registration| {
@@ -1066,24 +1066,24 @@ impl Default for AudioBufferSourceNodeOptions {
 }
 
 /// An audio source from an in-memory audio asset in an AudioBuffer
-pub struct AudioBufferSourceNode<'a> {
-    registration: AudioContextRegistration<'a>,
+pub struct AudioBufferSourceNode {
+    registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     controller: Controller,
 }
 
-impl<'a> AudioScheduledSourceNode for AudioBufferSourceNode<'a> {
+impl AudioScheduledSourceNode for AudioBufferSourceNode {
     fn scheduler(&self) -> &Scheduler {
         &self.controller.scheduler()
     }
 }
-impl<'a> AudioControllableSourceNode for AudioBufferSourceNode<'a> {
+impl AudioControllableSourceNode for AudioBufferSourceNode {
     fn controller(&self) -> &Controller {
         &self.controller
     }
 }
 
-impl<'a> AudioNode for AudioBufferSourceNode<'a> {
+impl AudioNode for AudioBufferSourceNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -1100,11 +1100,8 @@ impl<'a> AudioNode for AudioBufferSourceNode<'a> {
     }
 }
 
-impl<'a> AudioBufferSourceNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(
-        context: &'a C,
-        options: AudioBufferSourceNodeOptions,
-    ) -> Self {
+impl AudioBufferSourceNode {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: AudioBufferSourceNodeOptions) -> Self {
         context.base().register(move |registration| {
             // unwrap_or_default buffer
             let buffer = options
@@ -1151,13 +1148,13 @@ impl Default for ConstantSourceOptions {
 }
 
 /// Audio source whose output is nominally a constant value
-pub struct ConstantSourceNode<'a> {
-    registration: AudioContextRegistration<'a>,
+pub struct ConstantSourceNode {
+    registration: AudioContextRegistration,
     channel_config: ChannelConfig,
-    offset: AudioParam<'a>,
+    offset: AudioParam,
 }
 
-impl<'a> AudioNode for ConstantSourceNode<'a> {
+impl AudioNode for ConstantSourceNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -1174,8 +1171,8 @@ impl<'a> AudioNode for ConstantSourceNode<'a> {
     }
 }
 
-impl<'a> ConstantSourceNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: ConstantSourceOptions) -> Self {
+impl ConstantSourceNode {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
         context.base().register(move |registration| {
             let param_opts = AudioParamOptions {
                 min_value: f32::MIN,
@@ -1246,15 +1243,15 @@ pub struct PannerOptions {
 }
 
 /// Positions / spatializes an incoming audio stream in three-dimensional space.
-pub struct PannerNode<'a> {
-    registration: AudioContextRegistration<'a>,
+pub struct PannerNode {
+    registration: AudioContextRegistration,
     channel_config: ChannelConfig,
-    position_x: AudioParam<'a>,
-    position_y: AudioParam<'a>,
-    position_z: AudioParam<'a>,
+    position_x: AudioParam,
+    position_y: AudioParam,
+    position_z: AudioParam,
 }
 
-impl<'a> AudioNode for PannerNode<'a> {
+impl AudioNode for PannerNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -1271,8 +1268,8 @@ impl<'a> AudioNode for PannerNode<'a> {
     }
 }
 
-impl<'a> PannerNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: PannerOptions) -> Self {
+impl PannerNode {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: PannerOptions) -> Self {
         context.base().register(move |registration| {
             use crate::spatial::PARAM_OPTS;
             let id = registration.id();
@@ -1445,8 +1442,8 @@ enum AnalyserRequest {
 }
 
 /// Provides real-time frequency and time-domain analysis information
-pub struct AnalyserNode<'a> {
-    registration: AudioContextRegistration<'a>,
+pub struct AnalyserNode {
+    registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     fft_size: Arc<AtomicUsize>,
     smoothing_time_constant: Arc<AtomicU32>,
@@ -1457,7 +1454,7 @@ pub struct AnalyserNode<'a> {
     */
 }
 
-impl<'a> AudioNode for AnalyserNode<'a> {
+impl AudioNode for AnalyserNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -1474,8 +1471,8 @@ impl<'a> AudioNode for AnalyserNode<'a> {
     }
 }
 
-impl<'a> AnalyserNode<'a> {
-    pub fn new<C: AsBaseAudioContext>(context: &'a C, options: AnalyserOptions) -> Self {
+impl AnalyserNode {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: AnalyserOptions) -> Self {
         context.base().register(move |registration| {
             let fft_size = Arc::new(AtomicUsize::new(options.fft_size));
             let smoothing_time_constant = Arc::new(AtomicU32::new(
