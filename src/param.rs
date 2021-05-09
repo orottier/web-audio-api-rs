@@ -1,10 +1,7 @@
 //! AudioParam interface
 
 use std::collections::BinaryHeap;
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
-
-use AutomationEvent::*;
 
 use crate::alloc::AudioBuffer;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
@@ -12,6 +9,10 @@ use crate::context::AudioContextRegistration;
 use crate::node::AudioNode;
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{AtomicF64, SampleRate};
+
+use crossbeam_channel::{Receiver, Sender};
+
+use AutomationEvent::*;
 
 /// Precision of value calculation per render quantum
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -159,7 +160,7 @@ pub(crate) fn audio_param_pair(
     opts: AudioParamOptions,
     registration: AudioContextRegistration,
 ) -> (AudioParam, AudioParamProcessor) {
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = crossbeam_channel::unbounded();
     let shared_value = Arc::new(AtomicF64::new(opts.default_value as f64));
 
     let param = AudioParam {

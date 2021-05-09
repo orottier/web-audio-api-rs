@@ -2,7 +2,6 @@
 
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
 
 // magic node values
@@ -26,6 +25,8 @@ use crate::io;
 #[cfg(not(test))]
 use cpal::{traits::StreamTrait, Stream};
 
+use crossbeam_channel::Sender;
+
 /// The BaseAudioContext interface represents an audio-processing graph built from audio modules
 /// linked together, each represented by an AudioNode. An audio context controls both the creation
 /// of the nodes it contains and the execution of the audio processing, or decoding.
@@ -47,7 +48,7 @@ struct BaseAudioContextInner {
     channels: u32,
     /// incrementing id to assign to audio nodes
     node_id_inc: AtomicU64,
-    /// mpsc channel from control to render thread
+    /// message channel from control to render thread
     render_channel: Sender<ControlMessage>,
     /// number of frames played
     frames_played: AtomicU64,
@@ -278,7 +279,7 @@ impl AudioContext {
         let channels = config.channels as u32;
 
         // communication channel to the render thread
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = crossbeam_channel::unbounded();
 
         // first, setup the base audio context
         let base = BaseAudioContext::new(sample_rate, channels, sender);
@@ -294,7 +295,7 @@ impl AudioContext {
     pub fn new() -> Self {
         let sample_rate = SampleRate(44_100);
         let channels = 2;
-        let (sender, _receiver) = mpsc::channel();
+        let (sender, _receiver) = crossbeam_channel::unbounded();
 
         let base = BaseAudioContext::new(sample_rate, channels, sender);
 
@@ -538,7 +539,7 @@ impl Default for AudioContext {
 impl OfflineAudioContext {
     pub fn new(channels: u32, length: usize, sample_rate: SampleRate) -> Self {
         // communication channel to the render thread
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = crossbeam_channel::unbounded();
 
         // first, setup the base audio context
         let base = BaseAudioContext::new(sample_rate, channels, sender);
@@ -565,5 +566,22 @@ impl OfflineAudioContext {
 
     pub fn length(&self) -> usize {
         self.length
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn require_send_sync_static<T: Send + Sync + 'static>(_: T) {}
+
+    #[test]
+    fn test_audio_context_registration_traits() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let registration = context.mock_registration();
+
+        // we want to be able to ship AudioNodes to another thread, so the Registration should be
+        // Send Sync and 'static
+        require_send_sync_static(registration);
     }
 }

@@ -12,8 +12,9 @@ use crate::AtomicF64;
 use crate::SampleRate;
 
 use std::f32::consts::PI;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
+
+use crossbeam_channel::Sender;
 
 /// AudioParam settings for the carthesian coordinates
 pub(crate) const PARAM_OPTS: AudioParamOptions = AudioParamOptions {

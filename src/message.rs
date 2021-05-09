@@ -2,7 +2,7 @@ use crate::buffer::ChannelConfig;
 use crate::param::AutomationEvent;
 use crate::process::AudioProcessor;
 
-use std::sync::mpsc::Sender;
+use crossbeam_channel::Sender;
 
 /// Commands from the control thread to the render thread
 pub(crate) enum ControlMessage {
