@@ -3,7 +3,6 @@
 use std::f32::consts::PI;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
 
 use crate::analysis::Analyser;
@@ -19,6 +18,8 @@ use crate::media::{MediaElement, MediaStream};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{SampleRate, BUFFER_SIZE};
+
+use crossbeam_channel::{self, Receiver, Sender};
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules.
@@ -1432,11 +1433,11 @@ impl Default for AnalyserOptions {
 
 enum AnalyserRequest {
     FloatTime {
-        sender: SyncSender<Vec<f32>>,
+        sender: Sender<Vec<f32>>,
         buffer: Vec<f32>,
     },
     FloatFrequency {
-        sender: SyncSender<Vec<f32>>,
+        sender: Sender<Vec<f32>>,
         buffer: Vec<f32>,
     },
 }
@@ -1447,7 +1448,7 @@ pub struct AnalyserNode {
     channel_config: ChannelConfig,
     fft_size: Arc<AtomicUsize>,
     smoothing_time_constant: Arc<AtomicU32>,
-    sender: SyncSender<AnalyserRequest>,
+    sender: Sender<AnalyserRequest>,
     /*
     max_decibels: f32,
     min_decibels: f32,
@@ -1479,7 +1480,7 @@ impl AnalyserNode {
                 (options.smoothing_time_constant * 100.) as u32,
             ));
 
-            let (sender, receiver) = mpsc::sync_channel(0);
+            let (sender, receiver) = crossbeam_channel::bounded(0);
 
             let render = AnalyserRenderer {
                 analyser: Analyser::new(options.fft_size),
@@ -1530,7 +1531,7 @@ impl AnalyserNode {
 
     /// Copies the current time domain data (waveform data) into the provided buffer
     pub fn get_float_time_domain_data(&self, buffer: Vec<f32>) -> Vec<f32> {
-        let (sender, receiver) = mpsc::sync_channel(0);
+        let (sender, receiver) = crossbeam_channel::bounded(0);
         let request = AnalyserRequest::FloatTime { sender, buffer };
         self.sender.send(request).unwrap();
         receiver.recv().unwrap()
@@ -1538,7 +1539,7 @@ impl AnalyserNode {
 
     /// Copies the current frequency data into the provided buffer
     pub fn get_float_frequency_data(&self, buffer: Vec<f32>) -> Vec<f32> {
-        let (sender, receiver) = mpsc::sync_channel(0);
+        let (sender, receiver) = crossbeam_channel::bounded(0);
         let request = AnalyserRequest::FloatFrequency { sender, buffer };
         self.sender.send(request).unwrap();
         receiver.recv().unwrap()

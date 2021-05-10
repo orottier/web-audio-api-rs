@@ -3,7 +3,6 @@
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
-use std::sync::mpsc::{Receiver, TryRecvError};
 
 use lewton::inside_ogg::OggStreamReader;
 use lewton::VorbisError;
@@ -13,7 +12,8 @@ use crate::control::{Controller, Scheduler};
 use crate::{SampleRate, BUFFER_SIZE};
 
 #[cfg(not(test))]
-use std::sync::mpsc::{self, SyncSender};
+use crossbeam_channel::{self, Sender};
+use crossbeam_channel::{Receiver, TryRecvError};
 
 #[cfg(not(test))]
 use crate::io;
@@ -230,7 +230,7 @@ impl Microphone {
     #[cfg(not(test))]
     pub fn new() -> Self {
         let buffer = 1; // todo, use buffering to smooth frame drops
-        let (sender, receiver) = mpsc::sync_channel(buffer);
+        let (sender, receiver) = crossbeam_channel::bounded(buffer);
 
         let io_builder = io::InputBuilder::new();
         let config = io_builder.config();
@@ -303,7 +303,7 @@ impl Iterator for Microphone {
 pub(crate) struct MicrophoneRender {
     channels: usize,
     sample_rate: SampleRate,
-    sender: SyncSender<AudioBuffer>,
+    sender: Sender<AudioBuffer>,
 }
 
 #[cfg(not(test))]
