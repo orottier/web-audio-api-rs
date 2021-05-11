@@ -17,9 +17,11 @@ fn main() {
             let sequence = std::iter::repeat(buf).take(5);
             let media = sequence.map(|b| Ok(b));
             let element = MediaElement::new(media);
+
             let node = context.create_media_element_source(element);
-            node.set_loop(true);
             node.connect(&context.destination());
+            node.set_loop(true);
+            node.start();
         }
 
         let next_dest = {

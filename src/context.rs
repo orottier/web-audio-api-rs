@@ -121,6 +121,8 @@ pub trait AsBaseAudioContext {
     }
 
     /// Creates a MediaElementAudioSourceNode from a MediaElement
+    ///
+    /// Note: do not forget to `start()` the node.
     fn create_media_element_source(
         &self,
         media: MediaElement,
@@ -138,6 +140,8 @@ pub trait AsBaseAudioContext {
     }
 
     /// Creates an AudioBufferSourceNode
+    ///
+    /// Note: do not forget to `start()` the node.
     fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
         node::AudioBufferSourceNode::new(self.base(), Default::default())
     }

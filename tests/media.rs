@@ -2,7 +2,7 @@ use web_audio_api::buffer::{AudioBuffer, ChannelData};
 use web_audio_api::context::AsBaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::media::MediaElement;
-use web_audio_api::node::{AudioControllableSourceNode, AudioNode};
+use web_audio_api::node::{AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode};
 use web_audio_api::{SampleRate, BUFFER_SIZE};
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -59,6 +59,7 @@ fn test_media_buffering() {
         let node = context.create_media_element_source(element);
         node.connect(&context.destination());
         node.set_loop(true); // test if silence is not included in buffer
+        node.start();
     }
 
     // should be silent since the media stream did not yield any output
@@ -116,6 +117,7 @@ fn test_media_seeking() {
         let node = context.create_media_element_source(element);
         node.connect(&context.destination());
         node.seek(2.); // test seeking in combination with slow buffering
+        node.start();
     }
 
     // should be silent since the media stream did not yield any output

@@ -18,7 +18,6 @@
 //! let mut media = MediaElement::new(stream);
 //! // register as media element in the audio context
 //! let background = context.create_media_element_source(media);
-//! background.set_loop(true);
 //! // use a gain node to control volume
 //! let gain = context.create_gain();
 //! // play at low volume
@@ -28,6 +27,7 @@
 //! // connect the gain node to the destination node (speakers)
 //! gain.connect(&context.destination());
 //! // start playback
+//! background.set_loop(true);
 //! background.start();
 //!
 //! // mix in an oscillator sound

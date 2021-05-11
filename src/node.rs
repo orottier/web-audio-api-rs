@@ -927,7 +927,7 @@ impl MediaStreamAudioSourceNode {
 
             let resampler =
                 Resampler::new(context.base().sample_rate(), BUFFER_SIZE, options.media);
-            let render = MediaStreamRenderer::new(resampler);
+            let render = MediaStreamRenderer::new(resampler, Scheduler::new());
 
             (node, Box::new(render))
         })
@@ -944,6 +944,8 @@ pub struct MediaElementAudioSourceNodeOptions {
 ///
 /// The media element will take care of buffering of the stream so the render thread never blocks.
 /// This also allows for playback controls (pause, looping, playback rate, etc.)
+///
+/// Note: do not forget to `start()` the node.
 pub struct MediaElementAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
@@ -984,19 +986,17 @@ impl MediaElementAudioSourceNode {
     ) -> Self {
         context.base().register(move |registration| {
             let controller = options.media.controller().clone();
+            let scheduler = controller.scheduler().clone();
 
-            // wrap media input in resampler
-            let resampler =
-                Resampler::new(context.base().sample_rate(), BUFFER_SIZE, options.media);
-
-            // setup user facing audio node
             let node = MediaElementAudioSourceNode {
                 registration,
                 channel_config: options.channel_config.into(),
                 controller,
             };
 
-            let render = MediaStreamRenderer::new(resampler);
+            let resampler =
+                Resampler::new(context.base().sample_rate(), BUFFER_SIZE, options.media);
+            let render = MediaStreamRenderer::new(resampler, scheduler);
 
             (node, Box::new(render))
         })
@@ -1005,13 +1005,15 @@ impl MediaElementAudioSourceNode {
 
 struct MediaStreamRenderer<R> {
     stream: R,
+    scheduler: Scheduler,
     finished: bool,
 }
 
 impl<R> MediaStreamRenderer<R> {
-    fn new(stream: R) -> Self {
+    fn new(stream: R, scheduler: Scheduler) -> Self {
         Self {
             stream,
+            scheduler,
             finished: false,
         }
     }
@@ -1023,11 +1025,17 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
         _inputs: &[crate::alloc::AudioBuffer],
         outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
-        _timestamp: f64,
+        timestamp: f64,
         _sample_rate: SampleRate,
     ) {
         // single output node
         let output = &mut outputs[0];
+
+        // todo, sub-quantum start/stop
+        if !self.scheduler.is_active(timestamp) {
+            output.make_silent();
+            return;
+        }
 
         match self.stream.next() {
             Some(Ok(buffer)) => {
@@ -1079,6 +1087,8 @@ impl Default for AudioBufferSourceNodeOptions {
 }
 
 /// An audio source from an in-memory audio asset in an AudioBuffer
+///
+/// Note: do not forget to `start()` the node.
 pub struct AudioBufferSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
@@ -1130,15 +1140,17 @@ impl AudioBufferSourceNode {
 
             // wrap resampler in media-element (for loop/play/pause)
             let media = MediaElement::new(resampler);
+            let controller = media.controller().clone();
+            let scheduler = controller.scheduler().clone();
 
             // setup user facing audio node
             let node = AudioBufferSourceNode {
                 registration,
                 channel_config: options.channel_config.into(),
-                controller: media.controller().clone(),
+                controller,
             };
 
-            let render = MediaStreamRenderer::new(media);
+            let render = MediaStreamRenderer::new(media, scheduler);
 
             (node, Box::new(render))
         })

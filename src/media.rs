@@ -8,7 +8,7 @@ use lewton::inside_ogg::OggStreamReader;
 use lewton::VorbisError;
 
 use crate::buffer::{AudioBuffer, ChannelData};
-use crate::control::{Controller, Scheduler};
+use crate::control::Controller;
 use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 
 #[cfg(not(test))]
@@ -92,7 +92,7 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 ///
 /// // media is now a proper `MediaStream`, we can wrap it in a `MediaElement`
 /// let mut element = MediaElement::new(media);
-/// element.set_loop(true);
+/// element.controller().set_loop(true);
 ///
 /// // the media element provides an infinite iterator now
 /// for buf in element.take(5) {
@@ -118,20 +118,6 @@ pub struct MediaElement {
     timestamp: f64,
     /// indicates if we are currently seeking but the data is not available
     seeking: Option<f64>,
-}
-
-use crate::node::AudioControllableSourceNode;
-impl AudioControllableSourceNode for MediaElement {
-    fn controller(&self) -> &Controller {
-        &self.controller
-    }
-}
-
-use crate::node::AudioScheduledSourceNode;
-impl AudioScheduledSourceNode for MediaElement {
-    fn scheduler(&self) -> &Scheduler {
-        &self.controller.scheduler()
-    }
 }
 
 impl MediaElement {
@@ -161,6 +147,10 @@ impl MediaElement {
             timestamp: 0.,
             seeking: None,
         }
+    }
+
+    pub fn controller(&self) -> &Controller {
+        &self.controller
     }
 
     fn load_next(&mut self) -> Option<Result<AudioBuffer, Box<dyn Error + Send>>> {
@@ -255,8 +245,8 @@ impl Iterator for MediaElement {
         }
 
         // handle looping
-        if self.loop_() && self.timestamp > self.loop_end() {
-            self.seek(self.loop_start());
+        if self.controller.loop_() && self.timestamp > self.controller.loop_end() {
+            self.seek(self.controller.loop_start());
         }
 
         // read from cache if available
@@ -279,12 +269,12 @@ impl Iterator for MediaElement {
         };
 
         // signal depleted if we're not looping
-        if !self.loop_() || self.buffer.is_empty() {
+        if !self.controller.loop_() || self.buffer.is_empty() {
             return None;
         }
 
         // loop and get next
-        self.seek(self.loop_start());
+        self.seek(self.controller.loop_start());
         self.next()
     }
 }
@@ -421,7 +411,7 @@ impl MicrophoneRender {
 /// ```no_run
 /// use web_audio_api::media::{MediaElement, OggVorbisDecoder};
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
-/// use web_audio_api::node::AudioNode;
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// // construct the decoder
 /// let file = std::fs::File::open("sample.ogg").unwrap();
@@ -436,6 +426,7 @@ impl MicrophoneRender {
 ///
 /// // play media
 /// node.connect(&context.destination());
+/// node.start();
 /// ```
 ///
 pub struct OggVorbisDecoder {
@@ -476,7 +467,7 @@ impl Iterator for OggVorbisDecoder {
 /// ```no_run
 /// use web_audio_api::media::{MediaElement, WavDecoder};
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
-/// use web_audio_api::node::AudioNode;
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// // construct the decoder
 /// let file = std::fs::File::open("sample.wav").unwrap();
@@ -491,6 +482,7 @@ impl Iterator for OggVorbisDecoder {
 ///
 /// // play media
 /// node.connect(&context.destination());
+/// node.start();
 /// ```
 ///
 pub struct WavDecoder {

@@ -13,7 +13,6 @@ fn main() {
     let stream = OggVorbisDecoder::try_new(file).unwrap();
     // wrap stream in MediaElement, so we can control it (loop, play/pause)
     let media = MediaElement::new(stream);
-    media.set_loop(true);
     // register as media element in the audio context
     let background = context.create_media_element_source(media);
     // use a gain node to control volume
@@ -25,6 +24,7 @@ fn main() {
     // connect the gain node to the destination node (speakers)
     gain.connect(&context.destination());
     // start playback
+    background.set_loop(true);
     background.start();
 
     // mix in an oscillator sound
