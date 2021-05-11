@@ -17,7 +17,7 @@ use crate::control::{Controller, Scheduler};
 use crate::media::{MediaElement, MediaStream};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::{AudioParamValues, AudioProcessor};
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 
 use crossbeam_channel::{self, Receiver, Sender};
 
@@ -27,8 +27,8 @@ use crossbeam_channel::{self, Receiver, Sender};
 /// These modules can be connected together to form processing graphs for rendering audio
 /// to the audio hardware. Each node can have inputs and/or outputs.
 ///
-/// Note that the AudioNode is typically constructed together with an `[AudioProcessor]`
-/// (the object that lives the render thread). See `[BaseAudioContext::register]`.
+/// Note that the AudioNode is typically constructed together with an [`AudioProcessor`]
+/// (the object that lives the render thread). See [`BaseAudioContext::register`].
 pub trait AudioNode {
     fn registration(&self) -> &AudioContextRegistration;
 
@@ -883,7 +883,11 @@ pub struct MediaStreamAudioSourceNodeOptions<M> {
     pub channel_config: ChannelConfigOptions,
 }
 
-/// An audio source from media streams (microphone, or .ogg, .wav, .mp3 decoding)
+/// An audio source from a [`MediaStream`] (e.g. microphone input)
+///
+/// IMPORTANT: the media stream is polled on the render thread so you must ensure the media stream
+/// iterator never blocks. Consider wrapping the `MediaStream` in a [`MediaElement`], which buffers the
+/// stream on another thread so the render thread never blocks.
 pub struct MediaStreamAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
@@ -927,12 +931,15 @@ impl MediaStreamAudioSourceNode {
 }
 
 /// Options for constructing a MediaElementAudioSourceNode
-pub struct MediaElementAudioSourceNodeOptions<M> {
-    pub media: MediaElement<M>,
+pub struct MediaElementAudioSourceNodeOptions {
+    pub media: MediaElement,
     pub channel_config: ChannelConfigOptions,
 }
 
-/// An audio source from external media files (.ogg, .wav, .mp3)
+/// An audio source from a [`MediaElement`] (e.g. .ogg, .wav, .mp3 files)
+///
+/// The media element will take care of buffering of the stream so the render thread never blocks.
+/// This also allows for playback controls (pause, looping, playback rate, etc.)
 pub struct MediaElementAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
@@ -967,9 +974,9 @@ impl AudioNode for MediaElementAudioSourceNode {
 }
 
 impl MediaElementAudioSourceNode {
-    pub fn new<C: AsBaseAudioContext, M: MediaStream>(
+    pub fn new<C: AsBaseAudioContext>(
         context: &C,
-        options: MediaElementAudioSourceNodeOptions<M>,
+        options: MediaElementAudioSourceNodeOptions,
     ) -> Self {
         context.base().register(move |registration| {
             let controller = options.media.controller().clone();
@@ -1027,6 +1034,10 @@ impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
                     .iter_mut()
                     .zip(buffer.channels())
                     .for_each(|(o, i)| o.copy_from_slice(i.as_slice()));
+            }
+            Some(Err(e)) if e.is::<BufferDepletedError>() => {
+                log::debug!("media element buffer depleted");
+                output.make_silent()
             }
             Some(Err(e)) => {
                 // decoding error, stop playing

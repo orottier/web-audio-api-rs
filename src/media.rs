@@ -9,11 +9,11 @@ use lewton::VorbisError;
 
 use crate::buffer::{AudioBuffer, ChannelData};
 use crate::control::{Controller, Scheduler};
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 
 #[cfg(not(test))]
-use crossbeam_channel::{self, Sender};
-use crossbeam_channel::{Receiver, TryRecvError};
+use crossbeam_channel::Sender;
+use crossbeam_channel::{self, Receiver, TryRecvError};
 
 #[cfg(not(test))]
 use crate::io;
@@ -23,12 +23,17 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 
 /// Interface for media streaming.
 ///
-/// This is a trait alias for an [`AudioBuffer`] Iterator, for example the [`OggVorbisDecoder`]
+/// This is a trait alias for an [`AudioBuffer`] Iterator, for example the [`OggVorbisDecoder`] or
+/// [`Microphone`].
 ///
-/// Below is an example showing how to play the stream directly.
+/// Below is an example showing how to play the stream directly in the audio context. However, this
+/// is typically not what you should do. The media stream will be polled on the render thread which
+/// will have catastrophic effects if the iterator blocks or for another reason takes too much time
+/// to yield a new sample frame.
 ///
-/// If you want to control the media playback (play/pause, offsets, loops), wrap the `MediaStream`
-/// in a [`MediaElement`].
+/// The solution is to wrap the `MediaStream` inside a [`MediaElement`]. This will take care of
+/// buffering and timely delivery of audio to the render thread. It also allows for media playback
+/// controls (play/pause, offsets, loops, etc.)
 ///
 /// # Example
 ///
@@ -59,7 +64,10 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 {
 }
 
-/// Wrapper for [`MediaStream`]s, to control playback.
+/// Wrapper for [`MediaStream`]s, for buffering and playback controls.
+///
+/// Currently, the media element will start a new thread to buffer all available media. (todo
+/// async executor)
 ///
 /// # Example
 ///
@@ -71,7 +79,10 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// use web_audio_api::node::AudioControllableSourceNode;
 ///
 /// // create a new buffer with a few samples of silence
-/// let silence = AudioBuffer::from_channels(vec![ChannelData::from(vec![0.; 20])], SampleRate(44_100));
+/// let silence = AudioBuffer::from_channels(
+///     vec![ChannelData::from(vec![0.; 20])],
+///     SampleRate(44_100)
+/// );
 ///
 /// // create a sequence of this buffer
 /// let sequence = std::iter::repeat(silence).take(3);
@@ -92,8 +103,8 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// }
 ///
 /// ```
-pub struct MediaElement<S> {
-    input: S,
+pub struct MediaElement {
+    input: Receiver<Option<Result<AudioBuffer, Box<dyn Error + Send>>>>,
     buffer: Vec<AudioBuffer>,
     buffer_complete: bool,
     buffer_index: usize,
@@ -102,24 +113,39 @@ pub struct MediaElement<S> {
 }
 
 use crate::node::AudioControllableSourceNode;
-impl<S> AudioControllableSourceNode for MediaElement<S> {
+impl AudioControllableSourceNode for MediaElement {
     fn controller(&self) -> &Controller {
         &self.controller
     }
 }
 
 use crate::node::AudioScheduledSourceNode;
-impl<S> AudioScheduledSourceNode for MediaElement<S> {
+impl AudioScheduledSourceNode for MediaElement {
     fn scheduler(&self) -> &Scheduler {
         &self.controller.scheduler()
     }
 }
 
-impl<S: MediaStream> MediaElement<S> {
+impl MediaElement {
     /// Create a new MediaElement by buffering a MediaStream
-    pub fn new(input: S) -> Self {
+    pub fn new<S: MediaStream>(input: S) -> Self {
+        let (sender, receiver) = crossbeam_channel::unbounded();
+
+        let fill_buffer = move || {
+            let _ = sender.send(None); // signal thread started
+            input.map(Some).for_each(|i| {
+                let _ = sender.send(i);
+            });
+            let _ = sender.send(None); // signal depleted
+        };
+
+        std::thread::spawn(fill_buffer);
+        // wait for thread startup before handing out the MediaElement
+        let ping = receiver.recv().expect("buffer channel disconnected");
+        assert!(ping.is_none());
+
         Self {
-            input,
+            input: receiver,
             buffer: vec![],
             buffer_complete: false,
             buffer_index: 0,
@@ -130,7 +156,12 @@ impl<S: MediaStream> MediaElement<S> {
 
     fn load_next(&mut self) -> Option<Result<AudioBuffer, Box<dyn Error + Send>>> {
         if !self.buffer_complete {
-            match self.input.next() {
+            let next = match self.input.try_recv() {
+                Err(_) => return Some(Err(Box::new(BufferDepletedError {}))),
+                Ok(v) => v,
+            };
+
+            match next {
                 Some(Err(e)) => {
                     // no further streaming
                     self.buffer_complete = true;
@@ -175,10 +206,12 @@ impl<S: MediaStream> MediaElement<S> {
                 return;
             }
         }
+
+        // todo, handle BufferDepletedError
     }
 }
 
-impl<S: MediaStream> Iterator for MediaElement<S> {
+impl Iterator for MediaElement {
     type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -192,10 +225,17 @@ impl<S: MediaStream> Iterator for MediaElement<S> {
             return Some(Ok(data.clone()));
         }
 
-        if let Some(data) = self.load_next() {
-            self.buffer_index += 1;
-            return Some(data);
-        }
+        match self.load_next() {
+            Some(Ok(data)) => {
+                self.buffer_index += 1;
+                return Some(Ok(data));
+            }
+            Some(Err(e)) if e.is::<BufferDepletedError>() => {
+                // hickup when buffering was too slow
+                return Some(Err(e));
+            }
+            _ => (), // stream finished or errored out
+        };
 
         if !self.loop_() || self.buffer.is_empty() {
             return None;
@@ -337,7 +377,7 @@ impl MicrophoneRender {
 /// # Usage
 ///
 /// ```no_run
-/// use web_audio_api::media::OggVorbisDecoder;
+/// use web_audio_api::media::{MediaElement, OggVorbisDecoder};
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::node::AudioNode;
 ///
@@ -345,9 +385,12 @@ impl MicrophoneRender {
 /// let file = std::fs::File::open("sample.ogg").unwrap();
 /// let media = OggVorbisDecoder::try_new(file).unwrap();
 ///
-/// // register the media node
+/// // Wrap in a `MediaElement` so buffering/decoding does not take place on the render thread
+/// let element = MediaElement::new(media);
+///
+/// // register the media element node
 /// let context = AudioContext::new();
-/// let node = context.create_media_stream_source(media);
+/// let node = context.create_media_element_source(element);
 ///
 /// // play media
 /// node.connect(&context.destination());
@@ -389,7 +432,7 @@ impl Iterator for OggVorbisDecoder {
 /// # Usage
 ///
 /// ```no_run
-/// use web_audio_api::media::WavDecoder;
+/// use web_audio_api::media::{MediaElement, WavDecoder};
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::node::AudioNode;
 ///
@@ -397,9 +440,12 @@ impl Iterator for OggVorbisDecoder {
 /// let file = std::fs::File::open("sample.wav").unwrap();
 /// let media = WavDecoder::try_new(file).unwrap();
 ///
-/// // register the media node
+/// // Wrap in a `MediaElement` so buffering/decoding does not take place on the render thread
+/// let element = MediaElement::new(media);
+///
+/// // register the media element node
 /// let context = AudioContext::new();
-/// let node = context.create_media_stream_source(media);
+/// let node = context.create_media_element_source(element);
 ///
 /// // play media
 /// node.connect(&context.destination());

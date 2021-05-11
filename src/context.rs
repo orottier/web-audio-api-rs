@@ -121,9 +121,9 @@ pub trait AsBaseAudioContext {
     }
 
     /// Creates a MediaElementAudioSourceNode from a MediaElement
-    fn create_media_element_source<M: MediaStream>(
+    fn create_media_element_source(
         &self,
-        media: MediaElement<M>,
+        media: MediaElement,
     ) -> node::MediaElementAudioSourceNode {
         let channel_config = ChannelConfigOptions {
             count: 1,

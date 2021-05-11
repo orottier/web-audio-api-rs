@@ -89,6 +89,17 @@ impl fmt::Display for IndexSizeError {
 }
 impl std::error::Error for IndexSizeError {}
 
+/// Media stream buffering lags behind
+#[derive(Debug, Clone, Copy)]
+pub struct BufferDepletedError {}
+
+impl fmt::Display for BufferDepletedError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+impl std::error::Error for BufferDepletedError {}
+
 /// Atomic float, only `load` and `store` are supported, no arithmetics
 #[derive(Debug)]
 pub(crate) struct AtomicF64 {

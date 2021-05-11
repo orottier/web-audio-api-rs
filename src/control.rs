@@ -63,7 +63,7 @@ impl Controller {
             offset: Arc::new(AtomicF64::new(0.)),
             duration: Arc::new(AtomicF64::new(f64::MAX)),
             loop_: Arc::new(AtomicBool::new(false)),
-            loop_start: Arc::new(AtomicF64::new(f64::MAX)),
+            loop_start: Arc::new(AtomicF64::new(0.)),
             loop_end: Arc::new(AtomicF64::new(f64::MAX)),
             //playback_rate: ... create audio param pair
         }
