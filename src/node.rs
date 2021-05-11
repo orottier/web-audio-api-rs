@@ -170,6 +170,10 @@ pub trait AudioControllableSourceNode {
     fn set_loop_end(&self, loop_end: f64) {
         self.controller().set_loop_end(loop_end)
     }
+
+    fn seek(&self, timestamp: f64) {
+        self.controller().seek(timestamp)
+    }
 }
 
 /// Options for constructing an OscillatorNode
@@ -1040,14 +1044,11 @@ impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
                 output.make_silent()
             }
             Some(Err(e)) => {
-                // decoding error, stop playing
                 log::warn!("Error playing audio stream: {}", e);
-
-                self.finished = true;
+                self.finished = true; // halt playback
                 output.make_silent()
             }
             None => {
-                // stream is finished
                 if !self.finished {
                     log::debug!("Stream finished");
                     self.finished = true;

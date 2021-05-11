@@ -95,3 +95,41 @@ fn test_media_buffering() {
     let output = context.start_rendering();
     assert_eq!(output.channel_data(0).as_slice(), &[2.; LENGTH]);
 }
+
+#[test]
+fn test_media_seeking() {
+    const LENGTH: usize = BUFFER_SIZE as usize;
+    const SAMPLE_RATE: SampleRate = SampleRate(BUFFER_SIZE); // 1 render quantum = 1 second
+    let mut context = OfflineAudioContext::new(1, LENGTH, SAMPLE_RATE);
+
+    let block = Arc::new(AtomicBool::new(true));
+
+    {
+        let media = SlowMedia {
+            block: block.clone(),
+            finished: Arc::new(AtomicBool::new(false)),
+            sample_rate: SAMPLE_RATE,
+            value: 1.,
+        };
+
+        let element = MediaElement::new(media);
+        let node = context.create_media_element_source(element);
+        node.connect(&context.destination());
+        node.seek(2.); // test seeking in combination with slow buffering
+    }
+
+    // should be silent since the media stream did not yield any output
+    let output = context.start_rendering();
+    assert_eq!(output.channel_data(0).as_slice(), &[0.; LENGTH]);
+
+    block.store(false, Ordering::SeqCst); // emit single chunk
+    thread::sleep(Duration::from_millis(10)); // let buffer catch up
+    block.store(false, Ordering::SeqCst); // emit single chunk
+    thread::sleep(Duration::from_millis(10)); // let buffer catch up
+    block.store(false, Ordering::SeqCst); // emit single chunk
+    thread::sleep(Duration::from_millis(10)); // let buffer catch up
+
+    // should contain output, with first 2 values skipped
+    let output = context.start_rendering();
+    assert_eq!(output.channel_data(0).as_slice(), &[4.; LENGTH]);
+}

@@ -104,12 +104,20 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 ///
 /// ```
 pub struct MediaElement {
+    /// input media stream
     input: Receiver<Option<Result<AudioBuffer, Box<dyn Error + Send>>>>,
+    /// media buffer
     buffer: Vec<AudioBuffer>,
+    /// true when input stream is finished
     buffer_complete: bool,
+    /// current position in buffer when filling/looping
     buffer_index: usize,
+    /// user facing controller
     controller: Controller,
+    /// current playback timestamp of this stream
     timestamp: f64,
+    /// indicates if we are currently seeking but the data is not available
+    seeking: Option<f64>,
 }
 
 use crate::node::AudioControllableSourceNode;
@@ -151,6 +159,7 @@ impl MediaElement {
             buffer_index: 0,
             controller: Controller::new(),
             timestamp: 0.,
+            seeking: None,
         }
     }
 
@@ -170,6 +179,7 @@ impl MediaElement {
                 }
                 Some(Ok(data)) => {
                     self.buffer.push(data.clone());
+                    self.buffer_index += 1;
                     self.timestamp += data.duration();
                     return Some(Ok(data));
                 }
@@ -192,22 +202,38 @@ impl MediaElement {
         }
 
         self.timestamp = 0.;
+
+        // seek within currently buffered data
         for (i, buf) in self.buffer.iter().enumerate() {
             self.buffer_index = i;
             self.timestamp += buf.duration();
-            if self.timestamp >= ts {
-                return;
+            if self.timestamp > ts {
+                return; // seeking complete
             }
         }
 
-        while let Some(Ok(buf)) = self.load_next() {
-            self.timestamp += buf.duration();
-            if self.timestamp >= ts {
-                return;
+        // seek by consuming the leftover input stream
+        loop {
+            match self.load_next() {
+                Some(Ok(buf)) => {
+                    self.timestamp += buf.duration();
+                    if self.timestamp > ts {
+                        return; // seeking complete
+                    }
+                }
+                Some(Err(e)) if e.is::<BufferDepletedError>() => {
+                    // mark incomplete seeking
+                    self.seeking = Some(ts);
+                    return;
+                }
+                // stop seeking if stream finished or errors occur
+                _ => {
+                    // prevent playback of last available frame
+                    self.buffer_index += 1;
+                    return;
+                }
             }
         }
-
-        // todo, handle BufferDepletedError
     }
 }
 
@@ -215,19 +241,34 @@ impl Iterator for MediaElement {
     type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        // handle seeking
+        if let Some(seek) = self.controller().should_seek() {
+            println!("seek requested {}", seek);
+            self.seek(seek);
+        } else if let Some(seek) = self.seeking.take() {
+            println!("leftover seek {}", seek);
+            self.seek(seek);
+        }
+        if self.seeking.is_some() {
+            println!("leftover seek, return silence");
+            return Some(Err(Box::new(BufferDepletedError {})));
+        }
+
+        // handle looping
         if self.loop_() && self.timestamp > self.loop_end() {
             self.seek(self.loop_start());
         }
 
+        // read from cache if available
         if let Some(data) = self.buffer.get(self.buffer_index) {
             self.buffer_index += 1;
             self.timestamp += data.duration();
             return Some(Ok(data.clone()));
         }
 
+        // read from backing media stream
         match self.load_next() {
             Some(Ok(data)) => {
-                self.buffer_index += 1;
                 return Some(Ok(data));
             }
             Some(Err(e)) if e.is::<BufferDepletedError>() => {
@@ -237,12 +278,13 @@ impl Iterator for MediaElement {
             _ => (), // stream finished or errored out
         };
 
+        // signal depleted if we're not looping
         if !self.loop_() || self.buffer.is_empty() {
             return None;
         }
 
+        // loop and get next
         self.seek(self.loop_start());
-
         self.next()
     }
 }
