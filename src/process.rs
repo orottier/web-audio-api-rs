@@ -9,8 +9,8 @@ use crate::SampleRate;
 
 /// Interface for audio processing code that runs on the audio rendering thread.
 ///
-/// Note that the AudioProcessor is typically constructed together with an `AudioNode`
-/// (the user facing object that lives in the control thread). See `[crate::context::BaseAudioContext::register]`.
+/// Note that the AudioProcessor is typically constructed together with an [`crate::node::AudioNode`]
+/// (the user facing object that lives in the control thread). See [`crate::context::BaseAudioContext::register`].
 pub trait AudioProcessor: Send {
     /// Audio processing function
     fn process(

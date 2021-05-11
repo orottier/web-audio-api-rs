@@ -66,15 +66,6 @@ mod message;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SampleRate(pub u32);
 
-/// Number of channels for an audio buffer of audio node
-///
-/// 1 = Mono
-/// 2 = Stereo
-/// 4 = Quad
-/// 6 = Surround
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ChannelCount(pub u32);
-
 /// Input/output with this index does not exist
 #[derive(Debug, Clone, Copy)]
 pub struct IndexSizeError {}
