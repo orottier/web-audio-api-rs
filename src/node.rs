@@ -927,7 +927,7 @@ impl MediaStreamAudioSourceNode {
 
             let resampler =
                 Resampler::new(context.base().sample_rate(), BUFFER_SIZE, options.media);
-            let render = AudioBufferRenderer::new(resampler);
+            let render = MediaStreamRenderer::new(resampler);
 
             (node, Box::new(render))
         })
@@ -996,19 +996,19 @@ impl MediaElementAudioSourceNode {
                 controller,
             };
 
-            let render = AudioBufferRenderer::new(resampler);
+            let render = MediaStreamRenderer::new(resampler);
 
             (node, Box::new(render))
         })
     }
 }
 
-struct AudioBufferRenderer<R> {
+struct MediaStreamRenderer<R> {
     stream: R,
     finished: bool,
 }
 
-impl<R> AudioBufferRenderer<R> {
+impl<R> MediaStreamRenderer<R> {
     fn new(stream: R) -> Self {
         Self {
             stream,
@@ -1017,7 +1017,7 @@ impl<R> AudioBufferRenderer<R> {
     }
 }
 
-impl<R: MediaStream> AudioProcessor for AudioBufferRenderer<R> {
+impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
     fn process(
         &mut self,
         _inputs: &[crate::alloc::AudioBuffer],
@@ -1138,7 +1138,7 @@ impl AudioBufferSourceNode {
                 controller: media.controller().clone(),
             };
 
-            let render = AudioBufferRenderer::new(media);
+            let render = MediaStreamRenderer::new(media);
 
             (node, Box::new(render))
         })
