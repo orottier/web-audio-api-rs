@@ -954,7 +954,7 @@ pub struct MediaElementAudioSourceNode {
 
 impl AudioScheduledSourceNode for MediaElementAudioSourceNode {
     fn scheduler(&self) -> &Scheduler {
-        &self.controller.scheduler()
+        self.controller.scheduler()
     }
 }
 impl AudioControllableSourceNode for MediaElementAudioSourceNode {
@@ -1097,7 +1097,7 @@ pub struct AudioBufferSourceNode {
 
 impl AudioScheduledSourceNode for AudioBufferSourceNode {
     fn scheduler(&self) -> &Scheduler {
-        &self.controller.scheduler()
+        self.controller.scheduler()
     }
 }
 impl AudioControllableSourceNode for AudioBufferSourceNode {
@@ -1325,7 +1325,7 @@ impl PannerNode {
                 position_z,
             };
 
-            context.base().connect_listener_to_panner(&node.id());
+            context.base().connect_listener_to_panner(node.id());
 
             (node, Box::new(render))
         })
