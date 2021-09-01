@@ -1,0 +1,250 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in library 'web-audio-api'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--lib",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "web-audio-api",
+					"kind": "lib"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug example 'microphone'",
+			"cargo": {
+				"args": [
+					"build",
+					"--example=microphone",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "microphone",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in example 'microphone'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--example=microphone",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "microphone",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug example 'showcase'",
+			"cargo": {
+				"args": [
+					"build",
+					"--example=showcase",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "showcase",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in example 'showcase'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--example=showcase",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "showcase",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug example 'spatial'",
+			"cargo": {
+				"args": [
+					"build",
+					"--example=spatial",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "spatial",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in example 'spatial'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--example=spatial",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "spatial",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug example 'bench'",
+			"cargo": {
+				"args": [
+					"build",
+					"--example=bench",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "bench",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in example 'bench'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--example=bench",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "bench",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug example 'worklet'",
+			"cargo": {
+				"args": [
+					"build",
+					"--example=worklet",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "worklet",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in example 'worklet'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--example=worklet",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "worklet",
+					"kind": "example"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug integration test 'media'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--test=media",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "media",
+					"kind": "test"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug integration test 'offline'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--test=offline",
+					"--package=web-audio-api"
+				],
+				"filter": {
+					"name": "offline",
+					"kind": "test"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		}
+	]
+}
