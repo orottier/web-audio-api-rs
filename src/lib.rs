@@ -128,13 +128,13 @@ mod tests {
     #[test]
     fn test_atomic_f64() {
         let f = AtomicF64::new(2.0);
-        assert_eq!(f.load(), 2.0);
+        assert!((f.load() - 2.0).abs() < f64::EPSILON);
 
         f.store(3.0);
-        assert_eq!(f.load(), 3.0);
+        assert!((f.load() - 3.0).abs() < f64::EPSILON);
 
         let prev = f.swap(4.0);
-        assert_eq!(prev, 3.0);
-        assert_eq!(f.load(), 4.0);
+        assert!((prev - 3.0).abs() < f64::EPSILON);
+        assert!((f.load() - 4.0).abs() < f64::EPSILON);
     }
 }
