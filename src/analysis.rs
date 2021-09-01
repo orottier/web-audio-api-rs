@@ -233,7 +233,10 @@ mod tests {
 
         // get data, should be padded with zeroes
         analyser.get_float_time(&mut buffer[..], LEN * 5);
-        assert_eq!(&buffer[..], &[0.; LEN * 5]);
+        assert!(&buffer[..]
+            .iter()
+            .zip(&[0.; 5 * LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         // feed data for more than 256 times (the ring buffer size)
         for i in 0..258 {
@@ -247,20 +250,37 @@ mod tests {
         analyser.get_float_time(&mut buffer[..], LEN * 4);
 
         // taken from the end of the ring buffer
-        assert_eq!(&buffer[0..LEN], &[254.; LEN]);
-        assert_eq!(&buffer[LEN..LEN * 2], &[255.; LEN]);
+        assert!(&buffer[0..LEN]
+            .iter()
+            .zip(&[254.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert!(&buffer[LEN..LEN * 2]
+            .iter()
+            .zip(&[255.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         // taken from the start of the ring buffer
-        assert_eq!(&buffer[LEN * 2..LEN * 3], &[256.; LEN]);
-        assert_eq!(&buffer[LEN * 3..LEN * 4], &[257.; LEN]);
+        assert!(&buffer[LEN * 2..LEN * 3]
+            .iter()
+            .zip(&[256.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert!(&buffer[LEN * 3..LEN * 4]
+            .iter()
+            .zip(&[257.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         // excess capacity should be left unaltered
-        assert_eq!(&buffer[LEN * 4..LEN * 5], &[0.; LEN]);
-
+        assert!(&buffer[LEN * 4..LEN * 5]
+            .iter()
+            .zip(&[0.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
         // check for small fft_size
         buffer.resize(32, 0.);
         analyser.get_float_time(&mut buffer[..], LEN);
-        assert_eq!(&buffer[..], &[257.; 32]);
+        assert!(&buffer[..]
+            .iter()
+            .zip(&[257.; 32])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
     }
 
     #[test]
@@ -299,9 +319,14 @@ mod tests {
         // get data, should be zero (negative infinity decibel)
         analyser.calculate_float_frequency(fft_size, 0.8);
         analyser.get_float_frequency(&mut buffer[..]);
-        assert_eq!(&buffer[0..LEN * 2 + 1], &[f32::NEG_INFINITY; LEN * 2 + 1]);
+
+        assert!(buffer[0..LEN * 2 + 1] == [f32::NEG_INFINITY; LEN * 2 + 1]);
         // only N / 2 + 1 values should contain frequency data, rest is unaltered
-        assert_eq!(&buffer[LEN * 2 + 1..], &[-1.; LEN * 2 - 1]);
+
+        assert!(&buffer[LEN * 2 + 1..]
+            .iter()
+            .zip(&[-1.; LEN * 2 - 1])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         // feed data for more than 256 times (the ring buffer size)
         for i in 0..258 {
@@ -314,7 +339,7 @@ mod tests {
         // this should return other data now
         analyser.calculate_float_frequency(fft_size, 0.8);
         analyser.get_float_frequency(&mut buffer[..]);
-        assert!(&buffer[0..LEN * 2 + 1] != &[f32::NEG_INFINITY; LEN * 2 + 1]);
+        assert!(buffer[0..LEN * 2 + 1] != [f32::NEG_INFINITY; LEN * 2 + 1]);
     }
 
     #[test]
@@ -330,8 +355,14 @@ mod tests {
         assert!(min < 0.01 && min > 0.);
         assert!(max > 0.99 && max <= 1.);
 
-        let min_pos = values.iter().position(|&v| v == min).unwrap();
-        let max_pos = values.iter().position(|&v| v == max).unwrap();
+        let min_pos = values
+            .iter()
+            .position(|&v| (v - min).abs() < f32::EPSILON)
+            .unwrap();
+        let max_pos = values
+            .iter()
+            .position(|&v| (max - v).abs() < f32::EPSILON)
+            .unwrap();
         assert_eq!(min_pos, 0);
         assert_eq!(max_pos, 1024);
     }
