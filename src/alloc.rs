@@ -304,16 +304,26 @@ mod tests {
             {
                 // take a buffer out of the pool
                 let a = alloc.allocate();
-                assert_eq!(*a.as_ref(), [0.; LEN]);
+
+                assert!(a
+                    .as_ref()
+                    .iter()
+                    .zip(&[0.; LEN])
+                    .all(|(a, b)| (a - b).abs() < f32::EPSILON));
                 assert_eq!(alloc.pool_size(), 1);
 
                 // mutating this buffer will not allocate
                 let mut a = a;
                 a.iter_mut().for_each(|v| *v += 1.);
-                assert_eq!(*a.as_ref(), [1.; LEN]);
+                assert!(a
+                    .as_ref()
+                    .iter()
+                    .zip(&[1.; LEN])
+                    .all(|(a, b)| (a - b).abs() < f32::EPSILON));
                 assert_eq!(alloc.pool_size(), 1);
 
                 // clone this buffer, should not allocate
+                #[allow(clippy::redundant_clone)]
                 let mut b: ChannelData = a.clone();
                 assert_eq!(alloc.pool_size(), 1);
 
@@ -337,9 +347,21 @@ mod tests {
                 });
 
                 // dirty allocations
-                assert_eq!(*a.as_ref(), [1.; LEN]);
-                assert_eq!(*b.as_ref(), [2.; LEN]);
-                assert_eq!(*c.as_ref(), [0.; LEN]); // this one is fresh
+                assert!(a
+                    .as_ref()
+                    .iter()
+                    .zip(&[1.; LEN])
+                    .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+                assert!(b
+                    .as_ref()
+                    .iter()
+                    .zip(&[2.; LEN])
+                    .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+                assert!(c
+                    .as_ref()
+                    .iter()
+                    .zip(&[0.; LEN])
+                    .all(|(a, b)| (a - b).abs() < f32::EPSILON)); // this one is fresh
 
                 c
             };
@@ -363,11 +385,14 @@ mod tests {
                 assert_eq!(alloc.pool_size(), 2);
 
                 // but should be silent, even though a dirty buffer is taken
-                assert_eq!(*a_vals, [0.; LEN]);
-                assert_eq!(*a_vals, [0.; LEN]);
+
+                assert!(a_vals
+                    .iter()
+                    .zip(&[0.; LEN])
+                    .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
                 // is_silent is a superficial ptr check
-                assert_eq!(a.is_silent(), false);
+                assert!(!a.is_silent());
             }
         });
     }
@@ -376,23 +401,36 @@ mod tests {
     fn test_silence() {
         let alloc = Alloc::with_capacity(1);
         let silence = alloc.silence();
-        assert_eq!(&silence[..], &[0.; LEN]);
+
+        assert!(silence
+            .iter()
+            .zip(&[0.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
         assert!(silence.is_silent());
 
         // changing silence is possible
         let mut changed = silence;
         changed.iter_mut().for_each(|v| *v = 1.);
-        assert_eq!(&changed[..], &[1.; LEN]);
+        assert!(changed
+            .iter()
+            .zip(&[1.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
         assert!(!changed.is_silent());
 
         // but should not alter new silence
         let silence = alloc.silence();
-        assert_eq!(&silence[..], &[0.; LEN]);
+        assert!(silence
+            .iter()
+            .zip(&[0.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
         assert!(silence.is_silent());
 
         // can also create silence from ChannelData
         let from_channel = silence.silence();
-        assert_eq!(&from_channel[..], &[0.; LEN]);
+        assert!(from_channel
+            .iter()
+            .zip(&[0.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
         assert!(from_channel.is_silent());
     }
 
@@ -409,16 +447,25 @@ mod tests {
 
         // test add silence to signal
         signal1.add(&silence);
-        assert_eq!(&signal1[..], &[1.; LEN]);
+        assert!(signal1
+            .iter()
+            .zip(&[1.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         // test add signal to silence
         let mut sum = alloc.silence();
         sum.add(&signal1);
-        assert_eq!(&sum[..], &[1.; LEN]);
+        assert!(sum
+            .iter()
+            .zip(&[1.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         // test add two signals
         signal1.add(&signal2);
-        assert_eq!(&signal1[..], &[3.; LEN]);
+        assert!(signal1
+            .iter()
+            .zip(&[3.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
     }
 
     #[test]
@@ -448,18 +495,35 @@ mod tests {
         let mut buffer = AudioBuffer::new(signal);
 
         buffer.mix(1, ChannelInterpretation::Discrete);
+
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+        assert!(buffer
+            .channel_data(0)
+            .iter()
+            .zip(&[1.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         buffer.mix(2, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 2);
         // first channel unchanged, second channel silent
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
-        assert_eq!(&buffer.channel_data(1)[..], &[0.; LEN]);
+        assert!(buffer
+            .channel_data(0)
+            .iter()
+            .zip(&[1.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert!(buffer
+            .channel_data(1)
+            .iter()
+            .zip(&[0.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         buffer.mix(1, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+        assert!(buffer
+            .channel_data(0)
+            .iter()
+            .zip(&[1.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
     }
 
     #[test]
@@ -473,17 +537,33 @@ mod tests {
 
         buffer.mix(1, ChannelInterpretation::Speakers);
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+        assert!(buffer
+            .channel_data(0)
+            .iter()
+            .zip(&[1.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         buffer.mix(2, ChannelInterpretation::Speakers);
         assert_eq!(buffer.number_of_channels(), 2);
         // left and right equal
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
-        assert_eq!(&buffer.channel_data(1)[..], &[1.; LEN]);
+        assert!(buffer
+            .channel_data(0)
+            .iter()
+            .zip(&[1.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert!(buffer
+            .channel_data(1)
+            .iter()
+            .zip(&[1.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         buffer.mix(1, ChannelInterpretation::Speakers);
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+        assert!(buffer
+            .channel_data(0)
+            .iter()
+            .zip(&[1.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
     }
 
     #[test]
@@ -501,7 +581,15 @@ mod tests {
 
         buffer.add(&buffer2, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 2);
-        assert_eq!(&buffer.channel_data(0)[..], &[3.; LEN]);
-        assert_eq!(&buffer.channel_data(1)[..], &[1.; LEN]);
+        assert!(buffer
+            .channel_data(0)
+            .iter()
+            .zip(&[3.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert!(buffer
+            .channel_data(1)
+            .iter()
+            .zip(&[1.; LEN])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
     }
 }
