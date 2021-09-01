@@ -146,7 +146,7 @@ impl AudioProcessor for AudioParamProcessor {
             .channel_data_mut(0)
             .copy_from_slice(intrinsic.as_slice());
 
-        buffer.add(&input, ChannelInterpretation::Discrete);
+        buffer.add(input, ChannelInterpretation::Discrete);
 
         outputs[0] = buffer;
     }
