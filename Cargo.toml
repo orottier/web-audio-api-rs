@@ -19,6 +19,7 @@ hound = "3.4.0"
 log = "0.4.14"
 realfft = "1.1.0"
 crossbeam-channel = "0.5.1"
+crossbeam-queue = "0.3.2"
 
 [dev-dependencies]
 rand = "0.8.*"

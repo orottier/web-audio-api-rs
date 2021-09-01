@@ -1,9 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::channel;
 
 use cpal::Sample;
 use crossbeam_channel::Receiver;
+use crossbeam_queue::ArrayQueue;
 
 use crate::alloc::{Alloc, AudioBuffer};
 use crate::buffer::{ChannelConfig, ChannelCountMode};
@@ -18,6 +20,7 @@ pub(crate) struct RenderThread {
     channels: usize,
     frames_played: AtomicU64,
     receiver: Receiver<ControlMessage>,
+    ring_buffer: ArrayQueue<f32>,
 }
 
 // SAFETY:
@@ -39,6 +42,7 @@ impl RenderThread {
             channels,
             frames_played: AtomicU64::new(0),
             receiver,
+            ring_buffer: ArrayQueue::new(100_000),
         }
     }
 
@@ -114,12 +118,14 @@ impl RenderThread {
         let chunk_size = BUFFER_SIZE as usize * self.channels as usize;
 
         // assert input was properly sized
-        debug_assert_eq!(buffer.len() % chunk_size, 0);
+        // debug_assert_eq!(buffer.len() % chunk_size, 0);
 
-        for data in buffer.chunks_exact_mut(chunk_size) {
-            // handle addition/removal of nodes/edges
-            self.handle_control_messages();
+        // println!("Output buffer: {:?}", buffer.len());
 
+        // handle addition/removal of nodes/edges
+        self.handle_control_messages();
+
+        if self.ring_buffer.len() < 2 * chunk_size {
             // update time
             let timestamp = self
                 .frames_played
@@ -129,16 +135,39 @@ impl RenderThread {
             // render audio graph
             let rendered = self.graph.render(timestamp, self.sample_rate);
 
-            // copy rendered audio into output slice
+            // Verify queue have enough space left to rendered data
+            // push rendered data into queue if enough space left
+            // pop rendered data and replace data output
+            // if rendered data missing leave data to equelebrium
+            let mut channels_buffer = vec![0.; chunk_size];
             for i in 0..self.channels {
-                let output = data.iter_mut().skip(i).step_by(self.channels);
                 let channel = rendered.channel_data(i).iter();
-                for (sample, input) in output.zip(channel) {
-                    let value = Sample::from::<f32>(input);
-                    *sample = value;
+                for (idx, sample) in channel.enumerate() {
+                    channels_buffer[i + idx * self.channels] = *sample;
                 }
             }
+
+            // println!("Channels buffer: {:?}", channels_buffer.len());
+
+            if self.ring_buffer.len() > 1000 {
+                panic!("debugging");
+            }
+            for sample in channels_buffer {
+                self.ring_buffer
+                    .push(sample)
+                    .expect("Ring buffer push failed");
+            }
+            // println!("Ring buffer At push: {:?}", self.ring_buffer.len());
         }
+        // copy rendered audio into output slice
+
+        for sample in buffer.iter_mut() {
+            let input = &self.ring_buffer.pop().expect("Ring buffer pop failed");
+            let value = Sample::from::<f32>(input);
+            *sample = value;
+        }
+
+        // println!("Ring buffer At pop: {:?}", self.ring_buffer.len());
     }
 }
 
