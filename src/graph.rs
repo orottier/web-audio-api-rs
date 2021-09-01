@@ -107,6 +107,9 @@ impl RenderThread {
         buf
     }
 
+    // This code is not dead: false positive from clippy
+    // due to the use of #[cfg(not(test))]
+    #[allow(dead_code)]
     pub fn render<S: Sample>(&mut self, buffer: &mut [S]) {
         // The audio graph is rendered in chunks of BUFFER_SIZE frames.  But some audio backends
         // may not be able to emit chunks of this size, hence the only requirement is that the
@@ -317,10 +320,10 @@ impl Graph {
     fn order_nodes(&mut self) {
         // For borrowck reasons, we need the `visit` call to be &self.
         // So move out the bookkeeping Vecs, and pass them around as &mut.
-        let mut ordered = std::mem::replace(&mut self.ordered, vec![]);
-        let mut marked = std::mem::replace(&mut self.marked, vec![]);
-        let mut marked_temp = std::mem::replace(&mut self.marked_temp, vec![]);
-        let mut in_cycle = std::mem::replace(&mut self.in_cycle, vec![]);
+        let mut ordered = std::mem::take(&mut self.ordered);
+        let mut marked = std::mem::take(&mut self.marked);
+        let mut marked_temp = std::mem::take(&mut self.marked_temp);
+        let mut in_cycle = std::mem::take(&mut self.in_cycle);
 
         // clear previous administration
         ordered.clear();
@@ -479,7 +482,7 @@ mod tests {
         graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
         graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
         graph.add_node(NodeIndex(2), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(3), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(3), node, 1, 1, config());
 
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
         graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
@@ -529,7 +532,7 @@ mod tests {
         let node = Box::new(TestNode {});
         graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
         graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(2), node, 1, 1, config());
 
         // link 1->0, 1->2 and 2->0
         graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
@@ -570,7 +573,7 @@ mod tests {
         graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
         graph.add_node(NodeIndex(2), node.clone(), 1, 1, config());
         graph.add_node(NodeIndex(3), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(4), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(4), node, 1, 1, config());
 
         // link 4->2, 2->1, 1->0, 1->2, 3->0
         graph.add_edge((NodeIndex(4), 0), (NodeIndex(2), 0));
