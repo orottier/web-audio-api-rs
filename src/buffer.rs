@@ -484,8 +484,18 @@ mod tests {
         assert_eq!(b.sample_len(), 10);
         assert_eq!(b.number_of_channels(), 2);
         assert_eq!(b.sample_rate().0, 44_100);
-        assert_eq!(b.channel_data(0).as_slice(), &[0.; 10]);
-        assert_eq!(b.channel_data(1).as_slice(), &[0.; 10]);
+        assert!(b
+            .channel_data(0)
+            .as_slice()
+            .iter()
+            .zip(&[0.; 10])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert!(b
+            .channel_data(1)
+            .as_slice()
+            .iter()
+            .zip(&[0.; 10])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
         assert_eq!(b.channels().get(2), None);
     }
 
@@ -507,20 +517,26 @@ mod tests {
         assert_eq!(b1.sample_len(), 15);
         assert_eq!(b1.number_of_channels(), 2);
         assert_eq!(b1.sample_rate().0, 44_100);
-        assert_eq!(
-            b1.channel_data(0).as_slice(),
-            &[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 1.]
-        );
+        assert!(b1
+            .channel_data(0)
+            .as_slice()
+            .iter()
+            .zip(&[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 1.])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         let split = b1.split(8);
-        assert_eq!(
-            split[0].channel_data(0).as_slice(),
-            &[0., 0., 0., 0., 0., 0., 0., 0.]
-        );
-        assert_eq!(
-            split[1].channel_data(0).as_slice(),
-            &[0., 0., 1., 1., 1., 1., 1.]
-        );
+        assert!(split[0]
+            .channel_data(0)
+            .as_slice()
+            .iter()
+            .zip(&[0., 0., 0., 0., 0., 0., 0., 0.])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON),);
+        assert!(split[1]
+            .channel_data(0)
+            .as_slice()
+            .iter()
+            .zip(&[0., 0., 1., 1., 1., 1., 1.])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON),);
     }
 
     #[test]
@@ -528,10 +544,12 @@ mod tests {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(100));
         buffer.resample(SampleRate(200));
-        assert_eq!(
-            buffer.channel_data(0).as_slice(),
-            &[1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,]
-        );
+        assert!(buffer
+            .channel_data(0)
+            .as_slice()
+            .iter()
+            .zip(&[1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
         assert_eq!(buffer.sample_rate().0, 200);
     }
 
@@ -540,7 +558,12 @@ mod tests {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(200));
         buffer.resample(SampleRate(100));
-        assert_eq!(buffer.channel_data(0).as_slice(), &[2., 4.]);
+        assert!(buffer
+            .channel_data(0)
+            .as_slice()
+            .iter()
+            .zip(&[2., 4.])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
         assert_eq!(buffer.sample_rate().0, 100);
     }
 
@@ -548,23 +571,26 @@ mod tests {
     fn test_resampler_concat() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let input_buf = AudioBuffer::from_channels(vec![channel], SampleRate(44_100));
-        let input = vec![input_buf; 3].into_iter().map(|b| Ok(b));
+        let input = vec![input_buf; 3].into_iter().map(Ok);
         let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 10);
-        assert_eq!(
-            next.channel_data(0).as_slice(),
-            &[1., 2., 3., 4., 5., 1., 2., 3., 4., 5.,]
-        );
+        assert!(next
+            .channel_data(0)
+            .as_slice()
+            .iter()
+            .zip(&[1., 2., 3., 4., 5., 1., 2., 3., 4., 5.,])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 10);
-        assert_eq!(
-            next.channel_data(0).as_slice(),
-            &[1., 2., 3., 4., 5., 0., 0., 0., 0., 0.]
-        );
-
+        assert!(next
+            .channel_data(0)
+            .as_slice()
+            .iter()
+            .zip(&[1., 2., 3., 4., 5., 0., 0., 0., 0., 0.])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON),);
         assert!(resampler.next().is_none());
     }
 
@@ -580,11 +606,21 @@ mod tests {
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 5);
-        assert_eq!(next.channel_data(0).as_slice(), &[1., 2., 3., 4., 5.,]);
+        assert!(next
+            .channel_data(0)
+            .as_slice()
+            .iter()
+            .zip(&[1., 2., 3., 4., 5.,])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 5);
-        assert_eq!(next.channel_data(0).as_slice(), &[6., 7., 8., 9., 10.]);
+        assert!(next
+            .channel_data(0)
+            .as_slice()
+            .iter()
+            .zip(&[6., 7., 8., 9., 10.])
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON),);
 
         assert!(resampler.next().is_none());
     }
