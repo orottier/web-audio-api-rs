@@ -64,25 +64,45 @@ fn test_media_buffering() {
 
     // should be silent since the media stream did not yield any output
     let output = context.start_rendering();
-    assert_eq!(output.channel_data(0).as_slice(), &[0.; LENGTH]);
+    assert!(output
+        .channel_data(0)
+        .as_slice()
+        .iter()
+        .zip(&[0.; LENGTH])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
     block.store(false, Ordering::SeqCst); // emit single chunk
     thread::sleep(Duration::from_millis(10)); // let buffer catch up
 
     // should contain output
     let output = context.start_rendering();
-    assert_eq!(output.channel_data(0).as_slice(), &[2.; LENGTH]);
+    assert!(output
+        .channel_data(0)
+        .as_slice()
+        .iter()
+        .zip(&[2.; LENGTH])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
     // should be silent since the media stream did not yield any output
     let output = context.start_rendering();
-    assert_eq!(output.channel_data(0).as_slice(), &[0.; LENGTH]);
+    assert!(output
+        .channel_data(0)
+        .as_slice()
+        .iter()
+        .zip(&[0.; LENGTH])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
     block.store(false, Ordering::SeqCst); // emit single chunk
     thread::sleep(Duration::from_millis(10)); // let buffer catch up
 
     // should contain output
     let output = context.start_rendering();
-    assert_eq!(output.channel_data(0).as_slice(), &[3.; LENGTH]);
+    assert!(output
+        .channel_data(0)
+        .as_slice()
+        .iter()
+        .zip(&[3.; LENGTH])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 
     finished.store(true, Ordering::SeqCst); // signal stream ended
     block.store(false, Ordering::SeqCst); // emit single chunk
@@ -90,11 +110,26 @@ fn test_media_buffering() {
 
     // should contain previous output (looping)
     let output = context.start_rendering();
-    assert_eq!(output.channel_data(0).as_slice(), &[2.; LENGTH]);
+    assert!(output
+        .channel_data(0)
+        .as_slice()
+        .iter()
+        .zip(&[2.; LENGTH])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
     let output = context.start_rendering();
-    assert_eq!(output.channel_data(0).as_slice(), &[3.; LENGTH]);
+    assert!(output
+        .channel_data(0)
+        .as_slice()
+        .iter()
+        .zip(&[3.; LENGTH])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
     let output = context.start_rendering();
-    assert_eq!(output.channel_data(0).as_slice(), &[2.; LENGTH]);
+    assert!(output
+        .channel_data(0)
+        .as_slice()
+        .iter()
+        .zip(&[2.; LENGTH])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 }
 
 #[test]
@@ -122,7 +157,12 @@ fn test_media_seeking() {
 
     // should be silent since the media stream did not yield any output
     let output = context.start_rendering();
-    assert_eq!(output.channel_data(0).as_slice(), &[0.; LENGTH]);
+    assert!(output
+        .channel_data(0)
+        .as_slice()
+        .iter()
+        .zip(&[0.; LENGTH])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON),);
 
     block.store(false, Ordering::SeqCst); // emit single chunk
     thread::sleep(Duration::from_millis(10)); // let buffer catch up
@@ -133,5 +173,10 @@ fn test_media_seeking() {
 
     // should contain output, with first 2 values skipped
     let output = context.start_rendering();
-    assert_eq!(output.channel_data(0).as_slice(), &[4.; LENGTH]);
+    assert!(output
+        .channel_data(0)
+        .as_slice()
+        .iter()
+        .zip(&[4.; LENGTH])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 }
