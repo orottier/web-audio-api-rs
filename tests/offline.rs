@@ -29,8 +29,18 @@ fn test_offline_render() {
     assert_eq!(output.number_of_channels(), 2);
     assert_eq!(output.sample_len(), LENGTH);
 
-    assert_eq!(output.channel_data(0).as_slice(), &[-2.; LENGTH]);
-    assert_eq!(output.channel_data(1).as_slice(), &[-2.; LENGTH]);
+    assert!(output
+        .channel_data(0)
+        .as_slice()
+        .iter()
+        .zip(&[-2.; LENGTH])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+    assert!(output
+        .channel_data(1)
+        .as_slice()
+        .iter()
+        .zip(&[-2.; LENGTH])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
 }
 
 #[test]
@@ -142,8 +152,8 @@ fn test_listener() {
     let _ = context.start_rendering();
 
     let listener = context.listener();
-    assert_eq!(listener.position_y().value(), 2.);
-    assert_eq!(listener.position_x().value(), 1.);
+    assert!((listener.position_y().value() - 2.).abs() < f32::EPSILON);
+    assert!((listener.position_x().value() - 1.).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -172,8 +182,10 @@ fn test_cycle() {
 
     let output = context.start_rendering();
     // cycle should be muted, and other source should be processed
-    assert_eq!(
-        output.channel_data(0).as_slice(),
-        &[2.; BUFFER_SIZE as usize]
-    );
+    assert!(output
+        .channel_data(0)
+        .as_slice()
+        .iter()
+        .zip(&[2.; BUFFER_SIZE as usize])
+        .all(|(a, b)| (a - b).abs() < f32::EPSILON),);
 }
