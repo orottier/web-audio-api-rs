@@ -15,7 +15,7 @@ fn main() {
             let channel = ChannelData::from(vec![i as f32 / 200.; 250]);
             let buf = AudioBuffer::from_channels(vec![channel; 2], SampleRate(96_000));
             let sequence = std::iter::repeat(buf).take(5);
-            let media = sequence.map(|b| Ok(b));
+            let media = sequence.map(Ok);
             let element = MediaElement::new(media);
 
             let node = context.create_media_element_source(element);
