@@ -14,13 +14,13 @@ categories = ["multimedia::audio"]
 cpal = "0.13.1"
 lewton = "0.10.2"
 vecmath = "1.0.0"
-arrayvec = "0.5.2"
+arrayvec = "0.7.1"
 hound = "3.4.0"
 log = "0.4.14"
-realfft = "1.1.0"
+realfft = "2.0.1"
 crossbeam-channel = "0.5.1"
 
 [dev-dependencies]
 rand = "0.8.*"
 alloc_counter = "0.0.4"
-env_logger = "0.8.3"
+env_logger = "0.9.0"
