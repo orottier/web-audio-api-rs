@@ -146,7 +146,7 @@ impl std::ops::Drop for ChannelData {
 /// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone)]
 pub struct AudioBuffer {
-    channels: ArrayVec<[ChannelData; MAX_CHANNELS]>,
+    channels: ArrayVec<ChannelData, MAX_CHANNELS>,
 }
 
 impl AudioBuffer {
