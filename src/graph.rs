@@ -1,6 +1,6 @@
 use cpal::Sample;
 use crossbeam_channel::Receiver;
-use dasp::ring_buffer::{self, Bounded};
+use dasp::ring_buffer::Bounded;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -115,11 +115,6 @@ impl RenderThread {
         // actual buffer size is a multiple of BUFFER_SIZE.
         let chunk_size = BUFFER_SIZE as usize * self.channels as usize;
 
-        // assert input was properly sized
-        // debug_assert_eq!(buffer.len() % chunk_size, 0);
-
-        // println!("Output buffer: {:?}", buffer.len());
-
         // handle addition/removal of nodes/edges
         self.handle_control_messages();
 
@@ -145,21 +140,19 @@ impl RenderThread {
                 }
             }
 
-            // println!("Channels buffer: {:?}", channels_buffer.len());
-
             if self.ring_buffer.len() > 1000 {
                 panic!("debugging");
             }
             for sample in channels_buffer {
                 self.ring_buffer.push(sample);
             }
-            // println!("Ring buffer At push: {:?}", self.ring_buffer.len());
         }
         // copy rendered audio into output slice
 
         for sample in buffer.iter_mut() {
             let input = &self.ring_buffer.pop().unwrap();
             let value = Sample::from::<f32>(input);
+
             *sample = value;
         }
 
