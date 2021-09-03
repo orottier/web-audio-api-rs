@@ -37,7 +37,7 @@ Current deviations
 
 ## Contributing
 
-Crossbeam welcomes contribution from everyone in the form of suggestions, bug reports,
+web_audio_api_rs welcomes contribution from everyone in the form of suggestions, bug reports,
 pull requests, and feedback. 💛
 
 If you need ideas for contribution, there are several ways to get started:
