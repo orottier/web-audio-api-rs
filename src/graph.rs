@@ -1,11 +1,9 @@
+use cpal::Sample;
+use crossbeam_channel::Receiver;
+use dasp::ring_buffer::{self, Bounded};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::channel;
-
-use cpal::Sample;
-use crossbeam_channel::Receiver;
-use crossbeam_queue::ArrayQueue;
 
 use crate::alloc::{Alloc, AudioBuffer};
 use crate::buffer::{ChannelConfig, ChannelCountMode};
@@ -20,7 +18,7 @@ pub(crate) struct RenderThread {
     channels: usize,
     frames_played: AtomicU64,
     receiver: Receiver<ControlMessage>,
-    ring_buffer: ArrayQueue<f32>,
+    ring_buffer: Bounded<[f32; 2048]>,
 }
 
 // SAFETY:
@@ -42,7 +40,7 @@ impl RenderThread {
             channels,
             frames_played: AtomicU64::new(0),
             receiver,
-            ring_buffer: ArrayQueue::new(100_000),
+            ring_buffer: Bounded::from([0.; 2048]),
         }
     }
 
@@ -153,16 +151,14 @@ impl RenderThread {
                 panic!("debugging");
             }
             for sample in channels_buffer {
-                self.ring_buffer
-                    .push(sample)
-                    .expect("Ring buffer push failed");
+                self.ring_buffer.push(sample);
             }
             // println!("Ring buffer At push: {:?}", self.ring_buffer.len());
         }
         // copy rendered audio into output slice
 
         for sample in buffer.iter_mut() {
-            let input = &self.ring_buffer.pop().expect("Ring buffer pop failed");
+            let input = &self.ring_buffer.pop().unwrap();
             let value = Sample::from::<f32>(input);
             *sample = value;
         }
