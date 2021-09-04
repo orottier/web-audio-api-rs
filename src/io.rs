@@ -3,7 +3,7 @@ use std::default::Default;
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    BuildStreamError, Device, SampleFormat, Stream, StreamConfig, SupportedBufferSize,
+    Device, SampleFormat, Stream, StreamConfig, SupportedBufferSize,
 };
 
 use crate::graph::RenderThread;
@@ -55,9 +55,9 @@ impl OutputBuilder {
         &self.config
     }
 
-    pub fn build(self, mut render: RenderThread) -> Result<Stream, BuildStreamError> {
+    pub fn build(self, mut render: RenderThread) -> Stream {
         let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
-        match self.sample_format {
+        let stream = match self.sample_format {
             SampleFormat::F32 => self.device.build_output_stream(
                 &self.config,
                 move |d: &mut [f32], _c| render.render(d),
@@ -74,6 +74,12 @@ impl OutputBuilder {
                 err_fn,
             ),
         }
+        .expect("Output stream failed to build");
+
+        // Required because some hosts don't play the stream automatically
+        stream.play().expect("Output stream refused to play");
+
+        stream
     }
 }
 

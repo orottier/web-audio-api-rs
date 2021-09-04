@@ -275,7 +275,9 @@ impl AudioContext {
     /// This will play live audio on the default output
     #[cfg(not(test))]
     pub fn new() -> Self {
-        let io_builder = io::OutputBuilder::new();
+        // OutputBuilder instance: default host - default device - default config
+        let io_builder = io::OutputBuilder::default();
+
         let config = io_builder.config();
         log::debug!("Output {:?}", config);
 
@@ -292,34 +294,7 @@ impl AudioContext {
         let render = RenderThread::new(sample_rate, channels as usize, receiver);
         let stream = io_builder.build(render);
 
-        match stream {
-            Err(_) => {
-                let io_builder = io::OutputBuilder::default();
-                let config = io_builder.config();
-                log::debug!("Output {:?}", config);
-
-                let sample_rate = SampleRate(config.sample_rate.0);
-                let channels = config.channels as u32;
-
-                // communication channel to the render thread
-                let (sender, receiver) = crossbeam_channel::unbounded();
-
-                // first, setup the base audio context
-                let base = BaseAudioContext::new(sample_rate, channels, sender);
-
-                // spawn the render thread
-                let render = RenderThread::new(sample_rate, channels as usize, receiver);
-                let stream = io_builder
-                    .build(render)
-                    .expect("Stream default build failed");
-
-                Self { base, stream }
-            }
-            Ok(stream) => {
-                stream.play().expect("Stream play failed");
-                Self { base, stream }
-            }
-        }
+        Self { base, stream }
     }
 
     #[cfg(test)] // in tests, do not set up a cpal Stream
