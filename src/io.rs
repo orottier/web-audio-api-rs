@@ -82,22 +82,11 @@ impl Default for OutputBuilder {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
-            .expect("no output device available");
+            .expect("Default output device not found");
 
-        let mut supported_configs_range = device
-            .supported_output_configs()
-            .expect("error while querying configs");
-
-        let supported_config = if cfg!(target_os = "linux") {
-            device
-                .default_output_config()
-                .expect("default config not found")
-        } else {
-            supported_configs_range
-                .next()
-                .expect("no supported config?!")
-                .with_max_sample_rate()
-        };
+        let supported_config = device
+            .default_output_config()
+            .expect("Default output config not found");
 
         let sample_format = supported_config.sample_format();
 
@@ -106,6 +95,7 @@ impl Default for OutputBuilder {
             SupportedBufferSize::Range { min, .. } => crate::BUFFER_SIZE.max(*min),
             SupportedBufferSize::Unknown => BUFFER_SIZE,
         };
+
         // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
         // the desired number of frames.
         buffer_size = (buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
