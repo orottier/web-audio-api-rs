@@ -140,23 +140,18 @@ impl RenderThread {
                 }
             }
 
-            if self.ring_buffer.len() > 1000 {
-                panic!("debugging");
-            }
             for sample in channels_buffer {
                 self.ring_buffer.push(sample);
             }
         }
-        // copy rendered audio into output slice
 
+        // copy rendered audio into output slice
         for sample in buffer.iter_mut() {
             let input = &self.ring_buffer.pop().unwrap();
             let value = Sample::from::<f32>(input);
 
             *sample = value;
         }
-
-        // println!("Ring buffer At pop: {:?}", self.ring_buffer.len());
     }
 }
 
