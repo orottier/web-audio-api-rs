@@ -18,7 +18,10 @@ pub(crate) struct RenderThread {
     channels: usize,
     frames_played: AtomicU64,
     receiver: Receiver<ControlMessage>,
-    ring_buffer: Bounded<[f32; 2048]>,
+    // 8192 represents the memory space required to be compliant with the
+    //[web audio api specs](https://www.w3.org/TR/webaudio/#:~:text=An%20implementation%20MUST%20support%20at%20least%2032%20channels.)
+    //this memory space is required to store 2 chunk_size of 128 samples for 32 channels.
+    ring_buffer: Bounded<[f32; 8192]>,
 }
 
 // SAFETY:
@@ -40,7 +43,7 @@ impl RenderThread {
             channels,
             frames_played: AtomicU64::new(0),
             receiver,
-            ring_buffer: Bounded::from([0.; 2048]),
+            ring_buffer: Bounded::from([0.; 8192]),
         }
     }
 
