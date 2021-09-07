@@ -118,7 +118,9 @@ impl RenderThread {
         // handle addition/removal of nodes/edges
         self.handle_control_messages();
 
-        if self.ring_buffer.len() < 2 * chunk_size {
+        // Rendering is triggered to avoid cpal cb starving
+        // At least on chunk_size buffer should be always available to be consumed
+        if self.ring_buffer.len() < chunk_size {
             // update time
             let timestamp = self
                 .frames_played
