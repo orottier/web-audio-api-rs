@@ -148,6 +148,7 @@ impl RenderThread {
         }
 
         // copy rendered audio into output slice
+        // CPAL invariant: buffer.len() <= chunk_size
         for sample in buffer.iter_mut() {
             let input = &self.ring_buffer.pop().unwrap();
             let value = Sample::from::<f32>(input);
