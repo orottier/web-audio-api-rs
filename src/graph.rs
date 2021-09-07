@@ -1,6 +1,5 @@
 use cpal::Sample;
 use crossbeam_channel::Receiver;
-use dasp::ring_buffer::Bounded;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,6 +8,7 @@ use crate::alloc::{Alloc, AudioBuffer};
 use crate::buffer::{ChannelConfig, ChannelCountMode};
 use crate::message::ControlMessage;
 use crate::process::{AudioParamValues, AudioProcessor};
+use crate::ring_buffer::RingBuffer;
 use crate::{SampleRate, BUFFER_SIZE};
 
 /// Operations running off the system-level audio callback
@@ -21,7 +21,7 @@ pub(crate) struct RenderThread {
     // 8192 represents the memory space required to be compliant with the
     //[web audio api specs](https://www.w3.org/TR/webaudio/#:~:text=An%20implementation%20MUST%20support%20at%20least%2032%20channels.)
     //this memory space is required to store 2 chunk_size of 128 samples for 32 channels.
-    ring_buffer: Bounded<[f32; 8192]>,
+    ring_buffer: RingBuffer<8192>,
 }
 
 // SAFETY:
@@ -43,7 +43,7 @@ impl RenderThread {
             channels,
             frames_played: AtomicU64::new(0),
             receiver,
-            ring_buffer: Bounded::from([0.; 8192]),
+            ring_buffer: RingBuffer::default(),
         }
     }
 
@@ -153,7 +153,7 @@ impl RenderThread {
         // copy rendered audio into output slice
         // CPAL invariant: buffer.len() <= chunk_size
         for sample in buffer.iter_mut() {
-            let input = &self.ring_buffer.pop().unwrap();
+            let input = &self.ring_buffer.pop();
             let value = Sample::from::<f32>(input);
 
             *sample = value;

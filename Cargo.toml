@@ -19,7 +19,6 @@ hound = "3.4.0"
 log = "0.4.14"
 realfft = "1.1.0"
 crossbeam-channel = "0.5.1"
-dasp = {version = "0.11", features=["ring_buffer"]}
 
 [dev-dependencies]
 rand = "0.8.*"

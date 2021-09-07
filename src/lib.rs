@@ -61,6 +61,7 @@ mod io;
 mod analysis;
 mod graph;
 mod message;
+mod ring_buffer;
 
 /// Number of samples processed per second (Hertz) for a single channel of audio
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
