@@ -18,6 +18,7 @@ pub(crate) struct RenderThread {
     channels: usize,
     frames_played: AtomicU64,
     receiver: Receiver<ControlMessage>,
+    buffer_offset: Option<(usize, AudioBuffer)>,
 }
 
 // SAFETY:
@@ -39,6 +40,7 @@ impl RenderThread {
             channels,
             frames_played: AtomicU64::new(0),
             receiver,
+            buffer_offset: None,
         }
     }
 
@@ -107,16 +109,39 @@ impl RenderThread {
         buf
     }
 
-    pub fn render<S: Sample>(&mut self, buffer: &mut [S]) {
+    pub fn render<S: Sample>(&mut self, mut buffer: &mut [S]) {
+        // There may be audio frames left over from the previous render call,
+        // if the cpal buffer size did not align with our internal BUFFER_SIZE
+        if let Some((offset, prev_rendered)) = self.buffer_offset.take() {
+            let leftover_len = (BUFFER_SIZE as usize - offset) * self.channels;
+            // split the leftover frames slice, to fit in `buffer`
+            let (first, next) = buffer.split_at_mut(leftover_len.min(buffer.len()));
+
+            // copy rendered audio into output slice
+            for i in 0..self.channels {
+                let output = first.iter_mut().skip(i).step_by(self.channels);
+                let channel = prev_rendered.channel_data(i)[offset..].iter();
+                for (sample, input) in output.zip(channel) {
+                    let value = Sample::from::<f32>(input);
+                    *sample = value;
+                }
+            }
+
+            // exit early if we are done filling the buffer with the previously rendered data
+            if next.is_empty() {
+                self.buffer_offset = Some((offset + first.len() / self.channels, prev_rendered));
+                return;
+            }
+
+            // if there's still space left in the buffer, continue rendering
+            buffer = next;
+        }
+
         // The audio graph is rendered in chunks of BUFFER_SIZE frames.  But some audio backends
-        // may not be able to emit chunks of this size, hence the only requirement is that the
-        // actual buffer size is a multiple of BUFFER_SIZE.
+        // may not be able to emit chunks of this size.
         let chunk_size = BUFFER_SIZE as usize * self.channels as usize;
 
-        // assert input was properly sized
-        debug_assert_eq!(buffer.len() % chunk_size, 0);
-
-        for data in buffer.chunks_exact_mut(chunk_size) {
+        for data in buffer.chunks_mut(chunk_size) {
             // handle addition/removal of nodes/edges
             self.handle_control_messages();
 
@@ -137,6 +162,13 @@ impl RenderThread {
                     let value = Sample::from::<f32>(input);
                     *sample = value;
                 }
+            }
+
+            if data.len() != chunk_size {
+                // this is the last chunk, and it contained less than BUFFER_SIZE samples
+                let channel_offset = data.len() / self.channels;
+                debug_assert!(channel_offset < BUFFER_SIZE as usize);
+                self.buffer_offset = Some((channel_offset, rendered.clone()));
             }
         }
     }
