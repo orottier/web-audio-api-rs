@@ -275,7 +275,9 @@ impl AudioContext {
     /// This will play live audio on the default output
     #[cfg(not(test))]
     pub fn new() -> Self {
-        let io_builder = io::OutputBuilder::new();
+        // OutputBuilder instance: default host - default device - default config
+        let io_builder = io::OutputBuilder::default();
+
         let config = io_builder.config();
         log::debug!("Output {:?}", config);
 

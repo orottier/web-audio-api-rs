@@ -1,4 +1,5 @@
 use crate::BUFFER_SIZE;
+use std::default::Default;
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -23,6 +24,7 @@ impl OutputBuilder {
         let mut supported_configs_range = device
             .supported_output_configs()
             .expect("error while querying configs");
+
         let supported_config = supported_configs_range
             .next()
             .expect("no supported config?!")
@@ -72,11 +74,46 @@ impl OutputBuilder {
                 err_fn,
             ),
         }
-        .unwrap();
+        .expect("Output stream failed to build");
 
-        stream.play().unwrap();
+        // Required because some hosts don't play the stream automatically
+        stream.play().expect("Output stream refused to play");
 
         stream
+    }
+}
+
+impl Default for OutputBuilder {
+    fn default() -> Self {
+        let host = cpal::default_host();
+        let device = host
+            .default_output_device()
+            .expect("Default output device not found");
+
+        let supported_config = device
+            .default_output_config()
+            .expect("Default output config not found");
+
+        let sample_format = supported_config.sample_format();
+
+        // determine best buffer size. Spec requires BUFFER_SIZE, but that might not be available
+        let mut buffer_size = match supported_config.buffer_size() {
+            SupportedBufferSize::Range { min, .. } => crate::BUFFER_SIZE.max(*min),
+            SupportedBufferSize::Unknown => BUFFER_SIZE,
+        };
+
+        // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
+        // the desired number of frames.
+        buffer_size = (buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+
+        let mut config: StreamConfig = supported_config.into();
+        config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+
+        Self {
+            device,
+            config,
+            sample_format,
+        }
     }
 }
 
