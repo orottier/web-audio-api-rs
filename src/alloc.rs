@@ -292,6 +292,8 @@ impl AudioBuffer {
 
 #[cfg(test)]
 mod tests {
+    use float_eq::assert_float_eq;
+
     use super::*;
 
     #[test]
@@ -305,21 +307,13 @@ mod tests {
                 // take a buffer out of the pool
                 let a = alloc.allocate();
 
-                assert!(a
-                    .as_ref()
-                    .iter()
-                    .zip(&[0.; LEN])
-                    .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+                assert_float_eq!(&a[..], &[0.; LEN][..], ulps_all <= 0);
                 assert_eq!(alloc.pool_size(), 1);
 
                 // mutating this buffer will not allocate
                 let mut a = a;
                 a.iter_mut().for_each(|v| *v += 1.);
-                assert!(a
-                    .as_ref()
-                    .iter()
-                    .zip(&[1.; LEN])
-                    .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+                assert_float_eq!(&a[..], &[1.; LEN][..], ulps_all <= 0);
                 assert_eq!(alloc.pool_size(), 1);
 
                 // clone this buffer, should not allocate
@@ -347,21 +341,9 @@ mod tests {
                 });
 
                 // dirty allocations
-                assert!(a
-                    .as_ref()
-                    .iter()
-                    .zip(&[1.; LEN])
-                    .all(|(a, b)| (a - b).abs() < f32::EPSILON));
-                assert!(b
-                    .as_ref()
-                    .iter()
-                    .zip(&[2.; LEN])
-                    .all(|(a, b)| (a - b).abs() < f32::EPSILON));
-                assert!(c
-                    .as_ref()
-                    .iter()
-                    .zip(&[0.; LEN])
-                    .all(|(a, b)| (a - b).abs() < f32::EPSILON)); // this one is fresh
+                assert_float_eq!(&a[..], &[1.; LEN][..], ulps_all <= 0);
+                assert_float_eq!(&b[..], &[2.; LEN][..], ulps_all <= 0);
+                assert_float_eq!(&c[..], &[0.; LEN][..], ulps_all <= 0);
 
                 c
             };
@@ -385,11 +367,7 @@ mod tests {
                 assert_eq!(alloc.pool_size(), 2);
 
                 // but should be silent, even though a dirty buffer is taken
-
-                assert!(a_vals
-                    .iter()
-                    .zip(&[0.; LEN])
-                    .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+                assert_float_eq!(&a_vals[..], &[0.; LEN][..], ulps_all <= 0);
 
                 // is_silent is a superficial ptr check
                 assert!(!a.is_silent());
@@ -402,35 +380,23 @@ mod tests {
         let alloc = Alloc::with_capacity(1);
         let silence = alloc.silence();
 
-        assert!(silence
-            .iter()
-            .zip(&[0.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&silence[..], &[0.; LEN][..], ulps_all <= 0);
         assert!(silence.is_silent());
 
         // changing silence is possible
         let mut changed = silence;
         changed.iter_mut().for_each(|v| *v = 1.);
-        assert!(changed
-            .iter()
-            .zip(&[1.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&changed[..], &[1.; LEN][..], ulps_all <= 0);
         assert!(!changed.is_silent());
 
         // but should not alter new silence
         let silence = alloc.silence();
-        assert!(silence
-            .iter()
-            .zip(&[0.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&silence[..], &[0.; LEN][..], ulps_all <= 0);
         assert!(silence.is_silent());
 
         // can also create silence from ChannelData
         let from_channel = silence.silence();
-        assert!(from_channel
-            .iter()
-            .zip(&[0.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&from_channel[..], &[0.; LEN][..], ulps_all <= 0);
         assert!(from_channel.is_silent());
     }
 
@@ -447,25 +413,16 @@ mod tests {
 
         // test add silence to signal
         signal1.add(&silence);
-        assert!(signal1
-            .iter()
-            .zip(&[1.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&signal1[..], &[1.; LEN][..], ulps_all <= 0);
 
         // test add signal to silence
-        let mut sum = alloc.silence();
-        sum.add(&signal1);
-        assert!(sum
-            .iter()
-            .zip(&[1.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        let mut silence = alloc.silence();
+        silence.add(&signal1);
+        assert_float_eq!(&silence[..], &[1.; LEN][..], ulps_all <= 0);
 
         // test add two signals
         signal1.add(&signal2);
-        assert!(signal1
-            .iter()
-            .zip(&[3.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&signal1[..], &[3.; LEN][..], ulps_all <= 0);
     }
 
     #[test]
@@ -497,33 +454,18 @@ mod tests {
         buffer.mix(1, ChannelInterpretation::Discrete);
 
         assert_eq!(buffer.number_of_channels(), 1);
-        assert!(buffer
-            .channel_data(0)
-            .iter()
-            .zip(&[1.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
 
         buffer.mix(2, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 2);
+
         // first channel unchanged, second channel silent
-        assert!(buffer
-            .channel_data(0)
-            .iter()
-            .zip(&[1.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
-        assert!(buffer
-            .channel_data(1)
-            .iter()
-            .zip(&[0.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(1)[..], &[0.; LEN][..], ulps_all <= 0);
 
         buffer.mix(1, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 1);
-        assert!(buffer
-            .channel_data(0)
-            .iter()
-            .zip(&[1.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
     }
 
     #[test]
@@ -537,33 +479,18 @@ mod tests {
 
         buffer.mix(1, ChannelInterpretation::Speakers);
         assert_eq!(buffer.number_of_channels(), 1);
-        assert!(buffer
-            .channel_data(0)
-            .iter()
-            .zip(&[1.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
 
         buffer.mix(2, ChannelInterpretation::Speakers);
         assert_eq!(buffer.number_of_channels(), 2);
+
         // left and right equal
-        assert!(buffer
-            .channel_data(0)
-            .iter()
-            .zip(&[1.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
-        assert!(buffer
-            .channel_data(1)
-            .iter()
-            .zip(&[1.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(1)[..], &[1.; LEN][..], ulps_all <= 0);
 
         buffer.mix(1, ChannelInterpretation::Speakers);
         assert_eq!(buffer.number_of_channels(), 1);
-        assert!(buffer
-            .channel_data(0)
-            .iter()
-            .zip(&[1.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
     }
 
     #[test]
@@ -580,16 +507,9 @@ mod tests {
         let buffer2 = AudioBuffer::new(signal2);
 
         buffer.add(&buffer2, ChannelInterpretation::Discrete);
+
         assert_eq!(buffer.number_of_channels(), 2);
-        assert!(buffer
-            .channel_data(0)
-            .iter()
-            .zip(&[3.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
-        assert!(buffer
-            .channel_data(1)
-            .iter()
-            .zip(&[1.; LEN])
-            .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+        assert_float_eq!(&buffer.channel_data(0)[..], &[3.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(1)[..], &[1.; LEN][..], ulps_all <= 0);
     }
 }
