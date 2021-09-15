@@ -1,3 +1,4 @@
+use float_eq::assert_float_eq;
 use web_audio_api::context::AsBaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::node::{
@@ -29,18 +30,16 @@ fn test_offline_render() {
     assert_eq!(output.number_of_channels(), 2);
     assert_eq!(output.sample_len(), LENGTH);
 
-    assert!(output
-        .channel_data(0)
-        .as_slice()
-        .iter()
-        .zip(&[-2.; LENGTH])
-        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
-    assert!(output
-        .channel_data(1)
-        .as_slice()
-        .iter()
-        .zip(&[-2.; LENGTH])
-        .all(|(a, b)| (a - b).abs() < f32::EPSILON));
+    assert_float_eq!(
+        output.channel_data(0).as_slice(),
+        &[-2.; LENGTH][..],
+        ulps_all <= 0
+    );
+    assert_float_eq!(
+        output.channel_data(1).as_slice(),
+        &[-2.; LENGTH][..],
+        ulps_all <= 0
+    );
 }
 
 #[test]
