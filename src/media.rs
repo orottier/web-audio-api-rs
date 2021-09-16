@@ -301,22 +301,11 @@ impl Microphone {
     /// Setup the default microphone input stream
     #[cfg(not(test))]
     pub fn new() -> Self {
-        let buffer = 1; // todo, use buffering to smooth frame drops
-        let (sender, receiver) = crossbeam_channel::bounded(buffer);
-
-        let io_builder = io::InputBuilder::new();
-        let config = io_builder.config();
+        let (stream, config, receiver) = io::build_input();
         log::debug!("Input {:?}", config);
 
         let sample_rate = SampleRate(config.sample_rate.0);
         let channels = config.channels as usize;
-        let render = MicrophoneRender {
-            channels,
-            sample_rate,
-            sender,
-        };
-
-        let stream = io_builder.build(render);
 
         Self {
             receiver,
@@ -380,6 +369,14 @@ pub(crate) struct MicrophoneRender {
 
 #[cfg(not(test))]
 impl MicrophoneRender {
+    pub fn new(channels: usize, sample_rate: SampleRate, sender: Sender<AudioBuffer>) -> Self {
+        Self {
+            channels,
+            sample_rate,
+            sender,
+        }
+    }
+
     pub fn render<S: Sample>(&self, data: &[S]) {
         let mut channels = Vec::with_capacity(self.channels);
 
