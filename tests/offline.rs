@@ -1,3 +1,4 @@
+use float_eq::assert_float_eq;
 use web_audio_api::context::AsBaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::node::{
@@ -29,8 +30,16 @@ fn test_offline_render() {
     assert_eq!(output.number_of_channels(), 2);
     assert_eq!(output.sample_len(), LENGTH);
 
-    assert_eq!(output.channel_data(0).as_slice(), &[-2.; LENGTH]);
-    assert_eq!(output.channel_data(1).as_slice(), &[-2.; LENGTH]);
+    assert_float_eq!(
+        output.channel_data(0).as_slice(),
+        &[-2.; LENGTH][..],
+        ulps_all <= 0
+    );
+    assert_float_eq!(
+        output.channel_data(1).as_slice(),
+        &[-2.; LENGTH][..],
+        ulps_all <= 0
+    );
 }
 
 #[test]
@@ -142,8 +151,8 @@ fn test_listener() {
     let _ = context.start_rendering();
 
     let listener = context.listener();
-    assert_eq!(listener.position_y().value(), 2.);
-    assert_eq!(listener.position_x().value(), 1.);
+    assert_float_eq!(listener.position_y().value(), 2., ulps <= 0);
+    assert_float_eq!(listener.position_x().value(), 1., ulps <= 0);
 }
 
 #[test]
@@ -172,8 +181,9 @@ fn test_cycle() {
 
     let output = context.start_rendering();
     // cycle should be muted, and other source should be processed
-    assert_eq!(
+    assert_float_eq!(
         output.channel_data(0).as_slice(),
-        &[2.; BUFFER_SIZE as usize]
+        &[2.; BUFFER_SIZE as usize][..],
+        ulps_all <= 0
     );
 }

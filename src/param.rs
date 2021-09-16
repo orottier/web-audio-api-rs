@@ -146,7 +146,7 @@ impl AudioProcessor for AudioParamProcessor {
             .channel_data_mut(0)
             .copy_from_slice(intrinsic.as_slice());
 
-        buffer.add(&input, ChannelInterpretation::Discrete);
+        buffer.add(input, ChannelInterpretation::Discrete);
 
         outputs[0] = buffer;
     }
@@ -314,6 +314,8 @@ impl AudioParamProcessor {
 
 #[cfg(test)]
 mod tests {
+    use float_eq::assert_float_eq;
+
     use crate::context::{AsBaseAudioContext, OfflineAudioContext};
 
     use super::*;
@@ -350,10 +352,14 @@ mod tests {
         param.set_value_at_time_direct(8., 10.0); // should not occur 1st run
 
         let vs = render.tick(0., 1., 10);
-        assert_eq!(vs, vec![0., 0., 5., 5., 5., 5., 5., 5., 10., 10.]);
+        assert_float_eq!(
+            vs,
+            vec![0., 0., 5., 5., 5., 5., 5., 5., 10., 10.],
+            ulps_all <= 0
+        );
 
         let vs = render.tick(10., 1., 10);
-        assert_eq!(vs, vec![8.; 10]);
+        assert_float_eq!(vs, vec![8.; 10], ulps_all <= 0);
     }
 
     #[test]
@@ -372,10 +378,10 @@ mod tests {
         param.set_value_at_time_direct(8., 10.0); // should not occur 1st run
 
         let vs = render.tick(0., 1., 10);
-        assert_eq!(vs, vec![0.; 10]);
+        assert_float_eq!(vs, vec![0.; 10], ulps_all <= 0);
 
         let vs = render.tick(10., 1., 10);
-        assert_eq!(vs, vec![8.; 10]);
+        assert_float_eq!(vs, vec![8.; 10], ulps_all <= 0);
     }
 
     #[test]
@@ -398,7 +404,11 @@ mod tests {
         param.linear_ramp_to_value_at_time_direct(0., 13.0);
 
         let vs = render.tick(0., 1., 10);
-        assert_eq!(vs, vec![0., 0., 5., 6., 7., 8., 7., 6., 5., 4.]);
+        assert_float_eq!(
+            vs,
+            vec![0., 0., 5., 6., 7., 8., 7., 6., 5., 4.],
+            ulps_all <= 0
+        );
     }
 
     #[test]
@@ -419,6 +429,10 @@ mod tests {
         let vs = render.tick(0., 1., 10);
         // Todo last value should actually be zero, but it rounds not nicely
         // I guess this will not be a problem in practise.
-        assert_eq!(vs, vec![0., 1., 1., 1., 1., 1., 1., 1., 1., 1.]);
+        assert_float_eq!(
+            vs,
+            vec![0., 1., 1., 1., 1., 1., 1., 1., 1., 1.],
+            ulps_all <= 0
+        );
     }
 }

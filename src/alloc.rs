@@ -292,6 +292,8 @@ impl AudioBuffer {
 
 #[cfg(test)]
 mod tests {
+    use float_eq::assert_float_eq;
+
     use super::*;
 
     #[test]
@@ -304,16 +306,18 @@ mod tests {
             {
                 // take a buffer out of the pool
                 let a = alloc.allocate();
-                assert_eq!(*a.as_ref(), [0.; LEN]);
+
+                assert_float_eq!(&a[..], &[0.; LEN][..], ulps_all <= 0);
                 assert_eq!(alloc.pool_size(), 1);
 
                 // mutating this buffer will not allocate
                 let mut a = a;
                 a.iter_mut().for_each(|v| *v += 1.);
-                assert_eq!(*a.as_ref(), [1.; LEN]);
+                assert_float_eq!(&a[..], &[1.; LEN][..], ulps_all <= 0);
                 assert_eq!(alloc.pool_size(), 1);
 
                 // clone this buffer, should not allocate
+                #[allow(clippy::redundant_clone)]
                 let mut b: ChannelData = a.clone();
                 assert_eq!(alloc.pool_size(), 1);
 
@@ -337,9 +341,9 @@ mod tests {
                 });
 
                 // dirty allocations
-                assert_eq!(*a.as_ref(), [1.; LEN]);
-                assert_eq!(*b.as_ref(), [2.; LEN]);
-                assert_eq!(*c.as_ref(), [0.; LEN]); // this one is fresh
+                assert_float_eq!(&a[..], &[1.; LEN][..], ulps_all <= 0);
+                assert_float_eq!(&b[..], &[2.; LEN][..], ulps_all <= 0);
+                assert_float_eq!(&c[..], &[0.; LEN][..], ulps_all <= 0);
 
                 c
             };
@@ -363,11 +367,10 @@ mod tests {
                 assert_eq!(alloc.pool_size(), 2);
 
                 // but should be silent, even though a dirty buffer is taken
-                assert_eq!(*a_vals, [0.; LEN]);
-                assert_eq!(*a_vals, [0.; LEN]);
+                assert_float_eq!(&a_vals[..], &[0.; LEN][..], ulps_all <= 0);
 
                 // is_silent is a superficial ptr check
-                assert_eq!(a.is_silent(), false);
+                assert!(!a.is_silent());
             }
         });
     }
@@ -376,23 +379,24 @@ mod tests {
     fn test_silence() {
         let alloc = Alloc::with_capacity(1);
         let silence = alloc.silence();
-        assert_eq!(&silence[..], &[0.; LEN]);
+
+        assert_float_eq!(&silence[..], &[0.; LEN][..], ulps_all <= 0);
         assert!(silence.is_silent());
 
         // changing silence is possible
         let mut changed = silence;
         changed.iter_mut().for_each(|v| *v = 1.);
-        assert_eq!(&changed[..], &[1.; LEN]);
+        assert_float_eq!(&changed[..], &[1.; LEN][..], ulps_all <= 0);
         assert!(!changed.is_silent());
 
         // but should not alter new silence
         let silence = alloc.silence();
-        assert_eq!(&silence[..], &[0.; LEN]);
+        assert_float_eq!(&silence[..], &[0.; LEN][..], ulps_all <= 0);
         assert!(silence.is_silent());
 
         // can also create silence from ChannelData
         let from_channel = silence.silence();
-        assert_eq!(&from_channel[..], &[0.; LEN]);
+        assert_float_eq!(&from_channel[..], &[0.; LEN][..], ulps_all <= 0);
         assert!(from_channel.is_silent());
     }
 
@@ -409,16 +413,16 @@ mod tests {
 
         // test add silence to signal
         signal1.add(&silence);
-        assert_eq!(&signal1[..], &[1.; LEN]);
+        assert_float_eq!(&signal1[..], &[1.; LEN][..], ulps_all <= 0);
 
         // test add signal to silence
-        let mut sum = alloc.silence();
-        sum.add(&signal1);
-        assert_eq!(&sum[..], &[1.; LEN]);
+        let mut silence = alloc.silence();
+        silence.add(&signal1);
+        assert_float_eq!(&silence[..], &[1.; LEN][..], ulps_all <= 0);
 
         // test add two signals
         signal1.add(&signal2);
-        assert_eq!(&signal1[..], &[3.; LEN]);
+        assert_float_eq!(&signal1[..], &[3.; LEN][..], ulps_all <= 0);
     }
 
     #[test]
@@ -448,18 +452,20 @@ mod tests {
         let mut buffer = AudioBuffer::new(signal);
 
         buffer.mix(1, ChannelInterpretation::Discrete);
+
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
 
         buffer.mix(2, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 2);
+
         // first channel unchanged, second channel silent
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
-        assert_eq!(&buffer.channel_data(1)[..], &[0.; LEN]);
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(1)[..], &[0.; LEN][..], ulps_all <= 0);
 
         buffer.mix(1, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
     }
 
     #[test]
@@ -473,17 +479,18 @@ mod tests {
 
         buffer.mix(1, ChannelInterpretation::Speakers);
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
 
         buffer.mix(2, ChannelInterpretation::Speakers);
         assert_eq!(buffer.number_of_channels(), 2);
+
         // left and right equal
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
-        assert_eq!(&buffer.channel_data(1)[..], &[1.; LEN]);
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(1)[..], &[1.; LEN][..], ulps_all <= 0);
 
         buffer.mix(1, ChannelInterpretation::Speakers);
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_eq!(&buffer.channel_data(0)[..], &[1.; LEN]);
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
     }
 
     #[test]
@@ -500,8 +507,9 @@ mod tests {
         let buffer2 = AudioBuffer::new(signal2);
 
         buffer.add(&buffer2, ChannelInterpretation::Discrete);
+
         assert_eq!(buffer.number_of_channels(), 2);
-        assert_eq!(&buffer.channel_data(0)[..], &[3.; LEN]);
-        assert_eq!(&buffer.channel_data(1)[..], &[1.; LEN]);
+        assert_float_eq!(&buffer.channel_data(0)[..], &[3.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(1)[..], &[1.; LEN][..], ulps_all <= 0);
     }
 }

@@ -128,9 +128,9 @@ mod tests {
     fn test_controller() {
         let controller = Controller::new();
 
-        assert_eq!(controller.loop_(), false);
-        assert_eq!(controller.loop_start(), 0.);
-        assert_eq!(controller.loop_end(), f64::MAX);
+        assert!(!controller.loop_());
+        assert!(controller.loop_start() == 0.);
+        assert!(controller.loop_end() == f64::MAX);
         assert!(controller.should_seek().is_none());
 
         controller.seek(1.);

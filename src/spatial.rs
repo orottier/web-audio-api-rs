@@ -310,6 +310,8 @@ pub fn distance(source_position: Vector3<f32>, listener_position: Vector3<f32>) 
 
 #[cfg(test)]
 mod tests {
+    use float_eq::assert_float_eq;
+
     use super::*;
 
     // listener coordinates/directions
@@ -322,8 +324,8 @@ mod tests {
         let pos = [0., 0., 0.];
         let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
 
-        assert_eq!(azimuth, 0.);
-        assert_eq!(elevation, 0.);
+        assert_float_eq!(azimuth, 0., ulps <= 0);
+        assert_float_eq!(elevation, 0., ulps <= 0);
     }
 
     #[test]
@@ -332,35 +334,35 @@ mod tests {
 
         let pos = [10., 0., 0.];
         let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
-        assert!((azimuth - 90.).abs() < 0.001);
-        assert_eq!(elevation, 0.);
+        assert_float_eq!(azimuth, 90., abs <= 0.001);
+        assert_float_eq!(elevation, 0., ulps <= 0);
 
         let pos = [-10., 0., 0.];
         let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
-        assert!((azimuth + 90.).abs() < 0.001);
-        assert_eq!(elevation, 0.);
+        assert_float_eq!(azimuth, -90., abs <= 0.001);
+        assert_float_eq!(elevation, 0., ulps <= 0);
 
         let pos = [10., 0., -10.];
         let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
-        assert!((azimuth - 45.).abs() < 0.001);
-        assert_eq!(elevation, 0.);
+        assert_float_eq!(azimuth, 45., abs <= 0.001);
+        assert_float_eq!(elevation, 0., ulps <= 0);
 
         let pos = [-10., 0., -10.];
         let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
-        assert!((azimuth + 45.).abs() < 0.001);
-        assert_eq!(elevation, 0.);
+        assert_float_eq!(azimuth, -45., abs <= 0.001);
+        assert_float_eq!(elevation, 0., ulps <= 0);
     }
 
     #[test]
     fn azimuth_elevation_vertical() {
         let pos = [0., -10., 0.];
         let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
-        assert_eq!(azimuth, 0.);
-        assert!((elevation + 90.).abs() < 0.001);
+        assert_float_eq!(azimuth, 0., ulps <= 1);
+        assert_float_eq!(elevation, -90., abs <= 0.001);
 
         let pos = [0., 10., 0.];
         let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
-        assert_eq!(azimuth, 0.);
-        assert!((elevation - 90.).abs() < 0.001);
+        assert_float_eq!(azimuth, 0., ulps <= 1);
+        assert_float_eq!(elevation, 90., abs <= 0.001);
     }
 }

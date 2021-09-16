@@ -123,18 +123,20 @@ impl AtomicF64 {
 
 #[cfg(test)]
 mod tests {
+    use float_eq::assert_float_eq;
+
     use super::*;
 
     #[test]
     fn test_atomic_f64() {
         let f = AtomicF64::new(2.0);
-        assert_eq!(f.load(), 2.0);
+        assert_float_eq!(f.load(), 2.0, ulps <= 0);
 
         f.store(3.0);
-        assert_eq!(f.load(), 3.0);
+        assert_float_eq!(f.load(), 3.0, ulps <= 0);
 
         let prev = f.swap(4.0);
-        assert_eq!(prev, 3.0);
-        assert_eq!(f.load(), 4.0);
+        assert_float_eq!(prev, 3.0, ulps <= 0);
+        assert_float_eq!(f.load(), 4.0, ulps <= 0);
     }
 }

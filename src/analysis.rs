@@ -209,6 +209,8 @@ impl Analyser {
 
 #[cfg(test)]
 mod tests {
+    use float_eq::{assert_float_eq, float_eq};
+
     use super::*;
 
     use crate::alloc::Alloc;
@@ -233,7 +235,7 @@ mod tests {
 
         // get data, should be padded with zeroes
         analyser.get_float_time(&mut buffer[..], LEN * 5);
-        assert_eq!(&buffer[..], &[0.; LEN * 5]);
+        assert_float_eq!(&buffer[..], &[0.; 5 * LEN][..], ulps_all <= 0);
 
         // feed data for more than 256 times (the ring buffer size)
         for i in 0..258 {
@@ -247,20 +249,18 @@ mod tests {
         analyser.get_float_time(&mut buffer[..], LEN * 4);
 
         // taken from the end of the ring buffer
-        assert_eq!(&buffer[0..LEN], &[254.; LEN]);
-        assert_eq!(&buffer[LEN..LEN * 2], &[255.; LEN]);
-
+        assert_float_eq!(&buffer[0..LEN], &[254.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer[LEN..2 * LEN], &[255.; LEN][..], ulps_all <= 0);
         // taken from the start of the ring buffer
-        assert_eq!(&buffer[LEN * 2..LEN * 3], &[256.; LEN]);
-        assert_eq!(&buffer[LEN * 3..LEN * 4], &[257.; LEN]);
-
+        assert_float_eq!(&buffer[2 * LEN..3 * LEN], &[256.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer[3 * LEN..4 * LEN], &[257.; LEN][..], ulps_all <= 0);
         // excess capacity should be left unaltered
-        assert_eq!(&buffer[LEN * 4..LEN * 5], &[0.; LEN]);
+        assert_float_eq!(&buffer[4 * LEN..5 * LEN], &[0.; LEN][..], ulps_all <= 0);
 
         // check for small fft_size
         buffer.resize(32, 0.);
         analyser.get_float_time(&mut buffer[..], LEN);
-        assert_eq!(&buffer[..], &[257.; 32]);
+        assert_float_eq!(&buffer[..], &[257.; 32][..], ulps_all <= 0);
     }
 
     #[test]
@@ -299,9 +299,14 @@ mod tests {
         // get data, should be zero (negative infinity decibel)
         analyser.calculate_float_frequency(fft_size, 0.8);
         analyser.get_float_frequency(&mut buffer[..]);
-        assert_eq!(&buffer[0..LEN * 2 + 1], &[f32::NEG_INFINITY; LEN * 2 + 1]);
+
         // only N / 2 + 1 values should contain frequency data, rest is unaltered
-        assert_eq!(&buffer[LEN * 2 + 1..], &[-1.; LEN * 2 - 1]);
+        assert!(buffer[0..LEN * 2 + 1] == [f32::NEG_INFINITY; LEN * 2 + 1]);
+        assert_float_eq!(
+            &buffer[2 * LEN + 1..],
+            &[-1.; 2 * LEN - 1][..],
+            ulps_all <= 0
+        );
 
         // feed data for more than 256 times (the ring buffer size)
         for i in 0..258 {
@@ -314,7 +319,7 @@ mod tests {
         // this should return other data now
         analyser.calculate_float_frequency(fft_size, 0.8);
         analyser.get_float_frequency(&mut buffer[..]);
-        assert!(&buffer[0..LEN * 2 + 1] != &[f32::NEG_INFINITY; LEN * 2 + 1]);
+        assert!(buffer[0..LEN * 2 + 1] != [f32::NEG_INFINITY; LEN * 2 + 1]);
     }
 
     #[test]
@@ -330,8 +335,14 @@ mod tests {
         assert!(min < 0.01 && min > 0.);
         assert!(max > 0.99 && max <= 1.);
 
-        let min_pos = values.iter().position(|&v| v == min).unwrap();
-        let max_pos = values.iter().position(|&v| v == max).unwrap();
+        let min_pos = values
+            .iter()
+            .position(|&v| float_eq!(v, min, ulps_all <= 0))
+            .unwrap();
+        let max_pos = values
+            .iter()
+            .position(|&v| float_eq!(v, max, ulps_all <= 0))
+            .unwrap();
         assert_eq!(min_pos, 0);
         assert_eq!(max_pos, 1024);
     }
