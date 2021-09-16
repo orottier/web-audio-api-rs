@@ -136,7 +136,7 @@ mod tests {
         assert_float_eq!(f.load(), 3.0, ulps <= 0);
 
         let prev = f.swap(4.0);
-        assert!((prev - 3.0).abs() < f64::EPSILON);
+        assert_float_eq!(prev, 3.0, ulps <= 0);
         assert_float_eq!(f.load(), 4.0, ulps <= 0);
     }
 }

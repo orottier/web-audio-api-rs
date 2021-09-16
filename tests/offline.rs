@@ -151,8 +151,8 @@ fn test_listener() {
     let _ = context.start_rendering();
 
     let listener = context.listener();
-    assert!((listener.position_y().value() - 2.).abs() < f32::EPSILON);
-    assert!((listener.position_x().value() - 1.).abs() < f32::EPSILON);
+    assert_float_eq!(listener.position_y().value(), 2., ulps <= 0);
+    assert_float_eq!(listener.position_x().value(), 1., ulps <= 0);
 }
 
 #[test]
@@ -181,10 +181,9 @@ fn test_cycle() {
 
     let output = context.start_rendering();
     // cycle should be muted, and other source should be processed
-    assert!(output
-        .channel_data(0)
-        .as_slice()
-        .iter()
-        .zip(&[2.; BUFFER_SIZE as usize])
-        .all(|(a, b)| (a - b).abs() < f32::EPSILON),);
+    assert_float_eq!(
+        output.channel_data(0).as_slice(),
+        &[2.; BUFFER_SIZE as usize][..],
+        ulps_all <= 0
+    );
 }
