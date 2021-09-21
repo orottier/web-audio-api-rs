@@ -475,6 +475,8 @@ impl<M: MediaStream> Iterator for Resampler<M> {
 
 #[cfg(test)]
 mod tests {
+    use float_eq::assert_float_eq;
+
     use super::*;
 
     #[test]
@@ -484,8 +486,8 @@ mod tests {
         assert_eq!(b.sample_len(), 10);
         assert_eq!(b.number_of_channels(), 2);
         assert_eq!(b.sample_rate().0, 44_100);
-        assert_eq!(b.channel_data(0).as_slice(), &[0.; 10]);
-        assert_eq!(b.channel_data(1).as_slice(), &[0.; 10]);
+        assert_float_eq!(b.channel_data(0).as_slice(), &[0.; 10][..], ulps_all <= 0);
+        assert_float_eq!(b.channel_data(1).as_slice(), &[0.; 10][..], ulps_all <= 0);
         assert_eq!(b.channels().get(2), None);
     }
 
@@ -507,19 +509,22 @@ mod tests {
         assert_eq!(b1.sample_len(), 15);
         assert_eq!(b1.number_of_channels(), 2);
         assert_eq!(b1.sample_rate().0, 44_100);
-        assert_eq!(
+        assert_float_eq!(
             b1.channel_data(0).as_slice(),
-            &[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 1.]
+            &[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
+            ulps_all <= 0
         );
 
         let split = b1.split(8);
-        assert_eq!(
+        assert_float_eq!(
             split[0].channel_data(0).as_slice(),
-            &[0., 0., 0., 0., 0., 0., 0., 0.]
+            &[0., 0., 0., 0., 0., 0., 0., 0.][..],
+            ulps_all <= 0
         );
-        assert_eq!(
+        assert_float_eq!(
             split[1].channel_data(0).as_slice(),
-            &[0., 0., 1., 1., 1., 1., 1.]
+            &[0., 0., 1., 1., 1., 1., 1.][..],
+            ulps_all <= 0
         );
     }
 
@@ -528,9 +533,10 @@ mod tests {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(100));
         buffer.resample(SampleRate(200));
-        assert_eq!(
+        assert_float_eq!(
             buffer.channel_data(0).as_slice(),
-            &[1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,]
+            &[1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,][..],
+            ulps_all <= 0
         );
         assert_eq!(buffer.sample_rate().0, 200);
     }
@@ -540,7 +546,11 @@ mod tests {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(200));
         buffer.resample(SampleRate(100));
-        assert_eq!(buffer.channel_data(0).as_slice(), &[2., 4.]);
+        assert_float_eq!(
+            buffer.channel_data(0).as_slice(),
+            &[2., 4.][..],
+            ulps_all <= 0
+        );
         assert_eq!(buffer.sample_rate().0, 100);
     }
 
@@ -548,21 +558,23 @@ mod tests {
     fn test_resampler_concat() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let input_buf = AudioBuffer::from_channels(vec![channel], SampleRate(44_100));
-        let input = vec![input_buf; 3].into_iter().map(|b| Ok(b));
+        let input = vec![input_buf; 3].into_iter().map(Ok);
         let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 10);
-        assert_eq!(
+        assert_float_eq!(
             next.channel_data(0).as_slice(),
-            &[1., 2., 3., 4., 5., 1., 2., 3., 4., 5.,]
+            &[1., 2., 3., 4., 5., 1., 2., 3., 4., 5.,][..],
+            ulps_all <= 0
         );
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 10);
-        assert_eq!(
+        assert_float_eq!(
             next.channel_data(0).as_slice(),
-            &[1., 2., 3., 4., 5., 0., 0., 0., 0., 0.]
+            &[1., 2., 3., 4., 5., 0., 0., 0., 0., 0.][..],
+            ulps_all <= 0
         );
 
         assert!(resampler.next().is_none());
@@ -580,11 +592,19 @@ mod tests {
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 5);
-        assert_eq!(next.channel_data(0).as_slice(), &[1., 2., 3., 4., 5.,]);
+        assert_float_eq!(
+            next.channel_data(0).as_slice(),
+            &[1., 2., 3., 4., 5.][..],
+            ulps_all <= 0
+        );
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.sample_len(), 5);
-        assert_eq!(next.channel_data(0).as_slice(), &[6., 7., 8., 9., 10.]);
+        assert_float_eq!(
+            next.channel_data(0).as_slice(),
+            &[6., 7., 8., 9., 10.][..],
+            ulps_all <= 0
+        );
 
         assert!(resampler.next().is_none());
     }

@@ -233,7 +233,7 @@ pub trait AsBaseAudioContext {
 
 impl AsBaseAudioContext for BaseAudioContext {
     fn base(&self) -> &BaseAudioContext {
-        &self
+        self
     }
 }
 
