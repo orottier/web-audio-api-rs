@@ -1,6 +1,6 @@
 //! The AudioNode interface and concrete types
 
-use std::f32::consts::PI;
+use std::f32::consts::{PI, TAU};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -20,6 +20,8 @@ use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 
 use crossbeam_channel::{self, Receiver, Sender};
+
+use lazy_static::lazy_static;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules.
@@ -176,6 +178,50 @@ pub trait AudioControllableSourceNode {
     }
 }
 
+const TABLE_LENGTH_USIZE: usize = 2048;
+const TABLE_LENGTH_F32: f32 = TABLE_LENGTH_USIZE as f32;
+
+// Compute one period sine wavetable of size TABLE_LENGTH
+lazy_static! {
+    static ref SINETABLE: Vec<f32> = {
+        let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
+            .map(|x| ((x as f32) * TAU * (1. / (TABLE_LENGTH_F32))).sin())
+            .collect();
+        table
+    };
+    static ref SAWTABLE: Vec<f32> = {
+        let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
+            .map(|x| {
+                let norm_phase = x as f32 / TABLE_LENGTH_F32;
+                (2.0 * norm_phase) - 1.0
+            })
+            .collect();
+        table
+    };
+    static ref SQUARETABLE: Vec<f32> = {
+        let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
+            .map(|x| {
+                let norm_phase = x as f32 / TABLE_LENGTH_F32;
+                if norm_phase <= 0.5 {
+                    1.0
+                } else {
+                    -1.0
+                }
+            })
+            .collect();
+        table
+    };
+    static ref TRIANGLETABLE: Vec<f32> = {
+        let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
+            .map(|x| {
+                let norm_phase = x as f32 / TABLE_LENGTH_F32;
+                1. - ((norm_phase - 0.5).abs() * 4.)
+            })
+            .collect();
+        table
+    };
+}
+
 /// Options for constructing an OscillatorNode
 pub struct OscillatorOptions {
     pub type_: OscillatorType,
@@ -259,7 +305,8 @@ impl AudioNode for OscillatorNode {
 impl OscillatorNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: OscillatorOptions) -> Self {
         context.base().register(move |registration| {
-            let nyquist = context.base().sample_rate().0 as f32 / 2.;
+            let sample_rate = context.base().sample_rate().0 as f32;
+            let nyquist = sample_rate / 2.;
             let param_opts = AudioParamOptions {
                 min_value: -nyquist,
                 max_value: nyquist,
@@ -274,10 +321,19 @@ impl OscillatorNode {
             let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
             let scheduler = Scheduler::new();
 
+            let sine_renderer = SineRenderer::new(440., sample_rate);
+            let sawtooth_renderer = SawRenderer::new(440., sample_rate);
+            let triangle_renderer = TriangleRenderer::new(440., sample_rate);
+            let square_renderer = SquareRenderer::new(440., sample_rate);
+
             let render = OscillatorRenderer {
                 frequency: f_proc,
                 type_: type_.clone(),
                 scheduler: scheduler.clone(),
+                sine_renderer,
+                sawtooth_renderer,
+                triangle_renderer,
+                square_renderer,
             };
             let node = OscillatorNode {
                 registration,
@@ -308,6 +364,10 @@ struct OscillatorRenderer {
     frequency: AudioParamId,
     type_: Arc<AtomicU32>,
     scheduler: Scheduler,
+    sine_renderer: SineRenderer,
+    sawtooth_renderer: SawRenderer,
+    triangle_renderer: TriangleRenderer,
+    square_renderer: SquareRenderer,
 }
 
 impl AudioProcessor for OscillatorRenderer {
@@ -337,23 +397,253 @@ impl AudioProcessor for OscillatorRenderer {
         let type_ = self.type_.load(Ordering::SeqCst).into();
 
         let buffer = output.channel_data_mut(0);
-        let io = buffer
-            .iter_mut()
-            .enumerate()
-            .map(move |(i, v)| (timestamp as f32 + i as f32 / sample_rate.0 as f32, v));
 
         use OscillatorType::*;
 
         match type_ {
-            Sine => io.for_each(|(t, o)| *o = (2. * PI * freq * t).sin()),
-            Square => io.for_each(|(t, o)| *o = if (freq * t).fract() < 0.5 { 1. } else { -1. }),
-            Sawtooth => io.for_each(|(t, o)| *o = 2. * ((freq * t).fract() - 0.5)),
+            Sine => {
+                self.sine_renderer.set_frequency(freq);
+                buffer
+                    .iter_mut()
+                    .for_each(|o| *o = self.sine_renderer.tick());
+            }
+            Square => {
+                self.square_renderer.set_frequency(freq);
+                buffer
+                    .iter_mut()
+                    .for_each(|o| *o = self.square_renderer.tick());
+            }
+            Sawtooth => {
+                self.sawtooth_renderer.set_frequency(freq);
+                buffer
+                    .iter_mut()
+                    .for_each(|o| *o = self.sawtooth_renderer.tick());
+            }
+            Triangle => {
+                self.triangle_renderer.set_frequency(freq);
+                buffer
+                    .iter_mut()
+                    .for_each(|o| *o = self.triangle_renderer.tick())
+            }
             _ => todo!(),
         }
     }
 
     fn tail_time(&self) -> bool {
         true
+    }
+}
+
+trait PolyBlep {
+    fn poly_blep(&self, mut t: f32) -> f32 {
+        let dt = self.incr_phase() / TAU;
+        if t < dt {
+            t /= dt;
+            t + t - t * t - 1.0
+        } else if t > 1.0 - dt {
+            t = (t - 1.0) / dt;
+            t * t + t + t + 1.0
+        } else {
+            0.0
+        }
+    }
+
+    fn incr_phase(&self) -> f32;
+}
+
+trait Ticker {
+    fn tick(&mut self) -> f32;
+}
+
+#[derive(Debug)]
+struct SineRenderer {
+    frequency: f32,
+    sample_rate: f32,
+    phase: f32,
+    incr_phase: f32,
+    mu: f32,
+}
+
+impl SineRenderer {
+    fn new(frequency: f32, sample_rate: f32) -> Self {
+        let incr_phase = 2. * PI * (frequency / sample_rate);
+        let mu = (incr_phase - incr_phase.round()).abs();
+        Self {
+            frequency,
+            sample_rate,
+            phase: 0.0,
+            incr_phase,
+            mu,
+        }
+    }
+
+    fn set_frequency(&mut self, frequency: f32) {
+        self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
+        self.mu = (self.incr_phase - self.incr_phase.round()).abs();
+        self.frequency = frequency;
+    }
+}
+
+impl Ticker for SineRenderer {
+    fn tick(&mut self) -> f32 {
+        let idx = (self.phase + self.incr_phase) as usize;
+        let inf_idx = idx % TABLE_LENGTH_USIZE;
+        let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+        let sample = SINETABLE[inf_idx] * (1. - self.mu) + SINETABLE[sup_idx] * self.mu;
+        self.phase = (self.phase + self.incr_phase) % TABLE_LENGTH_F32;
+        sample
+    }
+}
+
+#[derive(Debug)]
+struct SawRenderer {
+    frequency: f32,
+    sample_rate: f32,
+    incr_phase: f32,
+    mu: f32,
+    phase: f32,
+}
+
+impl SawRenderer {
+    fn new(frequency: f32, sample_rate: f32) -> Self {
+        let incr_phase = (TABLE_LENGTH_F32 / sample_rate) * frequency;
+        let mu = (incr_phase - incr_phase.round()).abs();
+        Self {
+            frequency,
+            sample_rate,
+            phase: 0.0,
+            incr_phase,
+            mu,
+        }
+    }
+
+    fn set_frequency(&mut self, frequency: f32) {
+        self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
+        self.mu = (self.incr_phase - self.incr_phase.round()).abs();
+        self.frequency = frequency;
+    }
+}
+
+impl PolyBlep for SawRenderer {
+    fn incr_phase(&self) -> f32 {
+        self.incr_phase
+    }
+}
+
+impl Ticker for SawRenderer {
+    fn tick(&mut self) -> f32 {
+        let idx = (self.phase + self.incr_phase) as usize;
+        let inf_idx = idx % TABLE_LENGTH_USIZE;
+        let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+
+        let mut sample = SAWTABLE[inf_idx] * (1. - self.mu) + SAWTABLE[sup_idx] * self.mu;
+
+        let norm_phase = self.phase / TABLE_LENGTH_F32;
+        sample -= self.poly_blep(norm_phase);
+
+        self.phase = (self.phase + self.incr_phase) % TABLE_LENGTH_F32;
+        sample
+    }
+}
+
+#[derive(Debug)]
+struct TriangleRenderer {
+    frequency: f32,
+    sample_rate: f32,
+    incr_phase: f32,
+    mu: f32,
+    phase: f32,
+}
+
+impl TriangleRenderer {
+    fn new(frequency: f32, sample_rate: f32) -> Self {
+        let incr_phase = TABLE_LENGTH_F32 * frequency / sample_rate;
+        let mu = (incr_phase - incr_phase.round()).abs();
+        Self {
+            frequency,
+            sample_rate,
+            phase: 0.0,
+            incr_phase,
+            mu,
+        }
+    }
+
+    fn set_frequency(&mut self, frequency: f32) {
+        self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
+        self.mu = (self.incr_phase - self.incr_phase.round()).abs();
+        self.frequency = frequency;
+    }
+}
+
+impl PolyBlep for TriangleRenderer {
+    fn incr_phase(&self) -> f32 {
+        self.incr_phase
+    }
+}
+
+impl Ticker for TriangleRenderer {
+    fn tick(&mut self) -> f32 {
+        let idx = (self.phase + self.incr_phase) as usize;
+        let inf_idx = idx % TABLE_LENGTH_USIZE;
+        let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+
+        let mut sample = TRIANGLETABLE[inf_idx] * (1. - self.mu) + TRIANGLETABLE[sup_idx] * self.mu;
+
+        let norm_phase = self.phase / TABLE_LENGTH_F32;
+        sample -= self.poly_blep(norm_phase);
+        self.phase = (self.phase + self.incr_phase) % TABLE_LENGTH_F32;
+
+        sample
+    }
+}
+
+#[derive(Debug)]
+struct SquareRenderer {
+    frequency: f32,
+    sample_rate: f32,
+    incr_phase: f32,
+    mu: f32,
+    phase: f32,
+}
+
+impl SquareRenderer {
+    fn new(frequency: f32, sample_rate: f32) -> Self {
+        let incr_phase = (TABLE_LENGTH_F32 / sample_rate) * frequency;
+        let mu = (incr_phase - incr_phase.round()).abs();
+        Self {
+            frequency,
+            sample_rate,
+            phase: 0.0,
+            incr_phase,
+            mu,
+        }
+    }
+
+    fn set_frequency(&mut self, frequency: f32) {
+        self.incr_phase = (TABLE_LENGTH_F32 / self.sample_rate) * frequency;
+        self.mu = (self.incr_phase - self.incr_phase.round()).abs();
+        self.frequency = frequency;
+    }
+}
+
+impl PolyBlep for SquareRenderer {
+    fn incr_phase(&self) -> f32 {
+        self.incr_phase
+    }
+}
+
+impl Ticker for SquareRenderer {
+    fn tick(&mut self) -> f32 {
+        let idx = (self.phase + self.incr_phase) as usize;
+        let inf_idx = idx % TABLE_LENGTH_USIZE;
+        let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+
+        let mut sample = SQUARETABLE[inf_idx] * (1. - self.mu) + SQUARETABLE[sup_idx] * self.mu;
+
+        let norm_phase = self.phase / TABLE_LENGTH_F32;
+        sample -= self.poly_blep(norm_phase);
+        self.phase = (self.phase + self.incr_phase) % TABLE_LENGTH_F32;
+        sample
     }
 }
 
