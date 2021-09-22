@@ -59,6 +59,8 @@ pub(crate) fn build_output() -> (Stream, StreamConfig, Sender<ControlMessage>) {
     let device = host
         .default_output_device()
         .expect("no output device available");
+    log::debug!("Output device: {:?}", device.name());
+
     let mut supported_configs_range = device
         .supported_output_configs()
         .expect("error while querying configs");
@@ -124,6 +126,8 @@ pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let device = host
         .default_input_device()
         .expect("no input device available");
+    log::debug!("Input device: {:?}", device.name());
+
     let mut supported_configs_range = device
         .supported_input_configs()
         .expect("error while querying configs");
@@ -151,7 +155,7 @@ pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let sample_rate = SampleRate(config.sample_rate.0);
     let channels = config.channels as usize;
 
-    let smoothing = 1; // todo, use buffering to smooth frame drops
+    let smoothing = 3; // todo, use buffering to smooth frame drops
     let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
     let render = MicrophoneRender::new(channels, sample_rate, sender);
 
