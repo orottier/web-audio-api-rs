@@ -22,6 +22,7 @@ use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 use crossbeam_channel::{self, Receiver, Sender};
 
 use lazy_static::lazy_static;
+use realfft::num_traits::Signed;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules.
@@ -325,6 +326,7 @@ impl OscillatorNode {
             let sawtooth_renderer = SawRenderer::new(440., sample_rate);
             let triangle_renderer = TriangleRenderer::new(440., sample_rate);
             let square_renderer = SquareRenderer::new(440., sample_rate);
+            let custom_renderer = CustomRenderer::new(440., sample_rate);
 
             let render = OscillatorRenderer {
                 frequency: f_proc,
@@ -334,6 +336,7 @@ impl OscillatorNode {
                 sawtooth_renderer,
                 triangle_renderer,
                 square_renderer,
+                custom_renderer,
             };
             let node = OscillatorNode {
                 registration,
@@ -368,6 +371,7 @@ struct OscillatorRenderer {
     sawtooth_renderer: SawRenderer,
     triangle_renderer: TriangleRenderer,
     square_renderer: SquareRenderer,
+    custom_renderer: CustomRenderer,
 }
 
 impl AudioProcessor for OscillatorRenderer {
@@ -425,7 +429,9 @@ impl AudioProcessor for OscillatorRenderer {
                     .iter_mut()
                     .for_each(|o| *o = self.triangle_renderer.tick())
             }
-            _ => todo!(),
+            Custom => buffer
+                .iter_mut()
+                .for_each(|o| *o = self.custom_renderer.tick()),
         }
     }
 
@@ -643,6 +649,125 @@ impl Ticker for SquareRenderer {
         let norm_phase = self.phase / TABLE_LENGTH_F32;
         sample -= self.poly_blep(norm_phase);
         self.phase = (self.phase + self.incr_phase) % TABLE_LENGTH_F32;
+        sample
+    }
+}
+
+struct CustomRenderer {
+    frequency: f32,
+    sample_rate: f32,
+    normalizer: f32,
+    incr_phases: Vec<f32>,
+    mus: Vec<f32>,
+    reals: Vec<f32>,
+    imags: Vec<f32>,
+    norms: Vec<f32>,
+    phases: Vec<f32>,
+}
+
+impl CustomRenderer {
+    fn new(frequency: f32, sample_rate: f32) -> Self {
+        let reals = vec![0., 0.25, 0.25, 0.25, 0.25];
+        let imags = vec![0., 0., 0., 0., 0.];
+        let cplxs: Vec<(f32, f32)> = reals.iter().zip(&imags).map(|(&r, &i)| (r, i)).collect();
+
+        let norms: Vec<f32> = cplxs
+            .iter()
+            .map(|(r, i)| (f32::powi(*r, 2i32) + f32::powi(*i, 2i32)).sqrt())
+            .collect();
+
+        let phases: Vec<f32> = cplxs
+            .iter()
+            .map(|(r, i)| {
+                let phase = f32::atan2(*i, *r);
+                if phase < 0. {
+                    (phase + 2. * PI) * (TABLE_LENGTH_F32 / (2.0 * PI))
+                } else {
+                    phase * (TABLE_LENGTH_F32 / 2.0 * PI)
+                }
+            })
+            .collect();
+
+        let incr_phases: Vec<f32> = cplxs
+            .iter()
+            .enumerate()
+            .map(|(idx, _)| TABLE_LENGTH_F32 * idx as f32 * (frequency / sample_rate))
+            .collect();
+
+        let mus: Vec<f32> = incr_phases
+            .iter()
+            .map(|incr_phase| (incr_phase - incr_phase.round()).abs())
+            .collect();
+
+        let normalizer = Self::get_normalizer(
+            phases.clone(),
+            incr_phases.clone(),
+            mus.clone(),
+            norms.clone(),
+        );
+
+        dbg!(normalizer);
+
+        Self {
+            frequency,
+            sample_rate,
+            normalizer,
+            incr_phases,
+            mus,
+            reals,
+            imags,
+            phases,
+            norms,
+        }
+    }
+
+    fn get_normalizer(
+        mut phases: Vec<f32>,
+        incr_phases: Vec<f32>,
+        mus: Vec<f32>,
+        norms: Vec<f32>,
+    ) -> f32 {
+        let mut samples: Vec<f32> = Vec::new();
+
+        while phases[1] <= TABLE_LENGTH_F32 {
+            let mut sample = 0.0;
+            for i in 1..phases.len() {
+                let gain = norms[i];
+                let phase = phases[i];
+                let incr_phase = incr_phases[i];
+                let mu = mus[i];
+                let idx = (phase + incr_phase) as usize;
+                let inf_idx = idx % TABLE_LENGTH_USIZE;
+                let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+                sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain;
+                phases[i] = phase + incr_phase;
+            }
+            samples.push(sample);
+        }
+
+        1. / samples
+            .iter()
+            .copied()
+            .reduce(f32::max)
+            .expect("Maximum value not found")
+    }
+}
+
+impl Ticker for CustomRenderer {
+    fn tick(&mut self) -> f32 {
+        let mut sample = 0.;
+        for i in 1..self.phases.len() {
+            let gain = self.norms[i];
+            let phase = self.phases[i];
+            let incr_phase = self.incr_phases[i];
+            let mu = self.mus[i];
+            let idx = (phase + incr_phase) as usize;
+            let inf_idx = idx % TABLE_LENGTH_USIZE;
+            let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+            sample +=
+                (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain * self.normalizer;
+            self.phases[i] = (phase + incr_phase) % TABLE_LENGTH_F32;
+        }
         sample
     }
 }
