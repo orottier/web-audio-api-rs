@@ -22,7 +22,6 @@ use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 use crossbeam_channel::{self, Receiver, Sender};
 
 use lazy_static::lazy_static;
-use realfft::num_traits::Signed;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules.
@@ -223,11 +222,78 @@ lazy_static! {
     };
 }
 
+/// Options for constructing a periodic wave
+pub struct PeriodicWaveConstraints {
+    /// By default PeriodicWave is build with normalization enabled (disable_normalization = false).
+    /// In this case, a peak normalization is applied to the given custom periodic waveform.
+    ///
+    /// If disable_normalization is enabled (disable_normalization = true), the normalization is
+    /// defined by the periodic waveform characteristics (img, and real fields).
+    disable_normalization: bool,
+}
+
+/// PeriodicWave is a setup struct required to build
+/// custom periodic waveform oscillator type.
+#[derive(Clone)]
+pub struct PeriodicWave {
+    /// The real parameter represents an array of cosine terms of Fourrier series.
+    ///
+    /// The first element (index 0) represents the DC-offset.
+    /// This offset has to be given but will not be taken into account
+    /// to build the custom periodic waveform.
+    ///
+    /// The following elements (index 1 and more) represent the fundamental and harmonics of the periodic waveform.
+    real: Vec<f32>,
+    /// The imag parameter represents an array of sine terms of Fourrier series.
+    ///
+    /// The first element (index 0) will not be taken into account
+    /// to build the custom periodic waveform.
+    ///
+    /// The following elements (index 1 and more) represent the fundamental and harmonics of the periodic waveform.
+    imag: Vec<f32>,
+    /// By default PeriodicWave is build with normalization enabled (disable_normalization = false).
+    /// In this case, a peak normalization is applied to the given custom periodic waveform.
+    ///
+    /// If disable_normalization is enabled (disable_normalization = true), the normalization is
+    /// defined by the periodic waveform characteristics (img, and real fields).
+    disable_normalization: bool,
+}
+
+impl PeriodicWave {
+    /// Returns a PeriodicWave
+    ///
+    /// # Arguments
+    ///
+    /// * `real` - The real parameter represents an array of cosine terms of Fourrier series.
+    /// * `imag` - The imag parameter represents an array of sine terms of Fourrier series.
+    /// * `constraints` - The constraints parameter specifies the normalization mode of the PeriodicWave
+    pub(crate) fn new(
+        real: Vec<f32>,
+        imag: Vec<f32>,
+        constraints: Option<PeriodicWaveConstraints>,
+    ) -> Self {
+        if let Some(c) = constraints {
+            Self {
+                real,
+                imag,
+                disable_normalization: c.disable_normalization,
+            }
+        } else {
+            Self {
+                real,
+                imag,
+                disable_normalization: false,
+            }
+        }
+    }
+}
+
 /// Options for constructing an OscillatorNode
 pub struct OscillatorOptions {
     pub type_: OscillatorType,
     pub frequency: f32,
     pub channel_config: ChannelConfigOptions,
+    pub periodic_wave: Option<PeriodicWave>,
 }
 
 impl Default for OscillatorOptions {
@@ -236,6 +302,7 @@ impl Default for OscillatorOptions {
             type_: OscillatorType::default(),
             frequency: 440.,
             channel_config: ChannelConfigOptions::default(),
+            periodic_wave: None,
         }
     }
 }
@@ -277,6 +344,7 @@ pub struct OscillatorNode {
     channel_config: ChannelConfig,
     frequency: AudioParam,
     type_: Arc<AtomicU32>,
+    periodic_wave: Option<PeriodicWave>,
     scheduler: Scheduler,
 }
 
@@ -304,6 +372,12 @@ impl AudioNode for OscillatorNode {
 }
 
 impl OscillatorNode {
+    /// Returns an OscillatorNode
+    ///
+    /// # Arguments:
+    ///
+    /// * `context` - The AudioContext
+    /// * `options` - The Oscillatoroptions
     pub fn new<C: AsBaseAudioContext>(context: &C, options: OscillatorOptions) -> Self {
         context.base().register(move |registration| {
             let sample_rate = context.base().sample_rate().0 as f32;
@@ -322,11 +396,15 @@ impl OscillatorNode {
             let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
             let scheduler = Scheduler::new();
 
-            let sine_renderer = SineRenderer::new(440., sample_rate);
-            let sawtooth_renderer = SawRenderer::new(440., sample_rate);
-            let triangle_renderer = TriangleRenderer::new(440., sample_rate);
-            let square_renderer = SquareRenderer::new(440., sample_rate);
-            let custom_renderer = CustomRenderer::new(440., sample_rate);
+            let sine_renderer = SineRenderer::new(options.frequency, sample_rate);
+            let sawtooth_renderer = SawRenderer::new(options.frequency, sample_rate);
+            let triangle_renderer = TriangleRenderer::new(options.frequency, sample_rate);
+            let square_renderer = SquareRenderer::new(options.frequency, sample_rate);
+            let custom_renderer = CustomRenderer::new(
+                options.frequency,
+                sample_rate,
+                options.periodic_wave.clone(),
+            );
 
             let render = OscillatorRenderer {
                 frequency: f_proc,
@@ -342,6 +420,7 @@ impl OscillatorNode {
                 registration,
                 channel_config: options.channel_config.into(),
                 frequency: f_param,
+                periodic_wave: options.periodic_wave,
                 type_,
                 scheduler,
             };
@@ -350,16 +429,29 @@ impl OscillatorNode {
         })
     }
 
+    /// Returns the oscillator frequency audio parameter
     pub fn frequency(&self) -> &AudioParam {
         &self.frequency
     }
 
+    /// Returns the oscillator type
     pub fn type_(&self) -> OscillatorType {
         self.type_.load(Ordering::SeqCst).into()
     }
 
+    /// set the oscillator type
     pub fn set_type(&self, type_: OscillatorType) {
         self.type_.store(type_ as u32, Ordering::SeqCst);
+    }
+
+    /// set the oscillator type to custom. The oscillator will generate
+    /// a perdioc waveform following the PeriodicWave characteristics
+    //
+    //  TODO: The current implementation doesn't communicate its state
+    //  to the OscillatorRenderer, and so has no effect on the rendering
+    pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
+        self.set_type(OscillatorType::Custom);
+        self.periodic_wave = Some(periodic_wave);
     }
 }
 
@@ -381,7 +473,7 @@ impl AudioProcessor for OscillatorRenderer {
         outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         timestamp: f64,
-        sample_rate: SampleRate,
+        _sample_rate: SampleRate,
     ) {
         // single output node
         let output = &mut outputs[0];
@@ -406,32 +498,40 @@ impl AudioProcessor for OscillatorRenderer {
 
         match type_ {
             Sine => {
+                // K-rate
                 self.sine_renderer.set_frequency(freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.sine_renderer.tick());
             }
             Square => {
+                // K-rate
                 self.square_renderer.set_frequency(freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.square_renderer.tick());
             }
             Sawtooth => {
+                // K-rate
                 self.sawtooth_renderer.set_frequency(freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.sawtooth_renderer.tick());
             }
             Triangle => {
+                // K-rate
                 self.triangle_renderer.set_frequency(freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.triangle_renderer.tick())
             }
-            Custom => buffer
-                .iter_mut()
-                .for_each(|o| *o = self.custom_renderer.tick()),
+            Custom => {
+                // K-rate
+                self.custom_renderer.set_frequency(freq);
+                buffer
+                    .iter_mut()
+                    .for_each(|o| *o = self.custom_renderer.tick())
+            }
         }
     }
 
@@ -656,20 +756,27 @@ impl Ticker for SquareRenderer {
 struct CustomRenderer {
     frequency: f32,
     sample_rate: f32,
-    normalizer: f32,
-    incr_phases: Vec<f32>,
-    mus: Vec<f32>,
-    reals: Vec<f32>,
-    imags: Vec<f32>,
+    cplxs: Vec<(f32, f32)>,
     norms: Vec<f32>,
     phases: Vec<f32>,
+    incr_phases: Vec<f32>,
+    mus: Vec<f32>,
+    normalizer: Option<f32>,
 }
 
 impl CustomRenderer {
-    fn new(frequency: f32, sample_rate: f32) -> Self {
-        let reals = vec![0., 0.25, 0.25, 0.25, 0.25];
-        let imags = vec![0., 0., 0., 0., 0.];
-        let cplxs: Vec<(f32, f32)> = reals.iter().zip(&imags).map(|(&r, &i)| (r, i)).collect();
+    fn new(frequency: f32, sample_rate: f32, periodic_wave: Option<PeriodicWave>) -> Self {
+        let PeriodicWave {
+            real,
+            imag,
+            disable_normalization,
+        } = if let Some(p_w) = periodic_wave {
+            p_w
+        } else {
+            PeriodicWave::new(vec![0., 1.0], vec![0., 0.], None)
+        };
+
+        let cplxs: Vec<(f32, f32)> = real.iter().zip(&imag).map(|(&r, &i)| (r, i)).collect();
 
         let norms: Vec<f32> = cplxs
             .iter()
@@ -699,25 +806,26 @@ impl CustomRenderer {
             .map(|incr_phase| (incr_phase - incr_phase.round()).abs())
             .collect();
 
-        let normalizer = Self::get_normalizer(
-            phases.clone(),
-            incr_phases.clone(),
-            mus.clone(),
-            norms.clone(),
-        );
-
-        dbg!(normalizer);
+        let normalizer = if !disable_normalization {
+            Some(Self::get_normalizer(
+                phases.clone(),
+                incr_phases.clone(),
+                mus.clone(),
+                norms.clone(),
+            ))
+        } else {
+            None
+        };
 
         Self {
             frequency,
             sample_rate,
-            normalizer,
+            cplxs,
+            norms,
+            phases,
             incr_phases,
             mus,
-            reals,
-            imags,
-            phases,
-            norms,
+            normalizer,
         }
     }
 
@@ -751,6 +859,22 @@ impl CustomRenderer {
             .reduce(f32::max)
             .expect("Maximum value not found")
     }
+
+    fn set_frequency(&mut self, frequency: f32) {
+        self.frequency = frequency;
+        self.incr_phases = self
+            .cplxs
+            .iter()
+            .enumerate()
+            .map(|(idx, _)| TABLE_LENGTH_F32 * idx as f32 * (self.frequency / self.sample_rate))
+            .collect();
+
+        self.mus = self
+            .incr_phases
+            .iter()
+            .map(|incr_phase| (incr_phase - incr_phase.round()).abs())
+            .collect();
+    }
 }
 
 impl Ticker for CustomRenderer {
@@ -764,8 +888,9 @@ impl Ticker for CustomRenderer {
             let idx = (phase + incr_phase) as usize;
             let inf_idx = idx % TABLE_LENGTH_USIZE;
             let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
-            sample +=
-                (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain * self.normalizer;
+            sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu)
+                * gain
+                * self.normalizer.unwrap_or(1.);
             self.phases[i] = (phase + incr_phase) % TABLE_LENGTH_F32;
         }
         sample
