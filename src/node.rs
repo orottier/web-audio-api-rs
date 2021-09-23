@@ -344,7 +344,6 @@ pub struct OscillatorNode {
     channel_config: ChannelConfig,
     frequency: AudioParam,
     type_: Arc<AtomicU32>,
-    periodic_wave: Option<PeriodicWave>,
     scheduler: Scheduler,
 }
 
@@ -420,7 +419,6 @@ impl OscillatorNode {
                 registration,
                 channel_config: options.channel_config.into(),
                 frequency: f_param,
-                periodic_wave: options.periodic_wave,
                 type_,
                 scheduler,
             };
@@ -448,10 +446,12 @@ impl OscillatorNode {
     /// a perdioc waveform following the PeriodicWave characteristics
     //
     //  TODO: The current implementation doesn't communicate its state
-    //  to the OscillatorRenderer, and so has no effect on the rendering
-    pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
+    //  to the OscillatorRenderer, and so has no effect on the rendering.
+    //  This function should send the updated periodics waveform characteristics
+    //  to the OscillatorRenderer and more specifically to the CustomRenderer
+    pub fn set_periodic_wave(&mut self, _periodic_wave: PeriodicWave) {
         self.set_type(OscillatorType::Custom);
-        self.periodic_wave = Some(periodic_wave);
+        todo!();
     }
 }
 
