@@ -927,7 +927,12 @@ impl MediaStreamAudioSourceNode {
 
             let resampler =
                 Resampler::new(context.base().sample_rate(), BUFFER_SIZE, options.media);
-            let render = MediaStreamRenderer::new(resampler, Scheduler::new());
+
+            // setup void scheduler - always on
+            let scheduler = Scheduler::new();
+            scheduler.start_at(0.);
+
+            let render = MediaStreamRenderer::new(resampler, scheduler);
 
             (node, Box::new(render))
         })

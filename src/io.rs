@@ -1,153 +1,186 @@
-use crate::BUFFER_SIZE;
+use crate::message::ControlMessage;
+use crate::{SampleRate, BUFFER_SIZE};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    Device, SampleFormat, Stream, StreamConfig, SupportedBufferSize,
+    BuildStreamError, Device, SampleFormat, Stream, StreamConfig, SupportedBufferSize,
 };
 
+use crate::buffer::AudioBuffer;
 use crate::graph::RenderThread;
 use crate::media::MicrophoneRender;
 
-pub(crate) struct OutputBuilder {
-    device: Device,
-    config: StreamConfig,
+use crossbeam_channel::{Receiver, Sender};
+
+fn spawn_output_stream(
+    device: &Device,
     sample_format: SampleFormat,
-}
+    config: &StreamConfig,
+    mut render: RenderThread,
+) -> Result<Stream, BuildStreamError> {
+    let err_fn = |err| log::error!("an error occurred on the output audio stream: {}", err);
 
-impl OutputBuilder {
-    pub fn new() -> Self {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .expect("no output device available");
-        let mut supported_configs_range = device
-            .supported_output_configs()
-            .expect("error while querying configs");
-        let supported_config = supported_configs_range
-            .next()
-            .expect("no supported config?!")
-            .with_max_sample_rate();
-
-        let sample_format = supported_config.sample_format();
-
-        // determine best buffer size. Spec requires BUFFER_SIZE, but that might not be available
-        let mut buffer_size = match supported_config.buffer_size() {
-            SupportedBufferSize::Range { min, .. } => crate::BUFFER_SIZE.max(*min),
-            SupportedBufferSize::Unknown => BUFFER_SIZE,
-        };
-        // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
-        // the desired number of frames.
-        buffer_size = (buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
-
-        let mut config: StreamConfig = supported_config.into();
-        config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
-
-        Self {
-            device,
-            config,
-            sample_format,
+    match sample_format {
+        SampleFormat::F32 => {
+            device.build_output_stream(config, move |d: &mut [f32], _c| render.render(d), err_fn)
         }
-    }
-
-    pub fn config(&self) -> &StreamConfig {
-        &self.config
-    }
-
-    pub fn build(self, mut render: RenderThread) -> Stream {
-        let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
-        let stream = match self.sample_format {
-            SampleFormat::F32 => self.device.build_output_stream(
-                &self.config,
-                move |d: &mut [f32], _c| render.render(d),
-                err_fn,
-            ),
-            SampleFormat::U16 => self.device.build_output_stream(
-                &self.config,
-                move |d: &mut [u16], _c| render.render(d),
-                err_fn,
-            ),
-            SampleFormat::I16 => self.device.build_output_stream(
-                &self.config,
-                move |d: &mut [i16], _c| render.render(d),
-                err_fn,
-            ),
+        SampleFormat::U16 => {
+            device.build_output_stream(config, move |d: &mut [u16], _c| render.render(d), err_fn)
         }
-        .unwrap();
-
-        stream.play().unwrap();
-
-        stream
+        SampleFormat::I16 => {
+            device.build_output_stream(&config, move |d: &mut [i16], _c| render.render(d), err_fn)
+        }
     }
 }
 
-pub(crate) struct InputBuilder {
-    device: Device,
-    config: StreamConfig,
+fn spawn_input_stream(
+    device: &Device,
     sample_format: SampleFormat,
+    config: &StreamConfig,
+    render: MicrophoneRender,
+) -> Result<Stream, BuildStreamError> {
+    let err_fn = |err| log::error!("an error occurred on the input audio stream: {}", err);
+
+    match sample_format {
+        SampleFormat::F32 => {
+            device.build_input_stream(config, move |d: &[f32], _c| render.render(d), err_fn)
+        }
+        SampleFormat::U16 => {
+            device.build_input_stream(config, move |d: &[u16], _c| render.render(d), err_fn)
+        }
+        SampleFormat::I16 => {
+            device.build_input_stream(&config, move |d: &[i16], _c| render.render(d), err_fn)
+        }
+    }
 }
 
-impl InputBuilder {
-    pub fn new() -> Self {
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .expect("no input device available");
-        let mut supported_configs_range = device
-            .supported_input_configs()
-            .expect("error while querying configs");
-        let supported_config = supported_configs_range
-            .next()
-            .expect("no supported config?!")
-            .with_max_sample_rate();
+pub(crate) fn build_output() -> (Stream, StreamConfig, Sender<ControlMessage>) {
+    let host = cpal::default_host();
+    let device = host
+        .default_output_device()
+        .expect("no output device available");
+    log::info!("Output device: {:?}", device.name());
 
-        let sample_format = supported_config.sample_format();
+    let mut supported_configs_range = device
+        .supported_output_configs()
+        .expect("error while querying configs");
 
-        // determine best buffer size. Spec requires BUFFER_SIZE, but that might not be available
-        let mut buffer_size = match supported_config.buffer_size() {
-            SupportedBufferSize::Range { min, .. } => crate::BUFFER_SIZE.max(*min),
-            SupportedBufferSize::Unknown => BUFFER_SIZE,
-        };
-        // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
-        // the desired number of frames.
-        buffer_size = (buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+    let supported_config = supported_configs_range
+        .next()
+        .expect("no supported config?!")
+        .with_max_sample_rate();
 
-        let mut config: StreamConfig = supported_config.into();
-        config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+    let sample_format = supported_config.sample_format();
 
-        Self {
-            device,
-            config,
-            sample_format,
+    // clone the config, we may need to fall back on it later
+    let default_config: StreamConfig = supported_config.clone().into();
+
+    // determine best buffer size. Spec requires BUFFER_SIZE, but that might not be available
+    let mut buffer_size = match supported_config.buffer_size() {
+        SupportedBufferSize::Range { min, .. } => crate::BUFFER_SIZE.max(*min),
+        SupportedBufferSize::Unknown => BUFFER_SIZE,
+    };
+    // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
+    // the desired number of frames.
+    buffer_size = (buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+
+    let mut config: StreamConfig = supported_config.into();
+    config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+    let sample_rate = SampleRate(config.sample_rate.0);
+    let channels = config.channels as u32;
+
+    // communication channel to the render thread
+    let (mut sender, receiver) = crossbeam_channel::unbounded();
+
+    // spawn the render thread
+    let render = RenderThread::new(sample_rate, channels as usize, receiver);
+
+    let maybe_stream = spawn_output_stream(&device, sample_format, &config, render);
+    // our BUFFER_SIZEd config may not be supported, in that case, use the default config
+    let stream = match maybe_stream {
+        Ok(stream) => stream,
+        Err(e) => {
+            log::warn!(
+                "Input stream failed to build: {:?}, retry with default config {:?}",
+                e, default_config
+            );
+
+            // setup a new comms channel
+            let (sender2, receiver) = crossbeam_channel::unbounded();
+            sender = sender2; // overwrite earlier
+
+            let render = RenderThread::new(sample_rate, channels as usize, receiver);
+            spawn_output_stream(&device, sample_format, &default_config, render)
+                .expect("Unable to spawn output stream with default config")
         }
-    }
+    };
 
-    pub fn config(&self) -> &StreamConfig {
-        &self.config
-    }
+    // Required because some hosts don't play the stream automatically
+    stream.play().expect("Output stream refused to play");
 
-    pub fn build(self, render: MicrophoneRender) -> Stream {
-        let err_fn = |err| eprintln!("an error occurred on the input audio stream: {}", err);
-        let stream = match self.sample_format {
-            SampleFormat::F32 => self.device.build_input_stream(
-                &self.config,
-                move |d: &[f32], _c| render.render(d),
-                err_fn,
-            ),
-            SampleFormat::U16 => self.device.build_input_stream(
-                &self.config,
-                move |d: &[u16], _c| render.render(d),
-                err_fn,
-            ),
-            SampleFormat::I16 => self.device.build_input_stream(
-                &self.config,
-                move |d: &[i16], _c| render.render(d),
-                err_fn,
-            ),
+    (stream, config, sender)
+}
+
+pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
+    let host = cpal::default_host();
+    let device = host
+        .default_input_device()
+        .expect("no input device available");
+    log::info!("Input device: {:?}", device.name());
+
+    let mut supported_configs_range = device
+        .supported_input_configs()
+        .expect("error while querying configs");
+    let supported_config = supported_configs_range
+        .next()
+        .expect("no supported config?!")
+        .with_max_sample_rate();
+
+    let sample_format = supported_config.sample_format();
+
+    // clone the config, we may need to fall back on it later
+    let default_config: StreamConfig = supported_config.clone().into();
+
+    // determine best buffer size. Spec requires BUFFER_SIZE, but that might not be available
+    let mut buffer_size = match supported_config.buffer_size() {
+        SupportedBufferSize::Range { min, .. } => crate::BUFFER_SIZE.max(*min),
+        SupportedBufferSize::Unknown => BUFFER_SIZE,
+    };
+    // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
+    // the desired number of frames.
+    buffer_size = (buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+
+    let mut config: StreamConfig = supported_config.into();
+    config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+    let sample_rate = SampleRate(config.sample_rate.0);
+    let channels = config.channels as usize;
+
+    let smoothing = 3; // todo, use buffering to smooth frame drops
+    let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
+    let render = MicrophoneRender::new(channels, sample_rate, sender);
+
+    let maybe_stream = spawn_input_stream(&device, sample_format, &config, render);
+    // our BUFFER_SIZEd config may not be supported, in that case, use the default config
+    let stream = match maybe_stream {
+        Ok(stream) => stream,
+        Err(e) => {
+            log::warn!(
+                "Output stream failed to build: {:?}, retry with default config {:?}",
+                e, default_config
+            );
+
+            // setup a new comms channel
+            let (sender, receiver2) = crossbeam_channel::bounded(smoothing);
+            receiver = receiver2; // overwrite earlier
+
+            let render = MicrophoneRender::new(channels, sample_rate, sender);
+            spawn_input_stream(&device, sample_format, &default_config, render)
+                .expect("Unable to spawn input stream with default config")
         }
-        .unwrap();
+    };
 
-        stream.play().unwrap();
+    // Required because some hosts don't play the stream automatically
+    stream.play().expect("Input stream refused to play");
 
-        stream
-    }
+    (stream, config, receiver)
 }
