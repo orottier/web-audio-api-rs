@@ -394,7 +394,6 @@ impl OscillatorNode {
 
             let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
             let scheduler = Scheduler::new();
-
             let sine_renderer = SineRenderer::new(options.frequency, sample_rate);
             let sawtooth_renderer = SawRenderer::new(options.frequency, sample_rate);
             let triangle_renderer = TriangleRenderer::new(options.frequency, sample_rate);
@@ -404,7 +403,6 @@ impl OscillatorNode {
                 sample_rate,
                 options.periodic_wave.clone(),
             );
-
             let render = OscillatorRenderer {
                 frequency: f_proc,
                 type_: type_.clone(),
@@ -775,7 +773,6 @@ impl CustomRenderer {
         } else {
             PeriodicWave::new(vec![0., 1.0], vec![0., 0.], None)
         };
-
         let cplxs: Vec<(f32, f32)> = real.iter().zip(&imag).map(|(&r, &i)| (r, i)).collect();
 
         let norms: Vec<f32> = cplxs
@@ -805,14 +802,15 @@ impl CustomRenderer {
             .iter()
             .map(|incr_phase| (incr_phase - incr_phase.round()).abs())
             .collect();
-
         let normalizer = if !disable_normalization {
-            Some(Self::get_normalizer(
+            let norm = Self::get_normalizer(
                 phases.clone(),
                 incr_phases.clone(),
                 mus.clone(),
                 norms.clone(),
-            ))
+                frequency,
+            );
+            Some(norm)
         } else {
             None
         };
@@ -834,8 +832,13 @@ impl CustomRenderer {
         incr_phases: Vec<f32>,
         mus: Vec<f32>,
         norms: Vec<f32>,
+        frequency: f32,
     ) -> f32 {
         let mut samples: Vec<f32> = Vec::new();
+
+        if frequency == 0. {
+            return 1.;
+        }
 
         while phases[1] <= TABLE_LENGTH_F32 {
             let mut sample = 0.0;
