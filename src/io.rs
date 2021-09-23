@@ -18,7 +18,7 @@ fn spawn_output_stream(
     config: &StreamConfig,
     mut render: RenderThread,
 ) -> Result<Stream, BuildStreamError> {
-    let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
+    let err_fn = |err| log::error!("an error occurred on the output audio stream: {}", err);
 
     match sample_format {
         SampleFormat::F32 => {
@@ -39,7 +39,7 @@ fn spawn_input_stream(
     config: &StreamConfig,
     render: MicrophoneRender,
 ) -> Result<Stream, BuildStreamError> {
-    let err_fn = |err| eprintln!("an error occurred on the input audio stream: {}", err);
+    let err_fn = |err| log::error!("an error occurred on the input audio stream: {}", err);
 
     match sample_format {
         SampleFormat::F32 => {
@@ -59,7 +59,7 @@ pub(crate) fn build_output() -> (Stream, StreamConfig, Sender<ControlMessage>) {
     let device = host
         .default_output_device()
         .expect("no output device available");
-    log::debug!("Output device: {:?}", device.name());
+    log::info!("Output device: {:?}", device.name());
 
     let mut supported_configs_range = device
         .supported_output_configs()
@@ -100,7 +100,7 @@ pub(crate) fn build_output() -> (Stream, StreamConfig, Sender<ControlMessage>) {
     let stream = match maybe_stream {
         Ok(stream) => stream,
         Err(e) => {
-            eprintln!(
+            log::warn!(
                 "Input stream failed to build: {:?}, retry with default config {:?}",
                 e, default_config
             );
@@ -126,7 +126,7 @@ pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let device = host
         .default_input_device()
         .expect("no input device available");
-    log::debug!("Input device: {:?}", device.name());
+    log::info!("Input device: {:?}", device.name());
 
     let mut supported_configs_range = device
         .supported_input_configs()
@@ -164,7 +164,7 @@ pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let stream = match maybe_stream {
         Ok(stream) => stream,
         Err(e) => {
-            eprintln!(
+            log::warn!(
                 "Output stream failed to build: {:?}, retry with default config {:?}",
                 e, default_config
             );
