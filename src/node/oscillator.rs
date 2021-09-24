@@ -177,6 +177,7 @@ impl PeriodicWave {
 pub struct OscillatorOptions {
     pub type_: OscillatorType,
     pub frequency: f32,
+    pub detune: f32,
     pub channel_config: ChannelConfigOptions,
     pub periodic_wave: Option<PeriodicWave>,
 }
@@ -186,6 +187,7 @@ impl Default for OscillatorOptions {
         Self {
             type_: OscillatorType::default(),
             frequency: 440.,
+            detune: 0.,
             channel_config: ChannelConfigOptions::default(),
             periodic_wave: None,
         }
@@ -228,6 +230,7 @@ pub struct OscillatorNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     frequency: AudioParam,
+    detune: AudioParam,
     type_: Arc<AtomicU32>,
     scheduler: Scheduler,
 }
@@ -266,7 +269,9 @@ impl OscillatorNode {
         context.base().register(move |registration| {
             let sample_rate = context.base().sample_rate().0 as f32;
             let nyquist = sample_rate / 2.;
-            let param_opts = AudioParamOptions {
+
+            // frequency audio parameter
+            let freq_param_opts = AudioParamOptions {
                 min_value: -nyquist,
                 max_value: nyquist,
                 default_value: 440.,
@@ -274,8 +279,20 @@ impl OscillatorNode {
             };
             let (f_param, f_proc) = context
                 .base()
-                .create_audio_param(param_opts, registration.id());
+                .create_audio_param(freq_param_opts, registration.id());
             f_param.set_value(options.frequency);
+
+            // detune audio parameter
+            let det_param_opts = AudioParamOptions {
+                min_value: -153600.,
+                max_value: 153600.,
+                default_value: 0.,
+                automation_rate: crate::param::AutomationRate::A,
+            };
+            let (det_param, det_proc) = context
+                .base()
+                .create_audio_param(det_param_opts, registration.id());
+            det_param.set_value(options.detune);
 
             let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
             let scheduler = Scheduler::new();
@@ -289,8 +306,9 @@ impl OscillatorNode {
                 options.periodic_wave.clone(),
             );
             let render = OscillatorRenderer {
-                frequency: f_proc,
                 type_: type_.clone(),
+                frequency: f_proc,
+                detune: det_proc,
                 scheduler: scheduler.clone(),
                 sine_renderer,
                 sawtooth_renderer,
@@ -302,6 +320,7 @@ impl OscillatorNode {
                 registration,
                 channel_config: options.channel_config.into(),
                 frequency: f_param,
+                detune: det_param,
                 type_,
                 scheduler,
             };
@@ -313,6 +332,10 @@ impl OscillatorNode {
     /// Returns the oscillator frequency audio parameter
     pub fn frequency(&self) -> &AudioParam {
         &self.frequency
+    }
+
+    pub fn detune(&self) -> &AudioParam {
+        &self.detune
     }
 
     /// Returns the oscillator type
@@ -339,8 +362,9 @@ impl OscillatorNode {
 }
 
 struct OscillatorRenderer {
-    frequency: AudioParamId,
     type_: Arc<AtomicU32>,
+    frequency: AudioParamId,
+    detune: AudioParamId,
     scheduler: Scheduler,
     sine_renderer: SineRenderer,
     sawtooth_renderer: SawRenderer,
@@ -373,6 +397,11 @@ impl AudioProcessor for OscillatorRenderer {
         let freq_values = params.get(&self.frequency);
         let freq = freq_values[0]; // force a-rate processing
 
+        let det_values = params.get(&self.detune);
+        let detune = det_values[0]; // force a-rate processing
+
+        let computed_freq = freq + 2f32.powf(detune / 1200.);
+
         let type_ = self.type_.load(Ordering::SeqCst).into();
 
         let buffer = output.channel_data_mut(0);
@@ -382,35 +411,35 @@ impl AudioProcessor for OscillatorRenderer {
         match type_ {
             Sine => {
                 // K-rate
-                self.sine_renderer.set_frequency(freq);
+                self.sine_renderer.set_frequency(computed_freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.sine_renderer.tick());
             }
             Square => {
                 // K-rate
-                self.square_renderer.set_frequency(freq);
+                self.square_renderer.set_frequency(computed_freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.square_renderer.tick());
             }
             Sawtooth => {
                 // K-rate
-                self.sawtooth_renderer.set_frequency(freq);
+                self.sawtooth_renderer.set_frequency(computed_freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.sawtooth_renderer.tick());
             }
             Triangle => {
                 // K-rate
-                self.triangle_renderer.set_frequency(freq);
+                self.triangle_renderer.set_frequency(computed_freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.triangle_renderer.tick())
             }
             Custom => {
                 // K-rate
-                self.custom_renderer.set_frequency(freq);
+                self.custom_renderer.set_frequency(computed_freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.custom_renderer.tick())
