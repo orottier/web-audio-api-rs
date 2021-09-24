@@ -13,7 +13,7 @@ use crate::buffer::{AudioBuffer, ChannelConfigOptions, ChannelCountMode, Channel
 use crate::graph::{NodeIndex, RenderThread};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
-use crate::node::{self, AudioNode, PeriodicWave, PeriodicWaveConstraints};
+use crate::node::{self, AudioNode, PeriodicWave, PeriodicWaveOptions};
 use crate::param::{AudioParam, AudioParamOptions, AutomationEvent};
 use crate::process::AudioProcessor;
 use crate::spatial::{AudioListener, AudioListenerParams};
@@ -159,15 +159,17 @@ pub trait AsBaseAudioContext {
     /// Creates a periodic wave
     //
     // dictionary PeriodicWaveConstraints {
+    //   real
+    //   imag
     //   boolean disableNormalization = false;
     // };
     fn create_periodic_wave(
         &self,
         real: Vec<f32>,
         imag: Vec<f32>,
-        constraints: Option<PeriodicWaveConstraints>,
+        options: Option<PeriodicWaveOptions>,
     ) -> PeriodicWave {
-        PeriodicWave::new(real, imag, constraints)
+        PeriodicWave::new(self.base(), options)
     }
 
     /// Create an AudioParam.
