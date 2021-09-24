@@ -165,8 +165,8 @@ impl PeriodicWave {
             }
         } else {
             Self {
-                real: vec![0., 1.0],
-                imag: vec![0., 0.],
+                real: vec![0., 0.],
+                imag: vec![0., 1.],
                 disable_normalization: false,
             }
         }
@@ -657,8 +657,8 @@ impl CustomRenderer {
             p_w
         } else {
             PeriodicWave {
-                real: vec![0., 0.],
-                imag: vec![0., 1.],
+                real: vec![0., 1.],
+                imag: vec![0., 0.],
                 disable_normalization: false,
             }
         };
