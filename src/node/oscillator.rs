@@ -67,20 +67,20 @@ pub struct PeriodicWaveOptions {
     /// to build the custom periodic waveform.
     ///
     /// The following elements (index 1 and more) represent the fundamental and harmonics of the periodic waveform.
-    real: Vec<f32>,
+    pub real: Vec<f32>,
     /// The imag parameter represents an array of sine terms of Fourrier series.
     ///
     /// The first element (index 0) will not be taken into account
     /// to build the custom periodic waveform.
     ///
     /// The following elements (index 1 and more) represent the fundamental and harmonics of the periodic waveform.
-    imag: Vec<f32>,
+    pub imag: Vec<f32>,
     /// By default PeriodicWave is build with normalization enabled (disable_normalization = false).
     /// In this case, a peak normalization is applied to the given custom periodic waveform.
     ///
     /// If disable_normalization is enabled (disable_normalization = true), the normalization is
     /// defined by the periodic waveform characteristics (img, and real fields).
-    disable_normalization: bool,
+    pub disable_normalization: bool,
 }
 
 /// PeriodicWave is a setup struct required to build
@@ -118,7 +118,25 @@ impl PeriodicWave {
     /// * `real` - The real parameter represents an array of cosine terms of Fourrier series.
     /// * `imag` - The imag parameter represents an array of sine terms of Fourrier series.
     /// * `constraints` - The constraints parameter specifies the normalization mode of the PeriodicWave
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<PeriodicWaveOptions>) -> Self {
+    ///
+    /// # Example
+    ///
+    /// ```
+    ///    use web_audio_api::context::{AudioContext, AsBaseAudioContext};
+    ///    use web_audio_api::node::{PeriodicWave, PeriodicWaveOptions};
+    ///
+    ///    let context = AudioContext::new();
+    ///
+    ///    let options = PeriodicWaveOptions {
+    ///    real: vec![0.,1.,1.],
+    ///    imag: vec![0.,0.,0.],
+    ///    disable_normalization: false,
+    ///    };
+    ///
+    ///    let periodic_wave = PeriodicWave::new(&context, Some(options));
+    /// ```
+    ///
+    pub fn new<C: AsBaseAudioContext>(_context: &C, options: Option<PeriodicWaveOptions>) -> Self {
         if let Some(PeriodicWaveOptions {
             real,
             imag,
@@ -635,7 +653,11 @@ impl CustomRenderer {
         } = if let Some(p_w) = periodic_wave {
             p_w
         } else {
-            PeriodicWave::new(vec![0., 1.0], vec![0., 0.], None)
+            PeriodicWave {
+                real: vec![0., 0.],
+                imag: vec![0., 1.],
+                disable_normalization: false,
+            }
         };
         let cplxs: Vec<(f32, f32)> = real.iter().zip(&imag).map(|(&r, &i)| (r, i)).collect();
 
