@@ -143,6 +143,9 @@ impl PeriodicWave {
             disable_normalization,
         }) = options
         {
+            // Todo: assertions not complete. Missing assertions when
+            // only real field is specified, anly imag field is specified,
+            // and neither real or imag is specified
             assert!(
                 real.len() >= 2,
                 "RangeError: Real field length should be at least 2"
@@ -783,5 +786,54 @@ impl Ticker for CustomRenderer {
             self.phases[i] = (phase + incr_phase) % TABLE_LENGTH_F32;
         }
         sample
+    }
+}
+
+#[cfg(test)]
+
+mod tests {
+    use super::{PeriodicWave, PeriodicWaveOptions};
+    use crate::context::AudioContext;
+
+    #[test]
+    #[should_panic]
+    fn fails_to_build_when_real_is_too_short() {
+        let context = AudioContext::new();
+
+        let options = PeriodicWaveOptions {
+            real: vec![0.],
+            imag: vec![0., 0., 0.],
+            disable_normalization: false,
+        };
+
+        let _periodic_wave = PeriodicWave::new(&context, Some(options));
+    }
+
+    #[test]
+    #[should_panic]
+    fn fails_to_build_when_imag_is_too_short() {
+        let context = AudioContext::new();
+
+        let options = PeriodicWaveOptions {
+            real: vec![0., 0., 0.],
+            imag: vec![0.],
+            disable_normalization: false,
+        };
+
+        let _periodic_wave = PeriodicWave::new(&context, Some(options));
+    }
+
+    #[test]
+    #[should_panic]
+    fn fails_to_build_when_imag_and_real_not_equal_length() {
+        let context = AudioContext::new();
+
+        let options = PeriodicWaveOptions {
+            real: vec![0., 0., 0.],
+            imag: vec![0., 0.],
+            disable_normalization: false,
+        };
+
+        let _periodic_wave = PeriodicWave::new(&context, Some(options));
     }
 }
