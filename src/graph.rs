@@ -109,7 +109,6 @@ impl RenderThread {
         buf
     }
 
-
     // This code is not dead: false positive from clippy
     // due to the use of #[cfg(not(test))]
     #[allow(dead_code)]
