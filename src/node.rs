@@ -223,7 +223,22 @@ lazy_static! {
 }
 
 /// Options for constructing a periodic wave
-pub struct PeriodicWaveConstraints {
+pub struct PeriodicWaveOptions {
+    /// The real parameter represents an array of cosine terms of Fourrier series.
+    ///
+    /// The first element (index 0) represents the DC-offset.
+    /// This offset has to be given but will not be taken into account
+    /// to build the custom periodic waveform.
+    ///
+    /// The following elements (index 1 and more) represent the fundamental and harmonics of the periodic waveform.
+    real: Vec<f32>,
+    /// The imag parameter represents an array of sine terms of Fourrier series.
+    ///
+    /// The first element (index 0) will not be taken into account
+    /// to build the custom periodic waveform.
+    ///
+    /// The following elements (index 1 and more) represent the fundamental and harmonics of the periodic waveform.
+    imag: Vec<f32>,
     /// By default PeriodicWave is build with normalization enabled (disable_normalization = false).
     /// In this case, a peak normalization is applied to the given custom periodic waveform.
     ///
@@ -267,21 +282,34 @@ impl PeriodicWave {
     /// * `real` - The real parameter represents an array of cosine terms of Fourrier series.
     /// * `imag` - The imag parameter represents an array of sine terms of Fourrier series.
     /// * `constraints` - The constraints parameter specifies the normalization mode of the PeriodicWave
-    pub(crate) fn new(
-        real: Vec<f32>,
-        imag: Vec<f32>,
-        constraints: Option<PeriodicWaveConstraints>,
-    ) -> Self {
-        if let Some(c) = constraints {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<PeriodicWaveOptions>) -> Self {
+        if let Some(PeriodicWaveOptions {
+            real,
+            imag,
+            disable_normalization,
+        }) = options
+        {
+            assert!(
+                real.len() >= 2,
+                "RangeError: Real field length should be at least 2"
+            );
+            assert!(
+                imag.len() >= 2,
+                "RangeError: Imag field length should be at least 2",
+            );
+            assert!(
+                real.len() == imag.len(),
+                "RangeError: Imag and real field length should be equal"
+            );
             Self {
                 real,
                 imag,
-                disable_normalization: c.disable_normalization,
+                disable_normalization,
             }
         } else {
             Self {
-                real,
-                imag,
+                real: vec![0., 1.0],
+                imag: vec![0., 0.],
                 disable_normalization: false,
             }
         }
