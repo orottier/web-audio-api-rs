@@ -121,7 +121,7 @@ impl PeriodicWave {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     ///    use web_audio_api::context::{AudioContext, AsBaseAudioContext};
     ///    use web_audio_api::node::{PeriodicWave, PeriodicWaveOptions};
     ///
