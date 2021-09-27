@@ -51,7 +51,7 @@ struct BaseAudioContextInner {
     /// message channel from control to render thread
     render_channel: Sender<ControlMessage>,
     /// number of frames played
-    frames_played: AtomicU64,
+    frames_played: Arc<AtomicU64>,
     /// AudioListener fields
     listener_params: Option<AudioListenerParams>,
 }
@@ -275,10 +275,11 @@ impl AudioContext {
     /// This will play live audio on the default output
     #[cfg(not(test))]
     pub fn new() -> Self {
-        let (stream, config, sender) = io::build_output();
-        let sample_rate = SampleRate(config.sample_rate.0);
+        let (stream, config, frames_played, sender) = io::build_output();
         let channels = config.channels as u32;
-        let base = BaseAudioContext::new(sample_rate, channels, sender);
+        let sample_rate = SampleRate(config.sample_rate.0);
+
+        let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
         Self { base, stream }
     }
@@ -288,8 +289,8 @@ impl AudioContext {
         let sample_rate = SampleRate(44_100);
         let channels = 2;
         let (sender, _receiver) = crossbeam_channel::unbounded();
-
-        let base = BaseAudioContext::new(sample_rate, channels, sender);
+        let frames_played = Arc::new(AtomicU64::new(0));
+        let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
         Self { base }
     }
@@ -360,13 +361,18 @@ impl Drop for AudioContextRegistration {
 }
 
 impl BaseAudioContext {
-    fn new(sample_rate: SampleRate, channels: u32, render_channel: Sender<ControlMessage>) -> Self {
+    fn new(
+        sample_rate: SampleRate,
+        channels: u32,
+        frames_played: Arc<AtomicU64>,
+        render_channel: Sender<ControlMessage>,
+    ) -> Self {
         let base_inner = BaseAudioContextInner {
             sample_rate,
             channels,
             render_channel,
             node_id_inc: AtomicU64::new(0),
-            frames_played: AtomicU64::new(0),
+            frames_played,
             listener_params: None,
         };
         let base = BaseAudioContext {
@@ -533,11 +539,14 @@ impl OfflineAudioContext {
         // communication channel to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
 
-        // first, setup the base audio context
-        let base = BaseAudioContext::new(sample_rate, channels, sender);
-
         // setup the render 'thread', which will run inside the control thread
         let render = RenderThread::new(sample_rate, channels as usize, receiver);
+
+        // sync frames_played between RenderThread and BaseAudioContext
+        let frames_played = render.get_frames_played();
+
+        // first, setup the base audio context
+        let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
         Self {
             base,

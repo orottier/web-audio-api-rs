@@ -1,3 +1,6 @@
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
+
 use crate::message::ControlMessage;
 use crate::{SampleRate, BUFFER_SIZE};
 
@@ -28,7 +31,7 @@ fn spawn_output_stream(
             device.build_output_stream(config, move |d: &mut [u16], _c| render.render(d), err_fn)
         }
         SampleFormat::I16 => {
-            device.build_output_stream(&config, move |d: &mut [i16], _c| render.render(d), err_fn)
+            device.build_output_stream(config, move |d: &mut [i16], _c| render.render(d), err_fn)
         }
     }
 }
@@ -49,12 +52,12 @@ fn spawn_input_stream(
             device.build_input_stream(config, move |d: &[u16], _c| render.render(d), err_fn)
         }
         SampleFormat::I16 => {
-            device.build_input_stream(&config, move |d: &[i16], _c| render.render(d), err_fn)
+            device.build_input_stream(config, move |d: &[i16], _c| render.render(d), err_fn)
         }
     }
 }
 
-pub(crate) fn build_output() -> (Stream, StreamConfig, Sender<ControlMessage>) {
+pub(crate) fn build_output() -> (Stream, StreamConfig, Arc<AtomicU64>, Sender<ControlMessage>) {
     let host = cpal::default_host();
     let device = host
         .default_output_device()
@@ -95,14 +98,18 @@ pub(crate) fn build_output() -> (Stream, StreamConfig, Sender<ControlMessage>) {
     // spawn the render thread
     let render = RenderThread::new(sample_rate, channels as usize, receiver);
 
+    // sync frames_played between RenderThread and BaseAudioContext
+    let frames_played = render.get_frames_played();
+
     let maybe_stream = spawn_output_stream(&device, sample_format, &config, render);
     // our BUFFER_SIZEd config may not be supported, in that case, use the default config
-    let stream = match maybe_stream {
-        Ok(stream) => stream,
-        Err(e) => {
+    let (stream, frames_played) = match (maybe_stream, frames_played) {
+        (Ok(stream), frames_played) => (stream, frames_played),
+        (Err(e), _) => {
             log::warn!(
                 "Input stream failed to build: {:?}, retry with default config {:?}",
-                e, default_config
+                e,
+                default_config
             );
 
             // setup a new comms channel
@@ -110,15 +117,20 @@ pub(crate) fn build_output() -> (Stream, StreamConfig, Sender<ControlMessage>) {
             sender = sender2; // overwrite earlier
 
             let render = RenderThread::new(sample_rate, channels as usize, receiver);
-            spawn_output_stream(&device, sample_format, &default_config, render)
-                .expect("Unable to spawn output stream with default config")
+
+            // sync frames_played between RenderThread and BaseAudioContext
+            let frames_played = render.get_frames_played();
+
+            let stream = spawn_output_stream(&device, sample_format, &default_config, render)
+                .expect("Unable to spawn output stream with default config");
+            (stream, frames_played)
         }
     };
 
     // Required because some hosts don't play the stream automatically
     stream.play().expect("Output stream refused to play");
 
-    (stream, config, sender)
+    (stream, config, frames_played, sender)
 }
 
 pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
@@ -166,7 +178,8 @@ pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
         Err(e) => {
             log::warn!(
                 "Output stream failed to build: {:?}, retry with default config {:?}",
-                e, default_config
+                e,
+                default_config
             );
 
             // setup a new comms channel
