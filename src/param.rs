@@ -8,7 +8,7 @@ use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, Chann
 use crate::context::AudioContextRegistration;
 use crate::node::AudioNode;
 use crate::process::{AudioParamValues, AudioProcessor};
-use crate::{AtomicF64, SampleRate};
+use crate::{AtomicF64, SampleRate, BUFFER_SIZE};
 
 use crossbeam_channel::{Receiver, Sender};
 
@@ -122,6 +122,7 @@ pub(crate) struct AudioParamProcessor {
     min_value: f32,
     max_value: f32,
     events: BinaryHeap<AutomationEvent>,
+    buffer: Vec<f32>,
 }
 
 impl AudioProcessor for AudioParamProcessor {
@@ -178,6 +179,7 @@ pub(crate) fn audio_param_pair(
         min_value: opts.min_value,
         max_value: opts.max_value,
         events: BinaryHeap::new(),
+        buffer: Vec::with_capacity(BUFFER_SIZE as usize),
     };
 
     (param, render)
