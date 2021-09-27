@@ -157,18 +157,7 @@ pub trait AsBaseAudioContext {
     }
 
     /// Creates a periodic wave
-    //
-    // dictionary PeriodicWaveConstraints {
-    //   real
-    //   imag
-    //   boolean disableNormalization = false;
-    // };
-    fn create_periodic_wave(
-        &self,
-        real: Vec<f32>,
-        imag: Vec<f32>,
-        options: Option<PeriodicWaveOptions>,
-    ) -> PeriodicWave {
+    fn create_periodic_wave(&self, options: Option<PeriodicWaveOptions>) -> PeriodicWave {
         PeriodicWave::new(self.base(), options)
     }
 

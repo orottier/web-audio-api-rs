@@ -10,6 +10,7 @@ use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
 
+use crossbeam_channel::{self, Receiver, Sender};
 use lazy_static::lazy_static;
 
 use super::{AudioNode, AudioScheduledSourceNode};
@@ -85,7 +86,7 @@ pub struct PeriodicWaveOptions {
 
 /// PeriodicWave is a setup struct required to build
 /// custom periodic waveform oscillator type.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PeriodicWave {
     /// The real parameter represents an array of cosine terms of Fourrier series.
     ///
@@ -225,6 +226,10 @@ impl From<u32> for OscillatorType {
     }
 }
 
+enum OscMsg {
+    PeriodicWaveMsg(PeriodicWave),
+}
+
 /// Audio source generating a periodic waveform
 pub struct OscillatorNode {
     registration: AudioContextRegistration,
@@ -233,6 +238,7 @@ pub struct OscillatorNode {
     detune: AudioParam,
     type_: Arc<AtomicU32>,
     scheduler: Scheduler,
+    sender: Sender<OscMsg>,
 }
 
 impl AudioScheduledSourceNode for OscillatorNode {
@@ -305,6 +311,9 @@ impl OscillatorNode {
                 sample_rate,
                 options.periodic_wave.clone(),
             );
+
+            let (sender, receiver) = crossbeam_channel::bounded(0);
+
             let render = OscillatorRenderer {
                 type_: type_.clone(),
                 frequency: f_proc,
@@ -315,6 +324,7 @@ impl OscillatorNode {
                 triangle_renderer,
                 square_renderer,
                 custom_renderer,
+                receiver,
             };
             let node = OscillatorNode {
                 registration,
@@ -323,6 +333,7 @@ impl OscillatorNode {
                 detune: det_param,
                 type_,
                 scheduler,
+                sender,
             };
 
             (node, Box::new(render))
@@ -355,9 +366,11 @@ impl OscillatorNode {
     //  to the OscillatorRenderer, and so has no effect on the rendering.
     //  This function should send the updated periodics waveform characteristics
     //  to the OscillatorRenderer and more specifically to the CustomRenderer
-    pub fn set_periodic_wave(&mut self, _periodic_wave: PeriodicWave) {
+    pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
         self.set_type(OscillatorType::Custom);
-        todo!();
+        self.sender
+            .send(OscMsg::PeriodicWaveMsg(periodic_wave))
+            .expect("Sending periodic wave to the node renderer failed");
     }
 }
 
@@ -371,6 +384,7 @@ struct OscillatorRenderer {
     triangle_renderer: TriangleRenderer,
     square_renderer: SquareRenderer,
     custom_renderer: CustomRenderer,
+    receiver: Receiver<OscMsg>,
 }
 
 impl AudioProcessor for OscillatorRenderer {
@@ -407,6 +421,13 @@ impl AudioProcessor for OscillatorRenderer {
         let buffer = output.channel_data_mut(0);
 
         use OscillatorType::*;
+
+        // check if any message was send from the control thread
+        if let Ok(msg) = self.receiver.try_recv() {
+            match msg {
+                OscMsg::PeriodicWaveMsg(p_w) => self.custom_renderer.set_periodic_wave(p_w),
+            }
+        }
 
         match type_ {
             Sine => {
@@ -795,6 +816,64 @@ impl CustomRenderer {
             .iter()
             .map(|incr_phase| (incr_phase - incr_phase.round()).abs())
             .collect();
+    }
+
+    fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
+        let PeriodicWave {
+            real,
+            imag,
+            disable_normalization,
+        } = periodic_wave;
+
+        let cplxs: Vec<(f32, f32)> = real.iter().zip(&imag).map(|(&r, &i)| (r, i)).collect();
+
+        let norms: Vec<f32> = cplxs
+            .iter()
+            .map(|(r, i)| (f32::powi(*r, 2i32) + f32::powi(*i, 2i32)).sqrt())
+            .collect();
+
+        let phases: Vec<f32> = cplxs
+            .iter()
+            .map(|(r, i)| {
+                let phase = f32::atan2(*i, *r);
+                if phase < 0. {
+                    (phase + 2. * PI) * (TABLE_LENGTH_F32 / (2.0 * PI))
+                } else {
+                    phase * (TABLE_LENGTH_F32 / 2.0 * PI)
+                }
+            })
+            .collect();
+
+        let incr_phases: Vec<f32> = cplxs
+            .iter()
+            .enumerate()
+            .map(|(idx, _)| TABLE_LENGTH_F32 * idx as f32 * (self.frequency / self.sample_rate))
+            .collect();
+
+        let mus: Vec<f32> = incr_phases
+            .iter()
+            .map(|incr_phase| (incr_phase - incr_phase.round()).abs())
+            .collect();
+
+        let normalizer = if !disable_normalization {
+            let norm = Self::get_normalizer(
+                phases.clone(),
+                incr_phases.clone(),
+                mus.clone(),
+                norms.clone(),
+                self.frequency,
+            );
+            Some(norm)
+        } else {
+            None
+        };
+
+        self.cplxs = cplxs;
+        self.phases = phases;
+        self.incr_phases = incr_phases;
+        self.mus = mus;
+        self.norms = norms;
+        self.normalizer = normalizer;
     }
 }
 

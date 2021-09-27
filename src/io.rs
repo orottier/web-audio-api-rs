@@ -28,7 +28,7 @@ fn spawn_output_stream(
             device.build_output_stream(config, move |d: &mut [u16], _c| render.render(d), err_fn)
         }
         SampleFormat::I16 => {
-            device.build_output_stream(&config, move |d: &mut [i16], _c| render.render(d), err_fn)
+            device.build_output_stream(config, move |d: &mut [i16], _c| render.render(d), err_fn)
         }
     }
 }
@@ -49,7 +49,7 @@ fn spawn_input_stream(
             device.build_input_stream(config, move |d: &[u16], _c| render.render(d), err_fn)
         }
         SampleFormat::I16 => {
-            device.build_input_stream(&config, move |d: &[i16], _c| render.render(d), err_fn)
+            device.build_input_stream(config, move |d: &[i16], _c| render.render(d), err_fn)
         }
     }
 }
@@ -102,7 +102,8 @@ pub(crate) fn build_output() -> (Stream, StreamConfig, Sender<ControlMessage>) {
         Err(e) => {
             log::warn!(
                 "Input stream failed to build: {:?}, retry with default config {:?}",
-                e, default_config
+                e,
+                default_config
             );
 
             // setup a new comms channel
@@ -166,7 +167,8 @@ pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
         Err(e) => {
             log::warn!(
                 "Output stream failed to build: {:?}, retry with default config {:?}",
-                e, default_config
+                e,
+                default_config
             );
 
             // setup a new comms channel
