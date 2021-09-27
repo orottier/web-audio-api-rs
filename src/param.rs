@@ -143,9 +143,7 @@ impl AudioProcessor for AudioParamProcessor {
         );
         let mut buffer = inputs[0].clone(); // get new buf
         buffer.force_mono();
-        buffer
-            .channel_data_mut(0)
-            .copy_from_slice(intrinsic.as_slice());
+        buffer.channel_data_mut(0).copy_from_slice(intrinsic);
 
         buffer.add(input, ChannelInterpretation::Discrete);
 
@@ -232,20 +230,23 @@ impl AudioParamProcessor {
         }
     }
 
-    fn tick(&mut self, ts: f64, dt: f64, count: usize) -> Vec<f32> {
+    fn tick(&mut self, ts: f64, dt: f64, count: usize) -> &[f32] {
         // store incoming automation events in sorted queue
         for event in self.receiver.try_iter() {
             self.events.push(event);
         }
 
+        // Clear the vec from previously buffered data
+        self.buffer.clear();
+
         // setup return value buffer
         let a_rate = self.automation_rate == AutomationRate::A;
-        let mut result = if a_rate {
-            // empty buffer
-            Vec::with_capacity(count)
-        } else {
+
+        if !a_rate {
             // filling the vec already, no expensive calculations are performed later
-            vec![self.value(); count]
+            for _ in 0..count {
+                self.buffer.push(self.value())
+            }
         };
 
         // end of the render quantum
@@ -255,8 +256,8 @@ impl AudioParamProcessor {
             match self.events.peek() {
                 None => {
                     // fill remaining buffer for K-rate processing
-                    for _ in result.len()..count {
-                        result.push(self.value());
+                    for _ in self.buffer.len()..count {
+                        self.buffer.push(self.value());
                     }
                     break;
                 }
@@ -265,8 +266,8 @@ impl AudioParamProcessor {
                     let end_index = end_index.min(count);
 
                     // fill remaining buffer for K-rate processing
-                    for _ in result.len()..end_index {
-                        result.push(self.value());
+                    for _ in self.buffer.len()..end_index {
+                        self.buffer.push(self.value());
                     }
 
                     // if start time is outside this render quantum, return
@@ -278,8 +279,8 @@ impl AudioParamProcessor {
                 }
                 Some(LinearRampToValueAtTime { v, end }) => {
                     let end_index = ((end - ts).max(0.) / dt) as usize;
-                    if a_rate && end_index > result.len() {
-                        let start_index = result.len();
+                    if a_rate && end_index > self.buffer.len() {
+                        let start_index = self.buffer.len();
 
                         let dv = v - self.value;
                         let dt = end_index - start_index;
@@ -290,7 +291,7 @@ impl AudioParamProcessor {
 
                         for i in 0..n_values {
                             let val = self.value + i as f32 * slope;
-                            result.push(val.clamp(self.min_value, self.max_value));
+                            self.buffer.push(val.clamp(self.min_value, self.max_value));
                         }
                     }
 
@@ -309,8 +310,8 @@ impl AudioParamProcessor {
 
         self.shared_value.store(self.value() as f64);
 
-        assert_eq!(result.len(), count);
-        result
+        assert_eq!(self.buffer.len(), count);
+        self.buffer.as_slice()
     }
 }
 
@@ -356,12 +357,12 @@ mod tests {
         let vs = render.tick(0., 1., 10);
         assert_float_eq!(
             vs,
-            vec![0., 0., 5., 5., 5., 5., 5., 5., 10., 10.],
+            &[0., 0., 5., 5., 5., 5., 5., 5., 10., 10.][..],
             ulps_all <= 0
         );
 
         let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, vec![8.; 10], ulps_all <= 0);
+        assert_float_eq!(vs, &[8.; 10][..], ulps_all <= 0);
     }
 
     #[test]
@@ -380,10 +381,10 @@ mod tests {
         param.set_value_at_time_direct(8., 10.0); // should not occur 1st run
 
         let vs = render.tick(0., 1., 10);
-        assert_float_eq!(vs, vec![0.; 10], ulps_all <= 0);
+        assert_float_eq!(vs, &[0.; 10][..], ulps_all <= 0);
 
         let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, vec![8.; 10], ulps_all <= 0);
+        assert_float_eq!(vs, &[8.; 10][..], ulps_all <= 0);
     }
 
     #[test]
@@ -408,7 +409,7 @@ mod tests {
         let vs = render.tick(0., 1., 10);
         assert_float_eq!(
             vs,
-            vec![0., 0., 5., 6., 7., 8., 7., 6., 5., 4.],
+            &[0., 0., 5., 6., 7., 8., 7., 6., 5., 4.][..],
             ulps_all <= 0
         );
     }
@@ -433,7 +434,7 @@ mod tests {
         // I guess this will not be a problem in practise.
         assert_float_eq!(
             vs,
-            vec![0., 1., 1., 1., 1., 1., 1., 1., 1., 1.],
+            &[0., 1., 1., 1., 1., 1., 1., 1., 1., 1.][..],
             ulps_all <= 0
         );
     }
