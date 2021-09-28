@@ -506,7 +506,7 @@ struct SineRenderer {
 impl SineRenderer {
     fn new(frequency: f32, sample_rate: f32) -> Self {
         let incr_phase = 2. * PI * (frequency / sample_rate);
-        let mu = (incr_phase - incr_phase.round()).abs();
+        let mu = incr_phase - incr_phase.floor();
         Self {
             frequency,
             sample_rate,
@@ -522,7 +522,7 @@ impl SineRenderer {
             return;
         }
         self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
-        self.mu = (self.incr_phase - self.incr_phase.round()).abs();
+        self.mu = self.incr_phase - self.incr_phase.floor();
         self.frequency = frequency;
     }
 }
@@ -556,7 +556,7 @@ struct SawRenderer {
 impl SawRenderer {
     fn new(frequency: f32, sample_rate: f32) -> Self {
         let incr_phase = (TABLE_LENGTH_F32 / sample_rate) * frequency;
-        let mu = (incr_phase - incr_phase.round()).abs();
+        let mu = incr_phase - incr_phase.floor();
         Self {
             frequency,
             sample_rate,
@@ -572,7 +572,7 @@ impl SawRenderer {
             return;
         }
         self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
-        self.mu = (self.incr_phase - self.incr_phase.round()).abs();
+        self.mu = self.incr_phase - self.incr_phase.floor();
         self.frequency = frequency;
     }
 }
@@ -616,7 +616,7 @@ struct TriangleRenderer {
 impl TriangleRenderer {
     fn new(frequency: f32, sample_rate: f32) -> Self {
         let incr_phase = TABLE_LENGTH_F32 * frequency / sample_rate;
-        let mu = (incr_phase - incr_phase.round()).abs();
+        let mu = incr_phase - incr_phase.floor();
         Self {
             frequency,
             sample_rate,
@@ -632,7 +632,7 @@ impl TriangleRenderer {
             return;
         }
         self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
-        self.mu = (self.incr_phase - self.incr_phase.round()).abs();
+        self.mu = self.incr_phase - self.incr_phase.floor();
         self.frequency = frequency;
     }
 }
@@ -677,7 +677,7 @@ struct SquareRenderer {
 impl SquareRenderer {
     fn new(frequency: f32, sample_rate: f32) -> Self {
         let incr_phase = (TABLE_LENGTH_F32 / sample_rate) * frequency;
-        let mu = (incr_phase - incr_phase.round()).abs();
+        let mu = incr_phase - incr_phase.floor();
         Self {
             frequency,
             sample_rate,
@@ -693,7 +693,7 @@ impl SquareRenderer {
             return;
         }
         self.incr_phase = (TABLE_LENGTH_F32 / self.sample_rate) * frequency;
-        self.mu = (self.incr_phase - self.incr_phase.round()).abs();
+        self.mu = self.incr_phase - self.incr_phase.floor();
         self.frequency = frequency;
     }
 }
@@ -778,7 +778,7 @@ impl CustomRenderer {
 
         let mus: Vec<f32> = incr_phases
             .iter()
-            .map(|incr_phase| (incr_phase - incr_phase.round()).abs())
+            .map(|incr_phase| incr_phase - incr_phase.floor())
             .collect();
         let normalizer = if !disable_normalization {
             let norm = Self::get_normalizer(
@@ -857,7 +857,7 @@ impl CustomRenderer {
         self.mus = self
             .incr_phases
             .iter()
-            .map(|incr_phase| (incr_phase - incr_phase.round()).abs())
+            .map(|incr_phase| incr_phase - incr_phase.floor())
             .collect();
     }
 
