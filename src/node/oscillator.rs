@@ -432,35 +432,35 @@ impl AudioProcessor for OscillatorRenderer {
         match type_ {
             Sine => {
                 // K-rate
-                self.sine_renderer.set_frequency(computed_freq);
+                self.sine_renderer.compute_params(computed_freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.sine_renderer.tick());
             }
             Square => {
                 // K-rate
-                self.square_renderer.set_frequency(computed_freq);
+                self.square_renderer.compute_params(computed_freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.square_renderer.tick());
             }
             Sawtooth => {
                 // K-rate
-                self.sawtooth_renderer.set_frequency(computed_freq);
+                self.sawtooth_renderer.compute_params(computed_freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.sawtooth_renderer.tick());
             }
             Triangle => {
                 // K-rate
-                self.triangle_renderer.set_frequency(computed_freq);
+                self.triangle_renderer.compute_params(computed_freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.triangle_renderer.tick())
             }
             Custom => {
                 // K-rate
-                self.custom_renderer.set_frequency(computed_freq);
+                self.custom_renderer.compute_params(computed_freq);
                 buffer
                     .iter_mut()
                     .for_each(|o| *o = self.custom_renderer.tick())
@@ -496,34 +496,34 @@ trait Ticker {
 
 #[derive(Debug)]
 struct SineRenderer {
-    frequency: f32,
+    computed_freq: f32,
     sample_rate: f32,
     phase: f32,
     incr_phase: f32,
-    mu: f32,
+    interpol_ratio: f32,
 }
 
 impl SineRenderer {
-    fn new(frequency: f32, sample_rate: f32) -> Self {
-        let incr_phase = 2. * PI * (frequency / sample_rate);
-        let mu = incr_phase - incr_phase.floor();
+    fn new(computed_freq: f32, sample_rate: f32) -> Self {
+        let incr_phase = 2. * PI * (computed_freq / sample_rate);
+        let interpol_ratio = incr_phase - incr_phase.floor();
         Self {
-            frequency,
+            computed_freq,
             sample_rate,
             phase: 0.0,
             incr_phase,
-            mu,
+            interpol_ratio,
         }
     }
 
-    fn set_frequency(&mut self, frequency: f32) {
+    fn compute_params(&mut self, computed_freq: f32) {
         // No need to compute if frequency has not changed
-        if (self.frequency - frequency).abs() < 0.01 {
+        if (self.computed_freq - computed_freq).abs() < 0.01 {
             return;
         }
-        self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
-        self.mu = self.incr_phase - self.incr_phase.floor();
-        self.frequency = frequency;
+        self.incr_phase = TABLE_LENGTH_F32 * computed_freq / self.sample_rate;
+        self.interpol_ratio = self.incr_phase - self.incr_phase.floor();
+        self.computed_freq = computed_freq;
     }
 }
 
@@ -532,9 +532,10 @@ impl Ticker for SineRenderer {
         let idx = self.phase as usize;
         let inf_idx = idx % TABLE_LENGTH_USIZE;
         let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
-        let sample = SINETABLE[inf_idx] * (1. - self.mu) + SINETABLE[sup_idx] * self.mu;
+        let sample = SINETABLE[inf_idx] * (1. - self.interpol_ratio)
+            + SINETABLE[sup_idx] * self.interpol_ratio;
 
-        // Optimized modulo op
+        // Optimized float modulo op
         self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
             (self.phase + self.incr_phase) - TABLE_LENGTH_F32
         } else {
@@ -546,34 +547,34 @@ impl Ticker for SineRenderer {
 
 #[derive(Debug)]
 struct SawRenderer {
-    frequency: f32,
+    computed_freq: f32,
     sample_rate: f32,
     incr_phase: f32,
-    mu: f32,
     phase: f32,
+    interpol_ratio: f32,
 }
 
 impl SawRenderer {
-    fn new(frequency: f32, sample_rate: f32) -> Self {
-        let incr_phase = (TABLE_LENGTH_F32 / sample_rate) * frequency;
-        let mu = incr_phase - incr_phase.floor();
+    fn new(computed_freq: f32, sample_rate: f32) -> Self {
+        let incr_phase = (TABLE_LENGTH_F32 / sample_rate) * computed_freq;
+        let interpol_ratio = incr_phase - incr_phase.floor();
         Self {
-            frequency,
+            computed_freq,
             sample_rate,
             phase: 0.0,
             incr_phase,
-            mu,
+            interpol_ratio,
         }
     }
 
-    fn set_frequency(&mut self, frequency: f32) {
+    fn compute_params(&mut self, computed_freq: f32) {
         // No need to compute if frequency has not changed
-        if (self.frequency - frequency).abs() < 0.01 {
+        if (self.computed_freq - computed_freq).abs() < 0.01 {
             return;
         }
-        self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
-        self.mu = self.incr_phase - self.incr_phase.floor();
-        self.frequency = frequency;
+        self.incr_phase = TABLE_LENGTH_F32 * computed_freq / self.sample_rate;
+        self.interpol_ratio = self.incr_phase - self.incr_phase.floor();
+        self.computed_freq = computed_freq;
     }
 }
 
@@ -589,12 +590,13 @@ impl Ticker for SawRenderer {
         let inf_idx = idx % TABLE_LENGTH_USIZE;
         let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
 
-        let mut sample = SAWTABLE[inf_idx] * (1. - self.mu) + SAWTABLE[sup_idx] * self.mu;
+        let mut sample = SAWTABLE[inf_idx] * (1. - self.interpol_ratio)
+            + SAWTABLE[sup_idx] * self.interpol_ratio;
 
         let norm_phase = self.phase / TABLE_LENGTH_F32;
         sample -= self.poly_blep(norm_phase);
 
-        // Optimized modulo op
+        // Optimized float modulo op
         self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
             (self.phase + self.incr_phase) - TABLE_LENGTH_F32
         } else {
@@ -606,34 +608,34 @@ impl Ticker for SawRenderer {
 
 #[derive(Debug)]
 struct TriangleRenderer {
-    frequency: f32,
+    computed_freq: f32,
     sample_rate: f32,
-    incr_phase: f32,
-    mu: f32,
     phase: f32,
+    incr_phase: f32,
+    interpol_ratio: f32,
 }
 
 impl TriangleRenderer {
-    fn new(frequency: f32, sample_rate: f32) -> Self {
-        let incr_phase = TABLE_LENGTH_F32 * frequency / sample_rate;
-        let mu = incr_phase - incr_phase.floor();
+    fn new(computed_freq: f32, sample_rate: f32) -> Self {
+        let incr_phase = TABLE_LENGTH_F32 * computed_freq / sample_rate;
+        let interpol_ratio = incr_phase - incr_phase.floor();
         Self {
-            frequency,
+            computed_freq,
             sample_rate,
             phase: 0.0,
             incr_phase,
-            mu,
+            interpol_ratio,
         }
     }
 
-    fn set_frequency(&mut self, frequency: f32) {
+    fn compute_params(&mut self, computed_freq: f32) {
         // No need to compute if frequency has not changed
-        if (self.frequency - frequency).abs() < 0.01 {
+        if (self.computed_freq - computed_freq).abs() < 0.01 {
             return;
         }
-        self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
-        self.mu = self.incr_phase - self.incr_phase.floor();
-        self.frequency = frequency;
+        self.incr_phase = TABLE_LENGTH_F32 * computed_freq / self.sample_rate;
+        self.interpol_ratio = self.incr_phase - self.incr_phase.floor();
+        self.computed_freq = computed_freq;
     }
 }
 
@@ -649,12 +651,13 @@ impl Ticker for TriangleRenderer {
         let inf_idx = idx % TABLE_LENGTH_USIZE;
         let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
 
-        let mut sample = TRIANGLETABLE[inf_idx] * (1. - self.mu) + TRIANGLETABLE[sup_idx] * self.mu;
+        let mut sample = TRIANGLETABLE[inf_idx] * (1. - self.interpol_ratio)
+            + TRIANGLETABLE[sup_idx] * self.interpol_ratio;
 
         let norm_phase = self.phase / TABLE_LENGTH_F32;
         sample -= self.poly_blep(norm_phase);
 
-        // Optimized modulo op
+        // Optimized float modulo op
         self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
             (self.phase + self.incr_phase) - TABLE_LENGTH_F32
         } else {
@@ -667,34 +670,34 @@ impl Ticker for TriangleRenderer {
 
 #[derive(Debug)]
 struct SquareRenderer {
-    frequency: f32,
+    computed_freq: f32,
     sample_rate: f32,
-    incr_phase: f32,
-    mu: f32,
     phase: f32,
+    incr_phase: f32,
+    interpol_ratio: f32,
 }
 
 impl SquareRenderer {
-    fn new(frequency: f32, sample_rate: f32) -> Self {
-        let incr_phase = (TABLE_LENGTH_F32 / sample_rate) * frequency;
-        let mu = incr_phase - incr_phase.floor();
+    fn new(computed_freq: f32, sample_rate: f32) -> Self {
+        let incr_phase = (TABLE_LENGTH_F32 / sample_rate) * computed_freq;
+        let interpol_ratio = incr_phase - incr_phase.floor();
         Self {
-            frequency,
+            computed_freq,
             sample_rate,
             phase: 0.0,
             incr_phase,
-            mu,
+            interpol_ratio,
         }
     }
 
-    fn set_frequency(&mut self, frequency: f32) {
+    fn compute_params(&mut self, computed_freq: f32) {
         // No need to compute if frequency has not changed
-        if (self.frequency - frequency).abs() < 0.01 {
+        if (self.computed_freq - computed_freq).abs() < 0.01 {
             return;
         }
-        self.incr_phase = (TABLE_LENGTH_F32 / self.sample_rate) * frequency;
-        self.mu = self.incr_phase - self.incr_phase.floor();
-        self.frequency = frequency;
+        self.incr_phase = (TABLE_LENGTH_F32 / self.sample_rate) * computed_freq;
+        self.interpol_ratio = self.incr_phase - self.incr_phase.floor();
+        self.computed_freq = computed_freq;
     }
 }
 
@@ -710,12 +713,13 @@ impl Ticker for SquareRenderer {
         let inf_idx = idx % TABLE_LENGTH_USIZE;
         let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
 
-        let mut sample = SQUARETABLE[inf_idx] * (1. - self.mu) + SQUARETABLE[sup_idx] * self.mu;
+        let mut sample = SQUARETABLE[inf_idx] * (1. - self.interpol_ratio)
+            + SQUARETABLE[sup_idx] * self.interpol_ratio;
 
         let norm_phase = self.phase / TABLE_LENGTH_F32;
         sample -= self.poly_blep(norm_phase);
 
-        // Optimized modulo op
+        // Optimized float modulo op
         self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
             (self.phase + self.incr_phase) - TABLE_LENGTH_F32
         } else {
@@ -726,18 +730,18 @@ impl Ticker for SquareRenderer {
 }
 
 struct CustomRenderer {
-    frequency: f32,
+    computed_freq: f32,
     sample_rate: f32,
     cplxs: Vec<(f32, f32)>,
     norms: Vec<f32>,
     phases: Vec<f32>,
     incr_phases: Vec<f32>,
-    mus: Vec<f32>,
+    interpol_ratios: Vec<f32>,
     normalizer: Option<f32>,
 }
 
 impl CustomRenderer {
-    fn new(frequency: f32, sample_rate: f32, periodic_wave: Option<PeriodicWave>) -> Self {
+    fn new(computed_freq: f32, sample_rate: f32, periodic_wave: Option<PeriodicWave>) -> Self {
         let PeriodicWave {
             real,
             imag,
@@ -773,10 +777,10 @@ impl CustomRenderer {
         let incr_phases: Vec<f32> = cplxs
             .iter()
             .enumerate()
-            .map(|(idx, _)| TABLE_LENGTH_F32 * idx as f32 * (frequency / sample_rate))
+            .map(|(idx, _)| TABLE_LENGTH_F32 * idx as f32 * (computed_freq / sample_rate))
             .collect();
 
-        let mus: Vec<f32> = incr_phases
+        let interpol_ratios: Vec<f32> = incr_phases
             .iter()
             .map(|incr_phase| incr_phase - incr_phase.floor())
             .collect();
@@ -784,9 +788,9 @@ impl CustomRenderer {
             let norm = Self::get_normalizer(
                 phases.clone(),
                 incr_phases.clone(),
-                mus.clone(),
+                interpol_ratios.clone(),
                 norms.clone(),
-                frequency,
+                computed_freq,
             );
             Some(norm)
         } else {
@@ -794,13 +798,13 @@ impl CustomRenderer {
         };
 
         Self {
-            frequency,
+            computed_freq,
             sample_rate,
             cplxs,
             norms,
             phases,
             incr_phases,
-            mus,
+            interpol_ratios,
             normalizer,
         }
     }
@@ -808,13 +812,13 @@ impl CustomRenderer {
     fn get_normalizer(
         mut phases: Vec<f32>,
         incr_phases: Vec<f32>,
-        mus: Vec<f32>,
+        interpol_ratios: Vec<f32>,
         norms: Vec<f32>,
-        frequency: f32,
+        computed_freq: f32,
     ) -> f32 {
         let mut samples: Vec<f32> = Vec::new();
 
-        if frequency == 0. {
+        if computed_freq == 0. {
             return 1.;
         }
 
@@ -824,7 +828,7 @@ impl CustomRenderer {
                 let gain = norms[i];
                 let phase = phases[i];
                 let incr_phase = incr_phases[i];
-                let mu = mus[i];
+                let mu = interpol_ratios[i];
                 let idx = (phase + incr_phase) as usize;
                 let inf_idx = idx % TABLE_LENGTH_USIZE;
                 let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
@@ -841,20 +845,20 @@ impl CustomRenderer {
             .expect("Maximum value not found")
     }
 
-    fn set_frequency(&mut self, frequency: f32) {
+    fn compute_params(&mut self, computed_freq: f32) {
         // No need to compute if frequency has not changed
-        if (self.frequency - frequency).abs() < 0.01 {
+        if (self.computed_freq - computed_freq).abs() < 0.01 {
             return;
         }
-        self.frequency = frequency;
+        self.computed_freq = computed_freq;
         self.incr_phases = self
             .cplxs
             .iter()
             .enumerate()
-            .map(|(idx, _)| TABLE_LENGTH_F32 * idx as f32 * (self.frequency / self.sample_rate))
+            .map(|(idx, _)| TABLE_LENGTH_F32 * idx as f32 * (self.computed_freq / self.sample_rate))
             .collect();
 
-        self.mus = self
+        self.interpol_ratios = self
             .incr_phases
             .iter()
             .map(|incr_phase| incr_phase - incr_phase.floor())
@@ -890,10 +894,10 @@ impl CustomRenderer {
         let incr_phases: Vec<f32> = cplxs
             .iter()
             .enumerate()
-            .map(|(idx, _)| TABLE_LENGTH_F32 * idx as f32 * (self.frequency / self.sample_rate))
+            .map(|(idx, _)| TABLE_LENGTH_F32 * idx as f32 * (self.computed_freq / self.sample_rate))
             .collect();
 
-        let mus: Vec<f32> = incr_phases
+        let interpol_ratios: Vec<f32> = incr_phases
             .iter()
             .map(|incr_phase| (incr_phase - incr_phase.round()).abs())
             .collect();
@@ -902,9 +906,9 @@ impl CustomRenderer {
             let norm = Self::get_normalizer(
                 phases.clone(),
                 incr_phases.clone(),
-                mus.clone(),
+                interpol_ratios.clone(),
                 norms.clone(),
-                self.frequency,
+                self.computed_freq,
             );
             Some(norm)
         } else {
@@ -914,7 +918,7 @@ impl CustomRenderer {
         self.cplxs = cplxs;
         self.phases = phases;
         self.incr_phases = incr_phases;
-        self.mus = mus;
+        self.interpol_ratios = interpol_ratios;
         self.norms = norms;
         self.normalizer = normalizer;
     }
@@ -927,7 +931,7 @@ impl Ticker for CustomRenderer {
             let gain = self.norms[i];
             let phase = self.phases[i];
             let incr_phase = self.incr_phases[i];
-            let mu = self.mus[i];
+            let mu = self.interpol_ratios[i];
             let idx = (phase + incr_phase) as usize;
             let inf_idx = idx % TABLE_LENGTH_USIZE;
             let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
@@ -935,7 +939,7 @@ impl Ticker for CustomRenderer {
                 * gain
                 * self.normalizer.unwrap_or(1.);
 
-            // Optimized modulo op
+            // Optimized float modulo op
             self.phases[i] = if phase + incr_phase >= TABLE_LENGTH_F32 {
                 (phase + incr_phase) - TABLE_LENGTH_F32
             } else {
