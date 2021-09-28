@@ -525,11 +525,17 @@ impl SineRenderer {
 
 impl Ticker for SineRenderer {
     fn tick(&mut self) -> f32 {
-        let idx = (self.phase + self.incr_phase) as usize;
+        let idx = self.phase as usize;
         let inf_idx = idx % TABLE_LENGTH_USIZE;
         let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
         let sample = SINETABLE[inf_idx] * (1. - self.mu) + SINETABLE[sup_idx] * self.mu;
-        self.phase = (self.phase + self.incr_phase) % TABLE_LENGTH_F32;
+
+        // Optimized modulo op
+        self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
+            (self.phase + self.incr_phase) - TABLE_LENGTH_F32
+        } else {
+            self.phase + self.incr_phase
+        };
         sample
     }
 }
