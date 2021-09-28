@@ -517,6 +517,10 @@ impl SineRenderer {
     }
 
     fn set_frequency(&mut self, frequency: f32) {
+        // No need to compute if frequency has not changed
+        if (self.frequency - frequency).abs() < 0.01 {
+            return;
+        }
         self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
         self.mu = (self.incr_phase - self.incr_phase.round()).abs();
         self.frequency = frequency;
