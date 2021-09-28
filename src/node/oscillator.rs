@@ -1,4 +1,4 @@
-use std::f32::consts::{PI, TAU};
+use std::f32::consts::PI;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -473,23 +473,6 @@ impl AudioProcessor for OscillatorRenderer {
     }
 }
 
-trait PolyBlep {
-    fn poly_blep(&self, mut t: f32) -> f32 {
-        let dt = self.incr_phase() / TAU;
-        if t < dt {
-            t /= dt;
-            t + t - t * t - 1.0
-        } else if t > 1.0 - dt {
-            t = (t - 1.0) / dt;
-            t * t + t + t + 1.0
-        } else {
-            0.0
-        }
-    }
-
-    fn incr_phase(&self) -> f32;
-}
-
 trait Ticker {
     fn tick(&mut self) -> f32;
 }
@@ -532,6 +515,8 @@ impl Ticker for SineRenderer {
         let idx = self.phase as usize;
         let inf_idx = idx % TABLE_LENGTH_USIZE;
         let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+
+        // Linear interpolation
         let sample = SINETABLE[inf_idx] * (1. - self.interpol_ratio)
             + SINETABLE[sup_idx] * self.interpol_ratio;
 
@@ -543,6 +528,23 @@ impl Ticker for SineRenderer {
         };
         sample
     }
+}
+
+trait PolyBlep {
+    fn poly_blep(&self, mut t: f32) -> f32 {
+        let dt = self.incr_phase() / (2.0 * PI);
+        if t < dt {
+            t /= dt;
+            t + t - t * t - 1.0
+        } else if t > 1.0 - dt {
+            t = (t - 1.0) / dt;
+            t * t + t + t + 1.0
+        } else {
+            0.0
+        }
+    }
+
+    fn incr_phase(&self) -> f32;
 }
 
 #[derive(Debug)]
@@ -590,6 +592,7 @@ impl Ticker for SawRenderer {
         let inf_idx = idx % TABLE_LENGTH_USIZE;
         let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
 
+        // Linear interpolation
         let mut sample = SAWTABLE[inf_idx] * (1. - self.interpol_ratio)
             + SAWTABLE[sup_idx] * self.interpol_ratio;
 
@@ -651,6 +654,7 @@ impl Ticker for TriangleRenderer {
         let inf_idx = idx % TABLE_LENGTH_USIZE;
         let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
 
+        // Linear interpolation
         let mut sample = TRIANGLETABLE[inf_idx] * (1. - self.interpol_ratio)
             + TRIANGLETABLE[sup_idx] * self.interpol_ratio;
 
@@ -713,6 +717,7 @@ impl Ticker for SquareRenderer {
         let inf_idx = idx % TABLE_LENGTH_USIZE;
         let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
 
+        // Linear interpolation
         let mut sample = SQUARETABLE[inf_idx] * (1. - self.interpol_ratio)
             + SQUARETABLE[sup_idx] * self.interpol_ratio;
 
@@ -832,6 +837,7 @@ impl CustomRenderer {
                 let idx = (phase + incr_phase) as usize;
                 let inf_idx = idx % TABLE_LENGTH_USIZE;
                 let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+                // Linear interpolation
                 sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain;
                 phases[i] = phase + incr_phase;
             }
@@ -845,24 +851,21 @@ impl CustomRenderer {
             .expect("Maximum value not found")
     }
 
-    fn compute_params(&mut self, computed_freq: f32) {
+    fn compute_params(&mut self, new_comp_freq: f32) {
         // No need to compute if frequency has not changed
-        if (self.computed_freq - computed_freq).abs() < 0.01 {
+        if (self.computed_freq - new_comp_freq).abs() < 0.01 {
             return;
         }
-        self.computed_freq = computed_freq;
-        self.incr_phases = self
-            .cplxs
-            .iter()
-            .enumerate()
-            .map(|(idx, _)| TABLE_LENGTH_F32 * idx as f32 * (self.computed_freq / self.sample_rate))
-            .collect();
 
-        self.interpol_ratios = self
-            .incr_phases
-            .iter()
-            .map(|incr_phase| incr_phase - incr_phase.floor())
-            .collect();
+        for incr_phase in &mut self.incr_phases {
+            *incr_phase *= new_comp_freq / self.computed_freq;
+        }
+
+        for (r, incr_ph) in self.interpol_ratios.iter_mut().zip(self.incr_phases.iter()) {
+            *r = incr_ph - incr_ph.floor();
+        }
+
+        self.computed_freq = new_comp_freq;
     }
 
     fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
@@ -935,6 +938,8 @@ impl Ticker for CustomRenderer {
             let idx = (phase + incr_phase) as usize;
             let inf_idx = idx % TABLE_LENGTH_USIZE;
             let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+
+            // Linear interpolation
             sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu)
                 * gain
                 * self.normalizer.unwrap_or(1.);
