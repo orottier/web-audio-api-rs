@@ -175,6 +175,7 @@ impl PeriodicWave {
 }
 
 /// Options for constructing an OscillatorNode
+#[derive(Debug)]
 pub struct OscillatorOptions {
     pub type_: OscillatorType,
     pub frequency: f32,
@@ -196,7 +197,7 @@ impl Default for OscillatorOptions {
 }
 
 /// Waveform of an oscillator
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum OscillatorType {
     Sine,
     Square,
