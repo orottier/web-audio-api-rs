@@ -567,6 +567,10 @@ impl SawRenderer {
     }
 
     fn set_frequency(&mut self, frequency: f32) {
+        // No need to compute if frequency has not changed
+        if (self.frequency - frequency).abs() < 0.01 {
+            return;
+        }
         self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
         self.mu = (self.incr_phase - self.incr_phase.round()).abs();
         self.frequency = frequency;
@@ -581,7 +585,7 @@ impl PolyBlep for SawRenderer {
 
 impl Ticker for SawRenderer {
     fn tick(&mut self) -> f32 {
-        let idx = (self.phase + self.incr_phase) as usize;
+        let idx = self.phase as usize;
         let inf_idx = idx % TABLE_LENGTH_USIZE;
         let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
 
@@ -590,7 +594,12 @@ impl Ticker for SawRenderer {
         let norm_phase = self.phase / TABLE_LENGTH_F32;
         sample -= self.poly_blep(norm_phase);
 
-        self.phase = (self.phase + self.incr_phase) % TABLE_LENGTH_F32;
+        // Optimized modulo op
+        self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
+            (self.phase + self.incr_phase) - TABLE_LENGTH_F32
+        } else {
+            self.phase + self.incr_phase
+        };
         sample
     }
 }
@@ -618,6 +627,10 @@ impl TriangleRenderer {
     }
 
     fn set_frequency(&mut self, frequency: f32) {
+        // No need to compute if frequency has not changed
+        if (self.frequency - frequency).abs() < 0.01 {
+            return;
+        }
         self.incr_phase = TABLE_LENGTH_F32 * frequency / self.sample_rate;
         self.mu = (self.incr_phase - self.incr_phase.round()).abs();
         self.frequency = frequency;
@@ -640,7 +653,13 @@ impl Ticker for TriangleRenderer {
 
         let norm_phase = self.phase / TABLE_LENGTH_F32;
         sample -= self.poly_blep(norm_phase);
-        self.phase = (self.phase + self.incr_phase) % TABLE_LENGTH_F32;
+
+        // Optimized modulo op
+        self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
+            (self.phase + self.incr_phase) - TABLE_LENGTH_F32
+        } else {
+            self.phase + self.incr_phase
+        };
 
         sample
     }
@@ -669,6 +688,10 @@ impl SquareRenderer {
     }
 
     fn set_frequency(&mut self, frequency: f32) {
+        // No need to compute if frequency has not changed
+        if (self.frequency - frequency).abs() < 0.01 {
+            return;
+        }
         self.incr_phase = (TABLE_LENGTH_F32 / self.sample_rate) * frequency;
         self.mu = (self.incr_phase - self.incr_phase.round()).abs();
         self.frequency = frequency;
@@ -691,7 +714,13 @@ impl Ticker for SquareRenderer {
 
         let norm_phase = self.phase / TABLE_LENGTH_F32;
         sample -= self.poly_blep(norm_phase);
-        self.phase = (self.phase + self.incr_phase) % TABLE_LENGTH_F32;
+
+        // Optimized modulo op
+        self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
+            (self.phase + self.incr_phase) - TABLE_LENGTH_F32
+        } else {
+            self.phase + self.incr_phase
+        };
         sample
     }
 }
@@ -813,6 +842,10 @@ impl CustomRenderer {
     }
 
     fn set_frequency(&mut self, frequency: f32) {
+        // No need to compute if frequency has not changed
+        if (self.frequency - frequency).abs() < 0.01 {
+            return;
+        }
         self.frequency = frequency;
         self.incr_phases = self
             .cplxs
@@ -901,7 +934,13 @@ impl Ticker for CustomRenderer {
             sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu)
                 * gain
                 * self.normalizer.unwrap_or(1.);
-            self.phases[i] = (phase + incr_phase) % TABLE_LENGTH_F32;
+
+            // Optimized modulo op
+            self.phases[i] = if phase + incr_phase >= TABLE_LENGTH_F32 {
+                (phase + incr_phase) - TABLE_LENGTH_F32
+            } else {
+                phase + incr_phase
+            };
         }
         sample
     }
