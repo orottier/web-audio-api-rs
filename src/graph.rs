@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use cpal::Sample;
 use crossbeam_channel::Receiver;
@@ -16,7 +17,7 @@ pub(crate) struct RenderThread {
     graph: Graph,
     sample_rate: SampleRate,
     channels: usize,
-    frames_played: AtomicU64,
+    frames_played: Arc<AtomicU64>,
     receiver: Receiver<ControlMessage>,
     buffer_offset: Option<(usize, AudioBuffer)>,
 }
@@ -33,12 +34,13 @@ impl RenderThread {
         sample_rate: SampleRate,
         channels: usize,
         receiver: Receiver<ControlMessage>,
+        frames_played: Arc<AtomicU64>,
     ) -> Self {
         Self {
             graph: Graph::new(),
             sample_rate,
             channels,
-            frames_played: AtomicU64::new(0),
+            frames_played,
             receiver,
             buffer_offset: None,
         }

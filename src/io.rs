@@ -1,3 +1,6 @@
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
+
 use crate::message::ControlMessage;
 use crate::{SampleRate, BUFFER_SIZE};
 
@@ -54,7 +57,9 @@ fn spawn_input_stream(
     }
 }
 
-pub(crate) fn build_output() -> (Stream, StreamConfig, Sender<ControlMessage>) {
+pub(crate) fn build_output(
+    frames_played: Arc<AtomicU64>,
+) -> (Stream, StreamConfig, Sender<ControlMessage>) {
     let host = cpal::default_host();
     let device = host
         .default_output_device()
@@ -93,7 +98,13 @@ pub(crate) fn build_output() -> (Stream, StreamConfig, Sender<ControlMessage>) {
     let (mut sender, receiver) = crossbeam_channel::unbounded();
 
     // spawn the render thread
-    let render = RenderThread::new(sample_rate, channels as usize, receiver);
+    let frames_played_clone = frames_played.clone();
+    let render = RenderThread::new(
+        sample_rate,
+        channels as usize,
+        receiver,
+        frames_played_clone,
+    );
 
     let maybe_stream = spawn_output_stream(&device, sample_format, &config, render);
     // our BUFFER_SIZEd config may not be supported, in that case, use the default config
@@ -110,7 +121,8 @@ pub(crate) fn build_output() -> (Stream, StreamConfig, Sender<ControlMessage>) {
             let (sender2, receiver) = crossbeam_channel::unbounded();
             sender = sender2; // overwrite earlier
 
-            let render = RenderThread::new(sample_rate, channels as usize, receiver);
+            let render = RenderThread::new(sample_rate, channels as usize, receiver, frames_played);
+
             spawn_output_stream(&device, sample_format, &default_config, render)
                 .expect("Unable to spawn output stream with default config")
         }
