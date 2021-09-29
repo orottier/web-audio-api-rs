@@ -399,12 +399,14 @@ impl AudioProcessor for OscillatorRenderer {
         }
 
         let freq_values = params.get(&self.frequency);
-        let freq = freq_values[0]; // force a-rate processing
 
         let det_values = params.get(&self.detune);
-        let detune = det_values[0]; // force a-rate processing
 
-        let computed_freq = freq + 2f32.powf(detune / 1200.);
+        let mut computed_freqs: [f32; 128] = [0.; 128];
+
+        for (i, (f, d)) in freq_values.iter().zip(det_values).enumerate() {
+            computed_freqs[i] = f + 2f32.powf(d / 1200.);
+        }
 
         let type_ = self.type_.load(Ordering::SeqCst).into();
 
@@ -417,7 +419,8 @@ impl AudioProcessor for OscillatorRenderer {
             }
         }
 
-        self.renderer.generate_output(type_, buffer, freq_values);
+        self.renderer
+            .generate_output(type_, buffer, &computed_freqs[..]);
     }
 
     fn tail_time(&self) -> bool {
