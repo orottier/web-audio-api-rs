@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use cpal::Sample;
 use crossbeam_channel::Receiver;
@@ -16,7 +17,7 @@ pub(crate) struct RenderThread {
     graph: Graph,
     sample_rate: SampleRate,
     channels: usize,
-    frames_played: AtomicU64,
+    frames_played: Arc<AtomicU64>,
     receiver: Receiver<ControlMessage>,
     buffer_offset: Option<(usize, AudioBuffer)>,
 }
@@ -38,7 +39,7 @@ impl RenderThread {
             graph: Graph::new(),
             sample_rate,
             channels,
-            frames_played: AtomicU64::new(0),
+            frames_played: Arc::new(AtomicU64::new(0)),
             receiver,
             buffer_offset: None,
         }
@@ -174,6 +175,14 @@ impl RenderThread {
                 self.buffer_offset = Some((channel_offset, rendered.clone()));
             }
         }
+    }
+
+    /// Returns the number of frames played by the [RenderThread]
+    ///
+    /// Currently this method is used to share the number of played frames
+    /// across thread, and between [BaseAudioContext] and [RenderThread] structures.
+    pub(crate) fn get_frames_played(&self) -> Arc<AtomicU64> {
+        self.frames_played.clone()
     }
 }
 
