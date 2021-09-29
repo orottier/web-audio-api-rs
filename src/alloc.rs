@@ -145,7 +145,7 @@ impl std::ops::Drop for ChannelData {
 /// Fixed length audio asset, basically a matrix of `channels * [f32; BUFFER_SIZE]`
 ///
 /// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AudioBuffer {
     channels: ArrayVec<ChannelData, MAX_CHANNELS>,
 }
