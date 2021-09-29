@@ -39,7 +39,7 @@ lazy_static! {
         let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
             .map(|x| {
                 let norm_phase = x as f32 / TABLE_LENGTH_F32;
-                if norm_phase <= 0.5 {
+                if norm_phase < 0.5 {
                     1.0
                 } else {
                     -1.0
@@ -533,7 +533,7 @@ impl Ticker for SineRenderer {
 
 trait PolyBlep {
     fn poly_blep(&self, mut t: f32) -> f32 {
-        let dt = self.incr_phase() / (2.0 * PI);
+        let dt = self.incr_phase() / TABLE_LENGTH_F32;
         if t < dt {
             t /= dt;
             t + t - t * t - 1.0
@@ -554,19 +554,16 @@ struct SawRenderer {
     sample_rate: f32,
     incr_phase: f32,
     phase: f32,
-    interpol_ratio: f32,
 }
 
 impl SawRenderer {
     fn new(computed_freq: f32, sample_rate: f32) -> Self {
-        let incr_phase = (TABLE_LENGTH_F32 / sample_rate) * computed_freq;
-        let interpol_ratio = incr_phase - incr_phase.floor();
+        let incr_phase = sample_rate * computed_freq;
         Self {
             computed_freq,
             sample_rate,
             phase: 0.0,
             incr_phase,
-            interpol_ratio,
         }
     }
 
@@ -575,13 +572,23 @@ impl SawRenderer {
         if (self.computed_freq - computed_freq).abs() < 0.01 {
             return;
         }
-        self.incr_phase = TABLE_LENGTH_F32 * computed_freq / self.sample_rate;
-        self.interpol_ratio = self.incr_phase - self.incr_phase.floor();
+        self.incr_phase = computed_freq / self.sample_rate;
         self.computed_freq = computed_freq;
     }
-}
 
-impl PolyBlep for SawRenderer {
+    fn poly_blep(&self, mut t: f32) -> f32 {
+        let dt = self.incr_phase();
+        if t < dt {
+            t /= dt;
+            t + t - t * t - 1.0
+        } else if t > 1.0 - dt {
+            t = (t - 1.0) / dt;
+            t * t + t + t + 1.0
+        } else {
+            0.0
+        }
+    }
+
     fn incr_phase(&self) -> f32 {
         self.incr_phase
     }
@@ -589,23 +596,15 @@ impl PolyBlep for SawRenderer {
 
 impl Ticker for SawRenderer {
     fn tick(&mut self) -> f32 {
-        let idx = self.phase as usize;
-        let inf_idx = idx % TABLE_LENGTH_USIZE;
-        let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
-
-        // Linear interpolation
-        let mut sample = SAWTABLE[inf_idx] * (1. - self.interpol_ratio)
-            + SAWTABLE[sup_idx] * self.interpol_ratio;
-
-        let norm_phase = self.phase / TABLE_LENGTH_F32;
-        sample -= self.poly_blep(norm_phase);
+        let mut sample = (2.0 * self.phase) - 1.0;
+        sample -= self.poly_blep(self.phase);
 
         // Optimized float modulo op
-        self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
-            (self.phase + self.incr_phase) - TABLE_LENGTH_F32
-        } else {
-            self.phase + self.incr_phase
-        };
+        self.phase += self.incr_phase;
+        while self.phase >= 1. {
+            self.phase -= 1.
+        }
+
         sample
     }
 }
@@ -616,19 +615,18 @@ struct TriangleRenderer {
     sample_rate: f32,
     phase: f32,
     incr_phase: f32,
-    interpol_ratio: f32,
+    last_output: f32,
 }
 
 impl TriangleRenderer {
     fn new(computed_freq: f32, sample_rate: f32) -> Self {
-        let incr_phase = TABLE_LENGTH_F32 * computed_freq / sample_rate;
-        let interpol_ratio = incr_phase - incr_phase.floor();
+        let incr_phase = computed_freq / sample_rate;
         Self {
             computed_freq,
             sample_rate,
             phase: 0.0,
             incr_phase,
-            interpol_ratio,
+            last_output: 0.0,
         }
     }
 
@@ -637,8 +635,7 @@ impl TriangleRenderer {
         if (self.computed_freq - computed_freq).abs() < 0.01 {
             return;
         }
-        self.incr_phase = TABLE_LENGTH_F32 * computed_freq / self.sample_rate;
-        self.interpol_ratio = self.incr_phase - self.incr_phase.floor();
+        self.incr_phase = computed_freq / self.sample_rate;
         self.computed_freq = computed_freq;
     }
 }
@@ -651,25 +648,30 @@ impl PolyBlep for TriangleRenderer {
 
 impl Ticker for TriangleRenderer {
     fn tick(&mut self) -> f32 {
-        let idx = (self.phase + self.incr_phase) as usize;
-        let inf_idx = idx % TABLE_LENGTH_USIZE;
-        let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+        let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
 
-        // Linear interpolation
-        let mut sample = TRIANGLETABLE[inf_idx] * (1. - self.interpol_ratio)
-            + TRIANGLETABLE[sup_idx] * self.interpol_ratio;
-
-        let norm_phase = self.phase / TABLE_LENGTH_F32;
-        sample -= self.poly_blep(norm_phase);
+        sample += self.poly_blep(self.phase);
 
         // Optimized float modulo op
-        self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
-            (self.phase + self.incr_phase) - TABLE_LENGTH_F32
-        } else {
-            self.phase + self.incr_phase
-        };
+        let mut shift_phase = self.phase + 0.5;
+        while shift_phase >= 1. {
+            shift_phase -= 1.
+        }
+        sample -= self.poly_blep(shift_phase);
 
-        sample
+        // Optimized float modulo op
+        self.phase += self.incr_phase;
+        while self.phase >= 1. {
+            self.phase -= 1.
+        }
+
+        // Leaky integrator: y[n] = A * x[n] + (1 - A) * y[n-1]
+        // Classic integration cannot be used due to float errors accumulation over execution time
+        sample = self.incr_phase * sample + (1.0 - self.incr_phase) * self.last_output;
+        self.last_output = sample;
+
+        // Normalized amplitude into intervall [-1.0,1.0]
+        sample * 4.
     }
 }
 
@@ -679,19 +681,16 @@ struct SquareRenderer {
     sample_rate: f32,
     phase: f32,
     incr_phase: f32,
-    interpol_ratio: f32,
 }
 
 impl SquareRenderer {
     fn new(computed_freq: f32, sample_rate: f32) -> Self {
-        let incr_phase = (TABLE_LENGTH_F32 / sample_rate) * computed_freq;
-        let interpol_ratio = incr_phase - incr_phase.floor();
+        let incr_phase = 2. * PI * computed_freq / sample_rate;
         Self {
             computed_freq,
             sample_rate,
             phase: 0.0,
             incr_phase,
-            interpol_ratio,
         }
     }
 
@@ -700,37 +699,47 @@ impl SquareRenderer {
         if (self.computed_freq - computed_freq).abs() < 0.01 {
             return;
         }
-        self.incr_phase = (TABLE_LENGTH_F32 / self.sample_rate) * computed_freq;
-        self.interpol_ratio = self.incr_phase - self.incr_phase.floor();
+        self.incr_phase = computed_freq / self.sample_rate;
         self.computed_freq = computed_freq;
     }
-}
 
-impl PolyBlep for SquareRenderer {
-    fn incr_phase(&self) -> f32 {
+    fn poly_blep(&self, mut t: f32) -> f32 {
+        let dt = self.get_incr_phase();
+        if t < dt {
+            t /= dt;
+            t + t - t * t - 1.0
+        } else if t > 1.0 - dt {
+            t = (t - 1.0) / dt;
+            t * t + t + t + 1.0
+        } else {
+            0.0
+        }
+    }
+
+    fn get_incr_phase(&self) -> f32 {
         self.incr_phase
     }
 }
 
 impl Ticker for SquareRenderer {
     fn tick(&mut self) -> f32 {
-        let idx = (self.phase + self.incr_phase) as usize;
-        let inf_idx = idx % TABLE_LENGTH_USIZE;
-        let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+        let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
 
-        // Linear interpolation
-        let mut sample = SQUARETABLE[inf_idx] * (1. - self.interpol_ratio)
-            + SQUARETABLE[sup_idx] * self.interpol_ratio;
-
-        let norm_phase = self.phase / TABLE_LENGTH_F32;
-        sample -= self.poly_blep(norm_phase);
+        sample += self.poly_blep(self.phase);
 
         // Optimized float modulo op
-        self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
-            (self.phase + self.incr_phase) - TABLE_LENGTH_F32
-        } else {
-            self.phase + self.incr_phase
-        };
+        let mut shift_phase = self.phase + 0.5;
+        while shift_phase >= 1. {
+            shift_phase -= 1.
+        }
+        sample -= self.poly_blep(shift_phase);
+
+        // Optimized float modulo op
+        self.phase += self.incr_phase;
+        while self.phase >= 1. {
+            self.phase -= 1.
+        }
+
         sample
     }
 }
