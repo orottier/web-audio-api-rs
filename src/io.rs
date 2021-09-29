@@ -57,7 +57,9 @@ fn spawn_input_stream(
     }
 }
 
-pub(crate) fn build_output() -> (Stream, StreamConfig, Arc<AtomicU64>, Sender<ControlMessage>) {
+pub(crate) fn build_output(
+    frames_played: Arc<AtomicU64>,
+) -> (Stream, StreamConfig, Sender<ControlMessage>) {
     let host = cpal::default_host();
     let device = host
         .default_output_device()
@@ -96,16 +98,19 @@ pub(crate) fn build_output() -> (Stream, StreamConfig, Arc<AtomicU64>, Sender<Co
     let (mut sender, receiver) = crossbeam_channel::unbounded();
 
     // spawn the render thread
-    let render = RenderThread::new(sample_rate, channels as usize, receiver);
-
-    // sync frames_played between RenderThread and BaseAudioContext
-    let frames_played = render.get_frames_played();
+    let frames_played_clone = frames_played.clone();
+    let render = RenderThread::new(
+        sample_rate,
+        channels as usize,
+        receiver,
+        frames_played_clone,
+    );
 
     let maybe_stream = spawn_output_stream(&device, sample_format, &config, render);
     // our BUFFER_SIZEd config may not be supported, in that case, use the default config
-    let (stream, frames_played) = match (maybe_stream, frames_played) {
-        (Ok(stream), frames_played) => (stream, frames_played),
-        (Err(e), _) => {
+    let stream = match maybe_stream {
+        Ok(stream) => stream,
+        Err(e) => {
             log::warn!(
                 "Input stream failed to build: {:?}, retry with default config {:?}",
                 e,
@@ -116,21 +121,17 @@ pub(crate) fn build_output() -> (Stream, StreamConfig, Arc<AtomicU64>, Sender<Co
             let (sender2, receiver) = crossbeam_channel::unbounded();
             sender = sender2; // overwrite earlier
 
-            let render = RenderThread::new(sample_rate, channels as usize, receiver);
+            let render = RenderThread::new(sample_rate, channels as usize, receiver, frames_played);
 
-            // sync frames_played between RenderThread and BaseAudioContext
-            let frames_played = render.get_frames_played();
-
-            let stream = spawn_output_stream(&device, sample_format, &default_config, render)
-                .expect("Unable to spawn output stream with default config");
-            (stream, frames_played)
+            spawn_output_stream(&device, sample_format, &default_config, render)
+                .expect("Unable to spawn output stream with default config")
         }
     };
 
     // Required because some hosts don't play the stream automatically
     stream.play().expect("Output stream refused to play");
 
-    (stream, config, frames_played, sender)
+    (stream, config, sender)
 }
 
 pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {

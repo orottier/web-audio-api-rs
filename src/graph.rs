@@ -34,12 +34,13 @@ impl RenderThread {
         sample_rate: SampleRate,
         channels: usize,
         receiver: Receiver<ControlMessage>,
+        frames_played: Arc<AtomicU64>,
     ) -> Self {
         Self {
             graph: Graph::new(),
             sample_rate,
             channels,
-            frames_played: Arc::new(AtomicU64::new(0)),
+            frames_played,
             receiver,
             buffer_offset: None,
         }
@@ -175,14 +176,6 @@ impl RenderThread {
                 self.buffer_offset = Some((channel_offset, rendered.clone()));
             }
         }
-    }
-
-    /// Returns the number of frames played by the [RenderThread]
-    ///
-    /// Currently this method is used to share the number of played frames
-    /// across thread, and between [BaseAudioContext] and [RenderThread] structures.
-    pub(crate) fn get_frames_played(&self) -> Arc<AtomicU64> {
-        self.frames_played.clone()
     }
 }
 

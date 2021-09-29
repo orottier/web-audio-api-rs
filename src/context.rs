@@ -275,7 +275,11 @@ impl AudioContext {
     /// This will play live audio on the default output
     #[cfg(not(test))]
     pub fn new() -> Self {
-        let (stream, config, frames_played, sender) = io::build_output();
+        // track number of frames - synced from render thread to control thread
+        let frames_played = Arc::new(AtomicU64::new(0));
+        let frames_played_clone = frames_played.clone();
+
+        let (stream, config, sender) = io::build_output(frames_played_clone);
         let channels = config.channels as u32;
         let sample_rate = SampleRate(config.sample_rate.0);
 
@@ -539,11 +543,17 @@ impl OfflineAudioContext {
         // communication channel to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
 
-        // setup the render 'thread', which will run inside the control thread
-        let render = RenderThread::new(sample_rate, channels as usize, receiver);
+        // track number of frames - synced from render thread to control thread
+        let frames_played = Arc::new(AtomicU64::new(0));
+        let frames_played_clone = frames_played.clone();
 
-        // sync frames_played between RenderThread and BaseAudioContext
-        let frames_played = render.get_frames_played();
+        // setup the render 'thread', which will run inside the control thread
+        let render = RenderThread::new(
+            sample_rate,
+            channels as usize,
+            receiver,
+            frames_played_clone,
+        );
 
         // first, setup the base audio context
         let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
