@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
+use crate::alloc::ChannelData;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::control::Scheduler;
@@ -197,7 +198,7 @@ impl Default for OscillatorOptions {
 }
 
 /// Waveform of an oscillator
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum OscillatorType {
     Sine,
     Square,
@@ -303,11 +304,7 @@ impl OscillatorNode {
 
             let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
             let scheduler = Scheduler::new();
-            let sine_renderer = SineRenderer::new(options.frequency, sample_rate);
-            let sawtooth_renderer = SawRenderer::new(options.frequency, sample_rate);
-            let triangle_renderer = TriangleRenderer::new(options.frequency, sample_rate);
-            let square_renderer = SquareRenderer::new(options.frequency, sample_rate);
-            let custom_renderer = CustomRenderer::new(
+            let renderer = OscRendererInner::new(
                 options.frequency,
                 sample_rate,
                 options.periodic_wave.clone(),
@@ -320,11 +317,7 @@ impl OscillatorNode {
                 frequency: f_proc,
                 detune: det_proc,
                 scheduler: scheduler.clone(),
-                sine_renderer,
-                sawtooth_renderer,
-                triangle_renderer,
-                square_renderer,
-                custom_renderer,
+                renderer,
                 receiver,
             };
             let node = OscillatorNode {
@@ -380,11 +373,7 @@ struct OscillatorRenderer {
     frequency: AudioParamId,
     detune: AudioParamId,
     scheduler: Scheduler,
-    sine_renderer: SineRenderer,
-    sawtooth_renderer: SawRenderer,
-    triangle_renderer: TriangleRenderer,
-    square_renderer: SquareRenderer,
-    custom_renderer: CustomRenderer,
+    renderer: OscRendererInner,
     receiver: Receiver<OscMsg>,
 }
 
@@ -421,52 +410,14 @@ impl AudioProcessor for OscillatorRenderer {
 
         let buffer = output.channel_data_mut(0);
 
-        use OscillatorType::*;
-
         // check if any message was send from the control thread
         if let Ok(msg) = self.receiver.try_recv() {
             match msg {
-                OscMsg::PeriodicWaveMsg(p_w) => self.custom_renderer.set_periodic_wave(p_w),
+                OscMsg::PeriodicWaveMsg(p_w) => self.renderer.set_periodic_wave(p_w),
             }
         }
 
-        match type_ {
-            Sine => {
-                // K-rate
-                self.sine_renderer.compute_params(computed_freq);
-                buffer
-                    .iter_mut()
-                    .for_each(|o| *o = self.sine_renderer.tick());
-            }
-            Square => {
-                // K-rate
-                self.square_renderer.compute_params(computed_freq);
-                buffer
-                    .iter_mut()
-                    .for_each(|o| *o = self.square_renderer.tick());
-            }
-            Sawtooth => {
-                // K-rate
-                self.sawtooth_renderer.compute_params(computed_freq);
-                buffer
-                    .iter_mut()
-                    .for_each(|o| *o = self.sawtooth_renderer.tick());
-            }
-            Triangle => {
-                // K-rate
-                self.triangle_renderer.compute_params(computed_freq);
-                buffer
-                    .iter_mut()
-                    .for_each(|o| *o = self.triangle_renderer.tick())
-            }
-            Custom => {
-                // K-rate
-                self.custom_renderer.compute_params(computed_freq);
-                buffer
-                    .iter_mut()
-                    .for_each(|o| *o = self.custom_renderer.tick())
-            }
-        }
+        self.renderer.generate_output(type_, buffer, freq_values);
     }
 
     fn tail_time(&self) -> bool {
@@ -474,289 +425,27 @@ impl AudioProcessor for OscillatorRenderer {
     }
 }
 
-trait Ticker {
-    fn tick(&mut self) -> f32;
-}
-
-#[derive(Debug)]
-struct SineRenderer {
+struct OscRendererInner {
     computed_freq: f32,
     sample_rate: f32,
     phase: f32,
     incr_phase: f32,
     interpol_ratio: f32,
-}
-
-impl SineRenderer {
-    fn new(computed_freq: f32, sample_rate: f32) -> Self {
-        let incr_phase = 2. * PI * (computed_freq / sample_rate);
-        let interpol_ratio = incr_phase - incr_phase.floor();
-        Self {
-            computed_freq,
-            sample_rate,
-            phase: 0.0,
-            incr_phase,
-            interpol_ratio,
-        }
-    }
-
-    fn compute_params(&mut self, computed_freq: f32) {
-        // No need to compute if frequency has not changed
-        if (self.computed_freq - computed_freq).abs() < 0.01 {
-            return;
-        }
-        self.incr_phase = TABLE_LENGTH_F32 * computed_freq / self.sample_rate;
-        self.interpol_ratio = self.incr_phase - self.incr_phase.floor();
-        self.computed_freq = computed_freq;
-    }
-}
-
-impl Ticker for SineRenderer {
-    fn tick(&mut self) -> f32 {
-        let idx = self.phase as usize;
-        let inf_idx = idx % TABLE_LENGTH_USIZE;
-        let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
-
-        // Linear interpolation
-        let sample = SINETABLE[inf_idx] * (1. - self.interpol_ratio)
-            + SINETABLE[sup_idx] * self.interpol_ratio;
-
-        // Optimized float modulo op
-        self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
-            (self.phase + self.incr_phase) - TABLE_LENGTH_F32
-        } else {
-            self.phase + self.incr_phase
-        };
-        sample
-    }
-}
-
-trait PolyBlep {
-    fn poly_blep(&self, mut t: f32) -> f32 {
-        let dt = self.incr_phase() / TABLE_LENGTH_F32;
-        if t < dt {
-            t /= dt;
-            t + t - t * t - 1.0
-        } else if t > 1.0 - dt {
-            t = (t - 1.0) / dt;
-            t * t + t + t + 1.0
-        } else {
-            0.0
-        }
-    }
-
-    fn incr_phase(&self) -> f32;
-}
-
-#[derive(Debug)]
-struct SawRenderer {
-    computed_freq: f32,
-    sample_rate: f32,
-    incr_phase: f32,
-    phase: f32,
-}
-
-impl SawRenderer {
-    fn new(computed_freq: f32, sample_rate: f32) -> Self {
-        let incr_phase = sample_rate * computed_freq;
-        Self {
-            computed_freq,
-            sample_rate,
-            phase: 0.0,
-            incr_phase,
-        }
-    }
-
-    fn compute_params(&mut self, computed_freq: f32) {
-        // No need to compute if frequency has not changed
-        if (self.computed_freq - computed_freq).abs() < 0.01 {
-            return;
-        }
-        self.incr_phase = computed_freq / self.sample_rate;
-        self.computed_freq = computed_freq;
-    }
-
-    fn poly_blep(&self, mut t: f32) -> f32 {
-        let dt = self.incr_phase();
-        if t < dt {
-            t /= dt;
-            t + t - t * t - 1.0
-        } else if t > 1.0 - dt {
-            t = (t - 1.0) / dt;
-            t * t + t + t + 1.0
-        } else {
-            0.0
-        }
-    }
-
-    fn incr_phase(&self) -> f32 {
-        self.incr_phase
-    }
-}
-
-impl Ticker for SawRenderer {
-    fn tick(&mut self) -> f32 {
-        let mut sample = (2.0 * self.phase) - 1.0;
-        sample -= self.poly_blep(self.phase);
-
-        // Optimized float modulo op
-        self.phase += self.incr_phase;
-        while self.phase >= 1. {
-            self.phase -= 1.
-        }
-
-        sample
-    }
-}
-
-#[derive(Debug)]
-struct TriangleRenderer {
-    computed_freq: f32,
-    sample_rate: f32,
-    phase: f32,
-    incr_phase: f32,
     last_output: f32,
-}
-
-impl TriangleRenderer {
-    fn new(computed_freq: f32, sample_rate: f32) -> Self {
-        let incr_phase = computed_freq / sample_rate;
-        Self {
-            computed_freq,
-            sample_rate,
-            phase: 0.0,
-            incr_phase,
-            last_output: 0.0,
-        }
-    }
-
-    fn compute_params(&mut self, computed_freq: f32) {
-        // No need to compute if frequency has not changed
-        if (self.computed_freq - computed_freq).abs() < 0.01 {
-            return;
-        }
-        self.incr_phase = computed_freq / self.sample_rate;
-        self.computed_freq = computed_freq;
-    }
-}
-
-impl PolyBlep for TriangleRenderer {
-    fn incr_phase(&self) -> f32 {
-        self.incr_phase
-    }
-}
-
-impl Ticker for TriangleRenderer {
-    fn tick(&mut self) -> f32 {
-        let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
-
-        sample += self.poly_blep(self.phase);
-
-        // Optimized float modulo op
-        let mut shift_phase = self.phase + 0.5;
-        while shift_phase >= 1. {
-            shift_phase -= 1.
-        }
-        sample -= self.poly_blep(shift_phase);
-
-        // Optimized float modulo op
-        self.phase += self.incr_phase;
-        while self.phase >= 1. {
-            self.phase -= 1.
-        }
-
-        // Leaky integrator: y[n] = A * x[n] + (1 - A) * y[n-1]
-        // Classic integration cannot be used due to float errors accumulation over execution time
-        sample = self.incr_phase * sample + (1.0 - self.incr_phase) * self.last_output;
-        self.last_output = sample;
-
-        // Normalized amplitude into intervall [-1.0,1.0]
-        sample * 4.
-    }
-}
-
-#[derive(Debug)]
-struct SquareRenderer {
-    computed_freq: f32,
-    sample_rate: f32,
-    phase: f32,
-    incr_phase: f32,
-}
-
-impl SquareRenderer {
-    fn new(computed_freq: f32, sample_rate: f32) -> Self {
-        let incr_phase = 2. * PI * computed_freq / sample_rate;
-        Self {
-            computed_freq,
-            sample_rate,
-            phase: 0.0,
-            incr_phase,
-        }
-    }
-
-    fn compute_params(&mut self, computed_freq: f32) {
-        // No need to compute if frequency has not changed
-        if (self.computed_freq - computed_freq).abs() < 0.01 {
-            return;
-        }
-        self.incr_phase = computed_freq / self.sample_rate;
-        self.computed_freq = computed_freq;
-    }
-
-    fn poly_blep(&self, mut t: f32) -> f32 {
-        let dt = self.get_incr_phase();
-        if t < dt {
-            t /= dt;
-            t + t - t * t - 1.0
-        } else if t > 1.0 - dt {
-            t = (t - 1.0) / dt;
-            t * t + t + t + 1.0
-        } else {
-            0.0
-        }
-    }
-
-    fn get_incr_phase(&self) -> f32 {
-        self.incr_phase
-    }
-}
-
-impl Ticker for SquareRenderer {
-    fn tick(&mut self) -> f32 {
-        let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
-
-        sample += self.poly_blep(self.phase);
-
-        // Optimized float modulo op
-        let mut shift_phase = self.phase + 0.5;
-        while shift_phase >= 1. {
-            shift_phase -= 1.
-        }
-        sample -= self.poly_blep(shift_phase);
-
-        // Optimized float modulo op
-        self.phase += self.incr_phase;
-        while self.phase >= 1. {
-            self.phase -= 1.
-        }
-
-        sample
-    }
-}
-
-struct CustomRenderer {
-    computed_freq: f32,
-    sample_rate: f32,
     cplxs: Vec<(f32, f32)>,
     norms: Vec<f32>,
     phases: Vec<f32>,
     incr_phases: Vec<f32>,
     interpol_ratios: Vec<f32>,
     normalizer: Option<f32>,
+    first: bool,
 }
 
-impl CustomRenderer {
+impl OscRendererInner {
     fn new(computed_freq: f32, sample_rate: f32, periodic_wave: Option<PeriodicWave>) -> Self {
+        let incr_phase = computed_freq / sample_rate;
+        let interpol_ratio = (incr_phase - incr_phase.floor()) * TABLE_LENGTH_F32;
+
         let PeriodicWave {
             real,
             imag,
@@ -815,67 +504,18 @@ impl CustomRenderer {
         Self {
             computed_freq,
             sample_rate,
+            phase: 0.0,
+            incr_phase,
+            interpol_ratio,
             cplxs,
             norms,
             phases,
             incr_phases,
             interpol_ratios,
             normalizer,
+            last_output: 0.0,
+            first: true,
         }
-    }
-
-    fn get_normalizer(
-        mut phases: Vec<f32>,
-        incr_phases: Vec<f32>,
-        interpol_ratios: Vec<f32>,
-        norms: Vec<f32>,
-        computed_freq: f32,
-    ) -> f32 {
-        let mut samples: Vec<f32> = Vec::new();
-
-        if computed_freq == 0. {
-            return 1.;
-        }
-
-        while phases[1] <= TABLE_LENGTH_F32 {
-            let mut sample = 0.0;
-            for i in 1..phases.len() {
-                let gain = norms[i];
-                let phase = phases[i];
-                let incr_phase = incr_phases[i];
-                let mu = interpol_ratios[i];
-                let idx = (phase + incr_phase) as usize;
-                let inf_idx = idx % TABLE_LENGTH_USIZE;
-                let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
-                // Linear interpolation
-                sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain;
-                phases[i] = phase + incr_phase;
-            }
-            samples.push(sample);
-        }
-
-        1. / samples
-            .iter()
-            .copied()
-            .reduce(f32::max)
-            .expect("Maximum value not found")
-    }
-
-    fn compute_params(&mut self, new_comp_freq: f32) {
-        // No need to compute if frequency has not changed
-        if (self.computed_freq - new_comp_freq).abs() < 0.01 {
-            return;
-        }
-
-        for incr_phase in &mut self.incr_phases {
-            *incr_phase *= new_comp_freq / self.computed_freq;
-        }
-
-        for (r, incr_ph) in self.interpol_ratios.iter_mut().zip(self.incr_phases.iter()) {
-            *r = incr_ph - incr_ph.floor();
-        }
-
-        self.computed_freq = new_comp_freq;
     }
 
     fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
@@ -935,33 +575,245 @@ impl CustomRenderer {
         self.norms = norms;
         self.normalizer = normalizer;
     }
-}
 
-impl Ticker for CustomRenderer {
-    fn tick(&mut self) -> f32 {
-        let mut sample = 0.;
-        for i in 1..self.phases.len() {
-            let gain = self.norms[i];
-            let phase = self.phases[i];
-            let incr_phase = self.incr_phases[i];
-            let mu = self.interpol_ratios[i];
-            let idx = (phase + incr_phase) as usize;
+    fn compute_params(&mut self, type_: OscillatorType, computed_freq: f32) {
+        // No need to compute if frequency has not changed
+        if type_ == OscillatorType::Sine {
+            if self.first {
+                self.first = false;
+                self.incr_phase = computed_freq / self.sample_rate * TABLE_LENGTH_F32;
+            }
+            if (self.computed_freq - computed_freq).abs() < 0.01 {
+                return;
+            }
+            self.computed_freq = computed_freq;
+            self.incr_phase = computed_freq / self.sample_rate * TABLE_LENGTH_F32;
+        }
+        if (self.computed_freq - computed_freq).abs() < 0.01 {
+            return;
+        }
+        self.computed_freq = computed_freq;
+        self.incr_phase = computed_freq / self.sample_rate;
+    }
+
+    fn compute_periodic_params(&mut self, new_comp_freq: f32) {
+        // No need to compute if frequency has not changed
+        if (self.computed_freq - new_comp_freq).abs() < 0.01 {
+            return;
+        }
+
+        for incr_phase in &mut self.incr_phases {
+            *incr_phase *= new_comp_freq / self.computed_freq;
+        }
+
+        for (r, incr_ph) in self.interpol_ratios.iter_mut().zip(self.incr_phases.iter()) {
+            *r = incr_ph - incr_ph.floor();
+        }
+
+        self.computed_freq = new_comp_freq;
+    }
+
+    fn generate_output(
+        &mut self,
+        type_: OscillatorType,
+        buffer: &mut ChannelData,
+        freq_values: &[f32],
+    ) {
+        match type_ {
+            OscillatorType::Sine => self.generate_sine(type_, buffer, freq_values),
+            OscillatorType::Square => self.generate_square(type_, buffer, freq_values),
+            OscillatorType::Sawtooth => self.generate_sawtooth(type_, buffer, freq_values),
+            OscillatorType::Triangle => self.generate_triangle(type_, buffer, freq_values),
+            OscillatorType::Custom => self.generate_custom(buffer, freq_values),
+        }
+    }
+
+    fn generate_sine(
+        &mut self,
+        type_: OscillatorType,
+        buffer: &mut ChannelData,
+        freq_values: &[f32],
+    ) {
+        for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
+            self.compute_params(type_, computed_freq);
+            let idx = self.phase as usize;
             let inf_idx = idx % TABLE_LENGTH_USIZE;
             let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
 
             // Linear interpolation
-            sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu)
-                * gain
-                * self.normalizer.unwrap_or(1.);
+            *o = SINETABLE[inf_idx] * (1. - self.interpol_ratio)
+                + SINETABLE[sup_idx] * self.interpol_ratio;
 
             // Optimized float modulo op
-            self.phases[i] = if phase + incr_phase >= TABLE_LENGTH_F32 {
-                (phase + incr_phase) - TABLE_LENGTH_F32
+            self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
+                (self.phase + self.incr_phase) - TABLE_LENGTH_F32
             } else {
-                phase + incr_phase
+                self.phase + self.incr_phase
             };
         }
-        sample
+    }
+
+    fn generate_sawtooth(
+        &mut self,
+        type_: OscillatorType,
+        buffer: &mut ChannelData,
+        freq_values: &[f32],
+    ) {
+        for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
+            self.compute_params(type_, computed_freq);
+            let mut sample = (2.0 * self.phase) - 1.0;
+            sample -= self.poly_blep(self.phase);
+
+            // Optimized float modulo op
+            self.phase += self.incr_phase;
+            while self.phase >= 1. {
+                self.phase -= 1.;
+            }
+
+            *o = sample;
+        }
+    }
+
+    fn generate_square(
+        &mut self,
+        type_: OscillatorType,
+        buffer: &mut ChannelData,
+        freq_values: &[f32],
+    ) {
+        for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
+            self.compute_params(type_, computed_freq);
+            let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
+
+            sample += self.poly_blep(self.phase);
+
+            // Optimized float modulo op
+            let mut shift_phase = self.phase + 0.5;
+            while shift_phase >= 1. {
+                shift_phase -= 1.
+            }
+            sample -= self.poly_blep(shift_phase);
+
+            // Optimized float modulo op
+            self.phase += self.incr_phase;
+            while self.phase >= 1. {
+                self.phase -= 1.
+            }
+            *o = sample;
+        }
+    }
+
+    fn generate_triangle(
+        &mut self,
+        type_: OscillatorType,
+        buffer: &mut ChannelData,
+        freq_values: &[f32],
+    ) {
+        for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
+            self.compute_params(type_, computed_freq);
+            let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
+
+            sample += self.poly_blep(self.phase);
+
+            // Optimized float modulo op
+            let mut shift_phase = self.phase + 0.5;
+            while shift_phase >= 1. {
+                shift_phase -= 1.
+            }
+            sample -= self.poly_blep(shift_phase);
+
+            // Optimized float modulo op
+            self.phase += self.incr_phase;
+            while self.phase >= 1. {
+                self.phase -= 1.
+            }
+
+            // Leaky integrator: y[n] = A * x[n] + (1 - A) * y[n-1]
+            // Classic integration cannot be used due to float errors accumulation over execution time
+            sample = self.incr_phase * sample + (1.0 - self.incr_phase) * self.last_output;
+            self.last_output = sample;
+
+            // Normalized amplitude into intervall [-1.0,1.0]
+            *o = sample * 4.;
+        }
+    }
+
+    fn generate_custom(&mut self, buffer: &mut ChannelData, freq_values: &[f32]) {
+        for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
+            self.compute_periodic_params(computed_freq);
+            let mut sample = 0.;
+            for i in 1..self.phases.len() {
+                let gain = self.norms[i];
+                let phase = self.phases[i];
+                let incr_phase = self.incr_phases[i];
+                let mu = self.interpol_ratios[i];
+                let idx = (phase + incr_phase) as usize;
+                let inf_idx = idx % TABLE_LENGTH_USIZE;
+                let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+
+                // Linear interpolation
+                sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu)
+                    * gain
+                    * self.normalizer.unwrap_or(1.);
+
+                // Optimized float modulo op
+                self.phases[i] = if phase + incr_phase >= TABLE_LENGTH_F32 {
+                    (phase + incr_phase) - TABLE_LENGTH_F32
+                } else {
+                    phase + incr_phase
+                };
+            }
+            *o = sample;
+        }
+    }
+
+    fn get_normalizer(
+        mut phases: Vec<f32>,
+        incr_phases: Vec<f32>,
+        interpol_ratios: Vec<f32>,
+        norms: Vec<f32>,
+        computed_freq: f32,
+    ) -> f32 {
+        let mut samples: Vec<f32> = Vec::new();
+
+        if computed_freq == 0. {
+            return 1.;
+        }
+
+        while phases[1] <= TABLE_LENGTH_F32 {
+            let mut sample = 0.0;
+            for i in 1..phases.len() {
+                let gain = norms[i];
+                let phase = phases[i];
+                let incr_phase = incr_phases[i];
+                let mu = interpol_ratios[i];
+                let idx = (phase + incr_phase) as usize;
+                let inf_idx = idx % TABLE_LENGTH_USIZE;
+                let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+                // Linear interpolation
+                sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain;
+                phases[i] = phase + incr_phase;
+            }
+            samples.push(sample);
+        }
+
+        1. / samples
+            .iter()
+            .copied()
+            .reduce(f32::max)
+            .expect("Maximum value not found")
+    }
+
+    fn poly_blep(&self, mut t: f32) -> f32 {
+        let dt = self.incr_phase;
+        if t < dt {
+            t /= dt;
+            t + t - t * t - 1.0
+        } else if t > 1.0 - dt {
+            t = (t - 1.0) / dt;
+            t * t + t + t + 1.0
+        } else {
+            0.0
+        }
     }
 }
 
