@@ -289,10 +289,13 @@ impl AudioParamProcessor {
                         let end_index_clipped = end_index.min(count);
                         let n_values = end_index_clipped - start_index;
 
+                        let mut val = self.value;
                         for i in 0..n_values {
-                            let val = self.value + i as f32 * slope;
+                            val = self.value + i as f32 * slope;
+                            // println!("val {:?}", val);
                             self.buffer.push(val.clamp(self.min_value, self.max_value));
                         }
+                        self.value = val;
                     }
 
                     // if end time is outside this render quantum, return
