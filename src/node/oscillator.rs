@@ -404,8 +404,18 @@ impl AudioProcessor for OscillatorRenderer {
 
         let mut computed_freqs: [f32; 128] = [0.; 128];
 
-        for (i, (f, d)) in freq_values.iter().zip(det_values).enumerate() {
-            computed_freqs[i] = f * 2f32.powf(d / 1200.);
+        if det_values
+            .windows(2)
+            .all(|w| (w[0] - w[1]).abs() < 0.000001)
+        {
+            let d = 2f32.powf(det_values[0] / 1200.);
+            for (i, f) in freq_values.iter().enumerate() {
+                computed_freqs[i] = f * d
+            }
+        } else {
+            for (i, (f, d)) in freq_values.iter().zip(det_values).enumerate() {
+                computed_freqs[i] = f * 2f32.powf(d / 1200.);
+            }
         }
 
         let type_ = self.type_.load(Ordering::SeqCst).into();
