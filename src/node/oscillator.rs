@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::alloc::ChannelData;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions};
@@ -507,7 +507,7 @@ impl OscRendererInner {
         let normalizer_buffer = Vec::with_capacity(2048);
 
         let normalizer = if !disable_normalization {
-            let norm = Self::init_normalizer(
+            let norm = Self::init_norm_factor(
                 &mut phases,
                 &incr_phases,
                 &interpol_ratios,
@@ -544,45 +544,46 @@ impl OscRendererInner {
             imag,
             disable_normalization,
         } = periodic_wave;
+        // clear buffers
+        self.cplxs.clear();
+        self.norms.clear();
+        self.phases.clear();
+        self.incr_phases.clear();
+        self.interpol_ratios.clear();
 
-        let cplxs: Vec<(f32, f32)> = real.iter().zip(&imag).map(|(&r, &i)| (r, i)).collect();
+        // update cplxs
+        for cplx in real.into_iter().zip(imag) {
+            self.cplxs.push(cplx);
+        }
 
-        let norms: Vec<f32> = cplxs
-            .iter()
-            .map(|(r, i)| (f32::powi(*r, 2i32) + f32::powi(*i, 2i32)).sqrt())
-            .collect();
+        for (idx, (real, img)) in self.cplxs.iter().enumerate() {
+            // update norms
+            self.norms
+                .push((f32::powi(*real, 2i32) + f32::powi(*img, 2i32)).sqrt());
 
-        let phases: Vec<f32> = cplxs
-            .iter()
-            .map(|(r, i)| {
-                let phase = f32::atan2(*i, *r);
-                if phase < 0. {
-                    (phase + 2. * PI) * (TABLE_LENGTH_F32 / (2.0 * PI))
-                } else {
-                    phase * (TABLE_LENGTH_F32 / 2.0 * PI)
-                }
-            })
-            .collect();
+            // update phases
+            let phase = f32::atan2(*img, *real);
+            if phase < 0. {
+                self.phases
+                    .push((phase + 2. * PI) * (TABLE_LENGTH_F32 / (2.0 * PI)));
+            } else {
+                self.phases.push(phase * (TABLE_LENGTH_F32 / 2.0 * PI));
+            }
 
-        let incr_phases: Vec<f32> = cplxs
-            .iter()
-            .enumerate()
-            .map(|(idx, _)| TABLE_LENGTH_F32 * idx as f32 * (self.computed_freq / self.sample_rate))
-            .collect();
+            // update incr_phases
+            self.incr_phases
+                .push(TABLE_LENGTH_F32 * idx as f32 * (self.computed_freq / self.sample_rate));
+        }
 
-        let interpol_ratios: Vec<f32> = incr_phases
-            .iter()
-            .map(|incr_phase| (incr_phase - incr_phase.round()).abs())
-            .collect();
+        // update interpol_ratios
+        for incr_phase in &self.incr_phases {
+            self.interpol_ratios
+                .push((incr_phase - incr_phase.round()).abs());
+        }
 
-        self.cplxs = cplxs;
-        self.phases = phases;
-        self.incr_phases = incr_phases;
-        self.interpol_ratios = interpol_ratios;
-        self.norms = norms;
-
+        // update norm_factor
         let normalizer = if !disable_normalization {
-            let norm = self.update_normalizer(self.computed_freq);
+            let norm = self.update_norm_factor(self.computed_freq);
             Some(norm)
         } else {
             None
@@ -781,7 +782,7 @@ impl OscRendererInner {
         }
     }
 
-    fn init_normalizer(
+    fn init_norm_factor(
         phases: &mut [f32],
         incr_phases: &[f32],
         interpol_ratios: &[f32],
@@ -820,7 +821,7 @@ impl OscRendererInner {
             .expect("Maximum value not found")
     }
 
-    fn update_normalizer(&mut self, computed_freq: f32) -> f32 {
+    fn update_norm_factor(&mut self, computed_freq: f32) -> f32 {
         if computed_freq == 0. {
             return 1.;
         }
