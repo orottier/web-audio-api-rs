@@ -438,25 +438,41 @@ impl AudioProcessor for OscillatorRenderer {
     }
 }
 
-struct OscRendererInner {
-    computed_freq: f32,
-    sample_rate: f32,
-    phase: f32,
-    incr_phase: f32,
+struct SineState {
     interpol_ratio: f32,
+    first: bool,
+}
+
+struct TriangleState {
     last_output: f32,
+}
+
+struct PeriodicState {
     cplxs: Vec<(f32, f32)>,
     norms: Vec<f32>,
     phases: Vec<f32>,
     incr_phases: Vec<f32>,
     interpol_ratios: Vec<f32>,
     norm_factor: Option<f32>,
-    periodic_wavetable: Vec<f32>,
-    first: bool,
     disable_normalization: bool,
-    wt_phase: f32,
-    wt_incr_phase: f32,
-    wt_ref_freq: f32,
+    wavetable_state: WavetableState,
+}
+
+struct WavetableState {
+    periodic_wavetable: Vec<f32>,
+    phase: f32,
+    incr_phase: f32,
+    ref_freq: f32,
+}
+
+struct OscRendererInner {
+    computed_freq: f32,
+    sample_rate: f32,
+    phase: f32,
+    incr_phase: f32,
+    sine: SineState,
+    triangle: TriangleState,
+    periodic: PeriodicState,
 }
 
 impl OscRendererInner {
@@ -530,20 +546,26 @@ impl OscRendererInner {
             sample_rate,
             phase: 0.0,
             incr_phase,
-            interpol_ratio,
-            cplxs,
-            norms,
-            phases,
-            incr_phases,
-            interpol_ratios,
-            norm_factor,
-            last_output: 0.0,
-            periodic_wavetable,
-            first: true,
-            disable_normalization,
-            wt_phase: 0.,
-            wt_incr_phase: 1.,
-            wt_ref_freq: computed_freq,
+            sine: SineState {
+                interpol_ratio,
+                first: true,
+            },
+            triangle: TriangleState { last_output: 0.0 },
+            periodic: PeriodicState {
+                cplxs,
+                norms,
+                phases,
+                incr_phases,
+                interpol_ratios,
+                norm_factor,
+                disable_normalization,
+                wavetable_state: WavetableState {
+                    periodic_wavetable,
+                    phase: 0.,
+                    incr_phase: 1.,
+                    ref_freq: computed_freq,
+                },
+            },
         }
     }
 
@@ -554,60 +576,66 @@ impl OscRendererInner {
             disable_normalization,
         } = periodic_wave;
         // clear buffers
-        self.cplxs.clear();
-        self.norms.clear();
-        self.phases.clear();
-        self.incr_phases.clear();
-        self.interpol_ratios.clear();
+        self.periodic.cplxs.clear();
+        self.periodic.norms.clear();
+        self.periodic.phases.clear();
+        self.periodic.incr_phases.clear();
+        self.periodic.interpol_ratios.clear();
 
         // update cplxs
         for cplx in real.into_iter().zip(imag) {
-            self.cplxs.push(cplx);
+            self.periodic.cplxs.push(cplx);
         }
 
-        for (idx, (real, img)) in self.cplxs.iter().enumerate() {
+        for (idx, (real, img)) in self.periodic.cplxs.iter().enumerate() {
             // update norms
-            self.norms
+            self.periodic
+                .norms
                 .push((f32::powi(*real, 2i32) + f32::powi(*img, 2i32)).sqrt());
 
             // update phases
             let phase = f32::atan2(*img, *real);
             if phase < 0. {
-                self.phases
+                self.periodic
+                    .phases
                     .push((phase + 2. * PI) * (TABLE_LENGTH_F32 / (2.0 * PI)));
             } else {
-                self.phases.push(phase * (TABLE_LENGTH_F32 / 2.0 * PI));
+                self.periodic
+                    .phases
+                    .push(phase * (TABLE_LENGTH_F32 / 2.0 * PI));
             }
 
             // update incr_phases
-            self.incr_phases
+            self.periodic
+                .incr_phases
                 .push(TABLE_LENGTH_F32 * idx as f32 * (self.computed_freq / self.sample_rate));
         }
 
         // update interpol_ratios
-        for incr_phase in &self.incr_phases {
-            self.interpol_ratios
+        for incr_phase in &self.periodic.incr_phases {
+            self.periodic
+                .interpol_ratios
                 .push((incr_phase - incr_phase.round()).abs());
         }
 
         // update wavetable
         self.update_wavetable();
 
-        self.wt_ref_freq = self.computed_freq;
+        self.periodic.wavetable_state.ref_freq = self.computed_freq;
 
         // update norm_factor
         if !disable_normalization {
             self.update_norm_factor();
         } else {
-            self.norm_factor = None;
+            self.periodic.norm_factor = None;
         }
     }
 
     fn compute_params(&mut self, type_: OscillatorType, computed_freq: f32) {
         // No need to compute if frequency has not changed
         if type_ == OscillatorType::Sine {
-            if self.first {
-                self.first = false;
+            if self.sine.first {
+                self.sine.first = false;
                 self.incr_phase = computed_freq / self.sample_rate * TABLE_LENGTH_F32;
             }
             if (self.computed_freq - computed_freq).abs() < 0.01 {
@@ -629,15 +657,21 @@ impl OscRendererInner {
             return;
         }
 
-        for incr_phase in &mut self.incr_phases {
+        for incr_phase in &mut self.periodic.incr_phases {
             *incr_phase *= new_comp_freq / self.computed_freq;
         }
 
-        for (r, incr_ph) in self.interpol_ratios.iter_mut().zip(self.incr_phases.iter()) {
+        for (r, incr_ph) in self
+            .periodic
+            .interpol_ratios
+            .iter_mut()
+            .zip(self.periodic.incr_phases.iter())
+        {
             *r = incr_ph - incr_ph.floor();
         }
 
-        self.wt_incr_phase = new_comp_freq / self.wt_ref_freq;
+        self.periodic.wavetable_state.incr_phase =
+            new_comp_freq / self.periodic.wavetable_state.ref_freq;
         self.computed_freq = new_comp_freq;
     }
 
@@ -669,8 +703,8 @@ impl OscRendererInner {
             let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
 
             // Linear interpolation
-            *o = SINETABLE[inf_idx] * (1. - self.interpol_ratio)
-                + SINETABLE[sup_idx] * self.interpol_ratio;
+            *o = SINETABLE[inf_idx] * (1. - self.sine.interpol_ratio)
+                + SINETABLE[sup_idx] * self.sine.interpol_ratio;
 
             // Optimized float modulo op
             self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
@@ -757,8 +791,8 @@ impl OscRendererInner {
 
             // Leaky integrator: y[n] = A * x[n] + (1 - A) * y[n-1]
             // Classic integration cannot be used due to float errors accumulation over execution time
-            sample = self.incr_phase * sample + (1.0 - self.incr_phase) * self.last_output;
-            self.last_output = sample;
+            sample = self.incr_phase * sample + (1.0 - self.incr_phase) * self.triangle.last_output;
+            self.triangle.last_output = sample;
 
             // Normalized amplitude into intervall [-1.0,1.0]
             *o = sample * 4.;
@@ -768,17 +802,19 @@ impl OscRendererInner {
     fn generate_custom(&mut self, buffer: &mut ChannelData, freq_values: &[f32]) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
             self.compute_periodic_params(computed_freq);
-            if !self.disable_normalization {
-                self.wt_phase =
-                    (self.wt_phase + self.wt_incr_phase) % self.periodic_wavetable.len() as f32;
-                *o = self.periodic_wavetable[self.wt_phase as usize];
+            if !self.periodic.disable_normalization {
+                self.periodic.wavetable_state.phase = (self.periodic.wavetable_state.phase
+                    + self.periodic.wavetable_state.incr_phase)
+                    % self.periodic.wavetable_state.periodic_wavetable.len() as f32;
+                *o = self.periodic.wavetable_state.periodic_wavetable
+                    [self.periodic.wavetable_state.phase as usize];
             } else {
                 let mut sample = 0.;
-                for i in 1..self.phases.len() {
-                    let gain = self.norms[i];
-                    let phase = self.phases[i];
-                    let incr_phase = self.incr_phases[i];
-                    let interpol_ratio = self.interpol_ratios[i];
+                for i in 1..self.periodic.phases.len() {
+                    let gain = self.periodic.norms[i];
+                    let phase = self.periodic.phases[i];
+                    let incr_phase = self.periodic.incr_phases[i];
+                    let interpol_ratio = self.periodic.interpol_ratios[i];
                     let idx = (phase + incr_phase) as usize;
                     let inf_idx = idx % TABLE_LENGTH_USIZE;
                     let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
@@ -787,10 +823,10 @@ impl OscRendererInner {
                     sample += (SINETABLE[inf_idx] * (1. - interpol_ratio)
                         + SINETABLE[sup_idx] * interpol_ratio)
                         * gain
-                        * self.norm_factor.unwrap_or(1.);
+                        * self.periodic.norm_factor.unwrap_or(1.);
 
                     // Optimized float modulo op
-                    self.phases[i] = if phase + incr_phase >= TABLE_LENGTH_F32 {
+                    self.periodic.phases[i] = if phase + incr_phase >= TABLE_LENGTH_F32 {
                         (phase + incr_phase) - TABLE_LENGTH_F32
                     } else {
                         phase + incr_phase
@@ -830,24 +866,27 @@ impl OscRendererInner {
     }
 
     fn update_wavetable(&mut self) {
-        self.periodic_wavetable.clear();
+        self.periodic.wavetable_state.periodic_wavetable.clear();
 
-        while self.phases[1] <= TABLE_LENGTH_F32 {
+        while self.periodic.phases[1] <= TABLE_LENGTH_F32 {
             let mut sample = 0.0;
-            for i in 1..self.phases.len() {
-                let gain = self.norms[i];
-                let phase = self.phases[i];
-                let incr_phase = self.incr_phases[i];
-                let mu = self.interpol_ratios[i];
+            for i in 1..self.periodic.phases.len() {
+                let gain = self.periodic.norms[i];
+                let phase = self.periodic.phases[i];
+                let incr_phase = self.periodic.incr_phases[i];
+                let mu = self.periodic.interpol_ratios[i];
                 let idx = (phase + incr_phase) as usize;
                 let inf_idx = idx % TABLE_LENGTH_USIZE;
                 let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
                 // Linear interpolation
                 sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain;
-                self.phases[i] = phase + incr_phase;
+                self.periodic.phases[i] = phase + incr_phase;
             }
 
-            self.periodic_wavetable.push(sample);
+            self.periodic
+                .wavetable_state
+                .periodic_wavetable
+                .push(sample);
         }
     }
 
@@ -860,8 +899,10 @@ impl OscRendererInner {
     }
 
     fn update_norm_factor(&mut self) {
-        self.norm_factor = Some(
+        self.periodic.norm_factor = Some(
             1. / self
+                .periodic
+                .wavetable_state
                 .periodic_wavetable
                 .iter()
                 .copied()
