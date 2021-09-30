@@ -405,7 +405,7 @@ impl AudioProcessor for OscillatorRenderer {
         let mut computed_freqs: [f32; 128] = [0.; 128];
 
         for (i, (f, d)) in freq_values.iter().zip(det_values).enumerate() {
-            computed_freqs[i] = f + 2f32.powf(d / 1200.);
+            computed_freqs[i] = f * 2f32.powf(d / 1200.);
         }
 
         let type_ = self.type_.load(Ordering::SeqCst).into();
@@ -462,6 +462,7 @@ impl OscRendererInner {
                 disable_normalization: false,
             }
         };
+
         let cplxs: Vec<(f32, f32)> = real.iter().zip(&imag).map(|(&r, &i)| (r, i)).collect();
 
         let norms: Vec<f32> = cplxs
@@ -491,6 +492,7 @@ impl OscRendererInner {
             .iter()
             .map(|incr_phase| incr_phase - incr_phase.floor())
             .collect();
+
         let normalizer = if !disable_normalization {
             let norm = Self::get_normalizer(
                 phases.clone(),
