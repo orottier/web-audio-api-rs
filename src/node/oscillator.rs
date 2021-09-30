@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::alloc::ChannelData;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions};
@@ -451,6 +451,7 @@ struct OscRendererInner {
     incr_phases: Vec<f32>,
     interpol_ratios: Vec<f32>,
     normalizer: Option<f32>,
+    normalizer_buffer: Vec<f32>,
     first: bool,
 }
 
@@ -480,7 +481,7 @@ impl OscRendererInner {
             .map(|(r, i)| (f32::powi(*r, 2i32) + f32::powi(*i, 2i32)).sqrt())
             .collect();
 
-        let phases: Vec<f32> = cplxs
+        let mut phases: Vec<f32> = cplxs
             .iter()
             .map(|(r, i)| {
                 let phase = f32::atan2(*i, *r);
@@ -503,13 +504,16 @@ impl OscRendererInner {
             .map(|incr_phase| incr_phase - incr_phase.floor())
             .collect();
 
+        let normalizer_buffer = Vec::with_capacity(2048);
+
         let normalizer = if !disable_normalization {
-            let norm = Self::get_normalizer(
-                phases.clone(),
-                incr_phases.clone(),
-                interpol_ratios.clone(),
-                norms.clone(),
+            let norm = Self::init_normalizer(
+                &mut phases,
+                &incr_phases,
+                &interpol_ratios,
+                &norms,
                 computed_freq,
+                normalizer_buffer.clone(),
             );
             Some(norm)
         } else {
@@ -529,6 +533,7 @@ impl OscRendererInner {
             interpol_ratios,
             normalizer,
             last_output: 0.0,
+            normalizer_buffer,
             first: true,
         }
     }
@@ -570,24 +575,19 @@ impl OscRendererInner {
             .map(|incr_phase| (incr_phase - incr_phase.round()).abs())
             .collect();
 
-        let normalizer = if !disable_normalization {
-            let norm = Self::get_normalizer(
-                phases.clone(),
-                incr_phases.clone(),
-                interpol_ratios.clone(),
-                norms.clone(),
-                self.computed_freq,
-            );
-            Some(norm)
-        } else {
-            None
-        };
-
         self.cplxs = cplxs;
         self.phases = phases;
         self.incr_phases = incr_phases;
         self.interpol_ratios = interpol_ratios;
         self.norms = norms;
+
+        let normalizer = if !disable_normalization {
+            let norm = self.update_normalizer(self.computed_freq);
+            Some(norm)
+        } else {
+            None
+        };
+
         self.normalizer = normalizer;
     }
 
@@ -781,18 +781,19 @@ impl OscRendererInner {
         }
     }
 
-    fn get_normalizer(
-        mut phases: Vec<f32>,
-        incr_phases: Vec<f32>,
-        interpol_ratios: Vec<f32>,
-        norms: Vec<f32>,
+    fn init_normalizer(
+        phases: &mut [f32],
+        incr_phases: &[f32],
+        interpol_ratios: &[f32],
+        norms: &[f32],
         computed_freq: f32,
+        mut buffer: Vec<f32>,
     ) -> f32 {
-        let mut samples: Vec<f32> = Vec::new();
-
         if computed_freq == 0. {
             return 1.;
         }
+
+        buffer.clear();
 
         while phases[1] <= TABLE_LENGTH_F32 {
             let mut sample = 0.0;
@@ -808,10 +809,44 @@ impl OscRendererInner {
                 sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain;
                 phases[i] = phase + incr_phase;
             }
-            samples.push(sample);
+
+            buffer.push(sample);
         }
 
-        1. / samples
+        1. / buffer
+            .iter()
+            .copied()
+            .reduce(f32::max)
+            .expect("Maximum value not found")
+    }
+
+    fn update_normalizer(&mut self, computed_freq: f32) -> f32 {
+        if computed_freq == 0. {
+            return 1.;
+        }
+
+        self.normalizer_buffer.clear();
+
+        while self.phases[1] <= TABLE_LENGTH_F32 {
+            let mut sample = 0.0;
+            for i in 1..self.phases.len() {
+                let gain = self.norms[i];
+                let phase = self.phases[i];
+                let incr_phase = self.incr_phases[i];
+                let mu = self.interpol_ratios[i];
+                let idx = (phase + incr_phase) as usize;
+                let inf_idx = idx % TABLE_LENGTH_USIZE;
+                let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+                // Linear interpolation
+                sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain;
+                self.phases[i] = phase + incr_phase;
+            }
+
+            self.normalizer_buffer.push(sample);
+        }
+
+        1. / self
+            .normalizer_buffer
             .iter()
             .copied()
             .reduce(f32::max)
