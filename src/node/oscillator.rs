@@ -27,37 +27,6 @@ lazy_static! {
             .collect();
         table
     };
-    static ref SAWTABLE: Vec<f32> = {
-        let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
-            .map(|x| {
-                let norm_phase = x as f32 / TABLE_LENGTH_F32;
-                (2.0 * norm_phase) - 1.0
-            })
-            .collect();
-        table
-    };
-    static ref SQUARETABLE: Vec<f32> = {
-        let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
-            .map(|x| {
-                let norm_phase = x as f32 / TABLE_LENGTH_F32;
-                if norm_phase < 0.5 {
-                    1.0
-                } else {
-                    -1.0
-                }
-            })
-            .collect();
-        table
-    };
-    static ref TRIANGLETABLE: Vec<f32> = {
-        let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
-            .map(|x| {
-                let norm_phase = x as f32 / TABLE_LENGTH_F32;
-                1. - ((norm_phase - 0.5).abs() * 4.)
-            })
-            .collect();
-        table
-    };
 }
 
 /// Options for constructing a periodic wave
