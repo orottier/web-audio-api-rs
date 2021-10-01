@@ -364,7 +364,16 @@ impl Drop for AudioContextRegistration {
 
         if !magic {
             let message = ControlMessage::FreeWhenFinished { id: self.id.0 };
-            self.context.inner.render_channel.send(message).unwrap();
+            let send_result = self.context.inner.render_channel.send(message);
+
+            // In test mode, the channel can be premarturly disconnected and result into an error
+            if cfg!(test) {
+                if let Err(e) = send_result {
+                    log::error!("Sending the message failed: {}", e);
+                }
+            } else {
+                send_result.expect("Sending the message failed");
+            }
         }
     }
 }
@@ -479,7 +488,16 @@ impl BaseAudioContext {
             outputs: node.number_of_outputs() as usize,
             channel_config: node.channel_config_cloned(),
         };
-        self.inner.render_channel.send(message).unwrap();
+        let send_result = self.inner.render_channel.send(message);
+
+        // In test mode, the channel can be premarturly disconnected and result into an error
+        if cfg!(test) {
+            if let Err(e) = send_result {
+                log::error!("Sending the message failed: {}", e);
+            }
+        } else {
+            send_result.expect("Sending the message failed");
+        }
 
         node
     }
@@ -491,7 +509,16 @@ impl BaseAudioContext {
             output,
             input,
         };
-        self.inner.render_channel.send(message).unwrap();
+        let send_result = self.inner.render_channel.send(message);
+
+        // In test mode, the channel can be premarturly disconnected and result into an error
+        if cfg!(test) {
+            if let Err(e) = send_result {
+                log::error!("Sending the message failed: {}", e);
+            }
+        } else {
+            send_result.expect("Sending the message failed");
+        }
     }
 
     pub(crate) fn disconnect(&self, from: &AudioNodeId, to: &AudioNodeId) {
@@ -499,12 +526,30 @@ impl BaseAudioContext {
             from: from.0,
             to: to.0,
         };
-        self.inner.render_channel.send(message).unwrap();
+        let send_result = self.inner.render_channel.send(message);
+
+        // In test mode, the channel can be premarturly disconnected and result into an error
+        if cfg!(test) {
+            if let Err(e) = send_result {
+                log::error!("Sending the message failed: {}", e);
+            }
+        } else {
+            send_result.expect("Sending the message failed");
+        }
     }
 
     pub(crate) fn disconnect_all(&self, from: &AudioNodeId) {
         let message = ControlMessage::DisconnectAll { from: from.0 };
-        self.inner.render_channel.send(message).unwrap();
+        let send_result = self.inner.render_channel.send(message);
+
+        // In test mode, the channel can be premarturly disconnected and result into an error
+        if cfg!(test) {
+            if let Err(e) = send_result {
+                log::error!("Sending the message failed: {}", e);
+            }
+        } else {
+            send_result.expect("Sending the message failed");
+        }
     }
 
     /// Pass an AudioParam AutomationEvent to the render thread
@@ -520,7 +565,16 @@ impl BaseAudioContext {
             to: to.clone(),
             event,
         };
-        self.inner.render_channel.send(message).unwrap();
+        let send_result = self.inner.render_channel.send(message);
+
+        // In test mode, the channel can be premarturly disconnected and result into an error
+        if cfg!(test) {
+            if let Err(e) = send_result {
+                log::error!("Sending the message failed: {}", e);
+            }
+        } else {
+            send_result.expect("Sending the message failed");
+        }
     }
 
     /// Attach the 9 AudioListener coordinates to a PannerNode
