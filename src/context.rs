@@ -366,10 +366,10 @@ impl Drop for AudioContextRegistration {
             let message = ControlMessage::FreeWhenFinished { id: self.id.0 };
             let send_result = self.context.inner.render_channel.send(message);
 
-            // In test mode, the channel can be premarturly disconnected and result into an error
             if cfg!(test) {
                 if let Err(e) = send_result {
-                    log::error!("Sending the message failed: {}", e);
+                    println!("Sending the message failed: {}", e);
+                    println!("In test mode, the render thread is not spawned");
                 }
             } else {
                 send_result.expect("Sending the message failed");
@@ -490,10 +490,10 @@ impl BaseAudioContext {
         };
         let send_result = self.inner.render_channel.send(message);
 
-        // In test mode, the channel can be premarturly disconnected and result into an error
         if cfg!(test) {
             if let Err(e) = send_result {
-                log::error!("Sending the message failed: {}", e);
+                println!("Sending the message failed: {}", e);
+                println!("In test mode, the render thread is not spawned");
             }
         } else {
             send_result.expect("Sending the message failed");
@@ -511,10 +511,10 @@ impl BaseAudioContext {
         };
         let send_result = self.inner.render_channel.send(message);
 
-        // In test mode, the channel can be premarturly disconnected and result into an error
         if cfg!(test) {
             if let Err(e) = send_result {
-                log::error!("Sending the message failed: {}", e);
+                println!("Sending the message failed: {}", e);
+                println!("In test mode, the render thread is not spawned");
             }
         } else {
             send_result.expect("Sending the message failed");
@@ -528,10 +528,10 @@ impl BaseAudioContext {
         };
         let send_result = self.inner.render_channel.send(message);
 
-        // In test mode, the channel can be premarturly disconnected and result into an error
         if cfg!(test) {
             if let Err(e) = send_result {
-                log::error!("Sending the message failed: {}", e);
+                println!("Sending the message failed: {}", e);
+                println!("In test mode, the render thread is not spawned");
             }
         } else {
             send_result.expect("Sending the message failed");
@@ -542,10 +542,10 @@ impl BaseAudioContext {
         let message = ControlMessage::DisconnectAll { from: from.0 };
         let send_result = self.inner.render_channel.send(message);
 
-        // In test mode, the channel can be premarturly disconnected and result into an error
         if cfg!(test) {
             if let Err(e) = send_result {
-                log::error!("Sending the message failed: {}", e);
+                println!("Sending the message failed: {}", e);
+                println!("In test mode, the render thread is not spawned");
             }
         } else {
             send_result.expect("Sending the message failed");
@@ -567,12 +567,7 @@ impl BaseAudioContext {
         };
         let send_result = self.inner.render_channel.send(message);
 
-        // In test mode, the channel can be premarturly disconnected and result into an error
-        if cfg!(test) {
-            if let Err(e) = send_result {
-                log::error!("Sending the message failed: {}", e);
-            }
-        } else {
+        if cfg!(not(test)) {
             send_result.expect("Sending the message failed");
         }
     }
