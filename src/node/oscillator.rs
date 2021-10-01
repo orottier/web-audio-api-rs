@@ -197,6 +197,7 @@ impl From<u32> for OscillatorType {
     }
 }
 
+/// Message types used to communicate between [OscillatorNode] and [OscillatorRenderer]
 enum OscMsg {
     PeriodicWaveMsg {
         computed_freq: f32,
@@ -233,9 +234,12 @@ impl AudioNode for OscillatorNode {
         &self.channel_config
     }
 
+    /// OscillatorNode is a source node. A source node is by definition with no input
     fn number_of_inputs(&self) -> u32 {
         0
     }
+
+    /// OscillatorNode is a mono source node.
     fn number_of_outputs(&self) -> u32 {
         1
     }
@@ -252,12 +256,14 @@ impl OscillatorNode {
         context.base().register(move |registration| {
             let sample_rate = context.base().sample_rate().0 as f32;
             let nyquist = sample_rate / 2.;
+            let default_freq = 440.;
+            let default_det = 0.;
 
             // frequency audio parameter
             let freq_param_opts = AudioParamOptions {
                 min_value: -nyquist,
                 max_value: nyquist,
-                default_value: 440.,
+                default_value: default_freq,
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (f_param, f_proc) = context
@@ -269,7 +275,7 @@ impl OscillatorNode {
             let det_param_opts = AudioParamOptions {
                 min_value: -153600.,
                 max_value: 153600.,
-                default_value: 0.,
+                default_value: default_det,
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (det_param, det_proc) = context
@@ -279,22 +285,22 @@ impl OscillatorNode {
 
             let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
             let scheduler = Scheduler::new();
-            let renderer = OscRendererInner::new(
-                options.frequency,
-                sample_rate,
-                options.periodic_wave.clone(),
-            );
 
             let (sender, receiver) = crossbeam_channel::bounded(0);
 
-            let render = OscillatorRenderer {
+            let computed_freq = default_freq * 2f32.powf(default_det / 1200.);
+
+            let config = OscRendererConfig {
                 type_: type_.clone(),
                 frequency: f_proc,
                 detune: det_proc,
                 scheduler: scheduler.clone(),
-                renderer,
                 receiver,
+                computed_freq,
+                sample_rate,
+                periodic_wave: options.periodic_wave.clone(),
             };
+            let render = OscillatorRenderer::new(config);
             let node = OscillatorNode {
                 registration,
                 channel_config: options.channel_config.into(),
@@ -310,15 +316,21 @@ impl OscillatorNode {
         })
     }
 
-    /// Returns the oscillator frequency audio parameter
+    /// Returns the frequency audio parameter
+    /// The oscillator frequency is calculated as follow:
+    /// frequency * 2^(detune/1200)
     pub fn frequency(&self) -> &AudioParam {
         &self.frequency
     }
 
+    /// Returns the detune audio parameter. detune unity is cents.
+    /// The oscillator frequency is calculated as follow:
+    /// frequency * 2^(detune/1200)
     pub fn detune(&self) -> &AudioParam {
         &self.detune
     }
 
+    /// Returns the computedOscFrequency which is the oscillator frequency.
     fn computed_freq(&self) -> f32 {
         let frequency = self.frequency().value();
         let detune = self.detune().value();
@@ -331,11 +343,15 @@ impl OscillatorNode {
     }
 
     /// set the oscillator type
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - oscillator type (sine,square,triangle,sawtooth, and custom)
     pub fn set_type(&self, type_: OscillatorType) {
         self.type_.store(type_ as u32, Ordering::SeqCst);
     }
 
-    /// set the oscillator type to custom. The oscillator will generate
+    /// set the oscillator type to custom and generate
     /// a perdioc waveform following the PeriodicWave characteristics
     pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
         self.set_type(OscillatorType::Custom);
@@ -380,8 +396,9 @@ impl OscillatorNode {
             interpol_ratios.push((incr_phase - incr_phase.round()).abs());
         }
 
+        // generate the wavetable following periodic wave characteristics
         let wavetable =
-            self.generate_wavetable(&mut phases, &incr_phases, &interpol_ratios, &norms);
+            self.generate_wavetable(&norms, &mut phases, &incr_phases, &interpol_ratios);
 
         // update norm_factor
         let norm_factor = self.norm_factor(&wavetable);
@@ -396,12 +413,20 @@ impl OscillatorNode {
             .expect("Sending periodic wave to the node renderer failed");
     }
 
+    /// Generate the wavetable
+    ///
+    /// # Arguments
+    ///
+    /// * `norms` - the norm of each harmonics
+    /// * `phases` - the phase of each harmonics
+    /// * `incr_phases` - the phase to increment of each harmonics
+    /// * `interpol_ratios` - the interpolation ratio of each harmonics used by linear interpolation
     fn generate_wavetable(
         &self,
+        norms: &[f32],
         phases: &mut [f32],
         incr_phases: &[f32],
         interpol_ratios: &[f32],
-        norms: &[f32],
     ) -> Vec<f32> {
         let mut buffer = Vec::new();
 
@@ -426,6 +451,14 @@ impl OscillatorNode {
         buffer
     }
 
+    /// Compute the normalization factor
+    ///
+    /// The normalization factor is applied as a gain to the periodic wave
+    /// to normalize the signal peak amplitude in the interval [-1.0,1.0].
+    ///
+    /// # Arguments
+    ///
+    /// * `buffer` - the wavetable generated from periodic wave charateristics
     fn norm_factor(&self, buffer: &[f32]) -> f32 {
         1. / buffer
             .iter()
@@ -435,13 +468,48 @@ impl OscillatorNode {
     }
 }
 
+/// States relative to Sine OscillatorType
+struct SineState {
+    interpol_ratio: f32,
+    first: bool,
+}
+
+/// States relative to Triangle OscillatorType
+struct TriangleState {
+    last_output: f32,
+}
+
+/// States relative to Custom OscillatorType
+struct PeriodicState {
+    incr_phases: Vec<f32>,
+    interpol_ratios: Vec<f32>,
+    norm_factor: Option<f32>,
+    disable_normalization: bool,
+    wavetable: WavetableState,
+}
+
+/// States required to generate the periodic wavetable
+struct WavetableState {
+    buffer: Vec<f32>,
+    phase: f32,
+    incr_phase: f32,
+    ref_freq: f32,
+}
+
+/// Rendering component of the oscillator node
 struct OscillatorRenderer {
     type_: Arc<AtomicU32>,
     frequency: AudioParamId,
     detune: AudioParamId,
     scheduler: Scheduler,
-    renderer: OscRendererInner,
     receiver: Receiver<OscMsg>,
+    computed_freq: f32,
+    sample_rate: f32,
+    phase: f32,
+    incr_phase: f32,
+    sine: SineState,
+    triangle: TriangleState,
+    periodic: PeriodicState,
 }
 
 impl AudioProcessor for OscillatorRenderer {
@@ -497,7 +565,7 @@ impl AudioProcessor for OscillatorRenderer {
                     wavetable,
                     norm_factor,
                     disable_normalization,
-                } => self.renderer.set_periodic_wave(
+                } => self.set_periodic_wave(
                     computed_freq,
                     wavetable,
                     norm_factor,
@@ -506,8 +574,7 @@ impl AudioProcessor for OscillatorRenderer {
             }
         }
 
-        self.renderer
-            .generate_output(type_, buffer, &computed_freqs[..]);
+        self.generate_output(type_, buffer, &computed_freqs[..]);
     }
 
     fn tail_time(&self) -> bool {
@@ -515,42 +582,29 @@ impl AudioProcessor for OscillatorRenderer {
     }
 }
 
-struct SineState {
-    interpol_ratio: f32,
-    first: bool,
-}
-
-struct TriangleState {
-    last_output: f32,
-}
-
-struct PeriodicState {
-    incr_phases: Vec<f32>,
-    interpol_ratios: Vec<f32>,
-    norm_factor: Option<f32>,
-    disable_normalization: bool,
-    wavetable: WavetableState,
-}
-
-struct WavetableState {
-    buffer: Vec<f32>,
-    phase: f32,
-    incr_phase: f32,
-    ref_freq: f32,
-}
-
-struct OscRendererInner {
+struct OscRendererConfig {
+    type_: Arc<AtomicU32>,
+    frequency: AudioParamId,
+    detune: AudioParamId,
+    scheduler: Scheduler,
+    receiver: Receiver<OscMsg>,
     computed_freq: f32,
     sample_rate: f32,
-    phase: f32,
-    incr_phase: f32,
-    sine: SineState,
-    triangle: TriangleState,
-    periodic: PeriodicState,
+    periodic_wave: Option<PeriodicWave>,
 }
 
-impl OscRendererInner {
-    fn new(computed_freq: f32, sample_rate: f32, periodic_wave: Option<PeriodicWave>) -> Self {
+impl OscillatorRenderer {
+    fn new(config: OscRendererConfig) -> Self {
+        let OscRendererConfig {
+            type_,
+            frequency,
+            detune,
+            scheduler,
+            receiver,
+            computed_freq,
+            sample_rate,
+            periodic_wave,
+        } = config;
         let incr_phase = computed_freq / sample_rate;
         let interpol_ratio = (incr_phase - incr_phase.floor()) * TABLE_LENGTH_F32;
 
@@ -601,21 +655,26 @@ impl OscRendererInner {
         let mut periodic_wavetable = Vec::with_capacity(2048);
 
         Self::generate_wavetable(
+            &norms,
             &mut phases,
             &incr_phases,
             &interpol_ratios,
-            &norms,
             &mut periodic_wavetable,
         );
 
         let norm_factor = if !disable_normalization {
-            let norm_factor = Self::init_norm_factor(&periodic_wavetable);
+            let norm_factor = Self::norm_factor(&periodic_wavetable);
             Some(norm_factor)
         } else {
             None
         };
 
         Self {
+            type_,
+            frequency,
+            detune,
+            scheduler,
+            receiver,
             computed_freq,
             sample_rate,
             phase: 0.0,
@@ -640,20 +699,33 @@ impl OscRendererInner {
         }
     }
 
+    /// set periodic states
+    ///
+    /// # Arguments
+    ///
+    /// * `ref_freq` - the computedOscFrequency used to build the wavetable
+    /// * `wavetable` - wavetable following periodic wave characteristics
+    /// * `norm_factor` - normalization factor applied when disable_normalization is false
+    /// * `disable_normalization` - disable normalization. If false, the peak amplitude signal is 1.0
     fn set_periodic_wave(
         &mut self,
-        computed_freq: f32,
+        ref_freq: f32,
         wavetable: Vec<f32>,
         norm_factor: f32,
         disable_normalization: bool,
     ) {
-        self.periodic.wavetable.ref_freq = computed_freq;
+        self.periodic.wavetable.ref_freq = ref_freq;
         self.periodic.wavetable.buffer = wavetable;
         self.periodic.norm_factor = Some(norm_factor);
         self.periodic.disable_normalization = disable_normalization;
     }
 
-    fn compute_params(&mut self, type_: OscillatorType, computed_freq: f32) {
+    /// Compute params at each audio sample for the following oscillator type:
+    /// * sine
+    /// * sawtooth
+    /// * triangle
+    /// * and square
+    fn arate_calc_params(&mut self, type_: OscillatorType, computed_freq: f32) {
         // No need to compute if frequency has not changed
         if type_ == OscillatorType::Sine {
             if self.sine.first {
@@ -673,7 +745,8 @@ impl OscRendererInner {
         self.incr_phase = computed_freq / self.sample_rate;
     }
 
-    fn compute_periodic_params(&mut self, new_comp_freq: f32) {
+    /// Compute params at each audio sample for the custom oscillator type
+    fn arate_calc_periodic_params(&mut self, new_comp_freq: f32) {
         // No need to compute if frequency has not changed
         if (self.computed_freq - new_comp_freq).abs() < 0.01 {
             return;
@@ -696,6 +769,14 @@ impl OscRendererInner {
         self.computed_freq = new_comp_freq;
     }
 
+    /// generate the audio data according to the oscillator type and frequency parameters
+    /// buffer is filled with the generated audio data.
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
+    /// * `buffer` - audio output buffer
+    /// * `freq_values` - frequencies at which each sample should be generated
     fn generate_output(
         &mut self,
         type_: OscillatorType,
@@ -711,6 +792,14 @@ impl OscRendererInner {
         }
     }
 
+    /// generate the audio data when oscillator is of type sine
+    /// buffer is filled with the sine audio data.
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
+    /// * `buffer` - audio output buffer
+    /// * `freq_values` - frequencies at which each sample should be generated
     fn generate_sine(
         &mut self,
         type_: OscillatorType,
@@ -718,7 +807,7 @@ impl OscRendererInner {
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
-            self.compute_params(type_, computed_freq);
+            self.arate_calc_params(type_, computed_freq);
             let idx = self.phase as usize;
             let inf_idx = idx % TABLE_LENGTH_USIZE;
             let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
@@ -736,6 +825,14 @@ impl OscRendererInner {
         }
     }
 
+    /// generate the audio data when oscillator is of type sawtooth
+    /// buffer is filled with the sawtooth audio data.
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
+    /// * `buffer` - audio output buffer
+    /// * `freq_values` - frequencies at which each sample should be generated
     fn generate_sawtooth(
         &mut self,
         type_: OscillatorType,
@@ -743,7 +840,7 @@ impl OscRendererInner {
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
-            self.compute_params(type_, computed_freq);
+            self.arate_calc_params(type_, computed_freq);
             let mut sample = (2.0 * self.phase) - 1.0;
             sample -= self.poly_blep(self.phase);
 
@@ -757,6 +854,14 @@ impl OscRendererInner {
         }
     }
 
+    /// generate the audio data when oscillator is of type square
+    /// buffer is filled with the square audio data.
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
+    /// * `buffer` - audio output buffer
+    /// * `freq_values` - frequencies at which each sample should be generated
     fn generate_square(
         &mut self,
         type_: OscillatorType,
@@ -764,7 +869,7 @@ impl OscRendererInner {
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
-            self.compute_params(type_, computed_freq);
+            self.arate_calc_params(type_, computed_freq);
             let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
 
             sample += self.poly_blep(self.phase);
@@ -785,6 +890,14 @@ impl OscRendererInner {
         }
     }
 
+    /// generate the audio data when oscillator is of type triangle
+    /// buffer is filled with the triangle audio data.
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
+    /// * `buffer` - audio output buffer
+    /// * `freq_values` - frequencies at which each sample should be generated
     fn generate_triangle(
         &mut self,
         type_: OscillatorType,
@@ -792,7 +905,7 @@ impl OscRendererInner {
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
-            self.compute_params(type_, computed_freq);
+            self.arate_calc_params(type_, computed_freq);
             let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
 
             sample += self.poly_blep(self.phase);
@@ -820,9 +933,17 @@ impl OscRendererInner {
         }
     }
 
+    /// generate the audio data when oscillator is of type custom
+    /// buffer is filled with the periodic waveform audio data.
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
+    /// * `buffer` - audio output buffer
+    /// * `freq_values` - frequencies at which each sample should be generated
     fn generate_custom(&mut self, buffer: &mut ChannelData, freq_values: &[f32]) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
-            self.compute_periodic_params(computed_freq);
+            self.arate_calc_periodic_params(computed_freq);
             self.periodic.wavetable.phase = (self.periodic.wavetable.phase
                 + self.periodic.wavetable.incr_phase)
                 % self.periodic.wavetable.buffer.len() as f32;
@@ -830,11 +951,20 @@ impl OscRendererInner {
         }
     }
 
+    /// Generate the wavetable
+    ///
+    /// # Arguments
+    ///
+    /// * `norms` - the norm of each harmonics
+    /// * `phases` - the phase of each harmonics
+    /// * `incr_phases` - the phase to increment of each harmonics
+    /// * `interpol_ratios` - the interpolation ratio of each harmonics used by linear interpolatio
+    /// * `buffer` - the buffer is filled with generated wavetable data (avoid allocation)
     fn generate_wavetable(
+        norms: &[f32],
         phases: &mut [f32],
         incr_phases: &[f32],
         interpol_ratios: &[f32],
-        norms: &[f32],
         buffer: &mut Vec<f32>,
     ) {
         buffer.clear();
@@ -858,7 +988,7 @@ impl OscRendererInner {
         }
     }
 
-    fn init_norm_factor(buffer: &[f32]) -> f32 {
+    fn norm_factor(buffer: &[f32]) -> f32 {
         1. / buffer
             .iter()
             .copied()
@@ -866,6 +996,9 @@ impl OscRendererInner {
             .expect("Maximum value not found")
     }
 
+    /// computes the polyBLEP corrections to apply to aliasing signal
+    ///
+    /// polyBLEP stands for polyBandLimitedstEP
     fn poly_blep(&self, mut t: f32) -> f32 {
         let dt = self.incr_phase;
         if t < dt {
