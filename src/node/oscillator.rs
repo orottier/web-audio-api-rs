@@ -167,20 +167,20 @@ impl PeriodicWave {
 /// Options for constructing an OscillatorNode
 #[derive(Debug)]
 pub struct OscillatorOptions {
-    pub type_: OscillatorType,
-    pub frequency: f32,
-    pub detune: f32,
-    pub channel_config: ChannelConfigOptions,
+    pub type_: Option<OscillatorType>,
+    pub frequency: Option<f32>,
+    pub detune: Option<f32>,
+    pub channel_config: Option<ChannelConfigOptions>,
     pub periodic_wave: Option<PeriodicWave>,
 }
 
 impl Default for OscillatorOptions {
     fn default() -> Self {
         Self {
-            type_: OscillatorType::default(),
-            frequency: 440.,
-            detune: 0.,
-            channel_config: ChannelConfigOptions::default(),
+            type_: Some(OscillatorType::default()),
+            frequency: Some(440.),
+            detune: Some(0.),
+            channel_config: Some(ChannelConfigOptions::default()),
             periodic_wave: None,
         }
     }
@@ -272,12 +272,14 @@ impl OscillatorNode {
     ///
     /// * `context` - The AudioContext
     /// * `options` - The Oscillatoroptions
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: OscillatorOptions) -> Self {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<OscillatorOptions>) -> Self {
         context.base().register(move |registration| {
             let sample_rate = context.base().sample_rate().0 as f32;
             let nyquist = sample_rate / 2.;
             let default_freq = 440.;
             let default_det = 0.;
+
+            let options = options.unwrap_or_default();
 
             // frequency audio parameter
             let freq_param_opts = AudioParamOptions {
@@ -289,7 +291,7 @@ impl OscillatorNode {
             let (f_param, f_proc) = context
                 .base()
                 .create_audio_param(freq_param_opts, registration.id());
-            f_param.set_value(options.frequency);
+            f_param.set_value(options.frequency.unwrap_or(default_freq));
 
             // detune audio parameter
             let det_param_opts = AudioParamOptions {
@@ -301,9 +303,11 @@ impl OscillatorNode {
             let (det_param, det_proc) = context
                 .base()
                 .create_audio_param(det_param_opts, registration.id());
-            det_param.set_value(options.detune);
+            det_param.set_value(options.detune.unwrap_or(default_det));
 
-            let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
+            let type_ = Arc::new(AtomicU32::new(
+                options.type_.unwrap_or(OscillatorType::Sine) as u32,
+            ));
             let scheduler = Scheduler::new();
 
             let (sender, receiver) = crossbeam_channel::bounded(0);
@@ -321,9 +325,10 @@ impl OscillatorNode {
                 periodic_wave: options.periodic_wave.clone(),
             };
             let render = OscillatorRenderer::new(config);
+
             let node = OscillatorNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config: options.channel_config.unwrap_or_default().into(),
                 sample_rate,
                 frequency: f_param,
                 detune: det_param,
@@ -1039,7 +1044,10 @@ mod tests {
     use float_eq::assert_float_eq;
 
     use super::{PeriodicWave, PeriodicWaveOptions};
-    use crate::context::AudioContext;
+    use crate::{
+        context::{AsBaseAudioContext, AudioContext},
+        node::{OscillatorNode, OscillatorType},
+    };
 
     #[test]
     #[should_panic]
@@ -1125,6 +1133,46 @@ mod tests {
 
         assert_float_eq!(periodic_wave.real, vec![0., 0.], ulps_all <= 0);
         assert_float_eq!(periodic_wave.imag, vec![1., 0.], ulps_all <= 0);
-        assert_eq!(periodic_wave.disable_normalization, false);
+        assert!(!periodic_wave.disable_normalization);
+    }
+
+    #[test]
+    fn assert_osc_default_build_with_factory_func() {
+        let default_freq = 440.;
+        let default_det = 0.;
+        let default_type = OscillatorType::Sine;
+
+        let context = AudioContext::new();
+
+        let osc = context.create_oscillator();
+
+        let freq = osc.frequency.value();
+        assert_float_eq!(freq, default_freq, ulps_all <= 0);
+
+        let det = osc.detune.value();
+        assert_float_eq!(det, default_det, ulps_all <= 0);
+
+        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(type_, default_type as u32);
+    }
+
+    #[test]
+    fn assert_osc_default_build() {
+        let default_freq = 440.;
+        let default_det = 0.;
+        let default_type = OscillatorType::Sine;
+
+        let context = AudioContext::new();
+
+        let osc = OscillatorNode::new(&context, None);
+
+        let freq = osc.frequency.value();
+        assert_float_eq!(freq, default_freq, ulps_all <= 0);
+
+        let det = osc.detune.value();
+        assert_float_eq!(det, default_det, ulps_all <= 0);
+
+        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(type_, default_type as u32);
     }
 }
