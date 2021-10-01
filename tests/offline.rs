@@ -54,7 +54,7 @@ fn test_start_stop() {
             frequency: Some(0.), // constant signal
             ..Default::default()
         };
-        let osc = OscillatorNode::new(&context, opts);
+        let osc = OscillatorNode::new(&context, Some(opts));
         osc.connect(&context.destination());
 
         osc.start_at(1.);

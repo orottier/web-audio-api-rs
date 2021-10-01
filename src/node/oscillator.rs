@@ -99,9 +99,9 @@ impl PeriodicWave {
     ///    let context = AudioContext::new();
     ///
     ///    let options = PeriodicWaveOptions {
-    ///    real: vec![0.,1.,1.],
-    ///    imag: vec![0.,0.,0.],
-    ///    disable_normalization: false,
+    ///    real: Some(vec![0.,1.,1.]),
+    ///    imag: Some(vec![0.,0.,0.]),
+    ///    disable_normalization: Some(false),
     ///    };
     ///
     ///    let periodic_wave = PeriodicWave::new(&context, Some(options));
