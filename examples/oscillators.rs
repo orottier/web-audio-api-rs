@@ -16,9 +16,9 @@ fn main() {
 
     // defined periodic wave characteristics
     let options = Some(PeriodicWaveOptions {
-        real: vec![0., 0.5, 0.5],
-        imag: vec![0., 0., 0.],
-        disable_normalization: false,
+        real: Some(vec![0., 0.5, 0.5]),
+        imag: Some(vec![0., 0., 0.]),
+        disable_normalization: Some(false),
     });
 
     // Create a custom periodic wave

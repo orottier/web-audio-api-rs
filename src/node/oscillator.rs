@@ -38,20 +38,20 @@ pub struct PeriodicWaveOptions {
     /// to build the custom periodic waveform.
     ///
     /// The following elements (index 1 and more) represent the fundamental and harmonics of the periodic waveform.
-    pub real: Vec<f32>,
+    pub real: Option<Vec<f32>>,
     /// The imag parameter represents an array of sine terms of Fourrier series.
     ///
     /// The first element (index 0) will not be taken into account
     /// to build the custom periodic waveform.
     ///
     /// The following elements (index 1 and more) represent the fundamental and harmonics of the periodic waveform.
-    pub imag: Vec<f32>,
+    pub imag: Option<Vec<f32>>,
     /// By default PeriodicWave is build with normalization enabled (disable_normalization = false).
     /// In this case, a peak normalization is applied to the given custom periodic waveform.
     ///
     /// If disable_normalization is enabled (disable_normalization = true), the normalization is
     /// defined by the periodic waveform characteristics (img, and real fields).
-    pub disable_normalization: bool,
+    pub disable_normalization: Option<bool>,
 }
 
 /// PeriodicWave is a setup struct required to build
@@ -114,25 +114,45 @@ impl PeriodicWave {
             disable_normalization,
         }) = options
         {
-            // Todo: assertions not complete. Missing assertions when
-            // only real field is specified, anly imag field is specified,
-            // and neither real or imag is specified
-            assert!(
-                real.len() >= 2,
-                "RangeError: Real field length should be at least 2"
-            );
-            assert!(
-                imag.len() >= 2,
-                "RangeError: Imag field length should be at least 2",
-            );
-            assert!(
-                real.len() == imag.len(),
-                "RangeError: Imag and real field length should be equal"
-            );
+            let (real, imag) = match (real, imag) {
+                (Some(r), Some(i)) => {
+                    assert!(
+                        r.len() >= 2,
+                        "RangeError: Real field length should be at least 2"
+                    );
+                    assert!(
+                        i.len() >= 2,
+                        "RangeError: Imag field length should be at least 2",
+                    );
+                    assert!(
+                        r.len() == i.len(),
+                        "RangeError: Imag and real field length should be equal"
+                    );
+                    (r, i)
+                }
+                (Some(r), None) => {
+                    assert!(
+                        r.len() >= 2,
+                        "RangeError: Real field length should be at least 2"
+                    );
+                    let r_len = r.len();
+                    (r, vec![0.; r_len])
+                }
+                (None, Some(i)) => {
+                    assert!(
+                        i.len() >= 2,
+                        "RangeError: Real field length should be at least 2"
+                    );
+                    let i_len = i.len();
+                    (vec![0.; i_len], i)
+                }
+                _ => (vec![0.0, 0.0], vec![1., 0.]),
+            };
+
             Self {
                 real,
                 imag,
-                disable_normalization,
+                disable_normalization: disable_normalization.unwrap_or(false),
             }
         } else {
             Self {
@@ -1016,6 +1036,8 @@ impl OscillatorRenderer {
 #[cfg(test)]
 
 mod tests {
+    use float_eq::assert_float_eq;
+
     use super::{PeriodicWave, PeriodicWaveOptions};
     use crate::context::AudioContext;
 
@@ -1025,9 +1047,23 @@ mod tests {
         let context = AudioContext::new();
 
         let options = PeriodicWaveOptions {
-            real: vec![0.],
-            imag: vec![0., 0., 0.],
-            disable_normalization: false,
+            real: Some(vec![0.]),
+            imag: Some(vec![0., 0., 0.]),
+            disable_normalization: Some(false),
+        };
+
+        let _periodic_wave = PeriodicWave::new(&context, Some(options));
+    }
+
+    #[test]
+    #[should_panic]
+    fn fails_to_build_when_only_real_is_defined_and_too_short() {
+        let context = AudioContext::new();
+
+        let options = PeriodicWaveOptions {
+            real: Some(vec![0.]),
+            imag: None,
+            disable_normalization: Some(false),
         };
 
         let _periodic_wave = PeriodicWave::new(&context, Some(options));
@@ -1039,9 +1075,23 @@ mod tests {
         let context = AudioContext::new();
 
         let options = PeriodicWaveOptions {
-            real: vec![0., 0., 0.],
-            imag: vec![0.],
-            disable_normalization: false,
+            real: Some(vec![0., 0., 0.]),
+            imag: Some(vec![0.]),
+            disable_normalization: Some(false),
+        };
+
+        let _periodic_wave = PeriodicWave::new(&context, Some(options));
+    }
+
+    #[test]
+    #[should_panic]
+    fn fails_to_build_when_only_imag_is_defined_and_too_short() {
+        let context = AudioContext::new();
+
+        let options = PeriodicWaveOptions {
+            real: None,
+            imag: Some(vec![0.]),
+            disable_normalization: Some(false),
         };
 
         let _periodic_wave = PeriodicWave::new(&context, Some(options));
@@ -1053,11 +1103,28 @@ mod tests {
         let context = AudioContext::new();
 
         let options = PeriodicWaveOptions {
-            real: vec![0., 0., 0.],
-            imag: vec![0., 0.],
-            disable_normalization: false,
+            real: Some(vec![0., 0., 0.]),
+            imag: Some(vec![0., 0.]),
+            disable_normalization: Some(false),
         };
 
         let _periodic_wave = PeriodicWave::new(&context, Some(options));
+    }
+
+    #[test]
+    fn assert_default_periodic_options() {
+        let context = AudioContext::new();
+
+        let options = PeriodicWaveOptions {
+            real: None,
+            imag: None,
+            disable_normalization: None,
+        };
+
+        let periodic_wave = PeriodicWave::new(&context, Some(options));
+
+        assert_float_eq!(periodic_wave.real, vec![0., 0.], ulps_all <= 0);
+        assert_float_eq!(periodic_wave.imag, vec![1., 0.], ulps_all <= 0);
+        assert_eq!(periodic_wave.disable_normalization, false);
     }
 }
