@@ -21,6 +21,9 @@ use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 
 use crossbeam_channel::{self, Receiver, Sender};
 
+mod biquad;
+pub use biquad::*;
+
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules.
 ///
