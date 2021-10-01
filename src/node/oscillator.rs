@@ -423,7 +423,6 @@ struct PeriodicState {
     incr_phases: Vec<f32>,
     interpol_ratios: Vec<f32>,
     norm_factor: Option<f32>,
-    disable_normalization: bool,
     wavetable_state: WavetableState,
 }
 
@@ -527,7 +526,6 @@ impl OscRendererInner {
                 incr_phases,
                 interpol_ratios,
                 norm_factor,
-                disable_normalization,
                 wavetable_state: WavetableState {
                     periodic_wavetable,
                     phase: 0.,
@@ -771,38 +769,11 @@ impl OscRendererInner {
     fn generate_custom(&mut self, buffer: &mut ChannelData, freq_values: &[f32]) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
             self.compute_periodic_params(computed_freq);
-            if !self.periodic.disable_normalization {
-                self.periodic.wavetable_state.phase = (self.periodic.wavetable_state.phase
-                    + self.periodic.wavetable_state.incr_phase)
-                    % self.periodic.wavetable_state.periodic_wavetable.len() as f32;
-                *o = self.periodic.wavetable_state.periodic_wavetable
-                    [self.periodic.wavetable_state.phase as usize];
-            } else {
-                let mut sample = 0.;
-                for i in 1..self.periodic.phases.len() {
-                    let gain = self.periodic.norms[i];
-                    let phase = self.periodic.phases[i];
-                    let incr_phase = self.periodic.incr_phases[i];
-                    let interpol_ratio = self.periodic.interpol_ratios[i];
-                    let idx = (phase + incr_phase) as usize;
-                    let inf_idx = idx % TABLE_LENGTH_USIZE;
-                    let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
-
-                    // Linear interpolation
-                    sample += (SINETABLE[inf_idx] * (1. - interpol_ratio)
-                        + SINETABLE[sup_idx] * interpol_ratio)
-                        * gain
-                        * self.periodic.norm_factor.unwrap_or(1.);
-
-                    // Optimized float modulo op
-                    self.periodic.phases[i] = if phase + incr_phase >= TABLE_LENGTH_F32 {
-                        (phase + incr_phase) - TABLE_LENGTH_F32
-                    } else {
-                        phase + incr_phase
-                    };
-                }
-                *o = sample;
-            }
+            self.periodic.wavetable_state.phase = (self.periodic.wavetable_state.phase
+                + self.periodic.wavetable_state.incr_phase)
+                % self.periodic.wavetable_state.periodic_wavetable.len() as f32;
+            *o = self.periodic.wavetable_state.periodic_wavetable
+                [self.periodic.wavetable_state.phase as usize];
         }
     }
 
