@@ -198,13 +198,19 @@ impl From<u32> for OscillatorType {
 }
 
 enum OscMsg {
-    PeriodicWaveMsg(PeriodicWave),
+    PeriodicWaveMsg {
+        computed_freq: f32,
+        wavetable: Vec<f32>,
+        norm_factor: f32,
+        disable_normalization: bool,
+    },
 }
 
 /// Audio source generating a periodic waveform
 pub struct OscillatorNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
+    sample_rate: f32,
     frequency: AudioParam,
     detune: AudioParam,
     type_: Arc<AtomicU32>,
@@ -292,6 +298,7 @@ impl OscillatorNode {
             let node = OscillatorNode {
                 registration,
                 channel_config: options.channel_config.into(),
+                sample_rate,
                 frequency: f_param,
                 detune: det_param,
                 type_,
@@ -312,6 +319,12 @@ impl OscillatorNode {
         &self.detune
     }
 
+    fn computed_freq(&self) -> f32 {
+        let frequency = self.frequency().value();
+        let detune = self.detune().value();
+        frequency * 2f32.powf(detune / 1200.)
+    }
+
     /// Returns the oscillator type
     pub fn type_(&self) -> OscillatorType {
         self.type_.load(Ordering::SeqCst).into()
@@ -324,16 +337,101 @@ impl OscillatorNode {
 
     /// set the oscillator type to custom. The oscillator will generate
     /// a perdioc waveform following the PeriodicWave characteristics
-    //
-    //  TODO: The current implementation doesn't communicate its state
-    //  to the OscillatorRenderer, and so has no effect on the rendering.
-    //  This function should send the updated periodics waveform characteristics
-    //  to the OscillatorRenderer and more specifically to the CustomRenderer
     pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
         self.set_type(OscillatorType::Custom);
+
+        let PeriodicWave {
+            real,
+            imag,
+            disable_normalization,
+        } = periodic_wave;
+
+        let mut cplxs = Vec::with_capacity(real.len());
+        let mut norms = Vec::with_capacity(real.len());
+        let mut phases = Vec::with_capacity(real.len());
+        let mut incr_phases = Vec::with_capacity(real.len());
+        let mut interpol_ratios = Vec::with_capacity(real.len());
+
+        // update cplxs
+        for cplx in real.into_iter().zip(imag) {
+            cplxs.push(cplx);
+        }
+
+        let computed_freq = self.computed_freq();
+
+        for (idx, (real, img)) in cplxs.iter().enumerate() {
+            // update norms
+            norms.push((f32::powi(*real, 2i32) + f32::powi(*img, 2i32)).sqrt());
+
+            // update phases
+            let phase = f32::atan2(*img, *real);
+            if phase < 0. {
+                phases.push((phase + 2. * PI) * (TABLE_LENGTH_F32 / (2.0 * PI)));
+            } else {
+                phases.push(phase * (TABLE_LENGTH_F32 / 2.0 * PI));
+            }
+
+            // update incr_phases
+            incr_phases.push(TABLE_LENGTH_F32 * idx as f32 * (computed_freq / self.sample_rate));
+        }
+
+        // update interpol_ratios
+        for incr_phase in &incr_phases {
+            interpol_ratios.push((incr_phase - incr_phase.round()).abs());
+        }
+
+        let wavetable =
+            self.generate_wavetable(&mut phases, &incr_phases, &interpol_ratios, &norms);
+
+        // update norm_factor
+        let norm_factor = self.norm_factor(&wavetable);
+
         self.sender
-            .send(OscMsg::PeriodicWaveMsg(periodic_wave))
+            .send(OscMsg::PeriodicWaveMsg {
+                computed_freq,
+                wavetable,
+                norm_factor,
+                disable_normalization,
+            })
             .expect("Sending periodic wave to the node renderer failed");
+    }
+
+    fn generate_wavetable(
+        &self,
+        phases: &mut [f32],
+        incr_phases: &[f32],
+        interpol_ratios: &[f32],
+        norms: &[f32],
+    ) -> Vec<f32> {
+        let mut buffer = Vec::new();
+
+        while phases[1] <= TABLE_LENGTH_F32 {
+            let mut sample = 0.0;
+            for i in 1..phases.len() {
+                let gain = norms[i];
+                let phase = phases[i];
+                let incr_phase = incr_phases[i];
+                let mu = interpol_ratios[i];
+                let idx = (phase + incr_phase) as usize;
+                let inf_idx = idx % TABLE_LENGTH_USIZE;
+                let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+                // Linear interpolation
+                sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain;
+                phases[i] = phase + incr_phase;
+            }
+
+            buffer.push(sample);
+        }
+
+        buffer
+    }
+
+    fn norm_factor(&self, buffer: &[f32]) -> f32 {
+        1. / buffer
+            .iter()
+            .copied()
+            .reduce(f32::max)
+            .expect("Maximum value not found")
     }
 }
 
@@ -394,7 +492,17 @@ impl AudioProcessor for OscillatorRenderer {
         // check if any message was send from the control thread
         if let Ok(msg) = self.receiver.try_recv() {
             match msg {
-                OscMsg::PeriodicWaveMsg(p_w) => self.renderer.set_periodic_wave(p_w),
+                OscMsg::PeriodicWaveMsg {
+                    computed_freq,
+                    wavetable,
+                    norm_factor,
+                    disable_normalization,
+                } => self.renderer.set_periodic_wave(
+                    computed_freq,
+                    wavetable,
+                    norm_factor,
+                    disable_normalization,
+                ),
             }
         }
 
@@ -417,17 +525,15 @@ struct TriangleState {
 }
 
 struct PeriodicState {
-    cplxs: Vec<(f32, f32)>,
-    norms: Vec<f32>,
-    phases: Vec<f32>,
     incr_phases: Vec<f32>,
     interpol_ratios: Vec<f32>,
     norm_factor: Option<f32>,
-    wavetable_state: WavetableState,
+    disable_normalization: bool,
+    wavetable: WavetableState,
 }
 
 struct WavetableState {
-    periodic_wavetable: Vec<f32>,
+    buffer: Vec<f32>,
     phase: f32,
     incr_phase: f32,
     ref_freq: f32,
@@ -520,14 +626,12 @@ impl OscRendererInner {
             },
             triangle: TriangleState { last_output: 0.0 },
             periodic: PeriodicState {
-                cplxs,
-                norms,
-                phases,
                 incr_phases,
                 interpol_ratios,
                 norm_factor,
-                wavetable_state: WavetableState {
-                    periodic_wavetable,
+                disable_normalization,
+                wavetable: WavetableState {
+                    buffer: periodic_wavetable,
                     phase: 0.,
                     incr_phase: 1.,
                     ref_freq: computed_freq,
@@ -536,66 +640,17 @@ impl OscRendererInner {
         }
     }
 
-    fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
-        let PeriodicWave {
-            real,
-            imag,
-            disable_normalization,
-        } = periodic_wave;
-        // clear buffers
-        self.periodic.cplxs.clear();
-        self.periodic.norms.clear();
-        self.periodic.phases.clear();
-        self.periodic.incr_phases.clear();
-        self.periodic.interpol_ratios.clear();
-
-        // update cplxs
-        for cplx in real.into_iter().zip(imag) {
-            self.periodic.cplxs.push(cplx);
-        }
-
-        for (idx, (real, img)) in self.periodic.cplxs.iter().enumerate() {
-            // update norms
-            self.periodic
-                .norms
-                .push((f32::powi(*real, 2i32) + f32::powi(*img, 2i32)).sqrt());
-
-            // update phases
-            let phase = f32::atan2(*img, *real);
-            if phase < 0. {
-                self.periodic
-                    .phases
-                    .push((phase + 2. * PI) * (TABLE_LENGTH_F32 / (2.0 * PI)));
-            } else {
-                self.periodic
-                    .phases
-                    .push(phase * (TABLE_LENGTH_F32 / 2.0 * PI));
-            }
-
-            // update incr_phases
-            self.periodic
-                .incr_phases
-                .push(TABLE_LENGTH_F32 * idx as f32 * (self.computed_freq / self.sample_rate));
-        }
-
-        // update interpol_ratios
-        for incr_phase in &self.periodic.incr_phases {
-            self.periodic
-                .interpol_ratios
-                .push((incr_phase - incr_phase.round()).abs());
-        }
-
-        // update wavetable
-        self.update_wavetable();
-
-        self.periodic.wavetable_state.ref_freq = self.computed_freq;
-
-        // update norm_factor
-        if !disable_normalization {
-            self.update_norm_factor();
-        } else {
-            self.periodic.norm_factor = None;
-        }
+    fn set_periodic_wave(
+        &mut self,
+        computed_freq: f32,
+        wavetable: Vec<f32>,
+        norm_factor: f32,
+        disable_normalization: bool,
+    ) {
+        self.periodic.wavetable.ref_freq = computed_freq;
+        self.periodic.wavetable.buffer = wavetable;
+        self.periodic.norm_factor = Some(norm_factor);
+        self.periodic.disable_normalization = disable_normalization;
     }
 
     fn compute_params(&mut self, type_: OscillatorType, computed_freq: f32) {
@@ -637,8 +692,7 @@ impl OscRendererInner {
             *r = incr_ph - incr_ph.floor();
         }
 
-        self.periodic.wavetable_state.incr_phase =
-            new_comp_freq / self.periodic.wavetable_state.ref_freq;
+        self.periodic.wavetable.incr_phase = new_comp_freq / self.periodic.wavetable.ref_freq;
         self.computed_freq = new_comp_freq;
     }
 
@@ -769,11 +823,10 @@ impl OscRendererInner {
     fn generate_custom(&mut self, buffer: &mut ChannelData, freq_values: &[f32]) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
             self.compute_periodic_params(computed_freq);
-            self.periodic.wavetable_state.phase = (self.periodic.wavetable_state.phase
-                + self.periodic.wavetable_state.incr_phase)
-                % self.periodic.wavetable_state.periodic_wavetable.len() as f32;
-            *o = self.periodic.wavetable_state.periodic_wavetable
-                [self.periodic.wavetable_state.phase as usize];
+            self.periodic.wavetable.phase = (self.periodic.wavetable.phase
+                + self.periodic.wavetable.incr_phase)
+                % self.periodic.wavetable.buffer.len() as f32;
+            *o = self.periodic.wavetable.buffer[self.periodic.wavetable.phase as usize];
         }
     }
 
@@ -805,50 +858,12 @@ impl OscRendererInner {
         }
     }
 
-    fn update_wavetable(&mut self) {
-        self.periodic.wavetable_state.periodic_wavetable.clear();
-
-        while self.periodic.phases[1] <= TABLE_LENGTH_F32 {
-            let mut sample = 0.0;
-            for i in 1..self.periodic.phases.len() {
-                let gain = self.periodic.norms[i];
-                let phase = self.periodic.phases[i];
-                let incr_phase = self.periodic.incr_phases[i];
-                let mu = self.periodic.interpol_ratios[i];
-                let idx = (phase + incr_phase) as usize;
-                let inf_idx = idx % TABLE_LENGTH_USIZE;
-                let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
-                // Linear interpolation
-                sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain;
-                self.periodic.phases[i] = phase + incr_phase;
-            }
-
-            self.periodic
-                .wavetable_state
-                .periodic_wavetable
-                .push(sample);
-        }
-    }
-
     fn init_norm_factor(buffer: &[f32]) -> f32 {
         1. / buffer
             .iter()
             .copied()
             .reduce(f32::max)
             .expect("Maximum value not found")
-    }
-
-    fn update_norm_factor(&mut self) {
-        self.periodic.norm_factor = Some(
-            1. / self
-                .periodic
-                .wavetable_state
-                .periodic_wavetable
-                .iter()
-                .copied()
-                .reduce(f32::max)
-                .expect("Maximum value not found"),
-        );
     }
 
     fn poly_blep(&self, mut t: f32) -> f32 {
