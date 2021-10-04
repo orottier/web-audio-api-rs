@@ -31,6 +31,14 @@ fn main() {
     // connect the biquad node to the destination node (speakers)
     biquad.connect(&context.destination());
 
+    let frequency_hz = [500.0, 1000.];
+    let mut mag_response = [0.; 2];
+    let mut phase_response = [0.; 2];
+
+    biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
+
+    println!("{:?}", mag_response);
+
     // start playback
     background.set_loop(true);
     background.start();

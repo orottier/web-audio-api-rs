@@ -267,12 +267,9 @@ impl BiquadFilterNode {
     pub fn get_frequency_response(
         &self,
         frequency_hz: &[f32],
-        mut mag_response: Vec<f32>,
-        mut phase_response: Vec<f32>,
+        mag_response: &mut [f32],
+        phase_response: &mut [f32],
     ) {
-        mag_response.clear();
-        phase_response.clear();
-
         let (sender, receiver) = crossbeam_channel::bounded(0);
         self.sender.send(CoeffsReq(sender)).unwrap();
 
@@ -287,7 +284,7 @@ impl BiquadFilterNode {
                     continue;
                 }
                 Ok([b0, b1, b2, a0, a1, a2]) => {
-                    for &f in frequency_hz {
+                    for (i, &f) in frequency_hz.iter().enumerate() {
                         let num = b0
                             + Complex::from_polar(b1, -1.0 * 2.0 * PI * f / self.sample_rate)
                             + Complex::from_polar(b2, -2.0 * 2.0 * PI * f / self.sample_rate);
@@ -296,8 +293,8 @@ impl BiquadFilterNode {
                             + Complex::from_polar(a2, -2.0 * 2.0 * PI * f / self.sample_rate);
                         let h_f = num / denom;
 
-                        mag_response.push(h_f.norm());
-                        phase_response.push(h_f.arg())
+                        mag_response[i] = h_f.norm();
+                        phase_response[i] = h_f.arg()
                     }
                     break;
                 }
