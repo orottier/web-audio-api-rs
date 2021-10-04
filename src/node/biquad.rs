@@ -12,7 +12,7 @@ use crate::{
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
     process::{AudioParamValues, AudioProcessor},
-    SampleRate,
+    SampleRate, MAX_CHANNELS,
 };
 
 use super::AudioNode;
@@ -301,8 +301,8 @@ struct BiquadFilterRenderer {
     frequency: AudioParamId,
     gain: AudioParamId,
     type_: Arc<AtomicU32>,
-    s1: f32,
-    s2: f32,
+    ss1: [f32; MAX_CHANNELS],
+    ss2: [f32; MAX_CHANNELS],
     coeffs: Coefficients,
 }
 
@@ -355,6 +355,9 @@ impl BiquadFilterRenderer {
 
         let coeffs = Self::init_coeffs(sample_rate, params);
 
+        let s1 = [0.; MAX_CHANNELS];
+        let s2 = [0.; MAX_CHANNELS];
+
         Self {
             sample_rate,
             gain,
@@ -362,8 +365,8 @@ impl BiquadFilterRenderer {
             frequency,
             q,
             type_,
-            s1: 0.,
-            s2: 0.,
+            ss1: s1,
+            ss2: s2,
             coeffs,
         }
     }
@@ -372,17 +375,22 @@ impl BiquadFilterRenderer {
         // todo : A-rate
         self.update_coeffs(params);
 
-        for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
+        for (idx, (i_data, o_data)) in input
+            .channels()
+            .iter()
+            .zip(output.channels_mut())
+            .enumerate()
+        {
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.tick(i);
+                *o = self.tick(i, idx);
             }
         }
     }
 
-    fn tick(&mut self, input: f32) -> f32 {
-        let out = self.s1 + self.coeffs.b0 * input;
-        self.s1 = self.s2 + self.coeffs.b1 * input - self.coeffs.a1 * out;
-        self.s2 = self.coeffs.b2 * input - self.coeffs.a2 * out;
+    fn tick(&mut self, input: f32, idx: usize) -> f32 {
+        let out = self.ss1[idx] + self.coeffs.b0 * input;
+        self.ss1[idx] = self.ss2[idx] + self.coeffs.b1 * input - self.coeffs.a1 * out;
+        self.ss2[idx] = self.coeffs.b2 * input - self.coeffs.a2 * out;
 
         out
     }
