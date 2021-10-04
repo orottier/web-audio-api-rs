@@ -371,6 +371,13 @@ impl BiquadFilterRenderer {
         }
     }
 
+    /// Generate an output by filtering the input following the params values
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - Audiobuffer input
+    /// * `output` - Audiobuffer output
+    /// * `params` - biquadfilter params which resolves into biquad coeffs
     fn filter(&mut self, input: &AudioBuffer, output: &mut AudioBuffer, params: Params) {
         // todo : A-rate
         self.update_coeffs(params);
@@ -387,6 +394,12 @@ impl BiquadFilterRenderer {
         }
     }
 
+    /// Generate an output sample by filtering an input sample
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - Audiobuffer input
+    /// * `idx` - channel index mapping to the filter state index
     fn tick(&mut self, input: f32, idx: usize) -> f32 {
         let out = self.ss1[idx] + self.coeffs.b0 * input;
         self.ss1[idx] = self.ss2[idx] + self.coeffs.b1 * input - self.coeffs.a1 * out;
@@ -395,6 +408,12 @@ impl BiquadFilterRenderer {
         out
     }
 
+    /// initializes biquad filter coefficients
+    ///
+    /// # Arguments
+    ///
+    /// * `sample_rate` - Audio context sample rate
+    /// * `params` - params resolving into biquad coeffs
     fn init_coeffs(sample_rate: f32, params: Params) -> Coefficients {
         let Params {
             q,
@@ -424,6 +443,11 @@ impl BiquadFilterRenderer {
         }
     }
 
+    /// updates biquad filter coefficients when params are modified
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - params resolving into biquad coeffs
     fn update_coeffs(&mut self, params: Params) {
         let Params {
             q,
@@ -443,34 +467,15 @@ impl BiquadFilterRenderer {
         self.coeffs.a2 = Self::a2(type_, self.sample_rate, computed_freq, q, gain);
     }
 
-    fn a(gain: f32) -> f32 {
-        10f32.powf(gain / 40.)
-    }
-
-    fn w0(sample_rate: f32, computed_freq: f32) -> f32 {
-        2.0 * PI * computed_freq / sample_rate
-    }
-
-    fn alpha_q(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
-        Self::w0(sample_rate, computed_freq).sin() / (2. * q)
-    }
-
-    fn alpha_q_db(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
-        Self::w0(sample_rate, computed_freq).sin() / (2. * 10f32.powf(q / 20.))
-    }
-
-    fn s() -> f32 {
-        1.0
-    }
-
-    fn alpha_s(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
-        let w0 = Self::w0(sample_rate, computed_freq);
-        let a = Self::a(gain);
-        let s = Self::s();
-
-        (w0.sin() / 2.0) * ((a + (1. / a)) * ((1. / s) - 1.0) + 2.0)
-    }
-
+    /// calculates b_0 coefficient
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - biquadfilter type
+    /// * `sample_rate` - audio context sample rate
+    /// * `computed_freq` - computedOscFreq
+    /// * `q` - Q factor
+    /// * `gain` - filter gain
     fn b0(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f32 {
         match type_ {
             BiquadFilterType::Lowpass => Self::b0_lowpass(sample_rate, computed_freq),
@@ -529,6 +534,14 @@ impl BiquadFilterRenderer {
         a * ((a + 1.0) + (a - 1.0) * w0.cos() + 2.0 * alpha_s * a.sqrt())
     }
 
+    /// calculates b_1 coefficient
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - biquadfilter type
+    /// * `sample_rate` - audio context sample rate
+    /// * `computed_freq` - computedOscFreq
+    /// * `gain` - filter gain
     fn b1(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         match type_ {
             BiquadFilterType::Lowpass => Self::b1_lowpass(sample_rate, computed_freq),
@@ -583,6 +596,15 @@ impl BiquadFilterRenderer {
         -2.0 * a * ((a - 1.0) + (a + 1.0) * w0.cos())
     }
 
+    /// calculates b_2 coefficient
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - biquadfilter type
+    /// * `sample_rate` - audio context sample rate
+    /// * `computed_freq` - computedOscFreq
+    /// * `q` - Q factor
+    /// * `gain` - filter gain
     fn b2(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f32 {
         match type_ {
             BiquadFilterType::Lowpass => Self::b2_lowpass(sample_rate, computed_freq),
@@ -641,6 +663,15 @@ impl BiquadFilterRenderer {
         a * ((a + 1.0) + (a - 1.0) * w0.cos() - 2.0 * alpha_s * a.sqrt())
     }
 
+    /// calculates a_0 coefficient
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - biquadfilter type
+    /// * `sample_rate` - audio context sample rate
+    /// * `computed_freq` - computedOscFreq
+    /// * `q` - Q factor
+    /// * `gain` - filter gain
     fn a0(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f32 {
         match type_ {
             BiquadFilterType::Lowpass => Self::a0_lowpass(sample_rate, computed_freq, q),
@@ -701,6 +732,14 @@ impl BiquadFilterRenderer {
         (a + 1.0) - (a - 1.0) * w0.cos() + 2.0 * alpha_s * a.sqrt()
     }
 
+    /// calculates a_1 coefficient
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - biquadfilter type
+    /// * `sample_rate` - audio context sample rate
+    /// * `computed_freq` - computedOscFreq
+    /// * `gain` - filter gain
     fn a1(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         match type_ {
             BiquadFilterType::Lowpass => Self::a1_lowpass(sample_rate, computed_freq),
@@ -758,6 +797,15 @@ impl BiquadFilterRenderer {
         2.0 * ((a - 1.0) - (a + 1.0) * w0.cos())
     }
 
+    /// calculates a_2 coefficient
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - biquadfilter type
+    /// * `sample_rate` - audio context sample rate
+    /// * `computed_freq` - computedOscFreq
+    /// * `q` - Q factor
+    /// * `gain` - filter gain
     fn a2(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f32 {
         match type_ {
             BiquadFilterType::Lowpass => Self::a2_lowpass(sample_rate, computed_freq, q),
@@ -816,5 +864,39 @@ impl BiquadFilterRenderer {
         let alpha_s = Self::alpha_s(sample_rate, computed_freq, gain);
 
         (a + 1.0) - (a - 1.0) * w0.cos() - 2.0 * alpha_s * a.sqrt()
+    }
+
+    /// Returns A parameter used to calculate biquad coeffs
+    fn a(gain: f32) -> f32 {
+        10f32.powf(gain / 40.)
+    }
+
+    /// Returns w0 (omega 0) parameter used to calculate biquad coeffs
+    fn w0(sample_rate: f32, computed_freq: f32) -> f32 {
+        2.0 * PI * computed_freq / sample_rate
+    }
+
+    /// Returns alpha_q parameter used to calculate biquad coeffs
+    fn alpha_q(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+        Self::w0(sample_rate, computed_freq).sin() / (2. * q)
+    }
+
+    /// Returns alpha_q_db parameter used to calculate biquad coeffs
+    fn alpha_q_db(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+        Self::w0(sample_rate, computed_freq).sin() / (2. * 10f32.powf(q / 20.))
+    }
+
+    /// Returns S parameter used to calculate biquad coeffs
+    fn s() -> f32 {
+        1.0
+    }
+
+    /// Returns alpha_S parameter used to calculate biquad coeffs
+    fn alpha_s(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
+        let w0 = Self::w0(sample_rate, computed_freq);
+        let a = Self::a(gain);
+        let s = Self::s();
+
+        (w0.sin() / 2.0) * ((a + (1. / a)) * ((1. / s) - 1.0) + 2.0)
     }
 }
