@@ -7,6 +7,7 @@ use std::{
 };
 
 use crate::{
+    alloc::AudioBuffer,
     buffer::{ChannelConfig, ChannelConfigOptions},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
@@ -322,6 +323,17 @@ impl AudioProcessor for BiquadFilterRenderer {
         let det_values = params.get(&self.detune);
         let freq_values = params.get(&self.frequency);
         let q_values = params.get(&self.q);
+        let type_ = self.type_.load(Ordering::SeqCst).into();
+
+        let params = Params {
+            q: q_values[0],
+            detune: det_values[0],
+            frequency: freq_values[0],
+            gain: g_values[0],
+            type_,
+        };
+
+        self.filter(input, output, params);
     }
 
     fn tail_time(&self) -> bool {
@@ -341,7 +353,7 @@ impl BiquadFilterRenderer {
             params,
         } = config;
 
-        let coeffs = Self::init_coeffs(params);
+        let coeffs = Self::init_coeffs(sample_rate, params);
 
         Self {
             sample_rate,
@@ -356,8 +368,18 @@ impl BiquadFilterRenderer {
         }
     }
 
+    fn filter(&mut self, input: &AudioBuffer, output: &mut AudioBuffer, params: Params) {
+        // todo : A-rate
+        self.update_coeffs(params);
+
+        for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
+            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
+                *o = self.tick(i);
+            }
+        }
+    }
+
     fn tick(&mut self, input: f32) -> f32 {
-        self.update_coeffs();
         let out = self.s1 + self.coeffs.b0 * input;
         self.s1 = self.s2 + self.coeffs.b1 * input - self.coeffs.a1 * out;
         self.s2 = self.coeffs.b2 * input - self.coeffs.a2 * out;
@@ -365,8 +387,52 @@ impl BiquadFilterRenderer {
         out
     }
 
-    fn init_coeffs(params: Params) -> Coefficients {
-        todo!()
+    fn init_coeffs(sample_rate: f32, params: Params) -> Coefficients {
+        let Params {
+            q,
+            detune,
+            frequency,
+            gain,
+            type_,
+        } = params;
+
+        let computed_freq = frequency * 10f32.powf(detune / 1200.);
+
+        let b0 = Self::b0(type_, sample_rate, computed_freq, q, gain);
+        let b1 = Self::b1(type_, sample_rate, computed_freq, gain);
+        let b2 = Self::b2(type_, sample_rate, computed_freq, q, gain);
+
+        let a0 = Self::a0(type_, sample_rate, computed_freq, q, gain);
+        let a1 = Self::a1(type_, sample_rate, computed_freq, gain);
+        let a2 = Self::a2(type_, sample_rate, computed_freq, q, gain);
+
+        Coefficients {
+            b0,
+            b1,
+            b2,
+            a0,
+            a1,
+            a2,
+        }
+    }
+
+    fn update_coeffs(&mut self, params: Params) {
+        let Params {
+            q,
+            detune,
+            frequency,
+            gain,
+            type_,
+        } = params;
+
+        let computed_freq = frequency * 10f32.powf(detune / 1200.);
+
+        self.coeffs.b0 = Self::b0(type_, self.sample_rate, computed_freq, q, gain);
+        self.coeffs.b1 = Self::b1(type_, self.sample_rate, computed_freq, gain);
+        self.coeffs.b2 = Self::b2(type_, self.sample_rate, computed_freq, q, gain);
+        self.coeffs.a0 = Self::a0(type_, self.sample_rate, computed_freq, q, gain);
+        self.coeffs.a1 = Self::a1(type_, self.sample_rate, computed_freq, gain);
+        self.coeffs.a2 = Self::a2(type_, self.sample_rate, computed_freq, q, gain);
     }
 
     fn a(gain: f32) -> f32 {
@@ -395,10 +461,6 @@ impl BiquadFilterRenderer {
         let s = Self::s();
 
         (w0.sin() / 2.0) * ((a + (1. / a)) * ((1. / s) - 1.0) + 2.0)
-    }
-
-    fn update_coeffs(&mut self) {
-        todo!()
     }
 
     fn b0(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f32 {
@@ -634,7 +696,7 @@ impl BiquadFilterRenderer {
     fn a1(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         match type_ {
             BiquadFilterType::Lowpass => Self::a1_lowpass(sample_rate, computed_freq),
-            BiquadFilterType::Highpass => Self::a1_lowpass(sample_rate, computed_freq),
+            BiquadFilterType::Highpass => Self::a1_highpass(sample_rate, computed_freq),
             BiquadFilterType::Bandpass => Self::a1_bandpass(sample_rate, computed_freq),
             BiquadFilterType::Notch => Self::a1_notch(sample_rate, computed_freq),
             BiquadFilterType::Allpass => Self::a1_allpass(sample_rate, computed_freq),
@@ -691,7 +753,7 @@ impl BiquadFilterRenderer {
     fn a2(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f32 {
         match type_ {
             BiquadFilterType::Lowpass => Self::a2_lowpass(sample_rate, computed_freq, q),
-            BiquadFilterType::Highpass => Self::a2_lowpass(sample_rate, computed_freq, q),
+            BiquadFilterType::Highpass => Self::a2_highpass(sample_rate, computed_freq, q),
             BiquadFilterType::Bandpass => Self::a2_bandpass(sample_rate, computed_freq, q),
             BiquadFilterType::Notch => Self::a2_notch(sample_rate, computed_freq, q),
             BiquadFilterType::Allpass => Self::a2_allpass(sample_rate, computed_freq, q),
