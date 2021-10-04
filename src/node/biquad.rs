@@ -6,6 +6,9 @@ use std::{
     },
 };
 
+use crossbeam_channel::{Receiver, Sender};
+use num_complex::Complex;
+
 use crate::{
     alloc::AudioBuffer,
     buffer::{ChannelConfig, ChannelConfigOptions},
@@ -16,6 +19,8 @@ use crate::{
 };
 
 use super::AudioNode;
+
+struct CoeffsReq(Sender<[f32; 6]>);
 
 #[derive(Debug, Clone, Copy)]
 pub enum BiquadFilterType {
@@ -83,6 +88,7 @@ impl Default for BiquadFilterOptions {
 
 /// AudioNode for volume control
 pub struct BiquadFilterNode {
+    sample_rate: f32,
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     q: AudioParam,
@@ -90,6 +96,7 @@ pub struct BiquadFilterNode {
     frequency: AudioParam,
     gain: AudioParam,
     type_: Arc<AtomicU32>,
+    sender: Sender<CoeffsReq>,
 }
 
 impl AudioNode for BiquadFilterNode {
@@ -186,6 +193,8 @@ impl BiquadFilterNode {
                 type_: t_value,
             };
 
+            let (sender, receiver) = crossbeam_channel::bounded(0);
+
             let config = RendererConfig {
                 sample_rate,
                 gain: g_proc,
@@ -194,10 +203,12 @@ impl BiquadFilterNode {
                 q: q_proc,
                 type_: type_.clone(),
                 params: inits,
+                receiver,
             };
 
             let render = BiquadFilterRenderer::new(config);
             let node = BiquadFilterNode {
+                sample_rate,
                 registration,
                 channel_config: options.channel_config.into(),
                 type_,
@@ -205,6 +216,7 @@ impl BiquadFilterNode {
                 detune: d_param,
                 frequency: f_param,
                 gain: g_param,
+                sender,
             };
 
             (node, Box::new(render))
@@ -254,11 +266,43 @@ impl BiquadFilterNode {
     /// * `phase_response` - phase of the frequency response of the filter
     pub fn get_frequency_response(
         &self,
-        frequency_hz: Vec<f32>,
-        mag_response: Vec<f32>,
-        phase_response: Vec<f32>,
+        frequency_hz: &[f32],
+        mut mag_response: Vec<f32>,
+        mut phase_response: Vec<f32>,
     ) {
-        todo!()
+        mag_response.clear();
+        phase_response.clear();
+
+        let (sender, receiver) = crossbeam_channel::bounded(0);
+        self.sender.send(CoeffsReq(sender)).unwrap();
+
+        loop {
+            match receiver.try_recv() {
+                Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                    println!("Receiver Error: disconnected type");
+                    continue;
+                }
+                Err(crossbeam_channel::TryRecvError::Empty) => {
+                    println!("Receiver Error: empty type");
+                    continue;
+                }
+                Ok([b0, b1, b2, a0, a1, a2]) => {
+                    for &f in frequency_hz {
+                        let num = b0
+                            + Complex::from_polar(b1, -1.0 * 2.0 * PI * f / self.sample_rate)
+                            + Complex::from_polar(b2, -2.0 * 2.0 * PI * f / self.sample_rate);
+                        let denom = a0
+                            + Complex::from_polar(a1, -1.0 * 2.0 * PI * f / self.sample_rate)
+                            + Complex::from_polar(a2, -2.0 * 2.0 * PI * f / self.sample_rate);
+                        let h_f = num / denom;
+
+                        mag_response.push(h_f.norm());
+                        phase_response.push(h_f.arg())
+                    }
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -278,6 +322,7 @@ struct RendererConfig {
     gain: AudioParamId,
     type_: Arc<AtomicU32>,
     params: Params,
+    receiver: Receiver<CoeffsReq>,
 }
 
 /// Biquad filter coefficients
@@ -304,6 +349,7 @@ struct BiquadFilterRenderer {
     ss1: [f32; MAX_CHANNELS],
     ss2: [f32; MAX_CHANNELS],
     coeffs: Coefficients,
+    receiver: Receiver<CoeffsReq>,
 }
 
 impl AudioProcessor for BiquadFilterRenderer {
@@ -333,6 +379,23 @@ impl AudioProcessor for BiquadFilterRenderer {
             type_,
         };
 
+        let Coefficients {
+            b0,
+            b1,
+            b2,
+            a0,
+            a1,
+            a2,
+        } = self.coeffs;
+
+        let coeffs_resp = [b0, b1, b2, a0, a1, a2];
+
+        if let Ok(msg) = self.receiver.try_recv() {
+            let sender = msg.0;
+
+            sender.send(coeffs_resp).unwrap();
+        }
+
         self.filter(input, output, params);
     }
 
@@ -351,6 +414,7 @@ impl BiquadFilterRenderer {
             gain,
             type_,
             params,
+            receiver,
         } = config;
 
         let coeffs = Self::init_coeffs(sample_rate, params);
@@ -368,6 +432,7 @@ impl BiquadFilterRenderer {
             ss1: s1,
             ss2: s2,
             coeffs,
+            receiver,
         }
     }
 
