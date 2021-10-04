@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc,
+use std::{
+    f32::consts::PI,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
 };
 
 use crate::{
@@ -13,6 +16,7 @@ use crate::{
 
 use super::AudioNode;
 
+#[derive(Debug, Clone, Copy)]
 pub enum BiquadFilterType {
     Lowpass,
     Highpass,
@@ -109,10 +113,18 @@ impl BiquadFilterNode {
         context.base().register(move |registration| {
             let options = options.unwrap_or_default();
 
+            let sample_rate = context.base().sample_rate().0 as f32;
+
             let default_freq = 350.;
             let default_gain = 0.;
             let default_det = 0.;
             let default_q = 1.;
+
+            let q_value = options.detune.unwrap_or(default_det);
+            let d_value = options.detune.unwrap_or(default_det);
+            let f_value = options.frequency.unwrap_or(default_freq);
+            let g_value = options.gain.unwrap_or(default_gain);
+            let t_value = options.type_.unwrap_or(BiquadFilterType::Lowpass);
 
             let q_param_opts = AudioParamOptions {
                 min_value: f32::MIN,
@@ -124,7 +136,7 @@ impl BiquadFilterNode {
                 .base()
                 .create_audio_param(q_param_opts, registration.id());
 
-            q_param.set_value(options.detune.unwrap_or(default_det));
+            q_param.set_value(q_value);
 
             let d_param_opts = AudioParamOptions {
                 min_value: -153600.,
@@ -136,7 +148,7 @@ impl BiquadFilterNode {
                 .base()
                 .create_audio_param(d_param_opts, registration.id());
 
-            d_param.set_value(options.detune.unwrap_or(default_det));
+            d_param.set_value(d_value);
 
             let niquyst = context.base().sample_rate().0 / 2;
             let f_param_opts = AudioParamOptions {
@@ -149,7 +161,7 @@ impl BiquadFilterNode {
                 .base()
                 .create_audio_param(f_param_opts, registration.id());
 
-            f_param.set_value(options.frequency.unwrap_or(default_freq));
+            f_param.set_value(f_value);
 
             let g_param_opts = AudioParamOptions {
                 min_value: f32::MIN,
@@ -161,16 +173,33 @@ impl BiquadFilterNode {
                 .base()
                 .create_audio_param(g_param_opts, registration.id());
 
-            g_param.set_value(options.gain.unwrap_or(default_gain));
+            g_param.set_value(g_value);
 
-            let render = BiquadFilterRenderer { biquad: g_proc };
+            let type_ = Arc::new(AtomicU32::new(t_value as u32));
 
+            let inits = Params {
+                q: q_value,
+                detune: d_value,
+                frequency: f_value,
+                gain: g_value,
+                type_: t_value,
+            };
+
+            let config = RendererConfig {
+                sample_rate,
+                gain: g_proc,
+                detune: d_proc,
+                frequency: f_proc,
+                q: q_proc,
+                type_: type_.clone(),
+                params: inits,
+            };
+
+            let render = BiquadFilterRenderer::new(config);
             let node = BiquadFilterNode {
                 registration,
                 channel_config: options.channel_config.into(),
-                type_: Arc::new(AtomicU32::new(
-                    options.type_.unwrap_or(BiquadFilterType::Lowpass) as u32,
-                )),
+                type_,
                 q: q_param,
                 detune: d_param,
                 frequency: f_param,
@@ -232,8 +261,48 @@ impl BiquadFilterNode {
     }
 }
 
+struct Params {
+    q: f32,
+    detune: f32,
+    frequency: f32,
+    gain: f32,
+    type_: BiquadFilterType,
+}
+
+struct RendererConfig {
+    sample_rate: f32,
+    q: AudioParamId,
+    detune: AudioParamId,
+    frequency: AudioParamId,
+    gain: AudioParamId,
+    type_: Arc<AtomicU32>,
+    params: Params,
+}
+
+/// Biquad filter coefficients
+#[derive(Clone, Copy, Debug)]
+struct Coefficients {
+    // Denominator coefficients
+    a0: f32,
+    a1: f32,
+    a2: f32,
+
+    // Nominator coefficients
+    b0: f32,
+    b1: f32,
+    b2: f32,
+}
+
 struct BiquadFilterRenderer {
-    biquad: AudioParamId,
+    sample_rate: f32,
+    q: AudioParamId,
+    detune: AudioParamId,
+    frequency: AudioParamId,
+    gain: AudioParamId,
+    type_: Arc<AtomicU32>,
+    s1: f32,
+    s2: f32,
+    coeffs: Coefficients,
 }
 
 impl AudioProcessor for BiquadFilterRenderer {
@@ -249,19 +318,158 @@ impl AudioProcessor for BiquadFilterRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        let biquad_values = params.get(&self.biquad);
-
-        *output = input.clone();
-
-        output.modify_channels(|channel| {
-            channel
-                .iter_mut()
-                .zip(biquad_values.iter())
-                .for_each(|(value, g)| *value *= g)
-        });
+        let g_values = params.get(&self.gain);
+        let det_values = params.get(&self.detune);
+        let freq_values = params.get(&self.frequency);
+        let q_values = params.get(&self.q);
     }
 
     fn tail_time(&self) -> bool {
         false
+    }
+}
+
+impl BiquadFilterRenderer {
+    fn new(config: RendererConfig) -> Self {
+        let RendererConfig {
+            sample_rate,
+            q,
+            detune,
+            frequency,
+            gain,
+            type_,
+            params,
+        } = config;
+
+        let coeffs = Self::init_coeffs(params);
+
+        Self {
+            sample_rate,
+            gain,
+            detune,
+            frequency,
+            q,
+            type_,
+            s1: 0.,
+            s2: 0.,
+            coeffs,
+        }
+    }
+
+    fn tick(&mut self, input: f32) -> f32 {
+        self.update_coeffs();
+        let out = self.s1 + self.coeffs.b0 * input;
+        self.s1 = self.s2 + self.coeffs.b1 * input - self.coeffs.a1 * out;
+        self.s2 = self.coeffs.b2 * input - self.coeffs.a2 * out;
+
+        out
+    }
+
+    fn init_coeffs(params: Params) -> Coefficients {
+        todo!()
+    }
+
+    fn a(gain: f32) -> f32 {
+        10f32.powf(gain / 40.)
+    }
+
+    fn w0(sample_rate: f32, computed_freq: f32) -> f32 {
+        2.0 * PI * computed_freq / sample_rate
+    }
+
+    fn alpha_q(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+        Self::w0(sample_rate, computed_freq).sin() / (2. * q)
+    }
+
+    fn alpha_q_db(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+        Self::w0(sample_rate, computed_freq).sin() / (2. * 10f32.powf(q / 20.))
+    }
+
+    fn s() -> f32 {
+        1.0
+    }
+
+    fn alpha_s(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
+        let w0 = Self::w0(sample_rate, computed_freq);
+        let a = Self::a(gain);
+        let s = Self::s();
+
+        (w0.sin() / 2.0) * ((a + (1. / a)) * ((1. / s) - 1.0) + 2.0)
+    }
+
+    fn update_coeffs(&mut self) {
+        todo!()
+    }
+
+    fn b0(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32) -> f32 {
+        match type_ {
+            BiquadFilterType::Lowpass => Self::b0_lowpass(sample_rate, computed_freq),
+            _ => todo!(),
+        }
+    }
+
+    fn b0_lowpass(sample_rate: f32, computed_freq: f32) -> f32 {
+        let w0 = Self::w0(sample_rate, computed_freq);
+        (1.0 - w0.cos()) / 2.0
+    }
+
+    fn b1(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32) -> f32 {
+        match type_ {
+            BiquadFilterType::Lowpass => Self::b1_lowpass(sample_rate, computed_freq),
+            _ => todo!(),
+        }
+    }
+
+    fn b1_lowpass(sample_rate: f32, computed_freq: f32) -> f32 {
+        let w0 = Self::w0(sample_rate, computed_freq);
+        1.0 - w0.cos()
+    }
+
+    fn b2(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32) -> f32 {
+        match type_ {
+            BiquadFilterType::Lowpass => Self::b2_lowpass(sample_rate, computed_freq),
+            _ => todo!(),
+        }
+    }
+
+    fn b2_lowpass(sample_rate: f32, computed_freq: f32) -> f32 {
+        let w0 = Self::w0(sample_rate, computed_freq);
+        (1.0 - w0.cos()) / 2.0
+    }
+
+    fn a0(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+        match type_ {
+            BiquadFilterType::Lowpass => Self::a0_lowpass(sample_rate, computed_freq, q),
+            _ => todo!(),
+        }
+    }
+
+    fn a0_lowpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+        let alpha_q_db = Self::alpha_q_db(sample_rate, computed_freq, q);
+        1.0 + alpha_q_db
+    }
+
+    fn a1(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32) -> f32 {
+        match type_ {
+            BiquadFilterType::Lowpass => Self::a1_lowpass(sample_rate, computed_freq),
+            _ => todo!(),
+        }
+    }
+
+    fn a1_lowpass(sample_rate: f32, computed_freq: f32) -> f32 {
+        let w0 = Self::w0(sample_rate, computed_freq);
+        -2.0 * w0.cos()
+    }
+
+    fn a2(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+        match type_ {
+            BiquadFilterType::Lowpass => Self::a2_lowpass(sample_rate, computed_freq, q),
+            _ => todo!(),
+        }
+    }
+
+    fn a2_lowpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+        let alpha_q_db = Self::alpha_q_db(sample_rate, computed_freq, q);
+        1.0 - alpha_q_db
     }
 }
