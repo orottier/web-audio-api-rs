@@ -1,4 +1,7 @@
-use std::sync::{atomic::AtomicU32, Arc};
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
 
 use crate::{
     buffer::{ChannelConfig, ChannelConfigOptions},
@@ -178,12 +181,54 @@ impl BiquadFilterNode {
         })
     }
 
+    /// Returns the gain audio paramter
     pub fn gain(&self) -> &AudioParam {
         &self.gain
     }
 
+    /// Returns the frequency audio paramter
     pub fn frequency(&self) -> &AudioParam {
         &self.frequency
+    }
+
+    /// Returns the detune audio paramter
+    pub fn detune(&self) -> &AudioParam {
+        &self.detune
+    }
+
+    /// Returns the Q audio paramter
+    pub fn q(&self) -> &AudioParam {
+        &self.q
+    }
+
+    /// Returns the biquad filter type
+    pub fn type_(&self) -> BiquadFilterType {
+        self.type_.load(Ordering::SeqCst).into()
+    }
+
+    /// biquad filter type setter
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - the biquad filter type (lowpass, highpass,...)
+    pub fn set_type(&mut self, type_: BiquadFilterType) {
+        self.type_.store(type_ as u32, Ordering::SeqCst);
+    }
+
+    /// Returns the frequency response for the specified frequencies
+    ///
+    /// # Arguments
+    ///
+    /// * `frequency_hz` - frequencies for which frequency response of the filter should be calculated
+    /// * `mag_response` - magnitude of the frequency response of the filter
+    /// * `phase_response` - phase of the frequency response of the filter
+    pub fn get_frequency_response(
+        &self,
+        frequency_hz: Vec<f32>,
+        mag_response: Vec<f32>,
+        phase_response: Vec<f32>,
+    ) {
+        todo!()
     }
 }
 
