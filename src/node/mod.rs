@@ -21,6 +21,9 @@ use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 
 use crossbeam_channel::{self, Receiver, Sender};
 
+mod iir_filter;
+pub use iir_filter::*;
+
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules.
 ///
