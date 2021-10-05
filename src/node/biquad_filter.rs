@@ -276,8 +276,7 @@ impl BiquadFilterNode {
         loop {
             match receiver.try_recv() {
                 Err(crossbeam_channel::TryRecvError::Disconnected) => {
-                    println!("Receiver Error: disconnected type");
-                    continue;
+                    panic!("Receiver Error: disconnected type");
                 }
                 Err(crossbeam_channel::TryRecvError::Empty) => {
                     println!("Receiver Error: empty type");
@@ -376,23 +375,6 @@ impl AudioProcessor for BiquadFilterRenderer {
             type_,
         };
 
-        let Coefficients {
-            b0,
-            b1,
-            b2,
-            a0,
-            a1,
-            a2,
-        } = self.coeffs;
-
-        let coeffs_resp = [b0, b1, b2, a0, a1, a2];
-
-        if let Ok(msg) = self.receiver.try_recv() {
-            let sender = msg.0;
-
-            sender.send(coeffs_resp).unwrap();
-        }
-
         self.filter(input, output, params);
     }
 
@@ -444,6 +426,23 @@ impl BiquadFilterRenderer {
         // todo : A-rate
         self.update_coeffs(params);
 
+        let Coefficients {
+            b0,
+            b1,
+            b2,
+            a0,
+            a1,
+            a2,
+        } = self.coeffs;
+
+        let coeffs_resp = [b0, b1, b2, a0, a1, a2];
+
+        if let Ok(msg) = self.receiver.try_recv() {
+            let sender = msg.0;
+
+            sender.send(coeffs_resp).unwrap();
+        }
+
         for (idx, (i_data, o_data)) in input
             .channels()
             .iter()
@@ -463,9 +462,11 @@ impl BiquadFilterRenderer {
     /// * `input` - Audiobuffer input
     /// * `idx` - channel index mapping to the filter state index
     fn tick(&mut self, input: f32, idx: usize) -> f32 {
-        let out = self.ss1[idx] + self.coeffs.b0 * input;
-        self.ss1[idx] = self.ss2[idx] + self.coeffs.b1 * input - self.coeffs.a1 * out;
-        self.ss2[idx] = self.coeffs.b2 * input - self.coeffs.a2 * out;
+        let out = self.ss1[idx] + (self.coeffs.b0 / self.coeffs.a0) * input;
+        self.ss1[idx] = self.ss2[idx] + (self.coeffs.b1 / self.coeffs.a0) * input
+            - (self.coeffs.a1 / self.coeffs.a0) * out;
+        self.ss2[idx] =
+            (self.coeffs.b2 / self.coeffs.a0) * input - (self.coeffs.a2 / self.coeffs.a0) * out;
 
         out
     }
