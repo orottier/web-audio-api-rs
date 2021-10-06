@@ -1,5 +1,6 @@
 //! General purpose audio signal data structures
 
+use std::ops::{Index, IndexMut};
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -278,12 +279,28 @@ impl ChannelData {
         self.data.is_empty()
     }
 
+    // todo: Make ChannelData iterable and remove this method
     pub fn as_slice(&self) -> &[f32] {
         &self.data[..]
     }
 
+    // todo: Make ChannelData iterable and remove this method
     pub fn as_mut_slice(&mut self) -> &mut [f32] {
         &mut Arc::make_mut(&mut self.data)[..]
+    }
+}
+
+impl Index<usize> for ChannelData {
+    type Output = f32;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.data[index]
+    }
+}
+
+impl IndexMut<usize> for ChannelData {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut Arc::make_mut(&mut self.data)[index]
     }
 }
 
