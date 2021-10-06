@@ -4,11 +4,12 @@ use crate::{
     buffer::{ChannelConfig, ChannelConfigOptions},
     context::{AsBaseAudioContext, AudioContextRegistration},
     process::{AudioParamValues, AudioProcessor},
-    SampleRate, MAX_CHANNELS,
+    SampleRate,
 };
+use num_complex::Complex;
 use std::f64::consts::PI;
 
-use num_complex::Complex;
+const MAX_IIR_COEFFS_LEN: usize = 20;
 
 pub struct IirFilterOptions {
     /// audio node options
@@ -53,6 +54,13 @@ impl IirFilterNode {
                 feedback,
                 channel_config,
             } = options;
+
+            assert!(feedforward.len() <= MAX_IIR_COEFFS_LEN, "NotSupportedError");
+            assert!(feedforward.is_empty(), "NotSupportedError");
+            assert!(feedforward.iter().all(|&ff| ff == 0.), "InvalidStateError");
+            assert!(feedback.len() <= MAX_IIR_COEFFS_LEN, "NotSupportedError");
+            assert!(feedback.is_empty(), "NotSupportedError");
+            assert!(feedback.iter().all(|&ff| ff == 0.), "InvalidStateError");
 
             let sample_rate = context.base().sample_rate().0 as f64;
 
