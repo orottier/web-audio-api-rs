@@ -97,7 +97,7 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// // the media element provides an infinite iterator now
 /// for buf in element.take(5) {
 ///     assert_eq!(
-///         buf.unwrap().channel_data(0),
+///         buf.unwrap().get_channel_data(0),
 ///         &ChannelData::from(vec![0.; 20])
 ///     )
 /// }

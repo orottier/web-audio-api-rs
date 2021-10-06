@@ -28,15 +28,15 @@ fn test_offline_render() {
 
     let output = context.start_rendering();
     assert_eq!(output.number_of_channels(), 2);
-    assert_eq!(output.sample_len(), LENGTH);
+    assert_eq!(output.length(), LENGTH);
 
     assert_float_eq!(
-        output.channel_data(0).as_slice(),
+        output.get_channel_data(0).as_slice(),
         &[-2.; LENGTH][..],
         ulps_all <= 0
     );
     assert_float_eq!(
-        output.channel_data(1).as_slice(),
+        output.get_channel_data(1).as_slice(),
         &[-2.; LENGTH][..],
         ulps_all <= 0
     );
@@ -63,9 +63,9 @@ fn test_start_stop() {
 
     let output = context.start_rendering();
     assert_eq!(output.number_of_channels(), 1);
-    assert_eq!(output.sample_len(), BUFFER_SIZE as usize * 4);
+    assert_eq!(output.length(), BUFFER_SIZE as usize * 4);
 
-    let channel_data = output.channel_data(0).as_slice();
+    let channel_data = output.get_channel_data(0).as_slice();
 
     // one chunk of silence, two chunks of signal, one chunk of silence
     let mut expected = vec![0.; BUFFER_SIZE as usize];
@@ -92,9 +92,9 @@ fn test_delayed_constant_source() {
 
     let output = context.start_rendering();
     assert_eq!(output.number_of_channels(), 1);
-    assert_eq!(output.sample_len(), BUFFER_SIZE as usize * 4);
+    assert_eq!(output.length(), BUFFER_SIZE as usize * 4);
 
-    let channel_data = output.channel_data(0).as_slice();
+    let channel_data = output.get_channel_data(0).as_slice();
 
     // two chunks of silence, two chunks of signal
     let mut expected = vec![0.; 2 * BUFFER_SIZE as usize];
@@ -127,9 +127,9 @@ fn test_audio_param_graph() {
 
     let output = context.start_rendering();
     assert_eq!(output.number_of_channels(), 1);
-    assert_eq!(output.sample_len(), BUFFER_SIZE as usize);
+    assert_eq!(output.length(), BUFFER_SIZE as usize);
 
-    let channel_data = output.channel_data(0).as_slice();
+    let channel_data = output.get_channel_data(0).as_slice();
 
     // expect output = 0.8 (input) * ( 0.5 (intrinsic gain) + 0.4 (via 2 constant source input) )
     let expected = vec![0.8 * 0.9; BUFFER_SIZE as usize];
@@ -182,7 +182,7 @@ fn test_cycle() {
     let output = context.start_rendering();
     // cycle should be muted, and other source should be processed
     assert_float_eq!(
-        output.channel_data(0).as_slice(),
+        output.get_channel_data(0).as_slice(),
         &[2.; BUFFER_SIZE as usize][..],
         ulps_all <= 0
     );
