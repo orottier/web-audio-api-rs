@@ -56,11 +56,11 @@ impl IirFilterNode {
             } = options;
 
             assert!(feedforward.len() <= MAX_IIR_COEFFS_LEN, "NotSupportedError");
-            assert!(feedforward.is_empty(), "NotSupportedError");
-            assert!(feedforward.iter().all(|&ff| ff == 0.), "InvalidStateError");
+            assert!(!feedforward.is_empty(), "NotSupportedError");
+            assert!(!feedforward.iter().all(|&ff| ff == 0.), "InvalidStateError");
             assert!(feedback.len() <= MAX_IIR_COEFFS_LEN, "NotSupportedError");
-            assert!(feedback.is_empty(), "NotSupportedError");
-            assert!(feedback.iter().all(|&ff| ff == 0.), "InvalidStateError");
+            assert!(!feedback.is_empty(), "NotSupportedError");
+            assert!(!feedback.iter().all(|&ff| ff == 0.), "InvalidStateError");
 
             let sample_rate = context.base().sample_rate().0 as f64;
 
@@ -165,7 +165,7 @@ impl IirFilterRenderer {
             feedforward,
             feedback,
             x_n: VecDeque::from(vec![0.; fbs_len]),
-            y_n: VecDeque::from(vec![0.; ffs_len]),
+            y_n: VecDeque::from(vec![0.; ffs_len - 1]),
         }
     }
 
@@ -191,17 +191,19 @@ impl IirFilterRenderer {
     /// * `input` - Audiobuffer input
     fn tick(&mut self, input: f32) -> f32 {
         let mut output = 0.;
-        self.x_n.push_back(input as f64);
-        self.x_n.pop_front();
+        let a0 = self.feedback[0];
+        self.x_n.push_front(input as f64);
+        self.x_n.pop_back();
         for (b, x) in self.feedforward.iter().zip(&self.x_n) {
-            output += b * x;
+            output += b / a0 * x;
         }
 
-        for (a, y) in self.feedback.iter().zip(&self.y_n) {
-            output -= a * y;
+        for (a, y) in self.feedback.iter().skip(1).zip(&self.y_n) {
+            output -= a / a0 * y;
         }
-        self.y_n.push_back(output);
-        self.y_n.pop_front();
+        self.y_n.push_front(output);
+        self.y_n.pop_back();
+
         output as f32
     }
 }
