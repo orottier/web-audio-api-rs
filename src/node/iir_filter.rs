@@ -7,7 +7,7 @@ use crate::{
     SampleRate,
 };
 use num_complex::Complex;
-use std::f64::consts::PI;
+use std::{collections::VecDeque, f64::consts::PI};
 
 const MAX_IIR_COEFFS_LEN: usize = 20;
 
@@ -65,7 +65,6 @@ impl IirFilterNode {
             let sample_rate = context.base().sample_rate().0 as f64;
 
             let config = RendererConfig {
-                sample_rate,
                 feedforward: feedforward.clone(),
                 feedback: feedback.clone(),
             };
@@ -120,15 +119,15 @@ impl IirFilterNode {
 }
 
 struct RendererConfig {
-    sample_rate: f64,
     feedforward: Vec<f64>,
     feedback: Vec<f64>,
 }
 
 struct IirFilterRenderer {
-    sample_rate: f64,
     feedforward: Vec<f64>,
     feedback: Vec<f64>,
+    x_n: VecDeque<f64>,
+    y_n: VecDeque<f64>,
 }
 
 impl AudioProcessor for IirFilterRenderer {
@@ -155,14 +154,18 @@ impl AudioProcessor for IirFilterRenderer {
 impl IirFilterRenderer {
     fn new(config: RendererConfig) -> Self {
         let RendererConfig {
-            sample_rate,
             feedforward,
             feedback,
         } = config;
+
+        let ffs_len = feedforward.len();
+        let fbs_len = feedback.len();
+
         Self {
-            sample_rate,
             feedforward,
             feedback,
+            x_n: VecDeque::from(vec![0.; fbs_len]),
+            y_n: VecDeque::from(vec![0.; ffs_len]),
         }
     }
 
@@ -174,14 +177,9 @@ impl IirFilterRenderer {
     /// * `output` - Audiobuffer output
     /// * `params` - IirFilter params which resolves into biquad coeffs
     fn filter(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
-        for (idx, (i_data, o_data)) in input
-            .channels()
-            .iter()
-            .zip(output.channels_mut())
-            .enumerate()
-        {
+        for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.tick(i, idx);
+                *o = self.tick(i);
             }
         }
     }
@@ -191,8 +189,19 @@ impl IirFilterRenderer {
     /// # Arguments
     ///
     /// * `input` - Audiobuffer input
-    /// * `idx` - channel index mapping to the filter state index
-    fn tick(&mut self, input: f32, idx: usize) -> f32 {
-        todo!()
+    fn tick(&mut self, input: f32) -> f32 {
+        let mut output = 0.;
+        self.x_n.push_back(input as f64);
+        self.x_n.pop_front();
+        for (b, x) in self.feedforward.iter().zip(&self.x_n) {
+            output += b * x;
+        }
+
+        for (a, y) in self.feedback.iter().zip(&self.y_n) {
+            output -= a * y;
+        }
+        self.y_n.push_back(output);
+        self.y_n.pop_front();
+        output as f32
     }
 }
