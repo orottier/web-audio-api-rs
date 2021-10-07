@@ -1050,7 +1050,7 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
                     .channels_mut()
                     .iter_mut()
                     .zip(buffer.channels())
-                    .for_each(|(o, i)| o.copy_from_slice(i.as_slice()));
+                    .for_each(|(o, i)| o.copy_from_slice(&i[..]));
             }
             Some(Err(e)) if e.is::<BufferDepletedError>() => {
                 log::debug!("media element buffer depleted");

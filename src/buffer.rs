@@ -1,6 +1,7 @@
 //! General purpose audio signal data structures
 
 use std::ops::{Index, IndexMut};
+use std::slice::SliceIndex;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -50,9 +51,7 @@ impl AudioBuffer {
         let buffer_offset = buffer_offset.unwrap_or_default();
         let buffer_offset = usize::max(0, usize::min(self.length() - buffer_offset, source.len()));
 
-        for (dest, src) in self
-            .get_channel_data_mut(channel_number)
-            .as_mut_slice()
+        for (dest, src) in self.get_channel_data_mut(channel_number)[..]
             .iter_mut()
             .zip(&source[buffer_offset..])
         {
@@ -72,9 +71,7 @@ impl AudioBuffer {
             usize::min(self.length() - buffer_offset, destination.len()),
         );
 
-        for (src, dest) in self
-            .get_channel_data_mut(channel_number)
-            .as_mut_slice()
+        for (src, dest) in self.get_channel_data_mut(channel_number)[..]
             .iter_mut()
             .zip(&mut destination[buffer_offset..])
         {
@@ -144,7 +141,7 @@ impl AudioBuffer {
             .zip(other.channels.iter())
             .for_each(|(channel, other_channel)| {
                 let cur_channel_data = Arc::make_mut(&mut channel.data);
-                cur_channel_data.extend(other_channel.as_slice());
+                cur_channel_data.extend(&other_channel[..]);
             })
     }
 
@@ -172,7 +169,7 @@ impl AudioBuffer {
         let mut channels: Vec<_> = self
             .channels_mut()
             .iter()
-            .map(|channel_data| channel_data.as_slice().chunks(sample_len))
+            .map(|channel_data| channel_data[..].chunks(sample_len))
             .collect();
 
         (0..total_len)
@@ -278,28 +275,24 @@ impl ChannelData {
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
-
-    // todo: Make ChannelData iterable and remove this method
-    pub fn as_slice(&self) -> &[f32] {
-        &self.data[..]
-    }
-
-    // todo: Make ChannelData iterable and remove this method
-    pub fn as_mut_slice(&mut self) -> &mut [f32] {
-        &mut Arc::make_mut(&mut self.data)[..]
-    }
 }
 
-impl Index<usize> for ChannelData {
-    type Output = f32;
+impl<Idx> Index<Idx> for ChannelData
+where
+    Idx: SliceIndex<[f32]>,
+{
+    type Output = Idx::Output;
 
-    fn index(&self, index: usize) -> &Self::Output {
+    fn index(&self, index: Idx) -> &Self::Output {
         &self.data[index]
     }
 }
 
-impl IndexMut<usize> for ChannelData {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+impl<Idx> IndexMut<Idx> for ChannelData
+where
+    Idx: SliceIndex<[f32]>,
+{
+    fn index_mut(&mut self, index: Idx) -> &mut Self::Output {
         &mut Arc::make_mut(&mut self.data)[index]
     }
 }
@@ -547,16 +540,8 @@ mod tests {
         assert_eq!(b.length(), 10);
         assert_eq!(b.number_of_channels(), 2);
         assert_float_eq!(b.sample_rate(), 44_100.0, ulps <= 0);
-        assert_float_eq!(
-            b.get_channel_data(0).as_slice(),
-            &[0.; 10][..],
-            ulps_all <= 0
-        );
-        assert_float_eq!(
-            b.get_channel_data(1).as_slice(),
-            &[0.; 10][..],
-            ulps_all <= 0
-        );
+        assert_float_eq!(b.get_channel_data(0)[..], &[0.; 10][..], ulps_all <= 0);
+        assert_float_eq!(b.get_channel_data(1)[..], &[0.; 10][..], ulps_all <= 0);
         assert_eq!(b.channels().get(2), None);
     }
 
@@ -579,19 +564,19 @@ mod tests {
         assert_eq!(b1.number_of_channels(), 2);
         assert_float_eq!(b1.sample_rate(), 44_100.0, ulps <= 0);
         assert_float_eq!(
-            b1.get_channel_data(0).as_slice(),
+            b1.get_channel_data(0)[..],
             &[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
             ulps_all <= 0
         );
 
         let split = b1.split(8);
         assert_float_eq!(
-            split[0].get_channel_data(0).as_slice(),
+            split[0].get_channel_data(0)[..],
             &[0., 0., 0., 0., 0., 0., 0., 0.][..],
             ulps_all <= 0
         );
         assert_float_eq!(
-            split[1].get_channel_data(0).as_slice(),
+            split[1].get_channel_data(0)[..],
             &[0., 0., 1., 1., 1., 1., 1.][..],
             ulps_all <= 0
         );
@@ -603,7 +588,7 @@ mod tests {
         let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(100));
         buffer.resample(SampleRate(200));
         assert_float_eq!(
-            buffer.get_channel_data(0).as_slice(),
+            buffer.get_channel_data(0)[..],
             &[1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,][..],
             ulps_all <= 0
         );
@@ -615,11 +600,7 @@ mod tests {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(200));
         buffer.resample(SampleRate(100));
-        assert_float_eq!(
-            buffer.get_channel_data(0).as_slice(),
-            &[2., 4.][..],
-            ulps_all <= 0
-        );
+        assert_float_eq!(buffer.get_channel_data(0)[..], &[2., 4.][..], ulps_all <= 0);
         assert_float_eq!(buffer.sample_rate(), 100.0, ulps <= 0);
     }
 
@@ -633,7 +614,7 @@ mod tests {
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.length(), 10);
         assert_float_eq!(
-            next.get_channel_data(0).as_slice(),
+            next.get_channel_data(0)[..],
             &[1., 2., 3., 4., 5., 1., 2., 3., 4., 5.,][..],
             ulps_all <= 0
         );
@@ -641,7 +622,7 @@ mod tests {
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.length(), 10);
         assert_float_eq!(
-            next.get_channel_data(0).as_slice(),
+            next.get_channel_data(0)[..],
             &[1., 2., 3., 4., 5., 0., 0., 0., 0., 0.][..],
             ulps_all <= 0
         );
@@ -662,7 +643,7 @@ mod tests {
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.length(), 5);
         assert_float_eq!(
-            next.get_channel_data(0).as_slice(),
+            next.get_channel_data(0)[..],
             &[1., 2., 3., 4., 5.][..],
             ulps_all <= 0
         );
@@ -670,7 +651,7 @@ mod tests {
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.length(), 5);
         assert_float_eq!(
-            next.get_channel_data(0).as_slice(),
+            next.get_channel_data(0)[..],
             &[6., 7., 8., 9., 10.][..],
             ulps_all <= 0
         );
