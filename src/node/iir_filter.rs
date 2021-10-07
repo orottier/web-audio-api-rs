@@ -11,6 +11,7 @@ use std::{collections::VecDeque, f64::consts::PI};
 
 const MAX_IIR_COEFFS_LEN: usize = 20;
 
+/// The IirFilterOptions is used to specify the filter coefficients
 pub struct IirFilterOptions {
     /// audio node options
     pub channel_config: ChannelConfigOptions,
@@ -20,7 +21,7 @@ pub struct IirFilterOptions {
     pub feedback: Vec<f64>,
 }
 
-/// AudioNode for volume control
+/// An AudioNode implementing a general IIR filter
 pub struct IirFilterNode {
     sample_rate: f64,
     registration: AudioContextRegistration,
@@ -47,6 +48,12 @@ impl AudioNode for IirFilterNode {
 }
 
 impl IirFilterNode {
+    /// Creates an IirFilterNode
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - Audio context in which the node will live
+    /// * `options` - node options
     pub fn new<C: AsBaseAudioContext>(context: &C, options: IirFilterOptions) -> Self {
         context.base().register(move |registration| {
             let IirFilterOptions {
@@ -123,10 +130,15 @@ struct RendererConfig {
     feedback: Vec<f64>,
 }
 
+/// Renderer associated with the IirFilterNode
 struct IirFilterRenderer {
+    /// Numerator coefficients
     feedforward: Vec<f64>,
+    /// Denominator coefficients
     feedback: Vec<f64>,
+    /// input states -- x[n-k] from k=0
     x_n: VecDeque<f64>,
+    /// output states -- y[n-k] from k=0
     y_n: VecDeque<f64>,
 }
 
@@ -169,13 +181,12 @@ impl IirFilterRenderer {
         }
     }
 
-    /// Generate an output by filtering the input following the params values
+    /// Generate an output by filtering the input
     ///
     /// # Arguments
     ///
     /// * `input` - Audiobuffer input
     /// * `output` - Audiobuffer output
-    /// * `params` - IirFilter params which resolves into biquad coeffs
     fn filter(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
         for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
