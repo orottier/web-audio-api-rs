@@ -1,5 +1,5 @@
 use std::{
-    f32::consts::PI,
+    f32::consts::{PI, SQRT_2},
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc,
@@ -544,7 +544,7 @@ impl BiquadFilterRenderer {
             BiquadFilterType::Lowpass => Self::b0_lowpass(sample_rate, computed_freq),
             BiquadFilterType::Highpass => Self::b0_highpass(sample_rate, computed_freq),
             BiquadFilterType::Bandpass => Self::b0_bandpass(sample_rate, computed_freq, q),
-            BiquadFilterType::Notch => Self::b0_notch(),
+            BiquadFilterType::Notch => 1.0,
             BiquadFilterType::Allpass => Self::b0_allpass(sample_rate, computed_freq, q),
             BiquadFilterType::Peaking => Self::b0_peaking(sample_rate, computed_freq, q, gain),
             BiquadFilterType::Lowshelf => Self::b0_lowshelf(sample_rate, computed_freq, gain),
@@ -570,11 +570,6 @@ impl BiquadFilterRenderer {
     }
 
     #[inline]
-    fn b0_notch() -> f32 {
-        1.0
-    }
-
-    #[inline]
     fn b0_allpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
         let alpha_q = Self::alpha_q(sample_rate, computed_freq, q);
         1.0 - alpha_q
@@ -591,7 +586,7 @@ impl BiquadFilterRenderer {
     fn b0_lowshelf(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         let a = Self::a(gain);
         let w0 = Self::w0(sample_rate, computed_freq);
-        let alpha_s = Self::alpha_s(sample_rate, computed_freq, gain);
+        let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
         a * ((a + 1.0) - (a - 1.0) * w0.cos() + 2.0 * alpha_s * a.sqrt())
     }
@@ -600,7 +595,7 @@ impl BiquadFilterRenderer {
     fn b0_highshelf(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         let a = Self::a(gain);
         let w0 = Self::w0(sample_rate, computed_freq);
-        let alpha_s = Self::alpha_s(sample_rate, computed_freq, gain);
+        let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
         a * ((a + 1.0) + (a - 1.0) * w0.cos() + 2.0 * alpha_s * a.sqrt())
     }
@@ -618,10 +613,10 @@ impl BiquadFilterRenderer {
         match type_ {
             BiquadFilterType::Lowpass => Self::b1_lowpass(sample_rate, computed_freq),
             BiquadFilterType::Highpass => Self::b1_highpass(sample_rate, computed_freq),
-            BiquadFilterType::Bandpass => Self::b1_bandpass(),
-            BiquadFilterType::Notch => Self::b1_notch(sample_rate, computed_freq),
-            BiquadFilterType::Allpass => Self::b1_allpass(sample_rate, computed_freq),
-            BiquadFilterType::Peaking => Self::b1_peaking(sample_rate, computed_freq),
+            BiquadFilterType::Bandpass => 0.0,
+            BiquadFilterType::Notch => Self::b1_notch_all_peak(sample_rate, computed_freq),
+            BiquadFilterType::Allpass => Self::b1_notch_all_peak(sample_rate, computed_freq),
+            BiquadFilterType::Peaking => Self::b1_notch_all_peak(sample_rate, computed_freq),
             BiquadFilterType::Lowshelf => Self::b1_lowshelf(sample_rate, computed_freq, gain),
             BiquadFilterType::Highshelf => Self::b1_highshelf(sample_rate, computed_freq, gain),
         }
@@ -640,24 +635,7 @@ impl BiquadFilterRenderer {
     }
 
     #[inline]
-    fn b1_bandpass() -> f32 {
-        0.0
-    }
-
-    #[inline]
-    fn b1_notch(sample_rate: f32, computed_freq: f32) -> f32 {
-        let w0 = Self::w0(sample_rate, computed_freq);
-        -2.0 * w0.cos()
-    }
-
-    #[inline]
-    fn b1_allpass(sample_rate: f32, computed_freq: f32) -> f32 {
-        let w0 = Self::w0(sample_rate, computed_freq);
-        -2.0 * w0.cos()
-    }
-
-    #[inline]
-    fn b1_peaking(sample_rate: f32, computed_freq: f32) -> f32 {
+    fn b1_notch_all_peak(sample_rate: f32, computed_freq: f32) -> f32 {
         let w0 = Self::w0(sample_rate, computed_freq);
         -2.0 * w0.cos()
     }
@@ -691,7 +669,7 @@ impl BiquadFilterRenderer {
             BiquadFilterType::Lowpass => Self::b2_lowpass(sample_rate, computed_freq),
             BiquadFilterType::Highpass => Self::b2_highpass(sample_rate, computed_freq),
             BiquadFilterType::Bandpass => Self::b2_bandpass(sample_rate, computed_freq, q),
-            BiquadFilterType::Notch => Self::b2_notch(),
+            BiquadFilterType::Notch => 1.0,
             BiquadFilterType::Allpass => Self::b2_allpass(sample_rate, computed_freq, q),
             BiquadFilterType::Peaking => Self::b2_peaking(sample_rate, computed_freq, q, gain),
             BiquadFilterType::Lowshelf => Self::b2_lowshelf(sample_rate, computed_freq, gain),
@@ -717,11 +695,6 @@ impl BiquadFilterRenderer {
     }
 
     #[inline]
-    fn b2_notch() -> f32 {
-        1.0
-    }
-
-    #[inline]
     fn b2_allpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
         let alpha_q = Self::alpha_q(sample_rate, computed_freq, q);
         1.0 + alpha_q
@@ -738,7 +711,7 @@ impl BiquadFilterRenderer {
     fn b2_lowshelf(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         let a = Self::a(gain);
         let w0 = Self::w0(sample_rate, computed_freq);
-        let alpha_s = Self::alpha_s(sample_rate, computed_freq, gain);
+        let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
         a * ((a + 1.0) - (a - 1.0) * w0.cos() - 2.0 * alpha_s * a.sqrt())
     }
@@ -747,7 +720,7 @@ impl BiquadFilterRenderer {
     fn b2_highshelf(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         let a = Self::a(gain);
         let w0 = Self::w0(sample_rate, computed_freq);
-        let alpha_s = Self::alpha_s(sample_rate, computed_freq, gain);
+        let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
         a * ((a + 1.0) + (a - 1.0) * w0.cos() - 2.0 * alpha_s * a.sqrt())
     }
@@ -764,11 +737,11 @@ impl BiquadFilterRenderer {
     #[inline]
     fn a0(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f32 {
         match type_ {
-            BiquadFilterType::Lowpass => Self::a0_lowpass(sample_rate, computed_freq, q),
-            BiquadFilterType::Highpass => Self::a0_highpass(sample_rate, computed_freq, q),
-            BiquadFilterType::Bandpass => Self::a0_bandpass(sample_rate, computed_freq, q),
-            BiquadFilterType::Notch => Self::a0_notch(sample_rate, computed_freq, q),
-            BiquadFilterType::Allpass => Self::a0_allpass(sample_rate, computed_freq, q),
+            BiquadFilterType::Lowpass => Self::a0_lp_hp(sample_rate, computed_freq, q),
+            BiquadFilterType::Highpass => Self::a0_lp_hp(sample_rate, computed_freq, q),
+            BiquadFilterType::Bandpass => Self::a0_bp_notch_all(sample_rate, computed_freq, q),
+            BiquadFilterType::Notch => Self::a0_bp_notch_all(sample_rate, computed_freq, q),
+            BiquadFilterType::Allpass => Self::a0_bp_notch_all(sample_rate, computed_freq, q),
             BiquadFilterType::Peaking => Self::a0_peaking(sample_rate, computed_freq, q, gain),
             BiquadFilterType::Lowshelf => Self::a0_lowshelf(sample_rate, computed_freq, gain),
             BiquadFilterType::Highshelf => Self::a0_highshelf(sample_rate, computed_freq, gain),
@@ -776,31 +749,13 @@ impl BiquadFilterRenderer {
     }
 
     #[inline]
-    fn a0_lowpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+    fn a0_lp_hp(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
         let alpha_q_db = Self::alpha_q_db(sample_rate, computed_freq, q);
         1.0 + alpha_q_db
     }
 
     #[inline]
-    fn a0_highpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
-        let alpha_q_db = Self::alpha_q_db(sample_rate, computed_freq, q);
-        1.0 + alpha_q_db
-    }
-
-    #[inline]
-    fn a0_bandpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
-        let alpha_q = Self::alpha_q(sample_rate, computed_freq, q);
-        1.0 + alpha_q
-    }
-
-    #[inline]
-    fn a0_notch(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
-        let alpha_q = Self::alpha_q(sample_rate, computed_freq, q);
-        1.0 + alpha_q
-    }
-
-    #[inline]
-    fn a0_allpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+    fn a0_bp_notch_all(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
         let alpha_q = Self::alpha_q(sample_rate, computed_freq, q);
         1.0 + alpha_q
     }
@@ -816,7 +771,7 @@ impl BiquadFilterRenderer {
     fn a0_lowshelf(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         let a = Self::a(gain);
         let w0 = Self::w0(sample_rate, computed_freq);
-        let alpha_s = Self::alpha_s(sample_rate, computed_freq, gain);
+        let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
         (a + 1.0) + (a - 1.0) * w0.cos() + 2.0 * alpha_s * a.sqrt()
     }
@@ -825,7 +780,7 @@ impl BiquadFilterRenderer {
     fn a0_highshelf(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         let a = Self::a(gain);
         let w0 = Self::w0(sample_rate, computed_freq);
-        let alpha_s = Self::alpha_s(sample_rate, computed_freq, gain);
+        let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
         (a + 1.0) - (a - 1.0) * w0.cos() + 2.0 * alpha_s * a.sqrt()
     }
@@ -841,48 +796,29 @@ impl BiquadFilterRenderer {
     #[inline]
     fn a1(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         match type_ {
-            BiquadFilterType::Lowpass => Self::a1_lowpass(sample_rate, computed_freq),
-            BiquadFilterType::Highpass => Self::a1_highpass(sample_rate, computed_freq),
-            BiquadFilterType::Bandpass => Self::a1_bandpass(sample_rate, computed_freq),
-            BiquadFilterType::Notch => Self::a1_notch(sample_rate, computed_freq),
-            BiquadFilterType::Allpass => Self::a1_allpass(sample_rate, computed_freq),
-            BiquadFilterType::Peaking => Self::a1_peaking(sample_rate, computed_freq),
+            BiquadFilterType::Lowpass => {
+                Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq)
+            }
+            BiquadFilterType::Highpass => {
+                Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq)
+            }
+            BiquadFilterType::Bandpass => {
+                Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq)
+            }
+            BiquadFilterType::Notch => Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq),
+            BiquadFilterType::Allpass => {
+                Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq)
+            }
+            BiquadFilterType::Peaking => {
+                Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq)
+            }
             BiquadFilterType::Lowshelf => Self::a1_lowshelf(sample_rate, computed_freq, gain),
             BiquadFilterType::Highshelf => Self::a1_highshelf(sample_rate, computed_freq, gain),
         }
     }
 
     #[inline]
-    fn a1_lowpass(sample_rate: f32, computed_freq: f32) -> f32 {
-        let w0 = Self::w0(sample_rate, computed_freq);
-        -2.0 * w0.cos()
-    }
-
-    #[inline]
-    fn a1_highpass(sample_rate: f32, computed_freq: f32) -> f32 {
-        let w0 = Self::w0(sample_rate, computed_freq);
-        -2.0 * w0.cos()
-    }
-
-    #[inline]
-    fn a1_bandpass(sample_rate: f32, computed_freq: f32) -> f32 {
-        let w0 = Self::w0(sample_rate, computed_freq);
-        -2.0 * w0.cos()
-    }
-
-    #[inline]
-    fn a1_notch(sample_rate: f32, computed_freq: f32) -> f32 {
-        let w0 = Self::w0(sample_rate, computed_freq);
-        -2.0 * w0.cos()
-    }
-
-    #[inline]
-    fn a1_allpass(sample_rate: f32, computed_freq: f32) -> f32 {
-        let w0 = Self::w0(sample_rate, computed_freq);
-        -2.0 * w0.cos()
-    }
-
-    fn a1_peaking(sample_rate: f32, computed_freq: f32) -> f32 {
+    fn a1_lp_hp_bp_notch_all_peak(sample_rate: f32, computed_freq: f32) -> f32 {
         let w0 = Self::w0(sample_rate, computed_freq);
         -2.0 * w0.cos()
     }
@@ -915,11 +851,11 @@ impl BiquadFilterRenderer {
     #[inline]
     fn a2(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f32 {
         match type_ {
-            BiquadFilterType::Lowpass => Self::a2_lowpass(sample_rate, computed_freq, q),
-            BiquadFilterType::Highpass => Self::a2_highpass(sample_rate, computed_freq, q),
-            BiquadFilterType::Bandpass => Self::a2_bandpass(sample_rate, computed_freq, q),
-            BiquadFilterType::Notch => Self::a2_notch(sample_rate, computed_freq, q),
-            BiquadFilterType::Allpass => Self::a2_allpass(sample_rate, computed_freq, q),
+            BiquadFilterType::Lowpass => Self::a2_lp_hp(sample_rate, computed_freq, q),
+            BiquadFilterType::Highpass => Self::a2_lp_hp(sample_rate, computed_freq, q),
+            BiquadFilterType::Bandpass => Self::a2_bp_notch_all(sample_rate, computed_freq, q),
+            BiquadFilterType::Notch => Self::a2_bp_notch_all(sample_rate, computed_freq, q),
+            BiquadFilterType::Allpass => Self::a2_bp_notch_all(sample_rate, computed_freq, q),
             BiquadFilterType::Peaking => Self::a2_peaking(sample_rate, computed_freq, q, gain),
             BiquadFilterType::Lowshelf => Self::a2_lowshelf(sample_rate, computed_freq, gain),
             BiquadFilterType::Highshelf => Self::a2_highshelf(sample_rate, computed_freq, gain),
@@ -927,33 +863,15 @@ impl BiquadFilterRenderer {
     }
 
     #[inline]
-    fn a2_lowpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+    fn a2_lp_hp(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
         let alpha_q_db = Self::alpha_q_db(sample_rate, computed_freq, q);
         1.0 - alpha_q_db
     }
 
     #[inline]
-    fn a2_highpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
-        let alpha_q_db = Self::alpha_q_db(sample_rate, computed_freq, q);
-        1.0 - alpha_q_db
-    }
-
-    #[inline]
-    fn a2_bandpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
-        let alpha_q_db = Self::alpha_q_db(sample_rate, computed_freq, q);
-        1.0 - alpha_q_db
-    }
-
-    #[inline]
-    fn a2_notch(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
-        let alpha_q_db = Self::alpha_q_db(sample_rate, computed_freq, q);
-        1.0 - alpha_q_db
-    }
-
-    #[inline]
-    fn a2_allpass(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
-        let alpha_q_db = Self::alpha_q_db(sample_rate, computed_freq, q);
-        1.0 - alpha_q_db
+    fn a2_bp_notch_all(sample_rate: f32, computed_freq: f32, q: f32) -> f32 {
+        let alpha_q = Self::alpha_q(sample_rate, computed_freq, q);
+        1.0 - alpha_q
     }
 
     #[inline]
@@ -967,7 +885,7 @@ impl BiquadFilterRenderer {
     fn a2_lowshelf(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         let a = Self::a(gain);
         let w0 = Self::w0(sample_rate, computed_freq);
-        let alpha_s = Self::alpha_s(sample_rate, computed_freq, gain);
+        let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
         (a + 1.0) + (a - 1.0) * w0.cos() - 2.0 * alpha_s * a.sqrt()
     }
@@ -976,7 +894,7 @@ impl BiquadFilterRenderer {
     fn a2_highshelf(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
         let a = Self::a(gain);
         let w0 = Self::w0(sample_rate, computed_freq);
-        let alpha_s = Self::alpha_s(sample_rate, computed_freq, gain);
+        let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
         (a + 1.0) - (a - 1.0) * w0.cos() - 2.0 * alpha_s * a.sqrt()
     }
@@ -1005,19 +923,11 @@ impl BiquadFilterRenderer {
         Self::w0(sample_rate, computed_freq).sin() / (2. * 10f32.powf(q / 20.))
     }
 
-    /// Returns S parameter used to calculate biquad coeffs
-    #[inline]
-    fn s() -> f32 {
-        1.0
-    }
-
     /// Returns alpha_S parameter used to calculate biquad coeffs
     #[inline]
-    fn alpha_s(sample_rate: f32, computed_freq: f32, gain: f32) -> f32 {
+    fn alpha_s(sample_rate: f32, computed_freq: f32) -> f32 {
         let w0 = Self::w0(sample_rate, computed_freq);
-        let a = Self::a(gain);
-        let s = Self::s();
 
-        (w0.sin() / 2.0) * ((a + (1. / a)) * ((1. / s) - 1.0) + 2.0)
+        (w0.sin() / 2.0) * SQRT_2
     }
 }
