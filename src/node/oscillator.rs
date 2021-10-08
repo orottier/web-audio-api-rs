@@ -762,6 +762,7 @@ impl OscillatorRenderer {
     /// * sawtooth
     /// * triangle
     /// * and square
+    #[inline]
     fn arate_params(&mut self, type_: OscillatorType, computed_freq: f32) {
         // No need to compute if frequency has not changed
         if type_ == OscillatorType::Sine {
@@ -783,6 +784,7 @@ impl OscillatorRenderer {
     }
 
     /// Compute params at each audio sample for the custom oscillator type
+    #[inline]
     fn arate_periodic_params(&mut self, new_comp_freq: f32) {
         // No need to compute if frequency has not changed
         if (self.computed_freq - new_comp_freq).abs() < 0.01 {
@@ -814,6 +816,7 @@ impl OscillatorRenderer {
     /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
     /// * `buffer` - audio output buffer
     /// * `freq_values` - frequencies at which each sample should be generated
+    #[inline]
     fn generate_output(
         &mut self,
         type_: OscillatorType,
@@ -837,6 +840,7 @@ impl OscillatorRenderer {
     /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
     /// * `buffer` - audio output buffer
     /// * `freq_values` - frequencies at which each sample should be generated
+    #[inline]
     fn generate_sine(
         &mut self,
         type_: OscillatorType,
@@ -869,6 +873,7 @@ impl OscillatorRenderer {
     /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
     /// * `buffer` - audio output buffer
     /// * `freq_values` - frequencies at which each sample should be generated
+    #[inline]
     fn generate_sawtooth(
         &mut self,
         type_: OscillatorType,
@@ -898,6 +903,7 @@ impl OscillatorRenderer {
     /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
     /// * `buffer` - audio output buffer
     /// * `freq_values` - frequencies at which each sample should be generated
+    #[inline]
     fn generate_square(
         &mut self,
         type_: OscillatorType,
@@ -934,6 +940,7 @@ impl OscillatorRenderer {
     /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
     /// * `buffer` - audio output buffer
     /// * `freq_values` - frequencies at which each sample should be generated
+    #[inline]
     fn generate_triangle(
         &mut self,
         type_: OscillatorType,
@@ -977,6 +984,7 @@ impl OscillatorRenderer {
     /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
     /// * `buffer` - audio output buffer
     /// * `freq_values` - frequencies at which each sample should be generated
+    #[inline]
     fn generate_custom(&mut self, buffer: &mut ChannelData, freq_values: &[f32]) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
             self.arate_periodic_params(computed_freq);
@@ -1010,6 +1018,7 @@ impl OscillatorRenderer {
     /// * `incr_phases` - the phase to increment of each harmonics
     /// * `interpol_ratios` - the interpolation ratio of each harmonics used by linear interpolatio
     /// * `buffer` - the buffer is filled with generated wavetable data (avoid allocation)
+    #[inline]
     fn generate_wavetable(
         norms: &[f32],
         phases: &mut [f32],
