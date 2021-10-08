@@ -750,7 +750,7 @@ impl OscillatorRenderer {
     /// * sawtooth
     /// * triangle
     /// * and square
-    fn arate_calc_params(&mut self, type_: OscillatorType, computed_freq: f32) {
+    fn arate_params(&mut self, type_: OscillatorType, computed_freq: f32) {
         // No need to compute if frequency has not changed
         if type_ == OscillatorType::Sine {
             if self.sine.first {
@@ -771,7 +771,7 @@ impl OscillatorRenderer {
     }
 
     /// Compute params at each audio sample for the custom oscillator type
-    fn arate_calc_periodic_params(&mut self, new_comp_freq: f32) {
+    fn arate_periodic_params(&mut self, new_comp_freq: f32) {
         // No need to compute if frequency has not changed
         if (self.computed_freq - new_comp_freq).abs() < 0.01 {
             return;
@@ -832,10 +832,9 @@ impl OscillatorRenderer {
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
-            self.arate_calc_params(type_, computed_freq);
-            let idx = self.phase as usize;
-            let inf_idx = idx % TABLE_LENGTH_USIZE;
-            let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+            self.arate_params(type_, computed_freq);
+            let inf_idx = self.phase as usize;
+            let sup_idx = (inf_idx + 1) % TABLE_LENGTH_USIZE;
 
             // Linear interpolation
             *o = SINETABLE[inf_idx] * (1. - self.sine.interpol_ratio)
@@ -865,7 +864,7 @@ impl OscillatorRenderer {
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
-            self.arate_calc_params(type_, computed_freq);
+            self.arate_params(type_, computed_freq);
             let mut sample = (2.0 * self.phase) - 1.0;
             sample -= self.poly_blep(self.phase);
 
@@ -894,7 +893,7 @@ impl OscillatorRenderer {
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
-            self.arate_calc_params(type_, computed_freq);
+            self.arate_params(type_, computed_freq);
             let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
 
             sample += self.poly_blep(self.phase);
@@ -930,7 +929,7 @@ impl OscillatorRenderer {
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
-            self.arate_calc_params(type_, computed_freq);
+            self.arate_params(type_, computed_freq);
             let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
 
             sample += self.poly_blep(self.phase);
@@ -968,11 +967,25 @@ impl OscillatorRenderer {
     /// * `freq_values` - frequencies at which each sample should be generated
     fn generate_custom(&mut self, buffer: &mut ChannelData, freq_values: &[f32]) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
-            self.arate_calc_periodic_params(computed_freq);
-            self.periodic.wavetable.phase = (self.periodic.wavetable.phase
-                + self.periodic.wavetable.incr_phase)
-                % self.periodic.wavetable.buffer.len() as f32;
-            *o = self.periodic.wavetable.buffer[self.periodic.wavetable.phase as usize];
+            self.arate_periodic_params(computed_freq);
+
+            let phase = self.periodic.wavetable.phase;
+            let incr_phase = self.periodic.wavetable.incr_phase;
+            let table_len = self.periodic.wavetable.buffer.len();
+            let table_len_f32 = table_len as f32;
+            let buffer = &self.periodic.wavetable.buffer;
+            let inf_idx = phase as usize;
+            let sup_idx = (inf_idx + 1) % table_len;
+            let interpol_ratio = phase - phase.trunc();
+
+            *o = (1.0 - interpol_ratio) * buffer[inf_idx] + interpol_ratio * buffer[sup_idx];
+
+            // Update phase with optimized float modulo op
+            self.periodic.wavetable.phase = if phase + incr_phase >= table_len_f32 {
+                (phase + incr_phase) - table_len_f32
+            } else {
+                phase + incr_phase
+            };
         }
     }
 
