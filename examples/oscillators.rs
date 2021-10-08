@@ -27,57 +27,50 @@ fn main() {
     // Oscillator needs to be started explicitily
     osc.start();
 
-    println!("Sine tone sweep playing...");
+    let interval_time = 2.;
+
+    println!("Sine tone sweep playing... 🎵🎵🎵");
 
     // Sine tone sweep
-    for i in 0..1000 {
-        osc.frequency().set_value(440. + i as f32);
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
+    osc.frequency()
+        .linear_ramp_to_value_at_time(880., interval_time);
+    std::thread::sleep(std::time::Duration::from_secs(interval_time as u64));
 
-    println!("Square tone sweep playing...");
+    println!("Square tone sweep playing...🎵🎵🎵");
 
     // Select Square as the oscillator type
     osc.set_type(OscillatorType::Square);
-
     // Square tone sweep
-    for i in 0..1000 {
-        osc.frequency().set_value(440. + i as f32);
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
+    osc.frequency()
+        .linear_ramp_to_value_at_time(440., context.current_time() + interval_time);
+    std::thread::sleep(std::time::Duration::from_secs(interval_time as u64));
 
-    println!("Triangle tone sweep playing...");
+    println!("Triangle tone sweep playing...🎵🎵🎵");
 
     // Select Triangle as the oscillator type
     osc.set_type(OscillatorType::Triangle);
-
     // Triangle tone sweep
-    for i in 0..1000 {
-        osc.frequency().set_value(440. + i as f32);
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
+    osc.frequency()
+        .linear_ramp_to_value_at_time(880., context.current_time() + interval_time);
+    std::thread::sleep(std::time::Duration::from_secs(interval_time as u64));
 
-    println!("Sawtooth tone sweep playing...");
+    println!("Sawtooth tone sweep playing...🎵🎵🎵");
 
     // Select Sawtooth as the oscillator type
     osc.set_type(OscillatorType::Sawtooth);
-
     // Sawtooth tone sweep
-    for i in 0..1000 {
-        osc.frequency().set_value(440. + i as f32);
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
+    osc.frequency()
+        .linear_ramp_to_value_at_time(440., context.current_time() + interval_time);
+    std::thread::sleep(std::time::Duration::from_secs(interval_time as u64));
 
-    println!("Periodic wave tone sweep playing...");
+    println!("Periodic wave tone sweep playing...🎵🎵🎵");
 
     // Select Sawtooth as the PeriodicWave type
     osc.set_periodic_wave(periodic_wave);
-
     // Custom periodic wave tone sweep
-    for i in 0..1000 {
-        osc.frequency().set_value(440. + i as f32);
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
+    osc.frequency()
+        .linear_ramp_to_value_at_time(880., context.current_time() + interval_time);
+    std::thread::sleep(std::time::Duration::from_secs(interval_time as u64));
 
     // enjoy listening
 }
