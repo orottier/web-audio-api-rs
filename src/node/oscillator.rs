@@ -279,7 +279,13 @@ impl OscillatorNode {
             let default_freq = 440.;
             let default_det = 0.;
 
-            let options = options.unwrap_or_default();
+            let OscillatorOptions {
+                type_,
+                frequency,
+                detune,
+                channel_config,
+                periodic_wave,
+            } = options.unwrap_or_default();
 
             // frequency audio parameter
             let freq_param_opts = AudioParamOptions {
@@ -291,7 +297,7 @@ impl OscillatorNode {
             let (f_param, f_proc) = context
                 .base()
                 .create_audio_param(freq_param_opts, registration.id());
-            f_param.set_value(options.frequency.unwrap_or(default_freq));
+            f_param.set_value(frequency.unwrap_or(default_freq));
 
             // detune audio parameter
             let det_param_opts = AudioParamOptions {
@@ -303,11 +309,16 @@ impl OscillatorNode {
             let (det_param, det_proc) = context
                 .base()
                 .create_audio_param(det_param_opts, registration.id());
-            det_param.set_value(options.detune.unwrap_or(default_det));
+            det_param.set_value(detune.unwrap_or(default_det));
 
-            let type_ = Arc::new(AtomicU32::new(
-                options.type_.unwrap_or(OscillatorType::Sine) as u32,
-            ));
+            // if Periodic wave is defined, the oscillator type is custom
+            // and options.type is ignored (following the specs)
+            let type_ = if periodic_wave.is_some() {
+                Arc::new(AtomicU32::new(OscillatorType::Sine as u32))
+            } else {
+                Arc::new(AtomicU32::new(type_.unwrap_or(OscillatorType::Sine) as u32))
+            };
+
             let scheduler = Scheduler::new();
 
             let (sender, receiver) = crossbeam_channel::bounded(0);
@@ -322,13 +333,13 @@ impl OscillatorNode {
                 receiver,
                 computed_freq,
                 sample_rate,
-                periodic_wave: options.periodic_wave.clone(),
+                periodic_wave,
             };
             let render = OscillatorRenderer::new(config);
 
             let node = OscillatorNode {
                 registration,
-                channel_config: options.channel_config.unwrap_or_default().into(),
+                channel_config: channel_config.unwrap_or_default().into(),
                 sample_rate,
                 frequency: f_param,
                 detune: det_param,
@@ -379,6 +390,7 @@ impl OscillatorNode {
     /// set the oscillator type to custom and generate
     /// a perdioc waveform following the PeriodicWave characteristics
     pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
+        // The oscillator type is set to custom following the spec
         self.set_type(OscillatorType::Custom);
 
         let PeriodicWave {
