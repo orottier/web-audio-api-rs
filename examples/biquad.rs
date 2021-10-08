@@ -48,6 +48,25 @@ fn main() {
     background.set_loop(true);
     background.start();
 
+    biquad.frequency().set_value(125.);
+    biquad.frequency().linear_ramp_to_value_at_time(3_000., 4.);
     // enjoy listening
     std::thread::sleep(std::time::Duration::from_secs(4));
+
+    biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
+    println!("=================================");
+    println!("Biquad filter frequency response:");
+    println!("=================================");
+    println!("Cutoff freq -- {} Hz", biquad.frequency().value());
+    println!("Gain -- {}", biquad.gain().value());
+    println!("Q factor -- {}", biquad.q().value());
+    println!("---------------------------------");
+    for i in 0..frequency_hz.len() {
+        println!(
+            "{} Hz --> {} dB",
+            frequency_hz[i],
+            20.0 * mag_response[i].log10()
+        );
+    }
+    println!("---------------------------------");
 }
