@@ -302,6 +302,7 @@ impl BiquadFilterNode {
     }
 }
 
+#[derive(Debug)]
 struct Params {
     q: f32,
     detune: f32,
@@ -365,17 +366,8 @@ impl AudioProcessor for BiquadFilterRenderer {
         let det_values = params.get(&self.detune);
         let freq_values = params.get(&self.frequency);
         let q_values = params.get(&self.q);
-        let type_ = self.type_.load(Ordering::SeqCst).into();
 
-        let params = Params {
-            q: q_values[0],
-            detune: det_values[0],
-            frequency: freq_values[0],
-            gain: g_values[0],
-            type_,
-        };
-
-        self.filter(input, output, params);
+        self.filter(input, output, g_values, det_values, freq_values, q_values);
     }
 
     fn tail_time(&self) -> bool {
@@ -422,10 +414,15 @@ impl BiquadFilterRenderer {
     /// * `input` - Audiobuffer input
     /// * `output` - Audiobuffer output
     /// * `params` - biquadfilter params which resolves into biquad coeffs
-    fn filter(&mut self, input: &AudioBuffer, output: &mut AudioBuffer, params: Params) {
-        // todo : A-rate
-        self.update_coeffs(params);
-
+    fn filter(
+        &mut self,
+        input: &AudioBuffer,
+        output: &mut AudioBuffer,
+        g_values: &[f32],
+        det_values: &[f32],
+        freq_values: &[f32],
+        q_values: &[f32],
+    ) {
         let Coefficients {
             b0,
             b1,
@@ -439,7 +436,6 @@ impl BiquadFilterRenderer {
 
         if let Ok(msg) = self.receiver.try_recv() {
             let sender = msg.0;
-
             sender.send(coeffs_resp).unwrap();
         }
 
@@ -449,6 +445,17 @@ impl BiquadFilterRenderer {
             .zip(output.channels_mut())
             .enumerate()
         {
+            let p = Params {
+                q: q_values[idx],
+                detune: det_values[idx],
+                frequency: freq_values[idx],
+                gain: g_values[idx],
+                type_: BiquadFilterType::from(self.type_.load(Ordering::SeqCst)),
+            };
+
+            // A-rate params
+            self.update_coeffs(p);
+
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
                 *o = self.tick(i, idx);
             }
