@@ -289,10 +289,12 @@ impl AudioParamProcessor {
                         let end_index_clipped = end_index.min(count);
                         let n_values = end_index_clipped - start_index;
 
-                        for i in 0..n_values {
-                            let val = self.value + i as f32 * slope;
+                        let mut val = self.value;
+                        for _ in 0..n_values {
                             self.buffer.push(val.clamp(self.min_value, self.max_value));
+                            val += slope;
                         }
+                        self.value = val;
                     }
 
                     // if end time is outside this render quantum, return
@@ -410,6 +412,47 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 0., 5., 6., 7., 8., 7., 6., 5., 4.][..],
+            ulps_all <= 0
+        );
+    }
+
+    #[test]
+    fn test_linear_ramp_multiple_frames() {
+        // regression test for issue #9
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        let opts = AudioParamOptions {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -20.,
+            max_value: 20.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        // ramp to 20 from t = 0 to t = 20
+        param.linear_ramp_to_value_at_time_direct(20.0, 20.0);
+
+        // first quantum t = 0..10
+        let vs = render.tick(0., 1., 10);
+        assert_float_eq!(
+            vs,
+            &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
+            ulps_all <= 0
+        );
+
+        // next quantum t = 10..20
+        let vs = render.tick(10., 1., 10);
+        assert_float_eq!(
+            vs,
+            &[10., 11., 12., 13., 14., 15., 16., 17., 18., 19.][..],
+            ulps_all <= 0
+        );
+
+        // ramp finished t = 20..30
+        let vs = render.tick(20., 1., 10);
+        assert_float_eq!(
+            vs,
+            &[20.0; 10][..],
             ulps_all <= 0
         );
     }
