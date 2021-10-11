@@ -7,7 +7,7 @@ use crate::{
     SampleRate,
 };
 use num_complex::Complex;
-use std::{collections::VecDeque, f64::consts::PI};
+use std::f64::consts::PI;
 
 const MAX_IIR_COEFFS_LEN: usize = 20;
 
@@ -132,14 +132,8 @@ struct RendererConfig {
 
 /// Renderer associated with the IirFilterNode
 struct IirFilterRenderer {
-    /// Numerator coefficients
-    feedforward: Vec<f64>,
-    /// Denominator coefficients
-    feedback: Vec<f64>,
-    /// input states -- x[n-k] from k=0
-    x_n: VecDeque<f64>,
-    /// output states -- y[n-k] from k=0
-    y_n: VecDeque<f64>,
+    coeffs: Vec<(f64, f64)>,
+    states: Vec<f64>,
 }
 
 impl AudioProcessor for IirFilterRenderer {
@@ -166,19 +160,42 @@ impl AudioProcessor for IirFilterRenderer {
 impl IirFilterRenderer {
     fn new(config: RendererConfig) -> Self {
         let RendererConfig {
-            feedforward,
-            feedback,
+            mut feedforward,
+            mut feedback,
         } = config;
 
         let ffs_len = feedforward.len();
         let fbs_len = feedback.len();
 
-        Self {
-            feedforward,
-            feedback,
-            x_n: VecDeque::from(vec![0.; ffs_len]),
-            y_n: VecDeque::from(vec![0.; fbs_len - 1]),
+        if fbs_len > ffs_len {
+            feedforward = feedforward
+                .into_iter()
+                .chain(std::iter::repeat(0.))
+                .take(fbs_len)
+                .collect();
         }
+
+        if ffs_len > fbs_len {
+            feedback = feedback
+                .into_iter()
+                .chain(std::iter::repeat(0.))
+                .take(ffs_len)
+                .collect();
+        }
+
+        let a_0 = feedback[0];
+
+        let coeffs: Vec<(f64, f64)> = feedforward
+            .iter()
+            .zip(&feedback)
+            .map(|(&ff, &fb)| (ff / a_0, fb / a_0))
+            .collect();
+
+        let coeffs_len = coeffs.len();
+
+        let states = vec![0.; coeffs_len - 1];
+
+        Self { coeffs, states }
     }
 
     /// Generate an output by filtering the input
@@ -201,20 +218,12 @@ impl IirFilterRenderer {
     ///
     /// * `input` - Audiobuffer input
     fn tick(&mut self, input: f32) -> f32 {
-        let mut output = 0.;
-        let a0 = self.feedback[0];
-        self.x_n.push_front(input as f64);
-        self.x_n.pop_back();
-        for (b, x) in self.feedforward.iter().zip(&self.x_n) {
-            output += b / a0 * x;
-        }
+        let input = input as f64;
+        let output = self.coeffs[0].0 * input + self.states[0];
 
-        for (a, y) in self.feedback.iter().skip(1).zip(&self.y_n) {
-            output -= a / a0 * y;
+        for (idx, (ff, fb)) in self.coeffs.iter().skip(1).enumerate() {
+            self.states[idx] = ff * input - fb * output + self.states.get(idx + 1).unwrap_or(&0.);
         }
-        self.y_n.push_front(output);
-        self.y_n.pop_back();
-
         output as f32
     }
 }
