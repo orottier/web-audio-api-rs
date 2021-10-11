@@ -126,13 +126,17 @@ impl IirFilterNode {
 }
 
 struct RendererConfig {
+    // feedforward coeffs -- b[n] -- numerator coeffs
     feedforward: Vec<f64>,
+    // feedback coeffs -- a[n] -- denominator coeffs
     feedback: Vec<f64>,
 }
 
 /// Renderer associated with the IirFilterNode
 struct IirFilterRenderer {
+    // Normalized filter's coeffs -- (b[n],a[n])
     norm_coeffs: Vec<(f64, f64)>,
+    // filter's states
     states: Vec<f64>,
 }
 
@@ -158,6 +162,11 @@ impl AudioProcessor for IirFilterRenderer {
 }
 
 impl IirFilterRenderer {
+    /// Build an IirFilterNode renderer
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - renderer config
     fn new(config: RendererConfig) -> Self {
         let RendererConfig {
             feedforward,
@@ -174,6 +183,12 @@ impl IirFilterRenderer {
         }
     }
 
+    /// Generate filter's coeffs
+    ///
+    /// # Arguments
+    ///
+    /// * `feedforward` - feedforward coeffs (numerator)
+    /// * `feedback` - feedback coeffs (denominator)
     #[inline]
     fn build_coeffs(mut feedforward: Vec<f64>, mut feedback: Vec<f64>) -> Vec<(f64, f64)> {
         match (feedforward.len(), feedback.len()) {
@@ -199,6 +214,12 @@ impl IirFilterRenderer {
         coeffs
     }
 
+    /// Generate normalized filter's coeffs
+    /// coeffs are normalized by a[0] coefficient
+    ///
+    /// # Arguments
+    ///
+    /// * `coeffs` - unormalized filter's coeffs (numerator)
     #[inline]
     fn normalize_coeffs(coeffs: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
         let a_0 = coeffs[0].1;
@@ -206,6 +227,11 @@ impl IirFilterRenderer {
         coeffs.iter().map(|(ff, fb)| (ff / a_0, fb / a_0)).collect()
     }
 
+    /// initialize filter states
+    ///
+    /// # Arguments
+    ///
+    /// * `coeffs` - filter's coeffs
     #[inline]
     fn build_filter_states(coeffs: &[(f64, f64)]) -> Vec<f64> {
         let coeffs_len = coeffs.len();
