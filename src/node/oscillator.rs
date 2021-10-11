@@ -1078,10 +1078,7 @@ mod tests {
     use float_eq::assert_float_eq;
 
     use super::{PeriodicWave, PeriodicWaveOptions};
-    use crate::{
-        context::{AsBaseAudioContext, AudioContext},
-        node::{OscillatorNode, OscillatorType},
-    };
+    use crate::context::AudioContext;
 
     #[test]
     #[should_panic]
@@ -1168,45 +1165,5 @@ mod tests {
         assert_float_eq!(periodic_wave.real, vec![0., 0.], ulps_all <= 0);
         assert_float_eq!(periodic_wave.imag, vec![1., 0.], ulps_all <= 0);
         assert!(!periodic_wave.disable_normalization);
-    }
-
-    #[test]
-    fn assert_osc_default_build_with_factory_func() {
-        let default_freq = 440.;
-        let default_det = 0.;
-        let default_type = OscillatorType::Sine;
-
-        let context = AudioContext::new();
-
-        let osc = context.create_oscillator();
-
-        let freq = osc.frequency.value();
-        assert_float_eq!(freq, default_freq, ulps_all <= 0);
-
-        let det = osc.detune.value();
-        assert_float_eq!(det, default_det, ulps_all <= 0);
-
-        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(type_, default_type as u32);
-    }
-
-    #[test]
-    fn assert_osc_default_build() {
-        let default_freq = 440.;
-        let default_det = 0.;
-        let default_type = OscillatorType::Sine;
-
-        let context = AudioContext::new();
-
-        let osc = OscillatorNode::new(&context, None);
-
-        let freq = osc.frequency.value();
-        assert_float_eq!(freq, default_freq, ulps_all <= 0);
-
-        let det = osc.detune.value();
-        assert_float_eq!(det, default_det, ulps_all <= 0);
-
-        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(type_, default_type as u32);
     }
 }
