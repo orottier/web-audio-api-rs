@@ -1,3 +1,4 @@
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::perf)]
 use std::f32::consts::PI;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -17,11 +18,15 @@ use lazy_static::lazy_static;
 use super::{AudioNode, AudioScheduledSourceNode};
 
 const TABLE_LENGTH_USIZE: usize = 2048;
+// 2048 casts without loss of precision
+#[allow(clippy::pedantic)]
 const TABLE_LENGTH_F32: f32 = TABLE_LENGTH_USIZE as f32;
 
 // Compute one period sine wavetable of size TABLE_LENGTH
 lazy_static! {
     static ref SINETABLE: Vec<f32> = {
+        #[allow(clippy::pedantic)]
+        // 0 through 2048 are cast without loss of precision
         let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
             .map(|x| ((x as f32) * 2.0 * PI * (1. / (TABLE_LENGTH_F32))).sin())
             .collect();
@@ -54,7 +59,7 @@ pub struct PeriodicWaveOptions {
     pub disable_normalization: Option<bool>,
 }
 
-/// PeriodicWave is a setup struct required to build
+/// `PeriodicWave` is a setup struct required to build
 /// custom periodic waveform oscillator type.
 #[derive(Debug, Clone)]
 pub struct PeriodicWave {
@@ -82,13 +87,22 @@ pub struct PeriodicWave {
 }
 
 impl PeriodicWave {
-    /// Returns a PeriodicWave
+    /// Returns a `PeriodicWave`
     ///
     /// # Arguments
     ///
     /// * `real` - The real parameter represents an array of cosine terms of Fourrier series.
     /// * `imag` - The imag parameter represents an array of sine terms of Fourrier series.
-    /// * `constraints` - The constraints parameter specifies the normalization mode of the PeriodicWave
+    /// * `constraints` - The constraints parameter specifies the normalization mode of the `PeriodicWave`
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * `real` is defined and its length is less than 2
+    /// * `imag` is defined and its length is less than 2
+    /// * `real` and `imag` are defined and theirs lengths are not equal
+    /// * `PeriodicWave` is more than 8192 components
     ///
     /// # Example
     ///
@@ -125,6 +139,13 @@ impl PeriodicWave {
                         "RangeError: Imag field length should be at least 2",
                     );
                     assert!(
+                        // the specs gives this number as a lower bound
+                        // it is implemented here as a upper bound to enable required casting
+                        // without loss of precision
+                        r.len() <= 8192,
+                        "NotSupported: periodic wave of more than 8192 components"
+                    );
+                    assert!(
                         r.len() == i.len(),
                         "RangeError: Imag and real field length should be equal"
                     );
@@ -135,6 +156,13 @@ impl PeriodicWave {
                         r.len() >= 2,
                         "RangeError: Real field length should be at least 2"
                     );
+                    assert!(
+                        // the specs gives this number as a lower bound
+                        // it is implemented here as a upper bound to enable required casting
+                        // without loss of precision
+                        r.len() <= 8192,
+                        "NotSupported: periodic wave of more than 8192 components"
+                    );
                     let r_len = r.len();
                     (r, vec![0.; r_len])
                 }
@@ -142,6 +170,13 @@ impl PeriodicWave {
                     assert!(
                         i.len() >= 2,
                         "RangeError: Real field length should be at least 2"
+                    );
+                    assert!(
+                        i.len() <= 8192,
+                        // the specs gives this number as a lower bound
+                        // it is implemented here as a upper bound to enable required casting
+                        // without loss of precision
+                        "NotSupported: periodic wave of more than 8192 components"
                     );
                     let i_len = i.len();
                     (vec![0.; i_len], i)
@@ -164,8 +199,10 @@ impl PeriodicWave {
     }
 }
 
-/// Options for constructing an OscillatorNode
+/// Options for constructing an `OscillatorNode`
 #[derive(Debug)]
+// the naming comes from the web audio specfication
+#[allow(clippy::pedantic)]
 pub struct OscillatorOptions {
     pub type_: Option<OscillatorType>,
     pub frequency: Option<f32>,
@@ -188,6 +225,8 @@ impl Default for OscillatorOptions {
 
 /// Waveform of an oscillator
 #[derive(Debug, Copy, Clone, PartialEq)]
+// the naming comes from the web audio specfication
+#[allow(clippy::pedantic)]
 pub enum OscillatorType {
     Sine,
     Square,
@@ -198,13 +237,13 @@ pub enum OscillatorType {
 
 impl Default for OscillatorType {
     fn default() -> Self {
-        OscillatorType::Sine
+        Self::Sine
     }
 }
 
 impl From<u32> for OscillatorType {
     fn from(i: u32) -> Self {
-        use OscillatorType::*;
+        use OscillatorType::{Custom, Sawtooth, Sine, Square, Triangle};
 
         match i {
             0 => Sine,
@@ -217,7 +256,7 @@ impl From<u32> for OscillatorType {
     }
 }
 
-/// Message types used to communicate between [OscillatorNode] and [OscillatorRenderer]
+/// Message types used to communicate between [`OscillatorNode`] and [`OscillatorRenderer`]
 enum OscMsg {
     PeriodicWaveMsg {
         computed_freq: f32,
@@ -228,6 +267,8 @@ enum OscMsg {
 }
 
 /// Audio source generating a periodic waveform
+// the naming comes from the web audio specfication
+#[allow(clippy::pedantic)]
 pub struct OscillatorNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
@@ -254,23 +295,23 @@ impl AudioNode for OscillatorNode {
         &self.channel_config
     }
 
-    /// OscillatorNode is a source node. A source node is by definition with no input
+    /// `OscillatorNode` is a source node. A source node is by definition with no input
     fn number_of_inputs(&self) -> u32 {
         0
     }
 
-    /// OscillatorNode is a mono source node.
+    /// `OscillatorNode` is a mono source node.
     fn number_of_outputs(&self) -> u32 {
         1
     }
 }
 
 impl OscillatorNode {
-    /// Returns an OscillatorNode
+    /// Returns an `OscillatorNode`
     ///
     /// # Arguments:
     ///
-    /// * `context` - The AudioContext
+    /// * `context` - The `AudioContext`
     /// * `options` - The Oscillatoroptions
     pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<OscillatorOptions>) -> Self {
         context.base().register(move |registration| {
@@ -301,8 +342,8 @@ impl OscillatorNode {
 
             // detune audio parameter
             let det_param_opts = AudioParamOptions {
-                min_value: -153600.,
-                max_value: 153600.,
+                min_value: -153_600.,
+                max_value: 153_600.,
                 default_value: default_det,
                 automation_rate: crate::param::AutomationRate::A,
             };
@@ -323,7 +364,7 @@ impl OscillatorNode {
 
             let (sender, receiver) = crossbeam_channel::bounded(0);
 
-            let computed_freq = default_freq * 2f32.powf(default_det / 1200.);
+            let computed_freq = default_freq * (default_det / 1200.).exp2();
 
             let config = OscRendererConfig {
                 type_: type_.clone(),
@@ -335,9 +376,9 @@ impl OscillatorNode {
                 sample_rate,
                 periodic_wave,
             };
-            let render = OscillatorRenderer::new(config);
+            let renderer = OscillatorRenderer::new(config);
 
-            let node = OscillatorNode {
+            let node = Self {
                 registration,
                 channel_config: channel_config.unwrap_or_default().into(),
                 sample_rate,
@@ -348,32 +389,35 @@ impl OscillatorNode {
                 sender,
             };
 
-            (node, Box::new(render))
+            (node, Box::new(renderer))
         })
     }
 
     /// Returns the frequency audio parameter
     /// The oscillator frequency is calculated as follow:
     /// frequency * 2^(detune/1200)
-    pub fn frequency(&self) -> &AudioParam {
+    #[must_use]
+    pub const fn frequency(&self) -> &AudioParam {
         &self.frequency
     }
 
     /// Returns the detune audio parameter. detune unity is cents.
     /// The oscillator frequency is calculated as follow:
     /// frequency * 2^(detune/1200)
-    pub fn detune(&self) -> &AudioParam {
+    #[must_use]
+    pub const fn detune(&self) -> &AudioParam {
         &self.detune
     }
 
-    /// Returns the computedOscFrequency which is the oscillator frequency.
+    /// Returns the `computedOscFrequency` which is the oscillator frequency.
     fn computed_freq(&self) -> f32 {
         let frequency = self.frequency().value();
         let detune = self.detune().value();
-        frequency * 2f32.powf(detune / 1200.)
+        frequency * (detune / 1200.).exp2()
     }
 
     /// Returns the oscillator type
+    #[must_use]
     pub fn type_(&self) -> OscillatorType {
         self.type_.load(Ordering::SeqCst).into()
     }
@@ -388,7 +432,7 @@ impl OscillatorNode {
     }
 
     /// set the oscillator type to custom and generate
-    /// a perdioc waveform following the PeriodicWave characteristics
+    /// a perdioc waveform following the `PeriodicWave` characteristics
     pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
         // The oscillator type is set to custom following the spec
         self.set_type(OscillatorType::Custom);
@@ -414,17 +458,19 @@ impl OscillatorNode {
 
         for (idx, (real, img)) in cplxs.iter().enumerate() {
             // update norms
-            norms.push((f32::powi(*real, 2i32) + f32::powi(*img, 2i32)).sqrt());
+            norms.push((f32::powi(*real, 2_i32) + f32::powi(*img, 2_i32)).sqrt());
 
             // update phases
             let phase = f32::atan2(*img, *real);
             if phase < 0. {
-                phases.push((phase + 2. * PI) * (TABLE_LENGTH_F32 / (2.0 * PI)));
+                phases.push(2.0_f32.mul_add(PI, phase) * (TABLE_LENGTH_F32 / (2.0 * PI)));
             } else {
                 phases.push(phase * (TABLE_LENGTH_F32 / 2.0 * PI));
             }
 
             // update incr_phases
+            // idx maximum value (8192) casts without loss of precision
+            #[allow(clippy::pedantic)]
             incr_phases.push(TABLE_LENGTH_F32 * idx as f32 * (computed_freq / self.sample_rate));
         }
 
@@ -435,10 +481,10 @@ impl OscillatorNode {
 
         // generate the wavetable following periodic wave characteristics
         let wavetable =
-            self.generate_wavetable(&norms, &mut phases, &incr_phases, &interpol_ratios);
+            Self::generate_wavetable(&norms, &mut phases, &incr_phases, &interpol_ratios);
 
         // update norm_factor
-        let norm_factor = self.norm_factor(&wavetable);
+        let norm_factor = Self::norm_factor(&wavetable);
 
         self.sender
             .send(OscMsg::PeriodicWaveMsg {
@@ -459,7 +505,6 @@ impl OscillatorNode {
     /// * `incr_phases` - the phase to increment of each harmonics
     /// * `interpol_ratios` - the interpolation ratio of each harmonics used by linear interpolation
     fn generate_wavetable(
-        &self,
         norms: &[f32],
         phases: &mut [f32],
         incr_phases: &[f32],
@@ -474,11 +519,15 @@ impl OscillatorNode {
                 let phase = phases[i];
                 let incr_phase = incr_phases[i];
                 let mu = interpol_ratios[i];
+                // truncation is desired
+                #[allow(clippy::cast_possible_truncation)]
+                // phase + incr_phase is always positive
+                #[allow(clippy::cast_sign_loss)]
                 let idx = (phase + incr_phase) as usize;
                 let inf_idx = idx % TABLE_LENGTH_USIZE;
                 let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
                 // Linear interpolation
-                sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain;
+                sample += SINETABLE[inf_idx].mul_add(1. - mu, SINETABLE[sup_idx] * mu) * gain;
                 phases[i] = phase + incr_phase;
             }
 
@@ -496,7 +545,7 @@ impl OscillatorNode {
     /// # Arguments
     ///
     /// * `buffer` - the wavetable generated from periodic wave charateristics
-    fn norm_factor(&self, buffer: &[f32]) -> f32 {
+    fn norm_factor(buffer: &[f32]) -> f32 {
         1. / buffer
             .iter()
             .copied()
@@ -505,18 +554,18 @@ impl OscillatorNode {
     }
 }
 
-/// States relative to Sine OscillatorType
+/// States relative to Sine `OscillatorType`
 struct SineState {
     interpol_ratio: f32,
     first: bool,
 }
 
-/// States relative to Triangle OscillatorType
+/// States relative to Triangle `OscillatorType`
 struct TriangleState {
     last_output: f32,
 }
 
-/// States relative to Custom OscillatorType
+/// States relative to Custom `OscillatorType`
 struct PeriodicState {
     incr_phases: Vec<f32>,
     interpol_ratios: Vec<f32>,
@@ -578,15 +627,15 @@ impl AudioProcessor for OscillatorRenderer {
 
         if det_values
             .windows(2)
-            .all(|w| (w[0] - w[1]).abs() < 0.000001)
+            .all(|w| (w[0] - w[1]).abs() < 0.000_001)
         {
-            let d = 2f32.powf(det_values[0] / 1200.);
+            let d = (det_values[0] / 1200.).exp2();
             for (i, f) in freq_values.iter().enumerate() {
-                computed_freqs[i] = f * d
+                computed_freqs[i] = f * d;
             }
         } else {
             for (i, (f, d)) in freq_values.iter().zip(det_values).enumerate() {
-                computed_freqs[i] = f * 2f32.powf(d / 1200.);
+                computed_freqs[i] = f * (d / 1200.).exp2();
             }
         }
 
@@ -663,7 +712,7 @@ impl OscillatorRenderer {
 
         let norms: Vec<f32> = cplxs
             .iter()
-            .map(|(r, i)| (f32::powi(*r, 2i32) + f32::powi(*i, 2i32)).sqrt())
+            .map(|(r, i)| (f32::powi(*r, 2_i32) + f32::powi(*i, 2_i32)).sqrt())
             .collect();
 
         let mut phases: Vec<f32> = cplxs
@@ -671,13 +720,15 @@ impl OscillatorRenderer {
             .map(|(r, i)| {
                 let phase = f32::atan2(*i, *r);
                 if phase < 0. {
-                    (phase + 2. * PI) * (TABLE_LENGTH_F32 / (2.0 * PI))
+                    2.0_f32.mul_add(PI, phase) * (TABLE_LENGTH_F32 / (2.0 * PI))
                 } else {
                     phase * (TABLE_LENGTH_F32 / 2.0 * PI)
                 }
             })
             .collect();
 
+        // idx maximum value (8192) casts without loss of precision
+        #[allow(clippy::pedantic)]
         let incr_phases: Vec<f32> = cplxs
             .iter()
             .enumerate()
@@ -699,11 +750,11 @@ impl OscillatorRenderer {
             &mut periodic_wavetable,
         );
 
-        let norm_factor = if !disable_normalization {
+        let norm_factor = if disable_normalization {
+            None
+        } else {
             let norm_factor = Self::norm_factor(&periodic_wavetable);
             Some(norm_factor)
-        } else {
-            None
         };
 
         Self {
@@ -740,9 +791,9 @@ impl OscillatorRenderer {
     ///
     /// # Arguments
     ///
-    /// * `ref_freq` - the computedOscFrequency used to build the wavetable
+    /// * `ref_freq` - the `computedOscFrequency` used to build the wavetable
     /// * `wavetable` - wavetable following periodic wave characteristics
-    /// * `norm_factor` - normalization factor applied when disable_normalization is false
+    /// * `norm_factor` - normalization factor applied when `disable_normalization` is false
     /// * `disable_normalization` - disable normalization. If false, the peak amplitude signal is 1.0
     fn set_periodic_wave(
         &mut self,
@@ -849,12 +900,18 @@ impl OscillatorRenderer {
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
             self.arate_params(type_, computed_freq);
+            // truncation is desired
+            #[allow(clippy::cast_possible_truncation)]
+            // phase is always positive
+            #[allow(clippy::cast_sign_loss)]
             let inf_idx = self.phase as usize;
             let sup_idx = (inf_idx + 1) % TABLE_LENGTH_USIZE;
 
             // Linear interpolation
-            *o = SINETABLE[inf_idx] * (1. - self.sine.interpol_ratio)
-                + SINETABLE[sup_idx] * self.sine.interpol_ratio;
+            *o = SINETABLE[inf_idx].mul_add(
+                1. - self.sine.interpol_ratio,
+                SINETABLE[sup_idx] * self.sine.interpol_ratio,
+            );
 
             // Optimized float modulo op
             self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
@@ -919,14 +976,14 @@ impl OscillatorRenderer {
             // Optimized float modulo op
             let mut shift_phase = self.phase + 0.5;
             while shift_phase >= 1. {
-                shift_phase -= 1.
+                shift_phase -= 1.;
             }
             sample -= self.poly_blep(shift_phase);
 
             // Optimized float modulo op
             self.phase += self.incr_phase;
             while self.phase >= 1. {
-                self.phase -= 1.
+                self.phase -= 1.;
             }
             *o = sample;
         }
@@ -956,19 +1013,21 @@ impl OscillatorRenderer {
             // Optimized float modulo op
             let mut shift_phase = self.phase + 0.5;
             while shift_phase >= 1. {
-                shift_phase -= 1.
+                shift_phase -= 1.;
             }
             sample -= self.poly_blep(shift_phase);
 
             // Optimized float modulo op
             self.phase += self.incr_phase;
             while self.phase >= 1. {
-                self.phase -= 1.
+                self.phase -= 1.;
             }
 
             // Leaky integrator: y[n] = A * x[n] + (1 - A) * y[n-1]
             // Classic integration cannot be used due to float errors accumulation over execution time
-            sample = self.incr_phase * sample + (1.0 - self.incr_phase) * self.triangle.last_output;
+            sample = self
+                .incr_phase
+                .mul_add(sample, (1.0 - self.incr_phase) * self.triangle.last_output);
             self.triangle.last_output = sample;
 
             // Normalized amplitude into intervall [-1.0,1.0]
@@ -992,13 +1051,20 @@ impl OscillatorRenderer {
             let phase = self.periodic.wavetable.phase;
             let incr_phase = self.periodic.wavetable.incr_phase;
             let table_len = self.periodic.wavetable.buffer.len();
+
+            // 2048 casts without loss of precision
+            #[allow(clippy::cast_precision_loss)]
             let table_len_f32 = table_len as f32;
             let buffer = &self.periodic.wavetable.buffer;
+            // truncation is desired
+            #[allow(clippy::cast_possible_truncation)]
+            // phase is always positive
+            #[allow(clippy::cast_sign_loss)]
             let inf_idx = phase as usize;
             let sup_idx = (inf_idx + 1) % table_len;
             let interpol_ratio = phase - phase.trunc();
 
-            *o = (1.0 - interpol_ratio) * buffer[inf_idx] + interpol_ratio * buffer[sup_idx];
+            *o = (1.0 - interpol_ratio).mul_add(buffer[inf_idx], interpol_ratio * buffer[sup_idx]);
 
             // Update phase with optimized float modulo op
             self.periodic.wavetable.phase = if phase + incr_phase >= table_len_f32 {
@@ -1035,11 +1101,15 @@ impl OscillatorRenderer {
                 let phase = phases[i];
                 let incr_phase = incr_phases[i];
                 let mu = interpol_ratios[i];
+                // truncation is desired
+                #[allow(clippy::cast_possible_truncation)]
+                // phase + incr_phase is always positive
+                #[allow(clippy::cast_sign_loss)]
                 let idx = (phase + incr_phase) as usize;
                 let inf_idx = idx % TABLE_LENGTH_USIZE;
                 let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
                 // Linear interpolation
-                sample += (SINETABLE[inf_idx] * (1. - mu) + SINETABLE[sup_idx] * mu) * gain;
+                sample += SINETABLE[inf_idx].mul_add(1. - mu, SINETABLE[sup_idx] * mu) * gain;
                 phases[i] = phase + incr_phase;
             }
 
@@ -1055,9 +1125,9 @@ impl OscillatorRenderer {
             .expect("Maximum value not found")
     }
 
-    /// computes the polyBLEP corrections to apply to aliasing signal
+    /// computes the `polyBLEP` corrections to apply to aliasing signal
     ///
-    /// polyBLEP stands for polyBandLimitedstEP
+    /// `polyBLEP` stands for `polyBandLimitedstEP`
     fn poly_blep(&self, mut t: f32) -> f32 {
         let dt = self.incr_phase;
         if t < dt {
@@ -1065,7 +1135,7 @@ impl OscillatorRenderer {
             t + t - t * t - 1.0
         } else if t > 1.0 - dt {
             t = (t - 1.0) / dt;
-            t * t + t + t + 1.0
+            t.mul_add(t, t) + t + 1.0
         } else {
             0.0
         }
@@ -1073,7 +1143,6 @@ impl OscillatorRenderer {
 }
 
 #[cfg(test)]
-
 mod tests {
     use float_eq::assert_float_eq;
 
