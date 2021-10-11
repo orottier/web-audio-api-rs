@@ -176,8 +176,8 @@ impl IirFilterRenderer {
         Self {
             feedforward,
             feedback,
-            x_n: VecDeque::from(vec![0.; fbs_len]),
-            y_n: VecDeque::from(vec![0.; ffs_len - 1]),
+            x_n: VecDeque::from(vec![0.; ffs_len]),
+            y_n: VecDeque::from(vec![0.; fbs_len - 1]),
         }
     }
 
