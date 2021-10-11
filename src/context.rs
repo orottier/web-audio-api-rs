@@ -364,16 +364,7 @@ impl Drop for AudioContextRegistration {
 
         if !magic {
             let message = ControlMessage::FreeWhenFinished { id: self.id.0 };
-            let send_result = self.context.inner.render_channel.send(message);
-
-            if cfg!(test) {
-                if let Err(e) = send_result {
-                    println!("Sending the message failed: {}", e);
-                    println!("In test mode, the render thread is not spawned");
-                }
-            } else {
-                send_result.expect("Sending the message failed");
-            }
+            self.context.inner.render_channel.send(message).unwrap();
         }
     }
 }
@@ -488,16 +479,7 @@ impl BaseAudioContext {
             outputs: node.number_of_outputs() as usize,
             channel_config: node.channel_config_cloned(),
         };
-        let send_result = self.inner.render_channel.send(message);
-
-        if cfg!(test) {
-            if let Err(e) = send_result {
-                println!("Sending the message failed: {}", e);
-                println!("In test mode, the render thread is not spawned");
-            }
-        } else {
-            send_result.expect("Sending the message failed");
-        }
+        self.inner.render_channel.send(message).unwrap();
 
         node
     }
@@ -509,16 +491,7 @@ impl BaseAudioContext {
             output,
             input,
         };
-        let send_result = self.inner.render_channel.send(message);
-
-        if cfg!(test) {
-            if let Err(e) = send_result {
-                println!("Sending the message failed: {}", e);
-                println!("In test mode, the render thread is not spawned");
-            }
-        } else {
-            send_result.expect("Sending the message failed");
-        }
+        self.inner.render_channel.send(message).unwrap();
     }
 
     pub(crate) fn disconnect(&self, from: &AudioNodeId, to: &AudioNodeId) {
@@ -526,30 +499,12 @@ impl BaseAudioContext {
             from: from.0,
             to: to.0,
         };
-        let send_result = self.inner.render_channel.send(message);
-
-        if cfg!(test) {
-            if let Err(e) = send_result {
-                println!("Sending the message failed: {}", e);
-                println!("In test mode, the render thread is not spawned");
-            }
-        } else {
-            send_result.expect("Sending the message failed");
-        }
+        self.inner.render_channel.send(message).unwrap();
     }
 
     pub(crate) fn disconnect_all(&self, from: &AudioNodeId) {
         let message = ControlMessage::DisconnectAll { from: from.0 };
-        let send_result = self.inner.render_channel.send(message);
-
-        if cfg!(test) {
-            if let Err(e) = send_result {
-                println!("Sending the message failed: {}", e);
-                println!("In test mode, the render thread is not spawned");
-            }
-        } else {
-            send_result.expect("Sending the message failed");
-        }
+        self.inner.render_channel.send(message).unwrap();
     }
 
     /// Pass an AudioParam AutomationEvent to the render thread
@@ -565,11 +520,7 @@ impl BaseAudioContext {
             to: to.clone(),
             event,
         };
-        let send_result = self.inner.render_channel.send(message);
-
-        if cfg!(not(test)) {
-            send_result.expect("Sending the message failed");
-        }
+        self.inner.render_channel.send(message).unwrap();
     }
 
     /// Attach the 9 AudioListener coordinates to a PannerNode
