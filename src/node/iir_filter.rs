@@ -132,7 +132,7 @@ struct RendererConfig {
 
 /// Renderer associated with the IirFilterNode
 struct IirFilterRenderer {
-    coeffs: Vec<(f64, f64)>,
+    norm_coeffs: Vec<(f64, f64)>,
     states: Vec<f64>,
 }
 
@@ -160,42 +160,56 @@ impl AudioProcessor for IirFilterRenderer {
 impl IirFilterRenderer {
     fn new(config: RendererConfig) -> Self {
         let RendererConfig {
-            mut feedforward,
-            mut feedback,
+            feedforward,
+            feedback,
         } = config;
 
-        let ffs_len = feedforward.len();
-        let fbs_len = feedback.len();
+        let coeffs = Self::build_coeffs(feedforward, feedback);
+        let norm_coeffs = Self::normalize_coeffs(coeffs);
+        let states = Self::build_filter_states(&norm_coeffs);
 
-        if fbs_len > ffs_len {
-            feedforward = feedforward
-                .into_iter()
-                .chain(std::iter::repeat(0.))
-                .take(fbs_len)
-                .collect();
+        Self {
+            norm_coeffs,
+            states,
         }
+    }
 
-        if ffs_len > fbs_len {
-            feedback = feedback
-                .into_iter()
-                .chain(std::iter::repeat(0.))
-                .take(ffs_len)
-                .collect();
-        }
+    #[inline]
+    fn build_coeffs(mut feedforward: Vec<f64>, mut feedback: Vec<f64>) -> Vec<(f64, f64)> {
+        match (feedforward.len(), feedback.len()) {
+            (ffs_len, fbs_len) if ffs_len > fbs_len => {
+                feedforward = feedforward
+                    .into_iter()
+                    .chain(std::iter::repeat(0.))
+                    .take(fbs_len)
+                    .collect();
+            }
+            (ffs_len, fbs_len) if ffs_len < fbs_len => {
+                feedback = feedback
+                    .into_iter()
+                    .chain(std::iter::repeat(0.))
+                    .take(ffs_len)
+                    .collect();
+            }
+            _ => (),
+        };
 
-        let a_0 = feedback[0];
+        let coeffs: Vec<(f64, f64)> = feedforward.into_iter().zip(feedback).collect();
 
-        let coeffs: Vec<(f64, f64)> = feedforward
-            .iter()
-            .zip(&feedback)
-            .map(|(&ff, &fb)| (ff / a_0, fb / a_0))
-            .collect();
+        coeffs
+    }
 
+    #[inline]
+    fn normalize_coeffs(coeffs: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
+        let a_0 = coeffs[0].1;
+
+        coeffs.iter().map(|(ff, fb)| (ff / a_0, fb / a_0)).collect()
+    }
+
+    #[inline]
+    fn build_filter_states(coeffs: &[(f64, f64)]) -> Vec<f64> {
         let coeffs_len = coeffs.len();
-
-        let states = vec![0.; coeffs_len - 1];
-
-        Self { coeffs, states }
+        vec![0.; coeffs_len - 1]
     }
 
     /// Generate an output by filtering the input
@@ -204,6 +218,7 @@ impl IirFilterRenderer {
     ///
     /// * `input` - Audiobuffer input
     /// * `output` - Audiobuffer output
+    #[inline]
     fn filter(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
         for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
@@ -217,11 +232,12 @@ impl IirFilterRenderer {
     /// # Arguments
     ///
     /// * `input` - Audiobuffer input
+    #[inline]
     fn tick(&mut self, input: f32) -> f32 {
         let input = input as f64;
-        let output = self.coeffs[0].0 * input + self.states[0];
+        let output = self.norm_coeffs[0].0 * input + self.states[0];
 
-        for (idx, (ff, fb)) in self.coeffs.iter().skip(1).enumerate() {
+        for (idx, (ff, fb)) in self.norm_coeffs.iter().skip(1).enumerate() {
             self.states[idx] = ff * input - fb * output + self.states.get(idx + 1).unwrap_or(&0.);
         }
         output as f32
