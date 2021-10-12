@@ -18,14 +18,14 @@ use lazy_static::lazy_static;
 use super::{AudioNode, AudioScheduledSourceNode};
 
 const TABLE_LENGTH_USIZE: usize = 2048;
-// 2048 casts without loss of precision
-#[allow(clippy::pedantic)]
+// 2048 casts without loss of precision cause its mantissa is 0b0
+#[allow(clippy::cast_precision_loss)]
 const TABLE_LENGTH_F32: f32 = TABLE_LENGTH_USIZE as f32;
 
 // Compute one period sine wavetable of size TABLE_LENGTH
 lazy_static! {
     static ref SINETABLE: Vec<f32> = {
-        #[allow(clippy::pedantic)]
+        #[allow(clippy::cast_precision_loss)]
         // 0 through 2048 are cast without loss of precision
         let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
             .map(|x| ((x as f32) * 2.0 * PI * (1. / (TABLE_LENGTH_F32))).sin())
@@ -202,7 +202,7 @@ impl PeriodicWave {
 /// Options for constructing an `OscillatorNode`
 #[derive(Debug)]
 // the naming comes from the web audio specfication
-#[allow(clippy::pedantic)]
+#[allow(clippy::module_name_repetitions)]
 pub struct OscillatorOptions {
     pub type_: Option<OscillatorType>,
     pub frequency: Option<f32>,
@@ -226,7 +226,7 @@ impl Default for OscillatorOptions {
 /// Waveform of an oscillator
 #[derive(Debug, Copy, Clone, PartialEq)]
 // the naming comes from the web audio specfication
-#[allow(clippy::pedantic)]
+#[allow(clippy::module_name_repetitions)]
 pub enum OscillatorType {
     Sine,
     Square,
@@ -268,7 +268,7 @@ enum OscMsg {
 
 /// Audio source generating a periodic waveform
 // the naming comes from the web audio specfication
-#[allow(clippy::pedantic)]
+#[allow(clippy::module_name_repetitions)]
 pub struct OscillatorNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
@@ -469,8 +469,8 @@ impl OscillatorNode {
             }
 
             // update incr_phases
-            // idx maximum value (8192) casts without loss of precision
-            #[allow(clippy::pedantic)]
+            // 0 through max value 8192 casts without loss of precision
+            #[allow(clippy::cast_precision_loss)]
             incr_phases.push(TABLE_LENGTH_F32 * idx as f32 * (computed_freq / self.sample_rate));
         }
 
@@ -727,8 +727,8 @@ impl OscillatorRenderer {
             })
             .collect();
 
-        // idx maximum value (8192) casts without loss of precision
-        #[allow(clippy::pedantic)]
+        // 0 through max value 8192 casts without loss of precision
+        #[allow(clippy::cast_precision_loss)]
         let incr_phases: Vec<f32> = cplxs
             .iter()
             .enumerate()
