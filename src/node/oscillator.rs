@@ -181,7 +181,7 @@ impl PeriodicWave {
                     let i_len = i.len();
                     (vec![0.; i_len], i)
                 }
-                _ => (vec![0.0, 0.0], vec![1., 0.]),
+                _ => (vec![0.0, 1.0], vec![0., 0.]),
             };
 
             Self {
@@ -191,8 +191,8 @@ impl PeriodicWave {
             }
         } else {
             Self {
-                real: vec![0., 0.],
-                imag: vec![0., 1.],
+                real: vec![0., 1.],
+                imag: vec![0., 0.],
                 disable_normalization: false,
             }
         }
@@ -315,6 +315,7 @@ impl OscillatorNode {
     /// * `options` - The Oscillatoroptions
     pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<OscillatorOptions>) -> Self {
         context.base().register(move |registration| {
+            // Cannot guarantee that the cast is safe for all possible sample rate
             let sample_rate = context.base().sample_rate().0 as f32;
             let nyquist = sample_rate / 2.;
             let default_freq = 440.;
@@ -450,7 +451,7 @@ impl OscillatorNode {
     }
 
     /// set the oscillator type to any `OscillatorType` variant.
-    /// This private function is used internally. To modify OscillatorNode type,
+    /// This private function is used internally. To modify `OscillatorNode` type,
     /// you should use the public function `set_type`
     ///
     /// # Arguments
@@ -494,7 +495,7 @@ impl OscillatorNode {
             if phase < 0. {
                 phases.push(2.0_f32.mul_add(PI, phase) * (TABLE_LENGTH_F32 / (2.0 * PI)));
             } else {
-                phases.push(phase * (TABLE_LENGTH_F32 / 2.0 * PI));
+                phases.push(phase * (TABLE_LENGTH_F32 / (2.0 * PI)));
             }
 
             // update incr_phases
@@ -751,7 +752,7 @@ impl OscillatorRenderer {
                 if phase < 0. {
                     2.0_f32.mul_add(PI, phase) * (TABLE_LENGTH_F32 / (2.0 * PI))
                 } else {
-                    phase * (TABLE_LENGTH_F32 / 2.0 * PI)
+                    phase * (TABLE_LENGTH_F32 / (2.0 * PI))
                 }
             })
             .collect();
@@ -1311,8 +1312,9 @@ mod tests {
 
         let periodic_wave = PeriodicWave::new(&context, Some(options));
 
-        assert_float_eq!(periodic_wave.real, vec![0., 0.], ulps_all <= 0);
-        assert_float_eq!(periodic_wave.imag, vec![1., 0.], ulps_all <= 0);
+        // the default has to be a sine signal
+        assert_float_eq!(periodic_wave.real, vec![0., 1.], ulps_all <= 0);
+        assert_float_eq!(periodic_wave.imag, vec![0., 0.], ulps_all <= 0);
         assert!(!periodic_wave.disable_normalization);
     }
 
@@ -1553,6 +1555,45 @@ mod tests {
         let options = Some(PeriodicWaveOptions {
             real: Some(vec![0., 0.5, 0.5]),
             imag: Some(vec![0., 0., 0.]),
+            disable_normalization: Some(false),
+        });
+
+        // Create a custom periodic wave
+        let periodic_wave = context.create_periodic_wave(options);
+
+        let options = OscillatorOptions {
+            periodic_wave: Some(periodic_wave),
+            ..OscillatorOptions::default()
+        };
+
+        let osc = OscillatorNode::new(&context, Some(options));
+
+        osc.connect(&context.destination());
+        osc.start();
+
+        let output = context.start_rendering();
+
+        assert_float_eq!(
+            output.channel_data(0).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
+        assert_float_eq!(
+            output.channel_data(1).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
+    }
+
+    #[test]
+    fn default_periodic_wave_rendering_should_match_snapshot() {
+        let ref_sine = snapshot::read("./snapshots/default_periodic.json")
+            .expect("Reading snapshot file failed");
+
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let options = Some(PeriodicWaveOptions {
+            real: None,
+            imag: None,
             disable_normalization: Some(false),
         });
 
