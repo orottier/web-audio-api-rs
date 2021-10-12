@@ -355,7 +355,7 @@ impl OscillatorNode {
             // if Periodic wave is defined, the oscillator type is custom
             // and options.type is ignored (following the specs)
             let type_ = if periodic_wave.is_some() {
-                Arc::new(AtomicU32::new(OscillatorType::Sine as u32))
+                Arc::new(AtomicU32::new(OscillatorType::Custom as u32))
             } else {
                 Arc::new(AtomicU32::new(type_.unwrap_or(OscillatorType::Sine) as u32))
             };
@@ -427,7 +427,36 @@ impl OscillatorNode {
     /// # Arguments
     ///
     /// * `type_` - oscillator type (sine,square,triangle,sawtooth, and custom)
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * `type_` is `OscillatorType::Custom`
     pub fn set_type(&self, type_: OscillatorType) {
+        assert_ne!(
+            type_,
+            OscillatorType::Custom,
+            "InvalidStateError: Custom type cannot be set manually"
+        );
+
+        // if periodic wave is specified, type_ changes are should be ignored
+        // by specs definition
+        if self.type_.load(Ordering::SeqCst) == OscillatorType::Custom as u32 {
+            return;
+        }
+
+        self.type_.store(type_ as u32, Ordering::SeqCst);
+    }
+
+    /// set the oscillator type to any `OscillatorType` variant.
+    /// This private function is used internally. To modify OscillatorNode type,
+    /// you should use the public function `set_type`
+    ///
+    /// # Arguments
+    ///
+    /// * `type_` - oscillator type (sine,square,triangle,sawtooth, and custom)
+    fn change_type(&self, type_: OscillatorType) {
         self.type_.store(type_ as u32, Ordering::SeqCst);
     }
 
@@ -435,7 +464,7 @@ impl OscillatorNode {
     /// a perdioc waveform following the `PeriodicWave` characteristics
     pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
         // The oscillator type is set to custom following the spec
-        self.set_type(OscillatorType::Custom);
+        self.change_type(OscillatorType::Custom);
 
         let PeriodicWave {
             real,
@@ -1144,10 +1173,19 @@ impl OscillatorRenderer {
 
 #[cfg(test)]
 mod tests {
+
     use float_eq::assert_float_eq;
 
     use super::{PeriodicWave, PeriodicWaveOptions};
-    use crate::context::AudioContext;
+    use crate::{
+        context::{AsBaseAudioContext, AudioContext, OfflineAudioContext},
+        node::{
+            AudioNode, AudioScheduledSourceNode, OscillatorNode, OscillatorOptions, OscillatorType,
+        },
+        snapshot, SampleRate,
+    };
+
+    const LENGTH: usize = 555;
 
     #[test]
     #[should_panic]
@@ -1220,6 +1258,48 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn fails_to_build_when_imag_and_real_are_more_than_8192_comps() {
+        let context = AudioContext::new();
+
+        let options = PeriodicWaveOptions {
+            real: Some(vec![0.; 8193]),
+            imag: Some(vec![0.; 8193]),
+            disable_normalization: Some(false),
+        };
+
+        let _periodic_wave = PeriodicWave::new(&context, Some(options));
+    }
+
+    #[test]
+    #[should_panic]
+    fn fails_to_build_when_real_is_more_than_8192_comps() {
+        let context = AudioContext::new();
+
+        let options = PeriodicWaveOptions {
+            real: Some(vec![0.; 8193]),
+            imag: None,
+            disable_normalization: Some(false),
+        };
+
+        let _periodic_wave = PeriodicWave::new(&context, Some(options));
+    }
+
+    #[test]
+    #[should_panic]
+    fn fails_to_build_when_imag_is_more_than_8192_comps() {
+        let context = AudioContext::new();
+
+        let options = PeriodicWaveOptions {
+            real: None,
+            imag: Some(vec![0.; 8193]),
+            disable_normalization: Some(false),
+        };
+
+        let _periodic_wave = PeriodicWave::new(&context, Some(options));
+    }
+
+    #[test]
     fn assert_default_periodic_options() {
         let context = AudioContext::new();
 
@@ -1234,5 +1314,272 @@ mod tests {
         assert_float_eq!(periodic_wave.real, vec![0., 0.], ulps_all <= 0);
         assert_float_eq!(periodic_wave.imag, vec![1., 0.], ulps_all <= 0);
         assert!(!periodic_wave.disable_normalization);
+    }
+
+    #[test]
+    fn assert_osc_default_build_with_factory_func() {
+        let default_freq = 440.;
+        let default_det = 0.;
+        let default_type = OscillatorType::Sine;
+
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let osc = context.create_oscillator();
+
+        let freq = osc.frequency.value();
+        assert_float_eq!(freq, default_freq, ulps_all <= 0);
+
+        let det = osc.detune.value();
+        assert_float_eq!(det, default_det, ulps_all <= 0);
+
+        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(type_, default_type as u32);
+    }
+
+    #[test]
+    fn assert_osc_default_build() {
+        let default_freq = 440.;
+        let default_det = 0.;
+        let default_type = OscillatorType::Sine;
+
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let osc = OscillatorNode::new(&context, None);
+
+        let freq = osc.frequency.value();
+        assert_float_eq!(freq, default_freq, ulps_all <= 0);
+
+        let det = osc.detune.value();
+        assert_float_eq!(det, default_det, ulps_all <= 0);
+
+        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(type_, default_type as u32);
+    }
+
+    #[test]
+    #[should_panic]
+    fn set_type_to_custom_should_panic() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let osc = OscillatorNode::new(&context, None);
+
+        osc.set_type(OscillatorType::Custom);
+    }
+
+    #[test]
+    fn type_is_custom_when_periodic_wave_is_some() {
+        let expected_type = OscillatorType::Custom;
+
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let periodic_opt = PeriodicWaveOptions {
+            real: None,
+            imag: None,
+            disable_normalization: None,
+        };
+
+        let periodic_wave = PeriodicWave::new(&context, Some(periodic_opt));
+
+        let options = OscillatorOptions {
+            periodic_wave: Some(periodic_wave),
+            ..OscillatorOptions::default()
+        };
+
+        let osc = OscillatorNode::new(&context, Some(options));
+
+        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(type_, expected_type as u32);
+    }
+
+    #[test]
+    fn set_type_is_ignored_when_periodic_wave_is_some() {
+        let expected_type = OscillatorType::Custom;
+
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let periodic_opt = PeriodicWaveOptions {
+            real: None,
+            imag: None,
+            disable_normalization: None,
+        };
+
+        let periodic_wave = PeriodicWave::new(&context, Some(periodic_opt));
+
+        let options = OscillatorOptions {
+            periodic_wave: Some(periodic_wave),
+            ..OscillatorOptions::default()
+        };
+
+        let osc = OscillatorNode::new(&context, Some(options));
+
+        osc.set_type(OscillatorType::Sine);
+
+        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(type_, expected_type as u32);
+    }
+
+    #[test]
+    fn silence_rendering_if_osc_is_not_started() {
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let osc = OscillatorNode::new(&context, None);
+
+        osc.set_type(OscillatorType::Sine);
+        osc.connect(&context.destination());
+
+        let output = context.start_rendering();
+
+        assert_float_eq!(
+            output.channel_data(0).as_slice(),
+            &[0.; LENGTH][..],
+            ulps_all <= 0
+        );
+        assert_float_eq!(
+            output.channel_data(1).as_slice(),
+            &[0.; LENGTH][..],
+            ulps_all <= 0
+        );
+    }
+
+    #[test]
+    fn default_sine_rendering_should_match_snapshot() {
+        let ref_sine =
+            snapshot::read("./snapshots/sine.json").expect("Reading snapshot file failed");
+
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let osc = OscillatorNode::new(&context, None);
+
+        osc.set_type(OscillatorType::Sine);
+        osc.connect(&context.destination());
+        osc.start();
+
+        let output = context.start_rendering();
+
+        assert_float_eq!(
+            output.channel_data(0).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
+        assert_float_eq!(
+            output.channel_data(1).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
+    }
+
+    #[test]
+    fn default_square_rendering_should_match_snapshot() {
+        let ref_sine =
+            snapshot::read("./snapshots/square.json").expect("Reading snapshot file failed");
+
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let osc = OscillatorNode::new(&context, None);
+
+        osc.set_type(OscillatorType::Square);
+        osc.connect(&context.destination());
+        osc.start();
+
+        let output = context.start_rendering();
+
+        assert_float_eq!(
+            output.channel_data(0).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
+        assert_float_eq!(
+            output.channel_data(1).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
+    }
+
+    #[test]
+    fn default_triangle_rendering_should_match_snapshot() {
+        let ref_sine =
+            snapshot::read("./snapshots/triangle.json").expect("Reading snapshot file failed");
+
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let osc = OscillatorNode::new(&context, None);
+
+        osc.set_type(OscillatorType::Triangle);
+        osc.connect(&context.destination());
+        osc.start();
+
+        let output = context.start_rendering();
+
+        assert_float_eq!(
+            output.channel_data(0).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
+        assert_float_eq!(
+            output.channel_data(1).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
+    }
+
+    #[test]
+    fn default_sawtooth_rendering_should_match_snapshot() {
+        let ref_sine =
+            snapshot::read("./snapshots/sawtooth.json").expect("Reading snapshot file failed");
+
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let osc = OscillatorNode::new(&context, None);
+
+        osc.set_type(OscillatorType::Sawtooth);
+        osc.connect(&context.destination());
+        osc.start();
+
+        let output = context.start_rendering();
+
+        assert_float_eq!(
+            output.channel_data(0).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
+        assert_float_eq!(
+            output.channel_data(1).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
+    }
+
+    #[test]
+    fn periodic_wave_rendering_should_match_snapshot() {
+        let ref_sine =
+            snapshot::read("./snapshots/periodic_2f.json").expect("Reading snapshot file failed");
+
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let options = Some(PeriodicWaveOptions {
+            real: Some(vec![0., 0.5, 0.5]),
+            imag: Some(vec![0., 0., 0.]),
+            disable_normalization: Some(false),
+        });
+
+        // Create a custom periodic wave
+        let periodic_wave = context.create_periodic_wave(options);
+
+        let options = OscillatorOptions {
+            periodic_wave: Some(periodic_wave),
+            ..OscillatorOptions::default()
+        };
+
+        let osc = OscillatorNode::new(&context, Some(options));
+
+        osc.connect(&context.destination());
+        osc.start();
+
+        let output = context.start_rendering();
+
+        assert_float_eq!(
+            output.channel_data(0).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
+        assert_float_eq!(
+            output.channel_data(1).as_slice(),
+            &ref_sine.data[..],
+            ulps_all <= 0
+        );
     }
 }
