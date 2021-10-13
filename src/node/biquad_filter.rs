@@ -1,3 +1,4 @@
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::perf)]
 use std::{
     f64::consts::{PI, SQRT_2},
     sync::{
@@ -23,6 +24,8 @@ use super::AudioNode;
 struct CoeffsReq(Sender<[f64; 5]>);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+// the naming comes from the web audio specfication
+#[allow(clippy::module_name_repetitions)]
 pub enum BiquadFilterType {
     Lowpass,
     Highpass,
@@ -36,13 +39,15 @@ pub enum BiquadFilterType {
 
 impl Default for BiquadFilterType {
     fn default() -> Self {
-        BiquadFilterType::Lowpass
+        Self::Lowpass
     }
 }
 
 impl From<u32> for BiquadFilterType {
     fn from(i: u32) -> Self {
-        use BiquadFilterType::*;
+        use BiquadFilterType::{
+            Allpass, Bandpass, Highpass, Highshelf, Lowpass, Lowshelf, Notch, Peaking,
+        };
 
         match i {
             0 => Lowpass,
@@ -58,6 +63,8 @@ impl From<u32> for BiquadFilterType {
     }
 }
 
+// the naming comes from the web audio specfication
+#[allow(clippy::module_name_repetitions)]
 pub struct BiquadFilterOptions {
     /// The desired initial value for Q, if None default to 1.
     pub q: Option<f32>,
@@ -86,7 +93,9 @@ impl Default for BiquadFilterOptions {
     }
 }
 
-/// AudioNode for volume control
+/// `AudioNode` for volume control
+// the naming comes from the web audio specfication
+#[allow(clippy::module_name_repetitions)]
 pub struct BiquadFilterNode {
     sample_rate: f32,
     registration: AudioContextRegistration,
@@ -120,7 +129,9 @@ impl BiquadFilterNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<BiquadFilterOptions>) -> Self {
         context.base().register(move |registration| {
             let options = options.unwrap_or_default();
-
+            // cannot guarantee that the cast will be without loss of precision for all fs
+            // but for usual sample rate (44.1kHz, 48kHz, 96kHz) it is
+            #[allow(clippy::cast_precision_loss)]
             let sample_rate = context.base().sample_rate().0 as f32;
 
             let default_freq = 350.;
@@ -147,8 +158,8 @@ impl BiquadFilterNode {
             q_param.set_value(q_value);
 
             let d_param_opts = AudioParamOptions {
-                min_value: -153600.,
-                max_value: 153600.,
+                min_value: -153_600.,
+                max_value: 153_600.,
                 default_value: default_det,
                 automation_rate: crate::param::AutomationRate::A,
             };
@@ -159,6 +170,8 @@ impl BiquadFilterNode {
             d_param.set_value(d_value);
 
             let niquyst = context.base().sample_rate().0 / 2;
+            // It should be fine for usual fs
+            #[allow(clippy::cast_precision_loss)]
             let f_param_opts = AudioParamOptions {
                 min_value: 0.,
                 max_value: niquyst as f32,
@@ -206,8 +219,8 @@ impl BiquadFilterNode {
                 receiver,
             };
 
-            let render = BiquadFilterRenderer::new(config);
-            let node = BiquadFilterNode {
+            let renderer = BiquadFilterRenderer::new(config);
+            let node = Self {
                 sample_rate,
                 registration,
                 channel_config: options.channel_config.into(),
@@ -219,31 +232,36 @@ impl BiquadFilterNode {
                 sender,
             };
 
-            (node, Box::new(render))
+            (node, Box::new(renderer))
         })
     }
 
     /// Returns the gain audio paramter
-    pub fn gain(&self) -> &AudioParam {
+    #[must_use]
+    pub const fn gain(&self) -> &AudioParam {
         &self.gain
     }
 
     /// Returns the frequency audio paramter
-    pub fn frequency(&self) -> &AudioParam {
+    #[must_use]
+    pub const fn frequency(&self) -> &AudioParam {
         &self.frequency
     }
 
     /// Returns the detune audio paramter
-    pub fn detune(&self) -> &AudioParam {
+    #[must_use]
+    pub const fn detune(&self) -> &AudioParam {
         &self.detune
     }
 
     /// Returns the Q audio paramter
-    pub fn q(&self) -> &AudioParam {
+    #[must_use]
+    pub const fn q(&self) -> &AudioParam {
         &self.q
     }
 
     /// Returns the biquad filter type
+    #[must_use]
     pub fn type_(&self) -> BiquadFilterType {
         self.type_.load(Ordering::SeqCst).into()
     }
@@ -264,6 +282,7 @@ impl BiquadFilterNode {
     /// * `frequency_hz` - frequencies for which frequency response of the filter should be calculated
     /// * `mag_response` - magnitude of the frequency response of the filter
     /// * `phase_response` - phase of the frequency response of the filter
+    #[allow(clippy::cast_possible_truncation)]
     pub fn get_frequency_response(
         &self,
         frequency_hz: &mut [f32],
@@ -289,8 +308,8 @@ impl BiquadFilterNode {
                 Ok([b0, b1, b2, a1, a2]) => {
                     println!("received...");
                     for (i, &f) in frequency_hz.iter().enumerate() {
-                        let f = f as f64;
-                        let sample_rate = self.sample_rate as f64;
+                        let f = f64::from(f);
+                        let sample_rate = f64::from(self.sample_rate);
                         let num = b0
                             + Complex::from_polar(b1, -1.0 * 2.0 * PI * f / sample_rate)
                             + Complex::from_polar(b2, -2.0 * 2.0 * PI * f / sample_rate);
@@ -299,8 +318,10 @@ impl BiquadFilterNode {
                             + Complex::from_polar(a2, -2.0 * 2.0 * PI * f / sample_rate);
                         let h_f = num / denom;
 
+                        // Possible truncation is fine. f32 precision should be sufficients
+                        // And it is required by the specs
                         mag_response[i] = h_f.norm() as f32;
-                        phase_response[i] = h_f.arg() as f32
+                        phase_response[i] = h_f.arg() as f32;
                     }
                     break;
                 }
@@ -336,7 +357,7 @@ impl BiquadFilterNode {
 
     /// Mock of `get_frequency_response`
     /// This function is the same as `get_frequency_response` except it never send the `CoeffsReq`.
-    /// In tests, we use OfflineAudioContext and in this context the CoeffsReq is not sendable.
+    /// In tests, we use `OfflineAudioContext` and in this context the `CoeffsReq` is not sendable.
     ///
     /// # Arguments
     ///
@@ -439,7 +460,7 @@ impl BiquadFilterRenderer {
             receiver,
         } = config;
 
-        let coeffs = Self::init_coeffs(sample_rate, params);
+        let coeffs = Self::init_coeffs(sample_rate, &params);
 
         let s1 = [0.; MAX_CHANNELS];
         let s2 = [0.; MAX_CHANNELS];
@@ -500,7 +521,7 @@ impl BiquadFilterRenderer {
             };
 
             // A-rate params
-            self.update_coeffs(p);
+            self.update_coeffs(&p);
 
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
                 *o = self.tick(i, idx);
@@ -515,12 +536,14 @@ impl BiquadFilterRenderer {
     /// * `input` - Audiobuffer input
     /// * `idx` - channel index mapping to the filter state index
     #[inline]
+    #[allow(clippy::cast_possible_truncation)]
     fn tick(&mut self, input: f32, idx: usize) -> f32 {
-        let input = input as f64;
-        let out = self.ss1[idx] + self.coeffs.b0 * input;
-        self.ss1[idx] = self.ss2[idx] + self.coeffs.b1 * input - self.coeffs.a1 * out;
+        let input = f64::from(input);
+        let out = self.coeffs.b0.mul_add(input, self.ss1[idx]);
+        self.ss1[idx] = self.coeffs.b1.mul_add(input, self.ss2[idx]) - self.coeffs.a1 * out;
         self.ss2[idx] = self.coeffs.b2 * input - self.coeffs.a2 * out;
 
+        // Value truncation will not be hearable
         out as f32
     }
 
@@ -531,7 +554,7 @@ impl BiquadFilterRenderer {
     /// * `sample_rate` - Audio context sample rate
     /// * `params` - params resolving into biquad coeffs
     #[inline]
-    fn init_coeffs(sample_rate: f32, params: Params) -> Coefficients {
+    fn init_coeffs(sample_rate: f32, params: &Params) -> Coefficients {
         let Params {
             q,
             detune,
@@ -540,19 +563,24 @@ impl BiquadFilterRenderer {
             type_,
         } = params;
 
-        let computed_freq = frequency * 10f32.powf(detune / 1200.);
+        let computed_freq = frequency * 10_f32.powf(detune / 1200.);
+
+        let sample_rate = f64::from(sample_rate);
+        let computed_freq = f64::from(computed_freq);
+        let q = f64::from(*q);
+        let gain = f64::from(*gain);
 
         // compute a0 first to normalize others coeffs by a0
-        let a0 = Self::a0(type_, sample_rate, computed_freq, q, gain);
+        let a0 = Self::a0(*type_, sample_rate, computed_freq, q, gain);
 
-        let b0 = Self::b0(type_, sample_rate, computed_freq, q, gain) / a0;
-        let b1 = Self::b1(type_, sample_rate, computed_freq, gain) / a0;
-        let b2 = Self::b2(type_, sample_rate, computed_freq, q, gain) / a0;
+        let b0 = Self::b0(*type_, sample_rate, computed_freq, q, gain) / a0;
+        let b1 = Self::b1(*type_, sample_rate, computed_freq, gain) / a0;
+        let b2 = Self::b2(*type_, sample_rate, computed_freq, q, gain) / a0;
 
-        let a1 = Self::a1(type_, sample_rate, computed_freq, gain) / a0;
-        let a2 = Self::a2(type_, sample_rate, computed_freq, q, gain) / a0;
+        let a1 = Self::a1(*type_, sample_rate, computed_freq, gain) / a0;
+        let a2 = Self::a2(*type_, sample_rate, computed_freq, q, gain) / a0;
 
-        Coefficients { b0, b1, b2, a1, a2 }
+        Coefficients { a1, a2, b0, b1, b2 }
     }
 
     /// updates biquad filter coefficients when params are modified
@@ -561,7 +589,7 @@ impl BiquadFilterRenderer {
     ///
     /// * `params` - params resolving into biquad coeffs
     #[inline]
-    fn update_coeffs(&mut self, params: Params) {
+    fn update_coeffs(&mut self, params: &Params) {
         let Params {
             q,
             detune,
@@ -570,33 +598,34 @@ impl BiquadFilterRenderer {
             type_,
         } = params;
 
-        let computed_freq = frequency * 10f32.powf(detune / 1200.);
+        let computed_freq = frequency * 10_f32.powf(detune / 1200.);
+
+        let sample_rate = f64::from(self.sample_rate);
+        let computed_freq = f64::from(computed_freq);
+        let q = f64::from(*q);
+        let gain = f64::from(*gain);
 
         // compute a0 first to normalize others coeffs by a0
-        let a0 = Self::a0(type_, self.sample_rate, computed_freq, q, gain);
+        let a0 = Self::a0(*type_, sample_rate, computed_freq, q, gain);
 
-        self.coeffs.b0 = Self::b0(type_, self.sample_rate, computed_freq, q, gain) / a0;
-        self.coeffs.b1 = Self::b1(type_, self.sample_rate, computed_freq, gain) / a0;
-        self.coeffs.b2 = Self::b2(type_, self.sample_rate, computed_freq, q, gain) / a0;
-        self.coeffs.a1 = Self::a1(type_, self.sample_rate, computed_freq, gain) / a0;
-        self.coeffs.a2 = Self::a2(type_, self.sample_rate, computed_freq, q, gain) / a0;
+        self.coeffs.b0 = Self::b0(*type_, sample_rate, computed_freq, q, gain) / a0;
+        self.coeffs.b1 = Self::b1(*type_, sample_rate, computed_freq, gain) / a0;
+        self.coeffs.b2 = Self::b2(*type_, sample_rate, computed_freq, q, gain) / a0;
+        self.coeffs.a1 = Self::a1(*type_, sample_rate, computed_freq, gain) / a0;
+        self.coeffs.a2 = Self::a2(*type_, sample_rate, computed_freq, q, gain) / a0;
     }
 
-    /// calculates b_0 coefficient
+    /// calculates `b_0` coefficient
     ///
     /// # Arguments
     ///
     /// * `type_` - biquadfilter type
     /// * `sample_rate` - audio context sample rate
-    /// * `computed_freq` - computedOscFreq
+    /// * `computed_freq` - `computedOscFreq`
     /// * `q` - Q factor
     /// * `gain` - filter gain
     #[inline]
-    fn b0(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f64 {
-        let sample_rate = sample_rate as f64;
-        let computed_freq = computed_freq as f64;
-        let q = q as f64;
-        let gain = gain as f64;
+    fn b0(type_: BiquadFilterType, sample_rate: f64, computed_freq: f64, q: f64, gain: f64) -> f64 {
         match type_ {
             BiquadFilterType::Lowpass => Self::b0_lowpass(sample_rate, computed_freq),
             BiquadFilterType::Highpass => Self::b0_highpass(sample_rate, computed_freq),
@@ -636,7 +665,7 @@ impl BiquadFilterRenderer {
     fn b0_peaking(sample_rate: f64, computed_freq: f64, q: f64, gain: f64) -> f64 {
         let alpha_q = Self::alpha_q(sample_rate, computed_freq, q);
         let a = Self::a(gain);
-        1.0 + alpha_q * a
+        alpha_q.mul_add(a, 1.0)
     }
 
     #[inline]
@@ -645,7 +674,7 @@ impl BiquadFilterRenderer {
         let w0 = Self::w0(sample_rate, computed_freq);
         let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
-        a * ((a + 1.0) - (a - 1.0) * w0.cos() + 2.0 * alpha_s * a.sqrt())
+        a * (2.0 * alpha_s).mul_add(a.sqrt(), (a + 1.0) - (a - 1.0) * w0.cos())
     }
 
     #[inline]
@@ -654,31 +683,29 @@ impl BiquadFilterRenderer {
         let w0 = Self::w0(sample_rate, computed_freq);
         let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
-        a * ((a + 1.0) + (a - 1.0) * w0.cos() + 2.0 * alpha_s * a.sqrt())
+        a * (2.0 * alpha_s).mul_add(a.sqrt(), (a - 1.0).mul_add(w0.cos(), a + 1.0))
     }
 
-    /// calculates b_1 coefficient
+    /// calculates `b_1` coefficient
     ///
     /// # Arguments
     ///
     /// * `type_` - biquadfilter type
     /// * `sample_rate` - audio context sample rate
-    /// * `computed_freq` - computedOscFreq
+    /// * `computed_freq` - `computedOscFreq`
     /// * `gain` - filter gain
     #[inline]
-    fn b1(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, gain: f32) -> f64 {
-        let sample_rate = sample_rate as f64;
-        let computed_freq = computed_freq as f64;
-        let gain = gain as f64;
+    fn b1(type_: BiquadFilterType, sample_rate: f64, computed_freq: f64, gain: f64) -> f64 {
+        use BiquadFilterType::{
+            Allpass, Bandpass, Highpass, Highshelf, Lowpass, Lowshelf, Notch, Peaking,
+        };
         match type_ {
-            BiquadFilterType::Lowpass => Self::b1_lowpass(sample_rate, computed_freq),
-            BiquadFilterType::Highpass => Self::b1_highpass(sample_rate, computed_freq),
-            BiquadFilterType::Bandpass => 0.0,
-            BiquadFilterType::Notch => Self::b1_notch_all_peak(sample_rate, computed_freq),
-            BiquadFilterType::Allpass => Self::b1_notch_all_peak(sample_rate, computed_freq),
-            BiquadFilterType::Peaking => Self::b1_notch_all_peak(sample_rate, computed_freq),
-            BiquadFilterType::Lowshelf => Self::b1_lowshelf(sample_rate, computed_freq, gain),
-            BiquadFilterType::Highshelf => Self::b1_highshelf(sample_rate, computed_freq, gain),
+            Lowpass => Self::b1_lowpass(sample_rate, computed_freq),
+            Highpass => Self::b1_highpass(sample_rate, computed_freq),
+            Bandpass => 0.0,
+            Notch | Allpass | Peaking => Self::b1_notch_all_peak(sample_rate, computed_freq),
+            Lowshelf => Self::b1_lowshelf(sample_rate, computed_freq, gain),
+            Highshelf => Self::b1_highshelf(sample_rate, computed_freq, gain),
         }
     }
 
@@ -711,33 +738,32 @@ impl BiquadFilterRenderer {
     fn b1_highshelf(sample_rate: f64, computed_freq: f64, gain: f64) -> f64 {
         let a = Self::a(gain);
         let w0 = Self::w0(sample_rate, computed_freq);
-        -2.0 * a * ((a - 1.0) + (a + 1.0) * w0.cos())
+        -2.0 * a * (a + 1.0).mul_add(w0.cos(), a - 1.0)
     }
 
-    /// calculates b_2 coefficient
+    /// calculates `b_2` coefficient
     ///
     /// # Arguments
     ///
     /// * `type_` - biquadfilter type
     /// * `sample_rate` - audio context sample rate
-    /// * `computed_freq` - computedOscFreq
+    /// * `computed_freq` - `computedOscFreq`
     /// * `q` - Q factor
     /// * `gain` - filter gain
     #[inline]
-    fn b2(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f64 {
-        let sample_rate = sample_rate as f64;
-        let computed_freq = computed_freq as f64;
-        let q = q as f64;
-        let gain = gain as f64;
+    fn b2(type_: BiquadFilterType, sample_rate: f64, computed_freq: f64, q: f64, gain: f64) -> f64 {
+        use BiquadFilterType::{
+            Allpass, Bandpass, Highpass, Highshelf, Lowpass, Lowshelf, Notch, Peaking,
+        };
         match type_ {
-            BiquadFilterType::Lowpass => Self::b2_lowpass(sample_rate, computed_freq),
-            BiquadFilterType::Highpass => Self::b2_highpass(sample_rate, computed_freq),
-            BiquadFilterType::Bandpass => Self::b2_bandpass(sample_rate, computed_freq, q),
-            BiquadFilterType::Notch => 1.0,
-            BiquadFilterType::Allpass => Self::b2_allpass(sample_rate, computed_freq, q),
-            BiquadFilterType::Peaking => Self::b2_peaking(sample_rate, computed_freq, q, gain),
-            BiquadFilterType::Lowshelf => Self::b2_lowshelf(sample_rate, computed_freq, gain),
-            BiquadFilterType::Highshelf => Self::b2_highshelf(sample_rate, computed_freq, gain),
+            Lowpass => Self::b2_lowpass(sample_rate, computed_freq),
+            Highpass => Self::b2_highpass(sample_rate, computed_freq),
+            Bandpass => Self::b2_bandpass(sample_rate, computed_freq, q),
+            Notch => 1.0,
+            Allpass => Self::b2_allpass(sample_rate, computed_freq, q),
+            Peaking => Self::b2_peaking(sample_rate, computed_freq, q, gain),
+            Lowshelf => Self::b2_lowshelf(sample_rate, computed_freq, gain),
+            Highshelf => Self::b2_highshelf(sample_rate, computed_freq, gain),
         }
     }
 
@@ -786,33 +812,29 @@ impl BiquadFilterRenderer {
         let w0 = Self::w0(sample_rate, computed_freq);
         let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
-        a * ((a + 1.0) + (a - 1.0) * w0.cos() - 2.0 * alpha_s * a.sqrt())
+        a * ((a - 1.0).mul_add(w0.cos(), a + 1.0) - 2.0 * alpha_s * a.sqrt())
     }
 
-    /// calculates a_0 coefficient
+    /// calculates `a_0` coefficient
     ///
     /// # Arguments
     ///
     /// * `type_` - biquadfilter type
     /// * `sample_rate` - audio context sample rate
-    /// * `computed_freq` - computedOscFreq
+    /// * `computed_freq` - `computedOscFreq`
     /// * `q` - Q factor
     /// * `gain` - filter gain
     #[inline]
-    fn a0(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f64 {
-        let sample_rate = sample_rate as f64;
-        let computed_freq = computed_freq as f64;
-        let q = q as f64;
-        let gain = gain as f64;
+    fn a0(type_: BiquadFilterType, sample_rate: f64, computed_freq: f64, q: f64, gain: f64) -> f64 {
+        use BiquadFilterType::{
+            Allpass, Bandpass, Highpass, Highshelf, Lowpass, Lowshelf, Notch, Peaking,
+        };
         match type_ {
-            BiquadFilterType::Lowpass => Self::a0_lp_hp(sample_rate, computed_freq, q),
-            BiquadFilterType::Highpass => Self::a0_lp_hp(sample_rate, computed_freq, q),
-            BiquadFilterType::Bandpass => Self::a0_bp_notch_all(sample_rate, computed_freq, q),
-            BiquadFilterType::Notch => Self::a0_bp_notch_all(sample_rate, computed_freq, q),
-            BiquadFilterType::Allpass => Self::a0_bp_notch_all(sample_rate, computed_freq, q),
-            BiquadFilterType::Peaking => Self::a0_peaking(sample_rate, computed_freq, q, gain),
-            BiquadFilterType::Lowshelf => Self::a0_lowshelf(sample_rate, computed_freq, gain),
-            BiquadFilterType::Highshelf => Self::a0_highshelf(sample_rate, computed_freq, gain),
+            Lowpass | Highpass => Self::a0_lp_hp(sample_rate, computed_freq, q),
+            Bandpass | Notch | Allpass => Self::a0_bp_notch_all(sample_rate, computed_freq, q),
+            Peaking => Self::a0_peaking(sample_rate, computed_freq, q, gain),
+            Lowshelf => Self::a0_lowshelf(sample_rate, computed_freq, gain),
+            Highshelf => Self::a0_highshelf(sample_rate, computed_freq, gain),
         }
     }
 
@@ -841,7 +863,7 @@ impl BiquadFilterRenderer {
         let w0 = Self::w0(sample_rate, computed_freq);
         let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
-        (a + 1.0) + (a - 1.0) * w0.cos() + 2.0 * alpha_s * a.sqrt()
+        (2.0 * alpha_s).mul_add(a.sqrt(), (a - 1.0).mul_add(w0.cos(), a + 1.0))
     }
 
     #[inline]
@@ -850,41 +872,28 @@ impl BiquadFilterRenderer {
         let w0 = Self::w0(sample_rate, computed_freq);
         let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
-        (a + 1.0) - (a - 1.0) * w0.cos() + 2.0 * alpha_s * a.sqrt()
+        (2.0 * alpha_s).mul_add(a.sqrt(), (a + 1.0) - (a - 1.0) * w0.cos())
     }
 
-    /// calculates a_1 coefficient
+    /// calculates `a_1` coefficient
     ///
     /// # Arguments
     ///
     /// * `type_` - biquadfilter type
     /// * `sample_rate` - audio context sample rate
-    /// * `computed_freq` - computedOscFreq
+    /// * `computed_freq` - `computedOscFreq`
     /// * `gain` - filter gain
     #[inline]
-    fn a1(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, gain: f32) -> f64 {
-        let sample_rate = sample_rate as f64;
-        let computed_freq = computed_freq as f64;
-        let gain = gain as f64;
+    fn a1(type_: BiquadFilterType, sample_rate: f64, computed_freq: f64, gain: f64) -> f64 {
+        use BiquadFilterType::{
+            Allpass, Bandpass, Highpass, Highshelf, Lowpass, Lowshelf, Notch, Peaking,
+        };
         match type_ {
-            BiquadFilterType::Lowpass => {
+            Lowpass | Highpass | Bandpass | Notch | Allpass | Peaking => {
                 Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq)
             }
-            BiquadFilterType::Highpass => {
-                Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq)
-            }
-            BiquadFilterType::Bandpass => {
-                Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq)
-            }
-            BiquadFilterType::Notch => Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq),
-            BiquadFilterType::Allpass => {
-                Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq)
-            }
-            BiquadFilterType::Peaking => {
-                Self::a1_lp_hp_bp_notch_all_peak(sample_rate, computed_freq)
-            }
-            BiquadFilterType::Lowshelf => Self::a1_lowshelf(sample_rate, computed_freq, gain),
-            BiquadFilterType::Highshelf => Self::a1_highshelf(sample_rate, computed_freq, gain),
+            Lowshelf => Self::a1_lowshelf(sample_rate, computed_freq, gain),
+            Highshelf => Self::a1_highshelf(sample_rate, computed_freq, gain),
         }
     }
 
@@ -899,7 +908,7 @@ impl BiquadFilterRenderer {
         let a = Self::a(gain);
         let w0 = Self::w0(sample_rate, computed_freq);
 
-        -2.0 * ((a - 1.0) + (a + 1.0) * w0.cos())
+        -2.0 * (a + 1.0).mul_add(w0.cos(), a - 1.0)
     }
 
     #[inline]
@@ -910,30 +919,26 @@ impl BiquadFilterRenderer {
         2.0 * ((a - 1.0) - (a + 1.0) * w0.cos())
     }
 
-    /// calculates a_2 coefficient
+    /// calculates `a_2` coefficient
     ///
     /// # Arguments
     ///
     /// * `type_` - biquadfilter type
     /// * `sample_rate` - audio context sample rate
-    /// * `computed_freq` - computedOscFreq
+    /// * `computed_freq` - `computedOscFreq`
     /// * `q` - Q factor
     /// * `gain` - filter gain
     #[inline]
-    fn a2(type_: BiquadFilterType, sample_rate: f32, computed_freq: f32, q: f32, gain: f32) -> f64 {
-        let sample_rate = sample_rate as f64;
-        let computed_freq = computed_freq as f64;
-        let q = q as f64;
-        let gain = gain as f64;
+    fn a2(type_: BiquadFilterType, sample_rate: f64, computed_freq: f64, q: f64, gain: f64) -> f64 {
+        use BiquadFilterType::{
+            Allpass, Bandpass, Highpass, Highshelf, Lowpass, Lowshelf, Notch, Peaking,
+        };
         match type_ {
-            BiquadFilterType::Lowpass => Self::a2_lp_hp(sample_rate, computed_freq, q),
-            BiquadFilterType::Highpass => Self::a2_lp_hp(sample_rate, computed_freq, q),
-            BiquadFilterType::Bandpass => Self::a2_bp_notch_all(sample_rate, computed_freq, q),
-            BiquadFilterType::Notch => Self::a2_bp_notch_all(sample_rate, computed_freq, q),
-            BiquadFilterType::Allpass => Self::a2_bp_notch_all(sample_rate, computed_freq, q),
-            BiquadFilterType::Peaking => Self::a2_peaking(sample_rate, computed_freq, q, gain),
-            BiquadFilterType::Lowshelf => Self::a2_lowshelf(sample_rate, computed_freq, gain),
-            BiquadFilterType::Highshelf => Self::a2_highshelf(sample_rate, computed_freq, gain),
+            Lowpass | Highpass => Self::a2_lp_hp(sample_rate, computed_freq, q),
+            Bandpass | Notch | Allpass => Self::a2_bp_notch_all(sample_rate, computed_freq, q),
+            Peaking => Self::a2_peaking(sample_rate, computed_freq, q, gain),
+            Lowshelf => Self::a2_lowshelf(sample_rate, computed_freq, gain),
+            Highshelf => Self::a2_highshelf(sample_rate, computed_freq, gain),
         }
     }
 
@@ -962,7 +967,7 @@ impl BiquadFilterRenderer {
         let w0 = Self::w0(sample_rate, computed_freq);
         let alpha_s = Self::alpha_s(sample_rate, computed_freq);
 
-        (a + 1.0) + (a - 1.0) * w0.cos() - 2.0 * alpha_s * a.sqrt()
+        (a - 1.0).mul_add(w0.cos(), a + 1.0) - 2.0 * alpha_s * a.sqrt()
     }
 
     #[inline]
@@ -977,7 +982,7 @@ impl BiquadFilterRenderer {
     /// Returns A parameter used to calculate biquad coeffs
     #[inline]
     fn a(gain: f64) -> f64 {
-        10f64.powf(gain / 40.)
+        10_f64.powf(gain / 40.)
     }
 
     /// Returns w0 (omega 0) parameter used to calculate biquad coeffs
@@ -986,19 +991,19 @@ impl BiquadFilterRenderer {
         2.0 * PI * computed_freq / sample_rate
     }
 
-    /// Returns alpha_q parameter used to calculate biquad coeffs
+    /// Returns `alpha_q` parameter used to calculate biquad coeffs
     #[inline]
     fn alpha_q(sample_rate: f64, computed_freq: f64, q: f64) -> f64 {
         Self::w0(sample_rate, computed_freq).sin() / (2. * q)
     }
 
-    /// Returns alpha_q_db parameter used to calculate biquad coeffs
+    /// Returns `alpha_q_db` parameter used to calculate biquad coeffs
     #[inline]
     fn alpha_q_db(sample_rate: f64, computed_freq: f64, q: f64) -> f64 {
-        Self::w0(sample_rate, computed_freq).sin() / (2. * 10f64.powf(q / 20.))
+        Self::w0(sample_rate, computed_freq).sin() / (2. * 10_f64.powf(q / 20.))
     }
 
-    /// Returns alpha_S parameter used to calculate biquad coeffs
+    /// Returns `alpha_s` parameter used to calculate biquad coeffs
     #[inline]
     fn alpha_s(sample_rate: f64, computed_freq: f64) -> f64 {
         let w0 = Self::w0(sample_rate, computed_freq);
@@ -1024,13 +1029,13 @@ mod test {
     #[test]
     fn build_with_new() {
         let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-        let _ = BiquadFilterNode::new(&context, None);
+        let _biquad = BiquadFilterNode::new(&context, None);
     }
 
     #[test]
     fn build_with_factory_func() {
         let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-        let _ = context.create_biquad_filter();
+        let _biquad = context.create_biquad_filter();
     }
 
     #[test]
@@ -1135,7 +1140,7 @@ mod test {
         let mut mag_response = [0., 1.0];
         let mut phase_response = [0.];
 
-        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response)
+        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
     }
 
     #[test]
@@ -1148,13 +1153,15 @@ mod test {
         let mut mag_response = [0.];
         let mut phase_response = [0., 1.0];
 
-        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response)
+        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
     }
 
     #[test]
     fn frequencies_are_clamped() {
         let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let biquad = BiquadFilterNode::new(&context, None);
+        // It will be fine for the usual fs
+        #[allow(clippy::cast_precision_loss)]
         let niquyst = context.sample_rate().0 as f32 / 2.0;
 
         let mut frequency_hz = [-100., 1_000_000.];
