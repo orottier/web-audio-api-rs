@@ -22,11 +22,11 @@ fn main() {
     // connect the biquad node to the destination node (speakers)
     biquad.connect(&context.destination());
 
-    let frequency_hz = [250., 500.0, 750.0, 1000., 1500.0, 2000.0, 4000.0];
+    let mut frequency_hz = [250., 500.0, 750.0, 1000., 1500.0, 2000.0, 4000.0];
     let mut mag_response = [0.; 7];
     let mut phase_response = [0.; 7];
 
-    biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
+    biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
 
     println!("=================================");
     println!("Biquad filter frequency response:");
@@ -53,7 +53,7 @@ fn main() {
     // enjoy listening
     std::thread::sleep(std::time::Duration::from_secs(4));
 
-    biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
+    biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
     println!("=================================");
     println!("Biquad filter frequency response:");
     println!("=================================");

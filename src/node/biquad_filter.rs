@@ -1013,7 +1013,7 @@ mod test {
 
     use crate::{
         context::{AsBaseAudioContext, OfflineAudioContext},
-        node::{AudioNode, BiquadFilterOptions, BiquadFilterType},
+        node::{BiquadFilterOptions, BiquadFilterType},
         SampleRate,
     };
 
