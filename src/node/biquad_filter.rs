@@ -22,7 +22,7 @@ use super::AudioNode;
 
 struct CoeffsReq(Sender<[f64; 5]>);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BiquadFilterType {
     Lowpass,
     Highpass,
@@ -128,7 +128,7 @@ impl BiquadFilterNode {
             let default_det = 0.;
             let default_q = 1.;
 
-            let q_value = options.detune.unwrap_or(default_det);
+            let q_value = options.q.unwrap_or(default_det);
             let d_value = options.detune.unwrap_or(default_det);
             let f_value = options.frequency.unwrap_or(default_freq);
             let g_value = options.gain.unwrap_or(default_gain);
@@ -266,23 +266,28 @@ impl BiquadFilterNode {
     /// * `phase_response` - phase of the frequency response of the filter
     pub fn get_frequency_response(
         &self,
-        frequency_hz: &[f32],
+        frequency_hz: &mut [f32],
         mag_response: &mut [f32],
         phase_response: &mut [f32],
     ) {
+        self.validate_inputs(frequency_hz, mag_response, phase_response);
         let (sender, receiver) = crossbeam_channel::bounded(0);
-        self.sender.send(CoeffsReq(sender)).unwrap();
+        self.sender
+            .send(CoeffsReq(sender))
+            .expect("Sending CoeffsReq failed");
 
         loop {
             match receiver.try_recv() {
                 Err(crossbeam_channel::TryRecvError::Disconnected) => {
-                    panic!("Receiver Error: disconnected type");
+                    println!("Receiver Error: disconnected type");
+                    continue;
                 }
                 Err(crossbeam_channel::TryRecvError::Empty) => {
                     println!("Receiver Error: empty type");
                     continue;
                 }
                 Ok([b0, b1, b2, a1, a2]) => {
+                    println!("received...");
                     for (i, &f) in frequency_hz.iter().enumerate() {
                         let f = f as f64;
                         let sample_rate = self.sample_rate as f64;
@@ -301,6 +306,51 @@ impl BiquadFilterNode {
                 }
             }
         }
+    }
+
+    #[inline]
+    fn validate_inputs(
+        &self,
+        frequency_hz: &mut [f32],
+        mag_response: &mut [f32],
+        phase_response: &mut [f32],
+    ) {
+        assert_eq!(
+            frequency_hz.len(),
+            mag_response.len(),
+            " InvalidAccessError: All paramaters should be the same length"
+        );
+        assert_eq!(
+            mag_response.len(),
+            phase_response.len(),
+            " InvalidAccessError: All paramaters should be the same length"
+        );
+
+        // Ensures that given frequencies are in the correct range
+        let min = 0.;
+        let max = self.sample_rate / 2.;
+        for f in frequency_hz.iter_mut() {
+            *f = f.clamp(min, max);
+        }
+    }
+
+    /// Mock of `get_frequency_response`
+    /// This function is the same as `get_frequency_response` except it never send the `CoeffsReq`.
+    /// In tests, we use OfflineAudioContext and in this context the CoeffsReq is not sendable.
+    ///
+    /// # Arguments
+    ///
+    /// * `frequency_hz` - frequencies for which frequency response of the filter should be calculated
+    /// * `mag_response` - magnitude of the frequency response of the filter
+    /// * `phase_response` - phase of the frequency response of the filter
+    #[cfg(test)]
+    fn get_frequency_response_mock(
+        &self,
+        frequency_hz: &mut [f32],
+        mag_response: &mut [f32],
+        phase_response: &mut [f32],
+    ) {
+        self.validate_inputs(frequency_hz, mag_response, phase_response);
     }
 }
 
@@ -954,5 +1004,170 @@ impl BiquadFilterRenderer {
         let w0 = Self::w0(sample_rate, computed_freq);
 
         (w0.sin() / 2.0) * SQRT_2
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use float_eq::assert_float_eq;
+
+    use crate::{
+        context::{AsBaseAudioContext, OfflineAudioContext},
+        node::{AudioNode, BiquadFilterOptions, BiquadFilterType},
+        SampleRate,
+    };
+
+    use super::BiquadFilterNode;
+
+    const LENGTH: usize = 555;
+
+    #[test]
+    fn build_with_new() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let _ = BiquadFilterNode::new(&context, None);
+    }
+
+    #[test]
+    fn build_with_factory_func() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let _ = context.create_biquad_filter();
+    }
+
+    #[test]
+    fn default_audio_params_are_correct_with_no_options() {
+        let default_q = 1.0;
+        let default_detune = 0.;
+        let default_gain = 0.;
+        let default_freq = 350.;
+        let default_type = BiquadFilterType::Lowpass;
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let biquad = BiquadFilterNode::new(&context, None);
+
+        assert_float_eq!(biquad.q().value(), default_q, ulps <= 0);
+        assert_float_eq!(biquad.detune().value(), default_detune, ulps <= 0);
+        assert_float_eq!(biquad.gain().value(), default_gain, ulps <= 0);
+        assert_float_eq!(biquad.frequency().value(), default_freq, ulps <= 0);
+        assert_eq!(biquad.type_(), default_type);
+    }
+
+    #[test]
+    fn default_audio_params_are_correct_with_default_options() {
+        let default_q = 1.0;
+        let default_detune = 0.;
+        let default_gain = 0.;
+        let default_freq = 350.;
+        let default_type = BiquadFilterType::Lowpass;
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let options = BiquadFilterOptions::default();
+
+        let biquad = BiquadFilterNode::new(&context, Some(options));
+
+        assert_float_eq!(biquad.q().value(), default_q, ulps <= 0);
+        assert_float_eq!(biquad.detune().value(), default_detune, ulps <= 0);
+        assert_float_eq!(biquad.gain().value(), default_gain, ulps <= 0);
+        assert_float_eq!(biquad.frequency().value(), default_freq, ulps <= 0);
+        assert_eq!(biquad.type_(), default_type);
+    }
+
+    #[test]
+    fn options_sets_audio_params() {
+        let q = 2.0;
+        let detune = 100.;
+        let gain = 1.;
+        let frequency = 3050.;
+        let type_ = BiquadFilterType::Highpass;
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let options = BiquadFilterOptions {
+            q: Some(q),
+            detune: Some(detune),
+            gain: Some(gain),
+            frequency: Some(frequency),
+            type_: Some(type_),
+            ..BiquadFilterOptions::default()
+        };
+
+        let biquad = BiquadFilterNode::new(&context, Some(options));
+
+        context.start_rendering();
+
+        assert_float_eq!(biquad.q().value(), q, ulps <= 0);
+        assert_float_eq!(biquad.detune().value(), detune, ulps <= 0);
+        assert_float_eq!(biquad.gain().value(), gain, ulps <= 0);
+        assert_float_eq!(biquad.frequency().value(), frequency, ulps <= 0);
+        assert_eq!(biquad.type_(), type_);
+    }
+
+    #[test]
+    fn change_audio_params_after_build() {
+        let q = 2.0;
+        let detune = 100.;
+        let gain = 1.;
+        let frequency = 3050.;
+        let type_ = BiquadFilterType::Highpass;
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let mut biquad = BiquadFilterNode::new(&context, None);
+
+        biquad.q().set_value(q);
+        biquad.detune().set_value(detune);
+        biquad.gain().set_value(gain);
+        biquad.frequency().set_value(frequency);
+        biquad.set_type(type_);
+
+        context.start_rendering();
+
+        assert_float_eq!(biquad.q().value(), q, ulps <= 0);
+        assert_float_eq!(biquad.detune().value(), detune, ulps <= 0);
+        assert_float_eq!(biquad.gain().value(), gain, ulps <= 0);
+        assert_float_eq!(biquad.frequency().value(), frequency, ulps <= 0);
+        assert_eq!(biquad.type_(), type_);
+    }
+
+    #[test]
+    #[should_panic]
+    fn panics_when_not_the_same_length() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let biquad = BiquadFilterNode::new(&context, None);
+
+        let mut frequency_hz = [0.];
+        let mut mag_response = [0., 1.0];
+        let mut phase_response = [0.];
+
+        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response)
+    }
+
+    #[test]
+    #[should_panic]
+    fn panics_when_not_the_same_length_2() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let biquad = BiquadFilterNode::new(&context, None);
+
+        let mut frequency_hz = [0.];
+        let mut mag_response = [0.];
+        let mut phase_response = [0., 1.0];
+
+        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response)
+    }
+
+    #[test]
+    fn frequencies_are_clamped() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let biquad = BiquadFilterNode::new(&context, None);
+        let niquyst = context.sample_rate().0 as f32 / 2.0;
+
+        let mut frequency_hz = [-100., 1_000_000.];
+        let mut mag_response = [0., 0.];
+        let mut phase_response = [0., 0.];
+
+        biquad.get_frequency_response_mock(
+            &mut frequency_hz,
+            &mut mag_response,
+            &mut phase_response,
+        );
+
+        let ref_arr = [0., niquyst];
+        assert_float_eq!(frequency_hz, ref_arr, ulps_all <= 0);
     }
 }
