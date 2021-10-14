@@ -5,7 +5,7 @@ use crate::{
     buffer::{ChannelConfig, ChannelConfigOptions},
     context::{AsBaseAudioContext, AudioContextRegistration},
     process::{AudioParamValues, AudioProcessor},
-    SampleRate,
+    SampleRate, MAX_CHANNELS,
 };
 use num_complex::Complex;
 use std::f64::consts::PI;
@@ -161,7 +161,7 @@ struct IirFilterRenderer {
     // Normalized filter's coeffs -- (b[n],a[n])
     norm_coeffs: Vec<(f64, f64)>,
     // filter's states
-    states: Vec<f64>,
+    states: Vec<[f64; MAX_CHANNELS]>,
 }
 
 impl AudioProcessor for IirFilterRenderer {
@@ -257,9 +257,9 @@ impl IirFilterRenderer {
     ///
     /// * `coeffs` - filter's coeffs
     #[inline]
-    fn build_filter_states(coeffs: &[(f64, f64)]) -> Vec<f64> {
+    fn build_filter_states(coeffs: &[(f64, f64)]) -> Vec<[f64; MAX_CHANNELS]> {
         let coeffs_len = coeffs.len();
-        vec![0.; coeffs_len - 1]
+        vec![[0.; MAX_CHANNELS]; coeffs_len - 1]
     }
 
     /// Generate an output by filtering the input
@@ -270,9 +270,14 @@ impl IirFilterRenderer {
     /// * `output` - Audiobuffer output
     #[inline]
     fn filter(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
-        for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
+        for (idx, (i_data, o_data)) in input
+            .channels()
+            .iter()
+            .zip(output.channels_mut())
+            .enumerate()
+        {
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.tick(i);
+                *o = self.tick(i, idx);
             }
         }
     }
@@ -282,14 +287,16 @@ impl IirFilterRenderer {
     /// # Arguments
     ///
     /// * `input` - Audiobuffer input
+    /// * `idx` - channel index mapping to the filter state index
     #[inline]
     #[allow(clippy::cast_possible_truncation)]
-    fn tick(&mut self, input: f32) -> f32 {
+    fn tick(&mut self, input: f32, idx: usize) -> f32 {
         let input = f64::from(input);
-        let output = self.norm_coeffs[0].0.mul_add(input, self.states[0]);
+        let output = self.norm_coeffs[0].0.mul_add(input, self.states[0][idx]);
 
-        for (idx, (ff, fb)) in self.norm_coeffs.iter().skip(1).enumerate() {
-            self.states[idx] = ff * input - fb * output + self.states.get(idx + 1).unwrap_or(&0.);
+        for (i, (ff, fb)) in self.norm_coeffs.iter().skip(1).enumerate() {
+            let state = self.states.get(i + 1).unwrap_or(&[0.; MAX_CHANNELS])[idx];
+            self.states[i][idx] = ff * input - fb * output + state;
         }
 
         // Value truncation will not be hearable
