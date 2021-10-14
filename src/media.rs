@@ -7,7 +7,7 @@ use std::io::BufReader;
 use lewton::inside_ogg::OggStreamReader;
 use lewton::VorbisError;
 
-use crate::buffer::{AudioBuffer, ChannelData};
+use crate::buffer::{AudioBuffer, AudioBufferOptions, ChannelData};
 use crate::control::Controller;
 use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 
@@ -40,10 +40,16 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 /// ```no_run
 /// use web_audio_api::SampleRate;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
-/// use web_audio_api::buffer::AudioBuffer;
+/// use web_audio_api::buffer::{AudioBuffer, AudioBufferOptions};
+///
+/// let options = AudioBufferOptions {
+///     number_of_channels: Some(1),
+///     length: 512,
+///     sample_rate: 44_100.
+/// };
 ///
 /// // create a new buffer: 512 samples of silence
-/// let silence = AudioBuffer::new(1, 512, SampleRate(44_100));
+/// let silence = AudioBuffer::new(options);
 ///
 /// // create a sequence of this buffer
 /// let sequence = std::iter::repeat(silence).take(5);
@@ -81,7 +87,7 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// // create a new buffer with a few samples of silence
 /// let silence = AudioBuffer::from_channels(
 ///     vec![ChannelData::from(vec![0.; 20])],
-///     SampleRate(44_100)
+///     44_100.
 /// );
 ///
 /// // create a sequence of this buffer
@@ -348,7 +354,12 @@ impl Iterator for Microphone {
             Err(TryRecvError::Empty) => {
                 // frame not received in time, emit silence
                 log::debug!("input frame delayed");
-                AudioBuffer::new(self.channels, BUFFER_SIZE as usize, self.sample_rate)
+                let options = AudioBufferOptions {
+                    number_of_channels: Some(self.channels),
+                    length: BUFFER_SIZE as usize,
+                    sample_rate: self.sample_rate.0 as f32,
+                };
+                AudioBuffer::new(options)
             }
             Err(TryRecvError::Disconnected) => {
                 // MicrophoneRender has stopped, close stream
@@ -391,7 +402,7 @@ impl MicrophoneRender {
             ));
         }
 
-        let buffer = AudioBuffer::from_channels(channels, self.sample_rate);
+        let buffer = AudioBuffer::from_channels(channels, self.sample_rate.0 as f32);
         let result = self.sender.try_send(buffer); // can fail (frame dropped)
         if result.is_err() {
             log::debug!("input frame dropped");
@@ -449,7 +460,7 @@ impl Iterator for OggVorbisDecoder {
 
         let channel_data: Vec<_> = packet.into_iter().map(ChannelData::from).collect();
         let sample_rate = SampleRate(self.stream.ident_hdr.audio_sample_rate);
-        let result = AudioBuffer::from_channels(channel_data, sample_rate);
+        let result = AudioBuffer::from_channels(channel_data, sample_rate.0 as f32);
 
         Some(Ok(result))
     }
@@ -543,7 +554,7 @@ impl Iterator for WavDecoder {
 
         // convert data to AudioBuffer
         let channels = data.into_iter().map(ChannelData::from).collect();
-        let result = AudioBuffer::from_channels(channels, self.sample_rate);
+        let result = AudioBuffer::from_channels(channels, self.sample_rate.0 as f32);
 
         Some(Ok(result))
     }

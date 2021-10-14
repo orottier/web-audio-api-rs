@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use crate::analysis::Analyser;
 use crate::buffer::{
-    AudioBuffer, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
-    Resampler,
+    AudioBuffer, AudioBufferOptions, ChannelConfig, ChannelConfigOptions, ChannelCountMode,
+    ChannelInterpretation, Resampler,
 };
 use crate::context::{
     AsBaseAudioContext, AudioContextRegistration, AudioNodeId, AudioParamId, BaseAudioContext,
@@ -1132,9 +1132,13 @@ impl AudioBufferSourceNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: AudioBufferSourceNodeOptions) -> Self {
         context.base().register(move |registration| {
             // unwrap_or_default buffer
-            let buffer = options
-                .buffer
-                .unwrap_or_else(|| AudioBuffer::new(1, BUFFER_SIZE as usize, SampleRate(44_100)));
+            let buffer = options.buffer.unwrap_or_else(|| {
+                AudioBuffer::new(AudioBufferOptions {
+                    number_of_channels: Some(1),
+                    length: BUFFER_SIZE as usize,
+                    sample_rate: 44_100.,
+                })
+            });
 
             // wrap input in resampler
             let resampler = Resampler::new(

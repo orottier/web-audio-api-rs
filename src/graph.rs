@@ -7,7 +7,7 @@ use cpal::Sample;
 use crossbeam_channel::Receiver;
 
 use crate::alloc::{Alloc, AudioBuffer};
-use crate::buffer::{ChannelConfig, ChannelCountMode};
+use crate::buffer::{AudioBufferOptions, ChannelConfig, ChannelCountMode};
 use crate::message::ControlMessage;
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{SampleRate, BUFFER_SIZE};
@@ -90,7 +90,12 @@ impl RenderThread {
         // assert input was properly sized
         debug_assert_eq!(length % BUFFER_SIZE as usize, 0);
 
-        let mut buf = crate::buffer::AudioBuffer::new(self.channels, 0, self.sample_rate);
+        let options = AudioBufferOptions {
+            number_of_channels: Some(self.channels),
+            length: 0,
+            sample_rate: self.sample_rate.0 as f32,
+        };
+        let mut buf = crate::buffer::AudioBuffer::new(options);
 
         for _ in 0..length / BUFFER_SIZE as usize {
             // handle addition/removal of nodes/edges

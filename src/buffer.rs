@@ -1,43 +1,57 @@
 //! General purpose audio signal data structures
-
 use std::ops::{Index, IndexMut};
 use std::slice::SliceIndex;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use float_eq::float_eq;
+use float_eq::{assert_float_eq, float_eq};
 
 use crate::alloc::AudioBuffer as FixedAudioBuffer;
 use crate::media::MediaStream;
 use crate::SampleRate;
+
+#[derive(Debug, Clone, Copy)]
+pub struct AudioBufferOptions {
+    pub number_of_channels: Option<usize>,
+    pub length: usize,
+    pub sample_rate: f32,
+}
 
 /// Memory-resident audio asset, basically a matrix of channels * samples
 ///
 /// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug)]
 pub struct AudioBuffer {
-    channels: Vec<ChannelData>,
-    sample_rate: SampleRate,
+    sample_rate: f32,
+    internal_data: Vec<ChannelData>,
 }
 
 use std::error::Error;
 
 impl AudioBuffer {
     /// Allocate a silent audiobuffer with given channel and samples count.
-    pub fn new(channels: usize, len: usize, sample_rate: SampleRate) -> Self {
-        let silence = ChannelData::new(len);
+    pub fn new(options: AudioBufferOptions) -> Self {
+        let AudioBufferOptions {
+            number_of_channels,
+            length,
+            sample_rate,
+        } = options;
+
+        let number_of_channels = number_of_channels.unwrap_or(1);
+
+        let silence = ChannelData::new(length);
 
         Self {
-            channels: vec![silence; channels],
             sample_rate,
+            internal_data: vec![silence; number_of_channels],
         }
     }
 
     /// Create a multi-channel audiobuffer.
     /// todo replace with pub(crate)
-    pub fn from_channels(channels: Vec<ChannelData>, sample_rate: SampleRate) -> Self {
+    pub fn from_channels(channels: Vec<ChannelData>, sample_rate: f32) -> Self {
         Self {
-            channels,
+            internal_data: channels,
             sample_rate,
         }
     }
@@ -81,68 +95,68 @@ impl AudioBuffer {
 
     /// Number of channels in this AudioBuffer
     pub fn number_of_channels(&self) -> usize {
-        self.channels.len()
+        self.internal_data.len()
     }
 
     /// Number of samples per channel in this AudioBuffer
     pub fn length(&self) -> usize {
-        self.channels.get(0).map(ChannelData::len).unwrap_or(0)
+        self.internal_data.get(0).map(ChannelData::len).unwrap_or(0)
     }
 
     /// Sample rate of this AudioBuffer in Hertz
     pub fn sample_rate(&self) -> f32 {
-        self.sample_rate.0 as f32
+        self.sample_rate
     }
 
     /// Duration in seconds of the AudioBuffer
     pub fn duration(&self) -> f64 {
-        self.length() as f64 / self.sample_rate.0 as f64
+        self.length() as f64 / f64::from(self.sample_rate)
     }
 
     /// Channel data as slice
     pub fn channels(&self) -> &[ChannelData] {
-        &self.channels
+        &self.internal_data
     }
 
     /// Channel data as slice (mutable)
     pub fn channels_mut(&mut self) -> &mut [ChannelData] {
-        &mut self.channels
+        &mut self.internal_data
     }
 
     /// Get the samples from this specific channel.
     ///
     /// Panics if the index is greater than the available number of channels
     pub fn get_channel_data(&self, index: usize) -> &ChannelData {
-        &self.channels[index]
+        &self.internal_data[index]
     }
 
     /// Get the samples (mutable) from this specific channel.
     ///
     /// Panics if the index is greater than the available number of channels
     pub fn get_channel_data_mut(&mut self, index: usize) -> &mut ChannelData {
-        &mut self.channels[index]
+        &mut self.internal_data[index]
     }
 
     /// Modify every channel in the same way
     pub fn modify_channels<F: Fn(&mut ChannelData)>(&mut self, fun: F) {
         // todo, optimize for Arcs that are equal
-        self.channels.iter_mut().for_each(fun)
+        self.internal_data.iter_mut().for_each(fun)
     }
 
     /// Extends an AudioBuffer with the contents of another.
     ///
     /// This function will panic if the sample_rate and channel_count are not equal
     pub fn extend(&mut self, other: &Self) {
-        assert_eq!(self.sample_rate, other.sample_rate);
+        assert_float_eq!(self.sample_rate, other.sample_rate, ulps <= 0);
         assert_eq!(self.number_of_channels(), other.number_of_channels());
 
         let data = self.channels_mut();
         data.iter_mut()
-            .zip(other.channels.iter())
+            .zip(other.internal_data.iter())
             .for_each(|(channel, other_channel)| {
                 let cur_channel_data = Arc::make_mut(&mut channel.data);
                 cur_channel_data.extend(&other_channel[..]);
-            })
+            });
     }
 
     /// Extends an AudioBuffer with an [`FixedAudioBuffer`]
@@ -179,7 +193,7 @@ impl AudioBuffer {
                     .iter_mut()
                     .map(|c| ChannelData::from(c.next().unwrap().to_vec()))
                     .collect();
-                AudioBuffer::from_channels(cur, SampleRate(sample_rate as u32))
+                AudioBuffer::from_channels(cur, sample_rate)
             })
             .collect()
     }
@@ -196,7 +210,7 @@ impl AudioBuffer {
             .map(ChannelData::from)
             .collect();
 
-        AudioBuffer::from_channels(channels, SampleRate(sample_rate as u32))
+        AudioBuffer::from_channels(channels, sample_rate)
     }
 
     /// Resample to the desired sample rate.
@@ -208,10 +222,10 @@ impl AudioBuffer {
     /// use web_audio_api::buffer::{ChannelData, AudioBuffer};
     ///
     /// let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-    /// let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(48_000));
+    /// let mut buffer = AudioBuffer::from_channels(vec![channel], 48_000.);
     ///
     /// // upmix from 48k to 96k Hertz sample rate
-    /// buffer.resample(SampleRate(96_000));
+    /// buffer.resample(96_000.);
     ///
     /// assert_eq!(
     ///     buffer.get_channel_data(0),
@@ -220,12 +234,12 @@ impl AudioBuffer {
     ///
     /// assert_eq!(buffer.sample_rate(), 96_000.0);
     /// ```
-    pub fn resample(&mut self, sample_rate: SampleRate) {
-        if float_eq!(self.sample_rate(), sample_rate.0 as f32, ulps <= 0) {
+    pub fn resample(&mut self, sample_rate: f32) {
+        if float_eq!(self.sample_rate(), sample_rate, ulps <= 0) {
             return;
         }
 
-        let rate = sample_rate.0 as f32 / self.sample_rate.0 as f32;
+        let rate = sample_rate / self.sample_rate;
         self.modify_channels(|channel_data| {
             let mut current = 0;
             let resampled = channel_data
@@ -411,7 +425,14 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
     fn from_iter<I: IntoIterator<Item = AudioBuffer>>(iter: I) -> Self {
         let mut iter = iter.into_iter();
         let mut collect: AudioBuffer = match iter.next() {
-            None => return AudioBuffer::new(0, 0, SampleRate(0)),
+            None => {
+                let options = AudioBufferOptions {
+                    number_of_channels: Some(0),
+                    length: 0,
+                    sample_rate: 0.,
+                };
+                return AudioBuffer::new(options);
+            }
             Some(first) => first,
         };
 
@@ -433,7 +454,7 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
 ///
 /// // construct an input of 3 chunks of 5 samples
 /// let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-/// let input_buf = AudioBuffer::from_channels(vec![channel], SampleRate(44_100));
+/// let input_buf = AudioBuffer::from_channels(vec![channel], 44_100.);
 /// let input = vec![input_buf; 3].into_iter().map(|b| Ok(b));
 ///
 /// // resample to chunks of 10 samples
@@ -489,7 +510,7 @@ impl<M: MediaStream> Iterator for Resampler<M> {
                 None => return None,
                 Some(Err(e)) => return Some(Err(e)),
                 Some(Ok(mut data)) => {
-                    data.resample(self.sample_rate);
+                    data.resample(self.sample_rate.0 as f32);
                     data
                 }
             },
@@ -500,18 +521,19 @@ impl<M: MediaStream> Iterator for Resampler<M> {
             // buffer is smaller than desired len
             match self.input.next() {
                 None => {
-                    let padding = AudioBuffer::new(
-                        buffer.number_of_channels(),
-                        self.sample_len as usize - buffer.length(),
-                        self.sample_rate,
-                    );
+                    let options = AudioBufferOptions {
+                        number_of_channels: Some(buffer.number_of_channels()),
+                        length: self.sample_len as usize - buffer.length(),
+                        sample_rate: self.sample_rate.0 as f32,
+                    };
+                    let padding = AudioBuffer::new(options);
                     buffer.extend(&padding);
 
                     return Some(Ok(buffer));
                 }
                 Some(Err(e)) => return Some(Err(e)),
                 Some(Ok(mut data)) => {
-                    data.resample(self.sample_rate);
+                    data.resample(self.sample_rate.0 as f32);
                     buffer.extend(&data)
                 }
             }
@@ -535,7 +557,12 @@ mod tests {
 
     #[test]
     fn test_silent() {
-        let b = AudioBuffer::new(2, 10, SampleRate(44_100));
+        let options = AudioBufferOptions {
+            number_of_channels: Some(2),
+            length: 10,
+            sample_rate: 44100.,
+        };
+        let b = AudioBuffer::new(options);
 
         assert_eq!(b.length(), 10);
         assert_eq!(b.number_of_channels(), 2);
@@ -547,8 +574,13 @@ mod tests {
 
     #[test]
     fn test_concat_split() {
-        let mut b1 = AudioBuffer::new(2, 5, SampleRate(44_100));
-        let b2 = AudioBuffer::new(2, 5, SampleRate(44_100));
+        let options = AudioBufferOptions {
+            number_of_channels: Some(2),
+            length: 5,
+            sample_rate: 44100.,
+        };
+        let mut b1 = AudioBuffer::new(options);
+        let b2 = AudioBuffer::new(options);
         b1.extend(&b2);
 
         assert_eq!(b1.length(), 10);
@@ -556,7 +588,7 @@ mod tests {
         assert_float_eq!(b1.sample_rate(), 44_100.0, ulps <= 0);
 
         let channel_data = ChannelData::from(vec![1.; 5]);
-        let b3 = AudioBuffer::from_channels(vec![channel_data; 2], SampleRate(44_100));
+        let b3 = AudioBuffer::from_channels(vec![channel_data; 2], 44_100.);
 
         b1.extend(&b3);
 
@@ -585,8 +617,8 @@ mod tests {
     #[test]
     fn test_resample_upmix() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-        let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(100));
-        buffer.resample(SampleRate(200));
+        let mut buffer = AudioBuffer::from_channels(vec![channel], 100.);
+        buffer.resample(200.);
         assert_float_eq!(
             buffer.get_channel_data(0)[..],
             &[1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,][..],
@@ -598,8 +630,8 @@ mod tests {
     #[test]
     fn test_resample_downmix() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-        let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(200));
-        buffer.resample(SampleRate(100));
+        let mut buffer = AudioBuffer::from_channels(vec![channel], 200.);
+        buffer.resample(100.);
         assert_float_eq!(buffer.get_channel_data(0)[..], &[2., 4.][..], ulps_all <= 0);
         assert_float_eq!(buffer.sample_rate(), 100.0, ulps <= 0);
     }
@@ -607,7 +639,7 @@ mod tests {
     #[test]
     fn test_resampler_concat() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-        let input_buf = AudioBuffer::from_channels(vec![channel], SampleRate(44_100));
+        let input_buf = AudioBuffer::from_channels(vec![channel], 44_100.);
         let input = vec![input_buf; 3].into_iter().map(Ok);
         let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
 
@@ -633,10 +665,7 @@ mod tests {
     #[test]
     fn test_resampler_split() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);
-        let input_buf = Ok(AudioBuffer::from_channels(
-            vec![channel],
-            SampleRate(44_100),
-        ));
+        let input_buf = Ok(AudioBuffer::from_channels(vec![channel], 44_100.));
         let input = vec![input_buf].into_iter();
         let mut resampler = Resampler::new(SampleRate(44_100), 5, input);
 

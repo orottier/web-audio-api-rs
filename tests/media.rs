@@ -34,7 +34,7 @@ impl Iterator for SlowMedia {
         self.value += 1.;
 
         let channel_data = ChannelData::from(vec![self.value; BUFFER_SIZE as usize]);
-        let buffer = AudioBuffer::from_channels(vec![channel_data], self.sample_rate);
+        let buffer = AudioBuffer::from_channels(vec![channel_data], self.sample_rate.0 as f32);
 
         Some(Ok(buffer))
     }
