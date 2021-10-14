@@ -28,7 +28,7 @@ pub struct IirFilterOptions {
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 pub struct IirFilterNode {
-    sample_rate: f64,
+    sample_rate: f32,
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     feedforward: Vec<f64>,
@@ -82,7 +82,9 @@ impl IirFilterNode {
             assert!(!feedback.is_empty(), "NotSupportedError");
             assert!(!feedback.iter().all(|&ff| ff == 0.), "InvalidStateError");
 
-            let sample_rate = f64::from(context.base().sample_rate().0);
+            // cast will be without loss of precission for usual fs
+            #[allow(clippy::cast_precision_loss)]
+            let sample_rate = context.base().sample_rate().0 as f32;
 
             let config = RendererConfig {
                 feedforward: feedforward.clone(),
@@ -113,10 +115,12 @@ impl IirFilterNode {
     #[allow(clippy::cast_possible_truncation)]
     pub fn get_frequency_response(
         &self,
-        frequency_hz: &[f32],
+        frequency_hz: &mut [f32],
         mag_response: &mut [f32],
         phase_response: &mut [f32],
     ) {
+        self.validate_inputs(frequency_hz, mag_response, phase_response);
+
         for (i, &f) in frequency_hz.iter().enumerate() {
             let mut num: Complex<f64> = Complex::new(0., 0.);
             let mut denom: Complex<f64> = Complex::new(0., 0.);
@@ -126,7 +130,7 @@ impl IirFilterNode {
             for (idx, &ff) in self.feedforward.iter().enumerate() {
                 num += Complex::from_polar(
                     ff,
-                    idx as f64 * -2.0 * PI * f64::from(f) / self.sample_rate,
+                    idx as f64 * -2.0 * PI * f64::from(f) / f64::from(self.sample_rate),
                 );
             }
 
@@ -135,7 +139,7 @@ impl IirFilterNode {
             for (idx, &fb) in self.feedback.iter().enumerate() {
                 denom += Complex::from_polar(
                     fb,
-                    idx as f64 * -2.0 * PI * f64::from(f) / self.sample_rate,
+                    idx as f64 * -2.0 * PI * f64::from(f) / f64::from(self.sample_rate),
                 );
             }
 
@@ -145,6 +149,32 @@ impl IirFilterNode {
             // And it is required by the specs
             mag_response[i] = h_f.norm() as f32;
             phase_response[i] = h_f.arg() as f32;
+        }
+    }
+
+    #[inline]
+    fn validate_inputs(
+        &self,
+        frequency_hz: &mut [f32],
+        mag_response: &mut [f32],
+        phase_response: &mut [f32],
+    ) {
+        assert_eq!(
+            frequency_hz.len(),
+            mag_response.len(),
+            " InvalidAccessError: All paramaters should be the same length"
+        );
+        assert_eq!(
+            mag_response.len(),
+            phase_response.len(),
+            " InvalidAccessError: All paramaters should be the same length"
+        );
+
+        // Ensures that given frequencies are in the correct range
+        let min = 0.;
+        let max = self.sample_rate / 2.;
+        for f in frequency_hz.iter_mut() {
+            *f = f.clamp(min, max);
         }
     }
 }
@@ -306,5 +336,198 @@ impl IirFilterRenderer {
 
         // Value truncation will not be hearable
         output as f32
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use float_eq::assert_float_eq;
+
+    use crate::{
+        buffer::ChannelConfigOptions,
+        context::{AsBaseAudioContext, OfflineAudioContext},
+        SampleRate,
+    };
+
+    use super::{IirFilterNode, IirFilterOptions};
+
+    const LENGTH: usize = 555;
+
+    #[test]
+    fn build_with_new() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let feedforward = vec![
+            0.000_016_636_797_512_844_526,
+            0.000_033_273_595_025_689_05,
+            0.000_016_636_797_512_844_526,
+        ];
+        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+        let options = IirFilterOptions {
+            feedback,
+            feedforward,
+            channel_config: ChannelConfigOptions::default(),
+        };
+
+        let _biquad = IirFilterNode::new(&context, options);
+    }
+
+    #[test]
+    fn build_with_factory_func() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let feedforward = vec![
+            0.000_016_636_797_512_844_526,
+            0.000_033_273_595_025_689_05,
+            0.000_016_636_797_512_844_526,
+        ];
+        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+        let _biquad = context.create_iir_filter(feedforward, feedback);
+    }
+
+    #[test]
+    #[should_panic]
+    fn panics_when_ffs_is_above_max_len() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let feedforward = vec![
+            0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        ];
+        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+        let _biquad = context.create_iir_filter(feedforward, feedback);
+    }
+
+    #[test]
+    #[should_panic]
+    fn panics_when_fbs_is_above_max_len() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let feedback = vec![
+            0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        ];
+        let feedforward = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+        let _biquad = context.create_iir_filter(feedforward, feedback);
+    }
+
+    #[test]
+    #[should_panic]
+    fn panics_when_fbs_is_empty() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let feedback = vec![];
+        let feedforward = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+        let _biquad = context.create_iir_filter(feedforward, feedback);
+    }
+
+    #[test]
+    #[should_panic]
+    fn panics_when_ffs_is_empty() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let feedforward = vec![];
+        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+        let _biquad = context.create_iir_filter(feedforward, feedback);
+    }
+
+    #[test]
+    #[should_panic]
+    fn panics_when_ffs_are_zeros() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let feedforward = vec![0., 0.];
+        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+        let _biquad = context.create_iir_filter(feedforward, feedback);
+    }
+
+    #[test]
+    #[should_panic]
+    fn panics_when_fbs_are_zeros() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let feedback = vec![0., 0.];
+        let feedforward = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+        let _biquad = context.create_iir_filter(feedforward, feedback);
+    }
+
+    #[test]
+    #[should_panic]
+    fn panics_when_not_the_same_length() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let feedforward = vec![
+            0.000_016_636_797_512_844_526,
+            0.000_033_273_595_025_689_05,
+            0.000_016_636_797_512_844_526,
+        ];
+        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+        let options = IirFilterOptions {
+            feedback,
+            feedforward,
+            channel_config: ChannelConfigOptions::default(),
+        };
+        let biquad = IirFilterNode::new(&context, options);
+
+        let mut frequency_hz = [0.];
+        let mut mag_response = [0., 1.0];
+        let mut phase_response = [0.];
+
+        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+    }
+
+    #[test]
+    #[should_panic]
+    fn panics_when_not_the_same_length_2() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let feedforward = vec![
+            0.000_016_636_797_512_844_526,
+            0.000_033_273_595_025_689_05,
+            0.000_016_636_797_512_844_526,
+        ];
+        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+        let options = IirFilterOptions {
+            feedback,
+            feedforward,
+            channel_config: ChannelConfigOptions::default(),
+        };
+        let biquad = IirFilterNode::new(&context, options);
+
+        let mut frequency_hz = [0.];
+        let mut mag_response = [0.];
+        let mut phase_response = [0., 1.0];
+
+        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+    }
+
+    #[test]
+    fn frequencies_are_clamped() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let feedforward = vec![
+            0.000_016_636_797_512_844_526,
+            0.000_033_273_595_025_689_05,
+            0.000_016_636_797_512_844_526,
+        ];
+        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+        let options = IirFilterOptions {
+            feedback,
+            feedforward,
+            channel_config: ChannelConfigOptions::default(),
+        };
+        let iir = IirFilterNode::new(&context, options);
+        // It will be fine for the usual fs
+        #[allow(clippy::cast_precision_loss)]
+        let niquyst = context.sample_rate().0 as f32 / 2.0;
+
+        let mut frequency_hz = [-100., 1_000_000.];
+        let mut mag_response = [0., 0.];
+        let mut phase_response = [0., 0.];
+
+        iir.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+
+        let ref_arr = [0., niquyst];
+        assert_float_eq!(frequency_hz, ref_arr, ulps_all <= 0);
     }
 }
