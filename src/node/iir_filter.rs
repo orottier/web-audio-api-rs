@@ -299,6 +299,11 @@ impl IirFilterRenderer {
             self.states[i][idx] = ff * input - fb * output + state;
         }
 
+        #[cfg(debug_assertions)]
+        if output.is_nan() || output.is_infinite() {
+            log::debug!("An unstable filter is processed.");
+        }
+
         // Value truncation will not be hearable
         output as f32
     }
