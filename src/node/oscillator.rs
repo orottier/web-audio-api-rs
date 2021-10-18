@@ -12,7 +12,6 @@ use crate::{
     control::Scheduler,
     param::{AudioParam, AudioParamOptions},
     process::{AudioParamValues, AudioProcessor},
-    SampleRate,
 };
 
 use super::{AudioNode, AudioScheduledSourceNode};
@@ -100,7 +99,7 @@ impl AudioNode for OscillatorNode {
 impl OscillatorNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: OscillatorOptions) -> Self {
         context.base().register(move |registration| {
-            let nyquist = context.base().sample_rate().0 as f32 / 2.;
+            let nyquist = context.base().sample_rate() as f32 / 2.;
             let param_opts = AudioParamOptions {
                 min_value: -nyquist,
                 max_value: nyquist,
@@ -158,7 +157,7 @@ impl AudioProcessor for OscillatorRenderer {
         outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         timestamp: f64,
-        sample_rate: SampleRate,
+        sample_rate: f32,
     ) {
         // single output node
         let output = &mut outputs[0];
@@ -181,7 +180,7 @@ impl AudioProcessor for OscillatorRenderer {
         let io = buffer
             .iter_mut()
             .enumerate()
-            .map(move |(i, v)| (timestamp as f32 + i as f32 / sample_rate.0 as f32, v));
+            .map(move |(i, v)| (timestamp as f32 + i as f32 / sample_rate as f32, v));
 
         use OscillatorType::*;
 

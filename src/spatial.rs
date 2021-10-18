@@ -9,7 +9,6 @@ use crate::node::AudioNode;
 use crate::param::{AudioParam, AudioParamOptions, AutomationEvent, AutomationRate};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::AtomicF64;
-use crate::SampleRate;
 
 use std::f32::consts::PI;
 use std::sync::Arc;
@@ -199,7 +198,7 @@ impl AudioProcessor for ListenerRenderer {
         outputs: &mut [AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
-        _sample_rate: SampleRate,
+        _sample_rate: f32,
     ) {
         // for now: persist param values in output, so PannerNodes have access
         outputs[0] = params.get_raw(&self.position_x).clone();

@@ -10,12 +10,12 @@ use crate::alloc::{Alloc, AudioBuffer};
 use crate::buffer::{AudioBufferOptions, ChannelConfig, ChannelCountMode};
 use crate::message::ControlMessage;
 use crate::process::{AudioParamValues, AudioProcessor};
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::BUFFER_SIZE;
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
     graph: Graph,
-    sample_rate: SampleRate,
+    sample_rate: f32,
     channels: usize,
     frames_played: Arc<AtomicU64>,
     receiver: Receiver<ControlMessage>,
@@ -31,7 +31,7 @@ unsafe impl Send for RenderThread {}
 
 impl RenderThread {
     pub fn new(
-        sample_rate: SampleRate,
+        sample_rate: f32,
         channels: usize,
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
@@ -93,7 +93,7 @@ impl RenderThread {
         let options = AudioBufferOptions {
             number_of_channels: Some(self.channels),
             length: 0,
-            sample_rate: self.sample_rate.0 as f32,
+            sample_rate: self.sample_rate,
         };
         let mut buf = crate::buffer::AudioBuffer::new(options);
 
@@ -105,7 +105,7 @@ impl RenderThread {
             let timestamp = self
                 .frames_played
                 .fetch_add(BUFFER_SIZE as u64, Ordering::SeqCst) as f64
-                / self.sample_rate.0 as f64;
+                / self.sample_rate as f64;
 
             // render audio graph
             let rendered = self.graph.render(timestamp, self.sample_rate);
@@ -159,7 +159,7 @@ impl RenderThread {
             let timestamp = self
                 .frames_played
                 .fetch_add(BUFFER_SIZE as u64, Ordering::SeqCst) as f64
-                / self.sample_rate.0 as f64;
+                / self.sample_rate as f64;
 
             // render audio graph
             let rendered = self.graph.render(timestamp, self.sample_rate);
@@ -209,7 +209,7 @@ pub struct Node {
 
 impl Node {
     /// Render an audio quantum
-    fn process(&mut self, params: AudioParamValues, timestamp: f64, sample_rate: SampleRate) {
+    fn process(&mut self, params: AudioParamValues, timestamp: f64, sample_rate: f32) {
         self.processor.process(
             &self.inputs[..],
             &mut self.outputs[..],
@@ -404,7 +404,7 @@ impl Graph {
         self.in_cycle = in_cycle;
     }
 
-    pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer {
+    pub fn render(&mut self, timestamp: f64, sample_rate: f32) -> &AudioBuffer {
         if self.ordered.is_empty() {
             self.order_nodes();
         }
@@ -496,7 +496,7 @@ mod tests {
             _outputs: &mut [AudioBuffer],
             _params: AudioParamValues,
             _timestamp: f64,
-            _sample_rate: SampleRate,
+            _sample_rate: f32,
         ) {
         }
         fn tail_time(&self) -> bool {

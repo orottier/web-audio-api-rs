@@ -17,7 +17,7 @@ use crate::node::{self, AudioNode};
 use crate::param::{AudioParam, AudioParamOptions, AutomationEvent};
 use crate::process::AudioProcessor;
 use crate::spatial::{AudioListener, AudioListenerParams};
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::BUFFER_SIZE;
 
 #[cfg(not(test))]
 use crate::io;
@@ -43,7 +43,7 @@ impl PartialEq for BaseAudioContext {
 
 struct BaseAudioContextInner {
     /// sample rate in Hertz
-    sample_rate: SampleRate,
+    sample_rate: f32,
     /// number of speaker output channels
     channels: u32,
     /// incrementing id to assign to audio nodes
@@ -212,7 +212,7 @@ pub trait AsBaseAudioContext {
     }
 
     /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
-    fn sample_rate(&self) -> SampleRate {
+    fn sample_rate(&self) -> f32 {
         self.base().sample_rate()
     }
 
@@ -281,7 +281,7 @@ impl AudioContext {
 
         let (stream, config, sender) = io::build_output(frames_played_clone);
         let channels = config.channels as u32;
-        let sample_rate = SampleRate(config.sample_rate.0);
+        let sample_rate = config.sample_rate.0 as f32;
 
         let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
@@ -290,7 +290,7 @@ impl AudioContext {
 
     #[cfg(test)] // in tests, do not set up a cpal Stream
     pub fn new() -> Self {
-        let sample_rate = SampleRate(44_100);
+        let sample_rate = 44_100.;
         let channels = 2;
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
@@ -366,7 +366,7 @@ impl Drop for AudioContextRegistration {
 
 impl BaseAudioContext {
     fn new(
-        sample_rate: SampleRate,
+        sample_rate: f32,
         channels: u32,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
@@ -430,14 +430,14 @@ impl BaseAudioContext {
     }
 
     /// The sample rate (in sample-frames per second) at which the AudioContext handles audio.
-    pub fn sample_rate(&self) -> SampleRate {
+    pub fn sample_rate(&self) -> f32 {
         self.inner.sample_rate
     }
 
     /// This is the time in seconds of the sample frame immediately following the last sample-frame
     /// in the block of audio most recently processed by the context’s rendering graph.
     pub fn current_time(&self) -> f64 {
-        self.inner.frames_played.load(Ordering::SeqCst) as f64 / self.inner.sample_rate.0 as f64
+        self.inner.frames_played.load(Ordering::SeqCst) as f64 / self.inner.sample_rate as f64
     }
 
     /// Number of channels for the audio destination
@@ -539,7 +539,7 @@ impl Default for AudioContext {
 }
 
 impl OfflineAudioContext {
-    pub fn new(channels: u32, length: usize, sample_rate: SampleRate) -> Self {
+    pub fn new(channels: u32, length: usize, sample_rate: f32) -> Self {
         // communication channel to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
 
@@ -588,7 +588,7 @@ mod tests {
 
     #[test]
     fn test_audio_context_registration_traits() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 0.);
         let registration = context.mock_registration();
 
         // we want to be able to ship AudioNodes to another thread, so the Registration should be

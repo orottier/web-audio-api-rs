@@ -4,7 +4,7 @@ use crate::{
     control::{Controller, Scheduler},
     media::{MediaElement, MediaStream},
     process::{AudioParamValues, AudioProcessor},
-    BufferDepletedError, SampleRate, BUFFER_SIZE,
+    BufferDepletedError, BUFFER_SIZE,
 };
 
 use super::{AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode};
@@ -159,7 +159,7 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
         outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         timestamp: f64,
-        _sample_rate: SampleRate,
+        _sample_rate: f32,
     ) {
         // single output node
         let output = &mut outputs[0];

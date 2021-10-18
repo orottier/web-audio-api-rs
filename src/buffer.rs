@@ -8,7 +8,6 @@ use float_eq::{assert_float_eq, float_eq};
 
 use crate::alloc::AudioBuffer as FixedAudioBuffer;
 use crate::media::MediaStream;
-use crate::SampleRate;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AudioBufferOptions {
@@ -218,7 +217,6 @@ impl AudioBuffer {
     /// This changes the sample_length of the buffer.
     ///
     /// ```
-    /// use web_audio_api::SampleRate;
     /// use web_audio_api::buffer::{ChannelData, AudioBuffer};
     ///
     /// let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
@@ -449,7 +447,6 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
 /// A `MediaElement` can be wrapped inside a `Resampler` to yield AudioBuffers of the desired sample_rate and length
 ///
 /// ```
-/// use web_audio_api::SampleRate;
 /// use web_audio_api::buffer::{ChannelData, AudioBuffer, Resampler};
 ///
 /// // construct an input of 3 chunks of 5 samples
@@ -458,7 +455,7 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
 /// let input = vec![input_buf; 3].into_iter().map(|b| Ok(b));
 ///
 /// // resample to chunks of 10 samples
-/// let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
+/// let mut resampler = Resampler::new(44_100., 10, input);
 ///
 /// // first chunk contains 10 samples
 /// let next = resampler.next().unwrap().unwrap();
@@ -481,7 +478,7 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
 /// ```
 pub struct Resampler<I> {
     /// desired sample rate
-    sample_rate: SampleRate,
+    sample_rate: f32,
     /// desired sample length
     sample_len: u32,
     /// input stream
@@ -491,7 +488,7 @@ pub struct Resampler<I> {
 }
 
 impl<M: MediaStream> Resampler<M> {
-    pub fn new(sample_rate: SampleRate, sample_len: u32, input: M) -> Self {
+    pub fn new(sample_rate: f32, sample_len: u32, input: M) -> Self {
         Self {
             sample_rate,
             sample_len,
@@ -510,7 +507,7 @@ impl<M: MediaStream> Iterator for Resampler<M> {
                 None => return None,
                 Some(Err(e)) => return Some(Err(e)),
                 Some(Ok(mut data)) => {
-                    data.resample(self.sample_rate.0 as f32);
+                    data.resample(self.sample_rate);
                     data
                 }
             },
@@ -524,7 +521,7 @@ impl<M: MediaStream> Iterator for Resampler<M> {
                     let options = AudioBufferOptions {
                         number_of_channels: Some(buffer.number_of_channels()),
                         length: self.sample_len as usize - buffer.length(),
-                        sample_rate: self.sample_rate.0 as f32,
+                        sample_rate: self.sample_rate,
                     };
                     let padding = AudioBuffer::new(options);
                     buffer.extend(&padding);
@@ -533,7 +530,7 @@ impl<M: MediaStream> Iterator for Resampler<M> {
                 }
                 Some(Err(e)) => return Some(Err(e)),
                 Some(Ok(mut data)) => {
-                    data.resample(self.sample_rate.0 as f32);
+                    data.resample(self.sample_rate);
                     buffer.extend(&data)
                 }
             }
@@ -641,7 +638,7 @@ mod tests {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let input_buf = AudioBuffer::from_channels(vec![channel], 44_100.);
         let input = vec![input_buf; 3].into_iter().map(Ok);
-        let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
+        let mut resampler = Resampler::new(44_100., 10, input);
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.length(), 10);
@@ -667,7 +664,7 @@ mod tests {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);
         let input_buf = Ok(AudioBuffer::from_channels(vec![channel], 44_100.));
         let input = vec![input_buf].into_iter();
-        let mut resampler = Resampler::new(SampleRate(44_100), 5, input);
+        let mut resampler = Resampler::new(44_100., 5, input);
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.length(), 5);

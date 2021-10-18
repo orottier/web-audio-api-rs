@@ -4,7 +4,7 @@ use web_audio_api::context::AsBaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::media::MediaElement;
 use web_audio_api::node::{AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode};
-use web_audio_api::{SampleRate, BUFFER_SIZE};
+use web_audio_api::BUFFER_SIZE;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -14,7 +14,7 @@ use std::time::Duration;
 struct SlowMedia {
     block: Arc<AtomicBool>,
     finished: Arc<AtomicBool>,
-    sample_rate: SampleRate,
+    sample_rate: f32,
     value: f32,
 }
 
@@ -34,7 +34,7 @@ impl Iterator for SlowMedia {
         self.value += 1.;
 
         let channel_data = ChannelData::from(vec![self.value; BUFFER_SIZE as usize]);
-        let buffer = AudioBuffer::from_channels(vec![channel_data], self.sample_rate.0 as f32);
+        let buffer = AudioBuffer::from_channels(vec![channel_data], self.sample_rate);
 
         Some(Ok(buffer))
     }
@@ -43,7 +43,7 @@ impl Iterator for SlowMedia {
 #[test]
 fn test_media_buffering() {
     const LENGTH: usize = BUFFER_SIZE as usize;
-    let mut context = OfflineAudioContext::new(1, LENGTH, SampleRate(44_100));
+    let mut context = OfflineAudioContext::new(1, LENGTH, 44_100.);
 
     let block = Arc::new(AtomicBool::new(true));
     let finished = Arc::new(AtomicBool::new(false));
@@ -52,7 +52,7 @@ fn test_media_buffering() {
         let media = SlowMedia {
             block: block.clone(),
             finished: finished.clone(),
-            sample_rate: SampleRate(44_100),
+            sample_rate: 44_100.,
             value: 1.,
         };
 
@@ -129,7 +129,7 @@ fn test_media_buffering() {
 #[test]
 fn test_media_seeking() {
     const LENGTH: usize = BUFFER_SIZE as usize;
-    const SAMPLE_RATE: SampleRate = SampleRate(BUFFER_SIZE); // 1 render quantum = 1 second
+    const SAMPLE_RATE: f32 = BUFFER_SIZE as f32; // 1 render quantum = 1 second
     let mut context = OfflineAudioContext::new(1, LENGTH, SAMPLE_RATE);
 
     let block = Arc::new(AtomicBool::new(true));

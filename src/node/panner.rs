@@ -5,7 +5,6 @@ use crate::{
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::AudioParam,
     process::{AudioParamValues, AudioProcessor},
-    SampleRate,
 };
 
 use super::AudioNode;
@@ -114,7 +113,7 @@ impl AudioProcessor for PannerRenderer {
         outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
-        _sample_rate: SampleRate,
+        _sample_rate: f32,
     ) {
         // single input node, assume mono, not silent
         let input = inputs[0].channel_data(0);

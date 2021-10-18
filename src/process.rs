@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use crate::alloc::AudioBuffer;
 use crate::context::AudioParamId;
 use crate::graph::{Node, NodeIndex};
-use crate::SampleRate;
 
 /// Interface for audio processing code that runs on the audio rendering thread.
 ///
@@ -19,7 +18,7 @@ pub trait AudioProcessor: Send {
         outputs: &mut [AudioBuffer],
         params: AudioParamValues,
         timestamp: f64,
-        sample_rate: SampleRate,
+        sample_rate: f32,
     );
 
     /// Indicates if this node can have output when no inputs are connected

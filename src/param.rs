@@ -8,7 +8,7 @@ use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, Chann
 use crate::context::AudioContextRegistration;
 use crate::node::AudioNode;
 use crate::process::{AudioParamValues, AudioProcessor};
-use crate::{AtomicF64, SampleRate, BUFFER_SIZE};
+use crate::{AtomicF64, BUFFER_SIZE};
 
 use crossbeam_channel::{Receiver, Sender};
 
@@ -132,15 +132,11 @@ impl AudioProcessor for AudioParamProcessor {
         outputs: &mut [AudioBuffer],
         _params: AudioParamValues,
         timestamp: f64,
-        sample_rate: SampleRate,
+        sample_rate: f32,
     ) {
         let input = &inputs[0]; // single input mode
 
-        let intrinsic = self.tick(
-            timestamp,
-            1. / sample_rate.0 as f64,
-            crate::BUFFER_SIZE as _,
-        );
+        let intrinsic = self.tick(timestamp, 1. / sample_rate as f64, crate::BUFFER_SIZE as _);
         let mut buffer = inputs[0].clone(); // get new buf
         buffer.force_mono();
         buffer.channel_data_mut(0).copy_from_slice(intrinsic);
@@ -343,7 +339,7 @@ mod tests {
 
     #[test]
     fn test_steps_a_rate() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 0.);
         let opts = AudioParamOptions {
             automation_rate: AutomationRate::A,
             default_value: 0.,
@@ -369,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_steps_k_rate() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 0.);
         let opts = AudioParamOptions {
             automation_rate: AutomationRate::K,
             default_value: 0.,
@@ -391,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_linear_ramp() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 0.);
 
         let opts = AudioParamOptions {
             automation_rate: AutomationRate::A,
@@ -419,7 +415,7 @@ mod tests {
     #[test]
     fn test_linear_ramp_multiple_frames() {
         // regression test for issue #9
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 0.);
 
         let opts = AudioParamOptions {
             automation_rate: AutomationRate::A,
@@ -450,16 +446,12 @@ mod tests {
 
         // ramp finished t = 20..30
         let vs = render.tick(20., 1., 10);
-        assert_float_eq!(
-            vs,
-            &[20.0; 10][..],
-            ulps_all <= 0
-        );
+        assert_float_eq!(vs, &[20.0; 10][..], ulps_all <= 0);
     }
 
     #[test]
     fn test_linear_ramp_clamp() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 0.);
 
         let opts = AudioParamOptions {
             automation_rate: AutomationRate::A,

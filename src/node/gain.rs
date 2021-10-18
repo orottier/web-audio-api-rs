@@ -3,7 +3,6 @@ use crate::{
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
     process::{AudioParamValues, AudioProcessor},
-    SampleRate,
 };
 
 use super::AudioNode;
@@ -90,7 +89,7 @@ impl AudioProcessor for GainRenderer {
         outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
-        _sample_rate: SampleRate,
+        _sample_rate: f32,
     ) {
         // single input/output node
         let input = &inputs[0];

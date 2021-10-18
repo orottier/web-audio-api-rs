@@ -2,11 +2,10 @@ use web_audio_api::buffer::{AudioBuffer, ChannelData};
 use web_audio_api::context::{AsBaseAudioContext, OfflineAudioContext};
 use web_audio_api::media::MediaElement;
 use web_audio_api::node::{AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode};
-use web_audio_api::SampleRate;
 
 fn main() {
     let len = 128 * 2048; // render a fixed number of frames
-    let context = OfflineAudioContext::new(2, len, SampleRate(44_100));
+    let context = OfflineAudioContext::new(2, len, 44_100.);
 
     // create a big audio graph with all the nodes we know,
     // with each of the 10 pieces subtly different

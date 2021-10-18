@@ -4,7 +4,7 @@ use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, OscillatorNode, OscillatorOptions, OscillatorType,
 };
-use web_audio_api::{SampleRate, BUFFER_SIZE};
+use web_audio_api::BUFFER_SIZE;
 
 #[test]
 fn test_offline_render() {
@@ -13,7 +13,7 @@ fn test_offline_render() {
     // not a multiple of BUFFER_SIZE
     assert!(LENGTH % BUFFER_SIZE as usize != 0);
 
-    let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+    let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
     assert_eq!(context.length(), LENGTH);
 
     {
@@ -45,7 +45,7 @@ fn test_offline_render() {
 #[test]
 fn test_start_stop() {
     let len = (BUFFER_SIZE * 4) as usize;
-    let mut context = OfflineAudioContext::new(1, len, SampleRate(BUFFER_SIZE));
+    let mut context = OfflineAudioContext::new(1, len, BUFFER_SIZE as f32);
     assert_eq!(context.length(), len);
 
     {
@@ -78,7 +78,7 @@ fn test_start_stop() {
 #[test]
 fn test_delayed_constant_source() {
     let len = (BUFFER_SIZE * 4) as usize;
-    let mut context = OfflineAudioContext::new(1, len, SampleRate(BUFFER_SIZE));
+    let mut context = OfflineAudioContext::new(1, len, BUFFER_SIZE as f32);
     assert_eq!(context.length(), len);
 
     {
@@ -106,7 +106,7 @@ fn test_delayed_constant_source() {
 #[test]
 fn test_audio_param_graph() {
     let len = BUFFER_SIZE as usize;
-    let mut context = OfflineAudioContext::new(1, len, SampleRate(BUFFER_SIZE));
+    let mut context = OfflineAudioContext::new(1, len, BUFFER_SIZE as f32);
     {
         let gain = context.create_gain();
         gain.gain().set_value(0.5); // intrinsic value
@@ -139,7 +139,7 @@ fn test_audio_param_graph() {
 #[test]
 fn test_listener() {
     let len = BUFFER_SIZE as usize;
-    let mut context = OfflineAudioContext::new(1, len, SampleRate(BUFFER_SIZE));
+    let mut context = OfflineAudioContext::new(1, len, BUFFER_SIZE as f32);
 
     {
         let listener1 = context.listener();
@@ -158,7 +158,7 @@ fn test_listener() {
 #[test]
 fn test_cycle() {
     let len = BUFFER_SIZE as usize;
-    let mut context = OfflineAudioContext::new(1, len, SampleRate(44_100));
+    let mut context = OfflineAudioContext::new(1, len, 44_100.);
 
     {
         let cycle1 = context.create_gain();

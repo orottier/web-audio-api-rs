@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use crate::message::ControlMessage;
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::BUFFER_SIZE;
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -91,7 +91,7 @@ pub(crate) fn build_output(
 
     let mut config: StreamConfig = supported_config.into();
     config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
-    let sample_rate = SampleRate(config.sample_rate.0);
+    let sample_rate = config.sample_rate.0 as f32;
     let channels = config.channels as u32;
 
     // communication channel to the render thread
@@ -165,7 +165,7 @@ pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
 
     let mut config: StreamConfig = supported_config.into();
     config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
-    let sample_rate = SampleRate(config.sample_rate.0);
+    let sample_rate = config.sample_rate.0 as f32;
     let channels = config.channels as usize;
 
     let smoothing = 3; // todo, use buffering to smooth frame drops
@@ -173,7 +173,7 @@ pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let render = MicrophoneRender::new(channels, sample_rate, sender);
 
     let maybe_stream = spawn_input_stream(&device, sample_format, &config, render);
-    // our BUFFER_SIZEd config may not be supported, in that case, use the default config
+    // our BUFFER_SIZED config may not be supported, in that case, use the default config
     let stream = match maybe_stream {
         Ok(stream) => stream,
         Err(e) => {

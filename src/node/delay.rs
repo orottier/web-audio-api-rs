@@ -3,7 +3,7 @@ use crate::{
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
     process::{AudioParamValues, AudioProcessor},
-    SampleRate, BUFFER_SIZE,
+    BUFFER_SIZE,
 };
 
 use super::AudioNode;
@@ -65,7 +65,7 @@ impl DelayNode {
             param.set_value_at_time(options.delay_time, 0.);
 
             // allocate large enough buffer to store all delayed samples
-            let max_samples = options.max_delay_time * context.base().sample_rate().0 as f32;
+            let max_samples = options.max_delay_time * context.base().sample_rate();
             let max_quanta = (max_samples.ceil() as u32 + BUFFER_SIZE - 1) / BUFFER_SIZE;
             let delay_buffer = Vec::with_capacity(max_quanta as usize);
 
@@ -108,7 +108,7 @@ impl AudioProcessor for DelayRenderer {
         outputs: &mut [crate::alloc::AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
-        sample_rate: SampleRate,
+        sample_rate: f32,
     ) {
         // single input/output node
         let input = &inputs[0];
@@ -118,7 +118,7 @@ impl AudioProcessor for DelayRenderer {
         let delay = params.get(&self.delay_time)[0];
 
         // calculate the delay in chunks of BUFFER_SIZE (todo: sub quantum delays)
-        let quanta = (delay * sample_rate.0 as f32) as usize / BUFFER_SIZE as usize;
+        let quanta = (delay * sample_rate) as usize / BUFFER_SIZE as usize;
 
         if quanta == 0 {
             // when no delay is set, simply copy input to output

@@ -10,7 +10,6 @@ use crate::{
     buffer::{ChannelConfig, ChannelConfigOptions, ChannelInterpretation},
     context::{AsBaseAudioContext, AudioContextRegistration},
     process::{AudioParamValues, AudioProcessor},
-    SampleRate,
 };
 
 use super::AudioNode;
@@ -173,7 +172,7 @@ impl AudioProcessor for AnalyserRenderer {
         outputs: &mut [crate::alloc::AudioBuffer],
         _params: AudioParamValues,
         _timestamp: f64,
-        _sample_rate: SampleRate,
+        _sample_rate: f32,
     ) {
         // single input/output node
         let input = &inputs[0];

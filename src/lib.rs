@@ -62,10 +62,6 @@ mod analysis;
 mod graph;
 mod message;
 
-/// Number of samples processed per second (Hertz) for a single channel of audio
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SampleRate(pub u32);
-
 /// Input/output with this index does not exist
 #[derive(Debug, Clone, Copy)]
 pub struct IndexSizeError {}

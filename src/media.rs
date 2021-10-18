@@ -9,7 +9,7 @@ use lewton::VorbisError;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions, ChannelData};
 use crate::control::Controller;
-use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
+use crate::{BufferDepletedError, BUFFER_SIZE};
 
 #[cfg(not(test))]
 use crossbeam_channel::Sender;
@@ -38,7 +38,6 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 /// # Example
 ///
 /// ```no_run
-/// use web_audio_api::SampleRate;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::buffer::{AudioBuffer, AudioBufferOptions};
 ///
@@ -78,7 +77,6 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// # Example
 ///
 /// ```rust
-/// use web_audio_api::SampleRate;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::buffer::{AudioBuffer, ChannelData};
 /// use web_audio_api::media::MediaElement;
@@ -293,7 +291,7 @@ impl Iterator for MediaElement {
 pub struct Microphone {
     receiver: Receiver<AudioBuffer>,
     channels: usize,
-    sample_rate: SampleRate,
+    sample_rate: f32,
 
     #[cfg(not(test))]
     stream: Stream,
@@ -310,7 +308,7 @@ impl Microphone {
         let (stream, config, receiver) = io::build_input();
         log::debug!("Input {:?}", config);
 
-        let sample_rate = SampleRate(config.sample_rate.0);
+        let sample_rate = config.sample_rate.0 as f32;
         let channels = config.channels as usize;
 
         Self {
@@ -357,7 +355,7 @@ impl Iterator for Microphone {
                 let options = AudioBufferOptions {
                     number_of_channels: Some(self.channels),
                     length: BUFFER_SIZE as usize,
-                    sample_rate: self.sample_rate.0 as f32,
+                    sample_rate: self.sample_rate,
                 };
                 AudioBuffer::new(options)
             }
@@ -374,13 +372,13 @@ impl Iterator for Microphone {
 #[cfg(not(test))]
 pub(crate) struct MicrophoneRender {
     channels: usize,
-    sample_rate: SampleRate,
+    sample_rate: f32,
     sender: Sender<AudioBuffer>,
 }
 
 #[cfg(not(test))]
 impl MicrophoneRender {
-    pub fn new(channels: usize, sample_rate: SampleRate, sender: Sender<AudioBuffer>) -> Self {
+    pub fn new(channels: usize, sample_rate: f32, sender: Sender<AudioBuffer>) -> Self {
         Self {
             channels,
             sample_rate,
@@ -402,7 +400,7 @@ impl MicrophoneRender {
             ));
         }
 
-        let buffer = AudioBuffer::from_channels(channels, self.sample_rate.0 as f32);
+        let buffer = AudioBuffer::from_channels(channels, self.sample_rate);
         let result = self.sender.try_send(buffer); // can fail (frame dropped)
         if result.is_err() {
             log::debug!("input frame dropped");
@@ -459,8 +457,8 @@ impl Iterator for OggVorbisDecoder {
         };
 
         let channel_data: Vec<_> = packet.into_iter().map(ChannelData::from).collect();
-        let sample_rate = SampleRate(self.stream.ident_hdr.audio_sample_rate);
-        let result = AudioBuffer::from_channels(channel_data, sample_rate.0 as f32);
+        let sample_rate = self.stream.ident_hdr.audio_sample_rate as f32;
+        let result = AudioBuffer::from_channels(channel_data, sample_rate);
 
         Some(Ok(result))
     }
@@ -497,7 +495,7 @@ pub struct WavDecoder {
     //stream: hound::WavIntoSamples<BufReader<File>, f32>,
     stream: Box<dyn Iterator<Item = Result<f32, hound::Error>> + Send>,
     channels: u32,
-    sample_rate: SampleRate,
+    sample_rate: f32,
 }
 
 impl WavDecoder {
@@ -505,7 +503,7 @@ impl WavDecoder {
     pub fn try_new(file: File) -> Result<Self, hound::Error> {
         hound::WavReader::new(BufReader::new(file)).map(|wav| {
             let channels = wav.spec().channels as u32;
-            let sample_rate = SampleRate(wav.spec().sample_rate);
+            let sample_rate = wav.spec().sample_rate as f32;
 
             // convert samples to f32, always
             let stream: Box<dyn Iterator<Item = Result<_, _>> + Send> =
@@ -554,7 +552,7 @@ impl Iterator for WavDecoder {
 
         // convert data to AudioBuffer
         let channels = data.into_iter().map(ChannelData::from).collect();
-        let result = AudioBuffer::from_channels(channels, self.sample_rate.0 as f32);
+        let result = AudioBuffer::from_channels(channels, self.sample_rate);
 
         Some(Ok(result))
     }
