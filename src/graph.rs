@@ -37,7 +37,7 @@ impl RenderThread {
         frames_played: Arc<AtomicU64>,
     ) -> Self {
         Self {
-            graph: Graph::new(),
+            graph: Graph::new(sample_rate),
             sample_rate,
             channels,
             frames_played,
@@ -108,7 +108,7 @@ impl RenderThread {
                 / self.sample_rate as f64;
 
             // render audio graph
-            let rendered = self.graph.render(timestamp, self.sample_rate);
+            let rendered = self.graph.render(timestamp);
 
             buf.extend_alloc(rendered);
         }
@@ -162,7 +162,7 @@ impl RenderThread {
                 / self.sample_rate as f64;
 
             // render audio graph
-            let rendered = self.graph.render(timestamp, self.sample_rate);
+            let rendered = self.graph.render(timestamp);
 
             // copy rendered audio into output slice
             for i in 0..self.channels {
@@ -247,24 +247,29 @@ impl Node {
     }
 }
 
-pub(crate) struct Graph {
-    // actual audio graph
-    nodes: HashMap<NodeIndex, Node>,
-    edges: HashSet<((NodeIndex, u32), (NodeIndex, u32))>, // (node,output) to (node,input)
+type Nodes = HashMap<NodeIndex, Node>;
+type Edges = HashSet<((NodeIndex, u32), (NodeIndex, u32))>;
+type Ordered = Vec<NodeIndex>;
+type Drops = Vec<NodeIndex>;
 
+// actual audio graph
+pub(crate) struct Graph {
+    sample_rate: f32,
+    nodes: Nodes,
+    edges: Edges, // (node,output) to (node,input)
     // topological sorting
     marked: Vec<NodeIndex>,
     marked_temp: Vec<NodeIndex>,
-    ordered: Vec<NodeIndex>,
+    ordered: Ordered,
     in_cycle: Vec<NodeIndex>,
-
     // allocator for audio buffers
     alloc: Alloc,
 }
 
 impl Graph {
-    pub fn new() -> Self {
+    pub fn new(sample_rate: f32) -> Self {
         Graph {
+            sample_rate,
             nodes: HashMap::new(),
             edges: HashSet::new(),
             ordered: vec![],
@@ -404,39 +409,35 @@ impl Graph {
         self.in_cycle = in_cycle;
     }
 
-    pub fn render(&mut self, timestamp: f64, sample_rate: f32) -> &AudioBuffer {
+    fn pre_process(&mut self) -> Vec<NodeIndex> {
         if self.ordered.is_empty() {
             self.order_nodes();
         }
 
-        // split (mut) borrows
-        let ordered = &self.ordered;
-        let edges = &self.edges;
-        let nodes = &mut self.nodes;
+        Vec::new()
+    }
 
-        // we will drop audio nodes if they are finished running
-        let mut drop_nodes = vec![];
-
-        ordered.iter().for_each(|index| {
+    fn process(&mut self, timestamp: f64, mut drops: Drops) -> Drops {
+        for node_idx in &self.ordered {
             // remove node from map, re-insert later (for borrowck reasons)
-            let mut node = nodes.remove(index).unwrap();
+            let mut node = self.nodes.remove(node_idx).unwrap();
             // for lifecycle management, check if any inputs are present
             let mut has_inputs_connected = false;
             // mix all inputs together
             node.inputs.iter_mut().for_each(|i| i.make_silent());
 
-            edges
+            self.edges
                 .iter()
                 .filter_map(move |(s, d)| {
                     // audio params are connected to the 'hidden' u32::MAX input, ignore them
-                    if d.0 == *index && d.1 != u32::MAX {
+                    if d.0 == *node_idx && d.1 != u32::MAX {
                         Some((s, d.1))
                     } else {
                         None
                     }
                 })
                 .for_each(|(&(node_index, output), input)| {
-                    let input_node = nodes.get(&node_index).unwrap();
+                    let input_node = self.nodes.get(&node_index).unwrap();
                     let signal = &input_node.outputs[output as usize];
 
                     node.inputs[input as usize].add(signal, node.channel_config.interpretation());
@@ -458,27 +459,40 @@ impl Graph {
                 input_buf.mix(new_channels, interpretation);
             });
 
-            let params = AudioParamValues::from(&*nodes);
-            node.process(params, timestamp, sample_rate);
+            let params = AudioParamValues::from(&self.nodes);
+            node.process(params, timestamp, self.sample_rate);
 
             // check if the Node has reached end of lifecycle
             node.has_inputs_connected = has_inputs_connected;
             if node.can_free() {
-                drop_nodes.push(*index);
+                drops.push(*node_idx);
             }
 
             // re-insert node in graph
-            nodes.insert(*index, node);
-        });
+            self.nodes.insert(*node_idx, node);
+        }
 
-        for index in drop_nodes {
+        drops
+    }
+
+    fn post_process(&mut self, drops: Drops) {
+        for index in drops {
             self.remove_edges_from(index);
             self.nodes.remove(&index);
         }
+    }
 
+    fn get_destination(&self) -> &AudioBuffer {
         // return buffer of destination node
         // assume only 1 output (todo)
         &self.nodes.get(&NodeIndex(0)).unwrap().outputs[0]
+    }
+
+    pub fn render(&mut self, timestamp: f64) -> &AudioBuffer {
+        let drops = self.pre_process();
+        let drops = self.process(timestamp, drops);
+        self.post_process(drops);
+        self.get_destination()
     }
 }
 
@@ -515,7 +529,7 @@ mod tests {
 
     #[test]
     fn test_add_remove() {
-        let mut graph = Graph::new();
+        let mut graph = Graph::new(44100.);
 
         let node = Box::new(TestNode {});
         graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
@@ -566,7 +580,7 @@ mod tests {
 
     #[test]
     fn test_remove_all() {
-        let mut graph = Graph::new();
+        let mut graph = Graph::new(44100.);
 
         let node = Box::new(TestNode {});
         graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
@@ -605,7 +619,7 @@ mod tests {
 
     #[test]
     fn test_cycle() {
-        let mut graph = Graph::new();
+        let mut graph = Graph::new(44100.);
 
         let node = Box::new(TestNode {});
         graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
