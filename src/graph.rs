@@ -409,6 +409,52 @@ impl Graph {
         self.in_cycle = in_cycle;
     }
 
+    fn take_out_node(nodes: &mut Nodes, index: &NodeIndex) -> Node {
+        // remove node from map, re-insert later (for borrowck reasons)
+        nodes.remove(index).unwrap()
+    }
+
+    fn take_in_node(nodes: &mut Nodes, index: NodeIndex, node: Node) {
+        // re-insert node in graph
+        nodes.insert(index, node);
+    }
+
+    fn push_free_node(
+        drops: &mut Drops,
+        node: &mut Node,
+        index: NodeIndex,
+        has_inputs_connected: bool,
+    ) {
+        // check if the Node has reached end of lifecycle
+        node.has_inputs_connected = has_inputs_connected;
+        if node.can_free() {
+            drops.push(index);
+        }
+    }
+
+    fn mix(node: &mut Node) {
+        // up/down-mix to the desired channel count
+        let mode = node.channel_config.count_mode();
+        let count = node.channel_config.count();
+        let interpretation = node.channel_config.interpretation();
+        node.inputs.iter_mut().for_each(|input_buf| {
+            let cur_channels = input_buf.number_of_channels();
+            let new_channels = match mode {
+                ChannelCountMode::Max => cur_channels,
+                ChannelCountMode::Explicit => count,
+                ChannelCountMode::ClampedMax => cur_channels.min(count),
+            };
+            input_buf.mix(new_channels, interpretation);
+        });
+    }
+
+    fn clear_inputs(node: &mut Node) -> bool {
+        for input in &mut node.inputs {
+            input.make_silent();
+        }
+        false
+    }
+
     fn pre_process(&mut self) -> Vec<NodeIndex> {
         if self.ordered.is_empty() {
             self.order_nodes();
@@ -417,59 +463,62 @@ impl Graph {
         Vec::new()
     }
 
-    fn process(&mut self, timestamp: f64, mut drops: Drops) -> Drops {
-        for node_idx in &self.ordered {
-            // remove node from map, re-insert later (for borrowck reasons)
-            let mut node = self.nodes.remove(node_idx).unwrap();
-            // for lifecycle management, check if any inputs are present
-            let mut has_inputs_connected = false;
-            // mix all inputs together
-            node.inputs.iter_mut().for_each(|i| i.make_silent());
-
-            self.edges
+    fn io_swap(
+        edges: &Edges,
+        nodes: &Nodes,
+        index: NodeIndex,
+        node: &mut Node,
+        has_inputs_connected: &mut bool,
+    ) {
+        // for lifecycle management, check if any inputs are present
+        let filtered_edges =
+            edges
                 .iter()
-                .filter_map(move |(s, d)| {
+                .filter_map::<(&(NodeIndex, u32), u32), _>(move |(s, d)| {
                     // audio params are connected to the 'hidden' u32::MAX input, ignore them
-                    if d.0 == *node_idx && d.1 != u32::MAX {
+                    if d.0 == index && d.1 != u32::MAX {
                         Some((s, d.1))
                     } else {
                         None
                     }
-                })
-                .for_each(|(&(node_index, output), input)| {
-                    let input_node = self.nodes.get(&node_index).unwrap();
-                    let signal = &input_node.outputs[output as usize];
-
-                    node.inputs[input as usize].add(signal, node.channel_config.interpretation());
-
-                    has_inputs_connected = true;
                 });
 
-            // up/down-mix to the desired channel count
-            let mode = node.channel_config.count_mode();
-            let count = node.channel_config.count();
-            let interpretation = node.channel_config.interpretation();
-            node.inputs.iter_mut().for_each(|input_buf| {
-                let cur_channels = input_buf.number_of_channels();
-                let new_channels = match mode {
-                    ChannelCountMode::Max => cur_channels,
-                    ChannelCountMode::Explicit => count,
-                    ChannelCountMode::ClampedMax => cur_channels.min(count),
-                };
-                input_buf.mix(new_channels, interpretation);
-            });
+        for (&(node_index, output), input) in filtered_edges {
+            let input_node = nodes.get(&node_index).unwrap();
+            let signal = &input_node.outputs[output as usize];
 
-            let params = AudioParamValues::from(&self.nodes);
-            node.process(params, timestamp, self.sample_rate);
+            node.inputs[input as usize].add(signal, node.channel_config.interpretation());
 
-            // check if the Node has reached end of lifecycle
-            node.has_inputs_connected = has_inputs_connected;
-            if node.can_free() {
-                drops.push(*node_idx);
-            }
+            *has_inputs_connected = true;
+        }
+    }
 
-            // re-insert node in graph
-            self.nodes.insert(*node_idx, node);
+    fn process_node(nodes: &Nodes, node: &mut Node, timestamp: f64, sample_rate: f32) {
+        let params = AudioParamValues::from(nodes);
+        node.process(params, timestamp, sample_rate);
+    }
+
+    fn process(&mut self, timestamp: f64, mut drops: Drops) -> Drops {
+        for node_idx in &self.ordered {
+            let mut node = Self::take_out_node(&mut self.nodes, node_idx);
+
+            let mut has_inputs_connected = Self::clear_inputs(&mut node);
+
+            Self::io_swap(
+                &self.edges,
+                &self.nodes,
+                *node_idx,
+                &mut node,
+                &mut has_inputs_connected,
+            );
+
+            Self::mix(&mut node);
+
+            Self::process_node(&self.nodes, &mut node, timestamp, self.sample_rate);
+
+            Self::push_free_node(&mut drops, &mut node, *node_idx, has_inputs_connected);
+
+            Self::take_in_node(&mut self.nodes, *node_idx, node);
         }
 
         drops
