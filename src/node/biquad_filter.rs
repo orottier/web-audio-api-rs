@@ -239,14 +239,6 @@ impl BiquadFilterNode {
 
             let type_ = Arc::new(AtomicU32::new(t_value as u32));
 
-            let inits = Inits {
-                q: q_value,
-                detune: d_value,
-                frequency: f_value,
-                gain: g_value,
-                type_: t_value,
-            };
-
             let (sender, receiver) = crossbeam_channel::bounded(0);
 
             let config = RendererConfig {
@@ -256,7 +248,6 @@ impl BiquadFilterNode {
                 frequency: f_proc,
                 q: q_proc,
                 type_: type_.clone(),
-                inits,
                 receiver,
             };
 
@@ -451,7 +442,6 @@ struct RendererConfig {
     gain: AudioParamId,
     /// `BiquadFilterType` repesented as u32
     type_: Arc<AtomicU32>,
-    inits: Inits,
     /// receiver used to receive message from the control node part
     receiver: Receiver<CoeffsReq>,
 }
@@ -527,6 +517,9 @@ impl AudioProcessor for BiquadFilterRenderer {
 
 impl BiquadFilterRenderer {
     /// returns an `BiquadFilterRenderer` instance
+    // new cannot be qualified as const, since constant functions cannot evaluate destructors
+    // and config param need this evaluation
+    #[allow(clippy::missing_const_for_fn)]
     fn new(config: RendererConfig) -> Self {
         let RendererConfig {
             sample_rate,
@@ -535,11 +528,16 @@ impl BiquadFilterRenderer {
             frequency,
             gain,
             type_,
-            inits: params,
             receiver,
         } = config;
 
-        let coeffs = Self::init_coeffs(sample_rate, &params);
+        let coeffs = Coefficients {
+            a1: 0.,
+            a2: 0.,
+            b0: 0.,
+            b1: 0.,
+            b2: 0.,
+        };
 
         let s1 = [0.; MAX_CHANNELS];
         let s2 = [0.; MAX_CHANNELS];
@@ -575,16 +573,6 @@ impl BiquadFilterRenderer {
         freq_values: &[f32],
         q_values: &[f32],
     ) {
-        let Coefficients { b0, b1, b2, a1, a2 } = self.coeffs;
-
-        let coeffs_resp = [b0, b1, b2, a1, a2];
-
-        // Respond to request at K-rate following the specs
-        if let Ok(msg) = self.receiver.try_recv() {
-            let sender = msg.0;
-            sender.send(coeffs_resp).unwrap();
-        }
-
         for (idx, (i_data, o_data)) in input
             .channels()
             .iter()
@@ -599,12 +587,22 @@ impl BiquadFilterRenderer {
                 type_: BiquadFilterType::from(self.type_.load(Ordering::SeqCst)),
             };
 
-            // A-rate params
+            // K-rate params
             self.update_coeffs(&p);
 
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
                 *o = self.tick(i, idx);
             }
+        }
+
+        let Coefficients { b0, b1, b2, a1, a2 } = self.coeffs;
+
+        let coeffs_resp = [b0, b1, b2, a1, a2];
+
+        // Respond to request at K-rate following the specs
+        if let Ok(msg) = self.receiver.try_recv() {
+            let sender = msg.0;
+            sender.send(coeffs_resp).unwrap();
         }
     }
 
@@ -624,42 +622,6 @@ impl BiquadFilterRenderer {
 
         // Value truncation will not be hearable
         out as f32
-    }
-
-    /// initializes biquad filter coefficients
-    ///
-    /// # Arguments
-    ///
-    /// * `sample_rate` - Audio context sample rate
-    /// * `params` - params resolving into biquad coeffs
-    #[inline]
-    fn init_coeffs(sample_rate: f32, inits: &Inits) -> Coefficients {
-        let Inits {
-            q,
-            detune,
-            frequency,
-            gain,
-            type_,
-        } = inits;
-
-        let computed_freq = frequency * 10_f32.powf(detune / 1200.);
-
-        let sample_rate = f64::from(sample_rate);
-        let computed_freq = f64::from(computed_freq);
-        let q = f64::from(*q);
-        let gain = f64::from(*gain);
-
-        // compute a0 first to normalize others coeffs by a0
-        let a0 = Self::a0(*type_, sample_rate, computed_freq, q, gain);
-
-        let b0 = Self::b0(*type_, sample_rate, computed_freq, q, gain) / a0;
-        let b1 = Self::b1(*type_, sample_rate, computed_freq, gain) / a0;
-        let b2 = Self::b2(*type_, sample_rate, computed_freq, q, gain) / a0;
-
-        let a1 = Self::a1(*type_, sample_rate, computed_freq, gain) / a0;
-        let a2 = Self::a2(*type_, sample_rate, computed_freq, q, gain) / a0;
-
-        Coefficients { a1, a2, b0, b1, b2 }
     }
 
     /// updates biquad filter coefficients when params are modified
