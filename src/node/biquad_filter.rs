@@ -403,11 +403,10 @@ impl BiquadFilterNode {
     }
 }
 
-/// represents the first parameters values
-/// given to build the renderer instance `BiquadFilterRenderer`
-///
+/// Represents the audio parameters values required to compute
+/// the biquad coefficients
 #[derive(Debug)]
-struct Inits {
+struct CoeffsConfig {
     /// quality factor - its impact on the frequency response of the filter
     /// depends on the `BiquadFilterType`
     q: f32,
@@ -574,25 +573,24 @@ impl BiquadFilterRenderer {
         freq_values: &[f32],
         q_values: &[f32],
     ) {
-        for (idx, (i_data, o_data)) in input
+        for (channel_idx, (i_data, o_data)) in input
             .channels()
             .iter()
             .zip(output.channels_mut())
             .enumerate()
         {
-            let p = Inits {
-                q: q_values[idx],
-                detune: det_values[idx],
-                frequency: freq_values[idx],
-                gain: g_values[idx],
-                type_: BiquadFilterType::from(self.type_.load(Ordering::SeqCst)),
-            };
+            for (sample_idx, (&i, o)) in i_data.iter().zip(o_data.iter_mut()).enumerate() {
+                let p = CoeffsConfig {
+                    q: q_values[sample_idx],
+                    detune: det_values[sample_idx],
+                    frequency: freq_values[sample_idx],
+                    gain: g_values[sample_idx],
+                    type_: BiquadFilterType::from(self.type_.load(Ordering::SeqCst)),
+                };
 
-            // K-rate params
-            self.update_coeffs(&p);
-
-            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.tick(i, idx);
+                // A-rate params
+                self.update_coeffs(&p);
+                *o = self.tick(i, channel_idx);
             }
         }
 
@@ -631,8 +629,8 @@ impl BiquadFilterRenderer {
     ///
     /// * `params` - params resolving into biquad coeffs
     #[inline]
-    fn update_coeffs(&mut self, params: &Inits) {
-        let Inits {
+    fn update_coeffs(&mut self, params: &CoeffsConfig) {
+        let CoeffsConfig {
             q,
             detune,
             frequency,
