@@ -55,6 +55,9 @@ pub mod param;
 pub mod process;
 pub mod spatial;
 
+#[cfg(test)]
+mod snapshot;
+
 #[cfg(not(test))]
 mod io;
 

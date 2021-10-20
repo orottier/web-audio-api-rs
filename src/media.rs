@@ -75,7 +75,7 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// async executor)
 ///
 /// # Example
-///
+/// 
 /// ```rust
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::buffer::{AudioBuffer, ChannelData};
