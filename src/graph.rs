@@ -409,16 +409,19 @@ impl Graph {
         self.in_cycle = in_cycle;
     }
 
+    #[inline]
     fn take_out_node(nodes: &mut Nodes, index: &NodeIndex) -> Node {
         // remove node from map, re-insert later (for borrowck reasons)
         nodes.remove(index).unwrap()
     }
 
+    #[inline]
     fn take_in_node(nodes: &mut Nodes, index: NodeIndex, node: Node) {
         // re-insert node in graph
         nodes.insert(index, node);
     }
 
+    #[inline]
     fn push_free_node(
         drops: &mut Drops,
         node: &mut Node,
@@ -432,6 +435,7 @@ impl Graph {
         }
     }
 
+    #[inline]
     fn mix(node: &mut Node) {
         // up/down-mix to the desired channel count
         let mode = node.channel_config.count_mode();
@@ -448,6 +452,7 @@ impl Graph {
         });
     }
 
+    #[inline]
     fn clear_inputs(node: &mut Node) -> bool {
         for input in &mut node.inputs {
             input.make_silent();
@@ -455,6 +460,7 @@ impl Graph {
         false
     }
 
+    #[inline]
     fn pre_process(&mut self) -> Vec<NodeIndex> {
         if self.ordered.is_empty() {
             self.order_nodes();
@@ -463,6 +469,7 @@ impl Graph {
         Vec::new()
     }
 
+    #[inline]
     fn io_swap(
         edges: &Edges,
         nodes: &Nodes,
@@ -493,11 +500,13 @@ impl Graph {
         }
     }
 
+    #[inline]
     fn process_node(nodes: &Nodes, node: &mut Node, timestamp: f64, sample_rate: f32) {
         let params = AudioParamValues::from(nodes);
         node.process(params, timestamp, sample_rate);
     }
 
+    #[inline]
     fn process(&mut self, timestamp: f64, mut drops: Drops) -> Drops {
         for node_idx in &self.ordered {
             let mut node = Self::take_out_node(&mut self.nodes, node_idx);
@@ -524,6 +533,7 @@ impl Graph {
         drops
     }
 
+    #[inline]
     fn post_process(&mut self, drops: Drops) {
         for index in drops {
             self.remove_edges_from(index);
