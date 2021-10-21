@@ -24,8 +24,9 @@ use crossbeam_channel::{self, Receiver, Sender};
 mod biquad_filter;
 pub use biquad_filter::*;
 mod oscillator;
-
 pub use oscillator::*;
+mod waveshaper;
+pub use waveshaper::*;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules.
