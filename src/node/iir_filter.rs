@@ -219,7 +219,7 @@ impl FilterRendererBuilder {
         let coeffs: Vec<(f64, f64)> = feedforward.into_iter().zip(feedback).collect();
 
         let coeffs_len = coeffs.len();
-        let states = vec![[0.; MAX_CHANNELS]; coeffs_len - 1];
+        let states = vec![[0.; MAX_CHANNELS]; coeffs_len];
 
         Self { coeffs, states }
     }
@@ -320,7 +320,7 @@ impl IirFilterRenderer {
         let output = self.norm_coeffs[0].0.mul_add(input, self.states[0][idx]);
 
         for (i, (ff, fb)) in self.norm_coeffs.iter().skip(1).enumerate() {
-            let state = self.states.get(i + 1).unwrap_or(&[0.; MAX_CHANNELS])[idx];
+            let state = self.states[i + 1][idx];
             self.states[i][idx] = ff * input - fb * output + state;
         }
 
