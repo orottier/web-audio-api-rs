@@ -1,6 +1,6 @@
 [package]
 name = "web-audio-api"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["Otto <otto@ot-to.nl>"]
 edition = "2018"
 description = "A pure Rust implementation of the Web Audio API, for use in non-browser contexts"
@@ -20,12 +20,15 @@ log = "0.4.14"
 realfft = "2.0.1"
 crossbeam-channel = "0.5.1"
 num-complex = "0.4"
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 rand = "0.8.*"
 alloc_counter = "0.0.4"
-float_eq = "0.6"
+float_eq = "0.7"
 env_logger = "0.9.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 # Uncomment the following lines to enable debug symbols
 # during CPU profiling

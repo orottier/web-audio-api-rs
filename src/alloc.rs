@@ -13,6 +13,7 @@ pub(crate) struct Alloc {
     inner: Rc<AllocInner>,
 }
 
+#[derive(Debug)]
 struct AllocInner {
     pool: RefCell<Vec<Rc<[f32; LEN]>>>,
     zeroes: Rc<[f32; LEN]>,
@@ -75,7 +76,7 @@ impl AllocInner {
 /// Single channel audio samples, basically wraps a `Rc<[f32; BUFFER_SIZE]>`
 ///
 /// ChannelData has copy-on-write semantics, so it is cheap to clone.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ChannelData {
     data: Rc<[f32; LEN]>,
     alloc: Rc<AllocInner>,
@@ -144,7 +145,7 @@ impl std::ops::Drop for ChannelData {
 /// Fixed length audio asset, basically a matrix of `channels * [f32; BUFFER_SIZE]`
 ///
 /// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AudioBuffer {
     channels: ArrayVec<ChannelData, MAX_CHANNELS>,
 }

@@ -450,11 +450,7 @@ mod tests {
 
         // ramp finished t = 20..30
         let vs = render.tick(20., 1., 10);
-        assert_float_eq!(
-            vs,
-            &[20.0; 10][..],
-            ulps_all <= 0
-        );
+        assert_float_eq!(vs, &[20.0; 10][..], ulps_all <= 0);
     }
 
     #[test]
