@@ -57,7 +57,6 @@ impl From<u32> for OverSampleType {
 /// constructor method `new`
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
-#[derive(Default)]
 pub struct WaveShaperOptions {
     /// The distorsion curve
     pub curve: Option<Vec<f32>>,
@@ -65,6 +64,16 @@ pub struct WaveShaperOptions {
     pub oversample: Option<OverSampleType>,
     /// audio node options
     pub channel_config: Option<ChannelConfigOptions>,
+}
+
+impl Default for WaveShaperOptions {
+    fn default() -> Self {
+        Self {
+            curve: Default::default(),
+            oversample: Some(OverSampleType::None),
+            channel_config: Default::default(),
+        }
+    }
 }
 
 /// `BiquadFilterNode` is a second order IIR filter
