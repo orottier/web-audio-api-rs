@@ -179,6 +179,68 @@ impl IirFilterNode {
     }
 }
 
+struct FilterRendererBuilder {
+    coeffs: Vec<(f64, f64)>,
+    states: Vec<[f64; MAX_CHANNELS]>,
+}
+
+impl FilterRendererBuilder {
+    /// Generate filter's coeffs
+    ///
+    /// # Arguments
+    ///
+    /// * `feedforward` - feedforward coeffs (numerator)
+    /// * `feedback` - feedback coeffs (denominator)
+    #[inline]
+    fn build(config: RendererConfig) -> Self {
+        let RendererConfig {
+            mut feedforward,
+            mut feedback,
+        } = config;
+
+        match (feedforward.len(), feedback.len()) {
+            (feedforward_len, feedback_len) if feedforward_len > feedback_len => {
+                feedforward = feedforward
+                    .into_iter()
+                    .chain(std::iter::repeat(0.))
+                    .take(feedback_len)
+                    .collect();
+            }
+            (feedforward_len, feedback_len) if feedforward_len < feedback_len => {
+                feedback = feedback
+                    .into_iter()
+                    .chain(std::iter::repeat(0.))
+                    .take(feedforward_len)
+                    .collect();
+            }
+            _ => (),
+        };
+
+        let coeffs: Vec<(f64, f64)> = feedforward.into_iter().zip(feedback).collect();
+
+        let coeffs_len = coeffs.len();
+        let states = vec![[0.; MAX_CHANNELS]; coeffs_len - 1];
+
+        Self { coeffs, states }
+    }
+
+    /// Generate normalized filter's coeffs and filter's states
+    /// coeffs are normalized by a[0] coefficient
+    fn finish(mut self) -> IirFilterRenderer {
+        let a_0 = self.coeffs[0].1;
+
+        for (ff, fb) in &mut self.coeffs {
+            *ff /= a_0;
+            *fb /= a_0;
+        }
+
+        IirFilterRenderer {
+            norm_coeffs: self.coeffs,
+            states: self.states,
+        }
+    }
+}
+
 struct RendererConfig {
     // feedforward coeffs -- b[n] -- numerator coeffs
     feedforward: Vec<f64>,
@@ -222,74 +284,7 @@ impl IirFilterRenderer {
     ///
     /// * `config` - renderer config
     fn new(config: RendererConfig) -> Self {
-        let RendererConfig {
-            feedforward,
-            feedback,
-        } = config;
-
-        let coeffs = Self::build_coeffs(feedforward, feedback);
-        let norm_coeffs = Self::normalize_coeffs(&coeffs);
-        let states = Self::build_filter_states(&norm_coeffs);
-
-        Self {
-            norm_coeffs,
-            states,
-        }
-    }
-
-    /// Generate filter's coeffs
-    ///
-    /// # Arguments
-    ///
-    /// * `feedforward` - feedforward coeffs (numerator)
-    /// * `feedback` - feedback coeffs (denominator)
-    #[inline]
-    fn build_coeffs(mut feedforward: Vec<f64>, mut feedback: Vec<f64>) -> Vec<(f64, f64)> {
-        match (feedforward.len(), feedback.len()) {
-            (feedforward_len, feedback_len) if feedforward_len > feedback_len => {
-                feedforward = feedforward
-                    .into_iter()
-                    .chain(std::iter::repeat(0.))
-                    .take(feedback_len)
-                    .collect();
-            }
-            (feedforward_len, feedback_len) if feedforward_len < feedback_len => {
-                feedback = feedback
-                    .into_iter()
-                    .chain(std::iter::repeat(0.))
-                    .take(feedforward_len)
-                    .collect();
-            }
-            _ => (),
-        };
-
-        let coeffs: Vec<(f64, f64)> = feedforward.into_iter().zip(feedback).collect();
-
-        coeffs
-    }
-
-    /// Generate normalized filter's coeffs
-    /// coeffs are normalized by a[0] coefficient
-    ///
-    /// # Arguments
-    ///
-    /// * `coeffs` - unormalized filter's coeffs (numerator)
-    #[inline]
-    fn normalize_coeffs(coeffs: &[(f64, f64)]) -> Vec<(f64, f64)> {
-        let a_0 = coeffs[0].1;
-
-        coeffs.iter().map(|(ff, fb)| (ff / a_0, fb / a_0)).collect()
-    }
-
-    /// initialize filter states
-    ///
-    /// # Arguments
-    ///
-    /// * `coeffs` - filter's coeffs
-    #[inline]
-    fn build_filter_states(coeffs: &[(f64, f64)]) -> Vec<[f64; MAX_CHANNELS]> {
-        let coeffs_len = coeffs.len();
-        vec![[0.; MAX_CHANNELS]; coeffs_len - 1]
+        FilterRendererBuilder::build(config).finish()
     }
 
     /// Generate an output by filtering the input
