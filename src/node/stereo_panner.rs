@@ -10,7 +10,7 @@
 use std::f32::consts::PI;
 
 use crate::{
-    buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode},
+    buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
     process::{AudioParamValues, AudioProcessor},
@@ -24,12 +24,24 @@ use super::AudioNode;
 /// constructor method `new`
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
-#[derive(Default)]
 pub struct StereoPannerOptions {
     /// initial value for the pan parameter
     pan: Option<f32>,
     /// audio node options
     pub channel_config: ChannelConfigOptions,
+}
+
+impl Default for StereoPannerOptions {
+    fn default() -> Self {
+        Self {
+            pan: Some(0.),
+            channel_config: ChannelConfigOptions {
+                count: 2,
+                mode: ChannelCountMode::ClampedMax,
+                interpretation: ChannelInterpretation::Speakers,
+            },
+        }
+    }
 }
 
 /// `StereoPannerNode` positions an incoming audio stream in a stereo image
@@ -94,10 +106,13 @@ impl StereoPannerNode {
         context.base().register(move |registration| {
             let options = options.unwrap_or_default();
 
-            assert!(options.channel_config.count <= 2, "NotSupportedError");
+            assert!(
+                options.channel_config.count <= 2,
+                "NotSupportedError: channel count"
+            );
             assert!(
                 options.channel_config.mode != ChannelCountMode::Max,
-                "NotSupportedError"
+                "NotSupportedError: count mode"
             );
 
             let default_pan = 0.;
@@ -153,6 +168,7 @@ impl AudioProcessor for StereoPannerRenderer {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
+        output.set_number_of_channels(2);
 
         let pan_values = params.get(&self.pan);
 
