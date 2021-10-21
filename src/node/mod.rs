@@ -21,6 +21,8 @@ use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 
 use crossbeam_channel::{self, Receiver, Sender};
 
+mod biquad_filter;
+pub use biquad_filter::*;
 mod oscillator;
 
 pub use oscillator::*;

@@ -85,6 +85,11 @@ pub trait AsBaseAudioContext {
         node::DelayNode::new(self.base(), opts)
     }
 
+    /// Creates an biquadFilterNode
+    fn create_biquad_filter(&self) -> node::BiquadFilterNode {
+        node::BiquadFilterNode::new(self.base(), Default::default())
+    }
+
     /// Creates a ChannelSplitterNode
     fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
         let opts = node::ChannelSplitterOptions {
