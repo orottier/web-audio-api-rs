@@ -1,4 +1,10 @@
-#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::perf)]
+#![warn(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::perf,
+    clippy::missing_docs_in_private_items
+)]
 use super::AudioNode;
 use crate::{
     alloc::AudioBuffer,
@@ -10,6 +16,7 @@ use crate::{
 use num_complex::Complex;
 use std::f64::consts::PI;
 
+/// Filter order is limited to 20
 const MAX_IIR_COEFFS_LEN: usize = 20;
 
 /// The `IirFilterOptions` is used to specify the filter coefficients
@@ -28,10 +35,15 @@ pub struct IirFilterOptions {
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 pub struct IirFilterNode {
+    /// Sample rate (equals to audio context sample rate)
     sample_rate: f32,
+    /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
+    /// Infos about audio node channel configuration
     channel_config: ChannelConfig,
+    /// numerator filter's coefficients
     feedforward: Vec<f64>,
+    /// denomintor filter's coefficients
     feedback: Vec<f64>,
 }
 
@@ -152,6 +164,7 @@ impl IirFilterNode {
         }
     }
 
+    /// validates that the params given to `get_frequency_response` method
     #[inline]
     fn validate_inputs(
         &self,
@@ -179,8 +192,12 @@ impl IirFilterNode {
     }
 }
 
+/// `FilterRendererBuilder` helps to build `IirFilterRenderer`
 struct FilterRendererBuilder {
+    /// filter's coefficients as (feedforward, feedback)[]
     coeffs: Vec<(f64, f64)>,
+    /// filter's states
+    /// if the states is not used, it stays to 0. and will be never accessed
     states: Vec<[f64; MAX_CHANNELS]>,
 }
 
@@ -241,18 +258,20 @@ impl FilterRendererBuilder {
     }
 }
 
+/// Helper struct which regroups all parameters
+/// required to build `IirFilterRenderer` with the help of `FilterRendererBuilder`
 struct RendererConfig {
-    // feedforward coeffs -- b[n] -- numerator coeffs
+    /// feedforward coeffs -- b[n] -- numerator coeffs
     feedforward: Vec<f64>,
-    // feedback coeffs -- a[n] -- denominator coeffs
+    /// feedback coeffs -- a[n] -- denominator coeffs
     feedback: Vec<f64>,
 }
 
 /// Renderer associated with the `IirFilterNode`
 struct IirFilterRenderer {
-    // Normalized filter's coeffs -- (b[n],a[n])
+    /// Normalized filter's coeffs -- (b[n],a[n])
     norm_coeffs: Vec<(f64, f64)>,
-    // filter's states
+    /// filter's states
     states: Vec<[f64; MAX_CHANNELS]>,
 }
 
