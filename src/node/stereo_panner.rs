@@ -8,7 +8,7 @@
 )]
 
 use crate::{
-    buffer::{ChannelConfig, ChannelConfigOptions},
+    buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
     process::{AudioParamValues, AudioProcessor},
@@ -56,13 +56,35 @@ impl AudioNode for StereoPannerNode {
     fn number_of_inputs(&self) -> u32 {
         1
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
+    }
+
+    fn channel_count_mode(&self) -> ChannelCountMode {
+        ChannelCountMode::ClampedMax
+    }
+
+    fn set_channel_count_mode(&self, v: ChannelCountMode) {
+        assert!(v != ChannelCountMode::Max, "NotSupportedError");
+        self.channel_config.set_count_mode(v);
+    }
+
+    fn set_channel_count(&self, v: usize) {
+        assert!(v <= 2, "NotSupportedError");
+        self.channel_config.set_count(v);
     }
 }
 
 impl StereoPannerNode {
     /// returns a `StereoPannerNode` instance
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * `options.channel_config.count` is more than 2
+    /// * `options.channel_config.mode` is `ChannelCountMode::Max`
     ///
     /// # Arguments
     ///
@@ -71,6 +93,13 @@ impl StereoPannerNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<StereoPannerOptions>) -> Self {
         context.base().register(move |registration| {
             let options = options.unwrap_or_default();
+
+            assert!(options.channel_config.count <= 2, "NotSupportedError");
+            assert!(
+                options.channel_config.mode != ChannelCountMode::Max,
+                "NotSupportedError"
+            );
+
             // cannot guarantee that the cast will be without loss of precision for all fs
             // but for usual sample rate (44.1kHz, 48kHz, 96kHz) it is
             #[allow(clippy::cast_precision_loss)]
