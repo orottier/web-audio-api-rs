@@ -1,11 +1,11 @@
-//! The biquad filter control and renderer parts
-#![warn(
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    clippy::perf,
-    clippy::missing_docs_in_private_items
-)]
+// //! The stereo panner control and renderer parts
+// #![warn(
+//     clippy::all,
+//     clippy::pedantic,
+//     clippy::nursery,
+//     clippy::perf,
+//     clippy::missing_docs_in_private_items
+// )]
 use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc,
@@ -208,6 +208,12 @@ impl AudioProcessor for WaveShaperRenderer {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
+
+        for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
+            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
+                *o = self.tick(i);
+            }
+        }
     }
 
     fn tail_time(&self) -> bool {
@@ -237,6 +243,23 @@ impl WaveShaperRenderer {
             oversample,
             curve,
             curve_set,
+        }
+    }
+
+    fn tick(&self, input: f32) -> f32 {
+        if !self.curve_set {
+            input
+        } else {
+            let n = self.curve.len() as f32;
+            let v = (n - 1.) / 2.0 * (input + 1.);
+            let k = v.floor();
+            let f = v - k;
+
+            match v {
+                v if v <= 0. => self.curve[0],
+                v if v > n - 1. => self.curve[(n - 1.) as usize],
+                _ => (1. - f) * self.curve[k as usize] + f * self.curve[(k + 1.) as usize],
+            }
         }
     }
 }
