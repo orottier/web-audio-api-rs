@@ -211,7 +211,7 @@ impl AudioProcessor for IirFilterRenderer {
     }
 
     fn tail_time(&self) -> bool {
-        false
+        true
     }
 }
 
