@@ -7,6 +7,8 @@
     clippy::missing_docs_in_private_items
 )]
 
+use std::f32::consts::PI;
+
 use crate::{
     buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
@@ -34,8 +36,6 @@ pub struct StereoPannerOptions {
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 pub struct StereoPannerNode {
-    /// Sample rate (equals to audio context sample rate)
-    sample_rate: f32,
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
     /// Infos about audio node channel configuration
@@ -100,11 +100,6 @@ impl StereoPannerNode {
                 "NotSupportedError"
             );
 
-            // cannot guarantee that the cast will be without loss of precision for all fs
-            // but for usual sample rate (44.1kHz, 48kHz, 96kHz) it is
-            #[allow(clippy::cast_precision_loss)]
-            let sample_rate = context.base().sample_rate().0 as f32;
-
             let default_pan = 0.;
 
             let pan_value = options.pan.unwrap_or(default_pan);
@@ -121,9 +116,8 @@ impl StereoPannerNode {
 
             pan_param.set_value(pan_value);
 
-            let renderer = StereoPannerRenderer::new(sample_rate, pan_proc);
+            let renderer = StereoPannerRenderer::new(pan_proc);
             let node = Self {
-                sample_rate,
                 registration,
                 channel_config: options.channel_config.into(),
                 pan: pan_param,
@@ -142,8 +136,6 @@ impl StereoPannerNode {
 
 /// `StereoPannerRenderer` represents the rendering part of `StereoPannerNode`
 struct StereoPannerRenderer {
-    /// Sample rate (equals to audio context sample rate)
-    sample_rate: f32,
     /// The position of the input in the output’s stereo image.
     /// -1 represents full left, +1 represents full right.
     pan: AudioParamId,
@@ -163,6 +155,36 @@ impl AudioProcessor for StereoPannerRenderer {
         let output = &mut outputs[0];
 
         let pan_values = params.get(&self.pan);
+
+        match input.number_of_channels() {
+            0 => (),
+            1 => {
+                let in_data = input.channels();
+                let out_data = output.channels_mut();
+
+                for (sample_idx, &input) in in_data[0].iter().enumerate() {
+                    // A-rate params
+                    let pan = pan_values[sample_idx];
+                    let (left, right) = Self::mono_tick(input, pan);
+                    out_data[0][sample_idx] = left;
+                    out_data[1][sample_idx] = right;
+                }
+            }
+            2 => {
+                let in_data = input.channels();
+                let out_data = output.channels_mut();
+
+                for sample_idx in 0..in_data[0].len() {
+                    // A-rate params
+                    let pan = pan_values[sample_idx];
+                    let (left, right) =
+                        Self::stereo_tick((in_data[0][sample_idx], in_data[1][sample_idx]), pan);
+                    out_data[0][sample_idx] = left;
+                    out_data[1][sample_idx] = right;
+                }
+            }
+            _ => panic!("StereoPannerNode should not have more than 2 channels to process"),
+        }
     }
 
     fn tail_time(&self) -> bool {
@@ -175,8 +197,32 @@ impl StereoPannerRenderer {
     // new cannot be qualified as const, since constant functions cannot evaluate destructors
     // and config param need this evaluation
     #[allow(clippy::missing_const_for_fn)]
-    fn new(sample_rate: f32, pan: AudioParamId) -> Self {
-        Self { sample_rate, pan }
+    fn new(pan: AudioParamId) -> Self {
+        Self { pan }
+    }
+
+    /// Generates the output samples for a mono input
+    fn mono_tick(input: f32, pan: f32) -> (f32, f32) {
+        let x = (pan + 1.) / 2.0;
+        let (g_l, g_r) = Self::stereo_gains(x);
+
+        (input * g_l, input * g_r)
+    }
+
+    /// Generates the output samples for a stereo input
+    fn stereo_tick(inputs: (f32, f32), pan: f32) -> (f32, f32) {
+        let x = if pan <= 0. { pan + 1. } else { pan };
+
+        let (g_l, g_r) = Self::stereo_gains(x);
+
+        (inputs.0 * g_l, inputs.1 * g_r)
+    }
+
+    /// Generates the stereo gains for a specific x derived from pan
+    fn stereo_gains(x: f32) -> (f32, f32) {
+        let gain_l = (x * PI / 2.0).cos();
+        let gain_r = (x * PI / 2.0).sin();
+        (gain_l, gain_r)
     }
 }
 
