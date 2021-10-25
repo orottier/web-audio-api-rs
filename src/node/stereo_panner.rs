@@ -7,6 +7,10 @@
     clippy::missing_docs_in_private_items
 )]
 
+use std::f32::consts::PI;
+
+use float_eq::debug_assert_float_eq;
+
 use crate::{
     buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
@@ -15,7 +19,7 @@ use crate::{
     SampleRate,
 };
 
-use super::{AudioNode, SINETABLE, TABLE_LENGTH_BY_2_F32, TABLE_LENGTH_BY_4_USIZE};
+use super::{AudioNode, SINETABLE, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE};
 
 /// `StereoPannerOptions` is used to pass options
 /// during the construction of `StereoPannerNode` using its
@@ -241,18 +245,112 @@ impl StereoPannerRenderer {
         #[allow(clippy::cast_possible_truncation)]
         // no sign loss: x is always positive
         #[allow(clippy::cast_sign_loss)]
-        let idx = (x * TABLE_LENGTH_BY_2_F32) as usize;
+        let idx = (x * TABLE_LENGTH_BY_4_F32) as usize;
         let gain_l = SINETABLE[idx + TABLE_LENGTH_BY_4_USIZE];
         let gain_r = SINETABLE[idx];
+
+        // Assert correctness of wavetable optimization
+        debug_assert_float_eq!(gain_l, (x * PI / 2.).cos(), ulps <= 0, "gain_l panicked");
+        debug_assert_float_eq!(gain_r, (x * PI / 2.).sin(), ulps <= 0, "gain_r panicked");
+
         (gain_l, gain_r)
     }
 }
 
 #[cfg(test)]
 mod test {
+    use float_eq::assert_float_eq;
+
+    use crate::{
+        context::{AsBaseAudioContext, OfflineAudioContext},
+        SampleRate,
+    };
+
     use super::StereoPannerNode;
     const LENGTH: usize = 555;
 
     #[test]
-    fn testing_testing() {}
+    fn build_with_new() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let _panner = StereoPannerNode::new(&context, None);
+    }
+
+    #[test]
+    fn build_with_factory_func() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let _panner = context.create_stereo_panner();
+    }
+
+    #[test]
+    fn assert_stereo_default_build() {
+        let default_pan = 0.;
+
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let panner = StereoPannerNode::new(&context, None);
+
+        context.start_rendering();
+
+        let pan = panner.pan.value();
+        assert_float_eq!(pan, default_pan, ulps_all <= 0);
+    }
+
+    #[test]
+    fn setting_pan() {
+        let default_pan = 0.;
+        let new_pan = 0.1;
+
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let panner = StereoPannerNode::new(&context, None);
+
+        let pan = panner.pan.value();
+        assert_float_eq!(pan, default_pan, ulps_all <= 0);
+        panner.pan().set_value(new_pan);
+
+        context.start_rendering();
+
+        let pan = panner.pan.value();
+        assert_float_eq!(pan, new_pan, ulps_all <= 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn setting_pan_more_than_1_should_fail() {
+        let default_pan = 0.;
+        let new_pan = 1.1;
+
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let panner = StereoPannerNode::new(&context, None);
+
+        let pan = panner.pan.value();
+        assert_float_eq!(pan, default_pan, ulps_all <= 0);
+        panner.pan().set_value(new_pan);
+
+        context.start_rendering();
+
+        let pan = panner.pan.value();
+        assert_float_eq!(pan, new_pan, ulps_all <= 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn setting_pan_less_than_minus1_should_fail() {
+        let default_pan = 0.;
+        let new_pan = -1.1;
+
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let panner = StereoPannerNode::new(&context, None);
+
+        let pan = panner.pan.value();
+        assert_float_eq!(pan, default_pan, ulps_all <= 0);
+        panner.pan().set_value(new_pan);
+
+        context.start_rendering();
+
+        let pan = panner.pan.value();
+        assert_float_eq!(pan, new_pan, ulps_all <= 0);
+    }
 }
