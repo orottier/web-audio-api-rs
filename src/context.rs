@@ -247,6 +247,19 @@ impl AsBaseAudioContext for BaseAudioContext {
     }
 }
 
+pub enum LatencyHint {
+    Balanced,
+    Interactive,
+    Playback,
+    Specific(f32),
+}
+
+pub struct AudioContextOptions {
+    pub latency_hint: Option<LatencyHint>,
+    pub sample_rate: Option<u32>,
+    pub channels: Option<u16>,
+}
+
 /// This interface represents an audio graph whose AudioDestinationNode is routed to a real-time
 /// output device that produces a signal directed at the user.
 pub struct AudioContext {
@@ -284,12 +297,12 @@ impl AudioContext {
     /// Creates and returns a new AudioContext object.
     /// This will play live audio on the default output
     #[cfg(not(test))]
-    pub fn new() -> Self {
+    pub fn new(options: Option<AudioContextOptions>) -> Self {
         // track number of frames - synced from render thread to control thread
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
-        let (stream, config, sender) = io::build_output(frames_played_clone);
+        let (stream, config, sender) = io::build_output(frames_played_clone, options);
         let channels = config.channels as u32;
         let sample_rate = SampleRate(config.sample_rate.0);
 
@@ -299,9 +312,15 @@ impl AudioContext {
     }
 
     #[cfg(test)] // in tests, do not set up a cpal Stream
-    pub fn new() -> Self {
-        let sample_rate = SampleRate(44_100);
-        let channels = 2;
+    pub fn new(options: Option<AudioContextOptions>) -> Self {
+        let options = options.unwrap_or(AudioContextOptions {
+            latency_hint: Some(LatencyHint::Interactive),
+            sample_rate: Some(44_100),
+            channels: Some(2),
+        });
+
+        let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100));
+        let channels = options.channels.unwrap_or(2) as u32;
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
         let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
@@ -544,7 +563,7 @@ impl BaseAudioContext {
 
 impl Default for AudioContext {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
