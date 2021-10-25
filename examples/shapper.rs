@@ -3,15 +3,16 @@ use std::fs::File;
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 use web_audio_api::media::{MediaElement, OggVorbisDecoder};
 use web_audio_api::node::{
-    AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode, WaveShaperNode,
-    WaveShaperOptions,
+    AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode, OverSampleType,
+    WaveShaperNode, WaveShaperOptions,
 };
 
 fn make_distortion_curve(amount: usize) -> Vec<f32> {
-    let mut curve = vec![0.; 44100];
+    let n = 441;
+    let mut curve = vec![0.; n];
     let deg = PI / 180.;
     for (i, c) in curve.iter_mut().enumerate() {
-        let x = i as f32 * 2. / 44100. - 1.;
+        let x = i as f32 * 2. / n as f32 - 1.;
         *c = (3.0 + amount as f32) * x * 20. * deg / (PI + amount as f32 * x.abs());
     }
     curve
@@ -19,6 +20,8 @@ fn make_distortion_curve(amount: usize) -> Vec<f32> {
 
 fn main() {
     let context = AudioContext::new();
+
+    dbg!(context.sample_rate());
 
     // setup background music:
     // read from local file
@@ -36,14 +39,17 @@ fn main() {
     gain.gain().set_value(0.5);
 
     // Create the distorsion curve
-    let curve = make_distortion_curve(400);
+    let curve = make_distortion_curve(40);
+
     // Create wave shaper options
     let options = WaveShaperOptions {
         curve: Some(curve),
         ..Default::default()
     };
     // Create the waveshaper
-    let shaper = WaveShaperNode::new(&context, Some(options));
+    let mut shaper = WaveShaperNode::new(&context, Some(options));
+
+    shaper.set_oversample(OverSampleType::X4);
 
     // connect the media node to the gain node
     background.connect(&gain);
