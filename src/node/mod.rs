@@ -248,6 +248,21 @@ impl AudioNode for DestinationNode {
     fn channel_count(&self) -> usize {
         self.channel_count
     }
+
+    fn set_channel_count(&self, v: usize) {
+        assert!(
+            v <= self.max_channels_count() as usize,
+            "IndexSizeError: channel_count must be less or equal to {}",
+            self.max_channels_count()
+        );
+
+        assert!(
+            v >= 1,
+            "IndexSizeError: channel_count must be more or equal to 1",
+        );
+
+        self.channel_config_raw().set_count(v);
+    }
 }
 
 impl DestinationNode {
@@ -261,6 +276,12 @@ impl DestinationNode {
 
             (node, Box::new(proc))
         })
+    }
+
+    /// The maximum number of channels that the channelCount attribute can be set to
+    /// This is the limit number that audio hardware can support.
+    pub fn max_channels_count(&self) -> u32 {
+        self.registration.context().base().channels()
     }
 }
 
