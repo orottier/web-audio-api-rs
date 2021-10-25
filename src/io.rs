@@ -94,8 +94,6 @@ pub(crate) fn build_output(
 
     let mut primary_config: StreamConfig = supported_config.clone().into();
     primary_config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
-    let sample_rate = SampleRate(primary_config.sample_rate.0);
-    let channels = primary_config.channels as u32;
 
     let mut config: StreamConfig = supported_config.into();
 
@@ -108,6 +106,8 @@ pub(crate) fn build_output(
             config = primary_config;
         }
     }
+    let sample_rate = SampleRate(config.sample_rate.0);
+    let channels = config.channels as u32;
 
     // communication channel to the render thread
     let (mut sender, receiver) = crossbeam_channel::unbounded();
@@ -124,7 +124,10 @@ pub(crate) fn build_output(
     let maybe_stream = spawn_output_stream(&device, sample_format, &config, render);
     // our BUFFER_SIZEd config may not be supported, in that case, use the default config
     let stream = match maybe_stream {
-        Ok(stream) => stream,
+        Ok(stream) => {
+            log::warn!("Input stream build sucessfully with config: {:?}", config);
+            stream
+        }
         Err(e) => {
             log::warn!(
                 "Input stream failed to build: {:?}, retry with default config {:?}",
