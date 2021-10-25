@@ -7,8 +7,6 @@
     clippy::missing_docs_in_private_items
 )]
 
-use std::f32::consts::PI;
-
 use crate::{
     buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
@@ -17,7 +15,7 @@ use crate::{
     SampleRate,
 };
 
-use super::AudioNode;
+use super::{AudioNode, SINETABLE, TABLE_LENGTH_BY_2_F32, TABLE_LENGTH_BY_4_USIZE};
 
 /// `StereoPannerOptions` is used to pass options
 /// during the construction of `StereoPannerNode` using its
@@ -190,9 +188,9 @@ impl AudioProcessor for StereoPannerRenderer {
                 let in_data = input.channels();
                 let out_data = output.channels_mut();
 
-                for sample_idx in 0..in_data[0].len() {
+                for (sample_idx, &p) in pan_values.iter().enumerate() {
                     // A-rate params
-                    let pan = pan_values[sample_idx];
+                    let pan = p;
                     let (left, right) =
                         Self::stereo_tick((in_data[0][sample_idx], in_data[1][sample_idx]), pan);
                     out_data[0][sample_idx] = left;
@@ -218,14 +216,16 @@ impl StereoPannerRenderer {
     }
 
     /// Generates the output samples for a mono input
+    #[inline]
     fn mono_tick(input: f32, pan: f32) -> (f32, f32) {
-        let x = (pan + 1.) / 2.0;
+        let x = (pan + 1.) * 0.5;
         let (g_l, g_r) = Self::stereo_gains(x);
 
         (input * g_l, input * g_r)
     }
 
     /// Generates the output samples for a stereo input
+    #[inline]
     fn stereo_tick(inputs: (f32, f32), pan: f32) -> (f32, f32) {
         let x = if pan <= 0. { pan + 1. } else { pan };
 
@@ -235,9 +235,15 @@ impl StereoPannerRenderer {
     }
 
     /// Generates the stereo gains for a specific x derived from pan
+    #[inline]
     fn stereo_gains(x: f32) -> (f32, f32) {
-        let gain_l = (x * PI / 2.0).cos();
-        let gain_r = (x * PI / 2.0).sin();
+        // truncation is the intented behavior
+        #[allow(clippy::cast_possible_truncation)]
+        // no sign loss: x is always positive
+        #[allow(clippy::cast_sign_loss)]
+        let idx = (x * TABLE_LENGTH_BY_2_F32) as usize;
+        let gain_l = SINETABLE[idx + TABLE_LENGTH_BY_4_USIZE];
+        let gain_r = SINETABLE[idx];
         (gain_l, gain_r)
     }
 }

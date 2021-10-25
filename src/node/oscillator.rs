@@ -13,26 +13,8 @@ use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
 
 use crossbeam_channel::{self, Receiver, Sender};
-use lazy_static::lazy_static;
 
-use super::{AudioNode, AudioScheduledSourceNode};
-
-const TABLE_LENGTH_USIZE: usize = 2048;
-// 2048 casts without loss of precision cause its mantissa is 0b0
-#[allow(clippy::cast_precision_loss)]
-const TABLE_LENGTH_F32: f32 = TABLE_LENGTH_USIZE as f32;
-
-// Compute one period sine wavetable of size TABLE_LENGTH
-lazy_static! {
-    static ref SINETABLE: Vec<f32> = {
-        #[allow(clippy::cast_precision_loss)]
-        // 0 through 2048 are cast without loss of precision
-        let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
-            .map(|x| ((x as f32) * 2.0 * PI * (1. / (TABLE_LENGTH_F32))).sin())
-            .collect();
-        table
-    };
-}
+use super::{AudioNode, AudioScheduledSourceNode, SINETABLE, TABLE_LENGTH_F32, TABLE_LENGTH_USIZE};
 
 /// Options for constructing a periodic wave
 pub struct PeriodicWaveOptions {

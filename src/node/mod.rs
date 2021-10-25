@@ -20,6 +20,7 @@ use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 
 use crossbeam_channel::{self, Receiver, Sender};
+use lazy_static::lazy_static;
 
 mod biquad_filter;
 pub use biquad_filter::*;
@@ -27,6 +28,26 @@ mod oscillator;
 pub use oscillator::*;
 mod stereo_panner;
 pub use stereo_panner::*;
+
+const TABLE_LENGTH_USIZE: usize = 2048;
+const TABLE_LENGTH_BY_2_USIZE: usize = TABLE_LENGTH_USIZE / 2;
+const TABLE_LENGTH_BY_4_USIZE: usize = TABLE_LENGTH_USIZE / 4;
+// 2048 casts without loss of precision cause its mantissa is 0b0
+#[allow(clippy::cast_precision_loss)]
+const TABLE_LENGTH_F32: f32 = TABLE_LENGTH_USIZE as f32;
+const TABLE_LENGTH_BY_2_F32: f32 = TABLE_LENGTH_BY_2_USIZE as f32;
+
+// Compute one period sine wavetable of size TABLE_LENGTH
+lazy_static! {
+    static ref SINETABLE: Vec<f32> = {
+        #[allow(clippy::cast_precision_loss)]
+        // 0 through 2048 are cast without loss of precision
+        let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
+            .map(|x| ((x as f32) * 2.0 * PI * (1. / (TABLE_LENGTH_F32))).sin())
+            .collect();
+        table
+    };
+}
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules.
