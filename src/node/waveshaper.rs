@@ -127,7 +127,7 @@ impl WaveShaperNode {
             // cannot guarantee that the cast will be without loss of precision for all fs
             // but for usual sample rate (44.1kHz, 48kHz, 96kHz) it is
             #[allow(clippy::cast_precision_loss)]
-            let sample_rate = context.base().sample_rate().0 as f32;
+            let sample_rate = context.base().sample_rate().0 as usize;
             let channel_config = channel_config.unwrap_or_default().into();
             let oversample = Arc::new(AtomicU32::new(
                 oversample.expect("oversample should be OversampleType variant") as u32,
@@ -186,7 +186,7 @@ impl WaveShaperNode {
 /// required to build `WaveShaperRenderer`
 struct RendererConfig {
     /// Sample rate (equals to audio context sample rate)
-    sample_rate: f32,
+    sample_rate: usize,
     /// oversample factor
     oversample: Arc<AtomicU32>,
     /// distorsion curve
@@ -195,8 +195,14 @@ struct RendererConfig {
 
 /// `BiquadFilterRenderer` represents the rendering part of `BiquadFilterNode`
 struct WaveShaperRenderer {
+    /// Sample rate (equals to audio context sample rate)
+    sample_rate: usize,
     /// oversample factor
     oversample: Arc<AtomicU32>,
+    /// Number of channels used to build the up/down sampler X2
+    channels_x2: usize,
+    /// Number of channels used to build the up/down sampler X4
+    channels_x4: usize,
     // up sampler configured to multiply by 2 the input fs
     upsampler_x2: FftFixedInOut<f32>,
     // up sampler configured to multiply by 4 the input fs
@@ -228,8 +234,18 @@ impl AudioProcessor for WaveShaperRenderer {
 
         match self.oversample.load(Ordering::SeqCst).into() {
             None => self.process_none(input, output),
-            X2 => self.process_2x(input, output),
-            X4 => self.process_4x(input, output),
+            X2 => {
+                if input.channels().len() != self.channels_x2 {
+                    self.update_2x(input.channels().len());
+                }
+                self.process_2x(input, output)
+            }
+            X4 => {
+                if input.channels().len() != self.channels_x4 {
+                    self.update_4x(input.channels().len());
+                }
+                self.process_4x(input, output)
+            }
         }
     }
 
@@ -255,19 +271,39 @@ impl WaveShaperRenderer {
             None => (Vec::new(), false),
         };
 
-        let upsampler_x2 =
-            FftFixedInOut::<f32>::new(sample_rate as usize, sample_rate as usize * 2, 256, 1);
+        let channels_x2 = 1;
+        let channels_x4 = 1;
 
-        let upsampler_x4 =
-            FftFixedInOut::<f32>::new(sample_rate as usize, sample_rate as usize * 4, 512, 1);
+        let upsampler_x2 = FftFixedInOut::<f32>::new(
+            sample_rate as usize,
+            sample_rate as usize * 2,
+            256,
+            channels_x2,
+        );
 
-        let downsampler_x2 =
-            FftFixedInOut::<f32>::new(sample_rate as usize, sample_rate as usize / 2, 128, 1);
+        let downsampler_x2 = FftFixedInOut::<f32>::new(
+            sample_rate as usize,
+            sample_rate as usize / 2,
+            128,
+            channels_x2,
+        );
 
-        let downsampler_x4 =
-            FftFixedInOut::<f32>::new(sample_rate as usize, sample_rate as usize / 4, 128, 1);
+        let upsampler_x4 = FftFixedInOut::<f32>::new(
+            sample_rate as usize,
+            sample_rate as usize * 4,
+            512,
+            channels_x4,
+        );
+
+        let downsampler_x4 = FftFixedInOut::<f32>::new(
+            sample_rate as usize,
+            sample_rate as usize / 4,
+            128,
+            channels_x4,
+        );
 
         Self {
+            sample_rate,
             oversample,
             curve,
             curve_set,
@@ -275,6 +311,8 @@ impl WaveShaperRenderer {
             upsampler_x4,
             downsampler_x2,
             downsampler_x4,
+            channels_x2,
+            channels_x4,
         }
     }
 
@@ -343,6 +381,26 @@ impl WaveShaperRenderer {
                 _ => (1. - f) * self.curve[k as usize] + f * self.curve[(k + 1.) as usize],
             }
         }
+    }
+
+    fn update_2x(&mut self, channels_x2: usize) {
+        self.channels_x2 = channels_x2;
+
+        self.upsampler_x2 =
+            FftFixedInOut::<f32>::new(self.sample_rate, self.sample_rate * 2, 256, channels_x2);
+
+        self.downsampler_x2 =
+            FftFixedInOut::<f32>::new(self.sample_rate, self.sample_rate / 2, 128, channels_x2);
+    }
+
+    fn update_4x(&mut self, channels_x4: usize) {
+        self.channels_x4 = channels_x4;
+
+        self.upsampler_x4 =
+            FftFixedInOut::<f32>::new(self.sample_rate, self.sample_rate * 4, 512, channels_x4);
+
+        self.downsampler_x4 =
+            FftFixedInOut::<f32>::new(self.sample_rate, self.sample_rate / 4, 128, channels_x4);
     }
 }
 
