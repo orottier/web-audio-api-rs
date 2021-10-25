@@ -21,6 +21,7 @@ realfft = "2.0.1"
 crossbeam-channel = "0.5.1"
 num-complex = "0.4"
 lazy_static = "1.4.0"
+rubato = "0.10"
 
 [dev-dependencies]
 rand = "0.8.*"
