@@ -1,4 +1,4 @@
-// //! The stereo panner control and renderer parts
+//! The stereo panner control and renderer parts
 // #![warn(
 //     clippy::all,
 //     clippy::pedantic,
@@ -11,7 +11,10 @@ use std::sync::{
     Arc,
 };
 
+use rubato::{FftFixedInOut, Resampler};
+
 use crate::{
+    alloc::AudioBuffer,
     buffer::{ChannelConfig, ChannelConfigOptions},
     context::{AsBaseAudioContext, AudioContextRegistration},
     process::{AudioParamValues, AudioProcessor},
@@ -80,8 +83,6 @@ impl Default for WaveShaperOptions {
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 pub struct WaveShaperNode {
-    /// Sample rate (equals to audio context sample rate)
-    sample_rate: f32,
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
     /// Infos about audio node channel configuration
@@ -140,7 +141,6 @@ impl WaveShaperNode {
 
             let renderer = WaveShaperRenderer::new(config);
             let node = Self {
-                sample_rate,
                 registration,
                 channel_config,
                 curve,
@@ -195,10 +195,16 @@ struct RendererConfig {
 
 /// `BiquadFilterRenderer` represents the rendering part of `BiquadFilterNode`
 struct WaveShaperRenderer {
-    /// Sample rate (equals to audio context sample rate)
-    sample_rate: f32,
     /// oversample factor
     oversample: Arc<AtomicU32>,
+    // up sampler configured to multiply by 2 the input fs
+    upsampler_x2: FftFixedInOut<f32>,
+    // up sampler configured to multiply by 4 the input fs
+    upsampler_x4: FftFixedInOut<f32>,
+    // down sampler configured to divide by 4 the input fs
+    downsampler_x2: FftFixedInOut<f32>,
+    // down sampler configured to divide by 4 the input fs
+    downsampler_x4: FftFixedInOut<f32>,
     /// distorsion curve
     curve: Vec<f32>,
     /// set to true if curve is not None
@@ -218,10 +224,12 @@ impl AudioProcessor for WaveShaperRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
-            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.tick(i);
-            }
+        use OverSampleType::*;
+
+        match self.oversample.load(Ordering::SeqCst).into() {
+            None => self.process_none(input, output),
+            X2 => self.process_2x(input, output),
+            X4 => self.process_4x(input, output),
         }
     }
 
@@ -247,11 +255,76 @@ impl WaveShaperRenderer {
             None => (Vec::new(), false),
         };
 
+        let upsampler_x2 =
+            FftFixedInOut::<f32>::new(sample_rate as usize, sample_rate as usize * 2, 256, 1);
+
+        let upsampler_x4 =
+            FftFixedInOut::<f32>::new(sample_rate as usize, sample_rate as usize * 4, 512, 1);
+
+        let downsampler_x2 =
+            FftFixedInOut::<f32>::new(sample_rate as usize, sample_rate as usize / 2, 128, 1);
+
+        let downsampler_x4 =
+            FftFixedInOut::<f32>::new(sample_rate as usize, sample_rate as usize / 4, 128, 1);
+
         Self {
-            sample_rate,
             oversample,
             curve,
             curve_set,
+            upsampler_x2,
+            upsampler_x4,
+            downsampler_x2,
+            downsampler_x4,
+        }
+    }
+
+    fn process_none(&self, input: &AudioBuffer, output: &mut AudioBuffer) {
+        for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
+            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
+                *o = self.tick(i);
+            }
+        }
+    }
+
+    fn process_2x(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
+        let wave_in = input.channels();
+
+        let up_wave_in = self.upsampler_x2.process(wave_in).unwrap();
+        let mut up_wave_out = up_wave_in.clone();
+
+        for (i_data, o_data) in up_wave_in.iter().zip(&mut up_wave_out) {
+            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
+                *o = self.tick(i);
+            }
+        }
+
+        let wave_out = self.downsampler_x2.process(&up_wave_out).unwrap();
+
+        for (i_data, o_data) in wave_out.iter().zip(output.channels_mut()) {
+            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
+                *o = i;
+            }
+        }
+    }
+
+    fn process_4x(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
+        let wave_in = input.channels();
+
+        let up_wave_in = self.upsampler_x4.process(wave_in).unwrap();
+        let mut up_wave_out = up_wave_in.clone();
+
+        for (i_data, o_data) in up_wave_in.iter().zip(&mut up_wave_out) {
+            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
+                *o = self.tick(i);
+            }
+        }
+
+        let wave_out = self.downsampler_x4.process(&up_wave_out).unwrap();
+
+        for (i_data, o_data) in wave_out.iter().zip(output.channels_mut()) {
+            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
+                *o = i;
+            }
         }
     }
 
@@ -273,11 +346,11 @@ impl WaveShaperRenderer {
     }
 }
 
-#[cfg(test)]
-mod test {
+// #[cfg(test)]
+// mod test {
 
-    const LENGTH: usize = 555;
+//     const LENGTH: usize = 555;
 
-    #[test]
-    fn testing_testing() {}
-}
+//     #[test]
+//     fn testing_testing() {}
+// }
