@@ -6,10 +6,12 @@ use crate::{SampleRate, BUFFER_SIZE};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    BuildStreamError, Device, SampleFormat, Stream, StreamConfig, SupportedBufferSize,
+    BuildStreamError, Device, SampleFormat, SampleRate as CpalSampleRate, Stream, StreamConfig,
+    SupportedBufferSize,
 };
 
 use crate::buffer::AudioBuffer;
+use crate::context::AudioContextOptions;
 use crate::graph::RenderThread;
 use crate::media::MicrophoneRender;
 
@@ -59,6 +61,7 @@ fn spawn_input_stream(
 
 pub(crate) fn build_output(
     frames_played: Arc<AtomicU64>,
+    options: Option<AudioContextOptions>,
 ) -> (Stream, StreamConfig, Sender<ControlMessage>) {
     let host = cpal::default_host();
     let device = host
@@ -89,10 +92,22 @@ pub(crate) fn build_output(
     // the desired number of frames.
     buffer_size = (buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
 
+    let mut primary_config: StreamConfig = supported_config.clone().into();
+    primary_config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+    let sample_rate = SampleRate(primary_config.sample_rate.0);
+    let channels = primary_config.channels as u32;
+
     let mut config: StreamConfig = supported_config.into();
-    config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
-    let sample_rate = SampleRate(config.sample_rate.0);
-    let channels = config.channels as u32;
+
+    match options {
+        Some(opts) => {
+            config.sample_rate = CpalSampleRate(opts.sample_rate.unwrap_or(config.sample_rate.0));
+            config.channels = opts.channels.unwrap_or(config.channels);
+        }
+        None => {
+            config = primary_config;
+        }
+    }
 
     // communication channel to the render thread
     let (mut sender, receiver) = crossbeam_channel::unbounded();
