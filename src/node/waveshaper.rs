@@ -404,11 +404,93 @@ impl WaveShaperRenderer {
     }
 }
 
-// #[cfg(test)]
-// mod test {
+#[cfg(test)]
+mod test {
+    use crate::{
+        context::{AsBaseAudioContext, OfflineAudioContext},
+        node::WaveShaperOptions,
+        SampleRate,
+    };
 
-//     const LENGTH: usize = 555;
+    use super::{OverSampleType, WaveShaperNode};
 
-//     #[test]
-//     fn testing_testing() {}
-// }
+    const LENGTH: usize = 555;
+
+    #[test]
+    fn build_with_new() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let _shaper = WaveShaperNode::new(&context, None);
+    }
+
+    #[test]
+    fn build_with_factory_func() {
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let _shaper = context.create_wave_shaper();
+    }
+
+    #[test]
+    fn default_audio_params_are_correct_with_no_options() {
+        let default_oversample = OverSampleType::None;
+        let default_curve = None;
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let shaper = WaveShaperNode::new(&context, None);
+
+        assert_eq!(shaper.curve(), default_curve);
+        assert_eq!(shaper.oversample(), default_oversample);
+    }
+
+    #[test]
+    fn default_audio_params_are_correct_with_default_options() {
+        let default_oversample = OverSampleType::None;
+        let default_curve = None;
+
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let options = WaveShaperOptions::default();
+        let shaper = WaveShaperNode::new(&context, Some(options));
+
+        assert_eq!(shaper.curve(), default_curve);
+        assert_eq!(shaper.oversample(), default_oversample);
+    }
+
+    #[test]
+    fn options_sets_audio_params() {
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let options = WaveShaperOptions {
+            curve: Some(vec![1.0]),
+            oversample: Some(OverSampleType::X2),
+            ..Default::default()
+        };
+
+        let shaper = WaveShaperNode::new(&context, Some(options));
+
+        context.start_rendering();
+
+        assert_eq!(shaper.curve(), Some(&[1.0][..]));
+        assert_eq!(shaper.oversample(), OverSampleType::X2);
+    }
+
+    #[test]
+    fn change_audio_params_after_build() {
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let options = WaveShaperOptions {
+            curve: Some(vec![1.0]),
+            oversample: Some(OverSampleType::X2),
+            ..Default::default()
+        };
+
+        let mut shaper = WaveShaperNode::new(&context, Some(options));
+        assert_eq!(shaper.curve(), Some(&[1.0][..]));
+        assert_eq!(shaper.oversample(), OverSampleType::X2);
+
+        shaper.set_curve(vec![2.0]);
+        shaper.set_oversample(OverSampleType::X4);
+
+        context.start_rendering();
+
+        assert_eq!(shaper.curve(), Some(&[2.0][..]));
+        assert_eq!(shaper.oversample(), OverSampleType::X4);
+    }
+}
