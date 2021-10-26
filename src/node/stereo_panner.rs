@@ -250,8 +250,8 @@ impl StereoPannerRenderer {
         let gain_r = SINETABLE[idx];
 
         // Assert correctness of wavetable optimization
-        debug_assert_float_eq!(gain_l, (x * PI / 2.).cos(), ulps <= 0, "gain_l panicked");
-        debug_assert_float_eq!(gain_r, (x * PI / 2.).sin(), ulps <= 0, "gain_r panicked");
+        debug_assert_float_eq!(gain_l, (x * PI / 2.).cos(), abs <= 0.1, "gain_l panicked");
+        debug_assert_float_eq!(gain_r, (x * PI / 2.).sin(), abs <= 0.1, "gain_r panicked");
 
         (gain_l, gain_r)
     }
