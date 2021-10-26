@@ -11,7 +11,7 @@ use cpal::{
 };
 
 use crate::buffer::AudioBuffer;
-use crate::context::AudioContextOptions;
+use crate::context::{AudioContextOptions, LatencyHint};
 use crate::graph::RenderThread;
 use crate::media::MicrophoneRender;
 
@@ -95,12 +95,52 @@ pub(crate) fn build_output(
     let mut primary_config: StreamConfig = supported_config.clone().into();
     primary_config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
 
-    let mut config: StreamConfig = supported_config.into();
+    let mut config: StreamConfig = supported_config.clone().into();
 
     match options {
         Some(opts) => {
             config.sample_rate = CpalSampleRate(opts.sample_rate.unwrap_or(config.sample_rate.0));
             config.channels = opts.channels.unwrap_or(config.channels);
+
+            match opts.latency_hint {
+                None => {
+                    config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                }
+                Some(l) => match l {
+                    LatencyHint::Interactive => {
+                        config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                    }
+                    LatencyHint::Balanced => match supported_config.buffer_size() {
+                        SupportedBufferSize::Range { max, .. } => {
+                            let b = (buffer_size * 2).min(*max);
+                            let buffer_size = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+                            config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                        }
+                        SupportedBufferSize::Unknown => {
+                            let b = buffer_size * 2;
+                            let buffer_size = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+                            config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                        }
+                    },
+                    LatencyHint::Playback => match supported_config.buffer_size() {
+                        SupportedBufferSize::Range { max, .. } => {
+                            let b = (buffer_size * 4).min(*max);
+                            let buffer_size = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+                            config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                        }
+                        SupportedBufferSize::Unknown => {
+                            let b = buffer_size * 4;
+                            let buffer_size = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+                            config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                        }
+                    },
+                    LatencyHint::Specific(t) => {
+                        let b = t / config.sample_rate.0 as f32;
+                        let buffer_size = (b as u32 + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+                        config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                    }
+                },
+            }
         }
         None => {
             config = primary_config;
