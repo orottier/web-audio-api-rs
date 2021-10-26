@@ -1,4 +1,4 @@
-//! The stereo panner control and renderer parts
+//! The wave shaper control and renderer parts
 // #![warn(
 //     clippy::all,
 //     clippy::pedantic,
