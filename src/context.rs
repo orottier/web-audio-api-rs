@@ -251,7 +251,7 @@ pub enum LatencyHint {
     Balanced,
     Interactive,
     Playback,
-    Specific(f32),
+    Specific(f64),
 }
 
 pub struct AudioContextOptions {

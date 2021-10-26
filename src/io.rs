@@ -135,7 +135,7 @@ pub(crate) fn build_output(
                         }
                     },
                     LatencyHint::Specific(t) => {
-                        let b = t / config.sample_rate.0 as f32;
+                        let b = t * config.sample_rate.0 as f64;
                         let buffer_size = (b as u32 + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
                         config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
                     }
