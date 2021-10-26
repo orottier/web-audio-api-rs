@@ -1,3 +1,10 @@
+#![warn(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::perf,
+    clippy::missing_docs_in_private_items
+)]
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
@@ -17,6 +24,14 @@ use crate::media::MicrophoneRender;
 
 use crossbeam_channel::{Receiver, Sender};
 
+/// Creates an output stream
+///
+/// # Arguments:
+///
+/// * `device` - the output audio device on which the stream is created
+/// * `sample_format` - audio sample format of the stream
+/// * `config` - stream configuration
+/// * `render` - the render thread which process the audio data
 fn spawn_output_stream(
     device: &Device,
     sample_format: SampleFormat,
@@ -38,6 +53,14 @@ fn spawn_output_stream(
     }
 }
 
+/// Creates an input stream
+///
+/// # Arguments:
+///
+/// * `device` - the input audio device on which the stream is created
+/// * `sample_format` - audio sample format of the stream
+/// * `config` - stream configuration
+/// * `render` - the render thread which process the audio data
 fn spawn_input_stream(
     device: &Device,
     sample_format: SampleFormat,
@@ -59,6 +82,8 @@ fn spawn_input_stream(
     }
 }
 
+/// Builds the output
+#[allow(clippy::redundant_pub_crate)]
 pub(crate) fn build_output(
     frames_played: Arc<AtomicU64>,
     options: Option<AudioContextOptions>,
@@ -113,31 +138,32 @@ pub(crate) fn build_output(
                     LatencyHint::Balanced => match supported_config.buffer_size() {
                         SupportedBufferSize::Range { max, .. } => {
                             let b = (buffer_size * 2).min(*max);
-                            let buffer_size = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
-                            config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                            let buffer_length = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+                            config.buffer_size = cpal::BufferSize::Fixed(buffer_length);
                         }
                         SupportedBufferSize::Unknown => {
                             let b = buffer_size * 2;
-                            let buffer_size = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
-                            config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                            let buffer_length = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+                            config.buffer_size = cpal::BufferSize::Fixed(buffer_length);
                         }
                     },
                     LatencyHint::Playback => match supported_config.buffer_size() {
                         SupportedBufferSize::Range { max, .. } => {
                             let b = (buffer_size * 4).min(*max);
-                            let buffer_size = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
-                            config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                            let buffer_length = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+                            config.buffer_size = cpal::BufferSize::Fixed(buffer_length);
                         }
                         SupportedBufferSize::Unknown => {
                             let b = buffer_size * 4;
-                            let buffer_size = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
-                            config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                            let buffer_length = (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+                            config.buffer_size = cpal::BufferSize::Fixed(buffer_length);
                         }
                     },
                     LatencyHint::Specific(t) => {
-                        let b = t * config.sample_rate.0 as f64;
-                        let buffer_size = (b as u32 + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
-                        config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+                        let b = t * f64::from(config.sample_rate.0);
+                        let buffer_length =
+                            (b as u32 + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+                        config.buffer_size = cpal::BufferSize::Fixed(buffer_length);
                     }
                 },
             }
@@ -147,21 +173,21 @@ pub(crate) fn build_output(
         }
     }
     let sample_rate = SampleRate(config.sample_rate.0);
-    let channels = config.channels as u32;
+    let channels = u32::from(config.channels);
 
     // communication channel to the render thread
     let (mut sender, receiver) = crossbeam_channel::unbounded();
 
     // spawn the render thread
     let frames_played_clone = frames_played.clone();
-    let render = RenderThread::new(
+    let renderer = RenderThread::new(
         sample_rate,
         channels as usize,
         receiver,
         frames_played_clone,
     );
 
-    let maybe_stream = spawn_output_stream(&device, sample_format, &config, render);
+    let maybe_stream = spawn_output_stream(&device, sample_format, &config, renderer);
     // our BUFFER_SIZEd config may not be supported, in that case, use the default config
     let stream = match maybe_stream {
         Ok(stream) => {
@@ -179,9 +205,10 @@ pub(crate) fn build_output(
             let (sender2, receiver) = crossbeam_channel::unbounded();
             sender = sender2; // overwrite earlier
 
-            let render = RenderThread::new(sample_rate, channels as usize, receiver, frames_played);
+            let renderer =
+                RenderThread::new(sample_rate, channels as usize, receiver, frames_played);
 
-            spawn_output_stream(&device, sample_format, &default_config, render)
+            spawn_output_stream(&device, sample_format, &default_config, renderer)
                 .expect("Unable to spawn output stream with default config")
         }
     };
@@ -192,7 +219,8 @@ pub(crate) fn build_output(
     (stream, config, sender)
 }
 
-pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
+/// Builds the input
+pub fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
@@ -228,9 +256,9 @@ pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
 
     let smoothing = 3; // todo, use buffering to smooth frame drops
     let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
-    let render = MicrophoneRender::new(channels, sample_rate, sender);
+    let renderer = MicrophoneRender::new(channels, sample_rate, sender);
 
-    let maybe_stream = spawn_input_stream(&device, sample_format, &config, render);
+    let maybe_stream = spawn_input_stream(&device, sample_format, &config, renderer);
     // our BUFFER_SIZEd config may not be supported, in that case, use the default config
     let stream = match maybe_stream {
         Ok(stream) => stream,
@@ -245,8 +273,8 @@ pub(crate) fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
             let (sender, receiver2) = crossbeam_channel::bounded(smoothing);
             receiver = receiver2; // overwrite earlier
 
-            let render = MicrophoneRender::new(channels, sample_rate, sender);
-            spawn_input_stream(&device, sample_format, &default_config, render)
+            let renderer = MicrophoneRender::new(channels, sample_rate, sender);
+            spawn_input_stream(&device, sample_format, &default_config, renderer)
                 .expect("Unable to spawn input stream with default config")
         }
     };

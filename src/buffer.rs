@@ -143,8 +143,7 @@ impl AudioBuffer {
     }
 
     /// Split an AudioBuffer in two at the given index.
-    pub fn split_off(&mut self, index: u32) -> AudioBuffer {
-        let index = index as usize;
+    pub fn split_off(&mut self, index: usize) -> AudioBuffer {
         let sample_rate = self.sample_rate();
 
         let channels: Vec<_> = self
@@ -467,7 +466,7 @@ impl<M: MediaStream> Iterator for Resampler<M> {
             return Some(Ok(buffer));
         }
 
-        self.buffer = Some(buffer.split_off(self.sample_len));
+        self.buffer = Some(buffer.split_off(self.sample_len as usize));
 
         Some(Ok(buffer))
     }
