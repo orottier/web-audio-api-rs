@@ -1,4 +1,4 @@
-//! The biquad filter control and renderer parts
+//! The oscillator control and renderer parts
 #![warn(
     clippy::all,
     clippy::pedantic,
