@@ -284,6 +284,10 @@ impl AudioProcessor for WaveShaperRenderer {
             self.curve = msg.0;
         }
 
+        if !self.curve_set {
+            self.no_process(input, output);
+        }
+
         use OverSampleType::*;
         match self.oversample.load(Ordering::SeqCst).into() {
             None => self.process_none(input, output),
@@ -371,14 +375,23 @@ impl WaveShaperRenderer {
         }
     }
 
-    fn process_none(&self, input: &AudioBuffer, output: &mut AudioBuffer) {
+    #[inline]
+    fn no_process(&self, input: &AudioBuffer, output: &mut AudioBuffer) {
         for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.tick(i);
+                *o = i;
             }
         }
     }
 
+    #[inline]
+    fn process_none(&self, input: &AudioBuffer, output: &mut AudioBuffer) {
+        for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
+            o_data.copy_from_slice(&i_data[..]);
+        }
+    }
+
+    #[inline]
     fn process_2x(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
         let wave_in = input.channels();
 
@@ -400,6 +413,7 @@ impl WaveShaperRenderer {
         }
     }
 
+    #[inline]
     fn process_4x(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
         let wave_in = input.channels();
 
@@ -421,26 +435,26 @@ impl WaveShaperRenderer {
         }
     }
 
+    #[inline]
     fn tick(&self, input: f32) -> f32 {
-        if !self.curve_set {
-            input
-        } else {
-            let n = self.curve.len() as f32;
-            if n == 0. {
-                return 0.;
-            }
-            let v = (n - 1.) / 2.0 * (input + 1.);
-            let k = v.floor();
-            let f = v - k;
+        let n = self.curve.len() as f32;
+        if n == 0. {
+            return 0.;
+        }
+        let v = (n - 1.) / 2.0 * (input + 1.);
 
-            match v {
-                v if v <= 0. => self.curve[0],
-                v if v > n - 1. => self.curve[(n - 1.) as usize],
-                _ => (1. - f) * self.curve[k as usize] + f * self.curve[(k + 1.) as usize],
+        match v {
+            v if v <= 0. => self.curve[0],
+            v if v > n - 1. => self.curve[(n - 1.) as usize],
+            _ => {
+                let k = v.floor();
+                let f = v - k;
+                (1. - f) * self.curve[k as usize] + f * self.curve[(k + 1.) as usize]
             }
         }
     }
 
+    #[inline]
     fn update_2x(&mut self, channels_x2: usize) {
         self.channels_x2 = channels_x2;
 
@@ -451,6 +465,7 @@ impl WaveShaperRenderer {
             FftFixedInOut::<f32>::new(self.sample_rate, self.sample_rate / 2, 128, channels_x2);
     }
 
+    #[inline]
     fn update_4x(&mut self, channels_x4: usize) {
         self.channels_x4 = channels_x4;
 
