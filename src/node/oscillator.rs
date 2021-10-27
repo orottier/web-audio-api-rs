@@ -1,4 +1,11 @@
-#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::perf)]
+//! The oscillator control and renderer parts
+#![warn(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::perf,
+    clippy::missing_docs_in_private_items
+)]
 use std::f32::consts::PI;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -17,7 +24,9 @@ use lazy_static::lazy_static;
 
 use super::{AudioNode, AudioScheduledSourceNode};
 
+/// Wavetable length as usize
 const TABLE_LENGTH_USIZE: usize = 2048;
+/// Wavetable length as f32
 // 2048 casts without loss of precision cause its mantissa is 0b0
 #[allow(clippy::cast_precision_loss)]
 const TABLE_LENGTH_F32: f32 = TABLE_LENGTH_USIZE as f32;
@@ -204,10 +213,17 @@ impl PeriodicWave {
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 pub struct OscillatorOptions {
+    /// The shape of the periodic waveform
     pub type_: Option<OscillatorType>,
+    /// The frequency of the fundamental frequency.
     pub frequency: Option<f32>,
+    /// A detuning value (in cents) which will offset the frequency by the given amount.
     pub detune: Option<f32>,
+    /// channel config options
     pub channel_config: Option<ChannelConfigOptions>,
+    /// The PeriodicWave for the OscillatorNode
+    /// If this is specified, then any valid value for type is ignored;
+    /// it is treated as if "custom" were specified.
     pub periodic_wave: Option<PeriodicWave>,
 }
 
@@ -228,10 +244,15 @@ impl Default for OscillatorOptions {
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 pub enum OscillatorType {
+    /// Sine wave
     Sine,
+    /// Square wave
     Square,
+    /// Sawtooth wave
     Sawtooth,
+    /// Triangle wave
     Triangle,
+    /// type used when periodic_wave is specified
     Custom,
 }
 
@@ -258,10 +279,16 @@ impl From<u32> for OscillatorType {
 
 /// Message types used to communicate between [`OscillatorNode`] and [`OscillatorRenderer`]
 enum OscMsg {
+    /// represents all data required to build a periodic wave processing
     PeriodicWaveMsg {
+        /// `computed_freq` is computed from `frequency` and `detune`
         computed_freq: f32,
-        wavetable: Vec<f32>,
+        /// wavetable computed at runtime and following periodic wave charateristics
+        dyn_wavetable: Vec<f32>,
+        /// Peak normalization factor to apply to output
+        /// if `disable_normalization` is set to false
         norm_factor: f32,
+        /// if set to false, normalization factor is applied
         disable_normalization: bool,
     },
 }
@@ -270,13 +297,21 @@ enum OscMsg {
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 pub struct OscillatorNode {
+    /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
+    /// Infos about audio node channel configuration
     channel_config: ChannelConfig,
+    /// Sample rate (equals to audio context sample rate)
     sample_rate: f32,
+    /// The frequency of the fundamental frequency.
     frequency: AudioParam,
+    /// A detuning value (in cents) which will offset the frequency by the given amount.
     detune: AudioParam,
+    /// Waveform of an oscillator
     type_: Arc<AtomicU32>,
+    /// starts and stops Oscillator audio streams
     scheduler: Scheduler,
+    /// channel between control and renderer parts (sender part)
     sender: Sender<OscMsg>,
 }
 
@@ -316,6 +351,8 @@ impl OscillatorNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<OscillatorOptions>) -> Self {
         context.base().register(move |registration| {
             // Cannot guarantee that the cast is safe for all possible sample rate
+            // cast without loss of precision for usual sample rates
+            #[allow(clippy::cast_precision_loss)]
             let sample_rate = context.base().sample_rate().0 as f32;
             let nyquist = sample_rate / 2.;
             let default_freq = 440.;
@@ -510,16 +547,16 @@ impl OscillatorNode {
         }
 
         // generate the wavetable following periodic wave characteristics
-        let wavetable =
+        let dyn_wavetable =
             Self::generate_wavetable(&norms, &mut phases, &incr_phases, &interpol_ratios);
 
         // update norm_factor
-        let norm_factor = Self::norm_factor(&wavetable);
+        let norm_factor = Self::norm_factor(&dyn_wavetable);
 
         self.sender
             .send(OscMsg::PeriodicWaveMsg {
                 computed_freq,
-                wavetable,
+                dyn_wavetable,
                 norm_factor,
                 disable_normalization,
             })
@@ -586,45 +623,71 @@ impl OscillatorNode {
 
 /// States relative to Sine `OscillatorType`
 struct SineState {
+    /// linear interpolation ratio
     interpol_ratio: f32,
-    first: bool,
+    /// if set to true, requires sine parameters to be initialized  
+    needs_init: bool,
 }
 
 /// States relative to Triangle `OscillatorType`
 struct TriangleState {
+    /// this memory state is used in the leaky integrator
     last_output: f32,
 }
 
 /// States relative to Custom `OscillatorType`
 struct PeriodicState {
+    /// incremental phase for each harmonics
     incr_phases: Vec<f32>,
+    /// linear interpolation ratio for each harmonics
     interpol_ratios: Vec<f32>,
+    /// Peak normalization factor
     norm_factor: Option<f32>,
+    /// if set to false, apply `norm_factor`
     disable_normalization: bool,
+    /// States required to generate the periodic wavetable
     wavetable: WavetableState,
 }
 
 /// States required to generate the periodic wavetable
 struct WavetableState {
-    buffer: Vec<f32>,
+    /// dynamic wavetable
+    /// computes each time periodic wave paramaters change
+    dyn_table: Vec<f32>,
+    /// current phase of the oscillator
     phase: f32,
+    /// phase amount to add to the oscillator phase
+    /// which generates an output at `computed_freq` frequency
     incr_phase: f32,
+    /// frequency for which `WavetableState` has been computed
     ref_freq: f32,
 }
 
 /// Rendering component of the oscillator node
 struct OscillatorRenderer {
+    /// The shape of the periodic waveform
     type_: Arc<AtomicU32>,
+    /// The frequency of the fundamental frequency.
     frequency: AudioParamId,
+    /// A detuning value (in cents) which will offset the frequency by the given amount.
     detune: AudioParamId,
+    /// starts and stops oscillator audio streams
     scheduler: Scheduler,
+    /// channel between control and renderer parts (receiver part)
     receiver: Receiver<OscMsg>,
+    /// `computed_freq` is precomputed from `frequency` and `detune`
     computed_freq: f32,
+    /// channel between control and renderer parts (sender part)
     sample_rate: f32,
+    /// current phase of the oscillator
     phase: f32,
+    /// phase amount to add to phase at each tick
     incr_phase: f32,
+    /// states required to build a sine wave
     sine: SineState,
+    /// states required to build a triangle wave
     triangle: TriangleState,
+    /// states required to build a custom oscillator
     periodic: PeriodicState,
 }
 
@@ -678,12 +741,12 @@ impl AudioProcessor for OscillatorRenderer {
             match msg {
                 OscMsg::PeriodicWaveMsg {
                     computed_freq,
-                    wavetable,
+                    dyn_wavetable,
                     norm_factor,
                     disable_normalization,
                 } => self.set_periodic_wave(
                     computed_freq,
-                    wavetable,
+                    dyn_wavetable,
                     norm_factor,
                     disable_normalization,
                 ),
@@ -698,18 +761,36 @@ impl AudioProcessor for OscillatorRenderer {
     }
 }
 
+/// Helper struct which regroups all parameters
+/// required to build `OscillatorRenderer`
 struct OscRendererConfig {
+    /// The shape of the periodic waveform
     type_: Arc<AtomicU32>,
+    /// The frequency of the fundamental frequency.
     frequency: AudioParamId,
+    /// A detuning value (in cents) which will offset the frequency by the given amount.
     detune: AudioParamId,
+    /// starts and stops oscillator audio streams
     scheduler: Scheduler,
+    /// channel between control and renderer parts (receiver part)
     receiver: Receiver<OscMsg>,
+    /// `computed_freq` is precomputed from `frequency` and `detune`
     computed_freq: f32,
+    /// channel between control and renderer parts (sender part)
     sample_rate: f32,
+    /// The PeriodicWave for the OscillatorNode
+    /// If this is specified, then any valid value for type is ignored;
+    /// it is treated as if "custom" were specified.
     periodic_wave: Option<PeriodicWave>,
 }
 
 impl OscillatorRenderer {
+    /// Creates an `OscillatorRenderer`
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - Audio context in which the node will live
+    /// * `options` - node options
     fn new(config: OscRendererConfig) -> Self {
         let OscRendererConfig {
             type_,
@@ -799,7 +880,7 @@ impl OscillatorRenderer {
             incr_phase,
             sine: SineState {
                 interpol_ratio,
-                first: true,
+                needs_init: true,
             },
             triangle: TriangleState { last_output: 0.0 },
             periodic: PeriodicState {
@@ -808,7 +889,7 @@ impl OscillatorRenderer {
                 norm_factor,
                 disable_normalization,
                 wavetable: WavetableState {
-                    buffer: periodic_wavetable,
+                    dyn_table: periodic_wavetable,
                     phase: 0.,
                     incr_phase: 1.,
                     ref_freq: computed_freq,
@@ -822,18 +903,18 @@ impl OscillatorRenderer {
     /// # Arguments
     ///
     /// * `ref_freq` - the `computedOscFrequency` used to build the wavetable
-    /// * `wavetable` - wavetable following periodic wave characteristics
+    /// * `dyn_wavetable` - wavetable following periodic wave characteristics
     /// * `norm_factor` - normalization factor applied when `disable_normalization` is false
     /// * `disable_normalization` - disable normalization. If false, the peak amplitude signal is 1.0
     fn set_periodic_wave(
         &mut self,
         ref_freq: f32,
-        wavetable: Vec<f32>,
+        dyn_wavetable: Vec<f32>,
         norm_factor: f32,
         disable_normalization: bool,
     ) {
         self.periodic.wavetable.ref_freq = ref_freq;
-        self.periodic.wavetable.buffer = wavetable;
+        self.periodic.wavetable.dyn_table = dyn_wavetable;
         self.periodic.norm_factor = Some(norm_factor);
         self.periodic.disable_normalization = disable_normalization;
     }
@@ -847,8 +928,8 @@ impl OscillatorRenderer {
     fn arate_params(&mut self, type_: OscillatorType, computed_freq: f32) {
         // No need to compute if frequency has not changed
         if type_ == OscillatorType::Sine {
-            if self.sine.first {
-                self.sine.first = false;
+            if self.sine.needs_init {
+                self.sine.needs_init = false;
                 self.incr_phase = computed_freq / self.sample_rate * TABLE_LENGTH_F32;
             }
             if (self.computed_freq - computed_freq).abs() < 0.01 {
@@ -1074,18 +1155,18 @@ impl OscillatorRenderer {
     /// * `buffer` - audio output buffer
     /// * `freq_values` - frequencies at which each sample should be generated
     #[inline]
-    fn generate_custom(&mut self, buffer: &mut ChannelData, freq_values: &[f32]) {
-        for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
+    fn generate_custom(&mut self, output: &mut ChannelData, freq_values: &[f32]) {
+        for (o, &computed_freq) in output.iter_mut().zip(freq_values) {
             self.arate_periodic_params(computed_freq);
 
             let phase = self.periodic.wavetable.phase;
             let incr_phase = self.periodic.wavetable.incr_phase;
-            let table_len = self.periodic.wavetable.buffer.len();
+            let table_len = self.periodic.wavetable.dyn_table.len();
 
             // 2048 casts without loss of precision
             #[allow(clippy::cast_precision_loss)]
             let table_len_f32 = table_len as f32;
-            let buffer = &self.periodic.wavetable.buffer;
+            let buffer = &self.periodic.wavetable.dyn_table;
             // truncation is desired
             #[allow(clippy::cast_possible_truncation)]
             // phase is always positive
@@ -1147,6 +1228,7 @@ impl OscillatorRenderer {
         }
     }
 
+    /// normalizes the given buffer
     fn norm_factor(buffer: &[f32]) -> f32 {
         1. / buffer
             .iter()
