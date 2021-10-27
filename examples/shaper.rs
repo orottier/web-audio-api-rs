@@ -27,8 +27,6 @@ fn make_distortion_curve(amount: usize) -> Vec<f32> {
 fn main() {
     let context = AudioContext::new();
 
-    dbg!(context.sample_rate());
-
     // setup background music:
     // read from local file
     let file = File::open("sample.ogg").unwrap();
