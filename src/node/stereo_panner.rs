@@ -231,11 +231,17 @@ impl StereoPannerRenderer {
     /// Generates the output samples for a stereo input
     #[inline]
     fn stereo_tick(inputs: (f32, f32), pan: f32) -> (f32, f32) {
-        let x = if pan <= 0. { pan + 1. } else { pan };
-
-        let (g_l, g_r) = Self::stereo_gains(x);
-
-        (inputs.0 * g_l, inputs.1 * g_r)
+        match pan {
+            p if p <= 0. => {
+                let x = p + 1.;
+                let (g_l, g_r) = Self::stereo_gains(x);
+                (inputs.1.mul_add(g_l, inputs.0), inputs.1 * g_r)
+            }
+            x => {
+                let (g_l, g_r) = Self::stereo_gains(x);
+                (inputs.0 * g_l, inputs.0.mul_add(g_r, inputs.1))
+            }
+        }
     }
 
     /// Generates the stereo gains for a specific x derived from pan
@@ -266,7 +272,7 @@ mod test {
         SampleRate,
     };
 
-    use super::StereoPannerNode;
+    use super::{StereoPannerNode, StereoPannerRenderer};
     const LENGTH: usize = 555;
 
     #[test]
@@ -312,6 +318,43 @@ mod test {
 
         let pan = panner.pan.value();
         assert_float_eq!(pan, new_pan, ulps_all <= 0);
+    }
+
+    #[test]
+    fn panning_should_be_on_the_right() {
+        let pan = 1.0;
+
+        let (i_l, i_r) = StereoPannerRenderer::stereo_tick((1., 1.), pan);
+
+        // i_l is not exactly 0. due to precision error in the wavetable used
+        // to compute the panning gains
+        // 0.00001 corresponds to a reduction of -100 dB, so even if the gain is not exactly 0.
+        // it should not be audible
+        assert_float_eq!(i_l, 0.0, abs <= 0.00001);
+        assert_float_eq!(i_r, 2.0, ulps <= 0);
+    }
+
+    #[test]
+    fn panning_should_be_on_the_left() {
+        let pan = -1.0;
+
+        let (i_l, i_r) = StereoPannerRenderer::stereo_tick((1., 1.), pan);
+
+        assert_float_eq!(i_l, 2.0, ulps <= 0);
+        assert_float_eq!(i_r, 0.0, ulps <= 0);
+    }
+
+    #[test]
+    fn panning_should_be_in_the_middle() {
+        let pan = 0.0;
+
+        let (i_l, i_r) = StereoPannerRenderer::stereo_tick((1., 1.), pan);
+
+        // i_l is not exactly 1. due to precision error in the wavetable used
+        // to compute the panning gains
+        // 0.1 corresponds to a difference of < 1 dB, so it should not be audible
+        assert_float_eq!(i_l, 1.0, abs <= 0.1);
+        assert_float_eq!(i_r, 1.0, ulps <= 0);
     }
 
     #[test]
