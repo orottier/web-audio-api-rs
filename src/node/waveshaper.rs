@@ -61,7 +61,7 @@ impl From<u32> for OverSampleType {
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 pub struct WaveShaperOptions {
-    /// The distorsion curve
+    /// The distortion curve
     pub curve: Option<Vec<f32>>,
     /// Oversampling rate - default to `None`
     pub oversample: Option<OverSampleType>,
@@ -87,7 +87,7 @@ pub struct WaveShaperNode {
     registration: AudioContextRegistration,
     /// Infos about audio node channel configuration
     channel_config: ChannelConfig,
-    /// Distorsion curve
+    /// distortion curve
     curve: Option<Vec<f32>>,
     /// ovesample type
     oversample: Arc<AtomicU32>,
@@ -151,17 +151,17 @@ impl WaveShaperNode {
         })
     }
 
-    /// Returns the distorsion curve
+    /// Returns the distortion curve
     #[must_use]
     pub fn curve(&self) -> Option<&[f32]> {
         self.curve.as_deref()
     }
 
-    /// set the distorsion `curve` of this node
+    /// set the distortion `curve` of this node
     ///
     /// # Arguments
     ///
-    /// * `curve` - the desired distorsion `curve`
+    /// * `curve` - the desired distortion `curve`
     pub fn set_curve(&mut self, curve: Vec<f32>) {
         self.curve = Some(curve);
     }
@@ -189,7 +189,7 @@ struct RendererConfig {
     sample_rate: usize,
     /// oversample factor
     oversample: Arc<AtomicU32>,
-    /// distorsion curve
+    /// distortion curve
     curve: Option<Vec<f32>>,
 }
 
@@ -211,7 +211,7 @@ struct WaveShaperRenderer {
     downsampler_x2: FftFixedInOut<f32>,
     // down sampler configured to divide by 4 the input fs
     downsampler_x4: FftFixedInOut<f32>,
-    /// distorsion curve
+    /// distortion curve
     curve: Vec<f32>,
     /// set to true if curve is not None
     curve_set: bool,

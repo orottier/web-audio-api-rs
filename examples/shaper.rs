@@ -38,7 +38,7 @@ fn main() {
     // play at low volume
     gain.gain().set_value(0.5);
 
-    // Create the distorsion curve
+    // Create the distortion curve
     let curve = make_distortion_curve(40);
 
     // Create wave shaper options
