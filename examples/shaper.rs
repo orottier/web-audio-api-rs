@@ -7,6 +7,12 @@ use web_audio_api::node::{
     WaveShaperNode, WaveShaperOptions,
 };
 
+/// Creates a sigmoid curve
+/// see [curve graph](http://kevincennis.github.io/transfergraph/)
+///
+/// # Arguments
+///
+/// * `amount` - the steepness of the sigmoid curve (try value between 0-100)
 fn make_distortion_curve(amount: usize) -> Vec<f32> {
     let n = 441;
     let mut curve = vec![0.; n];
