@@ -79,7 +79,8 @@ impl Default for WaveShaperOptions {
     }
 }
 
-/// `BiquadFilterNode` is a second order IIR filter
+/// `WaveShaperNode` implemnets non-linear distortion effects
+/// Arbitrary non-linear shaping curves may be specified.
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 pub struct WaveShaperNode {
@@ -193,7 +194,7 @@ struct RendererConfig {
     curve: Option<Vec<f32>>,
 }
 
-/// `BiquadFilterRenderer` represents the rendering part of `BiquadFilterNode`
+/// `WaveShaperRenderer` represents the rendering part of `WaveShaperNode`
 struct WaveShaperRenderer {
     /// Sample rate (equals to audio context sample rate)
     sample_rate: usize,
@@ -255,7 +256,7 @@ impl AudioProcessor for WaveShaperRenderer {
 }
 
 impl WaveShaperRenderer {
-    /// returns an `BiquadFilterRenderer` instance
+    /// returns an `WaveShaperRenderer` instance
     // new cannot be qualified as const, since constant functions cannot evaluate destructors
     // and config param need this evaluation
     #[allow(clippy::missing_const_for_fn)]
