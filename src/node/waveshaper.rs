@@ -11,6 +11,7 @@ use std::sync::{
     Arc,
 };
 
+use crossbeam_channel::{Receiver, Sender};
 use rubato::{FftFixedInOut, Resampler};
 
 use crate::{
@@ -22,6 +23,8 @@ use crate::{
 };
 
 use super::AudioNode;
+
+struct CurveMessage(Vec<f32>);
 
 /// enumerates the oversampling rate available for `WaveShaperNode`
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -90,8 +93,12 @@ pub struct WaveShaperNode {
     channel_config: ChannelConfig,
     /// distortion curve
     curve: Option<Vec<f32>>,
+
+    set_curve: bool,
     /// ovesample type
     oversample: Arc<AtomicU32>,
+    /// Channel between node and renderer (sender part)
+    sender: Sender<CurveMessage>,
 }
 
 impl AudioNode for WaveShaperNode {
@@ -133,11 +140,15 @@ impl WaveShaperNode {
             let oversample = Arc::new(AtomicU32::new(
                 oversample.expect("oversample should be OversampleType variant") as u32,
             ));
+            let set_curve = curve.is_some();
+
+            let (sender, receiver) = crossbeam_channel::bounded(0);
 
             let config = RendererConfig {
                 sample_rate,
                 curve: curve.clone(),
                 oversample: oversample.clone(),
+                receiver,
             };
 
             let renderer = WaveShaperRenderer::new(config);
@@ -145,7 +156,9 @@ impl WaveShaperNode {
                 registration,
                 channel_config,
                 curve,
+                set_curve,
                 oversample,
+                sender,
             };
 
             (node, Box::new(renderer))
@@ -163,8 +176,39 @@ impl WaveShaperNode {
     /// # Arguments
     ///
     /// * `curve` - the desired distortion `curve`
-    pub fn set_curve(&mut self, curve: Vec<f32>) {
-        self.curve = Some(curve);
+    pub fn set_curve(&mut self, curve: Option<Vec<f32>>) {
+        self.validate_input_curve(curve.clone());
+        let c = curve.unwrap_or_else(Vec::new);
+        self.sender
+            .send(CurveMessage(c))
+            .expect("Sending CurveMessage failed");
+    }
+
+    /// Mock of `set_curve`
+    /// This function is the same as `set_curve` except it never send the `CurveMessage`.
+    /// In tests, we use `OfflineAudioContext` and in this context the `CurveMessage` is not sendable to the renderer,
+    /// because the renderer is not instantiated in this context.
+    ///
+    /// # Arguments
+    ///
+    /// * `curve` - the desired distortion `curve`
+    #[cfg(test)]
+    pub fn set_curve_mock(&mut self, curve: Option<Vec<f32>>) {
+        self.validate_input_curve(curve.clone());
+        let _c = curve.unwrap_or_else(Vec::new);
+    }
+
+    fn validate_input_curve(&mut self, curve: Option<Vec<f32>>) {
+        match (self.set_curve, curve) {
+            (true, Some(_)) => panic!("InvalidStateError"),
+            (false, opt_c @ Some(_)) => {
+                self.set_curve = true;
+                self.curve = opt_c;
+            }
+            (_, opt_c) => {
+                self.curve = opt_c;
+            }
+        };
     }
 
     /// Returns the `oversample` faactor of this node
@@ -192,6 +236,8 @@ struct RendererConfig {
     oversample: Arc<AtomicU32>,
     /// distortion curve
     curve: Option<Vec<f32>>,
+    /// Channel between node and renderer (receiver part)
+    receiver: Receiver<CurveMessage>,
 }
 
 /// `WaveShaperRenderer` represents the rendering part of `WaveShaperNode`
@@ -216,6 +262,8 @@ struct WaveShaperRenderer {
     curve: Vec<f32>,
     /// set to true if curve is not None
     curve_set: bool,
+    /// Channel between node and renderer (receiver part)
+    receiver: Receiver<CurveMessage>,
 }
 
 impl AudioProcessor for WaveShaperRenderer {
@@ -231,8 +279,12 @@ impl AudioProcessor for WaveShaperRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        use OverSampleType::*;
+        // Respond to request at K-rate
+        if let Ok(msg) = self.receiver.try_recv() {
+            self.curve = msg.0;
+        }
 
+        use OverSampleType::*;
         match self.oversample.load(Ordering::SeqCst).into() {
             None => self.process_none(input, output),
             X2 => {
@@ -265,6 +317,7 @@ impl WaveShaperRenderer {
             sample_rate,
             oversample,
             curve,
+            receiver,
         } = config;
 
         let (curve, curve_set) = match curve {
@@ -314,6 +367,7 @@ impl WaveShaperRenderer {
             downsampler_x4,
             channels_x2,
             channels_x4,
+            receiver,
         }
     }
 
@@ -372,6 +426,9 @@ impl WaveShaperRenderer {
             input
         } else {
             let n = self.curve.len() as f32;
+            if n == 0. {
+                return 0.;
+            }
             let v = (n - 1.) / 2.0 * (input + 1.);
             let k = v.floor();
             let f = v - k;
@@ -473,7 +530,8 @@ mod test {
     }
 
     #[test]
-    fn change_audio_params_after_build() {
+    #[should_panic]
+    fn change_a_curve_for_another_curve_should_panic() {
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
         let options = WaveShaperOptions {
@@ -486,7 +544,30 @@ mod test {
         assert_eq!(shaper.curve(), Some(&[1.0][..]));
         assert_eq!(shaper.oversample(), OverSampleType::X2);
 
-        shaper.set_curve(vec![2.0]);
+        shaper.set_curve_mock(Some(vec![2.0]));
+        shaper.set_oversample(OverSampleType::X4);
+
+        context.start_rendering();
+
+        assert_eq!(shaper.curve(), Some(&[2.0][..]));
+        assert_eq!(shaper.oversample(), OverSampleType::X4);
+    }
+
+    #[test]
+    fn change_none_for_curve_after_build() {
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        let options = WaveShaperOptions {
+            curve: None,
+            oversample: Some(OverSampleType::X2),
+            ..Default::default()
+        };
+
+        let mut shaper = WaveShaperNode::new(&context, Some(options));
+        assert_eq!(shaper.curve(), None);
+        assert_eq!(shaper.oversample(), OverSampleType::X2);
+
+        shaper.set_curve_mock(Some(vec![2.0]));
         shaper.set_oversample(OverSampleType::X4);
 
         context.start_rendering();
