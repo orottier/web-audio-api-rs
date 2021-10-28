@@ -31,8 +31,8 @@ mod audio_buffer_src;
 pub use audio_buffer_src::*;
 mod media_element_audio_src;
 pub use media_element_audio_src::*;
-mod media_stream_audio_src;
-pub use media_stream_audio_src::*;
+mod media_stream;
+pub use media_stream::*;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules.
