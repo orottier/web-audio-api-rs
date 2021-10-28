@@ -5,7 +5,7 @@ use crate::buffer::{
 };
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioNodeId, BaseAudioContext};
 use crate::control::{Controller, Scheduler};
-use crate::media::{MediaElement, MediaStream};
+use crate::media::MediaStream;
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
 
@@ -31,6 +31,8 @@ mod analyzer;
 pub use analyzer::*;
 mod audio_buffer_src;
 pub use audio_buffer_src::*;
+mod media_element_audio_src;
+pub use media_element_audio_src::*;
 
 /// This interface represents audio sources, the audio destination, and intermediate processing
 /// modules.
@@ -238,75 +240,6 @@ impl MediaStreamAudioSourceNode {
             let scheduler = Scheduler::new();
             scheduler.start_at(0.);
 
-            let render = MediaStreamRenderer::new(resampler, scheduler);
-
-            (node, Box::new(render))
-        })
-    }
-}
-
-/// Options for constructing a MediaElementAudioSourceNode
-pub struct MediaElementAudioSourceNodeOptions {
-    pub media: MediaElement,
-    pub channel_config: ChannelConfigOptions,
-}
-
-/// An audio source from a [`MediaElement`] (e.g. .ogg, .wav, .mp3 files)
-///
-/// The media element will take care of buffering of the stream so the render thread never blocks.
-/// This also allows for playback controls (pause, looping, playback rate, etc.)
-///
-/// Note: do not forget to `start()` the node.
-pub struct MediaElementAudioSourceNode {
-    registration: AudioContextRegistration,
-    channel_config: ChannelConfig,
-    controller: Controller,
-}
-
-impl AudioScheduledSourceNode for MediaElementAudioSourceNode {
-    fn scheduler(&self) -> &Scheduler {
-        self.controller.scheduler()
-    }
-}
-impl AudioControllableSourceNode for MediaElementAudioSourceNode {
-    fn controller(&self) -> &Controller {
-        &self.controller
-    }
-}
-
-impl AudioNode for MediaElementAudioSourceNode {
-    fn registration(&self) -> &AudioContextRegistration {
-        &self.registration
-    }
-    fn channel_config_raw(&self) -> &ChannelConfig {
-        &self.channel_config
-    }
-
-    fn number_of_inputs(&self) -> u32 {
-        0
-    }
-    fn number_of_outputs(&self) -> u32 {
-        1
-    }
-}
-
-impl MediaElementAudioSourceNode {
-    pub fn new<C: AsBaseAudioContext>(
-        context: &C,
-        options: MediaElementAudioSourceNodeOptions,
-    ) -> Self {
-        context.base().register(move |registration| {
-            let controller = options.media.controller().clone();
-            let scheduler = controller.scheduler().clone();
-
-            let node = MediaElementAudioSourceNode {
-                registration,
-                channel_config: options.channel_config.into(),
-                controller,
-            };
-
-            let resampler =
-                Resampler::new(context.base().sample_rate(), BUFFER_SIZE, options.media);
             let render = MediaStreamRenderer::new(resampler, scheduler);
 
             (node, Box::new(render))
