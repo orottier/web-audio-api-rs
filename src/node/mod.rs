@@ -29,8 +29,8 @@ mod analyzer;
 pub use analyzer::*;
 mod audio_buffer_src;
 pub use audio_buffer_src::*;
-mod media_element_audio_src;
-pub use media_element_audio_src::*;
+mod media_element;
+pub use media_element::*;
 mod media_stream;
 pub use media_stream::*;
 
