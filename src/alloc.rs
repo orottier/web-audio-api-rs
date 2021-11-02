@@ -133,6 +133,12 @@ impl DerefMut for ChannelData {
     }
 }
 
+impl AsRef<[f32]> for ChannelData {
+    fn as_ref(&self) -> &[f32] {
+        &self.data[..]
+    }
+}
+
 impl std::ops::Drop for ChannelData {
     fn drop(&mut self) {
         if Rc::strong_count(&self.data) == 1 {

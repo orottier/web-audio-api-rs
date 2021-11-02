@@ -66,6 +66,10 @@ pub trait AsBaseAudioContext {
         node::OscillatorNode::new(self.base(), Default::default())
     }
 
+    fn create_stereo_panner(&self) -> node::StereoPannerNode {
+        node::StereoPannerNode::new(self.base(), Default::default())
+    }
+
     /// Creates an GainNode, to control audio volume
     fn create_gain(&self) -> node::GainNode {
         node::GainNode::new(self.base(), Default::default())
@@ -105,6 +109,11 @@ pub trait AsBaseAudioContext {
     /// Creates an biquadFilterNode
     fn create_biquad_filter(&self) -> node::BiquadFilterNode {
         node::BiquadFilterNode::new(self.base(), Default::default())
+    }
+
+    /// Creates a WaveShaperNode
+    fn create_wave_shaper(&self) -> node::WaveShaperNode {
+        node::WaveShaperNode::new(self.base(), Default::default())
     }
 
     /// Creates a ChannelSplitterNode
