@@ -357,16 +357,19 @@ impl IirFilterRenderer {
 #[cfg(test)]
 mod test {
     use float_eq::assert_float_eq;
+    use std::fs::File;
 
     use crate::{
         buffer::ChannelConfigOptions,
         context::{AsBaseAudioContext, OfflineAudioContext},
-        SampleRate,
+        media::{MediaElement, OggVorbisDecoder},
+        node::{AudioNode, AudioScheduledSourceNode},
+        snapshot, SampleRate,
     };
 
     use super::{IirFilterNode, IirFilterOptions};
 
-    const LENGTH: usize = 555;
+    const LENGTH: usize = 512;
 
     #[test]
     fn build_with_new() {
@@ -544,5 +547,95 @@ mod test {
 
         let ref_arr = [0., niquyst];
         assert_float_eq!(frequency_hz, ref_arr, ulps_all <= 0);
+    }
+
+    #[test]
+    fn check_get_frequency_response() {
+        // This reference response has been generated with the python lib scipy
+        // b, a = signal.iirfilter(2, 4000, rs=60, btype='high', analog=False, ftype='cheby2', fs=44100)
+        // w, h = signal.freqz(b, a, 10, fs=44100)
+        let ref_mag = [
+            1e-3,
+            4.152_807e-4,
+            1.460_789_5e-3,
+            5.051_316e-3,
+            1.130_323_5e-2,
+            2.230_340_2e-2,
+            4.311_698e-2,
+            8.843_45e-2,
+            2.146_620_2e-1,
+            6.802_952e-1,
+        ];
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let feedforward = vec![
+            0.019_618_022_238_052_212,
+            -0.036_007_928_102_449_24,
+            0.019_618_022_238_052_21,
+        ];
+        let feedback = vec![1., 1.576_436_200_538_313_7, 0.651_680_173_116_867_3];
+
+        let options = IirFilterOptions {
+            feedback,
+            feedforward,
+            channel_config: ChannelConfigOptions::default(),
+        };
+        let iir = IirFilterNode::new(&context, options);
+
+        let mut frequency_hz = [
+            0., 2205., 4410., 6615., 8820., 11025., 13230., 15435., 17640., 19845.,
+        ];
+        let mut mag_response = [0.; 10];
+        let mut phase_response = [0.; 10];
+
+        iir.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+
+        assert_float_eq!(mag_response, ref_mag, ulps_all <= 0);
+    }
+
+    #[test]
+    fn default_periodic_wave_rendering_should_match_snapshot() {
+        let ref_filtered =
+            snapshot::read("./snapshots/white_hp.json").expect("Reading snapshot file failed");
+
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+
+        // setup background music:
+        // read from local file
+        let file = File::open("white.ogg").unwrap();
+        // decode file to media stream
+        let stream = OggVorbisDecoder::try_new(file).unwrap();
+        // wrap stream in MediaElement, so we can control it (loop, play/pause)
+        let media = MediaElement::new(stream);
+        // register as media element in the audio context
+        let background = context.create_media_element_source(media);
+
+        let feedforward = vec![
+            0.019_618_022_238_052_212,
+            -0.036_007_928_102_449_24,
+            0.019_618_022_238_052_21,
+        ];
+        let feedback = vec![1., 1.576_436_200_538_313_7, 0.651_680_173_116_867_3];
+
+        let options = IirFilterOptions {
+            feedback,
+            feedforward,
+            channel_config: ChannelConfigOptions::default(),
+        };
+        let iir = IirFilterNode::new(&context, options);
+
+        background.connect(&iir);
+        iir.connect(&context.destination());
+
+        background.start();
+
+        let output = context.start_rendering();
+
+        // println!("{:.32?}", output.channel_data(0).as_slice());
+
+        assert_float_eq!(
+            output.channel_data(0).as_slice(),
+            &ref_filtered.data[..],
+            ulps_all <= 0
+        );
     }
 }
