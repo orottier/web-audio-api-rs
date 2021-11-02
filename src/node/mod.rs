@@ -26,6 +26,8 @@ mod biquad_filter;
 pub use biquad_filter::*;
 mod oscillator;
 pub use oscillator::*;
+mod waveshaper;
+pub use waveshaper::*;
 mod stereo_panner;
 pub use stereo_panner::*;
 

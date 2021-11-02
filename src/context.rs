@@ -94,6 +94,11 @@ pub trait AsBaseAudioContext {
         node::BiquadFilterNode::new(self.base(), Default::default())
     }
 
+    /// Creates a WaveShaperNode
+    fn create_wave_shaper(&self) -> node::WaveShaperNode {
+        node::WaveShaperNode::new(self.base(), Default::default())
+    }
+
     /// Creates a ChannelSplitterNode
     fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
         let opts = node::ChannelSplitterOptions {
