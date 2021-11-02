@@ -53,7 +53,7 @@ fn main() {
     // Create the waveshaper
     let mut shaper = WaveShaperNode::new(&context, Some(options));
 
-    shaper.set_oversample(OverSampleType::X4);
+    shaper.set_oversample(OverSampleType::None);
 
     // connect the media node to the gain node
     background.connect(&gain);
