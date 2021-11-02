@@ -597,7 +597,7 @@ mod test {
         let ref_filtered =
             snapshot::read("./snapshots/white_hp.json").expect("Reading snapshot file failed");
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(1, LENGTH, SampleRate(44_100));
 
         // setup background music:
         // read from local file
@@ -627,10 +627,7 @@ mod test {
         iir.connect(&context.destination());
 
         background.start();
-
         let output = context.start_rendering();
-
-        // println!("{:.32?}", output.channel_data(0).as_slice());
 
         assert_float_eq!(
             output.channel_data(0).as_slice(),
