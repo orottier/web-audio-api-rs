@@ -87,6 +87,11 @@ pub trait AsBaseAudioContext {
         node::OscillatorNode::new(self.base(), None)
     }
 
+    /// Creates an `StereoPannerNode` to pan a stereo output
+    fn create_stereo_panner(&self) -> node::StereoPannerNode {
+        node::StereoPannerNode::new(self.base(), None)
+    }
+
     /// Creates an `GainNode`, to control audio volume
     fn create_gain(&self) -> node::GainNode {
         node::GainNode::new(self.base(), GainOptions::default())
