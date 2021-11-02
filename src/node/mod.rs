@@ -36,6 +36,8 @@ mod media_element;
 pub use media_element::*;
 mod media_stream;
 pub use media_stream::*;
+mod waveshaper;
+pub use waveshaper::*;
 mod stereo_panner;
 pub use stereo_panner::*;
 
