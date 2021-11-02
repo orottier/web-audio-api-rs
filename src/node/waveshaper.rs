@@ -437,20 +437,21 @@ impl WaveShaperRenderer {
 
     #[inline]
     fn tick(&self, input: f32) -> f32 {
-        let n = self.curve.len() as f32;
-        if n == 0. {
+        if self.curve.is_empty() {
             return 0.;
         }
+
+        let n = self.curve.len() as f32;
         let v = (n - 1.) / 2.0 * (input + 1.);
 
-        match v {
-            v if v <= 0. => self.curve[0],
-            v if v > n - 1. => self.curve[(n - 1.) as usize],
-            _ => {
-                let k = v.floor();
-                let f = v - k;
-                (1. - f) * self.curve[k as usize] + f * self.curve[(k + 1.) as usize]
-            }
+        if v <= 0. {
+            self.curve[0]
+        } else if v > n - 1. {
+            self.curve[(n - 1.) as usize]
+        } else {
+            let k = v.floor();
+            let f = v - k;
+            (1. - f) * self.curve[k as usize] + f * self.curve[(k + 1.) as usize]
         }
     }
 
