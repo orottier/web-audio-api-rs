@@ -1,3 +1,4 @@
+//! The IIR filter control and renderer parts
 #![warn(
     clippy::all,
     clippy::pedantic,
