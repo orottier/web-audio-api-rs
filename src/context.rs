@@ -446,13 +446,17 @@ pub struct AudioContextRegistration {
 
 impl AudioContextRegistration {
     /// get the audio node id of the registration
+    // false positive: AudioContextRegistration is not const
+    #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
-    pub const fn id(&self) -> &AudioNodeId {
+    pub fn id(&self) -> &AudioNodeId {
         &self.id
     }
     /// get the context of the registration
+    // false positive: AudioContextRegistration is not const
+    #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
-    pub const fn context(&self) -> &BaseAudioContext {
+    pub fn context(&self) -> &BaseAudioContext {
         &self.context
     }
 }
@@ -715,8 +719,10 @@ impl OfflineAudioContext {
     }
 
     /// get the length of rendering audio buffer
+    // false positive: OfflineAudioContext is not const
+    #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
-    pub const fn length(&self) -> usize {
+    pub fn length(&self) -> usize {
         self.length
     }
 }
