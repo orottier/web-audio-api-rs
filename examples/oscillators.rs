@@ -5,6 +5,8 @@ use web_audio_api::node::{
 };
 
 fn main() {
+    env_logger::init();
+
     // Create an audio context where all audio nodes lives
     let context = AudioContext::new(None);
 

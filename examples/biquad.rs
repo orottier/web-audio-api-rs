@@ -4,6 +4,7 @@ use web_audio_api::media::{MediaElement, OggVorbisDecoder};
 use web_audio_api::node::{AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode};
 
 fn main() {
+    env_logger::init();
     let context = AudioContext::new(None);
 
     // setup background music:

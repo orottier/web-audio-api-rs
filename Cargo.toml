@@ -1,6 +1,6 @@
 [package]
 name = "web-audio-api"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["Otto <otto@ot-to.nl>"]
 edition = "2018"
 description = "A pure Rust implementation of the Web Audio API, for use in non-browser contexts"
@@ -21,8 +21,8 @@ realfft = "2.0.1"
 crossbeam-channel = "0.5.1"
 num-complex = "0.4"
 lazy_static = "1.4.0"
+rubato = "0.10"
 float_eq = "0.7"
-
 
 [dev-dependencies]
 rand = "0.8.*"
