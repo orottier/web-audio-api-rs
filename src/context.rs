@@ -10,7 +10,6 @@
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 // magic node values
 /// Destination node id is always at index 0
@@ -599,10 +598,7 @@ impl BaseAudioContext {
             outputs: node.number_of_outputs() as usize,
             channel_config: node.channel_config_cloned(),
         };
-        self.inner
-            .render_channel
-            .send_timeout(message, Duration::from_millis(10))
-            .unwrap();
+        self.inner.render_channel.send(message).unwrap();
 
         node
     }
