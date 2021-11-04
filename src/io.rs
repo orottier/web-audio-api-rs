@@ -1,10 +1,10 @@
+//! Audio IO management API
 #![warn(
     clippy::all,
     clippy::pedantic,
     clippy::nursery,
     clippy::perf,
-
-    // clippy::missing_docs_in_private_items
+    clippy::missing_docs_in_private_items
 )]
 #![allow(clippy::missing_const_for_fn)]
 
@@ -85,13 +85,20 @@ fn spawn_input_stream(
     }
 }
 
-struct StreamConfigBuilder {
+/// This struct helps to build `StreamConfigs`
+struct StreamConfigsBuilder {
+    // This is not a dead code, this field is used by OutputStreamer
+    #[allow(dead_code)]
+    /// The device on which the stream will be build
     device: cpal::Device,
+    /// the device supported config from wich all the other configs are derived
     supported: cpal::SupportedStreamConfig,
+    /// the prefered config is a primary config optionnaly modified by the user options `AudioContextOptions`
     prefered: cpal::StreamConfig,
 }
 
-impl StreamConfigBuilder {
+impl StreamConfigsBuilder {
+    /// creates the `StreamConfigBuilder`
     fn new() -> Self {
         let host = cpal::default_host();
         let device = host
@@ -110,6 +117,11 @@ impl StreamConfigBuilder {
         }
     }
 
+    /// returns the supported stream config from with other configs are derived
+    ///
+    /// # Argument
+    ///
+    /// * `device` - the audio device on which the stream is broadcast
     fn get_supported_config(device: &cpal::Device) -> cpal::SupportedStreamConfig {
         let mut supported_configs_range = device
             .supported_output_configs()
@@ -121,6 +133,11 @@ impl StreamConfigBuilder {
             .with_max_sample_rate()
     }
 
+    /// returns the stream buffer size
+    ///
+    /// # Argument
+    ///
+    /// * `options` - options contains latency hint information from which buffer size is derived
     fn get_buffer_size(&self, options: Option<&AudioContextOptions>) -> u32 {
         let default_buffer_size = match self.supported.buffer_size() {
             SupportedBufferSize::Range { min, .. } => crate::BUFFER_SIZE.max(*min),
@@ -153,17 +170,26 @@ impl StreamConfigBuilder {
                                 (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE
                             }
                         },
+                        // b is always positive
+                        #[allow(clippy::cast_sign_loss)]
+                        // truncation is the desired behavior
+                        #[allow(clippy::cast_possible_truncation)]
                         LatencyHint::Specific(t) => {
                             let b = t * f64::from(self.prefered.sample_rate.0);
                             (b as u32 + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE
                         }
-                    }
+                    };
                 }
             },
             None => (default_buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE,
         }
     }
 
+    /// modify the sample rate config, following user options
+    ///
+    /// # Argument
+    ///
+    /// * `options` - options contains sample rate information
     fn with_sample_rate(mut self, options: Option<&AudioContextOptions>) -> Self {
         if let Some(opts) = options {
             if let Some(fs) = opts.sample_rate {
@@ -174,12 +200,27 @@ impl StreamConfigBuilder {
         self
     }
 
+    /// modify the buffer size config, following user options
+    ///
+    /// # Argument
+    ///
+    /// * `options` - options contains latency hint information
+    ///
+    /// # Warning
+    ///
+    /// `with_latency_hint` has to be called *after* `with_sample_rate` on whcih it depends on.
+    /// For now, this dependency is not enforce by the type system itself.
     fn with_latency_hint(mut self, options: Option<&AudioContextOptions>) -> Self {
         let buffer_size = self.get_buffer_size(options);
         self.prefered.buffer_size = cpal::BufferSize::Fixed(buffer_size);
         self
     }
 
+    /// modify the config number of output channels, following user options
+    ///
+    /// # Argument:
+    ///
+    /// * `options` - options contains channels number information
     fn with_channels(mut self, options: Option<&AudioContextOptions>) -> Self {
         if let Some(opts) = options {
             if let Some(chs) = opts.channels {
@@ -190,20 +231,29 @@ impl StreamConfigBuilder {
         self
     }
 
+    /// builds `StreamConfigs`
     fn build(self) -> StreamConfigs {
         StreamConfigs::new(self)
     }
 }
 
+/// `StreamConfigs` contains configs data
+/// required to build an output stream on
+/// a prefered config or a fallback config in case of failure
 struct StreamConfigs {
+    /// the requested sample format of the output stream
     sample_format: cpal::SampleFormat,
+    /// the prefered config of the output stream
     prefered: cpal::StreamConfig,
+    /// in case of failure to build the stream with `prefered`
+    /// a fallback config is used to spawn the stream
     fallback: cpal::StreamConfig,
 }
 
 impl StreamConfigs {
-    fn new(builder: StreamConfigBuilder) -> Self {
-        let StreamConfigBuilder {
+    /// creates a stream configs with the data prepared by the builder
+    fn new(builder: StreamConfigsBuilder) -> Self {
+        let StreamConfigsBuilder {
             supported,
             prefered,
             ..
@@ -219,16 +269,25 @@ impl StreamConfigs {
     }
 }
 
+/// `OutputStreamer` is used to spawn an output stream
 struct OutputStreamer {
+    /// The audio device on which the output stream is broadcast
     device: cpal::Device,
+    /// The configs on which the output stream can be build
     configs: StreamConfigs,
+    /// `frames_played` act as a time reference when processing
     frames_played: Arc<AtomicU64>,
+    /// communication channel between control and render thread (sender part)
     sender: Option<Sender<ControlMessage>>,
+    /// the output stream
     stream: Option<Stream>,
+    /// a flag to know if the output stream has been build with prefered config
+    /// or fallback config
     falled_back: bool,
 }
 
 impl OutputStreamer {
+    /// creates an `OutputStreamer`
     fn new(configs: StreamConfigs, frames_played: Arc<AtomicU64>) -> Self {
         let host = cpal::default_host();
         let device = host
@@ -245,6 +304,7 @@ impl OutputStreamer {
         }
     }
 
+    /// spawns the output stram with prefered config
     fn spawn(mut self) -> Result<Self, Self> {
         // try with prefered config
         let config = &self.configs.prefered;
@@ -280,6 +340,7 @@ impl OutputStreamer {
         }
     }
 
+    /// playes the output stream
     fn play(self) -> Self {
         self.stream
             .as_ref()
@@ -289,6 +350,7 @@ impl OutputStreamer {
         self
     }
 
+    /// returns the output stream infos
     fn get_output_stream(self) -> (Stream, StreamConfig, Sender<ControlMessage>) {
         if self.falled_back {
             (
@@ -306,7 +368,9 @@ impl OutputStreamer {
     }
 }
 
+/// adds a fallback path to `OutputStreamer`
 trait OrFallback {
+    /// falls back if previous attempt failed
     fn or_fallback(self) -> OutputStreamer;
 }
 
@@ -353,10 +417,9 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
 #[allow(clippy::redundant_pub_crate)]
 pub(crate) fn build_output(
     frames_played: Arc<AtomicU64>,
-    options: Option<AudioContextOptions>,
+    options: Option<&AudioContextOptions>,
 ) -> (Stream, StreamConfig, Sender<ControlMessage>) {
-    let options = options.as_ref();
-    let configs = StreamConfigBuilder::new()
+    let configs = StreamConfigsBuilder::new()
         .with_sample_rate(options)
         .with_latency_hint(options)
         .with_channels(options)

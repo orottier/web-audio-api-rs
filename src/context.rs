@@ -347,6 +347,8 @@ impl AsBaseAudioContext for OfflineAudioContext {
 impl AudioContext {
     /// Creates and returns a new `AudioContext` object.
     /// This will play live audio on the default output
+    // options is passed by value to be conform to the specification interface
+    #[allow(clippy::needless_pass_by_value)]
     #[cfg(not(test))]
     #[must_use]
     pub fn new(options: Option<AudioContextOptions>) -> Self {
@@ -354,7 +356,7 @@ impl AudioContext {
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
-        let (stream, config, sender) = io::build_output(frames_played_clone, options);
+        let (stream, config, sender) = io::build_output(frames_played_clone, options.as_ref());
         let channels = u32::from(config.channels);
         let sample_rate = SampleRate(config.sample_rate.0);
 
