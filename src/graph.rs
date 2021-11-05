@@ -467,9 +467,12 @@ impl Graph {
         });
 
         for index in drop_nodes {
+            println!("drop {}", index.0);
             self.remove_edges_from(index);
             self.nodes.remove(&index);
         }
+
+        println!("number of nodes active {}", self.nodes.len());
 
         // return buffer of destination node
         // assume only 1 output (todo)

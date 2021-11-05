@@ -12,6 +12,12 @@ pub struct Scheduler {
     stop: Arc<AtomicF64>,
 }
 
+pub enum ScheduledState {
+    NotStarted,
+    Active,
+    Ended,
+}
+
 impl Scheduler {
     /// Create a new Scheduler. Initial playback state will be: inactive.
     pub fn new() -> Self {
@@ -22,8 +28,13 @@ impl Scheduler {
     }
 
     /// Check if the stream should be active at this timestamp
-    pub fn is_active(&self, ts: f64) -> bool {
-        ts >= self.start.load() && ts < self.stop.load()
+    pub fn state(&self, ts: f64) -> ScheduledState {
+        if ts < self.start.load() {
+            return ScheduledState::NotStarted;
+        } else if ts >= self.stop.load() {
+            return ScheduledState::Ended;
+        }
+        ScheduledState::Active
     }
 
     /// Schedule playback start at this timestamp
