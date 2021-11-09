@@ -215,6 +215,7 @@ impl AudioBuffer {
 
         let silence = self.channels[0].silence();
 
+        // cf. https://www.w3.org/TR/webaudio/#channel-up-mixing-and-down-mixing
         // handle discrete interpretation
         if interpretation == ChannelInterpretation::Discrete {
             // upmix by filling with silence
@@ -225,34 +226,198 @@ impl AudioBuffer {
             // downmix by truncating
             self.channels.truncate(channels);
 
-            return;
-        }
+        } else if interpretation == ChannelInterpretation::Speakers {
+            match (self.number_of_channels(), channels) {
+                // ------------------------------------------
+                // UP MIX
+                // https://www.w3.org/TR/webaudio/#UpMix-sub
+                // ------------------------------------------
+                // 1 -> 2 : up-mix from mono to stereo
+                //   output.L = input;
+                //   output.R = input;
+                (1, 2) => {
+                    self.channels.push(self.channels[0].clone());
+                }
+                  // 1 -> 4 : up-mix from mono to quad
+                  //   output.L = input;
+                  //   output.R = input;
+                  //   output.SL = 0;
+                  //   output.SR = 0;
+                (1, 4) => {
+                    self.channels.push(self.channels[0].clone());
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence);
+                }
+                // 1 -> 5.1 : up-mix from mono to 5.1
+                //   output.L = 0;
+                //   output.R = 0;
+                //   output.C = input; // put in center channel
+                //   output.LFE = 0;
+                //   output.SL = 0;
+                //   output.SR = 0;
+                (1, 6) => {
+                    let main = std::mem::replace(&mut self.channels[0], silence.clone());
+                    self.channels.push(silence.clone());
+                    self.channels.push(main);
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence);
+                }
+                // 2 -> 4 : up-mix from stereo to quad
+                //   output.L = input.L;
+                //   output.R = input.R;
+                //   output.SL = 0;
+                //   output.SR = 0;
+                (2, 4) => {
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence);
+                }
+                // 2 -> 5.1 : up-mix from stereo to 5.1
+                //   output.L = input.L;
+                //   output.R = input.R;
+                //   output.C = 0;
+                //   output.LFE = 0;
+                //   output.SL = 0;
+                //   output.SR = 0;
+                (2, 6) => {
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence);
+                }
+                // 4 -> 5.1 : up-mix from quad to 5.1
+                //   output.L = input.L;
+                //   output.R = input.R;
+                //   output.C = 0;
+                //   output.LFE = 0;
+                //   output.SL = input.SL;
+                //   output.SR = input.SR;
+                (4, 6) => {
+                    let sl = std::mem::replace(&mut self.channels[2], silence.clone());
+                    let sr = std::mem::replace(&mut self.channels[3], silence);
+                    self.channels.push(sl);
+                    self.channels.push(sr);
+                }
+                // ------------------------------------------
+                // DOWN MIX
+                // https://www.w3.org/TR/webaudio/#down-mix
+                // ------------------------------------------
+                // 2 -> 1 : stereo to mono
+                //   output = 0.5 * (input.L + input.R);
+                (2, 1) => {
+                    let right = self.channels[1].clone();
 
-        match (self.number_of_channels(), channels) {
-            (1, 2) => {
-                self.channels.push(self.channels[0].clone());
+                    self.channels[0]
+                        .iter_mut()
+                        .zip(right.iter())
+                        .for_each(|(l, r)| *l = 0.5 * (*l + *r));
+
+                    self.channels.truncate(1);
+                }
+                // 4 -> 1 : quad to mono
+                //   output = 0.25 * (input.L + input.R + input.SL + input.SR);
+                (4, 1) => {
+                    let right = self.channels[1].clone();
+                    let s_left = self.channels[2].clone();
+                    let s_right = self.channels[3].clone();
+
+                    self.channels[0]
+                        .iter_mut()
+                        .zip(right.iter())
+                        .zip(s_left.iter())
+                        .zip(s_right.iter())
+                        .for_each(|(((l, r), sl), sr)| *l = 0.25 * (*l + *r + *sl + *sr));
+
+                    self.channels.truncate(1);
+                }
+                // 5.1 -> 1 : 5.1 to mono
+                //   output = sqrt(0.5) * (input.L + input.R) + input.C + 0.5 * (input.SL + input.SR)
+                (6, 1) => {
+                    let right = self.channels[1].clone();
+                    let center = self.channels[2].clone();
+                    let s_left = self.channels[4].clone();
+                    let s_right = self.channels[5].clone();
+                    let sqrt05 = (0.5_f32).sqrt();
+
+                    self.channels[0]
+                        .iter_mut()
+                        .zip(right.iter())
+                        .zip(center.iter())
+                        .zip(s_left.iter())
+                        .zip(s_right.iter())
+                        .for_each(|((((l, r), c), sl), sr)| *l = sqrt05 * (*l + *r) + *c + 0.5 * (*sl + *sr));
+
+                    self.channels.truncate(1);
+                }
+                // 4 -> 2 : quad to stereo
+                //   output.L = 0.5 * (input.L + input.SL);
+                //   output.R = 0.5 * (input.R + input.SR);
+                (4, 2) => {
+                    let s_left = self.channels[2].clone();
+                    let s_right = self.channels[3].clone();
+
+                    self.channels[0]
+                        .iter_mut()
+                        .zip(s_left.iter())
+                        .for_each(|(l, sl)| *l = 0.5 * (*l + *sl));
+
+                    self.channels[1]
+                        .iter_mut()
+                        .zip(s_right.iter())
+                        .for_each(|(r, sr)| *r = 0.5 * (*r + *sr));
+
+                    self.channels.truncate(2);
+                }
+                // 5.1 -> 2 : 5.1 to stereo
+                //   output.L = L + sqrt(0.5) * (input.C + input.SL)
+                //   output.R = R + sqrt(0.5) * (input.C + input.SR)
+                (6, 2) => {
+                    let center = self.channels[2].clone();
+                    let s_left = self.channels[4].clone();
+                    let s_right = self.channels[5].clone();
+                    let sqrt05 = (0.5_f32).sqrt();
+
+                    self.channels[0]
+                        .iter_mut()
+                        .zip(center.iter())
+                        .zip(s_left.iter())
+                        .for_each(|((l, c), sl)| *l = *l + sqrt05 * (*c + *sl));
+
+                    self.channels[1]
+                        .iter_mut()
+                        .zip(center.iter())
+                        .zip(s_right.iter())
+                        .for_each(|((r, c), sr)| *r = *r + sqrt05 * (*c + *sr));
+
+                    self.channels.truncate(2)
+                }
+                // 5.1 -> 4 : 5.1 to quad
+                //   output.L = L + sqrt(0.5) * input.C
+                //   output.R = R + sqrt(0.5) * input.C
+                //   output.SL = input.SL
+                //   output.SR = input.SR
+                (6, 4) => {
+                    let _low_f = self.channels.swap_remove(3); // swap lr to index 3
+                    let center = self.channels.swap_remove(2); // swap lf to index 2
+                    let sqrt05 = (0.5_f32).sqrt();
+
+                    self.channels[0]
+                        .iter_mut()
+                        .zip(center.iter())
+                        .for_each(|(l, c)| *l = *l + sqrt05 * c);
+
+                    self.channels[1]
+                        .iter_mut()
+                        .zip(center.iter())
+                        .for_each(|(r, c)| *r = *r + sqrt05 * c);
+                }
+
+                _ => panic!("{mixing} from {from} to {to} channels not supported",
+                    mixing = if self.number_of_channels() < channels { "Up-mixing" } else { "Down-mixing" },
+                    from = self.number_of_channels(),
+                    to = channels,
+                ),
             }
-            (1, 4) => {
-                self.channels.push(self.channels[0].clone());
-                self.channels.push(silence.clone());
-                self.channels.push(silence);
-            }
-            (1, 6) => {
-                let main = std::mem::replace(&mut self.channels[0], silence.clone());
-                self.channels.push(silence.clone());
-                self.channels.push(main);
-                self.channels.push(silence.clone());
-                self.channels.push(silence);
-            }
-            (2, 1) => {
-                let right = self.channels[1].clone();
-                self.channels[0]
-                    .iter_mut()
-                    .zip(right.iter())
-                    .for_each(|(l, r)| *l = (*l + *r) / 2.);
-                self.channels.truncate(1);
-            }
-            _ => todo!(),
         }
     }
 
@@ -476,28 +641,328 @@ mod tests {
     }
 
     #[test]
-    fn test_audiobuffer_mix_speakers() {
+    fn test_audiobuffer_upmix_speakers() {
         let alloc = Alloc::with_capacity(1);
 
-        let mut signal = alloc.silence();
-        signal.copy_from_slice(&[1.; LEN]);
+        { // 1 -> 2
+            let mut signal = alloc.silence();
+            signal.copy_from_slice(&[1.; LEN]);
 
-        let mut buffer = AudioBuffer::new(signal);
+            let mut buffer = AudioBuffer::new(signal.clone());
 
-        buffer.mix(1, ChannelInterpretation::Speakers);
-        assert_eq!(buffer.number_of_channels(), 1);
-        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            // make sure 1 -> 1 does nothing
+            buffer.mix(1, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 1);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
 
-        buffer.mix(2, ChannelInterpretation::Speakers);
-        assert_eq!(buffer.number_of_channels(), 2);
+            buffer.mix(2, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 2);
 
-        // left and right equal
-        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-        assert_float_eq!(&buffer.channel_data(1)[..], &[1.; LEN][..], ulps_all <= 0);
+            // left and right equal
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[1.; LEN][..], ulps_all <= 0);
+        }
 
-        buffer.mix(1, ChannelInterpretation::Speakers);
-        assert_eq!(buffer.number_of_channels(), 1);
-        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+        { // 1 -> 4
+            let mut signal = alloc.silence();
+            signal.copy_from_slice(&[1.; LEN]);
+
+            let mut buffer = AudioBuffer::new(signal.clone());
+
+            buffer.mix(4, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 4);
+
+            // left and right equal
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; LEN][..], ulps_all <= 0);
+        }
+
+        { // 1 -> 6
+            let mut signal = alloc.silence();
+            signal.copy_from_slice(&[1.; LEN]);
+
+            let mut buffer = AudioBuffer::new(signal.clone());
+
+            buffer.mix(6, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 6);
+
+            // left and right equal
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[0.; LEN][..], ulps_all <= 0);
+        }
+
+        { // 2 -> 4
+            let mut left_signal = alloc.silence();
+            left_signal.copy_from_slice(&[1.; LEN]);
+            let mut right_signal = alloc.silence();
+            right_signal.copy_from_slice(&[0.5; LEN]);
+
+            let mut buffer = AudioBuffer::new(left_signal.clone());
+            buffer.channels.push(right_signal.clone());
+
+            assert_eq!(buffer.number_of_channels(), 2);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
+
+            buffer.mix(4, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 4);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; LEN][..], ulps_all <= 0);
+        }
+
+        { // 2 -> 5.1
+            let mut left_signal = alloc.silence();
+            left_signal.copy_from_slice(&[1.; LEN]);
+            let mut right_signal = alloc.silence();
+            right_signal.copy_from_slice(&[0.5; LEN]);
+
+            let mut buffer = AudioBuffer::new(left_signal.clone());
+            buffer.channels.push(right_signal.clone());
+
+            assert_eq!(buffer.number_of_channels(), 2);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
+
+            buffer.mix(6, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 6);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[0.; LEN][..], ulps_all <= 0);
+        }
+
+        { // 4 -> 5.1
+            let mut left_signal = alloc.silence();
+            left_signal.copy_from_slice(&[0.25; LEN]);
+            let mut right_signal = alloc.silence();
+            right_signal.copy_from_slice(&[0.5; LEN]);
+            let mut s_left_signal = alloc.silence();
+            s_left_signal.copy_from_slice(&[0.75; LEN]);
+            let mut s_right_signal = alloc.silence();
+            s_right_signal.copy_from_slice(&[1.; LEN]);
+
+            let mut buffer = AudioBuffer::new(left_signal.clone());
+            buffer.channels.push(right_signal.clone());
+            buffer.channels.push(s_left_signal.clone());
+            buffer.channels.push(s_right_signal.clone());
+
+            assert_eq!(buffer.number_of_channels(), 4);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.75; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[1.; LEN][..], ulps_all <= 0);
+
+            buffer.mix(6, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 6);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.75; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[1.; LEN][..], ulps_all <= 0);
+        }
+    }
+
+    #[test]
+    fn test_audiobuffer_downmix_speakers() {
+        let alloc = Alloc::with_capacity(1);
+
+        { // 2 -> 1
+            let mut left_signal = alloc.silence();
+            left_signal.copy_from_slice(&[1.; LEN]);
+            let mut right_signal = alloc.silence();
+            right_signal.copy_from_slice(&[0.5; LEN]);
+
+            let mut buffer = AudioBuffer::new(left_signal.clone());
+            buffer.channels.push(right_signal.clone());
+
+            assert_eq!(buffer.number_of_channels(), 2);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
+
+            buffer.mix(1, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 1);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.75; LEN][..], ulps_all <= 0);
+        }
+
+        { // 4 -> 1
+            let mut left_signal = alloc.silence();
+            left_signal.copy_from_slice(&[1.; LEN]);
+            let mut right_signal = alloc.silence();
+            right_signal.copy_from_slice(&[0.75; LEN]);
+            let mut s_left_signal = alloc.silence();
+            s_left_signal.copy_from_slice(&[0.5; LEN]);
+            let mut s_right_signal = alloc.silence();
+            s_right_signal.copy_from_slice(&[0.25; LEN]);
+
+            let mut buffer = AudioBuffer::new(left_signal.clone());
+            buffer.channels.push(right_signal.clone());
+            buffer.channels.push(s_left_signal.clone());
+            buffer.channels.push(s_right_signal.clone());
+
+            assert_eq!(buffer.number_of_channels(), 4);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.75; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.25; LEN][..], ulps_all <= 0);
+
+            buffer.mix(1, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 1);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.625; LEN][..], ulps_all <= 0);
+        }
+
+        { // 6 -> 1
+            let mut left_signal = alloc.silence();
+            left_signal.copy_from_slice(&[1.; LEN]);
+            let mut right_signal = alloc.silence();
+            right_signal.copy_from_slice(&[0.9; LEN]);
+            let mut center_signal = alloc.silence();
+            center_signal.copy_from_slice(&[0.8; LEN]);
+            let mut low_freq_signal = alloc.silence();
+            low_freq_signal.copy_from_slice(&[0.7; LEN]);
+            let mut s_left_signal = alloc.silence();
+            s_left_signal.copy_from_slice(&[0.6; LEN]);
+            let mut s_right_signal = alloc.silence();
+            s_right_signal.copy_from_slice(&[0.5; LEN]);
+
+            let mut buffer = AudioBuffer::new(left_signal.clone());
+            buffer.channels.push(right_signal.clone());
+            buffer.channels.push(center_signal.clone());
+            buffer.channels.push(low_freq_signal.clone());
+            buffer.channels.push(s_left_signal.clone());
+            buffer.channels.push(s_right_signal.clone());
+
+            assert_eq!(buffer.number_of_channels(), 6);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; LEN][..], ulps_all <= 0);
+
+            buffer.mix(1, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 1);
+            // output = sqrt(0.5) * (input.L + input.R) + input.C + 0.5 * (input.SL + input.SR)
+            let res = (0.5_f32).sqrt() * (1. + 0.9) + 0.8 + 0.5 * (0.6 + 0.5);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[res; LEN][..], ulps_all <= 0);
+        }
+
+        { // 4 -> 2
+            let mut left_signal = alloc.silence();
+            left_signal.copy_from_slice(&[0.25; LEN]);
+            let mut right_signal = alloc.silence();
+            right_signal.copy_from_slice(&[0.5; LEN]);
+            let mut s_left_signal = alloc.silence();
+            s_left_signal.copy_from_slice(&[0.75; LEN]);
+            let mut s_right_signal = alloc.silence();
+            s_right_signal.copy_from_slice(&[1.; LEN]);
+
+            let mut buffer = AudioBuffer::new(left_signal.clone());
+            buffer.channels.push(right_signal.clone());
+            buffer.channels.push(s_left_signal.clone());
+            buffer.channels.push(s_right_signal.clone());
+
+            assert_eq!(buffer.number_of_channels(), 4);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.75; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[1.; LEN][..], ulps_all <= 0);
+
+            buffer.mix(2, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 2);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.75; LEN][..], ulps_all <= 0);
+        }
+
+        { // 6 -> 2
+            let mut left_signal = alloc.silence();
+            left_signal.copy_from_slice(&[1.; LEN]);
+            let mut right_signal = alloc.silence();
+            right_signal.copy_from_slice(&[0.9; LEN]);
+            let mut center_signal = alloc.silence();
+            center_signal.copy_from_slice(&[0.8; LEN]);
+            let mut low_freq_signal = alloc.silence();
+            low_freq_signal.copy_from_slice(&[0.7; LEN]);
+            let mut s_left_signal = alloc.silence();
+            s_left_signal.copy_from_slice(&[0.6; LEN]);
+            let mut s_right_signal = alloc.silence();
+            s_right_signal.copy_from_slice(&[0.5; LEN]);
+
+            let mut buffer = AudioBuffer::new(left_signal.clone());
+            buffer.channels.push(right_signal.clone());
+            buffer.channels.push(center_signal.clone());
+            buffer.channels.push(low_freq_signal.clone());
+            buffer.channels.push(s_left_signal.clone());
+            buffer.channels.push(s_right_signal.clone());
+
+            assert_eq!(buffer.number_of_channels(), 6);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; LEN][..], ulps_all <= 0);
+
+            buffer.mix(2, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 2);
+
+            let res_left = 1. + (0.5_f32).sqrt() * (0.8 + 0.6);
+            let res_right = 0.9 + (0.5_f32).sqrt() * (0.8 + 0.5);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[res_left; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[res_right; LEN][..], ulps_all <= 0);
+        }
+
+        { // 6 -> 4
+            let mut left_signal = alloc.silence();
+            left_signal.copy_from_slice(&[1.; LEN]);
+            let mut right_signal = alloc.silence();
+            right_signal.copy_from_slice(&[0.9; LEN]);
+            let mut center_signal = alloc.silence();
+            center_signal.copy_from_slice(&[0.8; LEN]);
+            let mut low_freq_signal = alloc.silence();
+            low_freq_signal.copy_from_slice(&[0.7; LEN]);
+            let mut s_left_signal = alloc.silence();
+            s_left_signal.copy_from_slice(&[0.6; LEN]);
+            let mut s_right_signal = alloc.silence();
+            s_right_signal.copy_from_slice(&[0.5; LEN]);
+
+            // create stereo AudioBuffer
+            // @note - not sure that's the proper way this
+            let mut buffer = AudioBuffer::new(left_signal.clone());
+            buffer.channels.push(right_signal.clone());
+            buffer.channels.push(center_signal.clone());
+            buffer.channels.push(low_freq_signal.clone());
+            buffer.channels.push(s_left_signal.clone());
+            buffer.channels.push(s_right_signal.clone());
+
+            assert_eq!(buffer.number_of_channels(), 6);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; LEN][..], ulps_all <= 0);
+
+            buffer.mix(4, ChannelInterpretation::Speakers);
+            assert_eq!(buffer.number_of_channels(), 4);
+
+            let res_left = 1. + (0.5_f32).sqrt() * 0.8;
+            let res_right = 0.9 + (0.5_f32).sqrt() * 0.8;
+            assert_float_eq!(&buffer.channel_data(0)[..], &[res_left; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[res_right; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.6; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.5; LEN][..], ulps_all <= 0);
+        }
     }
 
     #[test]
