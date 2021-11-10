@@ -25,8 +25,8 @@ use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{
     self, AnalyserOptions, AudioBufferSourceNodeOptions, AudioNode, ChannelMergerOptions,
-    ChannelSplitterOptions, ConstantSourceOptions, DelayOptions, GainOptions, PannerOptions,
-    PeriodicWave, PeriodicWaveOptions,
+    ChannelSplitterOptions, ConstantSourceOptions, DelayOptions, GainOptions, IirFilterOptions,
+    PannerOptions, PeriodicWave, PeriodicWaveOptions,
 };
 use crate::param::{AudioParam, AudioParamOptions, AutomationEvent};
 use crate::process::AudioProcessor;
@@ -99,6 +99,23 @@ pub trait AsBaseAudioContext {
     /// Creates an `ConstantSourceNode`, a source representing a constant value
     fn create_constant_source(&self) -> node::ConstantSourceNode {
         node::ConstantSourceNode::new(self.base(), ConstantSourceOptions::default())
+    }
+
+    /// Creates an IirFilterNode
+    ///
+    /// # Arguments
+    ///
+    /// * `feedforward` - An array of the feedforward (numerator) coefficients for the transfer function of the IIR filter.
+    /// The maximum length of this array is 20
+    /// * `feedback` - An array of the feedback (denominator) coefficients for the transfer function of the IIR filter.
+    /// The maximum length of this array is 20
+    fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IirFilterNode {
+        let options = IirFilterOptions {
+            channel_config: ChannelConfigOptions::default(),
+            feedforward,
+            feedback,
+        };
+        node::IirFilterNode::new(self.base(), options)
     }
 
     /// Creates a `DelayNode`, delaying the audio signal
