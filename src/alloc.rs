@@ -214,10 +214,10 @@ impl AudioBuffer {
     }
 
     /// Up/Down-mix to the desired number of channels
-    pub fn mix(&mut self, channels: usize, interpretation: ChannelInterpretation) {
-        assert!(channels < MAX_CHANNELS);
+    pub fn mix(&mut self, computed_number_of_channels: usize, interpretation: ChannelInterpretation) {
+        assert!(computed_number_of_channels < MAX_CHANNELS);
 
-        if self.number_of_channels() == channels {
+        if self.number_of_channels() == computed_number_of_channels {
             return;
         }
 
@@ -227,14 +227,15 @@ impl AudioBuffer {
         // handle discrete interpretation
         if interpretation == ChannelInterpretation::Discrete {
             // upmix by filling with silence
-            for _ in self.number_of_channels()..channels {
+            for _ in self.number_of_channels()..computed_number_of_channels {
                 self.channels.push(silence.clone());
             }
 
             // downmix by truncating
-            self.channels.truncate(channels);
+            self.channels.truncate(computed_number_of_channels);
+
         } else if interpretation == ChannelInterpretation::Speakers {
-            match (self.number_of_channels(), channels) {
+            match (self.number_of_channels(), computed_number_of_channels) {
                 // ------------------------------------------
                 // UP MIX
                 // https://www.w3.org/TR/webaudio/#UpMix-sub
@@ -423,13 +424,13 @@ impl AudioBuffer {
 
                 _ => panic!(
                     "{mixing} from {from} to {to} channels not supported",
-                    mixing = if self.number_of_channels() < channels {
+                    mixing = if self.number_of_channels() < computed_number_of_channels {
                         "Up-mixing"
                     } else {
                         "Down-mixing"
                     },
                     from = self.number_of_channels(),
-                    to = channels,
+                    to = computed_number_of_channels,
                 ),
             }
         }
