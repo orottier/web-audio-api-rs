@@ -2,7 +2,8 @@ use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
-    let context = AudioContext::new();
+    env_logger::init();
+    let context = AudioContext::new(None);
 
     // Create an oscillator
     let osc = context.create_oscillator();

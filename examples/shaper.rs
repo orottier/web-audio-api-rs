@@ -25,7 +25,8 @@ fn make_distortion_curve(amount: usize) -> Vec<f32> {
 }
 
 fn main() {
-    let context = AudioContext::new();
+    env_logger::init();
+    let context = AudioContext::new(None);
 
     // setup background music:
     // read from local file
