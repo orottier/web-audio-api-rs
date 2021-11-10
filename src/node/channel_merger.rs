@@ -68,7 +68,7 @@ impl ChannelMergerNode {
                 channel_config: options.channel_config.into(),
             };
 
-            let render = ChannelMergerRenderer { };
+            let render = ChannelMergerRenderer {};
 
             (node, Box::new(render))
         })
@@ -76,7 +76,7 @@ impl ChannelMergerNode {
 }
 
 #[derive(Debug)]
-struct ChannelMergerRenderer { }
+struct ChannelMergerRenderer {}
 
 impl AudioProcessor for ChannelMergerRenderer {
     fn process(

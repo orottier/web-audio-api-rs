@@ -789,11 +789,14 @@ impl OscillatorRenderer {
             real,
             imag,
             disable_normalization,
-        } =  periodic_wave.map_or_else(|| PeriodicWave {
-            real: vec![0., 1.],
-            imag: vec![0., 0.],
-            disable_normalization: false,
-        }, |p_w| p_w);
+        } = periodic_wave.map_or_else(
+            || PeriodicWave {
+                real: vec![0., 1.],
+                imag: vec![0., 0.],
+                disable_normalization: false,
+            },
+            |p_w| p_w,
+        );
 
         let cplxs: Vec<(f32, f32)> = real.iter().zip(&imag).map(|(&r, &i)| (r, i)).collect();
 
