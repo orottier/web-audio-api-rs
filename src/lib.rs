@@ -39,6 +39,9 @@
 //! //std::thread::sleep(std::time::Duration::from_secs(4));
 //! ```
 
+// these are annotated with SAFETY explanations
+#![allow(clippy::non_send_fields_in_send_ty)]
+
 /// Render quantum size (audio graph is rendered in blocks of this size)
 pub const BUFFER_SIZE: u32 = 128;
 
