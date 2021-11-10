@@ -214,7 +214,11 @@ impl AudioBuffer {
     }
 
     /// Up/Down-mix to the desired number of channels
-    pub fn mix(&mut self, computed_number_of_channels: usize, interpretation: ChannelInterpretation) {
+    pub fn mix(
+        &mut self,
+        computed_number_of_channels: usize,
+        interpretation: ChannelInterpretation,
+    ) {
         assert!(computed_number_of_channels < MAX_CHANNELS);
 
         if self.number_of_channels() == computed_number_of_channels {
@@ -233,7 +237,6 @@ impl AudioBuffer {
 
             // downmix by truncating
             self.channels.truncate(computed_number_of_channels);
-
         } else if interpretation == ChannelInterpretation::Speakers {
             match (self.number_of_channels(), computed_number_of_channels) {
                 // ------------------------------------------
@@ -641,18 +644,34 @@ mod tests {
         buffer.mix(1, ChannelInterpretation::Discrete);
 
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+        assert_float_eq!(
+            &buffer.channel_data(0)[..],
+            &[1.; BUFFER_SIZE][..],
+            ulps_all <= 0
+        );
 
         buffer.mix(2, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 2);
 
         // first channel unchanged, second channel silent
-        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-        assert_float_eq!(&buffer.channel_data(1)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+        assert_float_eq!(
+            &buffer.channel_data(0)[..],
+            &[1.; BUFFER_SIZE][..],
+            ulps_all <= 0
+        );
+        assert_float_eq!(
+            &buffer.channel_data(1)[..],
+            &[0.; BUFFER_SIZE][..],
+            ulps_all <= 0
+        );
 
         buffer.mix(1, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+        assert_float_eq!(
+            &buffer.channel_data(0)[..],
+            &[1.; BUFFER_SIZE][..],
+            ulps_all <= 0
+        );
     }
 
     #[test]
@@ -669,14 +688,26 @@ mod tests {
             // make sure 1 -> 1 does nothing
             buffer.mix(1, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 1);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
 
             buffer.mix(2, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 2);
 
             // left and right equal
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
 
         {
@@ -690,10 +721,26 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 4);
 
             // left and right equal
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
 
         {
@@ -707,12 +754,36 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 6);
 
             // left and right equal
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(4)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(5)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
 
         {
@@ -726,15 +797,39 @@ mod tests {
             buffer.channels.push(right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 2);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
 
             buffer.mix(4, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 4);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
 
         {
@@ -748,17 +843,49 @@ mod tests {
             buffer.channels.push(right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 2);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
 
             buffer.mix(6, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 6);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(4)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(5)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
 
         {
@@ -778,19 +905,59 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 4);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[0.25; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[0.75; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
 
             buffer.mix(6, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 6);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[0.25; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[0.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(4)[..],
+                &[0.75; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(5)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
     }
 
@@ -809,12 +976,24 @@ mod tests {
             buffer.channels.push(right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 2);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
 
             buffer.mix(1, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 1);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[0.75; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
 
         {
@@ -834,10 +1013,26 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 4);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.25; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.75; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[0.25; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
 
             buffer.mix(1, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 1);
@@ -871,18 +1066,46 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 6);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.9; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[0.8; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[0.7; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(4)[..],
+                &[0.6; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(5)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
 
             buffer.mix(1, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 1);
             // output = sqrt(0.5) * (input.L + input.R) + input.C + 0.5 * (input.SL + input.SR)
             let res = (0.5_f32).sqrt() * (1. + 0.9) + 0.8 + 0.5 * (0.6 + 0.5);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[res; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[res; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
 
         {
@@ -902,15 +1125,39 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 4);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[0.25; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[0.75; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
 
             buffer.mix(2, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 2);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.75; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
 
         {
@@ -936,12 +1183,36 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 6);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.9; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[0.8; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[0.7; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(4)[..],
+                &[0.6; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(5)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
 
             buffer.mix(2, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 2);
@@ -983,12 +1254,36 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 6);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[1.; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[0.9; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[0.8; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[0.7; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(4)[..],
+                &[0.6; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(5)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
 
             buffer.mix(4, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 4);
@@ -1005,8 +1300,16 @@ mod tests {
                 &[res_right; BUFFER_SIZE][..],
                 ulps_all <= 0
             );
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.6; BUFFER_SIZE][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(2)[..],
+                &[0.6; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(3)[..],
+                &[0.5; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
     }
 
@@ -1026,7 +1329,15 @@ mod tests {
         buffer.add(&buffer2, ChannelInterpretation::Discrete);
 
         assert_eq!(buffer.number_of_channels(), 2);
-        assert_float_eq!(&buffer.channel_data(0)[..], &[3.; BUFFER_SIZE][..], ulps_all <= 0);
-        assert_float_eq!(&buffer.channel_data(1)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+        assert_float_eq!(
+            &buffer.channel_data(0)[..],
+            &[3.; BUFFER_SIZE][..],
+            ulps_all <= 0
+        );
+        assert_float_eq!(
+            &buffer.channel_data(1)[..],
+            &[1.; BUFFER_SIZE][..],
+            ulps_all <= 0
+        );
     }
 }
