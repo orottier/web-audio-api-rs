@@ -9,18 +9,10 @@ use super::{
 };
 
 /// Options for constructing a AudioBufferSourceNode
+#[derive(Default)]
 pub struct AudioBufferSourceNodeOptions {
     pub buffer: Option<AudioBuffer>,
     pub channel_config: ChannelConfigOptions,
-}
-
-impl Default for AudioBufferSourceNodeOptions {
-    fn default() -> Self {
-        Self {
-            buffer: None,
-            channel_config: ChannelConfigOptions::default(),
-        }
-    }
 }
 
 /// An audio source from an in-memory audio asset in an AudioBuffer

@@ -101,7 +101,7 @@ pub trait AsBaseAudioContext {
         node::ConstantSourceNode::new(self.base(), ConstantSourceOptions::default())
     }
 
-    /// Creates an IirFilterNode
+    /// Creates an `IirFilterNode`
     ///
     /// # Arguments
     ///

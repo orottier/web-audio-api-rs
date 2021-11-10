@@ -789,15 +789,14 @@ impl OscillatorRenderer {
             real,
             imag,
             disable_normalization,
-        } = if let Some(p_w) = periodic_wave {
-            p_w
-        } else {
-            PeriodicWave {
+        } = periodic_wave.map_or_else(
+            || PeriodicWave {
                 real: vec![0., 1.],
                 imag: vec![0., 0.],
                 disable_normalization: false,
-            }
-        };
+            },
+            |p_w| p_w,
+        );
 
         let cplxs: Vec<(f32, f32)> = real.iter().zip(&imag).map(|(&r, &i)| (r, i)).collect();
 
@@ -1521,12 +1520,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 
@@ -1547,12 +1546,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 
@@ -1573,12 +1572,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 
@@ -1599,12 +1598,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 
@@ -1638,12 +1637,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 
@@ -1677,12 +1676,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 }
