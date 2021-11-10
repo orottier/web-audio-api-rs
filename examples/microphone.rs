@@ -4,7 +4,7 @@ use web_audio_api::node::AudioNode;
 
 fn main() {
     env_logger::init();
-    let context = AudioContext::new();
+    let context = AudioContext::new(None);
 
     let stream = Microphone::new();
     // register as media element in the audio context

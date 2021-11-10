@@ -99,7 +99,7 @@ impl PeriodicWave {
     ///    use web_audio_api::context::{AudioContext, AsBaseAudioContext};
     ///    use web_audio_api::node::{PeriodicWave, PeriodicWaveOptions};
     ///
-    ///    let context = AudioContext::new();
+    ///    let context = AudioContext::new(None);
     ///
     ///    let options = PeriodicWaveOptions {
     ///    real: Some(vec![0.,1.,1.]),
@@ -1253,7 +1253,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_real_is_too_short() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0.]),
@@ -1267,7 +1267,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_only_real_is_defined_and_too_short() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0.]),
@@ -1281,7 +1281,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_imag_is_too_short() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0., 0., 0.]),
@@ -1295,7 +1295,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_only_imag_is_defined_and_too_short() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: None,
@@ -1309,7 +1309,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_imag_and_real_not_equal_length() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0., 0., 0.]),
@@ -1323,7 +1323,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_imag_and_real_are_more_than_8192_comps() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0.; 8193]),
@@ -1337,7 +1337,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_real_is_more_than_8192_comps() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0.; 8193]),
@@ -1351,7 +1351,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_imag_is_more_than_8192_comps() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: None,
@@ -1364,7 +1364,7 @@ mod tests {
 
     #[test]
     fn assert_default_periodic_options() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: None,

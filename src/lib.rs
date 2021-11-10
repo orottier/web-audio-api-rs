@@ -7,7 +7,7 @@
 //! use web_audio_api::media::{MediaElement, OggVorbisDecoder};
 //! use web_audio_api::node::{AudioNode, AudioControllableSourceNode, AudioScheduledSourceNode};
 //!
-//! let context = AudioContext::new();
+//! let context = AudioContext::new(None);
 //!
 //! // setup background music:
 //! // read from local file

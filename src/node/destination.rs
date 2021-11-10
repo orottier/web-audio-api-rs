@@ -85,4 +85,10 @@ impl DestinationNode {
             (node, Box::new(proc))
         })
     }
+
+    /// The maximum number of channels that the channelCount attribute can be set to
+    /// This is the limit number that audio hardware can support.
+    pub fn max_channels_count(&self) -> u32 {
+        self.registration.context().base().channels()
+    }
 }

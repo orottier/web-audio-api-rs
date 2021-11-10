@@ -52,7 +52,7 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 /// let media = sequence.map(|b| Ok(b));
 ///
 /// // media is now a proper `MediaStream` and can be used in the audio graph
-/// let context = AudioContext::new();
+/// let context = AudioContext::new(None);
 /// let node = context.create_media_stream_source(media);
 /// ```
 pub trait MediaStream:
@@ -70,7 +70,7 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// async executor)
 ///
 /// # Example
-/// 
+///
 /// ```rust
 /// use web_audio_api::SampleRate;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
@@ -418,7 +418,7 @@ impl MicrophoneRender {
 /// let element = MediaElement::new(media);
 ///
 /// // register the media element node
-/// let context = AudioContext::new();
+/// let context = AudioContext::new(None);
 /// let node = context.create_media_element_source(element);
 ///
 /// // play media
@@ -474,7 +474,7 @@ impl Iterator for OggVorbisDecoder {
 /// let element = MediaElement::new(media);
 ///
 /// // register the media element node
-/// let context = AudioContext::new();
+/// let context = AudioContext::new(None);
 /// let node = context.create_media_element_source(element);
 ///
 /// // play media
