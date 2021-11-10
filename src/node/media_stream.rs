@@ -16,7 +16,7 @@ pub struct MediaStreamAudioSourceNodeOptions<M> {
 /// An audio source from a [`MediaStream`] (e.g. microphone input)
 ///
 /// IMPORTANT: the media stream is polled on the render thread so you must ensure the media stream
-/// iterator never blocks. Consider wrapping the `MediaStream` in a [`MediaElement`], which buffers the
+/// iterator never blocks. Consider wrapping the `MediaStream` in a `MediaElement`, which buffers the
 /// stream on another thread so the render thread never blocks.
 pub struct MediaStreamAudioSourceNode {
     registration: AudioContextRegistration,
