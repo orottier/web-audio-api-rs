@@ -1,4 +1,11 @@
-//! Optimized audio signal data structures, used in AudioProcessors
+//! Optimized audio signal data structures, used in `AudioProcessors`
+#![warn(
+    clippy::all,
+    clippy::perf,
+    // clippy::pedantic,
+    // clippy::nursery,
+    // clippy::missing_docs_in_private_items
+)]
 
 use arrayvec::ArrayVec;
 use std::cell::RefCell;
@@ -6,7 +13,8 @@ use std::rc::Rc;
 
 use crate::buffer::ChannelInterpretation;
 
-const LEN: usize = crate::BUFFER_SIZE as usize;
+/// size of a buffer, 128 samples per spec
+const BUFFER_SIZE: usize = crate::BUFFER_SIZE as usize;
 use crate::MAX_CHANNELS;
 
 pub(crate) struct Alloc {
@@ -15,14 +23,14 @@ pub(crate) struct Alloc {
 
 #[derive(Debug)]
 struct AllocInner {
-    pool: RefCell<Vec<Rc<[f32; LEN]>>>,
-    zeroes: Rc<[f32; LEN]>,
+    pool: RefCell<Vec<Rc<[f32; BUFFER_SIZE]>>>,
+    zeroes: Rc<[f32; BUFFER_SIZE]>,
 }
 
 impl Alloc {
     pub fn with_capacity(n: usize) -> Self {
-        let pool: Vec<_> = (0..n).map(|_| Rc::new([0.; LEN])).collect();
-        let zeroes = Rc::new([0.; LEN]);
+        let pool: Vec<_> = (0..n).map(|_| Rc::new([0.; BUFFER_SIZE])).collect();
+        let zeroes = Rc::new([0.; BUFFER_SIZE]);
 
         let inner = AllocInner {
             pool: RefCell::new(pool),
@@ -56,17 +64,17 @@ impl Alloc {
 }
 
 impl AllocInner {
-    fn allocate(&self) -> Rc<[f32; LEN]> {
+    fn allocate(&self) -> Rc<[f32; BUFFER_SIZE]> {
         if let Some(rc) = self.pool.borrow_mut().pop() {
             // re-use from pool
             rc
         } else {
             // allocate
-            Rc::new([0.; LEN])
+            Rc::new([0.; BUFFER_SIZE])
         }
     }
 
-    fn push(&self, data: Rc<[f32; LEN]>) {
+    fn push(&self, data: Rc<[f32; BUFFER_SIZE]>) {
         self.pool
             .borrow_mut() // infallible when single threaded
             .push(data);
@@ -75,15 +83,15 @@ impl AllocInner {
 
 /// Single channel audio samples, basically wraps a `Rc<[f32; BUFFER_SIZE]>`
 ///
-/// ChannelData has copy-on-write semantics, so it is cheap to clone.
+/// `ChannelData` has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug)]
 pub struct ChannelData {
-    data: Rc<[f32; LEN]>,
+    data: Rc<[f32; BUFFER_SIZE]>,
     alloc: Rc<AllocInner>,
 }
 
 impl ChannelData {
-    fn make_mut(&mut self) -> &mut [f32; LEN] {
+    fn make_mut(&mut self) -> &mut [f32; BUFFER_SIZE] {
         if Rc::strong_count(&self.data) != 1 {
             let mut new = self.alloc.allocate();
             Rc::make_mut(&mut new).copy_from_slice(self.data.deref());
@@ -110,7 +118,7 @@ impl ChannelData {
     }
 
     pub fn silence(&self) -> Self {
-        ChannelData {
+        Self {
             data: self.alloc.zeroes.clone(),
             alloc: Rc::clone(&self.alloc),
         }
@@ -120,7 +128,7 @@ impl ChannelData {
 use std::ops::{Deref, DerefMut};
 
 impl Deref for ChannelData {
-    type Target = [f32; LEN];
+    type Target = [f32; BUFFER_SIZE];
 
     fn deref(&self) -> &Self::Target {
         &self.data
@@ -225,7 +233,6 @@ impl AudioBuffer {
 
             // downmix by truncating
             self.channels.truncate(channels);
-
         } else if interpretation == ChannelInterpretation::Speakers {
             match (self.number_of_channels(), channels) {
                 // ------------------------------------------
@@ -238,11 +245,11 @@ impl AudioBuffer {
                 (1, 2) => {
                     self.channels.push(self.channels[0].clone());
                 }
-                  // 1 -> 4 : up-mix from mono to quad
-                  //   output.L = input;
-                  //   output.R = input;
-                  //   output.SL = 0;
-                  //   output.SR = 0;
+                // 1 -> 4 : up-mix from mono to quad
+                //   output.L = input;
+                //   output.R = input;
+                //   output.SL = 0;
+                //   output.SR = 0;
                 (1, 4) => {
                     self.channels.push(self.channels[0].clone());
                     self.channels.push(silence.clone());
@@ -345,7 +352,9 @@ impl AudioBuffer {
                         .zip(center.iter())
                         .zip(s_left.iter())
                         .zip(s_right.iter())
-                        .for_each(|((((l, r), c), sl), sr)| *l = sqrt05 * (*l + *r) + *c + 0.5 * (*sl + *sr));
+                        .for_each(|((((l, r), c), sl), sr)| {
+                            *l = sqrt05.mul_add(*l + *r, 0.5f32.mul_add(*sl + *sr, *c))
+                        });
 
                     self.channels.truncate(1);
                 }
@@ -381,13 +390,13 @@ impl AudioBuffer {
                         .iter_mut()
                         .zip(center.iter())
                         .zip(s_left.iter())
-                        .for_each(|((l, c), sl)| *l = *l + sqrt05 * (*c + *sl));
+                        .for_each(|((l, c), sl)| *l += sqrt05 * (*c + *sl));
 
                     self.channels[1]
                         .iter_mut()
                         .zip(center.iter())
                         .zip(s_right.iter())
-                        .for_each(|((r, c), sr)| *r = *r + sqrt05 * (*c + *sr));
+                        .for_each(|((r, c), sr)| *r += sqrt05 * (*c + *sr));
 
                     self.channels.truncate(2)
                 }
@@ -404,16 +413,21 @@ impl AudioBuffer {
                     self.channels[0]
                         .iter_mut()
                         .zip(center.iter())
-                        .for_each(|(l, c)| *l = *l + sqrt05 * c);
+                        .for_each(|(l, c)| *l += sqrt05 * c);
 
                     self.channels[1]
                         .iter_mut()
                         .zip(center.iter())
-                        .for_each(|(r, c)| *r = *r + sqrt05 * c);
+                        .for_each(|(r, c)| *r += sqrt05 * c);
                 }
 
-                _ => panic!("{mixing} from {from} to {to} channels not supported",
-                    mixing = if self.number_of_channels() < channels { "Up-mixing" } else { "Down-mixing" },
+                _ => panic!(
+                    "{mixing} from {from} to {to} channels not supported",
+                    mixing = if self.number_of_channels() < channels {
+                        "Up-mixing"
+                    } else {
+                        "Down-mixing"
+                    },
                     from = self.number_of_channels(),
                     to = channels,
                 ),
@@ -440,7 +454,7 @@ impl AudioBuffer {
         self.channels.iter_mut().for_each(fun)
     }
 
-    /// Sum two AudioBuffers
+    /// Sum two `AudioBuffer`s
     ///
     /// If the channel counts differ, the buffer with lower count will be upmixed.
     pub fn add(&mut self, other: &Self, interpretation: ChannelInterpretation) {
@@ -479,13 +493,13 @@ mod tests {
                 // take a buffer out of the pool
                 let a = alloc.allocate();
 
-                assert_float_eq!(&a[..], &[0.; LEN][..], ulps_all <= 0);
+                assert_float_eq!(&a[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
                 assert_eq!(alloc.pool_size(), 1);
 
                 // mutating this buffer will not allocate
                 let mut a = a;
                 a.iter_mut().for_each(|v| *v += 1.);
-                assert_float_eq!(&a[..], &[1.; LEN][..], ulps_all <= 0);
+                assert_float_eq!(&a[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
                 assert_eq!(alloc.pool_size(), 1);
 
                 // clone this buffer, should not allocate
@@ -513,9 +527,9 @@ mod tests {
                 });
 
                 // dirty allocations
-                assert_float_eq!(&a[..], &[1.; LEN][..], ulps_all <= 0);
-                assert_float_eq!(&b[..], &[2.; LEN][..], ulps_all <= 0);
-                assert_float_eq!(&c[..], &[0.; LEN][..], ulps_all <= 0);
+                assert_float_eq!(&a[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+                assert_float_eq!(&b[..], &[2.; BUFFER_SIZE][..], ulps_all <= 0);
+                assert_float_eq!(&c[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
 
                 c
             };
@@ -539,7 +553,7 @@ mod tests {
                 assert_eq!(alloc.pool_size(), 2);
 
                 // but should be silent, even though a dirty buffer is taken
-                assert_float_eq!(&a_vals[..], &[0.; LEN][..], ulps_all <= 0);
+                assert_float_eq!(&a_vals[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
 
                 // is_silent is a superficial ptr check
                 assert!(!a.is_silent());
@@ -552,23 +566,23 @@ mod tests {
         let alloc = Alloc::with_capacity(1);
         let silence = alloc.silence();
 
-        assert_float_eq!(&silence[..], &[0.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&silence[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
         assert!(silence.is_silent());
 
         // changing silence is possible
         let mut changed = silence;
         changed.iter_mut().for_each(|v| *v = 1.);
-        assert_float_eq!(&changed[..], &[1.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&changed[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
         assert!(!changed.is_silent());
 
         // but should not alter new silence
         let silence = alloc.silence();
-        assert_float_eq!(&silence[..], &[0.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&silence[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
         assert!(silence.is_silent());
 
         // can also create silence from ChannelData
         let from_channel = silence.silence();
-        assert_float_eq!(&from_channel[..], &[0.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&from_channel[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
         assert!(from_channel.is_silent());
     }
 
@@ -578,23 +592,23 @@ mod tests {
         let silence = alloc.silence();
 
         let mut signal1 = alloc.silence();
-        signal1.copy_from_slice(&[1.; LEN]);
+        signal1.copy_from_slice(&[1.; BUFFER_SIZE]);
 
         let mut signal2 = alloc.allocate();
-        signal2.copy_from_slice(&[2.; LEN]);
+        signal2.copy_from_slice(&[2.; BUFFER_SIZE]);
 
         // test add silence to signal
         signal1.add(&silence);
-        assert_float_eq!(&signal1[..], &[1.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&signal1[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
 
         // test add signal to silence
         let mut silence = alloc.silence();
         silence.add(&signal1);
-        assert_float_eq!(&silence[..], &[1.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&silence[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
 
         // test add two signals
         signal1.add(&signal2);
-        assert_float_eq!(&signal1[..], &[3.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&signal1[..], &[3.; BUFFER_SIZE][..], ulps_all <= 0);
     }
 
     #[test]
@@ -619,53 +633,55 @@ mod tests {
         let alloc = Alloc::with_capacity(1);
 
         let mut signal = alloc.silence();
-        signal.copy_from_slice(&[1.; LEN]);
+        signal.copy_from_slice(&[1.; BUFFER_SIZE]);
 
         let mut buffer = AudioBuffer::new(signal);
 
         buffer.mix(1, ChannelInterpretation::Discrete);
 
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
 
         buffer.mix(2, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 2);
 
         // first channel unchanged, second channel silent
-        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-        assert_float_eq!(&buffer.channel_data(1)[..], &[0.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(1)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
 
         buffer.mix(1, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 1);
-        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
     }
 
     #[test]
     fn test_audiobuffer_upmix_speakers() {
         let alloc = Alloc::with_capacity(1);
 
-        { // 1 -> 2
+        {
+            // 1 -> 2
             let mut signal = alloc.silence();
-            signal.copy_from_slice(&[1.; LEN]);
+            signal.copy_from_slice(&[1.; BUFFER_SIZE]);
 
             let mut buffer = AudioBuffer::new(signal.clone());
 
             // make sure 1 -> 1 does nothing
             buffer.mix(1, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 1);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
 
             buffer.mix(2, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 2);
 
             // left and right equal
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
         }
 
-        { // 1 -> 4
+        {
+            // 1 -> 4
             let mut signal = alloc.silence();
-            signal.copy_from_slice(&[1.; LEN]);
+            signal.copy_from_slice(&[1.; BUFFER_SIZE]);
 
             let mut buffer = AudioBuffer::new(signal.clone());
 
@@ -673,15 +689,16 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 4);
 
             // left and right equal
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
         }
 
-        { // 1 -> 6
+        {
+            // 1 -> 6
             let mut signal = alloc.silence();
-            signal.copy_from_slice(&[1.; LEN]);
+            signal.copy_from_slice(&[1.; BUFFER_SIZE]);
 
             let mut buffer = AudioBuffer::new(signal.clone());
 
@@ -689,67 +706,70 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 6);
 
             // left and right equal
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
         }
 
-        { // 2 -> 4
+        {
+            // 2 -> 4
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; LEN]);
+            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.5; LEN]);
+            right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
             let mut buffer = AudioBuffer::new(left_signal.clone());
             buffer.channels.push(right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 2);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
 
             buffer.mix(4, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 4);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
         }
 
-        { // 2 -> 5.1
+        {
+            // 2 -> 5.1
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; LEN]);
+            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.5; LEN]);
+            right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
             let mut buffer = AudioBuffer::new(left_signal.clone());
             buffer.channels.push(right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 2);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
 
             buffer.mix(6, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 6);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[0.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
         }
 
-        { // 4 -> 5.1
+        {
+            // 4 -> 5.1
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[0.25; LEN]);
+            left_signal.copy_from_slice(&[0.25; BUFFER_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.5; LEN]);
+            right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.75; LEN]);
+            s_left_signal.copy_from_slice(&[0.75; BUFFER_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[1.; LEN]);
+            s_right_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
 
             let mut buffer = AudioBuffer::new(left_signal.clone());
             buffer.channels.push(right_signal.clone());
@@ -757,19 +777,19 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 4);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.75; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
 
             buffer.mix(6, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 6);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.75; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
         }
     }
 
@@ -777,33 +797,35 @@ mod tests {
     fn test_audiobuffer_downmix_speakers() {
         let alloc = Alloc::with_capacity(1);
 
-        { // 2 -> 1
+        {
+            // 2 -> 1
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; LEN]);
+            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.5; LEN]);
+            right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
             let mut buffer = AudioBuffer::new(left_signal.clone());
             buffer.channels.push(right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 2);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
 
             buffer.mix(1, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 1);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.75; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
         }
 
-        { // 4 -> 1
+        {
+            // 4 -> 1
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; LEN]);
+            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.75; LEN]);
+            right_signal.copy_from_slice(&[0.75; BUFFER_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.5; LEN]);
+            s_left_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[0.25; LEN]);
+            s_right_signal.copy_from_slice(&[0.25; BUFFER_SIZE]);
 
             let mut buffer = AudioBuffer::new(left_signal.clone());
             buffer.channels.push(right_signal.clone());
@@ -811,29 +833,34 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 4);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.75; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.5; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.25; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.25; BUFFER_SIZE][..], ulps_all <= 0);
 
             buffer.mix(1, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 1);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.625; LEN][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[0.625; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
 
-        { // 6 -> 1
+        {
+            // 6 -> 1
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; LEN]);
+            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.9; LEN]);
+            right_signal.copy_from_slice(&[0.9; BUFFER_SIZE]);
             let mut center_signal = alloc.silence();
-            center_signal.copy_from_slice(&[0.8; LEN]);
+            center_signal.copy_from_slice(&[0.8; BUFFER_SIZE]);
             let mut low_freq_signal = alloc.silence();
-            low_freq_signal.copy_from_slice(&[0.7; LEN]);
+            low_freq_signal.copy_from_slice(&[0.7; BUFFER_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.6; LEN]);
+            s_left_signal.copy_from_slice(&[0.6; BUFFER_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[0.5; LEN]);
+            s_right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
             let mut buffer = AudioBuffer::new(left_signal.clone());
             buffer.channels.push(right_signal.clone());
@@ -843,29 +870,30 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 6);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
 
             buffer.mix(1, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 1);
             // output = sqrt(0.5) * (input.L + input.R) + input.C + 0.5 * (input.SL + input.SR)
             let res = (0.5_f32).sqrt() * (1. + 0.9) + 0.8 + 0.5 * (0.6 + 0.5);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[res; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[res; BUFFER_SIZE][..], ulps_all <= 0);
         }
 
-        { // 4 -> 2
+        {
+            // 4 -> 2
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[0.25; LEN]);
+            left_signal.copy_from_slice(&[0.25; BUFFER_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.5; LEN]);
+            right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.75; LEN]);
+            s_left_signal.copy_from_slice(&[0.75; BUFFER_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[1.; LEN]);
+            s_right_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
 
             let mut buffer = AudioBuffer::new(left_signal.clone());
             buffer.channels.push(right_signal.clone());
@@ -873,30 +901,31 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 4);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.75; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[1.; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.25; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
 
             buffer.mix(2, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 2);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[0.5; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.75; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.75; BUFFER_SIZE][..], ulps_all <= 0);
         }
 
-        { // 6 -> 2
+        {
+            // 6 -> 2
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; LEN]);
+            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.9; LEN]);
+            right_signal.copy_from_slice(&[0.9; BUFFER_SIZE]);
             let mut center_signal = alloc.silence();
-            center_signal.copy_from_slice(&[0.8; LEN]);
+            center_signal.copy_from_slice(&[0.8; BUFFER_SIZE]);
             let mut low_freq_signal = alloc.silence();
-            low_freq_signal.copy_from_slice(&[0.7; LEN]);
+            low_freq_signal.copy_from_slice(&[0.7; BUFFER_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.6; LEN]);
+            s_left_signal.copy_from_slice(&[0.6; BUFFER_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[0.5; LEN]);
+            s_right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
             let mut buffer = AudioBuffer::new(left_signal.clone());
             buffer.channels.push(right_signal.clone());
@@ -906,38 +935,45 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 6);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
 
             buffer.mix(2, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 2);
 
             let res_left = 1. + (0.5_f32).sqrt() * (0.8 + 0.6);
             let res_right = 0.9 + (0.5_f32).sqrt() * (0.8 + 0.5);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[res_left; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[res_right; LEN][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[res_left; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[res_right; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
         }
 
-        { // 6 -> 4
+        {
+            // 6 -> 4
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; LEN]);
+            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.9; LEN]);
+            right_signal.copy_from_slice(&[0.9; BUFFER_SIZE]);
             let mut center_signal = alloc.silence();
-            center_signal.copy_from_slice(&[0.8; LEN]);
+            center_signal.copy_from_slice(&[0.8; BUFFER_SIZE]);
             let mut low_freq_signal = alloc.silence();
-            low_freq_signal.copy_from_slice(&[0.7; LEN]);
+            low_freq_signal.copy_from_slice(&[0.7; BUFFER_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.6; LEN]);
+            s_left_signal.copy_from_slice(&[0.6; BUFFER_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[0.5; LEN]);
+            s_right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
-            // create stereo AudioBuffer
-            // @note - not sure that's the proper way this
             let mut buffer = AudioBuffer::new(left_signal.clone());
             buffer.channels.push(right_signal.clone());
             buffer.channels.push(center_signal.clone());
@@ -946,22 +982,30 @@ mod tests {
             buffer.channels.push(s_right_signal.clone());
 
             assert_eq!(buffer.number_of_channels(), 6);
-            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(0)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(1)[..], &[0.9; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.8; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.7; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(4)[..], &[0.6; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(5)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
 
             buffer.mix(4, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 4);
 
             let res_left = 1. + (0.5_f32).sqrt() * 0.8;
             let res_right = 0.9 + (0.5_f32).sqrt() * 0.8;
-            assert_float_eq!(&buffer.channel_data(0)[..], &[res_left; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(1)[..], &[res_right; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(2)[..], &[0.6; LEN][..], ulps_all <= 0);
-            assert_float_eq!(&buffer.channel_data(3)[..], &[0.5; LEN][..], ulps_all <= 0);
+            assert_float_eq!(
+                &buffer.channel_data(0)[..],
+                &[res_left; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(
+                &buffer.channel_data(1)[..],
+                &[res_right; BUFFER_SIZE][..],
+                ulps_all <= 0
+            );
+            assert_float_eq!(&buffer.channel_data(2)[..], &[0.6; BUFFER_SIZE][..], ulps_all <= 0);
+            assert_float_eq!(&buffer.channel_data(3)[..], &[0.5; BUFFER_SIZE][..], ulps_all <= 0);
         }
     }
 
@@ -970,18 +1014,18 @@ mod tests {
         let alloc = Alloc::with_capacity(1);
 
         let mut signal = alloc.silence();
-        signal.copy_from_slice(&[1.; LEN]);
+        signal.copy_from_slice(&[1.; BUFFER_SIZE]);
         let mut buffer = AudioBuffer::new(signal);
         buffer.mix(2, ChannelInterpretation::Speakers);
 
         let mut signal2 = alloc.silence();
-        signal2.copy_from_slice(&[2.; LEN]);
+        signal2.copy_from_slice(&[2.; BUFFER_SIZE]);
         let buffer2 = AudioBuffer::new(signal2);
 
         buffer.add(&buffer2, ChannelInterpretation::Discrete);
 
         assert_eq!(buffer.number_of_channels(), 2);
-        assert_float_eq!(&buffer.channel_data(0)[..], &[3.; LEN][..], ulps_all <= 0);
-        assert_float_eq!(&buffer.channel_data(1)[..], &[1.; LEN][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(0)[..], &[3.; BUFFER_SIZE][..], ulps_all <= 0);
+        assert_float_eq!(&buffer.channel_data(1)[..], &[1.; BUFFER_SIZE][..], ulps_all <= 0);
     }
 }
