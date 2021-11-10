@@ -15,12 +15,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # checkout repo, install dependencies
     - uses: actions/checkout@v2
     - name: install alsa (sound driver)
       run: sudo apt-get update && sudo apt-get install libasound2-dev
     - name: update rustc
       run: rustup update
+
+    # check it builds
     - name: Build
       run: cargo build --verbose
+
+    # run tests
     - name: Run tests
       run: cargo test --verbose
+
+    # make sure all code has been formatted with rustfmt
+    - run: rustup component add rustfmt
+    - name: check rustfmt
+      run: cargo fmt -- --check --color always
+
+    # run clippy to verify we have no warnings
+    - run: rustup component add clippy
+    - name: cargo clippy
+      run: cargo clippy --all-targets -- -D warnings
