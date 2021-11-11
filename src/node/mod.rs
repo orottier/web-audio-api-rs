@@ -10,6 +10,8 @@ use crate::{BufferDepletedError, SampleRate};
 
 use lazy_static::lazy_static;
 
+mod iir_filter;
+pub use iir_filter::*;
 mod biquad_filter;
 pub use biquad_filter::*;
 mod oscillator;

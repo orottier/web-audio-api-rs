@@ -99,7 +99,7 @@ impl PeriodicWave {
     ///    use web_audio_api::context::{AudioContext, AsBaseAudioContext};
     ///    use web_audio_api::node::{PeriodicWave, PeriodicWaveOptions};
     ///
-    ///    let context = AudioContext::new();
+    ///    let context = AudioContext::new(None);
     ///
     ///    let options = PeriodicWaveOptions {
     ///    real: Some(vec![0.,1.,1.]),
@@ -799,15 +799,14 @@ impl OscillatorRenderer {
             real,
             imag,
             disable_normalization,
-        } = if let Some(p_w) = periodic_wave {
-            p_w
-        } else {
-            PeriodicWave {
+        } = periodic_wave.map_or_else(
+            || PeriodicWave {
                 real: vec![0., 1.],
                 imag: vec![0., 0.],
                 disable_normalization: false,
-            }
-        };
+            },
+            |p_w| p_w,
+        );
 
         let cplxs: Vec<(f32, f32)> = real.iter().zip(&imag).map(|(&r, &i)| (r, i)).collect();
 
@@ -1264,7 +1263,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_real_is_too_short() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0.]),
@@ -1278,7 +1277,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_only_real_is_defined_and_too_short() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0.]),
@@ -1292,7 +1291,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_imag_is_too_short() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0., 0., 0.]),
@@ -1306,7 +1305,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_only_imag_is_defined_and_too_short() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: None,
@@ -1320,7 +1319,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_imag_and_real_not_equal_length() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0., 0., 0.]),
@@ -1334,7 +1333,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_imag_and_real_are_more_than_8192_comps() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0.; 8193]),
@@ -1348,7 +1347,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_real_is_more_than_8192_comps() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0.; 8193]),
@@ -1362,7 +1361,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_imag_is_more_than_8192_comps() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: None,
@@ -1375,7 +1374,7 @@ mod tests {
 
     #[test]
     fn assert_default_periodic_options() {
-        let context = AudioContext::new();
+        let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: None,
@@ -1532,12 +1531,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 
@@ -1558,12 +1557,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 
@@ -1584,12 +1583,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 
@@ -1610,12 +1609,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 
@@ -1649,12 +1648,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 
@@ -1688,12 +1687,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 0
+            ulps_all <= 40
         );
     }
 }

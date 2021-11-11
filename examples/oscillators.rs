@@ -8,7 +8,7 @@ fn main() {
     env_logger::init();
 
     // Create an audio context where all audio nodes lives
-    let context = AudioContext::new();
+    let context = AudioContext::new(None);
 
     // Create an oscillator node with sine (default) type
     let mut osc = context.create_oscillator();
