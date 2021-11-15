@@ -348,7 +348,7 @@ impl Iterator for Microphone {
             Err(TryRecvError::Empty) => {
                 // frame not received in time, emit silence
                 log::debug!("input frame delayed");
-                AudioBuffer::new(self.channels, BUFFER_SIZE as usize, self.sample_rate)
+                AudioBuffer::new(self.channels, BUFFER_SIZE, self.sample_rate)
             }
             Err(TryRecvError::Disconnected) => {
                 // MicrophoneRender has stopped, close stream
@@ -527,7 +527,7 @@ impl Iterator for WavDecoder {
         for (i, res) in self
             .stream
             .by_ref()
-            .take((self.channels * crate::BUFFER_SIZE) as usize)
+            .take(self.channels as usize * BUFFER_SIZE)
             .enumerate()
         {
             match res {

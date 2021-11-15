@@ -14,7 +14,7 @@ use std::rc::Rc;
 use crate::buffer::ChannelInterpretation;
 
 /// size of a buffer, 128 samples per spec
-const BUFFER_SIZE: usize = crate::BUFFER_SIZE as usize;
+use crate::BUFFER_SIZE;
 use crate::MAX_CHANNELS;
 
 pub(crate) struct Alloc {

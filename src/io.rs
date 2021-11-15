@@ -139,35 +139,37 @@ impl StreamConfigsBuilder {
     ///
     /// * `options` - options contains latency hint information from which buffer size is derived
     fn get_buffer_size(&self, options: Option<&AudioContextOptions>) -> u32 {
+        #[allow(clippy::cast_possible_truncation)]
+        let buffer_size = BUFFER_SIZE as u32;
         let default_buffer_size = match self.supported.buffer_size() {
-            SupportedBufferSize::Range { min, .. } => crate::BUFFER_SIZE.max(*min),
-            SupportedBufferSize::Unknown => BUFFER_SIZE,
+            SupportedBufferSize::Range { min, .. } => buffer_size.max(*min),
+            SupportedBufferSize::Unknown => buffer_size,
         };
 
         match options {
             Some(opts) => match opts.latency_hint.as_ref() {
-                None => (default_buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE,
+                None => (default_buffer_size + buffer_size - 1) / buffer_size * buffer_size,
                 Some(l) => {
                     return match l {
                         LatencyHint::Interactive => default_buffer_size,
                         LatencyHint::Balanced => match self.supported.buffer_size() {
                             SupportedBufferSize::Range { max, .. } => {
                                 let b = (default_buffer_size * 2).min(*max);
-                                (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE
+                                (b + buffer_size - 1) / buffer_size * buffer_size
                             }
                             SupportedBufferSize::Unknown => {
                                 let b = default_buffer_size * 2;
-                                (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE
+                                (b + buffer_size - 1) / buffer_size * buffer_size
                             }
                         },
                         LatencyHint::Playback => match self.supported.buffer_size() {
                             SupportedBufferSize::Range { max, .. } => {
                                 let b = (default_buffer_size * 4).min(*max);
-                                (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE
+                                (b + buffer_size - 1) / buffer_size * buffer_size
                             }
                             SupportedBufferSize::Unknown => {
                                 let b = default_buffer_size * 4;
-                                (b + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE
+                                (b + buffer_size - 1) / buffer_size * buffer_size
                             }
                         },
                         // b is always positive
@@ -176,12 +178,12 @@ impl StreamConfigsBuilder {
                         #[allow(clippy::cast_possible_truncation)]
                         LatencyHint::Specific(t) => {
                             let b = t * f64::from(self.prefered.sample_rate.0);
-                            (b as u32 + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE
+                            (b as u32 + buffer_size - 1) / buffer_size * buffer_size
                         }
                     };
                 }
             },
-            None => (default_buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE,
+            None => (default_buffer_size + buffer_size - 1) / buffer_size * buffer_size,
         }
     }
 
@@ -455,16 +457,18 @@ pub fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let default_config: StreamConfig = supported_config.clone().into();
 
     // determine best buffer size. Spec requires BUFFER_SIZE, but that might not be available
-    let mut buffer_size = match supported_config.buffer_size() {
-        SupportedBufferSize::Range { min, .. } => crate::BUFFER_SIZE.max(*min),
-        SupportedBufferSize::Unknown => BUFFER_SIZE,
+    #[allow(clippy::cast_possible_truncation)]
+    let buffer_size = BUFFER_SIZE as u32;
+    let mut input_buffer_size = match supported_config.buffer_size() {
+        SupportedBufferSize::Range { min, .. } => buffer_size.max(*min),
+        SupportedBufferSize::Unknown => buffer_size,
     };
     // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
     // the desired number of frames.
-    buffer_size = (buffer_size + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+    input_buffer_size = (input_buffer_size + buffer_size - 1) / buffer_size * buffer_size;
 
     let mut config: StreamConfig = supported_config.into();
-    config.buffer_size = cpal::BufferSize::Fixed(buffer_size);
+    config.buffer_size = cpal::BufferSize::Fixed(input_buffer_size);
     let sample_rate = SampleRate(config.sample_rate.0);
     let channels = config.channels as usize;
 
