@@ -12,7 +12,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use crate::message::ControlMessage;
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::{SampleRate, BUFFER_SIZE_U32};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -139,8 +139,7 @@ impl StreamConfigsBuilder {
     ///
     /// * `options` - options contains latency hint information from which buffer size is derived
     fn get_buffer_size(&self, options: Option<&AudioContextOptions>) -> u32 {
-        #[allow(clippy::cast_possible_truncation)]
-        let buffer_size = BUFFER_SIZE as u32;
+        let buffer_size = BUFFER_SIZE_U32;
         let default_buffer_size = match self.supported.buffer_size() {
             SupportedBufferSize::Range { min, .. } => buffer_size.max(*min),
             SupportedBufferSize::Unknown => buffer_size,
@@ -457,8 +456,7 @@ pub fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let default_config: StreamConfig = supported_config.clone().into();
 
     // determine best buffer size. Spec requires BUFFER_SIZE, but that might not be available
-    #[allow(clippy::cast_possible_truncation)]
-    let buffer_size = BUFFER_SIZE as u32;
+    let buffer_size = BUFFER_SIZE_U32;
     let mut input_buffer_size = match supported_config.buffer_size() {
         SupportedBufferSize::Range { min, .. } => buffer_size.max(*min),
         SupportedBufferSize::Unknown => buffer_size,

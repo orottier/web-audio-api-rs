@@ -39,8 +39,14 @@
 //! //std::thread::sleep(std::time::Duration::from_secs(4));
 //! ```
 
+/// Render quantum size as u32 (audio graph is rendered in blocks of this size)
+///
+/// derive BUFFER_SIZE from this const to prevent downcasting from `usize` to `u32`
+/// (cf. discussion [https://github.com/orottier/web-audio-api-rs/pull/52#issuecomment-969156219])
+pub const BUFFER_SIZE_U32: u32 = 128;
+
 /// Render quantum size (audio graph is rendered in blocks of this size)
-pub const BUFFER_SIZE: usize = 128;
+pub const BUFFER_SIZE: usize = BUFFER_SIZE_U32 as usize;
 
 /// Maximum number of channels for audio processing
 pub const MAX_CHANNELS: usize = 32;
