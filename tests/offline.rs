@@ -10,10 +10,7 @@ use web_audio_api::{SampleRate, BUFFER_SIZE};
 fn test_offline_render() {
     const LENGTH: usize = 555;
 
-    // not a multiple of BUFFER_SIZE
-    // compute modulo before to avoid clippy::assertions-on-constants errors
-    let modulo = LENGTH % BUFFER_SIZE;
-    assert!(modulo != 0);
+    assert_ne!(LENGTH % BUFFER_SIZE, 0);
 
     let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
     assert_eq!(context.length(), LENGTH);
