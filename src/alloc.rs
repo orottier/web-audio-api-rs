@@ -683,7 +683,7 @@ mod tests {
             let mut signal = alloc.silence();
             signal.copy_from_slice(&[1.; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(signal.clone());
+            let mut buffer = AudioBuffer::new(signal);
 
             // make sure 1 -> 1 does nothing
             buffer.mix(1, ChannelInterpretation::Speakers);
@@ -715,7 +715,7 @@ mod tests {
             let mut signal = alloc.silence();
             signal.copy_from_slice(&[1.; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(signal.clone());
+            let mut buffer = AudioBuffer::new(signal);
 
             buffer.mix(4, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 4);
@@ -748,7 +748,7 @@ mod tests {
             let mut signal = alloc.silence();
             signal.copy_from_slice(&[1.; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(signal.clone());
+            let mut buffer = AudioBuffer::new(signal);
 
             buffer.mix(6, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 6);
@@ -793,8 +793,8 @@ mod tests {
             let mut right_signal = alloc.silence();
             right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal.clone());
-            buffer.channels.push(right_signal.clone());
+            let mut buffer = AudioBuffer::new(left_signal);
+            buffer.channels.push(right_signal);
 
             assert_eq!(buffer.number_of_channels(), 2);
             assert_float_eq!(
@@ -839,8 +839,8 @@ mod tests {
             let mut right_signal = alloc.silence();
             right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal.clone());
-            buffer.channels.push(right_signal.clone());
+            let mut buffer = AudioBuffer::new(left_signal);
+            buffer.channels.push(right_signal);
 
             assert_eq!(buffer.number_of_channels(), 2);
             assert_float_eq!(
@@ -899,10 +899,10 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal.clone());
-            buffer.channels.push(right_signal.clone());
-            buffer.channels.push(s_left_signal.clone());
-            buffer.channels.push(s_right_signal.clone());
+            let mut buffer = AudioBuffer::new(left_signal);
+            buffer.channels.push(right_signal);
+            buffer.channels.push(s_left_signal);
+            buffer.channels.push(s_right_signal);
 
             assert_eq!(buffer.number_of_channels(), 4);
             assert_float_eq!(
@@ -972,8 +972,8 @@ mod tests {
             let mut right_signal = alloc.silence();
             right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal.clone());
-            buffer.channels.push(right_signal.clone());
+            let mut buffer = AudioBuffer::new(left_signal);
+            buffer.channels.push(right_signal);
 
             assert_eq!(buffer.number_of_channels(), 2);
             assert_float_eq!(
@@ -1007,10 +1007,10 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[0.25; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal.clone());
-            buffer.channels.push(right_signal.clone());
-            buffer.channels.push(s_left_signal.clone());
-            buffer.channels.push(s_right_signal.clone());
+            let mut buffer = AudioBuffer::new(left_signal);
+            buffer.channels.push(right_signal);
+            buffer.channels.push(s_left_signal);
+            buffer.channels.push(s_right_signal);
 
             assert_eq!(buffer.number_of_channels(), 4);
             assert_float_eq!(
@@ -1058,12 +1058,12 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal.clone());
-            buffer.channels.push(right_signal.clone());
-            buffer.channels.push(center_signal.clone());
-            buffer.channels.push(low_freq_signal.clone());
-            buffer.channels.push(s_left_signal.clone());
-            buffer.channels.push(s_right_signal.clone());
+            let mut buffer = AudioBuffer::new(left_signal);
+            buffer.channels.push(right_signal);
+            buffer.channels.push(center_signal);
+            buffer.channels.push(low_freq_signal);
+            buffer.channels.push(s_left_signal);
+            buffer.channels.push(s_right_signal);
 
             assert_eq!(buffer.number_of_channels(), 6);
             assert_float_eq!(
@@ -1119,10 +1119,10 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal.clone());
-            buffer.channels.push(right_signal.clone());
-            buffer.channels.push(s_left_signal.clone());
-            buffer.channels.push(s_right_signal.clone());
+            let mut buffer = AudioBuffer::new(left_signal);
+            buffer.channels.push(right_signal);
+            buffer.channels.push(s_left_signal);
+            buffer.channels.push(s_right_signal);
 
             assert_eq!(buffer.number_of_channels(), 4);
             assert_float_eq!(
@@ -1175,12 +1175,12 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal.clone());
-            buffer.channels.push(right_signal.clone());
-            buffer.channels.push(center_signal.clone());
-            buffer.channels.push(low_freq_signal.clone());
-            buffer.channels.push(s_left_signal.clone());
-            buffer.channels.push(s_right_signal.clone());
+            let mut buffer = AudioBuffer::new(left_signal);
+            buffer.channels.push(right_signal);
+            buffer.channels.push(center_signal);
+            buffer.channels.push(low_freq_signal);
+            buffer.channels.push(s_left_signal);
+            buffer.channels.push(s_right_signal);
 
             assert_eq!(buffer.number_of_channels(), 6);
             assert_float_eq!(
@@ -1246,12 +1246,12 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal.clone());
-            buffer.channels.push(right_signal.clone());
-            buffer.channels.push(center_signal.clone());
-            buffer.channels.push(low_freq_signal.clone());
-            buffer.channels.push(s_left_signal.clone());
-            buffer.channels.push(s_right_signal.clone());
+            let mut buffer = AudioBuffer::new(left_signal);
+            buffer.channels.push(right_signal);
+            buffer.channels.push(center_signal);
+            buffer.channels.push(low_freq_signal);
+            buffer.channels.push(s_left_signal);
+            buffer.channels.push(s_right_signal);
 
             assert_eq!(buffer.number_of_channels(), 6);
             assert_float_eq!(
