@@ -88,11 +88,11 @@ impl RenderThread {
 
     pub fn render_audiobuffer(&mut self, length: usize) -> crate::buffer::AudioBuffer {
         // assert input was properly sized
-        debug_assert_eq!(length % BUFFER_SIZE as usize, 0);
+        debug_assert_eq!(length % BUFFER_SIZE, 0);
 
         let mut buf = crate::buffer::AudioBuffer::new(self.channels, 0, self.sample_rate);
 
-        for _ in 0..length / BUFFER_SIZE as usize {
+        for _ in 0..length / BUFFER_SIZE {
             // handle addition/removal of nodes/edges
             self.handle_control_messages();
 
@@ -118,7 +118,7 @@ impl RenderThread {
         // There may be audio frames left over from the previous render call,
         // if the cpal buffer size did not align with our internal BUFFER_SIZE
         if let Some((offset, prev_rendered)) = self.buffer_offset.take() {
-            let leftover_len = (BUFFER_SIZE as usize - offset) * self.channels;
+            let leftover_len = (BUFFER_SIZE - offset) * self.channels;
             // split the leftover frames slice, to fit in `buffer`
             let (first, next) = buffer.split_at_mut(leftover_len.min(buffer.len()));
 
@@ -144,7 +144,7 @@ impl RenderThread {
 
         // The audio graph is rendered in chunks of BUFFER_SIZE frames.  But some audio backends
         // may not be able to emit chunks of this size.
-        let chunk_size = BUFFER_SIZE as usize * self.channels as usize;
+        let chunk_size = BUFFER_SIZE * self.channels as usize;
 
         for data in buffer.chunks_mut(chunk_size) {
             // handle addition/removal of nodes/edges
@@ -172,7 +172,7 @@ impl RenderThread {
             if data.len() != chunk_size {
                 // this is the last chunk, and it contained less than BUFFER_SIZE samples
                 let channel_offset = data.len() / self.channels;
-                debug_assert!(channel_offset < BUFFER_SIZE as usize);
+                debug_assert!(channel_offset < BUFFER_SIZE);
                 self.buffer_offset = Some((channel_offset, rendered.clone()));
             }
         }
