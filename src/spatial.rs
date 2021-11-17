@@ -357,12 +357,12 @@ mod tests {
     fn azimuth_elevation_vertical() {
         let pos = [0., -10., 0.];
         let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
-        assert_float_eq!(azimuth, 0., ulps <= 1);
+        assert_float_eq!(azimuth, 0., abs <= 0.001);
         assert_float_eq!(elevation, -90., abs <= 0.001);
 
         let pos = [0., 10., 0.];
         let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
-        assert_float_eq!(azimuth, 0., ulps <= 1);
+        assert_float_eq!(azimuth, 0., abs <= 0.001);
         assert_float_eq!(elevation, 90., abs <= 0.001);
     }
 }
