@@ -33,12 +33,12 @@ fn test_offline_render() {
     assert_float_eq!(
         output.channel_data(0).as_slice(),
         &[-2.; LENGTH][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
     assert_float_eq!(
         output.channel_data(1).as_slice(),
         &[-2.; LENGTH][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
 }
 
@@ -184,6 +184,6 @@ fn test_cycle() {
     assert_float_eq!(
         output.channel_data(0).as_slice(),
         &[2.; BUFFER_SIZE as usize][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
 }

@@ -547,7 +547,7 @@ mod test {
         iir.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
 
         let ref_arr = [0., niquyst];
-        assert_float_eq!(frequency_hz, ref_arr, ulps_all <= 0);
+        assert_float_eq!(frequency_hz, ref_arr, abs_all <= 0.);
     }
 
     #[test]
@@ -590,7 +590,7 @@ mod test {
 
         iir.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
 
-        assert_float_eq!(mag_response, ref_mag, ulps_all <= 0);
+        assert_float_eq!(mag_response, ref_mag, abs_all <= 0.);
     }
 
     #[test]
@@ -647,6 +647,6 @@ mod test {
 
         let min_len = min(data_ch.len(), ref_data_ch.len());
 
-        assert_float_eq!(data_ch[0..min_len], ref_data_ch[0..min_len], ulps_all <= 0);
+        assert_float_eq!(data_ch[0..min_len], ref_data_ch[0..min_len], abs_all <= 0.);
     }
 }

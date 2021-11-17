@@ -1299,6 +1299,6 @@ mod test {
         );
 
         let ref_arr = [0., niquyst];
-        assert_float_eq!(frequency_hz, ref_arr, ulps_all <= 0);
+        assert_float_eq!(frequency_hz, ref_arr, abs_all <= 0.);
     }
 }

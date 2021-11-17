@@ -1374,8 +1374,8 @@ mod tests {
         let periodic_wave = PeriodicWave::new(&context, Some(options));
 
         // the default has to be a sine signal
-        assert_float_eq!(periodic_wave.real, vec![0., 1.], ulps_all <= 0);
-        assert_float_eq!(periodic_wave.imag, vec![0., 0.], ulps_all <= 0);
+        assert_float_eq!(periodic_wave.real, vec![0., 1.], abs_all <= 0.);
+        assert_float_eq!(periodic_wave.imag, vec![0., 0.], abs_all <= 0.);
         assert!(!periodic_wave.disable_normalization);
     }
 
@@ -1390,10 +1390,10 @@ mod tests {
         let osc = context.create_oscillator();
 
         let freq = osc.frequency.value();
-        assert_float_eq!(freq, default_freq, ulps_all <= 0);
+        assert_float_eq!(freq, default_freq, abs_all <= 0.);
 
         let det = osc.detune.value();
-        assert_float_eq!(det, default_det, ulps_all <= 0);
+        assert_float_eq!(det, default_det, abs_all <= 0.);
 
         let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
         assert_eq!(type_, default_type as u32);
@@ -1410,10 +1410,10 @@ mod tests {
         let osc = OscillatorNode::new(&context, None);
 
         let freq = osc.frequency.value();
-        assert_float_eq!(freq, default_freq, ulps_all <= 0);
+        assert_float_eq!(freq, default_freq, abs_all <= 0.);
 
         let det = osc.detune.value();
-        assert_float_eq!(det, default_det, ulps_all <= 0);
+        assert_float_eq!(det, default_det, abs_all <= 0.);
 
         let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
         assert_eq!(type_, default_type as u32);
@@ -1494,12 +1494,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &[0.; LENGTH][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &[0.; LENGTH][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
     }
 

@@ -298,7 +298,7 @@ mod test {
         context.start_rendering();
 
         let pan = panner.pan.value();
-        assert_float_eq!(pan, default_pan, ulps_all <= 0);
+        assert_float_eq!(pan, default_pan, abs_all <= 0.);
     }
 
     #[test]
@@ -311,13 +311,13 @@ mod test {
         let panner = StereoPannerNode::new(&context, None);
 
         let pan = panner.pan.value();
-        assert_float_eq!(pan, default_pan, ulps_all <= 0);
+        assert_float_eq!(pan, default_pan, abs_all <= 0.);
         panner.pan().set_value(new_pan);
 
         context.start_rendering();
 
         let pan = panner.pan.value();
-        assert_float_eq!(pan, new_pan, ulps_all <= 0);
+        assert_float_eq!(pan, new_pan, abs_all <= 0.);
     }
 
     #[test]
@@ -368,13 +368,13 @@ mod test {
         let panner = StereoPannerNode::new(&context, None);
 
         let pan = panner.pan.value();
-        assert_float_eq!(pan, default_pan, ulps_all <= 0);
+        assert_float_eq!(pan, default_pan, abs_all <= 0.);
         panner.pan().set_value(new_pan);
 
         context.start_rendering();
 
         let pan = panner.pan.value();
-        assert_float_eq!(pan, new_pan, ulps_all <= 0);
+        assert_float_eq!(pan, new_pan, abs_all <= 0.);
     }
 
     #[test]
@@ -388,12 +388,12 @@ mod test {
         let panner = StereoPannerNode::new(&context, None);
 
         let pan = panner.pan.value();
-        assert_float_eq!(pan, default_pan, ulps_all <= 0);
+        assert_float_eq!(pan, default_pan, abs_all <= 0.);
         panner.pan().set_value(new_pan);
 
         context.start_rendering();
 
         let pan = panner.pan.value();
-        assert_float_eq!(pan, new_pan, ulps_all <= 0);
+        assert_float_eq!(pan, new_pan, abs_all <= 0.);
     }
 }
