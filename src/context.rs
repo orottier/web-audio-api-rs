@@ -222,6 +222,7 @@ pub trait AsBaseAudioContext {
         dest: &AudioNodeId,
     ) -> (crate::param::AudioParam, AudioParamId) {
         let param = self.base().register(move |registration| {
+            println!("param registration {:?}", registration.id());
             let (node, proc) = crate::param::audio_param_pair(opts, registration);
 
             (node, Box::new(proc))
@@ -436,6 +437,7 @@ impl AudioContext {
 /// Unique identifier for audio nodes.
 ///
 /// Used for internal bookkeeping.
+#[derive(Debug)]
 pub struct AudioNodeId(u64);
 
 /// Unique identifier for audio params.

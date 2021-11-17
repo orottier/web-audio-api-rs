@@ -1,8 +1,6 @@
 use std::{thread, time};
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-use web_audio_api::node::{
-    AudioNode, AudioScheduledSourceNode, OscillatorType, PeriodicWaveOptions,
-};
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn trigger_sine(audio_context: &AudioContext) {
     let osc = audio_context.create_oscillator();
@@ -14,7 +12,7 @@ fn trigger_sine(audio_context: &AudioContext) {
 }
 
 fn main() {
-    let audio_context = AudioContext::new();
+    let audio_context = AudioContext::new(None);
 
     // mimic setInterval
     loop {

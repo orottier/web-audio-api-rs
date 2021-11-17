@@ -215,7 +215,7 @@ impl Node {
     }
 
     /// Determine if this node is done playing and can be removed from the audio graph
-    fn can_free(&self) -> bool {
+    fn can_free(&self, index: NodeIndex) -> bool {
         // Only drop when the Control thread has dropped its handle.
         // Otherwise the node can be reconnected/restarted etc.
         if !self.free_when_finished {
@@ -224,6 +224,7 @@ impl Node {
 
         // Drop, if the node has no outputs connected
         if !self.has_outputs_connected {
+            println!("drop {:?} w/o outputs", index);
             return true;
         }
 
@@ -308,6 +309,11 @@ impl Graph {
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
         self.edges.retain(|&(s, _d)| s.0 != source);
+        self.ordered.clear(); // void current ordering
+    }
+
+    pub fn remove_all_edges(&mut self, node: NodeIndex) {
+        self.edges.retain(|&(s, d)| s.0 != node && d.0 != node);
         self.ordered.clear(); // void current ordering
     }
 
@@ -400,6 +406,7 @@ impl Graph {
     }
 
     pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer {
+        println!("render");
         if self.ordered.is_empty() {
             self.order_nodes();
         }
@@ -415,28 +422,45 @@ impl Graph {
         ordered.iter().for_each(|index| {
             // remove node from map, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
+
             // for lifecycle management, check if any inputs are present
-            let mut has_inputs_connected = false;
+            node.has_inputs_connected = false;
+            // and check if any outputs are present
+            // (index = 0 means this is the destination node)
+            node.has_outputs_connected = index.0 == 0;
+
             // mix all inputs together
             node.inputs.iter_mut().for_each(|i| i.make_silent());
 
             edges
                 .iter()
-                .filter_map(move |(s, d)| {
-                    // audio params are connected to the 'hidden' u32::MAX input, ignore them
-                    if d.0 == *index && d.1 != u32::MAX {
-                        Some((s, d.1))
-                    } else {
-                        None
-                    }
-                })
+                .filter_map(
+                    move |(s, d)| {
+                        if d.0 == *index {
+                            Some((s, d.1))
+                        } else {
+                            None
+                        }
+                    },
+                )
                 .for_each(|(&(node_index, output), input)| {
-                    let input_node = nodes.get(&node_index).unwrap();
+                    println!(
+                        "node {:?} @ {} is an input for node {:?} @ {}",
+                        node_index, output, index, input
+                    );
+                    let input_node = nodes.get_mut(&node_index).unwrap();
+                    input_node.has_outputs_connected = true;
+                    let input_node = &*input_node; // reborrow as immutable
+
+                    // audio params are connected to the 'hidden' u32::MAX input, ignore them here
+                    if input == u32::MAX {
+                        println!("this input is an audioparam");
+                        return;
+                    }
+
                     let signal = &input_node.outputs[output as usize];
-
                     node.inputs[input as usize].add(signal, node.channel_config.interpretation());
-
-                    has_inputs_connected = true;
+                    node.has_inputs_connected = true;
                 });
 
             // up/down-mix to the desired channel count
@@ -457,8 +481,7 @@ impl Graph {
             node.process(params, timestamp, sample_rate);
 
             // check if the Node has reached end of lifecycle
-            node.has_inputs_connected = has_inputs_connected;
-            if node.can_free() {
+            if node.can_free(*index) {
                 drop_nodes.push(*index);
             }
 
@@ -468,11 +491,11 @@ impl Graph {
 
         for index in drop_nodes {
             println!("drop {}", index.0);
-            self.remove_edges_from(index);
+            self.remove_all_edges(index);
             self.nodes.remove(&index);
         }
 
-        println!("number of nodes active {}", self.nodes.len());
+        println!("number of nodes registered {}", self.nodes.len());
 
         // return buffer of destination node
         // assume only 1 output (todo)

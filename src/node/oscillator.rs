@@ -330,6 +330,7 @@ impl OscillatorNode {
     /// * `options` - The Oscillatoroptions
     pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<OscillatorOptions>) -> Self {
         context.base().register(move |registration| {
+            println!("osc registration {:?}", registration.id());
             // Cannot guarantee that the cast is safe for all possible sample rate
             // cast without loss of precision for usual sample rates
             #[allow(clippy::cast_precision_loss)]
