@@ -1531,12 +1531,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            ulps_all <= 64
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            ulps_all <= 64
         );
     }
 

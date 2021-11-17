@@ -40,7 +40,7 @@
 //! ```
 
 /// Render quantum size (audio graph is rendered in blocks of this size)
-pub const BUFFER_SIZE: u32 = 128;
+pub const BUFFER_SIZE: usize = 128;
 
 /// Maximum number of channels for audio processing
 pub const MAX_CHANNELS: usize = 32;

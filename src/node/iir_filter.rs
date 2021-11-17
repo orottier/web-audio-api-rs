@@ -647,6 +647,6 @@ mod test {
 
         let min_len = min(data_ch.len(), ref_data_ch.len());
 
-        assert_float_eq!(data_ch[0..min_len], ref_data_ch[0..min_len], ulps_all <= 0);
+        assert_float_eq!(data_ch[0..min_len], ref_data_ch[0..min_len], ulps_all <= 4);
     }
 }
