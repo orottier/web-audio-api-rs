@@ -151,8 +151,8 @@ fn test_listener() {
     let _ = context.start_rendering();
 
     let listener = context.listener();
-    assert_float_eq!(listener.position_y().value(), 2., ulps <= 0);
-    assert_float_eq!(listener.position_x().value(), 1., ulps <= 0);
+    assert_float_eq!(listener.position_y().value(), 2., abs <= 0.);
+    assert_float_eq!(listener.position_x().value(), 1., abs <= 0.);
 }
 
 #[test]

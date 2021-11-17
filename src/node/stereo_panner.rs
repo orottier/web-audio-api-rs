@@ -331,7 +331,7 @@ mod test {
         // 0.00001 corresponds to a reduction of -100 dB, so even if the gain is not exactly 0.
         // it should not be audible
         assert_float_eq!(i_l, 0.0, abs <= 0.00001);
-        assert_float_eq!(i_r, 2.0, ulps <= 0);
+        assert_float_eq!(i_r, 2.0, abs <= 0.);
     }
 
     #[test]
@@ -340,8 +340,8 @@ mod test {
 
         let (i_l, i_r) = StereoPannerRenderer::stereo_tick((1., 1.), pan);
 
-        assert_float_eq!(i_l, 2.0, ulps <= 0);
-        assert_float_eq!(i_r, 0.0, ulps <= 0);
+        assert_float_eq!(i_l, 2.0, abs <= 0.);
+        assert_float_eq!(i_r, 0.0, abs <= 0.);
     }
 
     #[test]
@@ -354,7 +354,7 @@ mod test {
         // to compute the panning gains
         // 0.1 corresponds to a difference of < 1 dB, so it should not be audible
         assert_float_eq!(i_l, 1.0, abs <= 0.1);
-        assert_float_eq!(i_r, 1.0, ulps <= 0);
+        assert_float_eq!(i_r, 1.0, abs <= 0.);
     }
 
     #[test]

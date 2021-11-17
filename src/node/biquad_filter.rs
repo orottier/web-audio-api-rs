@@ -1142,10 +1142,10 @@ mod test {
 
         context.start_rendering();
 
-        assert_float_eq!(biquad.q().value(), default_q, ulps <= 0);
-        assert_float_eq!(biquad.detune().value(), default_detune, ulps <= 0);
-        assert_float_eq!(biquad.gain().value(), default_gain, ulps <= 0);
-        assert_float_eq!(biquad.frequency().value(), default_freq, ulps <= 0);
+        assert_float_eq!(biquad.q().value(), default_q, abs <= 0.);
+        assert_float_eq!(biquad.detune().value(), default_detune, abs <= 0.);
+        assert_float_eq!(biquad.gain().value(), default_gain, abs <= 0.);
+        assert_float_eq!(biquad.frequency().value(), default_freq, abs <= 0.);
         assert_eq!(biquad.type_(), default_type);
     }
 
@@ -1170,10 +1170,10 @@ mod test {
 
         context.start_rendering();
 
-        assert_float_eq!(biquad.q().value(), default_q, ulps <= 0);
-        assert_float_eq!(biquad.detune().value(), default_detune, ulps <= 0);
-        assert_float_eq!(biquad.gain().value(), default_gain, ulps <= 0);
-        assert_float_eq!(biquad.frequency().value(), default_freq, ulps <= 0);
+        assert_float_eq!(biquad.q().value(), default_q, abs <= 0.);
+        assert_float_eq!(biquad.detune().value(), default_detune, abs <= 0.);
+        assert_float_eq!(biquad.gain().value(), default_gain, abs <= 0.);
+        assert_float_eq!(biquad.frequency().value(), default_freq, abs <= 0.);
         assert_eq!(biquad.type_(), default_type);
     }
 
@@ -1192,10 +1192,10 @@ mod test {
 
         context.start_rendering();
 
-        assert_float_eq!(biquad.q().value(), default_q, ulps <= 0);
-        assert_float_eq!(biquad.detune().value(), default_detune, ulps <= 0);
-        assert_float_eq!(biquad.gain().value(), default_gain, ulps <= 0);
-        assert_float_eq!(biquad.frequency().value(), default_freq, ulps <= 0);
+        assert_float_eq!(biquad.q().value(), default_q, abs <= 0.);
+        assert_float_eq!(biquad.detune().value(), default_detune, abs <= 0.);
+        assert_float_eq!(biquad.gain().value(), default_gain, abs <= 0.);
+        assert_float_eq!(biquad.frequency().value(), default_freq, abs <= 0.);
         assert_eq!(biquad.type_(), default_type);
     }
 
@@ -1221,10 +1221,10 @@ mod test {
 
         context.start_rendering();
 
-        assert_float_eq!(biquad.q().value(), q, ulps <= 0);
-        assert_float_eq!(biquad.detune().value(), detune, ulps <= 0);
-        assert_float_eq!(biquad.gain().value(), gain, ulps <= 0);
-        assert_float_eq!(biquad.frequency().value(), frequency, ulps <= 0);
+        assert_float_eq!(biquad.q().value(), q, abs <= 0.);
+        assert_float_eq!(biquad.detune().value(), detune, abs <= 0.);
+        assert_float_eq!(biquad.gain().value(), gain, abs <= 0.);
+        assert_float_eq!(biquad.frequency().value(), frequency, abs <= 0.);
         assert_eq!(biquad.type_(), type_);
     }
 
@@ -1247,10 +1247,10 @@ mod test {
 
         context.start_rendering();
 
-        assert_float_eq!(biquad.q().value(), q, ulps <= 0);
-        assert_float_eq!(biquad.detune().value(), detune, ulps <= 0);
-        assert_float_eq!(biquad.gain().value(), gain, ulps <= 0);
-        assert_float_eq!(biquad.frequency().value(), frequency, ulps <= 0);
+        assert_float_eq!(biquad.q().value(), q, abs <= 0.);
+        assert_float_eq!(biquad.detune().value(), detune, abs <= 0.);
+        assert_float_eq!(biquad.gain().value(), gain, abs <= 0.);
+        assert_float_eq!(biquad.frequency().value(), frequency, abs <= 0.);
         assert_eq!(biquad.type_(), type_);
     }
 
