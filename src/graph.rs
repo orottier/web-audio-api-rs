@@ -478,7 +478,7 @@ impl Graph {
         let ordered = &mut self.ordered;
         nodes.retain(|&index, node| {
             // check if the Node has reached end of lifecycle
-            if node.can_free(index) {
+            if node.can_free() {
                 edges.retain(|&(s, d)| s.0 != index && d.0 != index);
                 ordered.clear(); // void current ordering
                 false // do no retain
