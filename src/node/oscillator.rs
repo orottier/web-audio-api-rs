@@ -1520,12 +1520,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
     }
 
@@ -1546,12 +1546,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
     }
 
@@ -1572,12 +1572,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
     }
 
@@ -1598,12 +1598,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
     }
 
@@ -1637,12 +1637,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
     }
 
@@ -1676,12 +1676,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            ulps_all <= 40
+            abs_all <= 1.0e-10
         );
     }
 }
