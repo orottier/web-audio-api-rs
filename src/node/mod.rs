@@ -254,7 +254,7 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
             }
             ScheduledState::Ended => {
                 output.make_silent();
-                //self.ended = true;
+                self.finished = true;
                 return;
             }
         }
