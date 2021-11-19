@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 
 use crate::buffer::{ChannelConfig, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AudioContextRegistration, AudioNodeId, BaseAudioContext};
-use crate::control::{Controller, Scheduler};
+use crate::control::{Controller, ScheduledState, Scheduler};
 use crate::media::MediaStream;
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{BufferDepletedError, SampleRate};
@@ -246,9 +246,17 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
         let output = &mut outputs[0];
 
         // todo, sub-quantum start/stop
-        if !self.scheduler.is_active(timestamp) {
-            output.make_silent();
-            return;
+        match self.scheduler.state(timestamp) {
+            ScheduledState::Active => (),
+            ScheduledState::NotStarted => {
+                output.make_silent();
+                return;
+            }
+            ScheduledState::Ended => {
+                output.make_silent();
+                self.finished = true;
+                return;
+            }
         }
 
         match self.stream.next() {

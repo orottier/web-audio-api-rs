@@ -409,37 +409,49 @@ impl Graph {
         let edges = &self.edges;
         let nodes = &mut self.nodes;
 
-        // we will drop audio nodes if they are finished running
-        let mut drop_nodes = vec![];
-
+        // process every node, in topological sorted order
         ordered.iter().for_each(|index| {
-            // remove node from map, re-insert later (for borrowck reasons)
+            // remove node from graph, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
+
             // for lifecycle management, check if any inputs are present
-            let mut has_inputs_connected = false;
-            // mix all inputs together
+            node.has_inputs_connected = false;
+            // and check if any outputs are present
+            // (index = 0 means this is the destination node)
+            node.has_outputs_connected = index.0 == 0;
+
+            // clear current node's inputs
             node.inputs.iter_mut().for_each(|i| i.make_silent());
 
+            // iterate all edges, find the nodes connecting to the current node,
+            // fetch their inputs and sum those together.
             edges
                 .iter()
-                .filter_map(move |(s, d)| {
-                    // audio params are connected to the 'hidden' u32::MAX input, ignore them
-                    if d.0 == *index && d.1 != u32::MAX {
-                        Some((s, d.1))
-                    } else {
-                        None
-                    }
-                })
+                .filter_map(
+                    move |(s, d)| {
+                        if d.0 == *index {
+                            Some((s, d.1))
+                        } else {
+                            None
+                        }
+                    },
+                )
                 .for_each(|(&(node_index, output), input)| {
-                    let input_node = nodes.get(&node_index).unwrap();
+                    let input_node = nodes.get_mut(&node_index).unwrap();
+                    input_node.has_outputs_connected = true;
+                    let input_node = &*input_node; // reborrow as immutable
+
+                    // audio params are connected to the 'hidden' u32::MAX input, ignore them here
+                    if input == u32::MAX {
+                        return;
+                    }
+
                     let signal = &input_node.outputs[output as usize];
-
                     node.inputs[input as usize].add(signal, node.channel_config.interpretation());
-
-                    has_inputs_connected = true;
+                    node.has_inputs_connected = true;
                 });
 
-            // up/down-mix to the desired channel count
+            // up/down-mix the cumulative inputs to the desired channel count
             let mode = node.channel_config.count_mode();
             let count = node.channel_config.count();
             let interpretation = node.channel_config.interpretation();
@@ -453,23 +465,27 @@ impl Graph {
                 input_buf.mix(new_channels, interpretation);
             });
 
+            // let the current node process
             let params = AudioParamValues::from(&*nodes);
             node.process(params, timestamp, sample_rate);
-
-            // check if the Node has reached end of lifecycle
-            node.has_inputs_connected = has_inputs_connected;
-            if node.can_free() {
-                drop_nodes.push(*index);
-            }
 
             // re-insert node in graph
             nodes.insert(*index, node);
         });
 
-        for index in drop_nodes {
-            self.remove_edges_from(index);
-            self.nodes.remove(&index);
-        }
+        // audio graph cleanup of decomissioned nodes
+        let edges = &mut self.edges;
+        let ordered = &mut self.ordered;
+        nodes.retain(|&index, node| {
+            // check if the Node has reached end of lifecycle
+            if node.can_free() {
+                edges.retain(|&(s, d)| s.0 != index && d.0 != index);
+                ordered.clear(); // void current ordering
+                false // do no retain
+            } else {
+                true
+            }
+        });
 
         // return buffer of destination node
         // assume only 1 output (todo)

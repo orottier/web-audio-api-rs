@@ -436,6 +436,7 @@ impl AudioContext {
 /// Unique identifier for audio nodes.
 ///
 /// Used for internal bookkeeping.
+#[derive(Debug)]
 pub struct AudioNodeId(u64);
 
 /// Unique identifier for audio params.
