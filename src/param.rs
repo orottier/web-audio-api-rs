@@ -431,6 +431,7 @@ impl AudioParamProcessor {
                             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
                             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
                             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
+
                             if time == 0. {
                                 time = ts;
                             }
@@ -450,6 +451,9 @@ impl AudioParamProcessor {
                             } else {
                                 self.value = value;
 
+                                // no computation has been done here, it's a
+                                // strict unequality check
+                                #[allow(clippy::float_cmp)]
                                 if time != event.time {
                                     // store as last event with the applied time
                                     let mut event = self.events.pop().unwrap();
@@ -640,11 +644,11 @@ mod tests {
         };
         let (param, _render) = audio_param_pair(opts, context.mock_registration());
 
-        assert_eq!(param.value(), 0.);
         assert_eq!(param.automation_rate(), AutomationRate::A);
-        assert_eq!(param.default_value(), 0.);
-        assert_eq!(param.min_value(), -10.);
-        assert_eq!(param.max_value(), 10.);
+        assert_float_eq!(param.default_value(), 0., ulps_all <= 0);
+        assert_float_eq!(param.min_value(), -10., ulps_all <= 0);
+        assert_float_eq!(param.max_value(), 10., ulps_all <= 0);
+        assert_float_eq!(param.value(), 0., ulps_all <= 0);
     }
 
     #[test]
@@ -660,12 +664,12 @@ mod tests {
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
         param.set_value(2.);
-        assert_eq!(param.value(), 2.);
+        assert_float_eq!(param.value(), 2., ulps_all <= 0);
 
         let vs = render.tick(0., 1., 10);
 
         // current_value should not be overriden by intrisic value
-        assert_eq!(param.value(), 2.);
+        assert_float_eq!(param.value(), 2., ulps_all <= 0);
         assert_float_eq!(vs, &[2.; 10][..], ulps_all <= 0);
     }
 
