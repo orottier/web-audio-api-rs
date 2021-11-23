@@ -143,11 +143,18 @@ fn test_listener() {
         let listener2 = context.listener();
         listener1.position_x().set_value(1.);
         listener2.position_y().set_value(2.);
+
+        println!("listener1.x {}", listener1.position_x().value());
+        println!("listener1.y {}", listener1.position_y().value());
+        println!("listener2.x {}", listener2.position_x().value());
+        println!("listener2.y {}", listener2.position_y().value());
     }
 
     let _ = context.start_rendering();
 
     let listener = context.listener();
+    println!("listener.x {}", listener.position_x().value());
+    println!("listener.y {}", listener.position_y().value());
     assert_float_eq!(listener.position_y().value(), 2., ulps <= 0);
     assert_float_eq!(listener.position_x().value(), 1., ulps <= 0);
 }
