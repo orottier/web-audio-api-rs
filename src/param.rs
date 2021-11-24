@@ -78,6 +78,16 @@ pub struct AudioParam {
     sender: Sender<AutomationEvent>,
 }
 
+#[derive(Clone)]
+pub struct AudioParamRaw(
+    AutomationRate,
+    f32,
+    f32,
+    f32,
+    Arc<AtomicF64>,
+    Sender<AutomationEvent>,
+);
+
 impl AudioNode for AudioParam {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
@@ -203,17 +213,8 @@ impl AudioParam {
     }
 
     // helper function to detach from context (for borrow reasons)
-    pub(crate) fn into_raw_parts(
-        self,
-    ) -> (
-        AutomationRate,
-        f32,
-        f32,
-        f32,
-        Arc<AtomicF64>,
-        Sender<AutomationEvent>,
-    ) {
-        (
+    pub(crate) fn into_raw_parts(self) -> AudioParamRaw {
+        AudioParamRaw(
             self.automation_rate,
             self.default_value,
             self.min_value,
@@ -226,14 +227,7 @@ impl AudioParam {
     // helper function to attach to context (for borrow reasons)
     pub(crate) fn from_raw_parts(
         registration: AudioContextRegistration,
-        parts: (
-            AutomationRate,
-            f32,
-            f32,
-            f32,
-            Arc<AtomicF64>,
-            Sender<AutomationEvent>,
-        ),
+        parts: AudioParamRaw,
     ) -> Self {
         Self {
             registration,
