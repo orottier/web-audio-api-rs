@@ -33,7 +33,7 @@ impl Iterator for SlowMedia {
 
         self.value += 1.;
 
-        let channel_data = ChannelData::from(vec![self.value; BUFFER_SIZE as usize]);
+        let channel_data = ChannelData::from(vec![self.value; BUFFER_SIZE]);
         let buffer = AudioBuffer::from_channels(vec![channel_data], self.sample_rate);
 
         Some(Ok(buffer))
@@ -42,8 +42,7 @@ impl Iterator for SlowMedia {
 
 #[test]
 fn test_media_buffering() {
-    const LENGTH: usize = BUFFER_SIZE as usize;
-    let mut context = OfflineAudioContext::new(1, LENGTH, SampleRate(44_100));
+    let mut context = OfflineAudioContext::new(1, BUFFER_SIZE, SampleRate(44_100));
 
     let block = Arc::new(AtomicBool::new(true));
     let finished = Arc::new(AtomicBool::new(false));
@@ -67,7 +66,7 @@ fn test_media_buffering() {
     let output = context.start_rendering();
     assert_float_eq!(
         output.channel_data(0).as_slice(),
-        &[0.; LENGTH][..],
+        &[0.; BUFFER_SIZE][..],
         abs_all <= 0.
     );
 
@@ -78,7 +77,7 @@ fn test_media_buffering() {
     let output = context.start_rendering();
     assert_float_eq!(
         output.channel_data(0).as_slice(),
-        &[2.; LENGTH][..],
+        &[2.; BUFFER_SIZE][..],
         abs_all <= 0.
     );
 
@@ -86,7 +85,7 @@ fn test_media_buffering() {
     let output = context.start_rendering();
     assert_float_eq!(
         output.channel_data(0).as_slice(),
-        &[0.; LENGTH][..],
+        &[0.; BUFFER_SIZE][..],
         abs_all <= 0.
     );
 
@@ -97,7 +96,7 @@ fn test_media_buffering() {
     let output = context.start_rendering();
     assert_float_eq!(
         output.channel_data(0).as_slice(),
-        &[3.; LENGTH][..],
+        &[3.; BUFFER_SIZE][..],
         abs_all <= 0.
     );
 
@@ -109,28 +108,27 @@ fn test_media_buffering() {
     let output = context.start_rendering();
     assert_float_eq!(
         output.channel_data(0).as_slice(),
-        &[2.; LENGTH][..],
+        &[2.; BUFFER_SIZE][..],
         abs_all <= 0.
     );
     let output = context.start_rendering();
     assert_float_eq!(
         output.channel_data(0).as_slice(),
-        &[3.; LENGTH][..],
+        &[3.; BUFFER_SIZE][..],
         abs_all <= 0.
     );
     let output = context.start_rendering();
     assert_float_eq!(
         output.channel_data(0).as_slice(),
-        &[2.; LENGTH][..],
+        &[2.; BUFFER_SIZE][..],
         abs_all <= 0.
     );
 }
 
 #[test]
 fn test_media_seeking() {
-    const LENGTH: usize = BUFFER_SIZE as usize;
-    const SAMPLE_RATE: SampleRate = SampleRate(BUFFER_SIZE); // 1 render quantum = 1 second
-    let mut context = OfflineAudioContext::new(1, LENGTH, SAMPLE_RATE);
+    const SAMPLE_RATE: SampleRate = SampleRate(BUFFER_SIZE as u32); // 1 render quantum = 1 second
+    let mut context = OfflineAudioContext::new(1, BUFFER_SIZE, SAMPLE_RATE);
 
     let block = Arc::new(AtomicBool::new(true));
 
@@ -153,7 +151,7 @@ fn test_media_seeking() {
     let output = context.start_rendering();
     assert_float_eq!(
         output.channel_data(0).as_slice(),
-        &[0.; LENGTH][..],
+        &[0.; BUFFER_SIZE][..],
         abs_all <= 0.
     );
 
@@ -168,7 +166,7 @@ fn test_media_seeking() {
     let output = context.start_rendering();
     assert_float_eq!(
         output.channel_data(0).as_slice(),
-        &[4.; LENGTH][..],
+        &[4.; BUFFER_SIZE][..],
         abs_all <= 0.
     );
 }

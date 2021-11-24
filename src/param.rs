@@ -136,11 +136,7 @@ impl AudioProcessor for AudioParamProcessor {
     ) {
         let input = &inputs[0]; // single input mode
 
-        let intrinsic = self.tick(
-            timestamp,
-            1. / sample_rate.0 as f64,
-            crate::BUFFER_SIZE as _,
-        );
+        let intrinsic = self.tick(timestamp, 1. / sample_rate.0 as f64, BUFFER_SIZE);
         let mut buffer = inputs[0].clone(); // get new buf
         buffer.force_mono();
         buffer.channel_data_mut(0).copy_from_slice(intrinsic);
@@ -177,7 +173,7 @@ pub(crate) fn audio_param_pair(
         min_value: opts.min_value,
         max_value: opts.max_value,
         events: BinaryHeap::new(),
-        buffer: Vec::with_capacity(BUFFER_SIZE as usize),
+        buffer: Vec::with_capacity(BUFFER_SIZE),
     };
 
     (param, render)

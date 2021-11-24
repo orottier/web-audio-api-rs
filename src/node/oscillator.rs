@@ -14,7 +14,7 @@ use std::sync::Arc;
 use crate::alloc::ChannelData;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
-use crate::control::Scheduler;
+use crate::control::{ScheduledState, Scheduler};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
@@ -669,6 +669,8 @@ struct OscillatorRenderer {
     triangle: TriangleState,
     /// states required to build a custom oscillator
     periodic: PeriodicState,
+    /// marks if the node has stopped playing
+    ended: bool,
 }
 
 impl AudioProcessor for OscillatorRenderer {
@@ -687,9 +689,17 @@ impl AudioProcessor for OscillatorRenderer {
         output.force_mono();
 
         // todo, sub-quantum start/stop
-        if !self.scheduler.is_active(timestamp) {
-            output.make_silent();
-            return;
+        match self.scheduler.state(timestamp) {
+            ScheduledState::Active => (),
+            ScheduledState::NotStarted => {
+                output.make_silent();
+                return;
+            }
+            ScheduledState::Ended => {
+                output.make_silent();
+                self.ended = true;
+                return;
+            }
         }
 
         let freq_values = params.get(&self.frequency);
@@ -737,7 +747,7 @@ impl AudioProcessor for OscillatorRenderer {
     }
 
     fn tail_time(&self) -> bool {
-        true
+        !self.ended
     }
 }
 
@@ -874,6 +884,7 @@ impl OscillatorRenderer {
                     ref_freq: computed_freq,
                 },
             },
+            ended: false,
         }
     }
 
@@ -1520,12 +1531,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            abs_all <= 1.0e-10
+            abs_all <= 1.0e-4
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            abs_all <= 1.0e-10
+            abs_all <= 1.0e-4
         );
     }
 
@@ -1637,12 +1648,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            abs_all <= 1.0e-10
+            abs_all <= 1.0e-6
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            abs_all <= 1.0e-10
+            abs_all <= 1.0e-6
         );
     }
 
@@ -1676,12 +1687,12 @@ mod tests {
         assert_float_eq!(
             output.channel_data(0).as_slice(),
             &ref_sine.data[..],
-            abs_all <= 1.0e-10
+            abs_all <= 1.0e-6
         );
         assert_float_eq!(
             output.channel_data(1).as_slice(),
             &ref_sine.data[..],
-            abs_all <= 1.0e-10
+            abs_all <= 1.0e-6
         );
     }
 }

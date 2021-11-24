@@ -407,7 +407,7 @@ pub struct Resampler<I> {
     /// desired sample rate
     sample_rate: SampleRate,
     /// desired sample length
-    sample_len: u32,
+    sample_len: usize,
     /// input stream
     input: I,
     /// internal buffer
@@ -415,7 +415,7 @@ pub struct Resampler<I> {
 }
 
 impl<M: MediaStream> Resampler<M> {
-    pub fn new(sample_rate: SampleRate, sample_len: u32, input: M) -> Self {
+    pub fn new(sample_rate: SampleRate, sample_len: usize, input: M) -> Self {
         Self {
             sample_rate,
             sample_len,
@@ -441,13 +441,13 @@ impl<M: MediaStream> Iterator for Resampler<M> {
             Some(data) => data,
         };
 
-        while (buffer.sample_len() as u32) < self.sample_len {
+        while buffer.sample_len() < self.sample_len {
             // buffer is smaller than desired len
             match self.input.next() {
                 None => {
                     let padding = AudioBuffer::new(
                         buffer.number_of_channels(),
-                        self.sample_len as usize - buffer.sample_len(),
+                        self.sample_len - buffer.sample_len(),
                         self.sample_rate,
                     );
                     buffer.extend(&padding);
@@ -462,11 +462,11 @@ impl<M: MediaStream> Iterator for Resampler<M> {
             }
         }
 
-        if buffer.sample_len() as u32 == self.sample_len {
+        if buffer.sample_len() == self.sample_len {
             return Some(Ok(buffer));
         }
 
-        self.buffer = Some(buffer.split_off(self.sample_len as usize));
+        self.buffer = Some(buffer.split_off(self.sample_len));
 
         Some(Ok(buffer))
     }

@@ -436,6 +436,7 @@ impl AudioContext {
 /// Unique identifier for audio nodes.
 ///
 /// Used for internal bookkeeping.
+#[derive(Debug)]
 pub struct AudioNodeId(u64);
 
 /// Unique identifier for audio params.
@@ -724,9 +725,7 @@ impl OfflineAudioContext {
     pub fn start_rendering(&mut self) -> AudioBuffer {
         // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
         // the desired number of frames.
-        let cast_buffer_size = BUFFER_SIZE as usize;
-        let buffer_size =
-            (self.length + cast_buffer_size - 1) / cast_buffer_size * cast_buffer_size;
+        let buffer_size = (self.length + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
 
         let mut buf = self.renderer.render_audiobuffer(buffer_size);
         let _split = buf.split_off(self.length);

@@ -58,7 +58,7 @@ impl AudioBufferSourceNode {
             // unwrap_or_default buffer
             let buffer = options
                 .buffer
-                .unwrap_or_else(|| AudioBuffer::new(1, BUFFER_SIZE as usize, SampleRate(44_100)));
+                .unwrap_or_else(|| AudioBuffer::new(1, BUFFER_SIZE, SampleRate(44_100)));
 
             // wrap input in resampler
             let resampler = Resampler::new(

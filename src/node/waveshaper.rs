@@ -363,14 +363,14 @@ impl WaveShaperRenderer {
         Self {
             sample_rate,
             oversample,
-            curve,
-            curve_set,
+            channels_x2,
+            channels_x4,
             upsampler_x2,
             upsampler_x4,
             downsampler_x2,
             downsampler_x4,
-            channels_x2,
-            channels_x4,
+            curve,
+            curve_set,
             receiver,
         }
     }
