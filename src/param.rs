@@ -309,38 +309,10 @@ impl AudioParamProcessor {
         }
     }
 
-    // @note - Maybe we should maintain the event list in the control thread as we
-    //  probably don't want to do all this in the audio thread (e.g. Blink does that using a mutex)
-    fn insert_event(&mut self, event: AutomationEvent) {
-        // if no event in the timeline and event_type is `LinearRampToValueAtTime`
-        // or `ExponentialRampToValue` at time, we must insert a `SetValueAtTime`
-        // with intrisic value and calling time.
-        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
-        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
-        if self.events.is_empty()
-            && (event.event_type == AutomationType::LinearRampToValueAtTime
-                || event.event_type == AutomationType::ExponentialRampToValueAtTime)
-        {
-            let set_value_event = AutomationEvent {
-                event_type: AutomationType::SetValueAtTime,
-                value: self.value,
-                // make sure the event is applied before any other event
-                // time will be replaced by block timestamp durin event processing
-                time: 0.,
-            };
-
-            self.events.push(set_value_event);
-        }
-
-        // @todo - many checks need to be done for setValueCurveAtTime events
-
-        self.events.push(event);
-    }
-
     fn tick(&mut self, ts: f64, dt: f64, count: usize) -> &[f32] {
         // println!("> tick - ts: {}, dt: {}, count: {}", ts, dt, count);
         // handle incoming automation events in sorted queue
-        let events: Vec<AutomationEvent> = self.receiver.try_iter().collect();
+        // let events: Vec<AutomationEvent> = self.receiver.try_iter().collect();
 
         // cf. https://www.w3.org/TR/webaudio/#computation-of-value
         // 1. paramIntrinsicValue will be calculated at each time, which is either the
@@ -350,7 +322,7 @@ impl AudioParamProcessor {
         // then the paramIntrinsicValue value will remain unchanged and stay at its
         // previous value until either the value attribute is directly set, or
         // automation events are added for the time range.
-        for event in events {
+        for event in self.receiver.try_iter() {
             // param intrisic value must be updated from the set_value call
             // but we don't want to insert these events in the queue
             if event.event_type == AutomationType::SetValue {
@@ -358,7 +330,40 @@ impl AudioParamProcessor {
                 self.value = current_value;
             }
 
-            self.insert_event(event);
+            // @note - should probably live in its own method just for clarity but
+            // can't get rid of this error:
+            //    for event in self.receiver.try_iter() {
+            //                 ------------------------
+            //                 |
+            //                 immutable borrow occurs here
+            //                 immutable borrow later used here
+            //
+            //        self.insert_event(event);
+            //            ^^^^^^^^^^^^^^^^^^^^^^^^ mutable borrow occurs here
+            //
+            // if no event in the timeline and event_type is `LinearRampToValueAtTime`
+            // or `ExponentialRampToValue` at time, we must insert a `SetValueAtTime`
+            // with intrisic value and calling time.
+            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
+            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
+            if self.events.is_empty()
+                && (event.event_type == AutomationType::LinearRampToValueAtTime
+                    || event.event_type == AutomationType::ExponentialRampToValueAtTime)
+            {
+                let set_value_event = AutomationEvent {
+                    event_type: AutomationType::SetValueAtTime,
+                    value: self.value,
+                    // make sure the event is applied before any other event
+                    // time will be replaced by block timestamp durin event processing
+                    time: 0.,
+                };
+
+                self.events.push(set_value_event);
+            }
+
+            // @todo - many checks need to be done for setValueCurveAtTime events
+
+            self.events.push(event);
         }
 
         // 2. Set [[current value]] to the value of paramIntrinsicValue at the
@@ -398,8 +403,7 @@ impl AudioParamProcessor {
                 }
                 Some(event) => {
                     match event.event_type {
-                        AutomationType::SetValue |
-                        AutomationType::SetValueAtTime => {
+                        AutomationType::SetValue | AutomationType::SetValueAtTime => {
                             let value = event.value;
                             let mut time = event.time;
 
