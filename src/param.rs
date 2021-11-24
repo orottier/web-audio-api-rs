@@ -273,20 +273,16 @@ impl AudioProcessor for AudioParamProcessor {
         timestamp: f64,
         sample_rate: SampleRate,
     ) {
-        let input = &inputs[0]; // single input mode
-
         let period = 1. / sample_rate.0 as f64;
-        let param_intrisic_value = self.tick(timestamp, period, BUFFER_SIZE);
+        let param_intrisic_values = self.tick(timestamp, period, BUFFER_SIZE);
 
-        let mut param_computed_value = inputs[0].clone(); // get new buf
-        param_computed_value.force_mono();
-        param_computed_value
+        let input = &inputs[0]; // single input mode
+        let param_computed_values = &mut outputs[0];
+
+        param_computed_values
             .channel_data_mut(0)
-            .copy_from_slice(param_intrisic_value);
-        // mix incoming signal
-        param_computed_value.add(input, ChannelInterpretation::Discrete);
-
-        outputs[0] = param_computed_value;
+            .copy_from_slice(param_intrisic_values);
+        param_computed_values.add(input, ChannelInterpretation::Discrete);
     }
 
     fn tail_time(&self) -> bool {
@@ -324,8 +320,8 @@ impl AudioParamProcessor {
                 self.value = current_value;
             }
 
-            // @note - should probably live in its own method just for clarity but
-            // can't get rid of this error:
+            // @note - should probably live in its own method just for clarity
+            // but can't get rid of this error:
             //    for event in self.receiver.try_iter() {
             //                 ------------------------
             //                 |
