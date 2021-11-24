@@ -67,7 +67,7 @@ fn test_media_buffering() {
     assert_float_eq!(
         output.channel_data(0).as_slice(),
         &[0.; BUFFER_SIZE][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
 
     block.store(false, Ordering::SeqCst); // emit single chunk
@@ -78,7 +78,7 @@ fn test_media_buffering() {
     assert_float_eq!(
         output.channel_data(0).as_slice(),
         &[2.; BUFFER_SIZE][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
 
     // should be silent since the media stream did not yield any output
@@ -86,7 +86,7 @@ fn test_media_buffering() {
     assert_float_eq!(
         output.channel_data(0).as_slice(),
         &[0.; BUFFER_SIZE][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
 
     block.store(false, Ordering::SeqCst); // emit single chunk
@@ -97,7 +97,7 @@ fn test_media_buffering() {
     assert_float_eq!(
         output.channel_data(0).as_slice(),
         &[3.; BUFFER_SIZE][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
 
     finished.store(true, Ordering::SeqCst); // signal stream ended
@@ -109,19 +109,19 @@ fn test_media_buffering() {
     assert_float_eq!(
         output.channel_data(0).as_slice(),
         &[2.; BUFFER_SIZE][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
     let output = context.start_rendering();
     assert_float_eq!(
         output.channel_data(0).as_slice(),
         &[3.; BUFFER_SIZE][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
     let output = context.start_rendering();
     assert_float_eq!(
         output.channel_data(0).as_slice(),
         &[2.; BUFFER_SIZE][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
 }
 
@@ -152,7 +152,7 @@ fn test_media_seeking() {
     assert_float_eq!(
         output.channel_data(0).as_slice(),
         &[0.; BUFFER_SIZE][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
 
     block.store(false, Ordering::SeqCst); // emit single chunk
@@ -167,6 +167,6 @@ fn test_media_seeking() {
     assert_float_eq!(
         output.channel_data(0).as_slice(),
         &[4.; BUFFER_SIZE][..],
-        ulps_all <= 0
+        abs_all <= 0.
     );
 }

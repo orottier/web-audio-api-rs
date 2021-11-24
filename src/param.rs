@@ -356,11 +356,11 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 0., 5., 5., 5., 5., 5., 5., 10., 10.][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
 
         let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, &[8.; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[8.; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -379,10 +379,10 @@ mod tests {
         param.set_value_at_time_direct(8., 10.0); // should not occur 1st run
 
         let vs = render.tick(0., 1., 10);
-        assert_float_eq!(vs, &[0.; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
 
         let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, &[8.; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[8.; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -408,7 +408,7 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 0., 5., 6., 7., 8., 7., 6., 5., 4.][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
     }
 
@@ -433,7 +433,7 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
 
         // next quantum t = 10..20
@@ -441,12 +441,12 @@ mod tests {
         assert_float_eq!(
             vs,
             &[10., 11., 12., 13., 14., 15., 16., 17., 18., 19.][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
 
         // ramp finished t = 20..30
         let vs = render.tick(20., 1., 10);
-        assert_float_eq!(vs, &[20.0; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[20.0; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -470,7 +470,7 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 1., 1., 1., 1., 1., 1., 1., 1., 1.][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
     }
 }
