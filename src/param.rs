@@ -146,12 +146,13 @@ impl AudioParam {
     // Any exceptions that would be thrown by setValueAtTime() will also be
     // thrown by setting this attribute.
     pub fn set_value(&self, value: f32) {
-        self.value.store(value as f64);
+        let clamped = value.clamp(self.min_value, self.max_value);
+        self.value.store(clamped as f64);
 
         // this event is ment to update param intrisic value before any calculation is done
         let event = AutomationEvent {
             event_type: AutomationType::SetValue,
-            value,
+            value: clamped,
             time: 0.,
         };
 
@@ -159,7 +160,7 @@ impl AudioParam {
 
         let event = AutomationEvent {
             event_type: AutomationType::SetValueAtTime,
-            value,
+            value: clamped,
             // this will be replaced with the block timestamp at processing
             time: 0.,
         };
@@ -167,8 +168,6 @@ impl AudioParam {
         self.send_event(event);
     }
 
-    // @note - need some insert_event method to handle special cases
-    // cf. blink audio_param_timeline.cc
     pub fn set_value_at_time(&self, value: f32, time: f64) {
         let event = AutomationEvent {
             event_type: AutomationType::SetValueAtTime,
@@ -190,10 +189,17 @@ impl AudioParam {
     }
 
     pub fn exponential_ramp_to_value_at_time(&self, value: f32, time: f64) {
-        // @todo - handle 0 target
-        // Uncaught RangeError: Failed to execute 'exponentialRampToValueAtTime'
-        // on 'AudioParam': The float target value provided (0) should not be
-        // in the range (-1.40130e-45, 1.40130e-45).
+        // @note - not sure this should `panic` as this could probably
+        //  crash at runtime, maybe warn and ignore?
+        if value == 0. {
+            panic!(
+                "RangeError: Failed to execute 'exponentialRampToValueAtTime'
+                on 'AudioParam': The float target value provided (0) should not be
+                in the range ({:+e}, {:+e})",
+                -f32::MIN_POSITIVE,
+                f32::MIN_POSITIVE
+            ) // implicit return there
+        }
 
         let event = AutomationEvent {
             event_type: AutomationType::ExponentialRampToValueAtTime,
@@ -314,23 +320,6 @@ impl AudioParamProcessor {
     // @note - Maybe we should maintain the event list in the control thread as we
     //  probably don't want to do all this in the audio thread (e.g. Blink does that using a mutex)
     fn insert_event(&mut self, event: AutomationEvent) {
-        // target of zero is forbidden for exponential ramps
-        // @note - not sure this should `panic` though as it could probably
-        //  crash at runtime, maybe warn and ignore?
-        // @note - this should probably be handle in AudioParam.exponential_ramp_to_value_at_time
-        //  However it is more convenient to put it there testing reasons.
-        //  review AudioParam mock in tests and review test_exponential_ramp_to_zero
-        //  accordingly.
-        if event.event_type == AutomationType::ExponentialRampToValueAtTime && event.value == 0. {
-            panic!(
-                "RangeError: Failed to execute 'exponentialRampToValueAtTime'
-                on 'AudioParam': The float target value provided (0) should not be
-                in the range ({:+e}, {:+e})",
-                -f32::MIN_POSITIVE,
-                f32::MIN_POSITIVE
-            );
-        }
-
         // if no event in the timeline and event_type is `LinearRampToValueAtTime`
         // or `ExponentialRampToValue` at time, we must insert a `SetValueAtTime`
         // with intrisic value and calling time.
@@ -671,6 +660,28 @@ mod tests {
         // current_value should not be overriden by intrisic value
         assert_float_eq!(param.value(), 2., ulps_all <= 0);
         assert_float_eq!(vs, &[2.; 10][..], ulps_all <= 0);
+    }
+
+    #[test]
+    fn test_set_value_clamped() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        let opts = AudioParamOptions {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -1.,
+            max_value: 1.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value(2.);
+        assert_float_eq!(param.value(), 1., ulps_all <= 0);
+
+        let vs = render.tick(0., 1., 10);
+
+        // current_value should not be overriden by intrisic value
+        assert_float_eq!(param.value(), 1., ulps_all <= 0);
+        assert_float_eq!(vs, &[1.; 10][..], ulps_all <= 0);
     }
 
     #[test]
@@ -1085,13 +1096,8 @@ mod tests {
             min_value: 0.,
             max_value: 1.,
         };
-        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+        let (param, mut _render) = audio_param_pair(opts, context.mock_registration());
         param.exponential_ramp_to_value_at_time(0.0, 10.);
-
-        // @note - we need to tick so that the panic occurs
-        // this should throw an error without this but need to review the
-        // AudioParam mock before that.
-        render.tick(20., 1., 10);
     }
 
     #[test]
