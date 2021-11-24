@@ -157,15 +157,6 @@ impl AudioParam {
         };
 
         self.send_event(event);
-
-        let event = AutomationEvent {
-            event_type: AutomationType::SetValueAtTime,
-            value: clamped,
-            // this will be replaced with the block timestamp at processing
-            time: 0.,
-        };
-
-        self.send_event(event);
     }
 
     pub fn set_value_at_time(&self, value: f32, time: f64) {
@@ -189,8 +180,9 @@ impl AudioParam {
     }
 
     pub fn exponential_ramp_to_value_at_time(&self, value: f32, time: f64) {
-        // @note - not sure this should `panic` as this could probably
-        //  crash at runtime, maybe warn and ignore?
+        // @note - this should probably `panic` as this could
+        //  crash at runtime.
+        // cf. Error pattern in `iir_filter.rs`
         if value == 0. {
             panic!(
                 "RangeError: Failed to execute 'exponentialRampToValueAtTime'
@@ -198,7 +190,7 @@ impl AudioParam {
                 in the range ({:+e}, {:+e})",
                 -f32::MIN_POSITIVE,
                 f32::MIN_POSITIVE
-            ) // implicit return there
+            )
         }
 
         let event = AutomationEvent {
@@ -364,9 +356,9 @@ impl AudioParamProcessor {
             if event.event_type == AutomationType::SetValue {
                 let current_value = self.shared_value.load() as f32;
                 self.value = current_value;
-            } else {
-                self.insert_event(event);
             }
+
+            self.insert_event(event);
         }
 
         // 2. Set [[current value]] to the value of paramIntrinsicValue at the
@@ -406,9 +398,7 @@ impl AudioParamProcessor {
                 }
                 Some(event) => {
                     match event.event_type {
-                        AutomationType::SetValue => {
-                            panic!("SetValue event should not be in the event queue")
-                        }
+                        AutomationType::SetValue |
                         AutomationType::SetValueAtTime => {
                             let value = event.value;
                             let mut time = event.time;
