@@ -77,6 +77,7 @@ pub struct AudioParam {
     sender: Sender<AutomationEvent>,
 }
 
+// helper struct to attach / detach to context (for borrow reasons)
 #[derive(Clone)]
 pub(crate) struct AudioParamRaw {
     automation_rate: AutomationRate,
@@ -158,7 +159,8 @@ impl AudioParam {
         let clamped = value.clamp(self.min_value, self.max_value);
         self.current_value.store(clamped as f64);
 
-        // this event is meant to update param intrisic value before any calculation is done
+        // this event is meant to update param intrisic value before any calculation
+        // is done, will behave as SetValueAtTime with `time == block_timestamp`
         let event = AutomationEvent {
             event_type: AutomationType::SetValue,
             value: clamped,
@@ -189,8 +191,7 @@ impl AudioParam {
     }
 
     pub fn exponential_ramp_to_value_at_time(&self, value: f32, time: f64) {
-        // @note - this should probably `panic` as this could
-        //  crash at runtime.
+        // @note - this should probably `panic` as this could crash at runtime.
         // cf. Error pattern in `iir_filter.rs`
         if value == 0. {
             panic!(
@@ -251,7 +252,7 @@ impl AudioParam {
 
 #[derive(Debug)]
 pub(crate) struct AudioParamProcessor {
-    intrisic_value: f32, // @todo - rename to `intrisic_value` to match the spec
+    intrisic_value: f32,
     current_value: Arc<AtomicF64>,
     receiver: Receiver<AutomationEvent>,
     automation_rate: AutomationRate,
@@ -300,9 +301,9 @@ impl AudioParamProcessor {
 
     fn tick(&mut self, ts: f64, dt: f64, count: usize) -> &[f32] {
         // println!("> tick - ts: {}, dt: {}, count: {}", ts, dt, count);
-        // handle incoming automation events in sorted queue
-        // let events: Vec<AutomationEvent> = self.receiver.try_iter().collect();
 
+        // handle incoming automation events in sorted queue
+        //
         // cf. https://www.w3.org/TR/webaudio/#computation-of-value
         // 1. paramIntrinsicValue will be calculated at each time, which is either the
         // value set directly to the value attribute, or, if there are any automation
@@ -355,8 +356,6 @@ impl AudioParamProcessor {
 
         // 2. Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
-        //
-        // in case of set value
         self.current_value.store(self.intrisic_value() as f64);
 
         // Clear the vec from previously buffered data
