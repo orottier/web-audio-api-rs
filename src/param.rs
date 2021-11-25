@@ -252,7 +252,7 @@ impl AudioParam {
 #[derive(Debug)]
 pub(crate) struct AudioParamProcessor {
     intrisic_value: f32, // @todo - rename to `intrisic_value` to match the spec
-    shared_value: Arc<AtomicF64>,
+    current_value: Arc<AtomicF64>,
     receiver: Receiver<AutomationEvent>,
     automation_rate: AutomationRate,
     default_value: f32,
@@ -357,7 +357,7 @@ impl AudioParamProcessor {
         // beginning of this render quantum.
         //
         // in case of set value
-        self.shared_value.store(self.intrisic_value() as f64);
+        self.current_value.store(self.intrisic_value() as f64);
 
         // Clear the vec from previously buffered data
         self.buffer.clear();
@@ -566,7 +566,7 @@ pub(crate) fn audio_param_pair(
     registration: AudioContextRegistration,
 ) -> (AudioParam, AudioParamProcessor) {
     let (sender, receiver) = crossbeam_channel::unbounded();
-    let shared_value = Arc::new(AtomicF64::new(opts.default_value as f64));
+    let current_value = Arc::new(AtomicF64::new(opts.default_value as f64));
 
     let param = AudioParam {
         registration,
@@ -574,13 +574,13 @@ pub(crate) fn audio_param_pair(
         default_value: opts.default_value,
         min_value: opts.min_value,
         max_value: opts.max_value,
-        value: shared_value.clone(),
+        value: current_value.clone(),
         sender,
     };
 
     let render = AudioParamProcessor {
         intrisic_value: opts.default_value,
-        shared_value,
+        current_value,
         receiver,
         automation_rate: opts.automation_rate,
         default_value: opts.default_value,
