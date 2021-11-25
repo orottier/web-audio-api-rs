@@ -31,7 +31,6 @@ pub struct AudioParamOptions {
     pub max_value: f32,
 }
 
-#[allow(clippy::enum_variant_names)] // @todo - remove that when all events are implemented
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum AutomationType {
     SetValue,
@@ -41,7 +40,7 @@ pub(crate) enum AutomationType {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct AutomationEvent {
+pub(crate) struct AutomationEvent {
     event_type: AutomationType,
     value: f32,
     time: f64,
@@ -70,7 +69,7 @@ impl std::cmp::Ord for AutomationEvent {
 /// AudioParam controls an individual aspect of an AudioNode's functionality, such as volume.
 pub struct AudioParam {
     registration: AudioContextRegistration,
-    automation_rate: AutomationRate, // // treat as readonly for now
+    automation_rate: AutomationRate, // treat as readonly for now
     default_value: f32,              // readonly
     min_value: f32,                  // readonly
     max_value: f32,                  // readonly
@@ -79,14 +78,14 @@ pub struct AudioParam {
 }
 
 #[derive(Clone)]
-pub struct AudioParamRaw(
-    AutomationRate,
-    f32,
-    f32,
-    f32,
-    Arc<AtomicF64>,
-    Sender<AutomationEvent>,
-);
+pub(crate) struct AudioParamRaw {
+    automation_rate: AutomationRate,
+    default_value: f32,
+    min_value: f32,
+    max_value: f32,
+    value: Arc<AtomicF64>,
+    sender: Sender<AutomationEvent>,
+}
 
 impl AudioNode for AudioParam {
     fn registration(&self) -> &AudioContextRegistration {
@@ -159,7 +158,7 @@ impl AudioParam {
         let clamped = value.clamp(self.min_value, self.max_value);
         self.value.store(clamped as f64);
 
-        // this event is ment to update param intrisic value before any calculation is done
+        // this event is meant to update param intrisic value before any calculation is done
         let event = AutomationEvent {
             event_type: AutomationType::SetValue,
             value: clamped,
@@ -214,14 +213,14 @@ impl AudioParam {
 
     // helper function to detach from context (for borrow reasons)
     pub(crate) fn into_raw_parts(self) -> AudioParamRaw {
-        AudioParamRaw(
-            self.automation_rate,
-            self.default_value,
-            self.min_value,
-            self.max_value,
-            self.value,
-            self.sender,
-        )
+        AudioParamRaw {
+            automation_rate: self.automation_rate,
+            default_value: self.default_value,
+            min_value: self.min_value,
+            max_value: self.max_value,
+            value: self.value,
+            sender: self.sender,
+        }
     }
 
     // helper function to attach to context (for borrow reasons)
@@ -231,12 +230,12 @@ impl AudioParam {
     ) -> Self {
         Self {
             registration,
-            automation_rate: parts.0,
-            default_value: parts.1,
-            min_value: parts.2,
-            max_value: parts.3,
-            value: parts.4,
-            sender: parts.5,
+            automation_rate: parts.automation_rate,
+            default_value: parts.default_value,
+            min_value: parts.min_value,
+            max_value: parts.max_value,
+            value: parts.value,
+            sender: parts.sender,
         }
     }
 
@@ -314,10 +313,8 @@ impl AudioParamProcessor {
         // automation events are added for the time range.
         for event in self.receiver.try_iter() {
             // param intrisic value must be updated from the set_value call
-            // but we don't want to insert these events in the queue
             if event.event_type == AutomationType::SetValue {
-                let current_value = self.shared_value.load() as f32;
-                self.value = current_value;
+                self.value = event.value;
             }
 
             // @note - should probably live in its own method just for clarity
@@ -343,8 +340,8 @@ impl AudioParamProcessor {
                 let set_value_event = AutomationEvent {
                     event_type: AutomationType::SetValueAtTime,
                     value: self.value,
-                    // make sure the event is applied before any other event
-                    // time will be replaced by block timestamp durin event processing
+                    // make sure the event is applied before any other event, time
+                    // will be replaced by the block timestamp during event processing
                     time: 0.,
                 };
 
@@ -371,7 +368,7 @@ impl AudioParamProcessor {
         if is_k_rate {
             // filling the vec already, no expensive calculations are performed later
             for _ in 0..count {
-                self.buffer.push(self.value())
+                self.buffer.push(self.value());
             }
         };
 
