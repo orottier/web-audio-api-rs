@@ -73,7 +73,7 @@ pub struct AudioParam {
     default_value: f32,              // readonly
     min_value: f32,                  // readonly
     max_value: f32,                  // readonly
-    value: Arc<AtomicF64>,
+    current_value: Arc<AtomicF64>,
     sender: Sender<AutomationEvent>,
 }
 
@@ -83,7 +83,7 @@ pub(crate) struct AudioParamRaw {
     default_value: f32,
     min_value: f32,
     max_value: f32,
-    value: Arc<AtomicF64>,
+    current_value: Arc<AtomicF64>,
     sender: Sender<AutomationEvent>,
 }
 
@@ -145,7 +145,7 @@ impl AudioParam {
 
     // @note - we need to test more how this behaves
     pub fn value(&self) -> f32 {
-        self.value.load() as _
+        self.current_value.load() as _
     }
 
     // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
@@ -156,7 +156,7 @@ impl AudioParam {
     // thrown by setting this attribute.
     pub fn set_value(&self, value: f32) {
         let clamped = value.clamp(self.min_value, self.max_value);
-        self.value.store(clamped as f64);
+        self.current_value.store(clamped as f64);
 
         // this event is meant to update param intrisic value before any calculation is done
         let event = AutomationEvent {
@@ -218,7 +218,7 @@ impl AudioParam {
             default_value: self.default_value,
             min_value: self.min_value,
             max_value: self.max_value,
-            value: self.value,
+            current_value: self.current_value,
             sender: self.sender,
         }
     }
@@ -234,7 +234,7 @@ impl AudioParam {
             default_value: parts.default_value,
             min_value: parts.min_value,
             max_value: parts.max_value,
-            value: parts.value,
+            current_value: parts.current_value,
             sender: parts.sender,
         }
     }
@@ -574,7 +574,7 @@ pub(crate) fn audio_param_pair(
         default_value: opts.default_value,
         min_value: opts.min_value,
         max_value: opts.max_value,
-        value: current_value.clone(),
+        current_value: current_value.clone(),
         sender,
     };
 
