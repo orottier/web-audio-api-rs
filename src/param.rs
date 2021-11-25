@@ -251,7 +251,7 @@ impl AudioParam {
 
 #[derive(Debug)]
 pub(crate) struct AudioParamProcessor {
-    value: f32, // @todo - rename to `intrisic_value` to match the spec
+    intrisic_value: f32, // @todo - rename to `intrisic_value` to match the spec
     shared_value: Arc<AtomicF64>,
     receiver: Receiver<AutomationEvent>,
     automation_rate: AutomationRate,
@@ -290,11 +290,11 @@ impl AudioProcessor for AudioParamProcessor {
 }
 
 impl AudioParamProcessor {
-    pub fn value(&self) -> f32 {
-        if self.value.is_nan() {
+    pub fn intrisic_value(&self) -> f32 {
+        if self.intrisic_value.is_nan() {
             self.default_value
         } else {
-            self.value.clamp(self.min_value, self.max_value)
+            self.intrisic_value.clamp(self.min_value, self.max_value)
         }
     }
 
@@ -314,7 +314,7 @@ impl AudioParamProcessor {
         for event in self.receiver.try_iter() {
             // param intrisic value must be updated from the set_value call
             if event.event_type == AutomationType::SetValue {
-                self.value = event.value;
+                self.intrisic_value = event.value;
             }
 
             // @note - should probably live in its own method just for clarity
@@ -339,7 +339,7 @@ impl AudioParamProcessor {
             {
                 let set_value_event = AutomationEvent {
                     event_type: AutomationType::SetValueAtTime,
-                    value: self.value,
+                    value: self.intrisic_value,
                     // make sure the event is applied before any other event, time
                     // will be replaced by the block timestamp during event processing
                     time: 0.,
@@ -357,7 +357,7 @@ impl AudioParamProcessor {
         // beginning of this render quantum.
         //
         // in case of set value
-        self.shared_value.store(self.value() as f64);
+        self.shared_value.store(self.intrisic_value() as f64);
 
         // Clear the vec from previously buffered data
         self.buffer.clear();
@@ -368,7 +368,7 @@ impl AudioParamProcessor {
         if is_k_rate {
             // filling the vec already, no expensive calculations are performed later
             for _ in 0..count {
-                self.buffer.push(self.value());
+                self.buffer.push(self.intrisic_value());
             }
         };
 
@@ -383,7 +383,7 @@ impl AudioParamProcessor {
                 None => {
                     // fill remaining buffer with current intrisic value
                     for _ in self.buffer.len()..count {
-                        self.buffer.push(self.value());
+                        self.buffer.push(self.intrisic_value());
                     }
 
                     break;
@@ -413,13 +413,13 @@ impl AudioParamProcessor {
                             // intrisic value until with reach event.time
                             // nothing is done here for K-rate, buffer is already full
                             for _ in self.buffer.len()..end_index_clipped {
-                                self.buffer.push(self.value());
+                                self.buffer.push(self.intrisic_value());
                             }
 
                             if time > max_ts {
                                 break;
                             } else {
-                                self.value = value;
+                                self.intrisic_value = value;
 
                                 // no computation has been done here, it's a
                                 // strict unequality check
@@ -464,21 +464,21 @@ impl AudioParamProcessor {
                                     self.buffer.push(clamped);
 
                                     time += dt;
-                                    self.value = clamped;
+                                    self.intrisic_value = clamped;
                                 }
                             } else if is_k_rate {
                                 let time = ts + end_index_clipped as f64 * dt;
                                 let value = last_value + dv * (time - last_time) as f32 / duration;
                                 let clamped = value.clamp(self.min_value, self.max_value);
 
-                                self.value = clamped;
+                                self.intrisic_value = clamped;
                             }
 
                             if end_time > max_ts {
                                 break;
                             } else {
                                 // next intrisic value
-                                self.value = end_value.clamp(self.min_value, self.max_value);
+                                self.intrisic_value = end_value.clamp(self.min_value, self.max_value);
                                 self.last_event = self.events.pop();
                             }
                         }
@@ -529,7 +529,7 @@ impl AudioParamProcessor {
                                         self.buffer.push(clamped);
 
                                         time += dt;
-                                        self.value = clamped;
+                                        self.intrisic_value = clamped;
                                     }
                                 } else if is_k_rate {
                                     let time = ts + end_index_clipped as f64 * dt;
@@ -537,14 +537,14 @@ impl AudioParamProcessor {
                                     let val = last_value * ratio.powf(phase);
                                     let clamped = val.clamp(self.min_value, self.max_value);
                                     // store as intrisic value for next block
-                                    self.value = clamped;
+                                    self.intrisic_value = clamped;
                                 }
 
                                 if end_time > max_ts {
                                     break;
                                 } else {
                                     // next intrisic value
-                                    self.value = end_value.clamp(self.min_value, self.max_value);
+                                    self.intrisic_value = end_value.clamp(self.min_value, self.max_value);
                                     self.last_event = self.events.pop();
                                 }
                             }
@@ -579,7 +579,7 @@ pub(crate) fn audio_param_pair(
     };
 
     let render = AudioParamProcessor {
-        value: opts.default_value,
+        intrisic_value: opts.default_value,
         shared_value,
         receiver,
         automation_rate: opts.automation_rate,
