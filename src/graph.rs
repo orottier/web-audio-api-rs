@@ -151,6 +151,7 @@ impl RenderThread {
             self.handle_control_messages();
 
             // update time
+            // @note - this follows the spec as fetch_add returns the old value
             let timestamp = self
                 .frames_played
                 .fetch_add(BUFFER_SIZE as u64, Ordering::SeqCst) as f64

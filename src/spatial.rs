@@ -6,15 +6,11 @@ use crate::alloc::AudioBuffer;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::node::AudioNode;
-use crate::param::{AudioParam, AudioParamOptions, AutomationEvent, AutomationRate};
+use crate::param::{AudioParam, AudioParamOptions, AudioParamRaw, AutomationRate};
 use crate::process::{AudioParamValues, AudioProcessor};
-use crate::AtomicF64;
 use crate::SampleRate;
 
 use std::f32::consts::PI;
-use std::sync::Arc;
-
-use crossbeam_channel::Sender;
 
 /// AudioParam settings for the carthesian coordinates
 pub(crate) const PARAM_OPTS: AudioParamOptions = AudioParamOptions {
@@ -220,15 +216,15 @@ impl AudioProcessor for ListenerRenderer {
 
 /// Data holder for the BaseAudioContext so it can reconstruct the AudioListener on request
 pub(crate) struct AudioListenerParams {
-    pub position_x: (Arc<AtomicF64>, Sender<AutomationEvent>),
-    pub position_y: (Arc<AtomicF64>, Sender<AutomationEvent>),
-    pub position_z: (Arc<AtomicF64>, Sender<AutomationEvent>),
-    pub forward_x: (Arc<AtomicF64>, Sender<AutomationEvent>),
-    pub forward_y: (Arc<AtomicF64>, Sender<AutomationEvent>),
-    pub forward_z: (Arc<AtomicF64>, Sender<AutomationEvent>),
-    pub up_x: (Arc<AtomicF64>, Sender<AutomationEvent>),
-    pub up_y: (Arc<AtomicF64>, Sender<AutomationEvent>),
-    pub up_z: (Arc<AtomicF64>, Sender<AutomationEvent>),
+    pub position_x: AudioParamRaw,
+    pub position_y: AudioParamRaw,
+    pub position_z: AudioParamRaw,
+    pub forward_x: AudioParamRaw,
+    pub forward_y: AudioParamRaw,
+    pub forward_z: AudioParamRaw,
+    pub up_x: AudioParamRaw,
+    pub up_y: AudioParamRaw,
+    pub up_z: AudioParamRaw,
 }
 
 use vecmath::{
