@@ -4,9 +4,12 @@ use std::{thread, time};
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
+// run in release mode
+// `cargo run --release --example many_oscillators_with_env`
+
 fn trigger_sine(audio_context: &AudioContext, rng: &mut ThreadRng) {
     let env = audio_context.create_gain();
-    env.gain().set_value(0.1);
+    env.gain().set_value(0.05);
     env.connect(&audio_context.destination());
 
     let osc = audio_context.create_oscillator();
@@ -19,20 +22,16 @@ fn trigger_sine(audio_context: &AudioContext, rng: &mut ThreadRng) {
 
     env.gain().set_value_at_time(0., now);
     env.gain().linear_ramp_to_value_at_time(0.1, now + 0.01);
-    env.gain()
-        .exponential_ramp_to_value_at_time(0.0001, now + 1.);
-    // env.gain().exponential_ramp_to_value_at_time(0.0001, now + 2.); // breaks #2
+    env.gain().exponential_ramp_to_value_at_time(0.0001, now + 2.);
 
     osc.start_at(now);
-    osc.stop_at(now + 1.);
-    // osc.stop_at(now + 2.); // breaks #2
+    osc.stop_at(now + 2.);
 }
 
 fn main() {
     let audio_context = AudioContext::new(None);
     let mut rng = rand::thread_rng();
-    let period = 100; // ms
-                      // let period = 50; // ms - breaks #1
+    let period = 50;
 
     // mimic setInterval
     loop {
