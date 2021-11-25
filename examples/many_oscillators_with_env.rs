@@ -22,7 +22,8 @@ fn trigger_sine(audio_context: &AudioContext, rng: &mut ThreadRng) {
 
     env.gain().set_value_at_time(0., now);
     env.gain().linear_ramp_to_value_at_time(0.1, now + 0.01);
-    env.gain().exponential_ramp_to_value_at_time(0.0001, now + 2.);
+    env.gain()
+        .exponential_ramp_to_value_at_time(0.0001, now + 2.);
 
     osc.start_at(now);
     osc.stop_at(now + 2.);

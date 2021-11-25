@@ -477,7 +477,8 @@ impl AudioParamProcessor {
                                 break;
                             } else {
                                 // next intrisic value
-                                self.intrisic_value = end_value.clamp(self.min_value, self.max_value);
+                                self.intrisic_value =
+                                    end_value.clamp(self.min_value, self.max_value);
                                 self.last_event = self.events.pop();
                             }
                         }
@@ -543,7 +544,8 @@ impl AudioParamProcessor {
                                     break;
                                 } else {
                                     // next intrisic value
-                                    self.intrisic_value = end_value.clamp(self.min_value, self.max_value);
+                                    self.intrisic_value =
+                                        end_value.clamp(self.min_value, self.max_value);
                                     self.last_event = self.events.pop();
                                 }
                             }
@@ -614,10 +616,10 @@ mod tests {
         let (param, _render) = audio_param_pair(opts, context.mock_registration());
 
         assert_eq!(param.automation_rate(), AutomationRate::A);
-        assert_float_eq!(param.default_value(), 0., ulps_all <= 0);
-        assert_float_eq!(param.min_value(), -10., ulps_all <= 0);
-        assert_float_eq!(param.max_value(), 10., ulps_all <= 0);
-        assert_float_eq!(param.value(), 0., ulps_all <= 0);
+        assert_float_eq!(param.default_value(), 0., abs_all <= 0.);
+        assert_float_eq!(param.min_value(), -10., abs_all <= 0.);
+        assert_float_eq!(param.max_value(), 10., abs_all <= 0.);
+        assert_float_eq!(param.value(), 0., abs_all <= 0.);
     }
 
     #[test]
@@ -633,13 +635,13 @@ mod tests {
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
         param.set_value(2.);
-        assert_float_eq!(param.value(), 2., ulps_all <= 0);
+        assert_float_eq!(param.value(), 2., abs_all <= 0.);
 
         let vs = render.tick(0., 1., 10);
 
         // current_value should not be overriden by intrisic value
-        assert_float_eq!(param.value(), 2., ulps_all <= 0);
-        assert_float_eq!(vs, &[2.; 10][..], ulps_all <= 0);
+        assert_float_eq!(param.value(), 2., abs_all <= 0.);
+        assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -655,13 +657,13 @@ mod tests {
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
         param.set_value(2.);
-        assert_float_eq!(param.value(), 1., ulps_all <= 0);
+        assert_float_eq!(param.value(), 1., abs_all <= 0.);
 
         let vs = render.tick(0., 1., 10);
 
         // current_value should not be overriden by intrisic value
-        assert_float_eq!(param.value(), 1., ulps_all <= 0);
-        assert_float_eq!(vs, &[1.; 10][..], ulps_all <= 0);
+        assert_float_eq!(param.value(), 1., abs_all <= 0.);
+        assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -685,11 +687,11 @@ mod tests {
             assert_float_eq!(
                 vs,
                 &[0., 0., 5., 5., 5., 5., 5., 5., 10., 10.][..],
-                ulps_all <= 0
+                abs_all <= 0.
             );
 
             let vs = render.tick(10., 1., 10);
-            assert_float_eq!(vs, &[8.; 10][..], ulps_all <= 0);
+            assert_float_eq!(vs, &[8.; 10][..], abs_all <= 0.);
         }
 
         {
@@ -709,14 +711,14 @@ mod tests {
             assert_float_eq!(
                 vs,
                 &[0., 0., 5., 5., 5., 5., 5., 5., 5., 5.][..],
-                ulps_all <= 0
+                abs_all <= 0.
             );
 
             let vs = render.tick(10., 1., 10);
             assert_float_eq!(
                 vs,
                 &[5., 5., 8., 8., 8., 8., 8., 8., 8., 8.][..],
-                ulps_all <= 0
+                abs_all <= 0.
             );
         }
     }
@@ -738,13 +740,13 @@ mod tests {
         param.set_value_at_time(3., 14.0); // should appear in 3rd run
 
         let vs = render.tick(0., 1., 10);
-        assert_float_eq!(vs, &[0.; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
 
         let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, &[8.; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[8.; 10][..], abs_all <= 0.);
 
         let vs = render.tick(20., 1., 10);
-        assert_float_eq!(vs, &[3.; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[3.; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -770,7 +772,7 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 0., 5., 6., 7., 8., 7., 6., 5., 4.][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
     }
 
@@ -795,7 +797,7 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
     }
 
@@ -814,7 +816,7 @@ mod tests {
         // mimic a ramp inserted after start
         // i.e. setTimeout(() => param.linearRampToValueAtTime(10, now + 10)), 10 * 1000);
         let vs = render.tick(0., 1., 10);
-        assert_float_eq!(vs, &[0.; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
 
         param.linear_ramp_to_value_at_time(10.0, 20.0);
 
@@ -822,11 +824,11 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
 
         let vs = render.tick(20., 1., 10);
-        assert_float_eq!(vs, &[10.; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -850,7 +852,7 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
 
         // next quantum t = 10..20
@@ -858,12 +860,12 @@ mod tests {
         assert_float_eq!(
             vs,
             &[10., 11., 12., 13., 14., 15., 16., 17., 18., 19.][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
 
         // ramp finished t = 20..30
         let vs = render.tick(20., 1., 10);
-        assert_float_eq!(vs, &[20.0; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[20.0; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -886,11 +888,11 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 3., 3., 3., 3., 2., 1.][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
 
         let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, &[0.; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -911,13 +913,13 @@ mod tests {
             param.linear_ramp_to_value_at_time(20.0, 20.0);
             // first quantum t = 0..10
             let vs = render.tick(0., 1., 10);
-            assert_float_eq!(vs, &[0.; 10][..], ulps_all <= 0);
+            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
             // next quantum t = 10..20
             let vs = render.tick(10., 1., 10);
-            assert_float_eq!(vs, &[10.; 10][..], ulps_all <= 0);
+            assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
             // ramp finished t = 20..30
             let vs = render.tick(20., 1., 10);
-            assert_float_eq!(vs, &[20.0; 10][..], ulps_all <= 0);
+            assert_float_eq!(vs, &[20.0; 10][..], abs_all <= 0.);
         }
 
         {
@@ -933,13 +935,13 @@ mod tests {
             param.linear_ramp_to_value_at_time(15.0, 15.0);
             // first quantum t = 0..10
             let vs = render.tick(0., 1., 10);
-            assert_float_eq!(vs, &[0.; 10][..], ulps_all <= 0);
+            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
             // next quantum t = 10..20
             let vs = render.tick(10., 1., 10);
-            assert_float_eq!(vs, &[10.; 10][..], ulps_all <= 0);
+            assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
             // ramp finished t = 20..30
             let vs = render.tick(20., 1., 10);
-            assert_float_eq!(vs, &[15.0; 10][..], ulps_all <= 0);
+            assert_float_eq!(vs, &[15.0; 10][..], abs_all <= 0.);
         }
     }
 
@@ -972,10 +974,10 @@ mod tests {
         }
 
         let vs = render.tick(0., 1., 10);
-        assert_float_eq!(vs, &res[..], ulps_all <= 0);
+        assert_float_eq!(vs, &res[..], abs_all <= 0.);
 
         let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, &[1.0; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[1.0; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -1008,10 +1010,10 @@ mod tests {
         res.append(&mut vec![1.; 7]);
 
         let vs = render.tick(0., 1., 10);
-        assert_float_eq!(vs, &res[0..10], ulps_all <= 0);
+        assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
 
         let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, &res[10..20], ulps_all <= 0);
+        assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
     }
 
     #[test]
@@ -1037,7 +1039,7 @@ mod tests {
             assert_float_eq!(
                 vs,
                 &[0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
-                ulps_all <= 0
+                abs_all <= 0.
             );
         }
 
@@ -1060,7 +1062,7 @@ mod tests {
             assert_float_eq!(
                 vs,
                 &[-1., -1., -1., -1., -1., 1., 1., 1., 1., 1.][..],
-                ulps_all <= 0
+                abs_all <= 0.
             );
         }
     }
@@ -1111,13 +1113,13 @@ mod tests {
 
         // recreate k-rate blocks from computed values
         let vs = render.tick(0., 1., 10);
-        assert_float_eq!(vs, &[res[0]; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[res[0]; 10][..], abs_all <= 0.);
 
         let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, &[res[10]; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[res[10]; 10][..], abs_all <= 0.);
 
         let vs = render.tick(20., 1., 10);
-        assert_float_eq!(vs, &[1.; 10][..], ulps_all <= 0);
+        assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -1138,10 +1140,10 @@ mod tests {
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
             let vs = render.tick(0., 1., 10);
-            assert_float_eq!(vs, &[0.; 10][..], ulps_all <= 0);
+            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
 
             let vs = render.tick(10., 1., 10);
-            assert_float_eq!(vs, &[1.; 10][..], ulps_all <= 0);
+            assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
         }
 
         {
@@ -1158,10 +1160,10 @@ mod tests {
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
             let vs = render.tick(0., 1., 10);
-            assert_float_eq!(vs, &[-1.; 10][..], ulps_all <= 0);
+            assert_float_eq!(vs, &[-1.; 10][..], abs_all <= 0.);
 
             let vs = render.tick(10., 1., 10);
-            assert_float_eq!(vs, &[1.; 10][..], ulps_all <= 0);
+            assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
         }
     }
 }

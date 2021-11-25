@@ -234,7 +234,7 @@ mod tests {
 
         // get data, should be padded with zeroes
         analyser.get_float_time(&mut buffer[..], BUFFER_SIZE * 5);
-        assert_float_eq!(&buffer[..], &[0.; 5 * BUFFER_SIZE][..], ulps_all <= 0);
+        assert_float_eq!(&buffer[..], &[0.; 5 * BUFFER_SIZE][..], abs_all <= 0.);
 
         // feed data for more than 256 times (the ring buffer size)
         for i in 0..258 {
@@ -251,35 +251,35 @@ mod tests {
         assert_float_eq!(
             &buffer[0..BUFFER_SIZE],
             &[254.; BUFFER_SIZE][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
         assert_float_eq!(
             &buffer[BUFFER_SIZE..2 * BUFFER_SIZE],
             &[255.; BUFFER_SIZE][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
         // taken from the start of the ring buffer
         assert_float_eq!(
             &buffer[2 * BUFFER_SIZE..3 * BUFFER_SIZE],
             &[256.; BUFFER_SIZE][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
         assert_float_eq!(
             &buffer[3 * BUFFER_SIZE..4 * BUFFER_SIZE],
             &[257.; BUFFER_SIZE][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
         // excess capacity should be left unaltered
         assert_float_eq!(
             &buffer[4 * BUFFER_SIZE..5 * BUFFER_SIZE],
             &[0.; BUFFER_SIZE][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
 
         // check for small fft_size
         buffer.resize(32, 0.);
         analyser.get_float_time(&mut buffer[..], BUFFER_SIZE);
-        assert_float_eq!(&buffer[..], &[257.; 32][..], ulps_all <= 0);
+        assert_float_eq!(&buffer[..], &[257.; 32][..], abs_all <= 0.);
     }
 
     #[test]
@@ -324,7 +324,7 @@ mod tests {
         assert_float_eq!(
             &buffer[2 * BUFFER_SIZE + 1..],
             &[-1.; 2 * BUFFER_SIZE - 1][..],
-            ulps_all <= 0
+            abs_all <= 0.
         );
 
         // feed data for more than 256 times (the ring buffer size)
@@ -356,11 +356,11 @@ mod tests {
 
         let min_pos = values
             .iter()
-            .position(|&v| float_eq!(v, min, ulps_all <= 0))
+            .position(|&v| float_eq!(v, min, abs_all <= 0.))
             .unwrap();
         let max_pos = values
             .iter()
-            .position(|&v| float_eq!(v, max, ulps_all <= 0))
+            .position(|&v| float_eq!(v, max, abs_all <= 0.))
             .unwrap();
         assert_eq!(min_pos, 0);
         assert_eq!(max_pos, 1024);
