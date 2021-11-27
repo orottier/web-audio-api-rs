@@ -1,6 +1,4 @@
 //! AudioParam interface
-
-use std::collections::BinaryHeap;
 use std::sync::Arc;
 
 use crate::alloc::AudioBuffer;
@@ -15,11 +13,10 @@ use crossbeam_channel::{Receiver, Sender};
 /// Precision of value calculation per render quantum
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum AutomationRate {
-    /// Audio Rate
-    /// sampled for each sample-frame of the block
+    /// Audio Rate - sampled for each sample-frame of the block
     A,
-    /// Control Rate
-    /// sampled at the time of the very first sample-frame, then used for the entire block
+    /// Control Rate - sampled at the time of the very first sample-frame,
+    /// then used for the entire block
     K,
 }
 
@@ -37,6 +34,7 @@ pub(crate) enum AutomationType {
     SetValueAtTime,
     LinearRampToValueAtTime,
     ExponentialRampToValueAtTime,
+    CancelScheduledValues,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -46,23 +44,50 @@ pub(crate) struct AutomationEvent {
     time: f64,
 }
 
-impl PartialEq for AutomationEvent {
-    fn eq(&self, other: &Self) -> bool {
-        self.time.eq(&other.time)
-    }
-}
-impl Eq for AutomationEvent {}
-
-impl std::cmp::PartialOrd for AutomationEvent {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        // reverse ordering
-        other.time.partial_cmp(&self.time)
-    }
+// Event queue that mimics the `BinaryHeap` API while allowing `retain` without going nigthly
+// @note - diverge in that `queue.sort()` is stable and must be called explicitly
+#[derive(Debug)]
+struct AutomationEventQueue {
+    inner: Vec<AutomationEvent>
 }
 
-impl std::cmp::Ord for AutomationEvent {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.time.partial_cmp(&other.time).unwrap()
+impl AutomationEventQueue {
+    fn new() -> Self {
+        Self { inner: Vec::new() }
+    }
+
+    fn push(&mut self, item: AutomationEvent) {
+        self.inner.push(item);
+    }
+
+    fn pop(&mut self) -> Option<AutomationEvent> {
+        if self.inner.len() > 0 {
+            Some(self.inner.remove(0))
+        } else {
+            None
+        }
+    }
+
+    fn peek(&self) -> Option<AutomationEvent> {
+        if self.inner.len() > 0 {
+            Some(self.inner[0])
+        } else {
+            None
+        }
+    }
+
+    fn sort(&mut self) {
+        self.inner.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+    }
+
+    fn is_empty(&mut self) -> bool {
+        self.inner.len() == 0
+    }
+
+    fn retain<F>(&mut self, func: F)
+        where F: Fn(&AutomationEvent) -> bool,
+    {
+        self.inner.retain(func);
     }
 }
 
@@ -191,7 +216,7 @@ impl AudioParam {
     }
 
     pub fn exponential_ramp_to_value_at_time(&self, value: f32, time: f64) {
-        // @note - this should probably `panic` as this could crash at runtime.
+        // @note - this should probably not `panic` as this could crash at runtime.
         // cf. Error pattern in `iir_filter.rs`
         if value == 0. {
             panic!(
@@ -259,7 +284,7 @@ pub(crate) struct AudioParamProcessor {
     default_value: f32,
     min_value: f32,
     max_value: f32,
-    events: BinaryHeap<AutomationEvent>,
+    events: AutomationEventQueue,
     last_event: Option<AutomationEvent>,
     buffer: Vec<f32>,
 }
@@ -312,7 +337,10 @@ impl AudioParamProcessor {
         // then the paramIntrinsicValue value will remain unchanged and stay at its
         // previous value until either the value attribute is directly set, or
         // automation events are added for the time range.
+        let mut events_received = false;
+
         for event in self.receiver.try_iter() {
+            events_received = true;
             // param intrisic value must be updated from the set_value call
             if event.event_type == AutomationType::SetValue {
                 self.intrisic_value = event.value;
@@ -329,7 +357,7 @@ impl AudioParamProcessor {
             //        self.insert_event(event);
             //            ^^^^^^^^^^^^^^^^^^^^^^^^ mutable borrow occurs here
             //
-            // if no event in the timeline and event_type is `LinearRampToValueAtTime`
+            // If no event in the timeline and event_type is `LinearRampToValueAtTime`
             // or `ExponentialRampToValue` at time, we must insert a `SetValueAtTime`
             // with intrisic value and calling time.
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
@@ -352,6 +380,10 @@ impl AudioParamProcessor {
             // @todo - many checks need to be done for setValueCurveAtTime events
 
             self.events.push(event);
+        }
+
+        if events_received {
+            self.events.sort();
         }
 
         // 2. Set [[current value]] to the value of paramIntrinsicValue at the
@@ -550,6 +582,7 @@ impl AudioParamProcessor {
                                 }
                             }
                         }
+                        _ => (), // CancelScheduledValues,
                     }
                 }
             }
@@ -587,7 +620,7 @@ pub(crate) fn audio_param_pair(
         default_value: opts.default_value,
         min_value: opts.min_value,
         max_value: opts.max_value,
-        events: BinaryHeap::new(),
+        events: AutomationEventQueue::new(),
         last_event: None,
         buffer: Vec::with_capacity(BUFFER_SIZE),
     };
