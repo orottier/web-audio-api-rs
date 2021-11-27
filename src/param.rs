@@ -35,6 +35,7 @@ enum AutomationType {
     LinearRampToValueAtTime,
     ExponentialRampToValueAtTime,
     CancelScheduledValues,
+    // SetTargetAtTime,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -68,6 +69,17 @@ impl AutomationEventQueue {
         }
     }
 
+    fn retain<F>(&mut self, func: F)
+    where
+        F: Fn(&AutomationEvent) -> bool,
+    {
+        self.inner.retain(func);
+    }
+
+    fn is_empty(&mut self) -> bool {
+        self.inner.is_empty()
+    }
+
     fn peek(&self) -> Option<AutomationEvent> {
         if !self.inner.is_empty() {
             Some(self.inner[0])
@@ -79,17 +91,6 @@ impl AutomationEventQueue {
     fn sort(&mut self) {
         self.inner
             .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
-    }
-
-    fn is_empty(&mut self) -> bool {
-        self.inner.is_empty()
-    }
-
-    fn retain<F>(&mut self, func: F)
-    where
-        F: Fn(&AutomationEvent) -> bool,
-    {
-        self.inner.retain(func);
     }
 }
 
@@ -368,14 +369,16 @@ impl AudioParamProcessor {
             // handle CancelScheduledValues events
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-cancelscheduledvalues
             if event.event_type == AutomationType::CancelScheduledValues {
-                let some_next_event = self.events.peek();
+                let some_current_event = self.events.peek();
 
-                match some_next_event {
+                match some_current_event {
                     None => (),
-                    Some(next_event) => {
-                        match next_event.event_type {
+                    Some(current_event) => {
+                        match current_event.event_type {
                             AutomationType::LinearRampToValueAtTime
                             | AutomationType::ExponentialRampToValueAtTime => {
+                                // we are in the middle of a ramp
+                                //
                                 // @note - Firefox and Chrome behave differently
                                 // on this: Firefox actually restore intrisic_value
                                 // from the value at the beginning of the vent, while
@@ -388,13 +391,13 @@ impl AudioParamProcessor {
                                 // because the original value (**from before such
                                 // automation**) is restored immediately."
                                 //
-                                // @note - last_event cannot be None here, because
+                                // @note - last_event cannot be `None` here, because
                                 // linear or exponential ramps are always preceded
                                 // by another event (even a set_value_at_time
                                 // inserted implicitly), so if the ramp is the next
                                 // event that means that at least one event has
                                 // already been processed.
-                                if next_event.time >= event.time {
+                                if current_event.time >= event.time {
                                     let last_event = self.last_event.unwrap();
                                     self.intrisic_value = last_event.value;
                                 }
@@ -406,7 +409,7 @@ impl AudioParamProcessor {
 
                 // remove all event in queue where time >= event.time
                 self.events.retain(|queued| queued.time < event.time);
-                continue; // no need to insert cancel event in queue
+                continue; // no need to insert cancel events in queue
             }
 
             // handle SetValue - param intrisic value must be updated from event value
