@@ -387,6 +387,13 @@ impl AudioParamProcessor {
                                 // and such cancellations may cause discontinuities
                                 // because the original value (**from before such
                                 // automation**) is restored immediately."
+                                //
+                                // @note - last_event cannot be None here, because
+                                // linear or exponential ramps are always preceded
+                                // by another event (even a set_value_at_time
+                                // inserted implicitly), so if the ramp is the next
+                                // event that means that at least one event has
+                                // already been processed.
                                 if next_event.time >= event.time {
                                     let last_event = self.last_event.unwrap();
                                     self.intrisic_value = last_event.value;
@@ -1299,8 +1306,8 @@ mod tests {
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
         }
 
+        // ramp already started, go back to previous value
         {
-            // ramp already started, go back to previous value
             let opts = AudioParamOptions {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
@@ -1310,6 +1317,47 @@ mod tests {
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             param.set_value_at_time(0., 0.);
+            param.linear_ramp_to_value_at_time(20., 20.);
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(
+                vs,
+                &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
+                abs_all <= 0.
+            );
+
+            param.cancel_scheduled_values(10.);
+            let vs = render.tick(10., 1., 10);
+            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+        }
+
+        // make sure we can't go into a situation where next_event is a ramp
+        // and last_event is not defined
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.linear_ramp_to_value_at_time(10., 10.);
+            param.cancel_scheduled_values(10.); // cancels the ramp
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+        }
+
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 20.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
             param.linear_ramp_to_value_at_time(20., 20.);
 
             let vs = render.tick(0., 1., 10);
