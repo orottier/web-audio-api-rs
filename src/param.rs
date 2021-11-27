@@ -173,7 +173,7 @@ impl AudioParam {
 
     // @note - we need to test more how this behaves
     pub fn value(&self) -> f32 {
-        self.current_value.load() as _
+        self.current_value.load()
     }
 
     // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
