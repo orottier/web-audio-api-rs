@@ -6,7 +6,7 @@ use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, Chann
 use crate::context::AudioContextRegistration;
 use crate::node::AudioNode;
 use crate::process::{AudioParamValues, AudioProcessor};
-use crate::{AtomicF64, SampleRate, BUFFER_SIZE};
+use crate::{AtomicF32, SampleRate, BUFFER_SIZE};
 
 use crossbeam_channel::{Receiver, Sender};
 
@@ -29,7 +29,7 @@ pub struct AudioParamOptions {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub(crate) enum AutomationType {
+enum AutomationType {
     SetValue,
     SetValueAtTime,
     LinearRampToValueAtTime,
@@ -48,7 +48,7 @@ pub(crate) struct AutomationEvent {
 // @note - diverge in that `queue.sort()` is stable and must be called explicitly
 #[derive(Debug)]
 struct AutomationEventQueue {
-    inner: Vec<AutomationEvent>
+    inner: Vec<AutomationEvent>,
 }
 
 impl AutomationEventQueue {
@@ -61,7 +61,7 @@ impl AutomationEventQueue {
     }
 
     fn pop(&mut self) -> Option<AutomationEvent> {
-        if self.inner.len() > 0 {
+        if !self.inner.is_empty() {
             Some(self.inner.remove(0))
         } else {
             None
@@ -69,7 +69,7 @@ impl AutomationEventQueue {
     }
 
     fn peek(&self) -> Option<AutomationEvent> {
-        if self.inner.len() > 0 {
+        if !self.inner.is_empty() {
             Some(self.inner[0])
         } else {
             None
@@ -77,15 +77,17 @@ impl AutomationEventQueue {
     }
 
     fn sort(&mut self) {
-        self.inner.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+        self.inner
+            .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
     }
 
     fn is_empty(&mut self) -> bool {
-        self.inner.len() == 0
+        self.inner.is_empty()
     }
 
     fn retain<F>(&mut self, func: F)
-        where F: Fn(&AutomationEvent) -> bool,
+    where
+        F: Fn(&AutomationEvent) -> bool,
     {
         self.inner.retain(func);
     }
@@ -98,7 +100,7 @@ pub struct AudioParam {
     default_value: f32,              // readonly
     min_value: f32,                  // readonly
     max_value: f32,                  // readonly
-    current_value: Arc<AtomicF64>,
+    current_value: Arc<AtomicF32>,
     sender: Sender<AutomationEvent>,
 }
 
@@ -109,7 +111,7 @@ pub(crate) struct AudioParamRaw {
     default_value: f32,
     min_value: f32,
     max_value: f32,
-    current_value: Arc<AtomicF64>,
+    current_value: Arc<AtomicF32>,
     sender: Sender<AutomationEvent>,
 }
 
@@ -182,7 +184,7 @@ impl AudioParam {
     // thrown by setting this attribute.
     pub fn set_value(&self, value: f32) {
         let clamped = value.clamp(self.min_value, self.max_value);
-        self.current_value.store(clamped as f64);
+        self.current_value.store(clamped);
 
         // this event is meant to update param intrisic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
@@ -195,27 +197,27 @@ impl AudioParam {
         self.send_event(event);
     }
 
-    pub fn set_value_at_time(&self, value: f32, time: f64) {
+    pub fn set_value_at_time(&self, value: f32, start_time: f64) {
         let event = AutomationEvent {
             event_type: AutomationType::SetValueAtTime,
             value,
-            time,
+            time: start_time,
         };
 
         self.send_event(event);
     }
 
-    pub fn linear_ramp_to_value_at_time(&self, value: f32, time: f64) {
+    pub fn linear_ramp_to_value_at_time(&self, value: f32, end_time: f64) {
         let event = AutomationEvent {
             event_type: AutomationType::LinearRampToValueAtTime,
             value,
-            time,
+            time: end_time,
         };
 
         self.send_event(event);
     }
 
-    pub fn exponential_ramp_to_value_at_time(&self, value: f32, time: f64) {
+    pub fn exponential_ramp_to_value_at_time(&self, value: f32, end_time: f64) {
         // @note - this should probably not `panic` as this could crash at runtime.
         // cf. Error pattern in `iir_filter.rs`
         if value == 0. {
@@ -231,7 +233,17 @@ impl AudioParam {
         let event = AutomationEvent {
             event_type: AutomationType::ExponentialRampToValueAtTime,
             value,
-            time,
+            time: end_time,
+        };
+
+        self.send_event(event);
+    }
+
+    pub fn cancel_scheduled_values(&self, cancel_time: f64) {
+        let event = AutomationEvent {
+            event_type: AutomationType::CancelScheduledValues,
+            value: 0., // no value
+            time: cancel_time,
         };
 
         self.send_event(event);
@@ -278,7 +290,7 @@ impl AudioParam {
 #[derive(Debug)]
 pub(crate) struct AudioParamProcessor {
     intrisic_value: f32,
-    current_value: Arc<AtomicF64>,
+    current_value: Arc<AtomicF32>,
     receiver: Receiver<AutomationEvent>,
     automation_rate: AutomationRate,
     default_value: f32,
@@ -341,12 +353,8 @@ impl AudioParamProcessor {
 
         for event in self.receiver.try_iter() {
             events_received = true;
-            // param intrisic value must be updated from the set_value call
-            if event.event_type == AutomationType::SetValue {
-                self.intrisic_value = event.value;
-            }
 
-            // @note - should probably live in its own method just for clarity
+            // @note - the following could live in its own method just for clarity
             // but can't get rid of this error:
             //    for event in self.receiver.try_iter() {
             //                 ------------------------
@@ -356,7 +364,49 @@ impl AudioParamProcessor {
             //
             //        self.insert_event(event);
             //            ^^^^^^^^^^^^^^^^^^^^^^^^ mutable borrow occurs here
-            //
+
+            // handle CancelScheduledValues events
+            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-cancelscheduledvalues
+            if event.event_type == AutomationType::CancelScheduledValues {
+                let some_next_event = self.events.peek();
+
+                match some_next_event {
+                    None => (),
+                    Some(next_event) => {
+                        match next_event.event_type {
+                            AutomationType::LinearRampToValueAtTime
+                            | AutomationType::ExponentialRampToValueAtTime => {
+                                // @note - Firefox and Chrome behave differently
+                                // on this: Firefox actually restore intrisic_value
+                                // from the value at the beginning of the vent, while
+                                // Chrome just keeps the current intrisic_value
+                                // The spec is not very clear there, but Firefox
+                                // seems to be the more compliant:
+                                // "Any active automations whose automation event
+                                // time is less than cancelTime are also cancelled,
+                                // and such cancellations may cause discontinuities
+                                // because the original value (**from before such
+                                // automation**) is restored immediately."
+                                if next_event.time >= event.time {
+                                    let last_event = self.last_event.unwrap();
+                                    self.intrisic_value = last_event.value;
+                                }
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+
+                // remove all event in queue where time >= event.time
+                self.events.retain(|queued| queued.time < event.time);
+                continue; // no need to insert cancel event in queue
+            }
+
+            // handle SetValue - param intrisic value must be updated from event value
+            if event.event_type == AutomationType::SetValue {
+                self.intrisic_value = event.value;
+            }
+
             // If no event in the timeline and event_type is `LinearRampToValueAtTime`
             // or `ExponentialRampToValue` at time, we must insert a `SetValueAtTime`
             // with intrisic value and calling time.
@@ -377,7 +427,7 @@ impl AudioParamProcessor {
                 self.events.push(set_value_event);
             }
 
-            // @todo - many checks need to be done for setValueCurveAtTime events
+            // @todo - more checks will to be done for setValueCurveAtTime events
 
             self.events.push(event);
         }
@@ -388,7 +438,7 @@ impl AudioParamProcessor {
 
         // 2. Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
-        self.current_value.store(self.intrisic_value() as f64);
+        self.current_value.store(self.intrisic_value());
 
         // Clear the vec from previously buffered data
         self.buffer.clear();
@@ -582,7 +632,10 @@ impl AudioParamProcessor {
                                 }
                             }
                         }
-                        _ => (), // CancelScheduledValues,
+                        _ => panic!(
+                            "AutomationEvent {:?} should not appear in AutomationEventQueue",
+                            event.event_type
+                        ),
                     }
                 }
             }
@@ -600,7 +653,7 @@ pub(crate) fn audio_param_pair(
     registration: AudioContextRegistration,
 ) -> (AudioParam, AudioParamProcessor) {
     let (sender, receiver) = crossbeam_channel::unbounded();
-    let current_value = Arc::new(AtomicF64::new(opts.default_value as f64));
+    let current_value = Arc::new(AtomicF32::new(opts.default_value));
 
     let param = AudioParam {
         registration,
@@ -1197,6 +1250,78 @@ mod tests {
 
             let vs = render.tick(10., 1., 10);
             assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
+        }
+    }
+
+    #[test]
+    fn test_cancel_scheduled_values() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        let opts = AudioParamOptions {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+        for t in 0..10 {
+            param.set_value_at_time(t as f32, t as f64);
+        }
+
+        param.cancel_scheduled_values(5.);
+
+        let vs = render.tick(0., 1., 10);
+        assert_float_eq!(
+            vs,
+            &[0., 1., 2., 3., 4., 4., 4., 4., 4., 4.][..],
+            abs_all <= 0.
+        );
+    }
+
+    #[test]
+    fn test_cancel_scheduled_values_ramp() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.set_value_at_time(0., 0.);
+            param.linear_ramp_to_value_at_time(10., 10.);
+            param.cancel_scheduled_values(10.); // cancels everything
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+        }
+
+        {
+            // ramp already started, go back to previous value
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 20.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.set_value_at_time(0., 0.);
+            param.linear_ramp_to_value_at_time(20., 20.);
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(
+                vs,
+                &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
+                abs_all <= 0.
+            );
+
+            param.cancel_scheduled_values(10.);
+            let vs = render.tick(10., 1., 10);
+            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
         }
     }
 }

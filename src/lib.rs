@@ -39,6 +39,9 @@
 //! //std::thread::sleep(std::time::Duration::from_secs(4));
 //! ```
 
+use std::fmt;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
 /// Render quantum size (audio graph is rendered in blocks of this size)
 pub const BUFFER_SIZE: usize = 128;
 
@@ -73,9 +76,6 @@ pub struct SampleRate(pub u32);
 #[derive(Debug, Clone, Copy)]
 pub struct IndexSizeError {}
 
-use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
-
 impl fmt::Display for IndexSizeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
@@ -94,7 +94,31 @@ impl fmt::Display for BufferDepletedError {
 }
 impl std::error::Error for BufferDepletedError {}
 
-/// Atomic float, only `load` and `store` are supported, no arithmetics
+/// Atomic float 32, only `load` and `store` are supported, no arithmetics
+#[derive(Debug)]
+pub(crate) struct AtomicF32 {
+    inner: AtomicU32,
+}
+
+// @note - `swap()` is not implement as `AtomicF32` is only used in `param.rs` for now
+impl AtomicF32 {
+    pub fn new(v: f32) -> Self {
+        Self {
+            inner: AtomicU32::new(u32::from_ne_bytes(v.to_ne_bytes())),
+        }
+    }
+
+    pub fn load(&self) -> f32 {
+        f32::from_ne_bytes(self.inner.load(Ordering::SeqCst).to_ne_bytes())
+    }
+
+    pub fn store(&self, v: f32) {
+        self.inner
+            .store(u32::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst)
+    }
+}
+
+/// Atomic float 64, only `load` and `store` are supported, no arithmetics
 #[derive(Debug)]
 pub(crate) struct AtomicF64 {
     inner: AtomicU64,
