@@ -107,7 +107,7 @@ impl AudioProcessor for DelayRenderer {
         params: AudioParamValues,
         _timestamp: f64,
         sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
@@ -131,9 +131,7 @@ impl AudioProcessor for DelayRenderer {
             // progress index
             self.index = (self.index + 1) % quanta;
         }
-    }
 
-    fn tail_time(&self) -> bool {
         // todo: return false when all inputs disconnected and buffer exhausted
         true
     }

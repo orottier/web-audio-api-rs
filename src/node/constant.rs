@@ -87,7 +87,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single output node
         let output = &mut outputs[0];
 
@@ -95,9 +95,7 @@ impl AudioProcessor for ConstantSourceRenderer {
 
         output.force_mono();
         output.channel_data_mut(0).copy_from_slice(offset_values);
-    }
 
-    fn tail_time(&self) -> bool {
         true
     }
 }

@@ -89,7 +89,7 @@ impl AudioProcessor for GainRenderer {
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
@@ -104,9 +104,7 @@ impl AudioProcessor for GainRenderer {
                 .zip(gain_values.iter())
                 .for_each(|(value, g)| *value *= g)
         });
-    }
 
-    fn tail_time(&self) -> bool {
         false
     }
 }

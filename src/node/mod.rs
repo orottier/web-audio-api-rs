@@ -241,7 +241,7 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
         _params: AudioParamValues,
         timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single output node
         let output = &mut outputs[0];
 
@@ -250,13 +250,16 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
             ScheduledState::Active => (),
             ScheduledState::NotStarted => {
                 output.make_silent();
-                return;
+                return true; // will output in the future
             }
             ScheduledState::Ended => {
                 output.make_silent();
                 self.finished = true;
-                return;
             }
+        }
+
+        if self.finished {
+            return false; // can clean up
         }
 
         match self.stream.next() {
@@ -286,9 +289,7 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
                 output.make_silent()
             }
         }
-    }
 
-    fn tail_time(&self) -> bool {
         !self.finished
     }
 }

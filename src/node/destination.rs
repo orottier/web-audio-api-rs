@@ -21,17 +21,15 @@ impl AudioProcessor for DestinationRenderer {
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
 
         // todo, actually fill cpal buffer here
         *output = input.clone();
-    }
 
-    fn tail_time(&self) -> bool {
-        unreachable!() // will never drop in control thread
+        true
     }
 }
 

@@ -166,7 +166,7 @@ impl AudioProcessor for StereoPannerRenderer {
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
@@ -203,9 +203,7 @@ impl AudioProcessor for StereoPannerRenderer {
             }
             _ => panic!("StereoPannerNode should not have more than 2 channels to process"),
         }
-    }
 
-    fn tail_time(&self) -> bool {
         false
     }
 }
