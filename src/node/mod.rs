@@ -254,12 +254,8 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
             }
             ScheduledState::Ended => {
                 output.make_silent();
-                self.finished = true;
+                return false; // can clean up
             }
-        }
-
-        if self.finished {
-            return false; // can clean up
         }
 
         match self.stream.next() {
