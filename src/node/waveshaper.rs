@@ -274,7 +274,7 @@ impl AudioProcessor for WaveShaperRenderer {
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
@@ -290,24 +290,25 @@ impl AudioProcessor for WaveShaperRenderer {
 
         use OverSampleType::*;
         match self.oversample.load(Ordering::SeqCst).into() {
-            None => self.process_none(input, output),
+            None => {
+                self.process_none(input, output);
+                false
+            }
             X2 => {
                 if input.channels().len() != self.channels_x2 {
                     self.update_2x(input.channels().len());
                 }
-                self.process_2x(input, output)
+                self.process_2x(input, output);
+                true // todo proper tail-time - issue #34
             }
             X4 => {
                 if input.channels().len() != self.channels_x4 {
                     self.update_4x(input.channels().len());
                 }
-                self.process_4x(input, output)
+                self.process_4x(input, output);
+                true // todo proper tail-time - issue #34
             }
         }
-    }
-
-    fn tail_time(&self) -> bool {
-        true
     }
 }
 

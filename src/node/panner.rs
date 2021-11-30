@@ -113,7 +113,7 @@ impl AudioProcessor for PannerRenderer {
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single input node, assume mono, not silent
         let input = inputs[0].channel_data(0);
         // single output node
@@ -178,9 +178,7 @@ impl AudioProcessor for PannerRenderer {
             .iter_mut()
             .zip(right)
             .for_each(|(o, i)| *o = i);
-    }
 
-    fn tail_time(&self) -> bool {
-        false // only for panning model HRTF
+        false // only true for panning model HRTF
     }
 }

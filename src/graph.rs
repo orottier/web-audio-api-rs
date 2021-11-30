@@ -201,12 +201,14 @@ pub struct Node {
     has_inputs_connected: bool,
     /// Indicates if the output of this Node was consumed in the current render quantum
     has_outputs_connected: bool,
+    /// Indicates if the Node will still output a signal if no inputs are connected
+    tail_time: bool,
 }
 
 impl Node {
     /// Render an audio quantum
     fn process(&mut self, params: AudioParamValues, timestamp: f64, sample_rate: SampleRate) {
-        self.processor.process(
+        self.tail_time = self.processor.process(
             &self.inputs[..],
             &mut self.outputs[..],
             params,
@@ -230,7 +232,7 @@ impl Node {
 
         // Drop, when the node does not have any inputs connected,
         // and if the processor reports it won't yield output.
-        if !self.has_inputs_connected && !self.processor.tail_time() {
+        if !self.has_inputs_connected && !self.tail_time {
             return true;
         }
 
@@ -293,6 +295,7 @@ impl Graph {
                 free_when_finished: false,
                 has_inputs_connected: true,
                 has_outputs_connected: true,
+                tail_time: true,
             },
         );
     }
@@ -509,9 +512,7 @@ mod tests {
             _params: AudioParamValues,
             _timestamp: f64,
             _sample_rate: SampleRate,
-        ) {
-        }
-        fn tail_time(&self) -> bool {
+        ) -> bool {
             false
         }
     }

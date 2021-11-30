@@ -365,7 +365,7 @@ impl AudioProcessor for AudioParamProcessor {
         _params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         let period = 1. / sample_rate.0 as f64;
         let param_intrisic_values = self.tick(timestamp, period, BUFFER_SIZE);
 
@@ -376,9 +376,7 @@ impl AudioProcessor for AudioParamProcessor {
             .channel_data_mut(0)
             .copy_from_slice(param_intrisic_values);
         param_computed_values.add(input, ChannelInterpretation::Discrete);
-    }
 
-    fn tail_time(&self) -> bool {
         true // has intrinsic value
     }
 }

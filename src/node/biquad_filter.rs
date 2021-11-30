@@ -497,7 +497,7 @@ impl AudioProcessor for BiquadFilterRenderer {
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
@@ -508,10 +508,8 @@ impl AudioProcessor for BiquadFilterRenderer {
         let q_values = params.get(&self.q);
 
         self.filter(input, output, g_values, det_values, freq_values, q_values);
-    }
 
-    fn tail_time(&self) -> bool {
-        true
+        true // todo tail time - issue #34
     }
 }
 
