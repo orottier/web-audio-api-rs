@@ -1,5 +1,5 @@
 use crate::buffer::ChannelConfig;
-use crate::param::AutomationEvent;
+use crate::param::AudioParamEvent;
 use crate::process::AudioProcessor;
 
 use crossbeam_channel::Sender;
@@ -35,7 +35,7 @@ pub(crate) enum ControlMessage {
     },
 
     AudioParamEvent {
-        to: Sender<AutomationEvent>,
-        event: AutomationEvent,
+        to: Sender<AudioParamEvent>,
+        event: AudioParamEvent,
     },
 }

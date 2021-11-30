@@ -28,7 +28,7 @@ use crate::node::{
     ChannelSplitterOptions, ConstantSourceOptions, DelayOptions, GainOptions, IirFilterOptions,
     PannerOptions, PeriodicWave, PeriodicWaveOptions,
 };
-use crate::param::{AudioParam, AudioParamOptions, AutomationEvent};
+use crate::param::{AudioParam, AudioParamEvent, AudioParamOptions};
 use crate::process::AudioProcessor;
 use crate::spatial::{AudioListener, AudioListenerParams};
 use crate::{SampleRate, BUFFER_SIZE};
@@ -649,14 +649,14 @@ impl BaseAudioContext {
         self.inner.render_channel.send(message).unwrap();
     }
 
-    /// Pass an `AudioParam::AutomationEvent` to the render thread
+    /// Pass an `AudioParam::AudioParamEvent` to the render thread
     ///
     /// This clunky setup (wrapping a Sender in a message sent by another Sender) ensures
     /// automation events will never be handled out of order.
     pub(crate) fn pass_audio_param_event(
         &self,
-        to: &Sender<AutomationEvent>,
-        event: AutomationEvent,
+        to: &Sender<AudioParamEvent>,
+        event: AudioParamEvent,
     ) {
         let message = ControlMessage::AudioParamEvent {
             to: to.clone(),

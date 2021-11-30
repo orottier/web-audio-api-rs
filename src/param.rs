@@ -29,39 +29,48 @@ pub struct AudioParamOptions {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-enum AutomationType {
+enum AudioParamEventType {
     SetValue,
     SetValueAtTime,
     LinearRampToValueAtTime,
     ExponentialRampToValueAtTime,
     CancelScheduledValues,
-    // SetTargetAtTime,
+    SetTargetAtTime,
+    // CancelAndHoldAtTime,
+    // SetValueCurve,
 }
 
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct AutomationEvent {
-    event_type: AutomationType,
+pub(crate) struct AudioParamEvent {
+    event_type: AudioParamEventType,
     value: f32,
     time: f64,
+    time_constant: Option<f64>,
 }
 
 // Event queue that mimics the `BinaryHeap` API while allowing `retain` without going nigthly
 // @note - diverge in that `queue.sort()` is stable and must be called explicitly
 #[derive(Debug)]
-struct AutomationEventQueue {
-    inner: Vec<AutomationEvent>,
+struct AudioParamEventTimeline {
+    inner: Vec<AudioParamEvent>,
+    dirty: bool,
 }
 
-impl AutomationEventQueue {
+impl AudioParamEventTimeline {
     fn new() -> Self {
-        Self { inner: Vec::new() }
+        Self {
+            inner: Vec::new(),
+            dirty: false,
+        }
     }
 
-    fn push(&mut self, item: AutomationEvent) {
+    fn push(&mut self, item: AudioParamEvent) {
+        self.dirty = true;
         self.inner.push(item);
     }
 
-    fn pop(&mut self) -> Option<AutomationEvent> {
+    // @note - `pop` and `retain` preserve order so they don't make the queue dirty
+    fn pop(&mut self) -> Option<AudioParamEvent> {
         if !self.inner.is_empty() {
             Some(self.inner.remove(0))
         } else {
@@ -71,7 +80,7 @@ impl AutomationEventQueue {
 
     fn retain<F>(&mut self, func: F)
     where
-        F: Fn(&AutomationEvent) -> bool,
+        F: Fn(&AudioParamEvent) -> bool,
     {
         self.inner.retain(func);
     }
@@ -80,17 +89,28 @@ impl AutomationEventQueue {
         self.inner.is_empty()
     }
 
-    fn peek(&self) -> Option<AutomationEvent> {
-        if !self.inner.is_empty() {
-            Some(self.inner[0])
-        } else {
-            None
+    fn unsafe_peek(&self) -> Option<&AudioParamEvent> {
+        self.inner.get(0)
+    }
+    // panic if dirty, we are doing something wrong here
+    fn peek(&self) -> Option<&AudioParamEvent> {
+        if self.dirty {
+            panic!("`AudioParamEventTimeline`: Invalid `.peek()` call, the queue is dirty");
         }
+        self.inner.get(0)
+    }
+
+    fn next(&self) -> Option<&AudioParamEvent> {
+        if self.dirty {
+            panic!("`AudioParamEventTimeline`: Invalid `.next()` call, the queue is dirty");
+        }
+        self.inner.get(1)
     }
 
     fn sort(&mut self) {
         self.inner
             .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+        self.dirty = false;
     }
 }
 
@@ -102,7 +122,7 @@ pub struct AudioParam {
     min_value: f32,                  // readonly
     max_value: f32,                  // readonly
     current_value: Arc<AtomicF32>,
-    sender: Sender<AutomationEvent>,
+    sender: Sender<AudioParamEvent>,
 }
 
 // helper struct to attach / detach to context (for borrow reasons)
@@ -113,7 +133,7 @@ pub(crate) struct AudioParamRaw {
     min_value: f32,
     max_value: f32,
     current_value: Arc<AtomicF32>,
-    sender: Sender<AutomationEvent>,
+    sender: Sender<AudioParamEvent>,
 }
 
 impl AudioNode for AudioParam {
@@ -172,7 +192,15 @@ impl AudioParam {
         self.max_value
     }
 
-    // @note - we need to test more how this behaves
+    // the choice here is to have this coherent with the first sample of
+    // the last rendered block, with means intrisic_value must be calculated
+    // for next_block_time at each tick.
+    // @note - maybe check with spec editors that it is correct
+    //
+    // see. test_linear_ramp_arate_multiple_blocks
+    //      test_linear_ramp_krate_multiple_blocks
+    //      test_exponential_ramp_a_rate_multiple_blocks
+    //      test_exponential_ramp_k_rate_multiple_blocks
     pub fn value(&self) -> f32 {
         self.current_value.load()
     }
@@ -189,30 +217,33 @@ impl AudioParam {
 
         // this event is meant to update param intrisic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
-        let event = AutomationEvent {
-            event_type: AutomationType::SetValue,
+        let event = AudioParamEvent {
+            event_type: AudioParamEventType::SetValue,
             value: clamped,
             time: 0.,
+            time_constant: None,
         };
 
         self.send_event(event);
     }
 
     pub fn set_value_at_time(&self, value: f32, start_time: f64) {
-        let event = AutomationEvent {
-            event_type: AutomationType::SetValueAtTime,
+        let event = AudioParamEvent {
+            event_type: AudioParamEventType::SetValueAtTime,
             value,
             time: start_time,
+            time_constant: None,
         };
 
         self.send_event(event);
     }
 
     pub fn linear_ramp_to_value_at_time(&self, value: f32, end_time: f64) {
-        let event = AutomationEvent {
-            event_type: AutomationType::LinearRampToValueAtTime,
+        let event = AudioParamEvent {
+            event_type: AudioParamEventType::LinearRampToValueAtTime,
             value,
             time: end_time,
+            time_constant: None,
         };
 
         self.send_event(event);
@@ -221,6 +252,7 @@ impl AudioParam {
     pub fn exponential_ramp_to_value_at_time(&self, value: f32, end_time: f64) {
         // @note - this should probably not `panic` as this could crash at runtime.
         // cf. Error pattern in `iir_filter.rs`
+        // @todo - implement clean Errors
         if value == 0. {
             panic!(
                 "RangeError: Failed to execute 'exponentialRampToValueAtTime'
@@ -231,20 +263,43 @@ impl AudioParam {
             )
         }
 
-        let event = AutomationEvent {
-            event_type: AutomationType::ExponentialRampToValueAtTime,
+        let event = AudioParamEvent {
+            event_type: AudioParamEventType::ExponentialRampToValueAtTime,
             value,
             time: end_time,
+            time_constant: None,
+        };
+
+        self.send_event(event);
+    }
+
+    pub fn set_target_at_time(&self, value: f32, start_time: f64, time_constant: f64) {
+        if time_constant <= 0. {
+            panic!(
+                "RangeError: Failed to execute 'setTargetAtTime' on 'AudioParam':
+                 Time constant must be a finite positive number: {:?}",
+                time_constant
+            )
+        }
+
+        // what about time_constant = 0. which leads to a division by zero
+        // both Chrome and Firefox accept that...
+        let event = AudioParamEvent {
+            event_type: AudioParamEventType::SetTargetAtTime,
+            value,
+            time: start_time,
+            time_constant: Some(time_constant),
         };
 
         self.send_event(event);
     }
 
     pub fn cancel_scheduled_values(&self, cancel_time: f64) {
-        let event = AutomationEvent {
-            event_type: AutomationType::CancelScheduledValues,
+        let event = AudioParamEvent {
+            event_type: AudioParamEventType::CancelScheduledValues,
             value: 0., // no value
             time: cancel_time,
+            time_constant: None,
         };
 
         self.send_event(event);
@@ -278,7 +333,7 @@ impl AudioParam {
         }
     }
 
-    fn send_event(&self, event: AutomationEvent) {
+    fn send_event(&self, event: AudioParamEvent) {
         if cfg!(test) {
             // bypass audiocontext enveloping of control messages for simpler testing
             self.sender.send(event).unwrap();
@@ -292,13 +347,13 @@ impl AudioParam {
 pub(crate) struct AudioParamProcessor {
     intrisic_value: f32,
     current_value: Arc<AtomicF32>,
-    receiver: Receiver<AutomationEvent>,
+    receiver: Receiver<AudioParamEvent>,
     automation_rate: AutomationRate,
     default_value: f32,
     min_value: f32,
     max_value: f32,
-    events: AutomationEventQueue,
-    last_event: Option<AutomationEvent>,
+    event_timeline: AudioParamEventTimeline,
+    last_event: Option<AudioParamEvent>,
     buffer: Vec<f32>,
 }
 
@@ -337,8 +392,8 @@ impl AudioParamProcessor {
         }
     }
 
-    fn tick(&mut self, ts: f64, dt: f64, count: usize) -> &[f32] {
-        // println!("> tick - ts: {}, dt: {}, count: {}", ts, dt, count);
+    fn tick(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
+        // println!("> tick - block_time: {}, dt: {}, count: {}", block_time, dt, count);
 
         // handle incoming automation events in sorted queue
         //
@@ -368,15 +423,25 @@ impl AudioParamProcessor {
 
             // handle CancelScheduledValues events
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-cancelscheduledvalues
-            if event.event_type == AutomationType::CancelScheduledValues {
-                let some_current_event = self.events.peek();
+            if event.event_type == AudioParamEventType::CancelScheduledValues {
+                // we don't want to `sort()` before `peek` here, because what we
+                // actually need to check is if a Ramp has already started, therefore
+                // we want the actual `peek()` at the end of the last block.
+                let some_current_event = self.event_timeline.unsafe_peek();
 
                 match some_current_event {
                     None => (),
                     Some(current_event) => {
+                        // @note - The spec is not particularly clear about what to do
+                        // with on-going SetTarget events, but both Chrome and Firefox
+                        // ignore the Cancel event if at same time nor if startTime is
+                        // equal to cancelTime, this can makes sens as the event time
+                        // (which is a `startTime` for `SetTarget`) is before the `cancelTime`
+                        // (maybe this should be clarified w/ spec editors)
+
                         match current_event.event_type {
-                            AutomationType::LinearRampToValueAtTime
-                            | AutomationType::ExponentialRampToValueAtTime => {
+                            AudioParamEventType::LinearRampToValueAtTime
+                            | AudioParamEventType::ExponentialRampToValueAtTime => {
                                 // we are in the middle of a ramp
                                 //
                                 // @note - Firefox and Chrome behave differently
@@ -408,12 +473,13 @@ impl AudioParamProcessor {
                 }
 
                 // remove all event in queue where time >= event.time
-                self.events.retain(|queued| queued.time < event.time);
+                self.event_timeline
+                    .retain(|queued| queued.time < event.time);
                 continue; // no need to insert cancel events in queue
             }
 
             // handle SetValue - param intrisic value must be updated from event value
-            if event.event_type == AutomationType::SetValue {
+            if event.event_type == AudioParamEventType::SetValue {
                 self.intrisic_value = event.value;
             }
 
@@ -422,35 +488,44 @@ impl AudioParamProcessor {
             // with intrisic value and calling time.
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
-            if self.events.is_empty()
-                && (event.event_type == AutomationType::LinearRampToValueAtTime
-                    || event.event_type == AutomationType::ExponentialRampToValueAtTime)
+            //
+            // for SetTarget, this behavior is not per se specified, but it allows
+            // to make sure we have a stable start_value available without having
+            // to store it elsewhere.
+            if self.event_timeline.is_empty()
+                && (event.event_type == AudioParamEventType::LinearRampToValueAtTime
+                    || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime
+                    || event.event_type == AudioParamEventType::SetTargetAtTime)
             {
-                let set_value_event = AutomationEvent {
-                    event_type: AutomationType::SetValueAtTime,
+                let set_value_event = AudioParamEvent {
+                    event_type: AudioParamEventType::SetValue,
                     value: self.intrisic_value,
                     // make sure the event is applied before any other event, time
                     // will be replaced by the block timestamp during event processing
                     time: 0.,
+                    time_constant: None,
                 };
 
-                self.events.push(set_value_event);
+                self.event_timeline.push(set_value_event);
             }
 
             // @todo - more checks will to be done for setValueCurveAtTime events
 
-            self.events.push(event);
+            self.event_timeline.push(event);
         }
 
         if events_received {
-            self.events.sort();
+            self.event_timeline.sort();
         }
 
         // 2. Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
         self.current_value.store(self.intrisic_value());
 
-        // Clear the vec from previously buffered data
+        // time at the beginning of the next render quantum
+        let next_block_time = block_time + dt * count as f64;
+
+        // clear the vec from previously buffered data
         self.buffer.clear();
 
         let is_a_rate = self.automation_rate == AutomationRate::A;
@@ -463,16 +538,13 @@ impl AudioParamProcessor {
             }
         };
 
-        // time at the beginning of the next render quantum
-        let max_ts = ts + dt * count as f64;
-
         loop {
-            let some_event = self.events.peek();
-            // println!("> Handle event: {:?}, ts: {:?}", some_event, ts);
+            let some_event = self.event_timeline.peek();
+            // println!("> Handle event: {:?}, block_time: {:?}", some_event, block_time);
 
             match some_event {
                 None => {
-                    // fill remaining buffer with current intrisic value
+                    // fill remaining buffer with `intrisic_value`
                     for _ in self.buffer.len()..count {
                         self.buffer.push(self.intrisic_value());
                     }
@@ -481,23 +553,23 @@ impl AudioParamProcessor {
                 }
                 Some(event) => {
                     match event.event_type {
-                        AutomationType::SetValue | AutomationType::SetValueAtTime => {
+                        AudioParamEventType::SetValue | AudioParamEventType::SetValueAtTime => {
                             let value = event.value;
                             let mut time = event.time;
 
                             // `set_value` calls and implicitely inserted events
                             // are inserted with a `time = 0.` to make sure
-                            // they are processed first, replacing w/ ts allow
-                            // to conform to the spec:
+                            // they are processed first, replacing w/ block_time
+                            // allows to conform to the spec:
                             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
                             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
                             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
 
                             if time == 0. {
-                                time = ts;
+                                time = block_time;
                             }
 
-                            let end_index = ((time - ts).max(0.) / dt) as usize;
+                            let end_index = ((time - block_time).max(0.) / dt) as usize;
                             let end_index_clipped = end_index.min(count);
 
                             // fill remaining buffer for A-rate processing with
@@ -507,7 +579,7 @@ impl AudioParamProcessor {
                                 self.buffer.push(self.intrisic_value());
                             }
 
-                            if time > max_ts {
+                            if time > next_block_time {
                                 break;
                             } else {
                                 self.intrisic_value = value;
@@ -517,75 +589,75 @@ impl AudioParamProcessor {
                                 #[allow(clippy::float_cmp)]
                                 if time != event.time {
                                     // store as last event with the applied time
-                                    let mut event = self.events.pop().unwrap();
+                                    let mut event = self.event_timeline.pop().unwrap();
                                     event.time = time;
                                     self.last_event = Some(event);
                                 } else {
-                                    self.last_event = self.events.pop();
+                                    self.last_event = self.event_timeline.pop();
                                 }
                             }
                         }
                         // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
                         // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
-                        AutomationType::LinearRampToValueAtTime => {
+                        AudioParamEventType::LinearRampToValueAtTime => {
                             let last_event = self.last_event.unwrap();
 
-                            let last_time = last_event.time;
+                            let start_time = last_event.time;
                             let end_time = event.time;
-                            let duration = (end_time - last_time) as f32;
+                            let duration = end_time - start_time;
 
-                            let last_value = last_event.value;
+                            let start_value = last_event.value;
                             let end_value = event.value;
-                            let dv = end_value - last_value;
+                            let dv = end_value - start_value;
 
                             let start_index = self.buffer.len();
-                            let end_index = ((end_time - ts).max(0.) / dt) as usize;
+                            let end_index = ((end_time - block_time).max(0.) / dt) as usize;
                             let end_index_clipped = end_index.min(count);
 
                             // compute "real" value according to `t` then clamp it
                             // cf. Example 7 https://www.w3.org/TR/webaudio/#computation-of-value
                             if is_a_rate && end_index_clipped > self.buffer.len() {
-                                let mut time = ts + start_index as f64 * dt;
-                                let mut clamped: f32;
+                                let mut time = block_time + start_index as f64 * dt;
 
                                 for _ in start_index..end_index_clipped {
-                                    let value =
-                                        last_value + dv * (time - last_time) as f32 / duration;
-                                    clamped = value.clamp(self.min_value, self.max_value);
+                                    let phase = (time - start_time) / duration;
+                                    let value = start_value + dv * phase as f32;
+                                    let clamped = value.clamp(self.min_value, self.max_value);
                                     self.buffer.push(clamped);
 
                                     time += dt;
                                     self.intrisic_value = clamped;
                                 }
-                            } else if is_k_rate {
-                                let time = ts + end_index_clipped as f64 * dt;
-                                let value = last_value + dv * (time - last_time) as f32 / duration;
-                                let clamped = value.clamp(self.min_value, self.max_value);
-
-                                self.intrisic_value = clamped;
                             }
 
-                            if end_time > max_ts {
+                            if end_time > next_block_time {
+                                // compute value for `next_block_time` so that `param.value()`
+                                // stays coherent (see. comment in `AudioParam`)
+                                // allows to properly fill k-rate within next block too
+                                let phase = (next_block_time - start_time) / duration;
+                                let value = start_value + dv * phase as f32;
+                                let clamped = value.clamp(self.min_value, self.max_value);
+                                self.intrisic_value = clamped;
                                 break;
                             } else {
-                                // next intrisic value
+                                // set value to "real" end_value
                                 self.intrisic_value =
                                     end_value.clamp(self.min_value, self.max_value);
-                                self.last_event = self.events.pop();
+                                self.last_event = self.event_timeline.pop();
                             }
                         }
                         // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
                         // v(t) = v1 * (v2/v1)^((t-t1) / (t2-t1))
-                        AutomationType::ExponentialRampToValueAtTime => {
+                        AudioParamEventType::ExponentialRampToValueAtTime => {
                             let last_event = self.last_event.unwrap();
 
-                            let last_time = last_event.time;
+                            let start_time = last_event.time;
                             let end_time = event.time;
-                            let duration = (end_time - last_time) as f32;
+                            let duration = end_time - start_time;
 
-                            let last_value = last_event.value;
+                            let start_value = last_event.value;
                             let end_value = event.value;
-                            let ratio = end_value / last_value;
+                            let ratio = end_value / start_value;
 
                             // Handle edge cases:
                             // > If 𝑉0 and 𝑉1 have opposite signs or if 𝑉0 is zero,
@@ -594,56 +666,155 @@ impl AudioParamProcessor {
                             // > If there are no more events after this ExponentialRampToValue
                             // > event then for 𝑡≥𝑇1, 𝑣(𝑡)=𝑉1.
                             // this should thus behave as a SetValue
-                            if last_value == 0. || last_value * end_value < 0. {
-                                self.events.pop();
+                            if start_value == 0. || start_value * end_value < 0. {
+                                // @todo - review that, e.g. try to avoid `push` and `sort`
+                                self.event_timeline.pop();
 
-                                let event = AutomationEvent {
-                                    event_type: AutomationType::SetValueAtTime,
+                                let event = AudioParamEvent {
+                                    event_type: AudioParamEventType::SetValueAtTime,
                                     time: end_time,
                                     value: end_value,
+                                    time_constant: None,
                                 };
 
-                                self.events.push(event);
+                                self.event_timeline.push(event);
+                                self.event_timeline.sort();
                             } else {
                                 let start_index = self.buffer.len();
-                                let end_index = ((end_time - ts).max(0.) / dt) as usize;
+                                let end_index = ((end_time - block_time).max(0.) / dt) as usize;
                                 let end_index_clipped = end_index.min(count);
 
                                 if is_a_rate && end_index_clipped > self.buffer.len() {
-                                    let mut time = ts + start_index as f64 * dt;
-                                    let mut clamped: f32;
+                                    let mut time = block_time + start_index as f64 * dt;
 
                                     for _ in start_index..end_index_clipped {
-                                        // v(t) = v1*(v2/v1)^((t-t1)/(t2-t1))
-                                        let phase = (time - last_time) as f32 / duration;
-                                        let val = last_value * ratio.powf(phase);
-                                        clamped = val.clamp(self.min_value, self.max_value);
+                                        let phase = (time - start_time) / duration;
+                                        let val = start_value * ratio.powf(phase as f32);
+                                        let clamped = val.clamp(self.min_value, self.max_value);
                                         self.buffer.push(clamped);
 
                                         time += dt;
                                         self.intrisic_value = clamped;
                                     }
-                                } else if is_k_rate {
-                                    let time = ts + end_index_clipped as f64 * dt;
-                                    let phase = (time - last_time) as f32 / duration;
-                                    let val = last_value * ratio.powf(phase);
-                                    let clamped = val.clamp(self.min_value, self.max_value);
-                                    // store as intrisic value for next block
-                                    self.intrisic_value = clamped;
                                 }
 
-                                if end_time > max_ts {
+                                if end_time > next_block_time {
+                                    // compute value for `next_block_time` so that `param.value()`
+                                    // stays coherent (see. comment in `AudioParam`)
+                                    // allows to properly fill k-rate within next block too
+                                    let phase = (next_block_time - start_time) / duration;
+                                    let val = start_value * ratio.powf(phase as f32);
+                                    let clamped = val.clamp(self.min_value, self.max_value);
+                                    self.intrisic_value = clamped;
                                     break;
                                 } else {
-                                    // next intrisic value
+                                    // set value to "real" end_value
                                     self.intrisic_value =
                                         end_value.clamp(self.min_value, self.max_value);
-                                    self.last_event = self.events.pop();
+                                    self.last_event = self.event_timeline.pop();
                                 }
                             }
                         }
+                        // https://webaudio.github.io/web-audio-api/#dom-audioparam-settargetattime
+                        // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+                        AudioParamEventType::SetTargetAtTime => {
+                            let mut end_time = next_block_time;
+                            let mut ended = false;
+                            // handle next event stop SetTarget if any
+                            let some_next_event = self.event_timeline.next();
+
+                            if let Some(next_event) = some_next_event {
+                                match next_event.event_type {
+                                    AudioParamEventType::LinearRampToValueAtTime
+                                    | AudioParamEventType::ExponentialRampToValueAtTime => {
+                                        // [spec] If the preceding event is a SetTarget
+                                        // event, 𝑇0 and 𝑉0 are chosen from the current
+                                        // time and value of SetTarget automation. That
+                                        // is, if the SetTarget event has not started,
+                                        // 𝑇0 is the start time of the event, and 𝑉0
+                                        // is the value just before the SetTarget event
+                                        // starts. In this case, the LinearRampToValue
+                                        // event effectively replaces the SetTarget event.
+                                        // If the SetTarget event has already started,
+                                        // 𝑇0 is the current context time, and 𝑉0 is
+                                        // the current SetTarget automation value at time 𝑇0.
+                                        // In both cases, the automation curve is continuous.
+                                        end_time = block_time;
+                                        ended = true;
+                                    }
+                                    _ => {
+                                        // For all other events, the SetTarget
+                                        // event ends at the time of the next event.
+                                        if next_event.time < next_block_time {
+                                            end_time = next_event.time;
+                                            ended = true;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // @todo - as SetTarget never resolves on an end value
+                            // some strategy could be implemented here so that
+                            // when the value is close enough to the target a
+                            // SetValue event could be inserted in the timeline.
+                            // This could be done once per block before the loop.
+                            // Chrome has such strategy, cf. `HasSetTargetConverged`
+
+                            let start_time = event.time;
+                            // if SetTarget is the first event registered, we implicitely
+                            // insert a SetValue event just before just as for Ramps.
+                            // Therefore we are sure last_event exists
+                            let start_value = self.last_event.unwrap().value;
+                            let end_value = event.value;
+                            let dv = start_value - end_value;
+                            let time_constant = event.time_constant.unwrap();
+
+                            let start_index = self.buffer.len();
+                            let end_index = ((end_time - block_time).max(0.) / dt) as usize;
+                            let end_index_clipped = end_index.min(count);
+
+                            if is_a_rate && end_index_clipped > self.buffer.len() {
+                                let mut time = block_time + start_index as f64 * dt;
+
+                                for _ in start_index..end_index_clipped {
+                                    let exponant = -1. * ((time - start_time) / time_constant);
+                                    let val = end_value + dv * exponant.exp() as f32;
+                                    let clamped = val.clamp(self.min_value, self.max_value);
+                                    self.buffer.push(clamped);
+
+                                    self.intrisic_value = clamped;
+                                    time += dt;
+                                }
+                            }
+
+                            if !ended {
+                                // compute value for `next_block_time` so that `param.value()`
+                                // stays coherent (see. comment in `AudioParam`)
+                                // allows to properly fill k-rate within next block too
+                                let exponant =
+                                    -1. * ((next_block_time - start_time) / time_constant);
+                                let value = end_value + dv * exponant.exp() as f32;
+                                self.intrisic_value = value.clamp(self.min_value, self.max_value);
+                                break;
+                            } else {
+                                // setTarget has no "real" end value, compute according
+                                // to next event start time
+                                let exponant = -1. * ((end_time - start_time) / time_constant);
+                                let end_target_value = end_value + dv * exponant.exp() as f32;
+
+                                self.intrisic_value =
+                                    end_target_value.clamp(self.min_value, self.max_value);
+
+                                // end_value and end_time must be stored for use
+                                // by next event
+                                let mut event = self.event_timeline.pop().unwrap();
+                                event.time = end_time;
+                                event.value = end_target_value;
+                                self.last_event = Some(event);
+                            }
+                        }
                         _ => panic!(
-                            "AutomationEvent {:?} should not appear in AutomationEventQueue",
+                            "AudioParamEvent {:?} should not appear in AudioParamEventTimeline",
                             event.event_type
                         ),
                     }
@@ -683,7 +854,7 @@ pub(crate) fn audio_param_pair(
         default_value: opts.default_value,
         min_value: opts.min_value,
         max_value: opts.max_value,
-        events: AutomationEventQueue::new(),
+        event_timeline: AudioParamEventTimeline::new(),
         last_event: None,
         buffer: Vec::with_capacity(BUFFER_SIZE),
     };
@@ -950,6 +1121,7 @@ mod tests {
             &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
             abs_all <= 0.
         );
+        assert_float_eq!(param.value(), 0., abs <= 0.);
 
         // next quantum t = 10..20
         let vs = render.tick(10., 1., 10);
@@ -958,10 +1130,12 @@ mod tests {
             &[10., 11., 12., 13., 14., 15., 16., 17., 18., 19.][..],
             abs_all <= 0.
         );
+        assert_float_eq!(param.value(), 10., abs <= 0.);
 
         // ramp finished t = 20..30
         let vs = render.tick(20., 1., 10);
         assert_float_eq!(vs, &[20.0; 10][..], abs_all <= 0.);
+        assert_float_eq!(param.value(), 20., abs <= 0.);
     }
 
     #[test]
@@ -1010,15 +1184,19 @@ mod tests {
             // first quantum t = 0..10
             let vs = render.tick(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+            assert_float_eq!(param.value(), 0., abs <= 0.);
             // next quantum t = 10..20
             let vs = render.tick(10., 1., 10);
             assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
+            assert_float_eq!(param.value(), 10., abs <= 0.);
             // ramp finished t = 20..30
             let vs = render.tick(20., 1., 10);
             assert_float_eq!(vs, &[20.0; 10][..], abs_all <= 0.);
+            assert_float_eq!(param.value(), 20., abs <= 0.);
         }
 
         {
+            // finish in the middle of a block
             let opts = AudioParamOptions {
                 automation_rate: AutomationRate::K,
                 default_value: 0.,
@@ -1032,12 +1210,15 @@ mod tests {
             // first quantum t = 0..10
             let vs = render.tick(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+            assert_float_eq!(param.value(), 0., abs <= 0.);
             // next quantum t = 10..20
             let vs = render.tick(10., 1., 10);
             assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
+            assert_float_eq!(param.value(), 10., abs <= 0.);
             // ramp finished t = 20..30
             let vs = render.tick(20., 1., 10);
             assert_float_eq!(vs, &[15.0; 10][..], abs_all <= 0.);
+            assert_float_eq!(param.value(), 15., abs <= 0.);
         }
     }
 
@@ -1107,9 +1288,11 @@ mod tests {
 
         let vs = render.tick(0., 1., 10);
         assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
+        assert_float_eq!(param.value(), res[0], abs <= 0.);
 
         let vs = render.tick(10., 1., 10);
         assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
+        assert_float_eq!(param.value(), res[10], abs <= 0.);
     }
 
     #[test]
@@ -1260,6 +1443,257 @@ mod tests {
 
             let vs = render.tick(10., 1., 10);
             assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
+        }
+    }
+
+    #[test]
+    fn test_set_target_at_time_a_rate() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 1.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+            let v0: f32 = 0.;
+            let v1: f32 = 1.;
+            let t0: f64 = 0.;
+            let time_constant: f64 = 1.;
+
+            param.set_value_at_time(v0, t0);
+            param.set_target_at_time(v1, t0, time_constant);
+            let vs = render.tick(0., 1., 10);
+
+            let mut res = Vec::<f32>::with_capacity(10);
+            for t in 0..10 {
+                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                res.push(val);
+            }
+
+            assert_float_eq!(vs, &res[..], abs_all <= 0.);
+        }
+
+        {
+            // implicit SetValue if SetTarget is first event
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 1.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+            let v0: f32 = 0.; // will be implicitly set in param (see default_value)
+            let v1: f32 = 1.;
+            let t0: f64 = 0.;
+            let time_constant: f64 = 1.;
+
+            param.set_target_at_time(v1, t0, time_constant);
+            let vs = render.tick(0., 1., 10);
+
+            let mut res = Vec::<f32>::with_capacity(10);
+            for t in 0..10 {
+                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                res.push(val);
+            }
+
+            assert_float_eq!(vs, &res[..], abs_all <= 0.);
+        }
+
+        {
+            // start later in block with arbitrary values
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 100.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+            let v0: f32 = 1.;
+            let v1: f32 = 42.;
+            let t0: f64 = 1.;
+            let time_constant: f64 = 2.1;
+
+            param.set_value_at_time(v0, t0);
+            param.set_target_at_time(v1, t0, time_constant);
+
+            let mut res = Vec::<f32>::with_capacity(10);
+            for t in 0..10 {
+                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                res.push(val);
+            }
+            // ramp start at 1 so
+            res[0] = 0.;
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(vs, &res[..], abs_all <= 0.);
+        }
+    }
+
+    #[test]
+    fn test_set_value_curve_a_rate_multiple_blocks() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 2.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+            let v0: f32 = 0.;
+            let v1: f32 = 2.;
+            let t0: f64 = 0.;
+            let time_constant: f64 = 1.;
+            // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
+            param.set_value_at_time(v0, t0);
+            param.set_target_at_time(v1, t0, time_constant);
+
+            let mut res = Vec::<f32>::with_capacity(20);
+            for t in 0..20 {
+                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                res.push(val);
+            }
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
+
+            let vs = render.tick(10., 1., 10);
+            assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
+        }
+    }
+
+    #[test]
+    fn test_set_value_curve_a_rate_followed_by_set_value() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 2.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+            let v0: f32 = 0.;
+            let v1: f32 = 2.;
+            let t0: f64 = 0.;
+            let time_constant: f64 = 1.;
+            // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
+            param.set_value_at_time(v0, t0);
+            param.set_target_at_time(v1, t0, time_constant);
+            param.set_value_at_time(0.5, 15.);
+
+            let mut res = Vec::<f32>::with_capacity(20);
+
+            for t in 0..15 {
+                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                res.push(val);
+            }
+
+            res.resize(20, 0.5);
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
+
+            let vs = render.tick(10., 1., 10);
+            assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
+        }
+    }
+
+    #[test]
+    fn test_set_value_curve_a_rate_followed_by_ramp() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+            let v0: f32 = 0.;
+            let v1: f32 = 2.;
+            let t0: f64 = 0.;
+            let time_constant: f64 = 10.;
+
+            param.set_value_at_time(v0, t0);
+            param.set_target_at_time(v1, t0, time_constant);
+
+            let mut res = Vec::<f32>::with_capacity(20);
+
+            for t in 0..11 {
+                // we compute the 10th elements as it will be the start value of the ramp
+                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                res.push(val);
+            }
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
+
+            // ramp
+            let v0 = res.pop().unwrap(); // v0 is defined by the SetTarget
+            let v1 = 10.;
+            let t0 = 10.;
+            let t1 = 20.;
+
+            param.linear_ramp_to_value_at_time(v1, t1);
+
+            for t in 10..20 {
+                let time = t as f64;
+                let value = v0 + (v1 - v0) * (time - t0) as f32 / (t1 - t0) as f32;
+                res.push(value);
+            }
+
+            let vs = render.tick(10., 1., 10);
+            assert_float_eq!(vs, &res[10..20], abs_all <= 1.0e-6);
+
+            let vs = render.tick(20., 1., 10);
+            assert_float_eq!(vs, &[v1; 10][..], abs_all <= 0.);
+        }
+    }
+
+    #[test]
+    fn test_set_value_curve_k_rate_multiple_blocks() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::K,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 2.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+            let v0: f32 = 0.;
+            let v1: f32 = 2.;
+            let t0: f64 = 0.;
+            let time_constant: f64 = 1.;
+            // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
+            param.set_value_at_time(v0, t0);
+            param.set_target_at_time(v1, t0, time_constant);
+
+            let mut res = Vec::<f32>::with_capacity(20);
+            for t in 0..20 {
+                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                res.push(val);
+            }
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(vs, &[res[0]; 10][..], abs_all <= 0.);
+
+            let vs = render.tick(10., 1., 10);
+            assert_float_eq!(vs, &[res[10]; 10][..], abs_all <= 0.);
         }
     }
 
