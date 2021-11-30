@@ -669,8 +669,6 @@ struct OscillatorRenderer {
     triangle: TriangleState,
     /// states required to build a custom oscillator
     periodic: PeriodicState,
-    /// marks if the node has stopped playing
-    ended: bool,
 }
 
 impl AudioProcessor for OscillatorRenderer {
@@ -681,7 +679,7 @@ impl AudioProcessor for OscillatorRenderer {
         params: AudioParamValues,
         timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single output node
         let output = &mut outputs[0];
 
@@ -693,12 +691,11 @@ impl AudioProcessor for OscillatorRenderer {
             ScheduledState::Active => (),
             ScheduledState::NotStarted => {
                 output.make_silent();
-                return;
+                return true; // will output in the future
             }
             ScheduledState::Ended => {
                 output.make_silent();
-                self.ended = true;
-                return;
+                return false; // can clean up
             }
         }
 
@@ -744,10 +741,8 @@ impl AudioProcessor for OscillatorRenderer {
         }
 
         self.generate_output(type_, buffer, &computed_freqs[..]);
-    }
 
-    fn tail_time(&self) -> bool {
-        !self.ended
+        true // do not clean up source nodes
     }
 }
 
@@ -884,7 +879,6 @@ impl OscillatorRenderer {
                     ref_freq: computed_freq,
                 },
             },
-            ended: false,
         }
     }
 

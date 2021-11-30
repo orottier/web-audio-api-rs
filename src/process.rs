@@ -11,8 +11,28 @@ use crate::SampleRate;
 ///
 /// Note that the AudioProcessor is typically constructed together with an [`crate::node::AudioNode`]
 /// (the user facing object that lives in the control thread). See [`crate::context::BaseAudioContext::register`].
+///
+/// Check the `examples/worklet.rs` file for example usage of this trait.
 pub trait AudioProcessor: Send {
     /// Audio processing function
+    ///
+    /// # Arguments
+    ///
+    /// - inputs: readonly array of input buffers
+    /// - outputs: array of output buffers
+    /// - params: available `AudioParam`s for this processor
+    /// - timestamp: time of the start of this render quantum
+    /// - sample_rate: sample rate of this render quantum
+    ///
+    /// # Return value
+    ///
+    /// The return value (bool) of this callback controls the lifetime of the processor.
+    ///
+    /// - return `false` when the node only transforms their inputs, and as such can be removed when
+    /// the inputs are disconnected (e.g. GainNode)
+    /// - return `true` for some time when the node still outputs after the inputs are disconnected
+    /// (e.g. DelayNode)
+    /// - return `true` as long as this node is a source of output (e.g. OscillatorNode)
     fn process(
         &mut self,
         inputs: &[AudioBuffer],
@@ -20,10 +40,7 @@ pub trait AudioProcessor: Send {
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
-    );
-
-    /// Indicates if this node can have output when no inputs are connected
-    fn tail_time(&self) -> bool;
+    ) -> bool;
 }
 
 /// Accessor for current [`crate::param::AudioParam`] values

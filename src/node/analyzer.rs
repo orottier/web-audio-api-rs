@@ -170,7 +170,7 @@ impl AudioProcessor for AnalyserRenderer {
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
@@ -212,9 +212,7 @@ impl AudioProcessor for AnalyserRenderer {
                 }
             }
         }
-    }
 
-    fn tail_time(&self) -> bool {
         false
     }
 }

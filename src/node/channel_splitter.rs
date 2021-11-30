@@ -90,7 +90,7 @@ impl AudioProcessor for ChannelSplitterRenderer {
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single input node
         let input = &inputs[0];
 
@@ -106,9 +106,7 @@ impl AudioProcessor for ChannelSplitterRenderer {
                 output.make_silent();
             }
         }
-    }
 
-    fn tail_time(&self) -> bool {
         false
     }
 }

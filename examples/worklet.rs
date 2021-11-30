@@ -87,7 +87,7 @@ impl AudioProcessor for WhiteNoiseProcessor {
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single output node
         let output = &mut outputs[0];
 
@@ -104,10 +104,8 @@ impl AudioProcessor for WhiteNoiseProcessor {
                     let rand: f32 = rng.gen_range(-1.0..1.0);
                     *o = *i * rand
                 })
-        })
-    }
+        });
 
-    fn tail_time(&self) -> bool {
         true // source node will always be active
     }
 }

@@ -86,7 +86,7 @@ impl AudioProcessor for ChannelMergerRenderer {
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single output node
         let output = &mut outputs[0];
         output.set_number_of_channels(inputs.len());
@@ -94,9 +94,7 @@ impl AudioProcessor for ChannelMergerRenderer {
         inputs.iter().enumerate().for_each(|(i, input)| {
             *output.channel_data_mut(i) = input.channel_data(0).clone();
         });
-    }
 
-    fn tail_time(&self) -> bool {
         false
     }
 }

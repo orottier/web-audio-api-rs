@@ -284,16 +284,14 @@ impl AudioProcessor for IirFilterRenderer {
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
-    ) {
+    ) -> bool {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
 
         self.filter(input, output);
-    }
 
-    fn tail_time(&self) -> bool {
-        true
+        true // todo tail time - issue #34
     }
 }
 
