@@ -533,9 +533,7 @@ impl AudioParamProcessor {
 
         if is_k_rate {
             // filling the vec already, no expensive calculations are performed later
-            for _ in 0..count {
-                self.buffer.push(self.intrisic_value());
-            }
+            self.buffer.resize(count, self.intrisic_value());
         };
 
         loop {
@@ -545,10 +543,7 @@ impl AudioParamProcessor {
             match some_event {
                 None => {
                     // fill remaining buffer with `intrisic_value`
-                    for _ in self.buffer.len()..count {
-                        self.buffer.push(self.intrisic_value());
-                    }
-
+                    self.buffer.resize(count, self.intrisic_value());
                     break;
                 }
                 Some(event) => {
