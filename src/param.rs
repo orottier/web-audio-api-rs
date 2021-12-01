@@ -89,7 +89,7 @@ impl AudioParamEventTimeline {
         self.inner.is_empty()
     }
 
-    fn unsafe_peek(&self) -> Option<&AudioParamEvent> {
+    fn unsorted_peek(&self) -> Option<&AudioParamEvent> {
         self.inner.get(0)
     }
     // panic if dirty, we are doing something wrong here
@@ -193,7 +193,7 @@ impl AudioParam {
     }
 
     // the choice here is to have this coherent with the first sample of
-    // the last rendered block, which means `intrisic_value must be calculated
+    // the last rendered block, which means `intrisic_value` must be calculated
     // for next_block_time at each tick.
     // @note - maybe check with spec editors that it is correct
     //
@@ -425,7 +425,7 @@ impl AudioParamProcessor {
                 // we don't want to `sort()` before `peek` here, because what we
                 // actually need to check is if a Ramp has already started, therefore
                 // we want the actual `peek()` at the end of the last block.
-                let some_current_event = self.event_timeline.unsafe_peek();
+                let some_current_event = self.event_timeline.unsorted_peek();
 
                 match some_current_event {
                     None => (),
@@ -770,8 +770,8 @@ impl AudioParamProcessor {
                                 let mut time = block_time + start_index as f64 * dt;
 
                                 for _ in start_index..end_index_clipped {
-                                    let exponant = -1. * ((time - start_time) / time_constant);
-                                    let val = end_value + dv * exponant.exp() as f32;
+                                    let exponent = -1. * ((time - start_time) / time_constant);
+                                    let val = end_value + dv * exponent.exp() as f32;
                                     let clamped = val.clamp(self.min_value, self.max_value);
                                     self.buffer.push(clamped);
 
@@ -784,16 +784,16 @@ impl AudioParamProcessor {
                                 // compute value for `next_block_time` so that `param.value()`
                                 // stays coherent (see. comment in `AudioParam`)
                                 // allows to properly fill k-rate within next block too
-                                let exponant =
+                                let exponent =
                                     -1. * ((next_block_time - start_time) / time_constant);
-                                let value = end_value + dv * exponant.exp() as f32;
+                                let value = end_value + dv * exponent.exp() as f32;
                                 self.intrisic_value = value.clamp(self.min_value, self.max_value);
                                 break;
                             } else {
                                 // setTarget has no "real" end value, compute according
                                 // to next event start time
-                                let exponant = -1. * ((end_time - start_time) / time_constant);
-                                let end_target_value = end_value + dv * exponant.exp() as f32;
+                                let exponent = -1. * ((end_time - start_time) / time_constant);
+                                let end_target_value = end_value + dv * exponent.exp() as f32;
 
                                 self.intrisic_value =
                                     end_target_value.clamp(self.min_value, self.max_value);
