@@ -193,7 +193,7 @@ impl AudioParam {
     }
 
     // the choice here is to have this coherent with the first sample of
-    // the last rendered block, with means intrisic_value must be calculated
+    // the last rendered block, which means `intrisic_value must be calculated
     // for next_block_time at each tick.
     // @note - maybe check with spec editors that it is correct
     //
@@ -1580,7 +1580,7 @@ mod tests {
             let v1: f32 = 2.;
             let t0: f64 = 0.;
             let time_constant: f64 = 1.;
-            // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
+
             param.set_value_at_time(v0, t0);
             param.set_target_at_time(v1, t0, time_constant);
             param.set_value_at_time(0.5, 15.);
@@ -1649,7 +1649,7 @@ mod tests {
 
             let vs = render.tick(10., 1., 10);
             assert_float_eq!(vs, &res[10..20], abs_all <= 1.0e-6);
-
+            // ramp ended
             let vs = render.tick(20., 1., 10);
             assert_float_eq!(vs, &[v1; 10][..], abs_all <= 0.);
         }
