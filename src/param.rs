@@ -541,16 +541,16 @@ impl AudioParamProcessor {
                 }
 
                 // If 𝐸2 exists:
-                //    If 𝐸2 is a linear or exponential ramp,
                 if let Some(matched) = e2 {
+                    // If 𝐸2 is a linear or exponential ramp,
+                    // Effectively rewrite 𝐸2 to be the same kind of ramp ending
+                    // at time 𝑡𝑐 with an end value that would be the value of the
+                    // original ramp at time 𝑡𝑐.
+                    // @note - this is done during the actual computation of the
+                    //  ramp using the cancel_time
                     if matched.event_type == AudioParamEventType::LinearRampToValueAtTime
                         || matched.event_type == AudioParamEventType::ExponentialRampToValueAtTime
                     {
-                        // Effectively rewrite 𝐸2 to be the same kind of ramp ending
-                        // at time 𝑡𝑐 with an end value that would be the value of the
-                        // original ramp at time 𝑡𝑐.
-                        // @note - this is done during the actual computation of the
-                        //  ramp using the cancel_time
                         matched.cancel_time = Some(event.time);
                     }
                 } else if let Some(matched) = e1 {
@@ -713,9 +713,13 @@ impl AudioParamProcessor {
                             let dv = end_value - start_value;
 
                             let start_index = self.buffer.len();
-                            let end_index = ((end_time - block_time).max(0.) / dt) as usize;
+                            // we need to `ceil()` because if `end_time` is between two samples
+                            // we actually want the sample before `end_time` to be computed
+                            // @note - see if it doesn't introduce weird edge cases
+                            let end_index = ((end_time - block_time).max(0.) / dt).ceil() as usize;
                             let end_index_clipped = end_index.min(count);
 
+                            println!("end_index: {:?}", end_index);
                             // compute "real" value according to `t` then clamp it
                             // cf. Example 7 https://www.w3.org/TR/webaudio/#computation-of-value
                             if is_a_rate && end_index_clipped > self.buffer.len() {
@@ -807,7 +811,11 @@ impl AudioParamProcessor {
                                 self.event_timeline.replace_peek(event);
                             } else {
                                 let start_index = self.buffer.len();
-                                let end_index = ((end_time - block_time).max(0.) / dt) as usize;
+                                // we need to `ceil()` because if `end_time` is between two samples
+                                // we actually want the sample before `end_time` to be computed
+                                // @note - see if it doesn't introduce weird edge cases
+                                let end_index =
+                                    ((end_time - block_time).max(0.) / dt).ceil() as usize;
                                 let end_index_clipped = end_index.min(count);
 
                                 if is_a_rate && end_index_clipped > self.buffer.len() {
@@ -923,7 +931,10 @@ impl AudioParamProcessor {
                             let time_constant = event.time_constant.unwrap();
 
                             let start_index = self.buffer.len();
-                            let end_index = ((end_time - block_time).max(0.) / dt) as usize;
+                            // we need to `ceil()` because if `end_time` is between two samples
+                            // we actually want the sample before `end_time` to be computed
+                            // @note - see if it doesn't introduce weird edge cases
+                            let end_index = ((end_time - block_time).max(0.) / dt).ceil() as usize;
                             let end_index_clipped = end_index.min(count);
 
                             if is_a_rate && end_index_clipped > self.buffer.len() {
@@ -2062,6 +2073,27 @@ mod tests {
                 abs_all <= 0.
             );
         }
+
+        {
+            // cancel between two samples
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.linear_ramp_to_value_at_time(10., 10.);
+            param.cancel_and_hold_at_time(4.5);
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(
+                vs,
+                &[0., 1., 2., 3., 4., 4.5, 4.5, 4.5, 4.5, 4.5][0..10],
+                abs_all <= 0.
+            );
+        }
     }
 
     #[test]
@@ -2094,6 +2126,39 @@ mod tests {
             }
 
             let hold_value = res.pop().unwrap();
+            res.resize(10, hold_value);
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(vs, &res[..], abs_all <= 0.);
+        }
+
+        {
+            // cancel between 2 samples
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            // set to 0.0001 at t=0 (0. is a special case)
+            param.set_value_at_time(0.0001, 0.);
+            param.exponential_ramp_to_value_at_time(1.0, 10.);
+            param.cancel_and_hold_at_time(4.5);
+
+            // compute resulting buffer:
+            // v(t) = v1*(v2/v1)^((t-t1)/(t2-t1))
+            let mut res = Vec::<f32>::with_capacity(10);
+            let start: f32 = 0.0001;
+            let end: f32 = 1.;
+
+            for t in 0..5 {
+                let value = start * (end / start).powf(t as f32 / 10.);
+                res.push(value);
+            }
+
+            let hold_value = start * (end / start).powf(4.5 / 10.);
             res.resize(10, hold_value);
 
             let vs = render.tick(0., 1., 10);
