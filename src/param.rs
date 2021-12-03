@@ -78,17 +78,13 @@ impl AudioParamEventTimeline {
         self.inner.push(item);
     }
 
-    // @note - `pop` and `retain` preserve order so they don't make the queue dirty
+    // `pop` and `retain` preserve order so they don't make the queue dirty
     fn pop(&mut self) -> Option<AudioParamEvent> {
         if !self.inner.is_empty() {
             Some(self.inner.remove(0))
         } else {
             None
         }
-    }
-
-    fn replace_peek(&mut self, item: AudioParamEvent) {
-        self.inner[0] = item;
     }
 
     fn retain<F>(&mut self, func: F)
@@ -98,17 +94,22 @@ impl AudioParamEventTimeline {
         self.inner.retain(func);
     }
 
+    // Only used to handle special cases in `ExponentialRampToValueAtTime`:
+    // as the replaced item has the same time, order is preserved.
+    // If the method turned out to be used elsewhere, this could maybe
+    // become wrong, be careful here.
+    fn replace_peek(&mut self, item: AudioParamEvent) {
+        self.inner[0] = item;
+    }
+
     fn is_empty(&mut self) -> bool {
         self.inner.is_empty()
     }
 
-    // only used to handle special cases in `ExponentialRampToValueAtTime`
-    // as the replaced item has the same time, order is preserved
-    // @note - if the method turned out to be used elsewhere, this could maybe
-    //  become wrong, be careful here.
     fn unsorted_peek(&self) -> Option<&AudioParamEvent> {
         self.inner.get(0)
     }
+
     // panic if dirty, we are doing something wrong here
     fn peek(&self) -> Option<&AudioParamEvent> {
         if self.dirty {
