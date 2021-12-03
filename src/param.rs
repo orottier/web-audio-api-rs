@@ -1,4 +1,5 @@
 //! AudioParam interface
+use std::slice::IterMut;
 use std::sync::Arc;
 
 use crate::alloc::AudioBuffer;
@@ -36,7 +37,7 @@ enum AudioParamEventType {
     ExponentialRampToValueAtTime,
     CancelScheduledValues,
     SetTargetAtTime,
-    // CancelAndHoldAtTime,
+    CancelAndHoldAtTime,
     // SetValueCurve,
 }
 
@@ -46,10 +47,18 @@ pub(crate) struct AudioParamEvent {
     value: f32,
     time: f64,
     time_constant: Option<f64>,
+    cancel_time: Option<f64>, // populated by `CancelAndHoldAtTime` events
 }
 
-// Event queue that mimics the `BinaryHeap` API while allowing `retain` without going nigthly
-// @note - diverge in that `queue.sort()` is stable and must be called explicitly
+// Event queue that contains `AudioParamEvent`s, most of the time, events must be
+// ordered (using stable sort), some operation may break this ordering (e.g. `push`)
+// in which cases `sort` must be called explicitely.
+// In the current implementation of the param rendering, `sort` is called once after
+// all events have been inserted in the queue at each `tick` (with the exception
+// `CancelAndHoldAtTime` which needs a clean queue to find its neighbors, but this
+// occurs during the insertion of events)
+// After this point, the queue should be considered sorted and no operations that
+// breaks the ordering should be done.
 #[derive(Debug)]
 struct AudioParamEventTimeline {
     inner: Vec<AudioParamEvent>,
@@ -78,6 +87,10 @@ impl AudioParamEventTimeline {
         }
     }
 
+    fn replace_peek(&mut self, item: AudioParamEvent) {
+        self.inner[0] = item;
+    }
+
     fn retain<F>(&mut self, func: F)
     where
         F: Fn(&AudioParamEvent) -> bool,
@@ -89,6 +102,10 @@ impl AudioParamEventTimeline {
         self.inner.is_empty()
     }
 
+    // only used to handle special cases in `ExponentialRampToValueAtTime`
+    // as the replaced item has the same time, order is preserved
+    // @note - if the method turned out to be used elsewhere, this could maybe
+    //  become wrong, be careful here.
     fn unsorted_peek(&self) -> Option<&AudioParamEvent> {
         self.inner.get(0)
     }
@@ -111,6 +128,10 @@ impl AudioParamEventTimeline {
         self.inner
             .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
         self.dirty = false;
+    }
+
+    fn iter_mut(&mut self) -> IterMut<'_, AudioParamEvent> {
+        self.inner.iter_mut()
     }
 }
 
@@ -222,6 +243,7 @@ impl AudioParam {
             value: clamped,
             time: 0.,
             time_constant: None,
+            cancel_time: None,
         };
 
         self.send_event(event);
@@ -233,6 +255,7 @@ impl AudioParam {
             value,
             time: start_time,
             time_constant: None,
+            cancel_time: None,
         };
 
         self.send_event(event);
@@ -244,6 +267,7 @@ impl AudioParam {
             value,
             time: end_time,
             time_constant: None,
+            cancel_time: None,
         };
 
         self.send_event(event);
@@ -268,6 +292,7 @@ impl AudioParam {
             value,
             time: end_time,
             time_constant: None,
+            cancel_time: None,
         };
 
         self.send_event(event);
@@ -289,6 +314,7 @@ impl AudioParam {
             value,
             time: start_time,
             time_constant: Some(time_constant),
+            cancel_time: None,
         };
 
         self.send_event(event);
@@ -300,6 +326,19 @@ impl AudioParam {
             value: 0., // no value
             time: cancel_time,
             time_constant: None,
+            cancel_time: None,
+        };
+
+        self.send_event(event);
+    }
+
+    pub fn cancel_and_hold_at_time(&self, cancel_time: f64) {
+        let event = AudioParamEvent {
+            event_type: AudioParamEventType::CancelAndHoldAtTime,
+            value: 0., // value will be defined by cancel event
+            time: cancel_time,
+            time_constant: None,
+            cancel_time: None,
         };
 
         self.send_event(event);
@@ -470,10 +509,71 @@ impl AudioParamProcessor {
                     }
                 }
 
-                // remove all event in queue where time >= event.time
+                // remove all event in queue where cancel_time >= event.time
                 self.event_timeline
                     .retain(|queued| queued.time < event.time);
-                continue; // no need to insert cancel events in queue
+                continue; // no need to insert cancel_values events in queue
+            }
+
+            if event.event_type == AudioParamEventType::CancelAndHoldAtTime {
+                // 1. Let 𝐸1 be the event (if any) at time 𝑡1 where 𝑡1 is the largest number satisfying 𝑡1 ≤ 𝑡𝑐.
+                // 2. Let 𝐸2 be the event (if any) at time 𝑡2 where 𝑡2 is the smallest number satisfying 𝑡𝑐 < 𝑡2.
+                let mut e1: Option<&mut AudioParamEvent> = None;
+                let mut e2: Option<&mut AudioParamEvent> = None;
+                let mut t1 = f64::MIN;
+                let mut t2 = f64::MAX;
+                // we need a sorted timeline here to find siblings
+                self.event_timeline.sort();
+
+                for queued in self.event_timeline.iter_mut() {
+                    // closest before cancel time: if several events at same time,
+                    // we want the last one
+                    if queued.time >= t1 && queued.time <= event.time {
+                        t1 = queued.time;
+                        e1 = Some(queued);
+                    // closest after cancel time: if several events at same time,
+                    // we want the first one
+                    } else if queued.time < t2 && queued.time > event.time {
+                        t2 = queued.time;
+                        e2 = Some(queued);
+                    }
+                }
+
+                // If 𝐸2 exists:
+                //    If 𝐸2 is a linear or exponential ramp,
+                if let Some(matched) = e2 {
+                    if matched.event_type == AudioParamEventType::LinearRampToValueAtTime
+                        || matched.event_type == AudioParamEventType::ExponentialRampToValueAtTime
+                    {
+                        // Effectively rewrite 𝐸2 to be the same kind of ramp ending
+                        // at time 𝑡𝑐 with an end value that would be the value of the
+                        // original ramp at time 𝑡𝑐.
+                        // @note - this is done during the actual computation of the
+                        //  ramp using the cancel_time
+                        matched.cancel_time = Some(event.time);
+                    }
+                } else if let Some(matched) = e1 {
+                    if matched.event_type == AudioParamEventType::SetTargetAtTime {
+                        // Implicitly insert a setValueAtTime event at time 𝑡𝑐 with
+                        // the value that the setTarget would
+                        // @note - same strategy as for ramps
+                        matched.cancel_time = Some(event.time);
+                    }
+
+                    // @todo - handle SetValueCurve
+                }
+
+                // [spec] Remove all events with time greater than 𝑡𝑐.
+                self.event_timeline.retain(|queued| {
+                    let mut time = queued.time;
+                    // if the event has a `cancel_time` we use it instead of `time`
+                    if let Some(cancel_time) = queued.cancel_time {
+                        time = cancel_time;
+                    }
+
+                    time <= event.time
+                });
+                continue; // cancel_and_hold events are not inserted timeline
             }
 
             // handle SetValue - param intrisic value must be updated from event value
@@ -502,6 +602,7 @@ impl AudioParamProcessor {
                     // will be replaced by the block timestamp during event processing
                     time: 0.,
                     time_constant: None,
+                    cancel_time: None,
                 };
 
                 self.event_timeline.push(set_value_event);
@@ -596,8 +697,15 @@ impl AudioParamProcessor {
                             let last_event = self.last_event.unwrap();
 
                             let start_time = last_event.time;
-                            let end_time = event.time;
+                            let mut end_time = event.time;
                             let duration = end_time - start_time;
+
+                            // we must check for the cancel event after we have
+                            // the "real" duration computed to not change the
+                            // slope of the ramp
+                            if let Some(cancel_time) = event.cancel_time {
+                                end_time = cancel_time;
+                            }
 
                             let start_value = last_event.value;
                             let end_value = event.value;
@@ -623,7 +731,8 @@ impl AudioParamProcessor {
                                 }
                             }
 
-                            if end_time > next_block_time {
+                            // event will continue in next tick
+                            if end_time >= next_block_time {
                                 // compute value for `next_block_time` so that `param.value()`
                                 // stays coherent (see. comment in `AudioParam`)
                                 // allows to properly fill k-rate within next block too
@@ -632,11 +741,30 @@ impl AudioParamProcessor {
                                 let clamped = value.clamp(self.min_value, self.max_value);
                                 self.intrisic_value = clamped;
                                 break;
+
+                            // handle end of event during this block
                             } else {
-                                // set value to "real" end_value
-                                self.intrisic_value =
-                                    end_value.clamp(self.min_value, self.max_value);
-                                self.last_event = self.event_timeline.pop();
+                                // event has been cancelled
+                                #[allow(clippy::float_cmp)] // no computation has been done
+                                if end_time != event.time {
+                                    // event has been cancelled
+                                    let phase = (end_time - start_time) / duration;
+                                    let value = start_value + dv * phase as f32;
+                                    let clamped = value.clamp(self.min_value, self.max_value);
+
+                                    self.intrisic_value = clamped;
+
+                                    let mut last_event = self.event_timeline.pop().unwrap();
+                                    last_event.time = end_time;
+                                    last_event.value = clamped;
+                                    self.last_event = Some(last_event);
+                                // event has ended
+                                } else {
+                                    // set value to "real" end_value
+                                    self.intrisic_value =
+                                        end_value.clamp(self.min_value, self.max_value);
+                                    self.last_event = self.event_timeline.pop();
+                                }
                             }
                         }
                         // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
@@ -645,8 +773,15 @@ impl AudioParamProcessor {
                             let last_event = self.last_event.unwrap();
 
                             let start_time = last_event.time;
-                            let end_time = event.time;
+                            let mut end_time = event.time;
                             let duration = end_time - start_time;
+
+                            // we must check for the cancel event after we have
+                            // the "real" duration computed to not change the
+                            // slope of the ramp
+                            if let Some(cancel_time) = event.cancel_time {
+                                end_time = cancel_time;
+                            }
 
                             let start_value = last_event.value;
                             let end_value = event.value;
@@ -660,18 +795,15 @@ impl AudioParamProcessor {
                             // > event then for 𝑡≥𝑇1, 𝑣(𝑡)=𝑉1.
                             // this should thus behave as a SetValue
                             if start_value == 0. || start_value * end_value < 0. {
-                                // @todo - review that, e.g. try to avoid `push` and `sort`
-                                self.event_timeline.pop();
-
                                 let event = AudioParamEvent {
                                     event_type: AudioParamEventType::SetValueAtTime,
                                     time: end_time,
                                     value: end_value,
                                     time_constant: None,
+                                    cancel_time: None,
                                 };
 
-                                self.event_timeline.push(event);
-                                self.event_timeline.sort();
+                                self.event_timeline.replace_peek(event);
                             } else {
                                 let start_index = self.buffer.len();
                                 let end_index = ((end_time - block_time).max(0.) / dt) as usize;
@@ -691,7 +823,8 @@ impl AudioParamProcessor {
                                     }
                                 }
 
-                                if end_time > next_block_time {
+                                // event will continue in next tick
+                                if end_time >= next_block_time {
                                     // compute value for `next_block_time` so that `param.value()`
                                     // stays coherent (see. comment in `AudioParam`)
                                     // allows to properly fill k-rate within next block too
@@ -700,11 +833,29 @@ impl AudioParamProcessor {
                                     let clamped = val.clamp(self.min_value, self.max_value);
                                     self.intrisic_value = clamped;
                                     break;
+
+                                // handle end of event during this block
                                 } else {
-                                    // set value to "real" end_value
-                                    self.intrisic_value =
-                                        end_value.clamp(self.min_value, self.max_value);
-                                    self.last_event = self.event_timeline.pop();
+                                    // event has been cancelled
+                                    #[allow(clippy::float_cmp)] // no computation has been done
+                                    if end_time != event.time {
+                                        let phase = (end_time - start_time) / duration;
+                                        let val = start_value * ratio.powf(phase as f32);
+                                        let clamped = val.clamp(self.min_value, self.max_value);
+
+                                        self.intrisic_value = clamped;
+
+                                        let mut last_event = self.event_timeline.pop().unwrap();
+                                        last_event.time = end_time;
+                                        last_event.value = clamped;
+                                        self.last_event = Some(last_event);
+                                    // event has ended
+                                    } else {
+                                        // set value to "real" end_value
+                                        self.intrisic_value =
+                                            end_value.clamp(self.min_value, self.max_value);
+                                        self.last_event = self.event_timeline.pop();
+                                    }
                                 }
                             }
                         }
@@ -743,6 +894,14 @@ impl AudioParamProcessor {
                                             ended = true;
                                         }
                                     }
+                                }
+                            }
+
+                            // handle CancelAndHoldAtTime
+                            if let Some(cancel_time) = event.cancel_time {
+                                if cancel_time < next_block_time {
+                                    end_time = cancel_time;
+                                    ended = true;
                                 }
                             }
 
@@ -799,13 +958,21 @@ impl AudioParamProcessor {
                                     end_target_value.clamp(self.min_value, self.max_value);
 
                                 // end_value and end_time must be stored for use
-                                // by next event
+                                // as start time by next event
                                 let mut event = self.event_timeline.pop().unwrap();
                                 event.time = end_time;
                                 event.value = end_target_value;
                                 self.last_event = Some(event);
                             }
                         }
+                        // AudioParamEventType::CancelAndHoldAtTime => {
+                        //     // as intrisic_value has been computed by ramps and targets
+                        //     // we just need to store intrisic value as the event value
+                        //     // param value and store as last event
+                        //     let mut event = self.event_timeline.pop().unwrap();
+                        //     event.value = self.intrisic_value();
+                        //     self.last_event = Some(event);
+                        // }
                         _ => panic!(
                             "AudioParamEvent {:?} should not appear in AudioParamEventTimeline",
                             event.event_type
@@ -1800,6 +1967,136 @@ mod tests {
             param.cancel_scheduled_values(10.);
             let vs = render.tick(10., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+        }
+    }
+
+    #[test]
+    fn test_cancel_and_hold() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.set_value_at_time(1., 1.);
+            param.set_value_at_time(2., 2.);
+            param.set_value_at_time(3., 3.);
+            param.set_value_at_time(4., 4.);
+            param.cancel_and_hold_at_time(2.5);
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(
+                vs,
+                &[0., 1., 2., 2., 2., 2., 2., 2., 2., 2.][0..10],
+                abs_all <= 0.
+            );
+        }
+    }
+
+    #[test]
+    fn test_cancel_and_hold_during_set_target() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 2.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+            let v0: f32 = 0.;
+            let v1: f32 = 2.;
+            let t0: f64 = 0.;
+            let time_constant: f64 = 1.;
+
+            param.set_value_at_time(v0, t0);
+            param.set_target_at_time(v1, t0, time_constant);
+            param.cancel_and_hold_at_time(15.);
+
+            let mut res = Vec::<f32>::with_capacity(20);
+
+            // compute index 15 to have hold_value
+            for t in 0..16 {
+                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                res.push(val);
+            }
+
+            let hold_value = res.pop().unwrap();
+            res.resize(20, hold_value);
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
+
+            let vs = render.tick(10., 1., 10);
+            assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
+        }
+    }
+
+    #[test]
+    fn test_cancel_and_hold_during_linear_ramp() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.linear_ramp_to_value_at_time(10., 10.);
+            param.cancel_and_hold_at_time(5.);
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(
+                vs,
+                &[0., 1., 2., 3., 4., 5., 5., 5., 5., 5.][0..10],
+                abs_all <= 0.
+            );
+        }
+    }
+
+    #[test]
+    fn test_cancel_and_hold_during_exponential_ramp() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+
+        {
+            let opts = AudioParamOptions {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            // set to 0.0001 at t=0 (0. is a special case)
+            param.set_value_at_time(0.0001, 0.);
+            param.exponential_ramp_to_value_at_time(1.0, 10.);
+            param.cancel_and_hold_at_time(5.);
+
+            // compute resulting buffer:
+            // v(t) = v1*(v2/v1)^((t-t1)/(t2-t1))
+            let mut res = Vec::<f32>::with_capacity(10);
+            let start: f32 = 0.0001;
+            let end: f32 = 1.;
+
+            for t in 0..6 {
+                let value = start * (end / start).powf(t as f32 / 10.);
+                res.push(value);
+            }
+
+            let hold_value = res.pop().unwrap();
+            res.resize(10, hold_value);
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(vs, &res[..], abs_all <= 0.);
         }
     }
 }
