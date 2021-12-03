@@ -719,7 +719,6 @@ impl AudioParamProcessor {
                             let end_index = ((end_time - block_time).max(0.) / dt).ceil() as usize;
                             let end_index_clipped = end_index.min(count);
 
-                            println!("end_index: {:?}", end_index);
                             // compute "real" value according to `t` then clamp it
                             // cf. Example 7 https://www.w3.org/TR/webaudio/#computation-of-value
                             if is_a_rate && end_index_clipped > self.buffer.len() {
