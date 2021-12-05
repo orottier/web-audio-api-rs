@@ -430,6 +430,51 @@ impl AudioParamProcessor {
         }
     }
 
+    // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
+    #[inline(always)]
+    fn compute_linear_ramp_sample(
+        &self,
+        start_time: f64,
+        duration: f64,
+        start_value: f32,
+        diff: f32,
+        time: f64,
+    ) -> f32 {
+        let phase = (time - start_time) / duration;
+        let value = start_value + diff * phase as f32;
+        value.clamp(self.min_value, self.max_value)
+    }
+
+    // v(t) = v1 * (v2/v1)^((t-t1) / (t2-t1))
+    #[inline(always)]
+    fn compute_exponential_ramp_sample(
+        &self,
+        start_time: f64,
+        duration: f64,
+        start_value: f32,
+        ratio: f32, // end_value / start_value
+        time: f64,
+    ) -> f32 {
+        let phase = (time - start_time) / duration;
+        let value = start_value * ratio.powf(phase as f32);
+        value.clamp(self.min_value, self.max_value)
+    }
+
+    // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+    #[inline(always)]
+    fn compute_set_target_sample(
+        &self,
+        start_time: f64,
+        time_constant: f64,
+        end_value: f32,
+        diff: f32, // start_value - end_value
+        time: f64,
+    ) -> f32 {
+        let exponent = -1. * ((time - start_time) / time_constant);
+        let value = end_value + diff * exponent.exp() as f32;
+        value.clamp(self.min_value, self.max_value)
+    }
+
     fn tick(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
         // println!("> tick - block_time: {}, dt: {}, count: {}", block_time, dt, count);
 
@@ -710,12 +755,12 @@ impl AudioParamProcessor {
 
                             let start_value = last_event.value;
                             let end_value = event.value;
-                            let dv = end_value - start_value;
+                            let diff = end_value - start_value;
 
                             let start_index = self.buffer.len();
                             // we need to `ceil()` because if `end_time` is between two samples
                             // we actually want the sample before `end_time` to be computed
-                            // @note - see if it doesn't introduce weird edge cases
+                            // @todo - more tests
                             let end_index = ((end_time - block_time).max(0.) / dt).ceil() as usize;
                             let end_index_clipped = end_index.min(count);
 
@@ -725,13 +770,17 @@ impl AudioParamProcessor {
                                 let mut time = block_time + start_index as f64 * dt;
 
                                 for _ in start_index..end_index_clipped {
-                                    let phase = (time - start_time) / duration;
-                                    let value = start_value + dv * phase as f32;
-                                    let clamped = value.clamp(self.min_value, self.max_value);
-                                    self.buffer.push(clamped);
+                                    let value = self.compute_linear_ramp_sample(
+                                        start_time,
+                                        duration,
+                                        start_value,
+                                        diff,
+                                        time,
+                                    );
+                                    self.buffer.push(value);
 
                                     time += dt;
-                                    self.intrisic_value = clamped;
+                                    self.intrisic_value = value;
                                 }
                             }
 
@@ -740,10 +789,14 @@ impl AudioParamProcessor {
                                 // compute value for `next_block_time` so that `param.value()`
                                 // stays coherent (see. comment in `AudioParam`)
                                 // allows to properly fill k-rate within next block too
-                                let phase = (next_block_time - start_time) / duration;
-                                let value = start_value + dv * phase as f32;
-                                let clamped = value.clamp(self.min_value, self.max_value);
-                                self.intrisic_value = clamped;
+                                let value = self.compute_linear_ramp_sample(
+                                    start_time,
+                                    duration,
+                                    start_value,
+                                    diff,
+                                    next_block_time,
+                                );
+                                self.intrisic_value = value;
                                 break;
 
                             // handle end of event during this block
@@ -751,16 +804,19 @@ impl AudioParamProcessor {
                                 // event has been cancelled
                                 #[allow(clippy::float_cmp)] // no computation has been done
                                 if end_time != event.time {
-                                    // event has been cancelled
-                                    let phase = (end_time - start_time) / duration;
-                                    let value = start_value + dv * phase as f32;
-                                    let clamped = value.clamp(self.min_value, self.max_value);
+                                    let value = self.compute_linear_ramp_sample(
+                                        start_time,
+                                        duration,
+                                        start_value,
+                                        diff,
+                                        end_time,
+                                    );
 
-                                    self.intrisic_value = clamped;
+                                    self.intrisic_value = value;
 
                                     let mut last_event = self.event_timeline.pop().unwrap();
                                     last_event.time = end_time;
-                                    last_event.value = clamped;
+                                    last_event.value = value;
                                     self.last_event = Some(last_event);
                                 // event has ended
                                 } else {
@@ -812,7 +868,7 @@ impl AudioParamProcessor {
                                 let start_index = self.buffer.len();
                                 // we need to `ceil()` because if `end_time` is between two samples
                                 // we actually want the sample before `end_time` to be computed
-                                // @note - see if it doesn't introduce weird edge cases
+                                // @todo - more tests
                                 let end_index =
                                     ((end_time - block_time).max(0.) / dt).ceil() as usize;
                                 let end_index_clipped = end_index.min(count);
@@ -821,13 +877,18 @@ impl AudioParamProcessor {
                                     let mut time = block_time + start_index as f64 * dt;
 
                                     for _ in start_index..end_index_clipped {
-                                        let phase = (time - start_time) / duration;
-                                        let val = start_value * ratio.powf(phase as f32);
-                                        let clamped = val.clamp(self.min_value, self.max_value);
-                                        self.buffer.push(clamped);
+                                        let value = self.compute_exponential_ramp_sample(
+                                            start_time,
+                                            duration,
+                                            start_value,
+                                            ratio,
+                                            time,
+                                        );
+
+                                        self.buffer.push(value);
+                                        self.intrisic_value = value;
 
                                         time += dt;
-                                        self.intrisic_value = clamped;
                                     }
                                 }
 
@@ -836,10 +897,14 @@ impl AudioParamProcessor {
                                     // compute value for `next_block_time` so that `param.value()`
                                     // stays coherent (see. comment in `AudioParam`)
                                     // allows to properly fill k-rate within next block too
-                                    let phase = (next_block_time - start_time) / duration;
-                                    let val = start_value * ratio.powf(phase as f32);
-                                    let clamped = val.clamp(self.min_value, self.max_value);
-                                    self.intrisic_value = clamped;
+                                    let value = self.compute_exponential_ramp_sample(
+                                        start_time,
+                                        duration,
+                                        start_value,
+                                        ratio,
+                                        next_block_time,
+                                    );
+                                    self.intrisic_value = value;
                                     break;
 
                                 // handle end of event during this block
@@ -847,15 +912,19 @@ impl AudioParamProcessor {
                                     // event has been cancelled
                                     #[allow(clippy::float_cmp)] // no computation has been done
                                     if end_time != event.time {
-                                        let phase = (end_time - start_time) / duration;
-                                        let val = start_value * ratio.powf(phase as f32);
-                                        let clamped = val.clamp(self.min_value, self.max_value);
+                                        let value = self.compute_exponential_ramp_sample(
+                                            start_time,
+                                            duration,
+                                            start_value,
+                                            ratio,
+                                            end_time,
+                                        );
 
-                                        self.intrisic_value = clamped;
+                                        self.intrisic_value = value;
 
                                         let mut last_event = self.event_timeline.pop().unwrap();
                                         last_event.time = end_time;
-                                        last_event.value = clamped;
+                                        last_event.value = value;
                                         self.last_event = Some(last_event);
                                     // event has ended
                                     } else {
@@ -926,13 +995,13 @@ impl AudioParamProcessor {
                             // Therefore we are sure last_event exists
                             let start_value = self.last_event.unwrap().value;
                             let end_value = event.value;
-                            let dv = start_value - end_value;
+                            let diff = start_value - end_value;
                             let time_constant = event.time_constant.unwrap();
 
                             let start_index = self.buffer.len();
                             // we need to `ceil()` because if `end_time` is between two samples
                             // we actually want the sample before `end_time` to be computed
-                            // @note - see if it doesn't introduce weird edge cases
+                            // @todo - more tests
                             let end_index = ((end_time - block_time).max(0.) / dt).ceil() as usize;
                             let end_index_clipped = end_index.min(count);
 
@@ -940,12 +1009,16 @@ impl AudioParamProcessor {
                                 let mut time = block_time + start_index as f64 * dt;
 
                                 for _ in start_index..end_index_clipped {
-                                    let exponent = -1. * ((time - start_time) / time_constant);
-                                    let val = end_value + dv * exponent.exp() as f32;
-                                    let clamped = val.clamp(self.min_value, self.max_value);
-                                    self.buffer.push(clamped);
+                                    let value = self.compute_set_target_sample(
+                                        start_time,
+                                        time_constant,
+                                        end_value,
+                                        diff,
+                                        time,
+                                    );
+                                    self.buffer.push(value);
 
-                                    self.intrisic_value = clamped;
+                                    self.intrisic_value = value;
                                     time += dt;
                                 }
                             }
@@ -954,36 +1027,35 @@ impl AudioParamProcessor {
                                 // compute value for `next_block_time` so that `param.value()`
                                 // stays coherent (see. comment in `AudioParam`)
                                 // allows to properly fill k-rate within next block too
-                                let exponent =
-                                    -1. * ((next_block_time - start_time) / time_constant);
-                                let value = end_value + dv * exponent.exp() as f32;
-                                self.intrisic_value = value.clamp(self.min_value, self.max_value);
+                                let value = self.compute_set_target_sample(
+                                    start_time,
+                                    time_constant,
+                                    end_value,
+                                    diff,
+                                    next_block_time,
+                                );
+                                self.intrisic_value = value;
                                 break;
                             } else {
                                 // setTarget has no "real" end value, compute according
                                 // to next event start time
-                                let exponent = -1. * ((end_time - start_time) / time_constant);
-                                let end_target_value = end_value + dv * exponent.exp() as f32;
+                                let value = self.compute_set_target_sample(
+                                    start_time,
+                                    time_constant,
+                                    end_value,
+                                    diff,
+                                    end_time,
+                                );
 
-                                self.intrisic_value =
-                                    end_target_value.clamp(self.min_value, self.max_value);
-
+                                self.intrisic_value = value;
                                 // end_value and end_time must be stored for use
                                 // as start time by next event
                                 let mut event = self.event_timeline.pop().unwrap();
                                 event.time = end_time;
-                                event.value = end_target_value;
+                                event.value = value;
                                 self.last_event = Some(event);
                             }
                         }
-                        // AudioParamEventType::CancelAndHoldAtTime => {
-                        //     // as intrisic_value has been computed by ramps and targets
-                        //     // we just need to store intrisic value as the event value
-                        //     // param value and store as last event
-                        //     let mut event = self.event_timeline.pop().unwrap();
-                        //     event.value = self.intrisic_value();
-                        //     self.last_event = Some(event);
-                        // }
                         _ => panic!(
                             "AudioParamEvent {:?} should not appear in AudioParamEventTimeline",
                             event.event_type
@@ -1941,6 +2013,7 @@ mod tests {
 
         // make sure we can't go into a situation where next_event is a ramp
         // and last_event is not defined
+        // @see - note in CancelScheduledValues insertion in timeline
         {
             let opts = AudioParamOptions {
                 automation_rate: AutomationRate::A,
@@ -1950,6 +2023,7 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
+            //
             param.linear_ramp_to_value_at_time(10., 10.);
             param.cancel_scheduled_values(10.); // cancels the ramp
 
