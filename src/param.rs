@@ -1,7 +1,7 @@
 //! AudioParam interface
+use std::convert::TryFrom;
 use std::slice::{Iter, IterMut};
 use std::sync::Arc;
-use std::convert::TryFrom;
 
 use crate::alloc::AudioBuffer;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
@@ -48,8 +48,8 @@ pub(crate) struct AudioParamEvent {
     value: f32,
     time: f64,
     time_constant: Option<f64>, // populated by `SetTargetAtTime` events
-    cancel_time: Option<f64>, // populated by `CancelAndHoldAtTime` events
-    duration: Option<f64>, // populated by `SetValueCurveAtTime` events
+    cancel_time: Option<f64>,   // populated by `CancelAndHoldAtTime` events
+    duration: Option<f64>,      // populated by `SetValueCurveAtTime` events
     values: Option<Box<[f32]>>, // populated by `SetValueCurveAtTime` events
 }
 
@@ -526,7 +526,7 @@ impl AudioParamProcessor {
         &self,
         start_time: f64,
         duration: f64,
-        values: &Box<[f32]>,
+        values: &[f32],
         time: f64,
     ) -> f32 {
         if time - start_time >= duration {
@@ -724,8 +724,7 @@ impl AudioParamProcessor {
                         panic!(
                             "NotSupportedError: scheduling SetValueCurveAtTime ({:?}) at
                             time of another automation event ({:?})",
-                            event,
-                            queued,
+                            event, queued,
                         );
                     }
                 }
@@ -749,8 +748,7 @@ impl AudioParamProcessor {
                             panic!(
                                 "NotSupportedError: scheduling automation event ({:?})
                                 during SetValueCurveAtTime ({:?})",
-                                event,
-                                queued,
+                                event, queued,
                             );
                         }
                     }
@@ -1209,8 +1207,7 @@ impl AudioParamProcessor {
                             // we need to `ceil()` because if `end_time` is between two samples
                             // we actually want the sample before `end_time` to be computed
                             // @todo - more tests
-                            let end_index =
-                                ((end_time - block_time).max(0.) / dt).ceil() as usize;
+                            let end_index = ((end_time - block_time).max(0.) / dt).ceil() as usize;
                             let end_index_clipped = end_index.min(count);
 
                             if is_a_rate && end_index_clipped > self.buffer.len() {
@@ -1218,10 +1215,7 @@ impl AudioParamProcessor {
 
                                 for _ in start_index..end_index_clipped {
                                     let value = self.compute_set_value_curve_sample(
-                                        start_time,
-                                        duration,
-                                        values,
-                                        time,
+                                        start_time, duration, values, time,
                                     );
 
                                     self.buffer.push(value);
@@ -1250,10 +1244,7 @@ impl AudioParamProcessor {
                                 // event has been cancelled
                                 if event.cancel_time != None {
                                     let value = self.compute_set_value_curve_sample(
-                                        start_time,
-                                        duration,
-                                        values,
-                                        end_time,
+                                        start_time, duration, values, end_time,
                                     );
 
                                     self.intrisic_value = value;
@@ -1265,8 +1256,7 @@ impl AudioParamProcessor {
                                 // event has ended
                                 } else {
                                     let value = values[values.len() - 1];
-                                    let value_clamped =
-                                        value.clamp(self.min_value, self.max_value);
+                                    let value_clamped = value.clamp(self.min_value, self.max_value);
 
                                     let mut last_event = self.event_timeline.pop().unwrap();
                                     last_event.time = end_time;
@@ -2484,7 +2474,8 @@ mod tests {
             );
         }
 
-        { // sub-sample
+        {
+            // sub-sample
             let opts = AudioParamOptions {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
@@ -2601,7 +2592,6 @@ mod tests {
             max_value: 1.,
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-
 
         let curve = [0., 0.5, 1., 0.5, 0.];
         param.set_value_curve_at_time(&curve[..], 0., 10.);
