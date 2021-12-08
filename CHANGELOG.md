@@ -1,3 +1,8 @@
+# Version 0.12.0 (2021-12-08)
+
+- Support all AudioParam automation methods
+- Change AudioProcessor API to match spec better
+
 # Version 0.11.0 (2021-11-25)
 
 - Support AudioParam.exponentialRampToValueAtTime
