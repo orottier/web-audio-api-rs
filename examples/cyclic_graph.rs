@@ -5,7 +5,7 @@ use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 // run in release mode
-// `cargo run --release --example many_oscillators_with_env`
+// `cargo run --release --example cyclic_graph`
 
 fn trigger_sine(context: &AudioContext, rng: &mut ThreadRng, cycle: &dyn AudioNode) {
     let osc = context.create_oscillator();
