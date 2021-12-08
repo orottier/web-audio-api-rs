@@ -1,5 +1,4 @@
 //! AudioParam interface
-use std::convert::TryFrom;
 use std::slice::{Iter, IterMut};
 use std::sync::Arc;
 
@@ -372,8 +371,7 @@ impl AudioParam {
 
         // When this method is called, an internal copy of the curve is
         // created for automation purposes.
-        // let arr = values.try_into();
-        let copy = Vec::<f32>::try_from(values).unwrap();
+        let copy = values.to_vec();
         let boxed_copy = copy.into_boxed_slice();
 
         let event = AudioParamEvent {
@@ -573,9 +571,12 @@ impl AudioParamProcessor {
             // handle CancelScheduledValues events
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-cancelscheduledvalues
             if event.event_type == AudioParamEventType::CancelScheduledValues {
-                // peek currevent event before inserting new events, and possibly sort
+                // peek current event before inserting new events, and possibly sort
                 // the queue, we need that for checking that we are (or not) in the middle
                 // of a ramp when handling `CancelScheduledValues`
+                // @note - probably not robust enough in some edge cases where the
+                // event is not the first received at this tick (`SetValueCurveAtTime`
+                // and `CancelAndHold` need to sort the queue)
                 let some_current_event = self.event_timeline.unsorted_peek();
 
                 match some_current_event {
@@ -935,7 +936,7 @@ impl AudioParamProcessor {
                             // handle end of event during this block
                             } else {
                                 // event has been cancelled
-                                if event.cancel_time != None {
+                                if event.cancel_time.is_some() {
                                     let value = self.compute_linear_ramp_sample(
                                         start_time,
                                         duration,
@@ -1044,7 +1045,7 @@ impl AudioParamProcessor {
                                 // handle end of event during this block
                                 } else {
                                     // event has been cancelled
-                                    if event.cancel_time != None {
+                                    if event.cancel_time.is_some() {
                                         let value = self.compute_exponential_ramp_sample(
                                             start_time,
                                             duration,
@@ -1242,7 +1243,7 @@ impl AudioParamProcessor {
                             // handle end of event during this block
                             } else {
                                 // event has been cancelled
-                                if event.cancel_time != None {
+                                if event.cancel_time.is_some() {
                                     let value = self.compute_set_value_curve_sample(
                                         start_time, duration, values, end_time,
                                     );
