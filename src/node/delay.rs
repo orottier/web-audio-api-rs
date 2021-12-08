@@ -228,6 +228,10 @@ impl AudioProcessor for DelayReader {
         // calculate the delay in chunks of BUFFER_SIZE (todo: sub quantum delays)
         let quanta = (delay * sample_rate.0 as f32) as usize / BUFFER_SIZE;
 
+        // a delay of zero quanta is not allowed (in cycles, we don't know wether the reader or
+        // writer renders first and the ordering may change on every graph update - causing clicks)
+        let quanta = quanta.max(1);
+
         let buffer = self.delay_buffer.borrow_mut();
 
         let delayed_index = (self.index + buffer.capacity() - quanta) % buffer.capacity();
