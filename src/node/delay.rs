@@ -32,6 +32,11 @@ impl Default for DelayOptions {
  * For simplicity in the audio graph rendering, we have made the conscious decision to deviate from
  * the spec and split the delay node up front in a reader and writer node (instead of during the
  * render loop - see https://webaudio.github.io/web-audio-api/#rendering-loop )
+ *
+ * This has a drawback: a delay of 0 is no longer possible. This would only be possible if the
+ * writer end is rendered before the reader end in the graph, but we cannot enforce that here.
+ * (The only way would be to connect the writer to the reader, but that would kill the
+ * cycle-breaker feature of the delay node.)
  */
 pub struct DelayNode {
     reader_registration: AudioContextRegistration,
@@ -176,30 +181,45 @@ impl AudioProcessor for DelayWriter {
         &mut self,
         inputs: &[AudioBuffer],
         outputs: &mut [AudioBuffer],
-        params: AudioParamValues,
+        _params: AudioParamValues,
         _timestamp: f64,
-        sample_rate: SampleRate,
+        _sample_rate: SampleRate,
     ) -> bool {
-        todo!()
+        // single input/output node
+        let input = inputs[0].clone();
+        let output = &mut outputs[0];
+
+        let mut buffer = self.delay_buffer.borrow_mut();
+
+        // add to buffer
+        if buffer.len() < buffer.capacity() {
+            buffer.push(input);
+        } else {
+            buffer[self.index] = input;
+        }
+
+        // increment cursor
+        self.index = (self.index + 1) % buffer.capacity();
+
+        // The writer end does not produce output.
+        // Clear output buffer, it may have been re-used
+        output.make_silent();
+
+        // todo: return false when all inputs disconnected and buffer exhausted
+        true
     }
 }
 
 impl AudioProcessor for DelayReader {
     fn process(
         &mut self,
-        inputs: &[AudioBuffer],
+        _inputs: &[AudioBuffer],
         outputs: &mut [AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         sample_rate: SampleRate,
     ) -> bool {
-        todo!()
-    }
-}
-
-/*
         // single input/output node
-        let input = &inputs[0];
         let output = &mut outputs[0];
 
         // todo: a-rate processing
@@ -208,20 +228,20 @@ impl AudioProcessor for DelayReader {
         // calculate the delay in chunks of BUFFER_SIZE (todo: sub quantum delays)
         let quanta = (delay * sample_rate.0 as f32) as usize / BUFFER_SIZE;
 
-        if quanta == 0 {
-            // when no delay is set, simply copy input to output
-            *output = input.clone();
-        } else if self.delay_buffer.len() < quanta {
-            // still filling buffer
-            self.delay_buffer.push(input.clone());
-            // clear output, it may have been re-used
+        let buffer = self.delay_buffer.borrow_mut();
+
+        let delayed_index = (self.index + buffer.capacity() - quanta) % buffer.capacity();
+        if delayed_index >= buffer.len() {
+            // still waiting to fill buffer for given delay
             output.make_silent();
         } else {
-            *output = std::mem::replace(&mut self.delay_buffer[self.index], input.clone());
-            // progress index
-            self.index = (self.index + 1) % quanta;
+            *output = buffer[delayed_index].clone();
         }
+
+        // increment cursor
+        self.index = (self.index + 1) % buffer.capacity();
 
         // todo: return false when all inputs disconnected and buffer exhausted
         true
-*/
+    }
+}
