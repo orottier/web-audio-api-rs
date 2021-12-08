@@ -1,3 +1,4 @@
+use crate::alloc::AudioBuffer;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::{AudioParam, AudioParamOptions};
@@ -90,20 +91,20 @@ impl DelayNode {
 
 struct DelayRenderer {
     delay_time: AudioParamId,
-    delay_buffer: Vec<crate::alloc::AudioBuffer>,
+    delay_buffer: Vec<AudioBuffer>,
     index: usize,
 }
 
 // SAFETY:
-// AudioBuffers are not Send but we promise the `delay_buffer` Vec is emtpy before we ship it to
+// AudioBuffers are not Send but we promise the `delay_buffer` Vec is empty before we ship it to
 // the render thread.
 unsafe impl Send for DelayRenderer {}
 
 impl AudioProcessor for DelayRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioBuffer],
+        outputs: &mut [AudioBuffer],
         params: AudioParamValues,
         _timestamp: f64,
         sample_rate: SampleRate,
