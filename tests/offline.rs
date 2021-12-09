@@ -183,3 +183,41 @@ fn test_cycle() {
         abs_all <= 0.
     );
 }
+
+#[test]
+fn test_cycle_breaker() {
+    let mut context = OfflineAudioContext::new(1, BUFFER_SIZE * 3, SampleRate(BUFFER_SIZE as _));
+
+    {
+        let delay = context.create_delay(1.);
+        delay.delay_time().set_value(1.);
+        delay.connect(&context.destination());
+
+        // here we go
+        delay.connect(&delay);
+
+        let source = context.create_constant_source();
+        source.offset().set_value(1.);
+        source.connect(&delay);
+        source.connect(&context.destination());
+    }
+
+    let output = context.start_rendering();
+
+    // not muted, and positive feedback cycle
+    assert_float_eq!(
+        output.channel_data(0).as_slice()[..BUFFER_SIZE],
+        &[1.; BUFFER_SIZE][..],
+        abs_all <= 0.
+    );
+    assert_float_eq!(
+        output.channel_data(0).as_slice()[BUFFER_SIZE..2 * BUFFER_SIZE],
+        &[2.; BUFFER_SIZE][..],
+        abs_all <= 0.
+    );
+    assert_float_eq!(
+        output.channel_data(0).as_slice()[2 * BUFFER_SIZE..3 * BUFFER_SIZE],
+        &[3.; BUFFER_SIZE][..],
+        abs_all <= 0.
+    );
+}
