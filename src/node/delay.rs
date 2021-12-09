@@ -28,6 +28,9 @@ impl Default for DelayOptions {
 }
 
 /// Node that delays the incoming audio signal by a certain amount
+///
+/// The current implementation does not allow for zero delay. The minimum delay is one render
+/// quantum (e.g. ~2.9ms at 44.1kHz).
 /*
  * For simplicity in the audio graph rendering, we have made the conscious decision to deviate from
  * the spec and split the delay node up front in a reader and writer node (instead of during the
