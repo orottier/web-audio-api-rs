@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use crate::alloc::AudioRenderQuantum;
 use crate::analysis::Analyser;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
@@ -165,8 +166,8 @@ unsafe impl Send for AnalyserRenderer {}
 impl AudioProcessor for AnalyserRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

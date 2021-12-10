@@ -1,3 +1,4 @@
+use crate::alloc::AudioRenderQuantum;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::{AudioParam, AudioParamOptions};
@@ -84,8 +85,8 @@ struct GainRenderer {
 impl AudioProcessor for GainRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

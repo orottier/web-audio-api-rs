@@ -1,5 +1,6 @@
 use std::f32::consts::PI;
 
+use crate::alloc::AudioRenderQuantum;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::AudioParam;
@@ -108,8 +109,8 @@ struct PannerRenderer {
 impl AudioProcessor for PannerRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

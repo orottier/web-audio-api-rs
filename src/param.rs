@@ -2,7 +2,7 @@
 use std::slice::{Iter, IterMut};
 use std::sync::Arc;
 
-use crate::alloc::AudioBuffer;
+use crate::alloc::AudioRenderQuantum;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::AudioContextRegistration;
 use crate::node::AudioNode;
@@ -442,8 +442,8 @@ pub(crate) struct AudioParamProcessor {
 impl AudioProcessor for AudioParamProcessor {
     fn process(
         &mut self,
-        inputs: &[AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,

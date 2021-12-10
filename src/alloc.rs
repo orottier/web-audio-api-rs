@@ -147,15 +147,17 @@ impl std::ops::Drop for ChannelData {
     }
 }
 
-/// Fixed length audio asset, basically a matrix of `channels * [f32; RENDER_QUANTUM_SIZE]`
+/// Internal fixed length audio asset of `RENDER_QUANTUM_SIZE` sample frames for
+/// block rendering, basically a matrix of `channels * [f32; RENDER_QUANTUM_SIZE]`
+/// cf. [https://webaudio.github.io/web-audio-api/#render-quantum]
 ///
-/// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
+/// An `AudioRenderQuantum` has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug)]
-pub struct AudioBuffer {
+pub struct AudioRenderQuantum {
     channels: ArrayVec<ChannelData, MAX_CHANNELS>,
 }
 
-impl AudioBuffer {
+impl AudioRenderQuantum {
     pub fn new(channel: ChannelData) -> Self {
         let mut channels = ArrayVec::new();
         channels.push(channel);
@@ -163,12 +165,12 @@ impl AudioBuffer {
         Self { channels }
     }
 
-    /// Number of channels in this AudioBuffer
+    /// Number of channels in this AudioRenderQuantum
     pub fn number_of_channels(&self) -> usize {
         self.channels.len()
     }
 
-    /// Set number of channels in this AudioBuffer
+    /// Set number of channels in this AudioRenderQuantum
     ///
     /// Note: if the new number is higher than the previous, the new channels will be filled with
     /// garbage.
@@ -449,7 +451,7 @@ impl AudioBuffer {
         self.channels.iter_mut().for_each(fun)
     }
 
-    /// Sum two `AudioBuffer`s
+    /// Sum two `AudioRenderQuantum`s
     ///
     /// If the channel counts differ, the buffer with lower count will be upmixed.
     pub fn add(&mut self, other: &Self, interpretation: ChannelInterpretation) {
@@ -615,7 +617,7 @@ mod tests {
         let alloc = Alloc::with_capacity(1);
         let silence = alloc.silence();
 
-        let buffer = AudioBuffer::new(silence);
+        let buffer = AudioRenderQuantum::new(silence);
         assert_eq!(buffer.number_of_channels(), 1);
 
         let mut buffer = buffer;
@@ -634,7 +636,7 @@ mod tests {
         let mut signal = alloc.silence();
         signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-        let mut buffer = AudioBuffer::new(signal);
+        let mut buffer = AudioRenderQuantum::new(signal);
 
         buffer.mix(1, ChannelInterpretation::Discrete);
 
@@ -678,7 +680,7 @@ mod tests {
             let mut signal = alloc.silence();
             signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(signal);
+            let mut buffer = AudioRenderQuantum::new(signal);
 
             // make sure 1 -> 1 does nothing
             buffer.mix(1, ChannelInterpretation::Speakers);
@@ -710,7 +712,7 @@ mod tests {
             let mut signal = alloc.silence();
             signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(signal);
+            let mut buffer = AudioRenderQuantum::new(signal);
 
             buffer.mix(4, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 4);
@@ -743,7 +745,7 @@ mod tests {
             let mut signal = alloc.silence();
             signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(signal);
+            let mut buffer = AudioRenderQuantum::new(signal);
 
             buffer.mix(6, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 6);
@@ -788,7 +790,7 @@ mod tests {
             let mut right_signal = alloc.silence();
             right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
 
             assert_eq!(buffer.number_of_channels(), 2);
@@ -834,7 +836,7 @@ mod tests {
             let mut right_signal = alloc.silence();
             right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
 
             assert_eq!(buffer.number_of_channels(), 2);
@@ -894,7 +896,7 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(s_left_signal);
             buffer.channels.push(s_right_signal);
@@ -967,7 +969,7 @@ mod tests {
             let mut right_signal = alloc.silence();
             right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
 
             assert_eq!(buffer.number_of_channels(), 2);
@@ -1002,7 +1004,7 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[0.25; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(s_left_signal);
             buffer.channels.push(s_right_signal);
@@ -1053,7 +1055,7 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(center_signal);
             buffer.channels.push(low_freq_signal);
@@ -1114,7 +1116,7 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(s_left_signal);
             buffer.channels.push(s_right_signal);
@@ -1170,7 +1172,7 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(center_signal);
             buffer.channels.push(low_freq_signal);
@@ -1241,7 +1243,7 @@ mod tests {
             let mut s_right_signal = alloc.silence();
             s_right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(center_signal);
             buffer.channels.push(low_freq_signal);
@@ -1314,12 +1316,12 @@ mod tests {
 
         let mut signal = alloc.silence();
         signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
-        let mut buffer = AudioBuffer::new(signal);
+        let mut buffer = AudioRenderQuantum::new(signal);
         buffer.mix(2, ChannelInterpretation::Speakers);
 
         let mut signal2 = alloc.silence();
         signal2.copy_from_slice(&[2.; RENDER_QUANTUM_SIZE]);
-        let buffer2 = AudioBuffer::new(signal2);
+        let buffer2 = AudioRenderQuantum::new(signal2);
 
         buffer.add(&buffer2, ChannelInterpretation::Discrete);
 

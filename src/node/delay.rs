@@ -1,4 +1,4 @@
-use crate::alloc::AudioBuffer;
+use crate::alloc::AudioRenderQuantum;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::{AudioParam, AudioParamOptions};
@@ -165,17 +165,17 @@ impl DelayNode {
 
 struct DelayReader {
     delay_time: AudioParamId,
-    delay_buffer: Rc<RefCell<Vec<AudioBuffer>>>,
+    delay_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
 }
 
 struct DelayWriter {
-    delay_buffer: Rc<RefCell<Vec<AudioBuffer>>>,
+    delay_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
 }
 
 // SAFETY:
-// AudioBuffers are not Send but we promise the `delay_buffer` Vec is empty before we ship it to
+// AudioRenderQuantums are not Send but we promise the `delay_buffer` Vec is empty before we ship it to
 // the render thread.
 unsafe impl Send for DelayReader {}
 unsafe impl Send for DelayWriter {}
@@ -183,8 +183,8 @@ unsafe impl Send for DelayWriter {}
 impl AudioProcessor for DelayWriter {
     fn process(
         &mut self,
-        inputs: &[AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -217,8 +217,8 @@ impl AudioProcessor for DelayWriter {
 impl AudioProcessor for DelayReader {
     fn process(
         &mut self,
-        _inputs: &[AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        _inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         _timestamp: f64,
         sample_rate: SampleRate,

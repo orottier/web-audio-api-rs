@@ -12,6 +12,7 @@ use std::f32::consts::PI;
 use float_eq::debug_assert_float_eq;
 
 use crate::{
+    alloc::AudioRenderQuantum,
     buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
@@ -161,8 +162,8 @@ struct StereoPannerRenderer {
 impl AudioProcessor for StereoPannerRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

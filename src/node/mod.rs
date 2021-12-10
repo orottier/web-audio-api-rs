@@ -1,6 +1,7 @@
 //! The AudioNode interface and concrete types
 use std::f32::consts::PI;
 
+use crate::alloc::AudioRenderQuantum;
 use crate::buffer::{ChannelConfig, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AudioContextRegistration, AudioNodeId, BaseAudioContext};
 use crate::control::{Controller, ScheduledState, Scheduler};
@@ -236,8 +237,8 @@ impl<R> MediaStreamRenderer<R> {
 impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
     fn process(
         &mut self,
-        _inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        _inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
         timestamp: f64,
         _sample_rate: SampleRate,

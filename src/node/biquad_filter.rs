@@ -19,7 +19,7 @@ use crossbeam_channel::{Receiver, Sender};
 use num_complex::Complex;
 
 use crate::{
-    alloc::AudioBuffer,
+    alloc::AudioRenderQuantum,
     buffer::{ChannelConfig, ChannelConfigOptions},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
@@ -492,8 +492,8 @@ struct BiquadFilterRenderer {
 impl AudioProcessor for BiquadFilterRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -564,8 +564,8 @@ impl BiquadFilterRenderer {
     #[inline]
     fn filter(
         &mut self,
-        input: &AudioBuffer,
-        output: &mut AudioBuffer,
+        input: &AudioRenderQuantum,
+        output: &mut AudioRenderQuantum,
         g_values: &[f32],
         det_values: &[f32],
         freq_values: &[f32],

@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::alloc::AudioBuffer as FixedAudioBuffer;
+use crate::alloc::AudioRenderQuantum;
 use crate::media::MediaStream;
 use crate::SampleRate;
 
@@ -103,10 +103,10 @@ impl AudioBuffer {
             })
     }
 
-    /// Extends an AudioBuffer with an [`FixedAudioBuffer`]
+    /// Extends an AudioBuffer with an [`AudioRenderQuantum`]
     ///
     /// This assumes the sample_rate matches. No up/down-mixing is performed
-    pub fn extend_alloc(&mut self, other: &FixedAudioBuffer) {
+    pub fn extend_alloc(&mut self, other: &AudioRenderQuantum) {
         self.channels_mut()
             .iter_mut()
             .zip(other.channels())

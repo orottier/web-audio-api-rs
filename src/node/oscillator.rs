@@ -11,7 +11,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use crate::alloc::ChannelData;
+use crate::alloc::{AudioRenderQuantum, ChannelData};
 use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::control::{ScheduledState, Scheduler};
@@ -674,8 +674,8 @@ struct OscillatorRenderer {
 impl AudioProcessor for OscillatorRenderer {
     fn process(
         &mut self,
-        _inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        _inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         timestamp: f64,
         _sample_rate: SampleRate,

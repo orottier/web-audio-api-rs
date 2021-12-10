@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::alloc::AudioBuffer;
+use crate::alloc::AudioRenderQuantum;
 use crate::context::AudioParamId;
 use crate::graph::{Node, NodeIndex};
 use crate::SampleRate;
@@ -35,8 +35,8 @@ pub trait AudioProcessor: Send {
     /// - return `true` as long as this node is a source of output (e.g. OscillatorNode)
     fn process(
         &mut self,
-        inputs: &[AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
@@ -55,7 +55,7 @@ impl<'a> AudioParamValues<'a> {
         Self { nodes }
     }
 
-    pub(crate) fn get_raw(&self, index: &AudioParamId) -> &AudioBuffer {
+    pub(crate) fn get_raw(&self, index: &AudioParamId) -> &AudioRenderQuantum {
         self.nodes.get(&index.into()).unwrap().get_buffer()
     }
 

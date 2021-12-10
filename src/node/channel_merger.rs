@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use crate::alloc::AudioRenderQuantum;
 use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
 use crate::process::{AudioParamValues, AudioProcessor};
@@ -81,8 +82,8 @@ struct ChannelMergerRenderer {}
 impl AudioProcessor for ChannelMergerRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

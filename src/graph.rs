@@ -6,8 +6,8 @@ use std::sync::Arc;
 use cpal::Sample;
 use crossbeam_channel::Receiver;
 
-use crate::alloc::{Alloc, AudioBuffer};
-use crate::buffer::{ChannelConfig, ChannelCountMode};
+use crate::alloc::{Alloc, AudioRenderQuantum};
+use crate::buffer::{AudioBuffer, ChannelConfig, ChannelCountMode};
 use crate::message::ControlMessage;
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
@@ -19,11 +19,11 @@ pub(crate) struct RenderThread {
     channels: usize,
     frames_played: Arc<AtomicU64>,
     receiver: Receiver<ControlMessage>,
-    buffer_offset: Option<(usize, AudioBuffer)>,
+    buffer_offset: Option<(usize, AudioRenderQuantum)>,
 }
 
 // SAFETY:
-// The RenderThread is not Send since it contains AudioBuffers (which use Rc), but these are only
+// The RenderThread is not Send since it contains `AudioRenderQuantum`s (which use Rc), but these are only
 // accessed within the same thread (the render thread). Due to the cpal constraints we can neither
 // move the RenderThread object into the render thread, nor can we initialize the Rc's in that
 // thread.
@@ -86,11 +86,11 @@ impl RenderThread {
         }
     }
 
-    pub fn render_audiobuffer(&mut self, length: usize) -> crate::buffer::AudioBuffer {
+    pub fn render_audiobuffer(&mut self, length: usize) -> AudioBuffer {
         // assert input was properly sized
         debug_assert_eq!(length % RENDER_QUANTUM_SIZE, 0);
 
-        let mut buf = crate::buffer::AudioBuffer::new(self.channels, 0, self.sample_rate);
+        let mut buf = AudioBuffer::new(self.channels, 0, self.sample_rate);
 
         for _ in 0..length / RENDER_QUANTUM_SIZE {
             // handle addition/removal of nodes/edges
@@ -188,9 +188,9 @@ pub struct Node {
     /// Renderer: converts inputs to outputs
     processor: Box<dyn AudioProcessor>,
     /// Input buffers
-    inputs: Vec<AudioBuffer>,
+    inputs: Vec<AudioRenderQuantum>,
     /// Output buffers, consumed by subsequent Nodes in this graph
-    outputs: Vec<AudioBuffer>,
+    outputs: Vec<AudioRenderQuantum>,
     /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
 
@@ -240,7 +240,7 @@ impl Node {
     }
 
     /// Get the current buffer for AudioParam values
-    pub fn get_buffer(&self) -> &AudioBuffer {
+    pub fn get_buffer(&self) -> &AudioRenderQuantum {
         self.outputs.get(0).unwrap()
     }
 }
@@ -282,8 +282,8 @@ impl Graph {
         channel_config: ChannelConfig,
     ) {
         // todo, allocate on control thread, make single alloc..?
-        let inputs = vec![AudioBuffer::new(self.alloc.silence()); inputs];
-        let outputs = vec![AudioBuffer::new(self.alloc.silence()); outputs];
+        let inputs = vec![AudioRenderQuantum::new(self.alloc.silence()); inputs];
+        let outputs = vec![AudioRenderQuantum::new(self.alloc.silence()); outputs];
 
         self.nodes.insert(
             index,
@@ -390,7 +390,7 @@ impl Graph {
                 .unwrap()
                 .outputs
                 .iter_mut()
-                .for_each(AudioBuffer::make_silent);
+                .for_each(AudioRenderQuantum::make_silent);
         }
 
         // depth first search yields reverse order
@@ -403,7 +403,7 @@ impl Graph {
         self.in_cycle = in_cycle;
     }
 
-    pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer {
+    pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioRenderQuantum {
         if self.ordered.is_empty() {
             self.order_nodes();
         }
@@ -507,8 +507,8 @@ mod tests {
     impl AudioProcessor for TestNode {
         fn process(
             &mut self,
-            _inputs: &[AudioBuffer],
-            _outputs: &mut [AudioBuffer],
+            _inputs: &[AudioRenderQuantum],
+            _outputs: &mut [AudioRenderQuantum],
             _params: AudioParamValues,
             _timestamp: f64,
             _sample_rate: SampleRate,

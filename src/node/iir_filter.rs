@@ -8,7 +8,7 @@
 )]
 use super::AudioNode;
 use crate::{
-    alloc::AudioBuffer,
+    alloc::AudioRenderQuantum,
     buffer::{ChannelConfig, ChannelConfigOptions},
     context::{AsBaseAudioContext, AudioContextRegistration},
     process::{AudioParamValues, AudioProcessor},
@@ -279,8 +279,8 @@ struct IirFilterRenderer {
 impl AudioProcessor for IirFilterRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -312,7 +312,7 @@ impl IirFilterRenderer {
     /// * `input` - Audiobuffer input
     /// * `output` - Audiobuffer output
     #[inline]
-    fn filter(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
+    fn filter(&mut self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
         for (idx, (i_data, o_data)) in input
             .channels()
             .iter()
