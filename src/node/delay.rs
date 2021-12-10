@@ -3,7 +3,7 @@ use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::{AudioParamValues, AudioProcessor};
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::AudioNode;
 
@@ -112,7 +112,8 @@ impl DelayNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: DelayOptions) -> Self {
         // allocate large enough buffer to store all delayed samples
         let max_samples = options.max_delay_time * context.base().sample_rate().0 as f32;
-        let max_quanta = (max_samples.ceil() as usize + BUFFER_SIZE - 1) / BUFFER_SIZE;
+        let max_quanta =
+            (max_samples.ceil() as usize + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
         let delay_buffer = Vec::with_capacity(max_quanta);
 
         let shared_buffer = Rc::new(RefCell::new(delay_buffer));
@@ -228,8 +229,8 @@ impl AudioProcessor for DelayReader {
         // todo: a-rate processing
         let delay = params.get(&self.delay_time)[0];
 
-        // calculate the delay in chunks of BUFFER_SIZE (todo: sub quantum delays)
-        let quanta = (delay * sample_rate.0 as f32) as usize / BUFFER_SIZE;
+        // calculate the delay in chunks of RENDER_QUANTUM_SIZE (todo: sub quantum delays)
+        let quanta = (delay * sample_rate.0 as f32) as usize / RENDER_QUANTUM_SIZE;
 
         // a delay of zero quanta is not allowed (in cycles, we don't know wether the reader or
         // writer renders first and the ordering may change on every graph update - causing clicks)

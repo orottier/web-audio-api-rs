@@ -31,7 +31,7 @@ use crate::node::{
 use crate::param::{AudioParam, AudioParamEvent, AudioParamOptions};
 use crate::process::AudioProcessor;
 use crate::spatial::{AudioListener, AudioListenerParams};
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 #[cfg(not(test))]
 use crate::io;
@@ -723,9 +723,10 @@ impl OfflineAudioContext {
     /// `OfflineAudioContext` doesn't start rendering automatically
     /// You need to call this function to start the audio rendering
     pub fn start_rendering(&mut self) -> AudioBuffer {
-        // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
+        // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
         // the desired number of frames.
-        let buffer_size = (self.length + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+        let buffer_size =
+            (self.length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE * RENDER_QUANTUM_SIZE;
 
         let mut buf = self.renderer.render_audiobuffer(buffer_size);
         let _split = buf.split_off(self.length);

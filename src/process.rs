@@ -61,7 +61,7 @@ impl<'a> AudioParamValues<'a> {
 
     /// Get the computed values for the given [`crate::param::AudioParam`]
     ///
-    /// For both A & K-rate params, it will provide a slice of length [`crate::BUFFER_SIZE`]
+    /// For both A & K-rate params, it will provide a slice of length [`crate::RENDER_QUANTUM_SIZE`]
     pub fn get(&self, index: &AudioParamId) -> &[f32] {
         &self.get_raw(index).channel_data(0)[..]
     }

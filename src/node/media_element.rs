@@ -2,7 +2,7 @@ use crate::buffer::{ChannelConfig, ChannelConfigOptions, Resampler};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
 use crate::control::{Controller, Scheduler};
 use crate::media::MediaElement;
-use crate::BUFFER_SIZE;
+use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
     AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode, MediaStreamRenderer,
@@ -68,8 +68,11 @@ impl MediaElementAudioSourceNode {
                 controller,
             };
 
-            let resampler =
-                Resampler::new(context.base().sample_rate(), BUFFER_SIZE, options.media);
+            let resampler = Resampler::new(
+                context.base().sample_rate(),
+                RENDER_QUANTUM_SIZE,
+                options.media,
+            );
             let render = MediaStreamRenderer::new(resampler, scheduler);
 
             (node, Box::new(render))

@@ -10,7 +10,7 @@ use crate::alloc::{Alloc, AudioBuffer};
 use crate::buffer::{ChannelConfig, ChannelCountMode};
 use crate::message::ControlMessage;
 use crate::process::{AudioParamValues, AudioProcessor};
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
@@ -88,19 +88,19 @@ impl RenderThread {
 
     pub fn render_audiobuffer(&mut self, length: usize) -> crate::buffer::AudioBuffer {
         // assert input was properly sized
-        debug_assert_eq!(length % BUFFER_SIZE, 0);
+        debug_assert_eq!(length % RENDER_QUANTUM_SIZE, 0);
 
         let mut buf = crate::buffer::AudioBuffer::new(self.channels, 0, self.sample_rate);
 
-        for _ in 0..length / BUFFER_SIZE {
+        for _ in 0..length / RENDER_QUANTUM_SIZE {
             // handle addition/removal of nodes/edges
             self.handle_control_messages();
 
             // update time
-            let timestamp = self
-                .frames_played
-                .fetch_add(BUFFER_SIZE as u64, Ordering::SeqCst) as f64
-                / self.sample_rate.0 as f64;
+            let timestamp =
+                self.frames_played
+                    .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst) as f64
+                    / self.sample_rate.0 as f64;
 
             // render audio graph
             let rendered = self.graph.render(timestamp, self.sample_rate);
@@ -116,9 +116,9 @@ impl RenderThread {
     #[allow(dead_code)]
     pub fn render<S: Sample>(&mut self, mut buffer: &mut [S]) {
         // There may be audio frames left over from the previous render call,
-        // if the cpal buffer size did not align with our internal BUFFER_SIZE
+        // if the cpal buffer size did not align with our internal RENDER_QUANTUM_SIZE
         if let Some((offset, prev_rendered)) = self.buffer_offset.take() {
-            let leftover_len = (BUFFER_SIZE - offset) * self.channels;
+            let leftover_len = (RENDER_QUANTUM_SIZE - offset) * self.channels;
             // split the leftover frames slice, to fit in `buffer`
             let (first, next) = buffer.split_at_mut(leftover_len.min(buffer.len()));
 
@@ -142,9 +142,9 @@ impl RenderThread {
             buffer = next;
         }
 
-        // The audio graph is rendered in chunks of BUFFER_SIZE frames.  But some audio backends
+        // The audio graph is rendered in chunks of RENDER_QUANTUM_SIZE frames.  But some audio backends
         // may not be able to emit chunks of this size.
-        let chunk_size = BUFFER_SIZE * self.channels as usize;
+        let chunk_size = RENDER_QUANTUM_SIZE * self.channels as usize;
 
         for data in buffer.chunks_mut(chunk_size) {
             // handle addition/removal of nodes/edges
@@ -152,10 +152,10 @@ impl RenderThread {
 
             // update time
             // @note - this follows the spec as fetch_add returns the old value
-            let timestamp = self
-                .frames_played
-                .fetch_add(BUFFER_SIZE as u64, Ordering::SeqCst) as f64
-                / self.sample_rate.0 as f64;
+            let timestamp =
+                self.frames_played
+                    .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst) as f64
+                    / self.sample_rate.0 as f64;
 
             // render audio graph
             let rendered = self.graph.render(timestamp, self.sample_rate);
@@ -171,9 +171,9 @@ impl RenderThread {
             }
 
             if data.len() != chunk_size {
-                // this is the last chunk, and it contained less than BUFFER_SIZE samples
+                // this is the last chunk, and it contained less than RENDER_QUANTUM_SIZE samples
                 let channel_offset = data.len() / self.channels;
-                debug_assert!(channel_offset < BUFFER_SIZE);
+                debug_assert!(channel_offset < RENDER_QUANTUM_SIZE);
                 self.buffer_offset = Some((channel_offset, rendered.clone()));
             }
         }

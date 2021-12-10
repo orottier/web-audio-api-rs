@@ -9,7 +9,7 @@ use lewton::VorbisError;
 
 use crate::buffer::{AudioBuffer, ChannelData};
 use crate::control::Controller;
-use crate::{BufferDepletedError, SampleRate, BUFFER_SIZE};
+use crate::{BufferDepletedError, SampleRate, RENDER_QUANTUM_SIZE};
 
 #[cfg(not(test))]
 use crossbeam_channel::Sender;
@@ -348,7 +348,7 @@ impl Iterator for Microphone {
             Err(TryRecvError::Empty) => {
                 // frame not received in time, emit silence
                 log::debug!("input frame delayed");
-                AudioBuffer::new(self.channels, BUFFER_SIZE, self.sample_rate)
+                AudioBuffer::new(self.channels, RENDER_QUANTUM_SIZE, self.sample_rate)
             }
             Err(TryRecvError::Disconnected) => {
                 // MicrophoneRender has stopped, close stream
@@ -522,12 +522,12 @@ impl Iterator for WavDecoder {
     type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // read data in chunks of channels * BUFFER_SIZE
+        // read data in chunks of channels * RENDER_QUANTUM_SIZE
         let mut data = vec![vec![]; self.channels as usize];
         for (i, res) in self
             .stream
             .by_ref()
-            .take(self.channels as usize * BUFFER_SIZE)
+            .take(self.channels as usize * RENDER_QUANTUM_SIZE)
             .enumerate()
         {
             match res {

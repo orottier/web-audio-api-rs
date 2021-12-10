@@ -7,7 +7,7 @@ use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, Chann
 use crate::context::AudioContextRegistration;
 use crate::node::AudioNode;
 use crate::process::{AudioParamValues, AudioProcessor};
-use crate::{AtomicF32, SampleRate, BUFFER_SIZE};
+use crate::{AtomicF32, SampleRate, RENDER_QUANTUM_SIZE};
 
 use crossbeam_channel::{Receiver, Sender};
 
@@ -449,7 +449,7 @@ impl AudioProcessor for AudioParamProcessor {
         sample_rate: SampleRate,
     ) -> bool {
         let period = 1. / sample_rate.0 as f64;
-        let param_intrisic_values = self.tick(timestamp, period, BUFFER_SIZE);
+        let param_intrisic_values = self.tick(timestamp, period, RENDER_QUANTUM_SIZE);
 
         let input = &inputs[0]; // single input mode
         let param_computed_values = &mut outputs[0];
@@ -1311,7 +1311,7 @@ pub(crate) fn audio_param_pair(
         max_value: opts.max_value,
         event_timeline: AudioParamEventTimeline::new(),
         last_event: None,
-        buffer: Vec::with_capacity(BUFFER_SIZE),
+        buffer: Vec::with_capacity(RENDER_QUANTUM_SIZE),
     };
 
     (param, render)
