@@ -6,12 +6,12 @@ use std::sync::Arc;
 use cpal::Sample;
 use crossbeam_channel::Receiver;
 
-use crate::alloc::{Alloc, AudioRenderQuantum};
 use crate::buffer::AudioBuffer;
 use crate::message::ControlMessage;
 use crate::node::{ChannelConfig, ChannelCountMode};
-use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+
+use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum};
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {

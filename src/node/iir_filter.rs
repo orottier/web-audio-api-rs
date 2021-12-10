@@ -10,9 +10,8 @@ use num_complex::Complex;
 use std::f64::consts::PI;
 
 use crate::{
-    alloc::AudioRenderQuantum,
     context::{AsBaseAudioContext, AudioContextRegistration},
-    process::{AudioParamValues, AudioProcessor},
+    renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
 };
 

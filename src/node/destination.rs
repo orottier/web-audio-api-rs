@@ -1,6 +1,5 @@
-use crate::alloc::AudioRenderQuantum;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
-use crate::process::{AudioParamValues, AudioProcessor};
+use crate::renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
 use super::{

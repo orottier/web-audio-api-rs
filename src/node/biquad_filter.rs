@@ -19,10 +19,9 @@ use crossbeam_channel::{Receiver, Sender};
 use num_complex::Complex;
 
 use crate::{
-    alloc::AudioRenderQuantum,
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
-    process::{AudioParamValues, AudioProcessor},
+    renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
 };
 

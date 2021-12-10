@@ -20,7 +20,6 @@ const LISTENER_NODE_ID: u64 = 1;
 const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
 use crate::buffer::AudioBuffer;
-use crate::graph::{NodeIndex, RenderThread};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{
@@ -30,7 +29,7 @@ use crate::node::{
     PeriodicWave, PeriodicWaveOptions,
 };
 use crate::param::{AudioParam, AudioParamEvent, AudioParamOptions};
-use crate::process::AudioProcessor;
+use crate::renderer::{AudioProcessor, NodeIndex, RenderThread};
 use crate::spatial::{AudioListener, AudioListenerParams};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 

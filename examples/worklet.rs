@@ -1,12 +1,11 @@
 use rand::Rng;
 
-use web_audio_api::alloc::AudioRenderQuantum;
 use web_audio_api::context::{
     AsBaseAudioContext, AudioContext, AudioContextRegistration, AudioParamId,
 };
 use web_audio_api::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
 use web_audio_api::param::{AudioParam, AudioParamOptions, AutomationRate};
-use web_audio_api::process::{AudioParamValues, AudioProcessor};
+use web_audio_api::renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use web_audio_api::SampleRate;
 
 /// Audio source node emitting white noise (random samples)

@@ -1,10 +1,9 @@
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::alloc::AudioRenderQuantum;
 use crate::analysis::Analyser;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
-use crate::process::{AudioParamValues, AudioProcessor};
+use crate::renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};

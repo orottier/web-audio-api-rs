@@ -1,8 +1,8 @@
 //! General purpose audio signal data structures
 use std::sync::Arc;
 
-use crate::alloc::AudioRenderQuantum;
 use crate::media::MediaStream;
+use crate::renderer::AudioRenderQuantum;
 use crate::SampleRate;
 
 /// Memory-resident audio asset, basically a matrix of channels * samples

@@ -11,11 +11,12 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use crate::alloc::{AudioRenderQuantum, AudioRenderQuantumChannel};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::control::{ScheduledState, Scheduler};
 use crate::param::{AudioParam, AudioParamOptions};
-use crate::process::{AudioParamValues, AudioProcessor};
+use crate::renderer::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioRenderQuantumChannel,
+};
 use crate::SampleRate;
 
 use crossbeam_channel::{self, Receiver, Sender};

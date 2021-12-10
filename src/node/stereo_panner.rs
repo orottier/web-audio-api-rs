@@ -12,10 +12,9 @@ use std::f32::consts::PI;
 use float_eq::debug_assert_float_eq;
 
 use crate::{
-    alloc::AudioRenderQuantum,
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
-    process::{AudioParamValues, AudioProcessor},
+    renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate,
 };
 

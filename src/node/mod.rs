@@ -3,11 +3,10 @@ use std::f32::consts::PI;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::alloc::AudioRenderQuantum;
 use crate::context::{AudioContextRegistration, AudioNodeId, BaseAudioContext};
 use crate::control::{Controller, ScheduledState, Scheduler};
 use crate::media::MediaStream;
-use crate::process::{AudioParamValues, AudioProcessor};
+use crate::renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{BufferDepletedError, SampleRate};
 
 use lazy_static::lazy_static;

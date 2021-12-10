@@ -1,9 +1,8 @@
 use std::f32::consts::PI;
 
-use crate::alloc::AudioRenderQuantum;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::AudioParam;
-use crate::process::{AudioParamValues, AudioProcessor};
+use crate::renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
 use super::{

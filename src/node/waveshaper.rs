@@ -15,9 +15,8 @@ use crossbeam_channel::{Receiver, Sender};
 use rubato::{FftFixedInOut, Resampler};
 
 use crate::{
-    alloc::AudioRenderQuantum,
     context::{AsBaseAudioContext, AudioContextRegistration},
-    process::{AudioParamValues, AudioProcessor},
+    renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate,
 };
 
