@@ -19,7 +19,7 @@ const LISTENER_NODE_ID: u64 = 1;
 /// listener audio parameters ids are always at index 2 through 12
 const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
-use crate::buffer::{AudioBuffer};
+use crate::buffer::AudioBuffer;
 use crate::graph::{NodeIndex, RenderThread};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;

@@ -21,8 +21,8 @@ use crate::SampleRate;
 use crossbeam_channel::{self, Receiver, Sender};
 
 use super::{
-    AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions,
-    SINETABLE, TABLE_LENGTH_F32, TABLE_LENGTH_USIZE
+    AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions, SINETABLE,
+    TABLE_LENGTH_F32, TABLE_LENGTH_USIZE,
 };
 
 /// Options for constructing a periodic wave

@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use crate::alloc::AudioRenderQuantum;
 use crate::context::AudioContextRegistration;
-use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
+use crate::node::{
+    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{AtomicF32, SampleRate, RENDER_QUANTUM_SIZE};
 

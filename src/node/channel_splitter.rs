@@ -5,7 +5,9 @@ use crate::context::{AsBaseAudioContext, AudioContextRegistration};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
+use super::{
+    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+};
 
 /// Options for constructing a ChannelSplitterNode
 pub struct ChannelSplitterOptions {

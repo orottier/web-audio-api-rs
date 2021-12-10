@@ -3,7 +3,9 @@ use crate::context::{AsBaseAudioContext, AudioContextRegistration};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
+use super::{
+    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+};
 
 /// Representing the final audio destination and is what the user will ultimately hear.
 pub struct DestinationNode {

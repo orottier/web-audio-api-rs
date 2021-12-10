@@ -4,7 +4,9 @@
 
 use crate::alloc::AudioRenderQuantum;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
-use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
+use crate::node::{
+    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+};
 use crate::param::{AudioParam, AudioParamOptions, AudioParamRaw, AutomationRate};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;

@@ -7,7 +7,7 @@ use cpal::Sample;
 use crossbeam_channel::Receiver;
 
 use crate::alloc::{Alloc, AudioRenderQuantum};
-use crate::buffer::{AudioBuffer};
+use crate::buffer::AudioBuffer;
 use crate::message::ControlMessage;
 use crate::node::{ChannelConfig, ChannelCountMode};
 use crate::process::{AudioParamValues, AudioProcessor};

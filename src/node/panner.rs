@@ -6,7 +6,9 @@ use crate::param::AudioParam;
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
+use super::{
+    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+};
 
 /// Options for constructing a PannerNode
 #[derive(Default)]

@@ -5,8 +5,8 @@ use crate::media::MediaElement;
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::{
-    AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode,
-    ChannelConfig, ChannelConfigOptions, MediaStreamRenderer,
+    AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode, ChannelConfig,
+    ChannelConfigOptions, MediaStreamRenderer,
 };
 
 /// Options for constructing a AudioBufferSourceNode

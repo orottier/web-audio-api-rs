@@ -1,4 +1,4 @@
-use crate::buffer::{Resampler};
+use crate::buffer::Resampler;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
 use crate::control::Scheduler;
 use crate::media::MediaStream;

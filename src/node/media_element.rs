@@ -1,12 +1,12 @@
-use crate::buffer::{Resampler};
+use crate::buffer::Resampler;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
 use crate::control::{Controller, Scheduler};
 use crate::media::MediaElement;
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
-    AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode,
-    ChannelConfig, ChannelConfigOptions, MediaStreamRenderer,
+    AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode, ChannelConfig,
+    ChannelConfigOptions, MediaStreamRenderer,
 };
 
 /// Options for constructing a MediaElementAudioSourceNode
