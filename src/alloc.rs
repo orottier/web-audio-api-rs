@@ -8,6 +8,7 @@ use crate::buffer::ChannelInterpretation;
 use crate::MAX_CHANNELS;
 use crate::RENDER_QUANTUM_SIZE;
 
+// object pool for `AudioRenderQuantumChannel`s, only allocate if the pool is empty
 pub(crate) struct Alloc {
     inner: Rc<AllocInner>,
 }
@@ -34,15 +35,15 @@ impl Alloc {
     }
 
     #[cfg(test)]
-    pub fn allocate(&self) -> ChannelData {
-        ChannelData {
+    pub fn allocate(&self) -> AudioRenderQuantumChannel {
+        AudioRenderQuantumChannel {
             data: self.inner.allocate(),
             alloc: Rc::clone(&self.inner),
         }
     }
 
-    pub fn silence(&self) -> ChannelData {
-        ChannelData {
+    pub fn silence(&self) -> AudioRenderQuantumChannel {
+        AudioRenderQuantumChannel {
             data: Rc::clone(&self.inner.zeroes),
             alloc: Rc::clone(&self.inner),
         }
@@ -74,14 +75,14 @@ impl AllocInner {
 
 /// Single channel audio samples, basically wraps a `Rc<[f32; RENDER_QUANTUM_SIZE]>`
 ///
-/// `ChannelData` has copy-on-write semantics, so it is cheap to clone.
+/// `AudioRenderQuantumChannel` has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug)]
-pub struct ChannelData {
+pub struct AudioRenderQuantumChannel {
     data: Rc<[f32; RENDER_QUANTUM_SIZE]>,
     alloc: Rc<AllocInner>,
 }
 
-impl ChannelData {
+impl AudioRenderQuantumChannel {
     fn make_mut(&mut self) -> &mut [f32; RENDER_QUANTUM_SIZE] {
         if Rc::strong_count(&self.data) != 1 {
             let mut new = self.alloc.allocate();
@@ -118,7 +119,7 @@ impl ChannelData {
 
 use std::ops::{Deref, DerefMut};
 
-impl Deref for ChannelData {
+impl Deref for AudioRenderQuantumChannel {
     type Target = [f32; RENDER_QUANTUM_SIZE];
 
     fn deref(&self) -> &Self::Target {
@@ -126,19 +127,19 @@ impl Deref for ChannelData {
     }
 }
 
-impl DerefMut for ChannelData {
+impl DerefMut for AudioRenderQuantumChannel {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.make_mut()
     }
 }
 
-impl AsRef<[f32]> for ChannelData {
+impl AsRef<[f32]> for AudioRenderQuantumChannel {
     fn as_ref(&self) -> &[f32] {
         &self.data[..]
     }
 }
 
-impl std::ops::Drop for ChannelData {
+impl std::ops::Drop for AudioRenderQuantumChannel {
     fn drop(&mut self) {
         if Rc::strong_count(&self.data) == 1 {
             let rc = std::mem::replace(&mut self.data, self.alloc.zeroes.clone());
@@ -154,11 +155,11 @@ impl std::ops::Drop for ChannelData {
 /// An `AudioRenderQuantum` has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug)]
 pub struct AudioRenderQuantum {
-    channels: ArrayVec<ChannelData, MAX_CHANNELS>,
+    channels: ArrayVec<AudioRenderQuantumChannel, MAX_CHANNELS>,
 }
 
 impl AudioRenderQuantum {
-    pub fn new(channel: ChannelData) -> Self {
+    pub fn new(channel: AudioRenderQuantumChannel) -> Self {
         let mut channels = ArrayVec::new();
         channels.push(channel);
 
@@ -185,24 +186,24 @@ impl AudioRenderQuantum {
     /// Get the samples from this specific channel.
     ///
     /// Panics if the index is greater than the available number of channels
-    pub fn channel_data(&self, index: usize) -> &ChannelData {
+    pub fn channel_data(&self, index: usize) -> &AudioRenderQuantumChannel {
         &self.channels[index]
     }
 
     /// Get the samples (mutable) from this specific channel.
     ///
     /// Panics if the index is greater than the available number of channels
-    pub fn channel_data_mut(&mut self, index: usize) -> &mut ChannelData {
+    pub fn channel_data_mut(&mut self, index: usize) -> &mut AudioRenderQuantumChannel {
         &mut self.channels[index]
     }
 
     /// Channel data as slice
-    pub fn channels(&self) -> &[ChannelData] {
+    pub fn channels(&self) -> &[AudioRenderQuantumChannel] {
         &self.channels[..]
     }
 
     /// Channel data as slice (mutable)
-    pub fn channels_mut(&mut self) -> &mut [ChannelData] {
+    pub fn channels_mut(&mut self) -> &mut [AudioRenderQuantumChannel] {
         &mut self.channels[..]
     }
 
@@ -446,7 +447,7 @@ impl AudioRenderQuantum {
     }
 
     /// Modify every channel in the same way
-    pub fn modify_channels<F: Fn(&mut ChannelData)>(&mut self, fun: F) {
+    pub fn modify_channels<F: Fn(&mut AudioRenderQuantumChannel)>(&mut self, fun: F) {
         // todo, optimize for Rcs that are equal
         self.channels.iter_mut().for_each(fun)
     }
@@ -501,7 +502,7 @@ mod tests {
 
                 // clone this buffer, should not allocate
                 #[allow(clippy::redundant_clone)]
-                let mut b: ChannelData = a.clone();
+                let mut b: AudioRenderQuantumChannel = a.clone();
                 assert_eq!(alloc.pool_size(), 1);
 
                 // mutate cloned buffer, this will allocate
@@ -577,7 +578,7 @@ mod tests {
         assert_float_eq!(&silence[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
         assert!(silence.is_silent());
 
-        // can also create silence from ChannelData
+        // can also create silence from AudioRenderQuantumChannel
         let from_channel = silence.silence();
         assert_float_eq!(
             &from_channel[..],

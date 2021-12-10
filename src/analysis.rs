@@ -1,4 +1,4 @@
-use crate::alloc::ChannelData;
+use crate::alloc::AudioRenderQuantumChannel;
 use crate::RENDER_QUANTUM_SIZE;
 
 use realfft::{num_complex::Complex, RealFftPlanner};
@@ -23,7 +23,7 @@ pub fn generate_blackman(size: usize) -> impl Iterator<Item = f32> {
 
 /// Ring buffer for time domain analysis
 struct TimeAnalyser {
-    buffer: Vec<ChannelData>,
+    buffer: Vec<AudioRenderQuantumChannel>,
     index: u8,
     previous_cycle_index: u8,
 }
@@ -39,7 +39,7 @@ impl TimeAnalyser {
     }
 
     /// Add samples to the ring buffer
-    fn add_data(&mut self, data: ChannelData) {
+    fn add_data(&mut self, data: AudioRenderQuantumChannel) {
         if self.buffer.len() < 256 {
             self.buffer.push(data);
         } else {
@@ -135,7 +135,7 @@ impl Analyser {
     }
 
     /// Add samples to the ring buffer
-    pub fn add_data(&mut self, data: ChannelData) {
+    pub fn add_data(&mut self, data: AudioRenderQuantumChannel) {
         self.time.add_data(data);
     }
 

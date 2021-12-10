@@ -11,7 +11,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use crate::alloc::{AudioRenderQuantum, ChannelData};
+use crate::alloc::{AudioRenderQuantum, AudioRenderQuantumChannel};
 use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::control::{ScheduledState, Scheduler};
@@ -966,7 +966,7 @@ impl OscillatorRenderer {
     fn generate_output(
         &mut self,
         type_: OscillatorType,
-        buffer: &mut ChannelData,
+        buffer: &mut AudioRenderQuantumChannel,
         freq_values: &[f32],
     ) {
         match type_ {
@@ -990,7 +990,7 @@ impl OscillatorRenderer {
     fn generate_sine(
         &mut self,
         type_: OscillatorType,
-        buffer: &mut ChannelData,
+        buffer: &mut AudioRenderQuantumChannel,
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
@@ -1029,7 +1029,7 @@ impl OscillatorRenderer {
     fn generate_sawtooth(
         &mut self,
         type_: OscillatorType,
-        buffer: &mut ChannelData,
+        buffer: &mut AudioRenderQuantumChannel,
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
@@ -1059,7 +1059,7 @@ impl OscillatorRenderer {
     fn generate_square(
         &mut self,
         type_: OscillatorType,
-        buffer: &mut ChannelData,
+        buffer: &mut AudioRenderQuantumChannel,
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
@@ -1096,7 +1096,7 @@ impl OscillatorRenderer {
     fn generate_triangle(
         &mut self,
         type_: OscillatorType,
-        buffer: &mut ChannelData,
+        buffer: &mut AudioRenderQuantumChannel,
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
@@ -1139,7 +1139,7 @@ impl OscillatorRenderer {
     /// * `buffer` - audio output buffer
     /// * `freq_values` - frequencies at which each sample should be generated
     #[inline]
-    fn generate_custom(&mut self, output: &mut ChannelData, freq_values: &[f32]) {
+    fn generate_custom(&mut self, output: &mut AudioRenderQuantumChannel, freq_values: &[f32]) {
         for (o, &computed_freq) in output.iter_mut().zip(freq_values) {
             self.arate_periodic_params(computed_freq);
 
