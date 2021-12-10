@@ -20,14 +20,13 @@ use num_complex::Complex;
 
 use crate::{
     alloc::AudioRenderQuantum,
-    buffer::{ChannelConfig, ChannelConfigOptions},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
     process::{AudioParamValues, AudioProcessor},
     SampleRate, MAX_CHANNELS,
 };
 
-use super::AudioNode;
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 /// Coefficients request
 /// This request is send by the control thread and send back by the rendering thread with
@@ -1106,13 +1105,11 @@ mod test {
     use float_eq::assert_float_eq;
 
     use crate::{
-        buffer::ChannelConfigOptions,
         context::{AsBaseAudioContext, OfflineAudioContext},
-        node::{BiquadFilterOptions, BiquadFilterType},
         SampleRate,
     };
 
-    use super::BiquadFilterNode;
+    use super::{BiquadFilterNode, BiquadFilterOptions, BiquadFilterType, ChannelConfigOptions};
 
     const LENGTH: usize = 555;
 

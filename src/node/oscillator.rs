@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use crate::alloc::{AudioRenderQuantum, AudioRenderQuantumChannel};
-use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::control::{ScheduledState, Scheduler};
 use crate::param::{AudioParam, AudioParamOptions};
@@ -21,7 +20,10 @@ use crate::SampleRate;
 
 use crossbeam_channel::{self, Receiver, Sender};
 
-use super::{AudioNode, AudioScheduledSourceNode, SINETABLE, TABLE_LENGTH_F32, TABLE_LENGTH_USIZE};
+use super::{
+    AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions,
+    SINETABLE, TABLE_LENGTH_F32, TABLE_LENGTH_USIZE
+};
 
 /// Options for constructing a periodic wave
 pub struct PeriodicWaveOptions {

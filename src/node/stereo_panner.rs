@@ -13,14 +13,16 @@ use float_eq::debug_assert_float_eq;
 
 use crate::{
     alloc::AudioRenderQuantum,
-    buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
     process::{AudioParamValues, AudioProcessor},
     SampleRate,
 };
 
-use super::{AudioNode, SINETABLE, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE};
+use super::{
+    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+    SINETABLE, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE
+};
 
 /// `StereoPannerOptions` is used to pass options
 /// during the construction of `StereoPannerNode` using its

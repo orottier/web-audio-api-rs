@@ -3,7 +3,7 @@ use arrayvec::ArrayVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::buffer::ChannelInterpretation;
+use crate::node::ChannelInterpretation;
 
 use crate::MAX_CHANNELS;
 use crate::RENDER_QUANTUM_SIZE;

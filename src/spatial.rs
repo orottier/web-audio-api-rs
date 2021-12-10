@@ -3,9 +3,8 @@
 //! Required for panning algorithm, distance and cone effects of [`crate::node::PannerNode`]s
 
 use crate::alloc::AudioRenderQuantum;
-use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
-use crate::node::AudioNode;
+use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::param::{AudioParam, AudioParamOptions, AudioParamRaw, AutomationRate};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;

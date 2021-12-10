@@ -1,11 +1,11 @@
-use crate::buffer::{ChannelConfig, ChannelConfigOptions, Resampler};
+use crate::buffer::{Resampler};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
 use crate::control::Scheduler;
 use crate::media::MediaStream;
 
 use crate::RENDER_QUANTUM_SIZE;
 
-use super::{AudioNode, MediaStreamRenderer};
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer};
 
 /// Options for constructing a MediaStreamAudioSourceNode
 pub struct MediaStreamAudioSourceNodeOptions<M> {

@@ -1,11 +1,10 @@
 use crate::alloc::AudioRenderQuantum;
-use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
 
-use super::AudioNode;
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 /// Options for constructing an ConstantSourceNode
 pub struct ConstantSourceOptions {

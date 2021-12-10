@@ -1,13 +1,12 @@
 use std::f32::consts::PI;
 
 use crate::alloc::AudioRenderQuantum;
-use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::AudioParam;
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
 
-use super::AudioNode;
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 
 /// Options for constructing a PannerNode
 #[derive(Default)]

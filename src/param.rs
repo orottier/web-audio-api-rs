@@ -3,9 +3,8 @@ use std::slice::{Iter, IterMut};
 use std::sync::Arc;
 
 use crate::alloc::AudioRenderQuantum;
-use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::AudioContextRegistration;
-use crate::node::AudioNode;
+use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{AtomicF32, SampleRate, RENDER_QUANTUM_SIZE};
 

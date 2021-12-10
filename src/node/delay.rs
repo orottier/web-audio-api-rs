@@ -1,11 +1,10 @@
 use crate::alloc::AudioRenderQuantum;
-use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
-use super::AudioNode;
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 use std::cell::RefCell;
 use std::rc::Rc;

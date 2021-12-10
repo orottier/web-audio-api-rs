@@ -16,13 +16,12 @@ use rubato::{FftFixedInOut, Resampler};
 
 use crate::{
     alloc::AudioRenderQuantum,
-    buffer::{ChannelConfig, ChannelConfigOptions},
     context::{AsBaseAudioContext, AudioContextRegistration},
     process::{AudioParamValues, AudioProcessor},
     SampleRate,
 };
 
-use super::AudioNode;
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 struct CurveMessage(Vec<f32>);
 

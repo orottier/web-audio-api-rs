@@ -3,14 +3,13 @@ use std::sync::Arc;
 
 use crate::alloc::AudioRenderQuantum;
 use crate::analysis::Analyser;
-use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::SampleRate;
 
-use crossbeam_channel::{self, Receiver, Sender};
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
 
-use super::AudioNode;
+use crossbeam_channel::{self, Receiver, Sender};
 
 /// Options for constructing an AnalyserNode
 pub struct AnalyserOptions {

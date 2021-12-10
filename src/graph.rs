@@ -7,8 +7,9 @@ use cpal::Sample;
 use crossbeam_channel::Receiver;
 
 use crate::alloc::{Alloc, AudioRenderQuantum};
-use crate::buffer::{AudioBuffer, ChannelConfig, ChannelCountMode};
+use crate::buffer::{AudioBuffer};
 use crate::message::ControlMessage;
+use crate::node::{ChannelConfig, ChannelCountMode};
 use crate::process::{AudioParamValues, AudioProcessor};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
@@ -86,6 +87,7 @@ impl RenderThread {
         }
     }
 
+    // render method of the OfflineAudioContext
     pub fn render_audiobuffer(&mut self, length: usize) -> AudioBuffer {
         // assert input was properly sized
         debug_assert_eq!(length % RENDER_QUANTUM_SIZE, 0);
@@ -518,10 +520,10 @@ mod tests {
     }
 
     fn config() -> ChannelConfig {
-        crate::buffer::ChannelConfigOptions {
+        crate::node::ChannelConfigOptions {
             count: 2,
-            mode: crate::buffer::ChannelCountMode::Explicit,
-            interpretation: crate::buffer::ChannelInterpretation::Speakers,
+            mode: crate::node::ChannelCountMode::Explicit,
+            interpretation: crate::node::ChannelInterpretation::Speakers,
         }
         .into()
     }

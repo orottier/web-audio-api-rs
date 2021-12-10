@@ -6,16 +6,17 @@
     clippy::perf,
     clippy::missing_docs_in_private_items
 )]
-use super::AudioNode;
+use num_complex::Complex;
+use std::f64::consts::PI;
+
 use crate::{
     alloc::AudioRenderQuantum,
-    buffer::{ChannelConfig, ChannelConfigOptions},
     context::{AsBaseAudioContext, AudioContextRegistration},
     process::{AudioParamValues, AudioProcessor},
     SampleRate, MAX_CHANNELS,
 };
-use num_complex::Complex;
-use std::f64::consts::PI;
+
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 /// Filter order is limited to 20
 const MAX_IIR_COEFFS_LEN: usize = 20;
@@ -359,14 +360,13 @@ mod test {
     use std::{cmp::min, fs::File};
 
     use crate::{
-        buffer::ChannelConfigOptions,
         context::{AsBaseAudioContext, OfflineAudioContext},
         media::{MediaElement, OggVorbisDecoder},
         node::{AudioNode, AudioScheduledSourceNode},
         snapshot, SampleRate,
     };
 
-    use super::{IirFilterNode, IirFilterOptions};
+    use super::{ChannelConfigOptions, IirFilterNode, IirFilterOptions};
 
     const LENGTH: usize = 512;
 

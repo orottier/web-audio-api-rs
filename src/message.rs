@@ -1,4 +1,4 @@
-use crate::buffer::ChannelConfig;
+use crate::node::ChannelConfig;
 use crate::param::AudioParamEvent;
 use crate::process::AudioProcessor;
 
