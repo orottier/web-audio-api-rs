@@ -8,23 +8,79 @@ use crate::SampleRate;
 // @note - what about using https://github.com/pdeljanov/Symphonia? seems quite
 // complete and efficient
 // @note - should also be async, but that's not a big deal neither for now
-pub fn decode_audio_data(file: std::fs::File) {
+pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
     let buf_reader = std::io::BufReader::new(file);
-    let media = hound::WavReader::new(buf_reader).unwrap();
+    let mut reader = hound::WavReader::new(buf_reader).unwrap();
     let hound::WavSpec {
         channels,
         sample_rate,
-        bits_per_sample: _,
-        sample_format: _,
-    } = media.spec();
-    let length = media.duration(); // sadly named, its the number of samples
-    // let channels = Vec::<Vec<f32>>::new()
-    // WavSpec { channels: 2, sample_rate: 44100, bits_per_sample: 16, sample_format: Int }
-    // let mut channels = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
+        bits_per_sample, // should probably use that (or some higher level library)
+        sample_format,
+    } = reader.spec();
+    let number_of_channels = channels as usize;
+    let length = reader.duration() as usize; // this is the number of samples per channel
 
-    println!("channels {:?}", channels);
-    println!("length {:?}", length);
-    println!("sample_rate {:?}", sample_rate);
+    // println!("channels {:?}", channels);
+    // println!("length {:?}", length);
+    // println!("sample_rate {:?}", sample_rate);
+    // println!("bits_per_sample {:?}", bits_per_sample);
+    // println!("sample_format {:?}", sample_format);
+
+    // @note - we don't want the Arc now because we need to have mut access
+    // and we don't want to go into Mutex as nthing is mutable after this step
+    let mut decoded: Vec::<Vec<f32>> = Vec::with_capacity(number_of_channels);
+    // init each channel with empty Vec
+    for _ in 0..number_of_channels {
+        decoded.push(Vec::<f32>::with_capacity(length));
+    }
+
+    match sample_format {
+        hound::SampleFormat::Int => {
+            // channel are interleaved, so we need to de-interleave
+            let mut channel_number = 0;
+
+            if bits_per_sample == 16 {
+                for sample in reader.samples::<i16>() {
+                    let s = sample.unwrap() as f32 / i16::MAX as f32;
+                    decoded[channel_number].push(s);
+                    channel_number = (channel_number + 1) % number_of_channels;
+                }
+            } else {
+                panic!("bits_per_sample {:?} not implemented", bits_per_sample);
+            }
+        }
+        hound::SampleFormat::Float => { // this one is not tested
+            let mut channel_number = 0;
+
+            for sample in reader.samples::<f32>() {
+                let s = sample.unwrap();
+                decoded[channel_number].push(s);
+                channel_number = (channel_number + 1) % number_of_channels;
+            }
+        }
+    }
+
+    assert_eq!(decoded[0].len(), length); // duration is ok
+    println!("decoded length: {} - input length: {}", decoded[0].len(), length);
+    // now we should resample
+
+    // wrap decoded channels into Arc to create the `AudioBuffer`
+    // @todo - can (very) probably be done in a much more efficient way...
+    let mut internal_data = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
+
+    for channel_number in 0..number_of_channels {
+        let mut channel = Vec::<f32>::with_capacity(length);
+        channel.extend_from_slice(&decoded[channel_number][..]);
+        internal_data.push(Arc::new(channel));
+    }
+
+    AudioBuffer {
+        number_of_channels,
+        length,
+        // @todo - this is wrong, should be the AudioContext.sampleRate
+        sample_rate: SampleRate(sample_rate),
+        internal_data
+    }
 }
 
 // @note - what could be default in Rust syntax? is this possible?
@@ -41,19 +97,24 @@ pub struct AudioBuffer {
     number_of_channels: usize,
     length: usize,
     sample_rate: SampleRate,
+
+    // `internal_data` is a matrix representing a de-interleaved in memory audio asset
+    // 0 (left) : [0.0, 1.0, ...]
+    // 1 (right): [0.1, 0.9, ...]
+    // ...
+    //
+    // @note: each channel is an `Arc` that can be acquired by the audio nodes,
+    // important - the inner `Arc<Vec>`s should be mutated, only replaced by another
+    // `Arc<Vec>` maybe this can be reinforced in the type system, don't know...
+    //
+    // @see - <https://webaudio.github.io/web-audio-api/#acquire-the-content>
+    //
     // @note - we could maybe reuse buffer::ChannelData here, but that might be also
     // a bit over-engineered as we don't need any sort of memory management strategy
     // (at least as a first step)
     internal_data: Vec<Arc<Vec<f32>>>,
 }
 
-// notes: define what exctly means acquire the buffer
-// https://webaudio.github.io/web-audio-api/#acquire-the-content
-//
-// the source node acquire a cloned ref to the Arc?
-// does this mean that setChannelData should create a new Arc?
-// would it be better to have some Vec<Arc<Vec<f32>>>> so that each channel
-// can be grabbed
 
 impl AudioBuffer {
     // https://webaudio.github.io/web-audio-api/#AudioBuffer-constructors
@@ -152,7 +213,8 @@ impl AudioBuffer {
         // replace channel with modified copy and new Arc so that next time some
         // node acquire the content it will grab the updated values and the old
         // data will be freed when last ref from node will be dropped.
-        // @note - to be confirmed that my understanding is good there
+        // The nodes who already acquired the Arc to the previous resource
+        // are therefore not impacted.
         self.internal_data[channel_number] = Arc::new(copy);
     }
 
@@ -164,10 +226,6 @@ impl AudioBuffer {
         let channel = &self.internal_data[channel_number];
         channel.to_vec()
     }
-
-    // pub(crate) from_pcm_data() {
-
-    // }
 }
 
 #[cfg(test)]
@@ -309,16 +367,24 @@ mod tests {
         );
     }
 
-
-
     #[test]
     fn test_decode_audio_data() {
         let file = std::fs::File::open("sample.wav").unwrap();
         let audio_buffer = decode_audio_data(file);
+
+        println!("----------------------------------------------");
+        println!("- number_of_channels: {:?}", audio_buffer.number_of_channels());
+        println!("- length: {:?}", audio_buffer.length());
+        println!("- sample_rate: {:?}", audio_buffer.sample_rate());
+
+        let mut left_start = vec![];
+        let mut right_start = vec![];
+        left_start.extend_from_slice(&audio_buffer.internal_data[0][0..100]);
+        right_start.extend_from_slice(&audio_buffer.internal_data[1][0..100]);
+
+        println!("----------------------------------------------");
+        println!("- left_start: {:?}", left_start);
+        println!("----------------------------------------------");
+        println!("- right_start: {:?}", right_start);
     }
-
-
-
-
-
 }
