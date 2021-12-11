@@ -23,7 +23,7 @@ use cpal::{
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextOptions, LatencyHint};
 use crate::media::MicrophoneRender;
-use crate::renderer::RenderThread;
+use crate::render::RenderThread;
 
 use crossbeam_channel::{Receiver, Sender};
 use log::warn;

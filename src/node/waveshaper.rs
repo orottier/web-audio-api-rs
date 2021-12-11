@@ -16,7 +16,7 @@ use rubato::{FftFixedInOut, Resampler};
 
 use crate::{
     context::{AsBaseAudioContext, AudioContextRegistration},
-    renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate,
 };
 

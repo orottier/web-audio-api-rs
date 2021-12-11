@@ -29,7 +29,7 @@ use crate::node::{
     PeriodicWave, PeriodicWaveOptions,
 };
 use crate::param::{AudioParam, AudioParamEvent, AudioParamOptions};
-use crate::renderer::{AudioProcessor, NodeIndex, RenderThread};
+use crate::render::{AudioProcessor, NodeIndex, RenderThread};
 use crate::spatial::{AudioListener, AudioListenerParams};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 

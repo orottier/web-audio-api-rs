@@ -11,7 +11,7 @@ use std::f64::consts::PI;
 
 use crate::{
     context::{AsBaseAudioContext, AudioContextRegistration},
-    renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
 };
 

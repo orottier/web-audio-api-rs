@@ -14,7 +14,7 @@ use float_eq::debug_assert_float_eq;
 use crate::{
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
-    renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate,
 };
 

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::context::{AudioContextRegistration, AudioNodeId, BaseAudioContext};
 use crate::control::{Controller, ScheduledState, Scheduler};
 use crate::media::MediaStream;
-use crate::renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{BufferDepletedError, SampleRate};
 
 use lazy_static::lazy_static;

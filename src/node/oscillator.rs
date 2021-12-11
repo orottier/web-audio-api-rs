@@ -14,7 +14,7 @@ use std::sync::Arc;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::control::{ScheduledState, Scheduler};
 use crate::param::{AudioParam, AudioParamOptions};
-use crate::renderer::{
+use crate::render::{
     AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioRenderQuantumChannel,
 };
 use crate::SampleRate;

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::analysis::Analyser;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
-use crate::renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};

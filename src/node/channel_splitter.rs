@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
-use crate::renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
 use super::{
