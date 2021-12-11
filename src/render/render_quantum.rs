@@ -150,7 +150,7 @@ impl std::ops::Drop for AudioRenderQuantumChannel {
 
 /// Internal fixed length audio asset of `RENDER_QUANTUM_SIZE` sample frames for
 /// block rendering, basically a matrix of `channels * [f32; RENDER_QUANTUM_SIZE]`
-/// cf. [https://webaudio.github.io/web-audio-api/#render-quantum]
+/// cf. <https://webaudio.github.io/web-audio-api/#render-quantum>
 ///
 /// An `AudioRenderQuantum` has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug)]

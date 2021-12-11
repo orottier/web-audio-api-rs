@@ -1,5 +1,8 @@
+//! Primitives related to audio graph rendering
+
 mod graph;
-pub use graph::*;
+pub(crate) use graph::*;
+
 mod processor;
 pub use processor::*;
 mod render_quantum;
