@@ -49,6 +49,9 @@ pub const RENDER_QUANTUM_SIZE: usize = 128;
 /// Maximum number of channels for audio processing
 pub const MAX_CHANNELS: usize = 32;
 
+// experimental
+pub mod audio_buffer;
+
 pub mod buffer;
 pub mod context;
 pub mod control;
