@@ -6,7 +6,7 @@ use crate::context::AudioContextRegistration;
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
-use crate::renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{AtomicF32, SampleRate, RENDER_QUANTUM_SIZE};
 
 use crossbeam_channel::{Receiver, Sender};

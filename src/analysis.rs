@@ -1,4 +1,4 @@
-use crate::renderer::AudioRenderQuantumChannel;
+use crate::render::AudioRenderQuantumChannel;
 use crate::RENDER_QUANTUM_SIZE;
 
 use realfft::{num_complex::Complex, RealFftPlanner};
@@ -213,7 +213,7 @@ mod tests {
 
     use super::*;
 
-    use crate::renderer::Alloc;
+    use crate::render::Alloc;
 
     #[test]
     fn assert_index_size() {

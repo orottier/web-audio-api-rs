@@ -1,6 +1,6 @@
 use crate::node::ChannelConfig;
 use crate::param::AudioParamEvent;
-use crate::renderer::AudioProcessor;
+use crate::render::AudioProcessor;
 
 use crossbeam_channel::Sender;
 

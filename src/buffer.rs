@@ -2,7 +2,7 @@
 use std::sync::Arc;
 
 use crate::media::MediaStream;
-use crate::renderer::AudioRenderQuantum;
+use crate::render::AudioRenderQuantum;
 use crate::SampleRate;
 
 /// Memory-resident audio asset, basically a matrix of channels * samples

@@ -21,7 +21,7 @@ use num_complex::Complex;
 use crate::{
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
-    renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
 };
 

@@ -1,6 +1,6 @@
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::{AudioParam, AudioParamOptions};
-use crate::renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};

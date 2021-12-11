@@ -6,7 +6,7 @@ use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 use crate::param::{AudioParam, AudioParamOptions, AudioParamRaw, AutomationRate};
-use crate::renderer::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
 use std::f32::consts::PI;
