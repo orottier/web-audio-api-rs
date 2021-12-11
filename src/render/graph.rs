@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -12,6 +12,8 @@ use crate::node::{ChannelConfig, ChannelCountMode};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum};
+
+use smallvec::{smallvec, SmallVec};
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
@@ -196,13 +198,14 @@ pub struct Node {
     /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
 
+    /// Outgoing edges: tuple of outcoming node reference and channel index, and our channel index
+    outgoing_edges: SmallVec<[(NodeIndex, u32, u32); 2]>,
+    /// Incoming edges: tuple of incoming node reference and channel index, and our channel index
+    incoming_edges: SmallVec<[(NodeIndex, u32, u32); 2]>,
+
     // lifecycle management flags:
     /// Indicates if the control thread has dropped this Node
     free_when_finished: bool,
-    /// Indicates if the Node has had any inputs in the current render quantum
-    has_inputs_connected: bool,
-    /// Indicates if the output of this Node was consumed in the current render quantum
-    has_outputs_connected: bool,
     /// Indicates if the Node will still output a signal if no inputs are connected
     tail_time: bool,
 }
@@ -228,13 +231,13 @@ impl Node {
         }
 
         // Drop, if the node has no outputs connected
-        if !self.has_outputs_connected {
+        if self.outgoing_edges.is_empty() {
             return true;
         }
 
         // Drop, when the node does not have any inputs connected,
         // and if the processor reports it won't yield output.
-        if !self.has_inputs_connected && !self.tail_time {
+        if self.incoming_edges.is_empty() && !self.tail_time {
             return true;
         }
 
@@ -250,7 +253,6 @@ impl Node {
 pub(crate) struct Graph {
     // actual audio graph
     nodes: HashMap<NodeIndex, Node>,
-    edges: HashSet<((NodeIndex, u32), (NodeIndex, u32))>, // (node,output) to (node,input)
 
     // topological sorting
     marked: Vec<NodeIndex>,
@@ -266,7 +268,6 @@ impl Graph {
     pub fn new() -> Self {
         Graph {
             nodes: HashMap::new(),
-            edges: HashSet::new(),
             ordered: vec![],
             marked: vec![],
             marked_temp: vec![],
@@ -294,38 +295,61 @@ impl Graph {
                 inputs,
                 outputs,
                 channel_config,
+                incoming_edges: smallvec![],
+                outgoing_edges: smallvec![],
                 free_when_finished: false,
-                has_inputs_connected: true,
-                has_outputs_connected: true,
                 tail_time: true,
             },
         );
     }
 
     pub fn add_edge(&mut self, source: (NodeIndex, u32), dest: (NodeIndex, u32)) {
-        self.edges.insert((source, dest));
+        self.nodes
+            .get_mut(&source.0)
+            .unwrap()
+            .outgoing_edges
+            .push((dest.0, dest.1, source.1));
+
+        self.nodes
+            .get_mut(&dest.0)
+            .unwrap()
+            .incoming_edges
+            .push((source.0, source.1, dest.1));
+
         self.ordered.clear(); // void current ordering
     }
 
     pub fn remove_edge(&mut self, source: NodeIndex, dest: NodeIndex) {
-        self.edges.retain(|&(s, d)| s.0 != source || d.0 != dest);
+        self.nodes
+            .get_mut(&source)
+            .unwrap()
+            .outgoing_edges
+            .retain(|(i, _, _)| *i != dest);
+
+        self.nodes
+            .get_mut(&dest)
+            .unwrap()
+            .incoming_edges
+            .retain(|(i, _, _)| *i != source);
+
         self.ordered.clear(); // void current ordering
     }
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
-        self.edges.retain(|&(s, _d)| s.0 != source);
+        let node = self.nodes.get_mut(&source).unwrap();
+        node.outgoing_edges.clear();
+        node.incoming_edges.clear();
+
+        self.nodes.values_mut().for_each(|node| {
+            node.outgoing_edges.retain(|(i, _, _)| *i != source);
+            node.incoming_edges.retain(|(i, _, _)| *i != source);
+        });
+
         self.ordered.clear(); // void current ordering
     }
 
     fn mark_free_when_finished(&mut self, index: NodeIndex) {
         self.nodes.get_mut(&index).unwrap().free_when_finished = true;
-    }
-
-    pub fn children(&self, node: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
-        self.edges
-            .iter()
-            .filter(move |&(_s, d)| d.0 == node)
-            .map(|&(s, _d)| s.0)
     }
 
     /// Traverse node for topological sort
@@ -349,8 +373,13 @@ impl Graph {
         marked.push(n);
         marked_temp.push(n);
 
-        self.children(n)
-            .for_each(|c| self.visit(c, marked, marked_temp, ordered, in_cycle));
+        // visit nodes connecting to this one
+        self.nodes
+            .get(&n)
+            .unwrap()
+            .incoming_edges
+            .iter()
+            .for_each(|(c, _, _)| self.visit(*c, marked, marked_temp, ordered, in_cycle));
 
         marked_temp.retain(|marked| *marked != n);
         ordered.insert(0, n);
@@ -412,7 +441,6 @@ impl Graph {
 
         // split (mut) borrows
         let ordered = &self.ordered;
-        let edges = &self.edges;
         let nodes = &mut self.nodes;
 
         // process every node, in topological sorted order
@@ -420,47 +448,31 @@ impl Graph {
             // remove node from graph, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
 
-            // for lifecycle management, check if any inputs are present
-            node.has_inputs_connected = false;
-            // and check if any outputs are present
-            // (index = 0 means this is the destination node)
-            node.has_outputs_connected = index.0 == 0;
-
             // clear current node's inputs
             node.inputs.iter_mut().for_each(|i| i.make_silent());
 
+            // for input mixing
+            let channel_interpretation = node.channel_config.interpretation();
+
             // iterate all edges, find the nodes connecting to the current node,
             // fetch their inputs and sum those together.
-            edges
-                .iter()
-                .filter_map(
-                    move |(s, d)| {
-                        if d.0 == *index {
-                            Some((s, d.1))
-                        } else {
-                            None
-                        }
-                    },
-                )
-                .for_each(|(&(node_index, output), input)| {
-                    let input_node = nodes.get_mut(&node_index).unwrap();
-                    input_node.has_outputs_connected = true;
-                    let input_node = &*input_node; // reborrow as immutable
+            let incoming = &node.incoming_edges;
+            let inputs = &mut node.inputs;
+            incoming.iter().for_each(|&(node_index, output, input)| {
+                let input_node = nodes.get(&node_index).unwrap();
 
-                    // audio params are connected to the 'hidden' u32::MAX input, ignore them here
-                    if input == u32::MAX {
-                        return;
-                    }
+                // audio params are connected to the 'hidden' u32::MAX input, ignore them here
+                if input == u32::MAX {
+                    return;
+                }
 
-                    let signal = &input_node.outputs[output as usize];
-                    node.inputs[input as usize].add(signal, node.channel_config.interpretation());
-                    node.has_inputs_connected = true;
-                });
+                let signal = &input_node.outputs[output as usize];
+                inputs[input as usize].add(signal, channel_interpretation);
+            });
 
             // up/down-mix the cumulative inputs to the desired channel count
             let mode = node.channel_config.count_mode();
             let count = node.channel_config.count();
-            let interpretation = node.channel_config.interpretation();
             node.inputs.iter_mut().for_each(|input_buf| {
                 let cur_channels = input_buf.number_of_channels();
                 let new_channels = match mode {
@@ -468,24 +480,39 @@ impl Graph {
                     ChannelCountMode::Explicit => count,
                     ChannelCountMode::ClampedMax => cur_channels.min(count),
                 };
-                input_buf.mix(new_channels, interpretation);
+                input_buf.mix(new_channels, channel_interpretation);
             });
 
             // let the current node process
             let params = AudioParamValues::from(&*nodes);
             node.process(params, timestamp, sample_rate);
 
+            if node.can_free() {
+                node.incoming_edges.iter().for_each(|(node_index, _, _)| {
+                    nodes
+                        .get_mut(node_index)
+                        .unwrap()
+                        .outgoing_edges
+                        .retain(|(source, _, _)| source != index)
+                });
+                node.outgoing_edges.iter().for_each(|(node_index, _, _)| {
+                    nodes
+                        .get_mut(node_index)
+                        .unwrap()
+                        .incoming_edges
+                        .retain(|(source, _, _)| source != index)
+                });
+            }
+
             // re-insert node in graph
             nodes.insert(*index, node);
         });
 
         // audio graph cleanup of decomissioned nodes
-        let edges = &mut self.edges;
         let ordered = &mut self.ordered;
-        nodes.retain(|&index, node| {
+        nodes.retain(|&_index, node| {
             // check if the Node has reached end of lifecycle
             if node.can_free() {
-                edges.retain(|&(s, d)| s.0 != index && d.0 != index);
                 ordered.clear(); // void current ordering
                 false // do no retain
             } else {
