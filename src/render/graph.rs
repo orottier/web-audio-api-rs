@@ -187,6 +187,12 @@ impl RenderThread {
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct NodeIndex(pub u64);
 
+struct Edge {
+    self_index: u32,
+    other_id: NodeIndex,
+    other_index: u32,
+}
+
 /// Renderer Node in the Audio Graph
 pub struct Node {
     /// Renderer: converts inputs to outputs
@@ -198,22 +204,24 @@ pub struct Node {
     /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
 
-    /// Outgoing edges: tuple of outcoming node reference and channel index, and our channel index
-    outgoing_edges: SmallVec<[(NodeIndex, u32, u32); 2]>,
-    /// Incoming edges: tuple of incoming node reference and channel index, and our channel index
-    incoming_edges: SmallVec<[(NodeIndex, u32, u32); 2]>,
+    /// Outgoing edges: tuple of outcoming node reference, our output index and their input index
+    outgoing_edges: SmallVec<[Edge; 2]>,
+    /// Incoming edges: tuple of incoming node reference and their output index, and our input index
+    incoming_edges: SmallVec<[Edge; 2]>,
 
-    // lifecycle management flags:
     /// Indicates if the control thread has dropped this Node
     free_when_finished: bool,
-    /// Indicates if the Node will still output a signal if no inputs are connected
-    tail_time: bool,
 }
 
 impl Node {
     /// Render an audio quantum
-    fn process(&mut self, params: AudioParamValues, timestamp: f64, sample_rate: SampleRate) {
-        self.tail_time = self.processor.process(
+    fn process(
+        &mut self,
+        params: AudioParamValues,
+        timestamp: f64,
+        sample_rate: SampleRate,
+    ) -> bool {
+        self.processor.process(
             &self.inputs[..],
             &mut self.outputs[..],
             params,
@@ -223,7 +231,7 @@ impl Node {
     }
 
     /// Determine if this node is done playing and can be removed from the audio graph
-    fn can_free(&self) -> bool {
+    fn can_free(&self, tail_time: bool) -> bool {
         // Only drop when the Control thread has dropped its handle.
         // Otherwise the node can be reconnected/restarted etc.
         if !self.free_when_finished {
@@ -237,7 +245,11 @@ impl Node {
 
         // Drop, when the node does not have any inputs connected,
         // and if the processor reports it won't yield output.
-        if self.incoming_edges.is_empty() && !self.tail_time {
+        let has_incoming = self
+            .incoming_edges
+            .iter()
+            .any(|edge| edge.self_index != u32::MAX);
+        if !has_incoming && !tail_time {
             return true;
         }
 
@@ -298,7 +310,6 @@ impl Graph {
                 incoming_edges: smallvec![],
                 outgoing_edges: smallvec![],
                 free_when_finished: false,
-                tail_time: true,
             },
         );
     }
@@ -308,13 +319,21 @@ impl Graph {
             .get_mut(&source.0)
             .unwrap()
             .outgoing_edges
-            .push((dest.0, dest.1, source.1));
+            .push(Edge {
+                self_index: source.1,
+                other_id: dest.0,
+                other_index: dest.1,
+            });
 
         self.nodes
             .get_mut(&dest.0)
             .unwrap()
             .incoming_edges
-            .push((source.0, source.1, dest.1));
+            .push(Edge {
+                self_index: dest.1,
+                other_id: source.0,
+                other_index: source.1,
+            });
 
         self.ordered.clear(); // void current ordering
     }
@@ -324,13 +343,13 @@ impl Graph {
             .get_mut(&source)
             .unwrap()
             .outgoing_edges
-            .retain(|(i, _, _)| *i != dest);
+            .retain(|edge| edge.other_id != dest);
 
         self.nodes
             .get_mut(&dest)
             .unwrap()
             .incoming_edges
-            .retain(|(i, _, _)| *i != source);
+            .retain(|edge| edge.other_id != source);
 
         self.ordered.clear(); // void current ordering
     }
@@ -341,8 +360,8 @@ impl Graph {
         node.incoming_edges.clear();
 
         self.nodes.values_mut().for_each(|node| {
-            node.outgoing_edges.retain(|(i, _, _)| *i != source);
-            node.incoming_edges.retain(|(i, _, _)| *i != source);
+            node.outgoing_edges.retain(|edge| edge.other_id != source);
+            node.incoming_edges.retain(|edge| edge.other_id != source);
         });
 
         self.ordered.clear(); // void current ordering
@@ -379,7 +398,7 @@ impl Graph {
             .unwrap()
             .incoming_edges
             .iter()
-            .for_each(|(c, _, _)| self.visit(*c, marked, marked_temp, ordered, in_cycle));
+            .for_each(|edge| self.visit(edge.other_id, marked, marked_temp, ordered, in_cycle));
 
         marked_temp.retain(|marked| *marked != n);
         ordered.insert(0, n);
@@ -435,9 +454,13 @@ impl Graph {
     }
 
     pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioRenderQuantum {
+        // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
             self.order_nodes();
         }
+
+        // keep track of end-of-lifecyle nodes
+        let mut nodes_dropped = false;
 
         // split (mut) borrows
         let ordered = &self.ordered;
@@ -448,29 +471,8 @@ impl Graph {
             // remove node from graph, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
 
-            // clear current node's inputs
-            node.inputs.iter_mut().for_each(|i| i.make_silent());
-
-            // for input mixing
-            let channel_interpretation = node.channel_config.interpretation();
-
-            // iterate all edges, find the nodes connecting to the current node,
-            // fetch their inputs and sum those together.
-            let incoming = &node.incoming_edges;
-            let inputs = &mut node.inputs;
-            incoming.iter().for_each(|&(node_index, output, input)| {
-                let input_node = nodes.get(&node_index).unwrap();
-
-                // audio params are connected to the 'hidden' u32::MAX input, ignore them here
-                if input == u32::MAX {
-                    return;
-                }
-
-                let signal = &input_node.outputs[output as usize];
-                inputs[input as usize].add(signal, channel_interpretation);
-            });
-
             // up/down-mix the cumulative inputs to the desired channel count
+            let channel_interpretation = node.channel_config.interpretation();
             let mode = node.channel_config.count_mode();
             let count = node.channel_config.count();
             node.inputs.iter_mut().for_each(|input_buf| {
@@ -485,40 +487,51 @@ impl Graph {
 
             // let the current node process
             let params = AudioParamValues::from(&*nodes);
-            node.process(params, timestamp, sample_rate);
+            let tail_time = node.process(params, timestamp, sample_rate);
 
-            if node.can_free() {
-                node.incoming_edges.iter().for_each(|(node_index, _, _)| {
+            // iterate all outgoing edges, lookup these nodes and add to their input
+            node.outgoing_edges
+                .iter()
+                // audio params are connected to the 'hidden' u32::MAX output, ignore them here
+                .filter(|edge| edge.other_index != u32::MAX)
+                .for_each(|edge| {
+                    let output_node = nodes.get_mut(&edge.other_id).unwrap();
+                    let signal = &node.outputs[edge.self_index as usize];
+                    output_node.inputs[edge.other_index as usize]
+                        .add(signal, channel_interpretation);
+                });
+
+            // audio graph cleanup of decomissioned nodes
+            if node.can_free(tail_time) {
+                node.incoming_edges.iter().for_each(|edge| {
                     nodes
-                        .get_mut(node_index)
+                        .get_mut(&edge.other_id)
                         .unwrap()
                         .outgoing_edges
-                        .retain(|(source, _, _)| source != index)
+                        .retain(|e| e.other_id != *index)
                 });
-                node.outgoing_edges.iter().for_each(|(node_index, _, _)| {
+                node.outgoing_edges.iter().for_each(|edge| {
                     nodes
-                        .get_mut(node_index)
+                        .get_mut(&edge.other_id)
                         .unwrap()
                         .incoming_edges
-                        .retain(|(source, _, _)| source != index)
+                        .retain(|e| e.other_id != *index)
                 });
-            }
-
-            // re-insert node in graph
-            nodes.insert(*index, node);
-        });
-
-        // audio graph cleanup of decomissioned nodes
-        let ordered = &mut self.ordered;
-        nodes.retain(|&_index, node| {
-            // check if the Node has reached end of lifecycle
-            if node.can_free() {
-                ordered.clear(); // void current ordering
-                false // do no retain
+                nodes_dropped = true;
             } else {
-                true
+                // reset input buffers
+                node.inputs
+                    .iter_mut()
+                    .for_each(AudioRenderQuantum::make_silent);
+
+                // re-insert node in graph
+                nodes.insert(*index, node);
             }
         });
+
+        if nodes_dropped {
+            self.ordered.clear();
+        }
 
         // return buffer of destination node
         // assume only 1 output (todo)
