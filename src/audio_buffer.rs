@@ -88,8 +88,8 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
     }
 }
 
-// `AudioBufferData` is basically a simple matrix representing a de-interleaved
-// "in memory" audio asset (i.e. a complete sound file). e.g.:
+// `AudioBufferData` is basically a simple matrix representing an aligned,
+// de-interleaved "in memory" audio asset (i.e. a complete sound file), i.e.:
 // 0 (left) : [0.0, 1.0, ...]
 // 1 (right): [0.1, 0.9, ...]
 // ...
@@ -99,6 +99,11 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
 // it must keep a reference to it even if `set_channel_data` is called. In such
 // situation we just replace the channel with a new `Arc` pointing to new `Vec`.
 // So no mutation occurs and memory allocation takes place in the control thread.
+// Having the `Arc` at the level of the single channel, will probably lead to a
+// bit more bookkeeping in the node side, but allows to be a bit more efficent in
+// terms of memory, as we can discard only one channel at a time.
+//
+// @note - spec does not define "audio asset" which can lead to confusion
 //
 // @see - <https://webaudio.github.io/web-audio-api/#acquire-the-content>
 pub(crate) struct AudioBufferData {
@@ -122,14 +127,18 @@ impl AudioBufferData {
     }
 }
 
+// used in `decodeAudioData`
+// could be used as is in `OfflineAudioContext.startRendering()` too or just
+// write another `impl From<T>` that matches current implementation.
 impl From<Vec<Vec<f32>>> for AudioBufferData {
-    // used in `AudioContext.decodeAudioData`
-    // could be used in `OfflineAudioContext.startRendering()` too
     fn from(decoded: Vec<Vec<f32>>) -> Self {
         let number_of_channels = decoded.len();
-        // wrap each decoded channel with `Arc`
+        // wrap each decoded channel with `Arc
         let mut channels = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
-        // @note - is there a better than using `to_vec`?
+        // @note - is there a better way than using `to_vec`?
+        // basically, is there a way to grab the `decoded.channel` reference and
+        // put it where we want it to be without `clone` and memory allocation?
+        // (sometime JS feels so simple... :)
         for channel_number in 0..number_of_channels {
             let channel = decoded[channel_number].to_vec();
             channels.push(Arc::new(channel));
@@ -138,6 +147,15 @@ impl From<Vec<Vec<f32>>> for AudioBufferData {
         Self { channels }
     }
 }
+
+// this could be the strategy to acquire the data (basically Vec<Arc.clone()>)
+// let see if `From<Self>` works, would be funny
+// impl From<Self> for AudioBufferData {
+//     fn from(source) -> Self {
+//          // create a Vec of Arc.clone(channel);
+//          // Self { channels }
+//      }
+// }
 
 // @note - what could be default in Rust syntax? is this possible to have some
 // partial defaults? (that's not a really a big deal...)
@@ -149,6 +167,9 @@ pub struct AudioBufferOptions {
 }
 
 
+// @note - maybe put that in the `node` namespace
+// this is actually not an `AudioNode` but from a user-centered point of view
+// maybe it's confusing to not have it there
 pub struct AudioBuffer {
     number_of_channels: usize,
     length: usize,
@@ -203,10 +224,13 @@ impl AudioBuffer {
         channel_number: usize,
         offset: usize,
     ) {
-        // Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number of
-        // elements in the destination array, and 𝑘 be the value of bufferOffset.
+        // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
+        // of elements in the destination array, and 𝑘 be the value of bufferOffset.
         // Then the number of frames copied from buffer to destination is max(0,min(𝑁𝑏−𝑘,𝑁𝑓)).
         // If this is less than 𝑁𝑓, then the remaining elements of destination are not modified.
+        //
+        // we use the `capacity` instead of `len` because destination is a write
+        // buffer and we don't care of its current values (cf. `copy_to_channel`)
         let dest_capacity = destination.capacity();
         let max_frame = (self.length - offset).min(dest_capacity).max(0);
         let channel = &self.internal_data.channels[channel_number];
@@ -228,13 +252,13 @@ impl AudioBuffer {
     // some pub(crate) variation of this one without the memory allocation
     // should be implemented for use by `audioContext.decodeAudioData(binary)`
     pub fn copy_to_channel_with_offset(&mut self, source: &Vec<f32>, channel_number: usize, offset: usize) {
-        // Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number of
-        // elements in the source array, and 𝑘 be the value of bufferOffset. Then
+        // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
+        // of elements in the source array, and 𝑘 be the value of bufferOffset. Then
         // the number of frames copied from source to the buffer is max(0,min(𝑁𝑏−𝑘,𝑁𝑓)).
         // If this is less than 𝑁𝑓, then the remaining elements of buffer are not modified.
         //
-        // we use the `len` instead of the capacity to make sur we don't try to
-        // access some undefined index
+        // we use the `len` instead of `capacity` because source is a read buffer and we
+        // want to be sure we don't access some undefined index (cf. `copy_from_channel`)
         let src_len = source.len();
         let max_frame = (self.length - offset).min(src_len).max(0);
         let channel = &self.internal_data.channels[channel_number];
