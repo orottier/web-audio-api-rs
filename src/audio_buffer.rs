@@ -105,7 +105,8 @@ pub struct AudioBuffer {
     //
     // @note: each channel is an `Arc` that can be acquired by the audio nodes,
     // important - the inner `Arc<Vec>`s should be mutated, only replaced by another
-    // `Arc<Vec>` maybe this can be reinforced in the type system, don't know...
+    // @note - probably there is possible improvements in term of architecture
+    //  and type system
     //
     // @see - <https://webaudio.github.io/web-audio-api/#acquire-the-content>
     //
