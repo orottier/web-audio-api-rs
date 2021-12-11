@@ -17,8 +17,11 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
         bits_per_sample, // should probably use that (or some higher level library)
         sample_format,
     } = reader.spec();
+    // shadow `channels`, this name is too usefull to be wasted here :)
     let number_of_channels = channels as usize;
-    let length = reader.duration() as usize; // this is the number of samples per channel
+    // badly named, there is not time information here as this is the number of
+    // samples per channel, means nothing without sample_rate
+    let length = reader.duration() as usize;
 
     // println!("channels {:?}", channels);
     // println!("length {:?}", length);
@@ -26,23 +29,30 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
     // println!("bits_per_sample {:?}", bits_per_sample);
     // println!("sample_format {:?}", sample_format);
 
-    // @note - we don't want the Arc now because we need to have mut access
-    // and we don't want to go into Mutex as nthing is mutable after this step
+    // @note - we use this intermediary type (e.g. without any `Arc`), because we
+    // need `mut` access and we don't want to go into `Mutex` as nothing is mutable
+    // after this step. `AudioBufferChannel::from` should be the one that minimize
+    // memory allocation if possible
     let mut decoded: Vec::<Vec<f32>> = Vec::with_capacity(number_of_channels);
-    // init each channel with empty Vec
+    // init each channel with an empty Vec
     for _ in 0..number_of_channels {
         decoded.push(Vec::<f32>::with_capacity(length));
     }
 
+    // @note - hound retrieve interleaved values
+    // cf. https://docs.rs/hound/latest/hound/struct.WavReader.html#method.samples
     match sample_format {
         hound::SampleFormat::Int => {
             // channel are interleaved, so we need to de-interleave
             let mut channel_number = 0;
 
+            // we should probably match `bit_per_sample` here and just create a
+            // `max` variable to scale PCM data (e.g. `i[bits_per_sample]::MAX`
             if bits_per_sample == 16 {
                 for sample in reader.samples::<i16>() {
                     let s = sample.unwrap() as f32 / i16::MAX as f32;
                     decoded[channel_number].push(s);
+                    // next sample belongs to the next channel
                     channel_number = (channel_number + 1) % number_of_channels;
                 }
             } else {
@@ -55,6 +65,7 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
             for sample in reader.samples::<f32>() {
                 let s = sample.unwrap();
                 decoded[channel_number].push(s);
+                // next sample belongs to the next channel
                 channel_number = (channel_number + 1) % number_of_channels;
             }
         }
@@ -62,67 +73,41 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
 
     assert_eq!(decoded[0].len(), length); // duration is ok
     println!("decoded length: {} - input length: {}", decoded[0].len(), length);
-    // now we should resample
 
-    // wrap decoded channels into Arc to create the `AudioBuffer`
-    // @todo - can (very) probably be done in a much more efficient way...
-    let mut internal_data = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
-
-    for channel_number in 0..number_of_channels {
-        let mut channel = Vec::<f32>::with_capacity(length);
-        channel.extend_from_slice(&decoded[channel_number][..]);
-        internal_data.push(Arc::new(channel));
-    }
+    // @todo - resample if needed
+    // if (sample_rate != self.sample_rate()) {
+    //     // @todo - resample
+    // }
 
     AudioBuffer {
         number_of_channels,
         length,
-        // @todo - this is wrong, should be the AudioContext.sampleRate
+        // @TODO - this is wrong, should be the AudioContext.sampleRate
         sample_rate: SampleRate(sample_rate),
-        internal_data
+        internal_data: AudioBufferData::from(decoded),
     }
 }
 
-// @note - what could be default in Rust syntax? is this possible?
-// is this even possible to have only partial defaults?
-// not really a big deal though
-#[derive(Copy, Clone, Debug)]
-pub struct AudioBufferOptions {
-    number_of_channels: usize, // default to 1
-    length: usize,             // required
-    sample_rate: SampleRate, // required
+// `AudioBufferData` is basically a simple matrix representing a de-interleaved
+// "in memory" audio asset (i.e. a complete sound file). e.g.:
+// 0 (left) : [0.0, 1.0, ...]
+// 1 (right): [0.1, 0.9, ...]
+// ...
+//
+// @note: each channel is an `Arc` that can be cloned by the audio nodes, we
+// only need Arc and not Mutex here because if a node acquired a channel,
+// it must keep a reference to it even if `set_channel_data` is called. In such
+// situation we just replace the channel with a new `Arc` pointing to new `Vec`.
+// So no mutation occurs and memory allocation takes place in the control thread.
+//
+// @see - <https://webaudio.github.io/web-audio-api/#acquire-the-content>
+pub(crate) struct AudioBufferData {
+    channels: Vec<Arc<Vec<f32>>>
 }
 
-pub struct AudioBuffer {
-    number_of_channels: usize,
-    length: usize,
-    sample_rate: SampleRate,
-
-    // `internal_data` is a matrix representing a de-interleaved in memory audio asset
-    // 0 (left) : [0.0, 1.0, ...]
-    // 1 (right): [0.1, 0.9, ...]
-    // ...
-    //
-    // @note: each channel is an `Arc` that can be acquired by the audio nodes,
-    // important - the inner `Arc<Vec>`s should be mutated, only replaced by another
-    // @note - probably there is possible improvements in term of architecture
-    //  and type system
-    //
-    // @see - <https://webaudio.github.io/web-audio-api/#acquire-the-content>
-    //
-    // @note - we could maybe reuse buffer::ChannelData here, but that might be also
-    // a bit over-engineered as we don't need any sort of memory management strategy
-    // (at least as a first step)
-    internal_data: Vec<Arc<Vec<f32>>>,
-}
-
-
-impl AudioBuffer {
-    // https://webaudio.github.io/web-audio-api/#AudioBuffer-constructors
-    pub fn new(options: AudioBufferOptions) -> Self {
-        let number_of_channels = options.number_of_channels;
-        let length = options.length;
-
+impl AudioBufferData {
+    // only used by AudioBuffer
+    fn new(number_of_channels: usize, length: usize) -> Self {
         let mut channels = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
         // [spec] Note: This initializes the underlying storage to zero.
         // we don't want to clone just the Arc here, but the whole underlying data,
@@ -133,11 +118,61 @@ impl AudioBuffer {
             channels.push(channel);
         }
 
+        Self { channels }
+    }
+}
+
+impl From<Vec<Vec<f32>>> for AudioBufferData {
+    // used in `AudioContext.decodeAudioData`
+    // could be used in `OfflineAudioContext.startRendering()` too
+    fn from(decoded: Vec<Vec<f32>>) -> Self {
+        let number_of_channels = decoded.len();
+        // wrap each decoded channel with `Arc`
+        let mut channels = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
+        // @note - is there a better than using `to_vec`?
+        for channel_number in 0..number_of_channels {
+            let channel = decoded[channel_number].to_vec();
+            channels.push(Arc::new(channel));
+        }
+
+        Self { channels }
+    }
+}
+
+// @note - what could be default in Rust syntax? is this possible to have some
+// partial defaults? (that's not a really a big deal...)
+#[derive(Copy, Clone, Debug)]
+pub struct AudioBufferOptions {
+    number_of_channels: usize,  // defaults to 1
+    length: usize,              // required
+    sample_rate: SampleRate,    // required
+}
+
+
+pub struct AudioBuffer {
+    number_of_channels: usize,
+    length: usize,
+    sample_rate: SampleRate,
+    internal_data: AudioBufferData,
+}
+
+
+impl AudioBuffer {
+    // https://webaudio.github.io/web-audio-api/#AudioBuffer-constructors
+    pub fn new(options: AudioBufferOptions) -> Self {
+        let AudioBufferOptions {
+            number_of_channels,
+            length,
+            sample_rate,
+        } = options;
+
+        let internal_data = AudioBufferData::new(number_of_channels, length);
+
         Self {
             number_of_channels,
             length,
-            sample_rate: options.sample_rate,
-            internal_data: channels,
+            sample_rate,
+            internal_data,
         }
     }
 
@@ -157,7 +192,7 @@ impl AudioBuffer {
         (self.length * self.sample_rate.0 as usize) as f64
     }
 
-    // @todo - check that usage of `capacity` and `len` are ok
+    // @note - not sure if we can handle default arguments in another way
     pub fn copy_from_channel(&self, destination: &mut Vec<f32>, channel_number: usize) {
         self.copy_from_channel_with_offset(destination, channel_number, 0);
     }
@@ -174,7 +209,7 @@ impl AudioBuffer {
         // If this is less than 𝑁𝑓, then the remaining elements of destination are not modified.
         let dest_capacity = destination.capacity();
         let max_frame = (self.length - offset).min(dest_capacity).max(0);
-        let channel = &self.internal_data[channel_number];
+        let channel = &self.internal_data.channels[channel_number];
 
         for index in 0..max_frame {
             if index < destination.len() {
@@ -185,6 +220,7 @@ impl AudioBuffer {
         }
     }
 
+    // @note - not sure if we can handle default arguments in another way
     pub fn copy_to_channel(&mut self, source: &Vec<f32>, channel_number: usize) {
         self.copy_to_channel_with_offset(source, channel_number, 0);
     }
@@ -201,7 +237,7 @@ impl AudioBuffer {
         // access some undefined index
         let src_len = source.len();
         let max_frame = (self.length - offset).min(src_len).max(0);
-        let channel = &self.internal_data[channel_number];
+        let channel = &self.internal_data.channels[channel_number];
         // we need to copy the underlying channel here because it could have been
         // acquired by some node and be in use.
         // @see - https://webaudio.github.io/web-audio-api/#acquire-the-content
@@ -213,18 +249,20 @@ impl AudioBuffer {
 
         // replace channel with modified copy and new Arc so that next time some
         // node acquire the content it will grab the updated values and the old
-        // data will be freed when last ref from node will be dropped.
+        // data will be freed when last ref from audio node is dropped.
         // The nodes who already acquired the Arc to the previous resource
         // are therefore not impacted.
-        self.internal_data[channel_number] = Arc::new(copy);
+        // @note - make sure this works as I think it is...
+        self.internal_data.channels[channel_number] = Arc::new(copy);
     }
 
-    // According to the rules described in acquire the content either allow writing
+    // [spec] According to the rules described in acquire the content either allow writing
     // into or getting a copy of the bytes stored in [[internal data]] in a new Float32Array
     //
-    // that's not really clear, just return a copy to make sure nothing can be messed up
+    // @note - that's really not clear and kind of "do whatever you want unless it
+    // breaks something...", so just return a copy to make sure nothing can be messed up
     pub fn get_channel_data(&self, channel_number: usize) -> Vec<f32> {
-        let channel = &self.internal_data[channel_number];
+        let channel = &self.internal_data.channels[channel_number];
         channel.to_vec()
     }
 }
@@ -305,9 +343,8 @@ mod tests {
             let mut audio_buffer = AudioBuffer::new(options);
             let mut src = vec![1.; 10];
             audio_buffer.copy_to_channel(&mut src, 0);
-            // println!("> {:?}", audio_buffer.internal_data[0]);
             assert_float_eq!(
-                audio_buffer.internal_data[0][..],
+                audio_buffer.internal_data.channels[0][..],
                 [1.; 10][..],
                 abs_all <= 0.
             );
@@ -317,9 +354,8 @@ mod tests {
             let mut audio_buffer = AudioBuffer::new(options);
             let mut src = vec![1.; 5];
             audio_buffer.copy_to_channel(&mut src, 0);
-            // println!("> {:?}", audio_buffer.internal_data[0]);
             assert_float_eq!(
-                audio_buffer.internal_data[0][..],
+                audio_buffer.internal_data.channels[0][..],
                 [1., 1., 1., 1., 1., 0., 0., 0., 0., 0.][..],
                 abs_all <= 0.
             );
@@ -329,9 +365,8 @@ mod tests {
             let mut audio_buffer = AudioBuffer::new(options);
             let mut src = vec![1.; 12];
             audio_buffer.copy_to_channel(&mut src, 0);
-            // println!("> {:?}", audio_buffer.internal_data[0]);
             assert_float_eq!(
-                audio_buffer.internal_data[0][..],
+                audio_buffer.internal_data.channels[0][..],
                 [1., 1., 1., 1., 1., 1., 1., 1., 1., 1.][..],
                 abs_all <= 0.
             );
@@ -341,9 +376,8 @@ mod tests {
             let mut audio_buffer = AudioBuffer::new(options);
             let mut src = vec![1.; 10];
             audio_buffer.copy_to_channel_with_offset(&mut src, 0, 5);
-            // println!("> {:?}", audio_buffer.internal_data[0]);
             assert_float_eq!(
-                audio_buffer.internal_data[0][..],
+                audio_buffer.internal_data.channels[0][..],
                 [0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
                 abs_all <= 0.
             );
@@ -364,7 +398,7 @@ mod tests {
         // mutate channel and make sure this does not propagate to internal_data
         channel[0] = 1.;
         assert_float_eq!(
-            audio_buffer.internal_data[0][..], [0.; 10][..], abs_all <= 0.
+            audio_buffer.internal_data.channels[0][..], [0.; 10][..], abs_all <= 0.
         );
     }
 
@@ -380,9 +414,11 @@ mod tests {
 
         let mut left_start = vec![];
         let mut right_start = vec![];
-        left_start.extend_from_slice(&audio_buffer.internal_data[0][0..100]);
-        right_start.extend_from_slice(&audio_buffer.internal_data[1][0..100]);
+        left_start.extend_from_slice(&audio_buffer.internal_data.channels[0][0..100]);
+        right_start.extend_from_slice(&audio_buffer.internal_data.channels[1][0..100]);
 
+        println!("----------------------------------------------");
+        println!("@todo - should check that resampling is ok    ");
         println!("----------------------------------------------");
         println!("- left_start: {:?}", left_start);
         println!("----------------------------------------------");
