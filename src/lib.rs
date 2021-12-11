@@ -42,20 +42,20 @@
 use std::fmt;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-/// Render quantum size (audio graph is rendered in blocks of this size)
-pub const BUFFER_SIZE: usize = 128;
+/// Render quantum size, the audio graph is rendered in blocks of RENDER_QUANTUM_SIZE samples
+/// see. [https://webaudio.github.io/web-audio-api/#render-quantum]
+pub const RENDER_QUANTUM_SIZE: usize = 128;
 
 /// Maximum number of channels for audio processing
 pub const MAX_CHANNELS: usize = 32;
 
-pub mod alloc;
 pub mod buffer;
 pub mod context;
 pub mod control;
 pub mod media;
 pub mod node;
 pub mod param;
-pub mod process;
+pub mod render;
 pub mod spatial;
 
 #[cfg(test)]
@@ -65,7 +65,6 @@ mod snapshot;
 mod io;
 
 mod analysis;
-mod graph;
 mod message;
 
 /// Number of samples processed per second (Hertz) for a single channel of audio

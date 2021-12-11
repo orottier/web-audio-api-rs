@@ -1,12 +1,12 @@
-use crate::alloc::ChannelData;
-use crate::BUFFER_SIZE;
+use crate::render::AudioRenderQuantumChannel;
+use crate::RENDER_QUANTUM_SIZE;
 
 use realfft::{num_complex::Complex, RealFftPlanner};
 
 use std::f32::consts::PI;
 
 const MAX_QUANTA: usize = 256;
-const MAX_SAMPLES: usize = MAX_QUANTA * BUFFER_SIZE;
+const MAX_SAMPLES: usize = MAX_QUANTA * RENDER_QUANTUM_SIZE;
 
 /// Blackman window values iterator with alpha = 0.16
 pub fn generate_blackman(size: usize) -> impl Iterator<Item = f32> {
@@ -23,7 +23,7 @@ pub fn generate_blackman(size: usize) -> impl Iterator<Item = f32> {
 
 /// Ring buffer for time domain analysis
 struct TimeAnalyser {
-    buffer: Vec<ChannelData>,
+    buffer: Vec<AudioRenderQuantumChannel>,
     index: u8,
     previous_cycle_index: u8,
 }
@@ -39,7 +39,7 @@ impl TimeAnalyser {
     }
 
     /// Add samples to the ring buffer
-    fn add_data(&mut self, data: ChannelData) {
+    fn add_data(&mut self, data: AudioRenderQuantumChannel) {
         if self.buffer.len() < 256 {
             self.buffer.push(data);
         } else {
@@ -52,7 +52,7 @@ impl TimeAnalyser {
     fn check_complete_cycle(&mut self, fft_size: usize) -> bool {
         // number of buffers processed since last complete cycle
         let processed = self.index.wrapping_sub(self.previous_cycle_index);
-        let processed_samples = processed as usize * BUFFER_SIZE;
+        let processed_samples = processed as usize * RENDER_QUANTUM_SIZE;
 
         // cycle is complete when divisible by fft_size
         if processed_samples % fft_size == 0 {
@@ -80,7 +80,7 @@ impl TimeAnalyser {
 
         // split the output buffer in same sized chunks
         let true_size = fft_size.min(buffer.len());
-        let buf_chunks = buffer[0..true_size].chunks_mut(BUFFER_SIZE).rev();
+        let buf_chunks = buffer[0..true_size].chunks_mut(RENDER_QUANTUM_SIZE).rev();
 
         // copy data from internal buffer to output buffer
         buf_chunks
@@ -135,7 +135,7 @@ impl Analyser {
     }
 
     /// Add samples to the ring buffer
-    pub fn add_data(&mut self, data: ChannelData) {
+    pub fn add_data(&mut self, data: AudioRenderQuantumChannel) {
         self.time.add_data(data);
     }
 
@@ -213,7 +213,7 @@ mod tests {
 
     use super::*;
 
-    use crate::alloc::Alloc;
+    use crate::render::Alloc;
 
     #[test]
     fn assert_index_size() {
@@ -227,58 +227,62 @@ mod tests {
         let alloc = Alloc::with_capacity(256);
 
         let mut analyser = TimeAnalyser::new();
-        let mut buffer = vec![-1.; BUFFER_SIZE * 5];
+        let mut buffer = vec![-1.; RENDER_QUANTUM_SIZE * 5];
 
         // feed single data buffer
         analyser.add_data(alloc.silence());
 
         // get data, should be padded with zeroes
-        analyser.get_float_time(&mut buffer[..], BUFFER_SIZE * 5);
-        assert_float_eq!(&buffer[..], &[0.; 5 * BUFFER_SIZE][..], abs_all <= 0.);
+        analyser.get_float_time(&mut buffer[..], RENDER_QUANTUM_SIZE * 5);
+        assert_float_eq!(
+            &buffer[..],
+            &[0.; 5 * RENDER_QUANTUM_SIZE][..],
+            abs_all <= 0.
+        );
 
         // feed data for more than 256 times (the ring buffer size)
         for i in 0..258 {
             let mut signal = alloc.silence();
             // signal = i
-            signal.copy_from_slice(&[i as f32; BUFFER_SIZE]);
+            signal.copy_from_slice(&[i as f32; RENDER_QUANTUM_SIZE]);
             analyser.add_data(signal);
         }
 
         // this should return non-zero data now
-        analyser.get_float_time(&mut buffer[..], BUFFER_SIZE * 4);
+        analyser.get_float_time(&mut buffer[..], RENDER_QUANTUM_SIZE * 4);
 
         // taken from the end of the ring buffer
         assert_float_eq!(
-            &buffer[0..BUFFER_SIZE],
-            &[254.; BUFFER_SIZE][..],
+            &buffer[0..RENDER_QUANTUM_SIZE],
+            &[254.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
         assert_float_eq!(
-            &buffer[BUFFER_SIZE..2 * BUFFER_SIZE],
-            &[255.; BUFFER_SIZE][..],
+            &buffer[RENDER_QUANTUM_SIZE..2 * RENDER_QUANTUM_SIZE],
+            &[255.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
         // taken from the start of the ring buffer
         assert_float_eq!(
-            &buffer[2 * BUFFER_SIZE..3 * BUFFER_SIZE],
-            &[256.; BUFFER_SIZE][..],
+            &buffer[2 * RENDER_QUANTUM_SIZE..3 * RENDER_QUANTUM_SIZE],
+            &[256.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
         assert_float_eq!(
-            &buffer[3 * BUFFER_SIZE..4 * BUFFER_SIZE],
-            &[257.; BUFFER_SIZE][..],
+            &buffer[3 * RENDER_QUANTUM_SIZE..4 * RENDER_QUANTUM_SIZE],
+            &[257.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
         // excess capacity should be left unaltered
         assert_float_eq!(
-            &buffer[4 * BUFFER_SIZE..5 * BUFFER_SIZE],
-            &[0.; BUFFER_SIZE][..],
+            &buffer[4 * RENDER_QUANTUM_SIZE..5 * RENDER_QUANTUM_SIZE],
+            &[0.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
 
         // check for small fft_size
         buffer.resize(32, 0.);
-        analyser.get_float_time(&mut buffer[..], BUFFER_SIZE);
+        analyser.get_float_time(&mut buffer[..], RENDER_QUANTUM_SIZE);
         assert_float_eq!(&buffer[..], &[257.; 32][..], abs_all <= 0.);
     }
 
@@ -287,28 +291,28 @@ mod tests {
         let alloc = Alloc::with_capacity(256);
         let mut analyser = TimeAnalyser::new();
 
-        // check values smaller than BUFFER_SIZE
+        // check values smaller than RENDER_QUANTUM_SIZE
         analyser.add_data(alloc.silence());
         assert!(analyser.check_complete_cycle(32));
 
-        // check BUFFER_SIZE
+        // check RENDER_QUANTUM_SIZE
         analyser.add_data(alloc.silence());
-        assert!(analyser.check_complete_cycle(BUFFER_SIZE));
+        assert!(analyser.check_complete_cycle(RENDER_QUANTUM_SIZE));
 
-        // check multiple of BUFFER_SIZE
+        // check multiple of RENDER_QUANTUM_SIZE
         analyser.add_data(alloc.silence());
-        assert!(!analyser.check_complete_cycle(BUFFER_SIZE * 2));
+        assert!(!analyser.check_complete_cycle(RENDER_QUANTUM_SIZE * 2));
         analyser.add_data(alloc.silence());
-        assert!(analyser.check_complete_cycle(BUFFER_SIZE * 2));
+        assert!(analyser.check_complete_cycle(RENDER_QUANTUM_SIZE * 2));
         analyser.add_data(alloc.silence());
-        assert!(!analyser.check_complete_cycle(BUFFER_SIZE * 2));
+        assert!(!analyser.check_complete_cycle(RENDER_QUANTUM_SIZE * 2));
     }
 
     #[test]
     fn test_freq_domain() {
         let alloc = Alloc::with_capacity(256);
 
-        let fft_size: usize = BUFFER_SIZE * 4;
+        let fft_size: usize = RENDER_QUANTUM_SIZE * 4;
         let mut analyser = Analyser::new(fft_size);
         let mut buffer = vec![-1.; fft_size];
 
@@ -320,10 +324,13 @@ mod tests {
         analyser.get_float_frequency(&mut buffer[..]);
 
         // only N / 2 + 1 values should contain frequency data, rest is unaltered
-        assert!(buffer[0..BUFFER_SIZE * 2 + 1] == [f32::NEG_INFINITY; BUFFER_SIZE * 2 + 1]);
+        assert!(
+            buffer[0..RENDER_QUANTUM_SIZE * 2 + 1]
+                == [f32::NEG_INFINITY; RENDER_QUANTUM_SIZE * 2 + 1]
+        );
         assert_float_eq!(
-            &buffer[2 * BUFFER_SIZE + 1..],
-            &[-1.; 2 * BUFFER_SIZE - 1][..],
+            &buffer[2 * RENDER_QUANTUM_SIZE + 1..],
+            &[-1.; 2 * RENDER_QUANTUM_SIZE - 1][..],
             abs_all <= 0.
         );
 
@@ -331,14 +338,17 @@ mod tests {
         for i in 0..258 {
             let mut signal = alloc.silence();
             // signal = i
-            signal.copy_from_slice(&[i as f32; BUFFER_SIZE]);
+            signal.copy_from_slice(&[i as f32; RENDER_QUANTUM_SIZE]);
             analyser.add_data(signal);
         }
 
         // this should return other data now
         analyser.calculate_float_frequency(fft_size, 0.8);
         analyser.get_float_frequency(&mut buffer[..]);
-        assert!(buffer[0..BUFFER_SIZE * 2 + 1] != [f32::NEG_INFINITY; BUFFER_SIZE * 2 + 1]);
+        assert!(
+            buffer[0..RENDER_QUANTUM_SIZE * 2 + 1]
+                != [f32::NEG_INFINITY; RENDER_QUANTUM_SIZE * 2 + 1]
+        );
     }
 
     #[test]

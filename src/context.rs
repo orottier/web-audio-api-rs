@@ -19,19 +19,19 @@ const LISTENER_NODE_ID: u64 = 1;
 /// listener audio parameters ids are always at index 2 through 12
 const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
-use crate::buffer::{AudioBuffer, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
-use crate::graph::{NodeIndex, RenderThread};
+use crate::buffer::AudioBuffer;
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{
-    self, AnalyserOptions, AudioBufferSourceNodeOptions, AudioNode, ChannelMergerOptions,
-    ChannelSplitterOptions, ConstantSourceOptions, DelayOptions, GainOptions, IirFilterOptions,
-    PannerOptions, PeriodicWave, PeriodicWaveOptions,
+    self, AnalyserOptions, AudioBufferSourceNodeOptions, AudioNode, ChannelConfigOptions,
+    ChannelCountMode, ChannelInterpretation, ChannelMergerOptions, ChannelSplitterOptions,
+    ConstantSourceOptions, DelayOptions, GainOptions, IirFilterOptions, PannerOptions,
+    PeriodicWave, PeriodicWaveOptions,
 };
 use crate::param::{AudioParam, AudioParamEvent, AudioParamOptions};
-use crate::process::AudioProcessor;
+use crate::render::{AudioProcessor, NodeIndex, RenderThread};
 use crate::spatial::{AudioListener, AudioListenerParams};
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 #[cfg(not(test))]
 use crate::io;
@@ -723,9 +723,10 @@ impl OfflineAudioContext {
     /// `OfflineAudioContext` doesn't start rendering automatically
     /// You need to call this function to start the audio rendering
     pub fn start_rendering(&mut self) -> AudioBuffer {
-        // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
+        // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
         // the desired number of frames.
-        let buffer_size = (self.length + BUFFER_SIZE - 1) / BUFFER_SIZE * BUFFER_SIZE;
+        let buffer_size =
+            (self.length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE * RENDER_QUANTUM_SIZE;
 
         let mut buf = self.renderer.render_audiobuffer(buffer_size);
         let _split = buf.split_off(self.length);

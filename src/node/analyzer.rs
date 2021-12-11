@@ -2,14 +2,13 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::analysis::Analyser;
-use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
-use crate::process::{AudioParamValues, AudioProcessor};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
-use crossbeam_channel::{self, Receiver, Sender};
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
 
-use super::AudioNode;
+use crossbeam_channel::{self, Receiver, Sender};
 
 /// Options for constructing an AnalyserNode
 pub struct AnalyserOptions {
@@ -165,8 +164,8 @@ unsafe impl Send for AnalyserRenderer {}
 impl AudioProcessor for AnalyserRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

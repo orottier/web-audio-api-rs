@@ -15,14 +15,12 @@ use crossbeam_channel::{Receiver, Sender};
 use rubato::{FftFixedInOut, Resampler};
 
 use crate::{
-    alloc::AudioBuffer,
-    buffer::{ChannelConfig, ChannelConfigOptions},
     context::{AsBaseAudioContext, AudioContextRegistration},
-    process::{AudioParamValues, AudioProcessor},
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate,
 };
 
-use super::AudioNode;
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 struct CurveMessage(Vec<f32>);
 
@@ -269,8 +267,8 @@ struct WaveShaperRenderer {
 impl AudioProcessor for WaveShaperRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -377,7 +375,7 @@ impl WaveShaperRenderer {
     }
 
     #[inline]
-    fn no_process(&self, input: &AudioBuffer, output: &mut AudioBuffer) {
+    fn no_process(&self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
         for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
                 *o = i;
@@ -386,14 +384,14 @@ impl WaveShaperRenderer {
     }
 
     #[inline]
-    fn process_none(&self, input: &AudioBuffer, output: &mut AudioBuffer) {
+    fn process_none(&self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
         for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
             o_data.copy_from_slice(&i_data[..]);
         }
     }
 
     #[inline]
-    fn process_2x(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
+    fn process_2x(&mut self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
         let wave_in = input.channels();
 
         let up_wave_in = self.upsampler_x2.process(wave_in).unwrap();
@@ -415,7 +413,7 @@ impl WaveShaperRenderer {
     }
 
     #[inline]
-    fn process_4x(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
+    fn process_4x(&mut self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
         let wave_in = input.channels();
 
         let up_wave_in = self.upsampler_x4.process(wave_in).unwrap();

@@ -12,14 +12,16 @@ use std::f32::consts::PI;
 use float_eq::debug_assert_float_eq;
 
 use crate::{
-    buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
-    process::{AudioParamValues, AudioProcessor},
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate,
 };
 
-use super::{AudioNode, SINETABLE, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE};
+use super::{
+    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+    SINETABLE, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE,
+};
 
 /// `StereoPannerOptions` is used to pass options
 /// during the construction of `StereoPannerNode` using its
@@ -161,8 +163,8 @@ struct StereoPannerRenderer {
 impl AudioProcessor for StereoPannerRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

@@ -6,11 +6,12 @@ use std::sync::Arc;
 use cpal::Sample;
 use crossbeam_channel::Receiver;
 
-use crate::alloc::{Alloc, AudioBuffer};
-use crate::buffer::{ChannelConfig, ChannelCountMode};
+use crate::buffer::AudioBuffer;
 use crate::message::ControlMessage;
-use crate::process::{AudioParamValues, AudioProcessor};
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::node::{ChannelConfig, ChannelCountMode};
+use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+
+use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum};
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
@@ -19,11 +20,11 @@ pub(crate) struct RenderThread {
     channels: usize,
     frames_played: Arc<AtomicU64>,
     receiver: Receiver<ControlMessage>,
-    buffer_offset: Option<(usize, AudioBuffer)>,
+    buffer_offset: Option<(usize, AudioRenderQuantum)>,
 }
 
 // SAFETY:
-// The RenderThread is not Send since it contains AudioBuffers (which use Rc), but these are only
+// The RenderThread is not Send since it contains `AudioRenderQuantum`s (which use Rc), but these are only
 // accessed within the same thread (the render thread). Due to the cpal constraints we can neither
 // move the RenderThread object into the render thread, nor can we initialize the Rc's in that
 // thread.
@@ -86,21 +87,22 @@ impl RenderThread {
         }
     }
 
-    pub fn render_audiobuffer(&mut self, length: usize) -> crate::buffer::AudioBuffer {
+    // render method of the OfflineAudioContext
+    pub fn render_audiobuffer(&mut self, length: usize) -> AudioBuffer {
         // assert input was properly sized
-        debug_assert_eq!(length % BUFFER_SIZE, 0);
+        debug_assert_eq!(length % RENDER_QUANTUM_SIZE, 0);
 
-        let mut buf = crate::buffer::AudioBuffer::new(self.channels, 0, self.sample_rate);
+        let mut buf = AudioBuffer::new(self.channels, 0, self.sample_rate);
 
-        for _ in 0..length / BUFFER_SIZE {
+        for _ in 0..length / RENDER_QUANTUM_SIZE {
             // handle addition/removal of nodes/edges
             self.handle_control_messages();
 
             // update time
-            let timestamp = self
-                .frames_played
-                .fetch_add(BUFFER_SIZE as u64, Ordering::SeqCst) as f64
-                / self.sample_rate.0 as f64;
+            let timestamp =
+                self.frames_played
+                    .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst) as f64
+                    / self.sample_rate.0 as f64;
 
             // render audio graph
             let rendered = self.graph.render(timestamp, self.sample_rate);
@@ -116,9 +118,9 @@ impl RenderThread {
     #[allow(dead_code)]
     pub fn render<S: Sample>(&mut self, mut buffer: &mut [S]) {
         // There may be audio frames left over from the previous render call,
-        // if the cpal buffer size did not align with our internal BUFFER_SIZE
+        // if the cpal buffer size did not align with our internal RENDER_QUANTUM_SIZE
         if let Some((offset, prev_rendered)) = self.buffer_offset.take() {
-            let leftover_len = (BUFFER_SIZE - offset) * self.channels;
+            let leftover_len = (RENDER_QUANTUM_SIZE - offset) * self.channels;
             // split the leftover frames slice, to fit in `buffer`
             let (first, next) = buffer.split_at_mut(leftover_len.min(buffer.len()));
 
@@ -142,9 +144,9 @@ impl RenderThread {
             buffer = next;
         }
 
-        // The audio graph is rendered in chunks of BUFFER_SIZE frames.  But some audio backends
+        // The audio graph is rendered in chunks of RENDER_QUANTUM_SIZE frames.  But some audio backends
         // may not be able to emit chunks of this size.
-        let chunk_size = BUFFER_SIZE * self.channels as usize;
+        let chunk_size = RENDER_QUANTUM_SIZE * self.channels as usize;
 
         for data in buffer.chunks_mut(chunk_size) {
             // handle addition/removal of nodes/edges
@@ -152,10 +154,10 @@ impl RenderThread {
 
             // update time
             // @note - this follows the spec as fetch_add returns the old value
-            let timestamp = self
-                .frames_played
-                .fetch_add(BUFFER_SIZE as u64, Ordering::SeqCst) as f64
-                / self.sample_rate.0 as f64;
+            let timestamp =
+                self.frames_played
+                    .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst) as f64
+                    / self.sample_rate.0 as f64;
 
             // render audio graph
             let rendered = self.graph.render(timestamp, self.sample_rate);
@@ -171,9 +173,9 @@ impl RenderThread {
             }
 
             if data.len() != chunk_size {
-                // this is the last chunk, and it contained less than BUFFER_SIZE samples
+                // this is the last chunk, and it contained less than RENDER_QUANTUM_SIZE samples
                 let channel_offset = data.len() / self.channels;
-                debug_assert!(channel_offset < BUFFER_SIZE);
+                debug_assert!(channel_offset < RENDER_QUANTUM_SIZE);
                 self.buffer_offset = Some((channel_offset, rendered.clone()));
             }
         }
@@ -188,9 +190,9 @@ pub struct Node {
     /// Renderer: converts inputs to outputs
     processor: Box<dyn AudioProcessor>,
     /// Input buffers
-    inputs: Vec<AudioBuffer>,
+    inputs: Vec<AudioRenderQuantum>,
     /// Output buffers, consumed by subsequent Nodes in this graph
-    outputs: Vec<AudioBuffer>,
+    outputs: Vec<AudioRenderQuantum>,
     /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
 
@@ -240,7 +242,7 @@ impl Node {
     }
 
     /// Get the current buffer for AudioParam values
-    pub fn get_buffer(&self) -> &AudioBuffer {
+    pub fn get_buffer(&self) -> &AudioRenderQuantum {
         self.outputs.get(0).unwrap()
     }
 }
@@ -282,8 +284,8 @@ impl Graph {
         channel_config: ChannelConfig,
     ) {
         // todo, allocate on control thread, make single alloc..?
-        let inputs = vec![AudioBuffer::new(self.alloc.silence()); inputs];
-        let outputs = vec![AudioBuffer::new(self.alloc.silence()); outputs];
+        let inputs = vec![AudioRenderQuantum::new(self.alloc.silence()); inputs];
+        let outputs = vec![AudioRenderQuantum::new(self.alloc.silence()); outputs];
 
         self.nodes.insert(
             index,
@@ -390,7 +392,7 @@ impl Graph {
                 .unwrap()
                 .outputs
                 .iter_mut()
-                .for_each(AudioBuffer::make_silent);
+                .for_each(AudioRenderQuantum::make_silent);
         }
 
         // depth first search yields reverse order
@@ -403,7 +405,7 @@ impl Graph {
         self.in_cycle = in_cycle;
     }
 
-    pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioBuffer {
+    pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioRenderQuantum {
         if self.ordered.is_empty() {
             self.order_nodes();
         }
@@ -507,8 +509,8 @@ mod tests {
     impl AudioProcessor for TestNode {
         fn process(
             &mut self,
-            _inputs: &[AudioBuffer],
-            _outputs: &mut [AudioBuffer],
+            _inputs: &[AudioRenderQuantum],
+            _outputs: &mut [AudioRenderQuantum],
             _params: AudioParamValues,
             _timestamp: f64,
             _sample_rate: SampleRate,
@@ -518,10 +520,10 @@ mod tests {
     }
 
     fn config() -> ChannelConfig {
-        crate::buffer::ChannelConfigOptions {
+        crate::node::ChannelConfigOptions {
             count: 2,
-            mode: crate::buffer::ChannelCountMode::Explicit,
-            interpretation: crate::buffer::ChannelInterpretation::Speakers,
+            mode: crate::node::ChannelCountMode::Explicit,
+            interpretation: crate::node::ChannelInterpretation::Speakers,
         }
         .into()
     }

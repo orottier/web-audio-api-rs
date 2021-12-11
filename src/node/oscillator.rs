@@ -11,17 +11,20 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use crate::alloc::ChannelData;
-use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::control::{ScheduledState, Scheduler};
 use crate::param::{AudioParam, AudioParamOptions};
-use crate::process::{AudioParamValues, AudioProcessor};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioRenderQuantumChannel,
+};
 use crate::SampleRate;
 
 use crossbeam_channel::{self, Receiver, Sender};
 
-use super::{AudioNode, AudioScheduledSourceNode, SINETABLE, TABLE_LENGTH_F32, TABLE_LENGTH_USIZE};
+use super::{
+    AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions, SINETABLE,
+    TABLE_LENGTH_F32, TABLE_LENGTH_USIZE,
+};
 
 /// Options for constructing a periodic wave
 pub struct PeriodicWaveOptions {
@@ -674,8 +677,8 @@ struct OscillatorRenderer {
 impl AudioProcessor for OscillatorRenderer {
     fn process(
         &mut self,
-        _inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        _inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         timestamp: f64,
         _sample_rate: SampleRate,
@@ -966,7 +969,7 @@ impl OscillatorRenderer {
     fn generate_output(
         &mut self,
         type_: OscillatorType,
-        buffer: &mut ChannelData,
+        buffer: &mut AudioRenderQuantumChannel,
         freq_values: &[f32],
     ) {
         match type_ {
@@ -990,7 +993,7 @@ impl OscillatorRenderer {
     fn generate_sine(
         &mut self,
         type_: OscillatorType,
-        buffer: &mut ChannelData,
+        buffer: &mut AudioRenderQuantumChannel,
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
@@ -1029,7 +1032,7 @@ impl OscillatorRenderer {
     fn generate_sawtooth(
         &mut self,
         type_: OscillatorType,
-        buffer: &mut ChannelData,
+        buffer: &mut AudioRenderQuantumChannel,
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
@@ -1059,7 +1062,7 @@ impl OscillatorRenderer {
     fn generate_square(
         &mut self,
         type_: OscillatorType,
-        buffer: &mut ChannelData,
+        buffer: &mut AudioRenderQuantumChannel,
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
@@ -1096,7 +1099,7 @@ impl OscillatorRenderer {
     fn generate_triangle(
         &mut self,
         type_: OscillatorType,
-        buffer: &mut ChannelData,
+        buffer: &mut AudioRenderQuantumChannel,
         freq_values: &[f32],
     ) {
         for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
@@ -1139,7 +1142,7 @@ impl OscillatorRenderer {
     /// * `buffer` - audio output buffer
     /// * `freq_values` - frequencies at which each sample should be generated
     #[inline]
-    fn generate_custom(&mut self, output: &mut ChannelData, freq_values: &[f32]) {
+    fn generate_custom(&mut self, output: &mut AudioRenderQuantumChannel, freq_values: &[f32]) {
         for (o, &computed_freq) in output.iter_mut().zip(freq_values) {
             self.arate_periodic_params(computed_freq);
 

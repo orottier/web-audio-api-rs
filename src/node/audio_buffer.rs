@@ -1,11 +1,12 @@
-use crate::buffer::{AudioBuffer, ChannelConfig, ChannelConfigOptions, Resampler};
+use crate::buffer::{AudioBuffer, Resampler};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
 use crate::control::{Controller, Scheduler};
 use crate::media::MediaElement;
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::{
-    AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode, MediaStreamRenderer,
+    AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode, ChannelConfig,
+    ChannelConfigOptions, MediaStreamRenderer,
 };
 
 /// Options for constructing a AudioBufferSourceNode
@@ -58,12 +59,12 @@ impl AudioBufferSourceNode {
             // unwrap_or_default buffer
             let buffer = options
                 .buffer
-                .unwrap_or_else(|| AudioBuffer::new(1, BUFFER_SIZE, SampleRate(44_100)));
+                .unwrap_or_else(|| AudioBuffer::new(1, RENDER_QUANTUM_SIZE, SampleRate(44_100)));
 
             // wrap input in resampler
             let resampler = Resampler::new(
                 context.base().sample_rate(),
-                BUFFER_SIZE,
+                RENDER_QUANTUM_SIZE,
                 std::iter::once(Ok(buffer)),
             );
 

@@ -1,36 +1,28 @@
 //! Optimized audio signal data structures, used in `AudioProcessors`
-#![warn(
-    clippy::all,
-    clippy::perf,
-    // clippy::pedantic,
-    // clippy::nursery,
-    // clippy::missing_docs_in_private_items
-)]
-
 use arrayvec::ArrayVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::buffer::ChannelInterpretation;
+use crate::node::ChannelInterpretation;
 
-/// size of a buffer, 128 samples per spec
-use crate::BUFFER_SIZE;
 use crate::MAX_CHANNELS;
+use crate::RENDER_QUANTUM_SIZE;
 
+// object pool for `AudioRenderQuantumChannel`s, only allocate if the pool is empty
 pub(crate) struct Alloc {
     inner: Rc<AllocInner>,
 }
 
 #[derive(Debug)]
 struct AllocInner {
-    pool: RefCell<Vec<Rc<[f32; BUFFER_SIZE]>>>,
-    zeroes: Rc<[f32; BUFFER_SIZE]>,
+    pool: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>>,
+    zeroes: Rc<[f32; RENDER_QUANTUM_SIZE]>,
 }
 
 impl Alloc {
     pub fn with_capacity(n: usize) -> Self {
-        let pool: Vec<_> = (0..n).map(|_| Rc::new([0.; BUFFER_SIZE])).collect();
-        let zeroes = Rc::new([0.; BUFFER_SIZE]);
+        let pool: Vec<_> = (0..n).map(|_| Rc::new([0.; RENDER_QUANTUM_SIZE])).collect();
+        let zeroes = Rc::new([0.; RENDER_QUANTUM_SIZE]);
 
         let inner = AllocInner {
             pool: RefCell::new(pool),
@@ -43,15 +35,15 @@ impl Alloc {
     }
 
     #[cfg(test)]
-    pub fn allocate(&self) -> ChannelData {
-        ChannelData {
+    pub fn allocate(&self) -> AudioRenderQuantumChannel {
+        AudioRenderQuantumChannel {
             data: self.inner.allocate(),
             alloc: Rc::clone(&self.inner),
         }
     }
 
-    pub fn silence(&self) -> ChannelData {
-        ChannelData {
+    pub fn silence(&self) -> AudioRenderQuantumChannel {
+        AudioRenderQuantumChannel {
             data: Rc::clone(&self.inner.zeroes),
             alloc: Rc::clone(&self.inner),
         }
@@ -64,34 +56,34 @@ impl Alloc {
 }
 
 impl AllocInner {
-    fn allocate(&self) -> Rc<[f32; BUFFER_SIZE]> {
+    fn allocate(&self) -> Rc<[f32; RENDER_QUANTUM_SIZE]> {
         if let Some(rc) = self.pool.borrow_mut().pop() {
             // re-use from pool
             rc
         } else {
             // allocate
-            Rc::new([0.; BUFFER_SIZE])
+            Rc::new([0.; RENDER_QUANTUM_SIZE])
         }
     }
 
-    fn push(&self, data: Rc<[f32; BUFFER_SIZE]>) {
+    fn push(&self, data: Rc<[f32; RENDER_QUANTUM_SIZE]>) {
         self.pool
             .borrow_mut() // infallible when single threaded
             .push(data);
     }
 }
 
-/// Single channel audio samples, basically wraps a `Rc<[f32; BUFFER_SIZE]>`
+/// Single channel audio samples, basically wraps a `Rc<[f32; RENDER_QUANTUM_SIZE]>`
 ///
-/// `ChannelData` has copy-on-write semantics, so it is cheap to clone.
+/// `AudioRenderQuantumChannel` has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug)]
-pub struct ChannelData {
-    data: Rc<[f32; BUFFER_SIZE]>,
+pub struct AudioRenderQuantumChannel {
+    data: Rc<[f32; RENDER_QUANTUM_SIZE]>,
     alloc: Rc<AllocInner>,
 }
 
-impl ChannelData {
-    fn make_mut(&mut self) -> &mut [f32; BUFFER_SIZE] {
+impl AudioRenderQuantumChannel {
+    fn make_mut(&mut self) -> &mut [f32; RENDER_QUANTUM_SIZE] {
         if Rc::strong_count(&self.data) != 1 {
             let mut new = self.alloc.allocate();
             Rc::make_mut(&mut new).copy_from_slice(self.data.deref());
@@ -127,27 +119,27 @@ impl ChannelData {
 
 use std::ops::{Deref, DerefMut};
 
-impl Deref for ChannelData {
-    type Target = [f32; BUFFER_SIZE];
+impl Deref for AudioRenderQuantumChannel {
+    type Target = [f32; RENDER_QUANTUM_SIZE];
 
     fn deref(&self) -> &Self::Target {
         &self.data
     }
 }
 
-impl DerefMut for ChannelData {
+impl DerefMut for AudioRenderQuantumChannel {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.make_mut()
     }
 }
 
-impl AsRef<[f32]> for ChannelData {
+impl AsRef<[f32]> for AudioRenderQuantumChannel {
     fn as_ref(&self) -> &[f32] {
         &self.data[..]
     }
 }
 
-impl std::ops::Drop for ChannelData {
+impl std::ops::Drop for AudioRenderQuantumChannel {
     fn drop(&mut self) {
         if Rc::strong_count(&self.data) == 1 {
             let rc = std::mem::replace(&mut self.data, self.alloc.zeroes.clone());
@@ -156,28 +148,30 @@ impl std::ops::Drop for ChannelData {
     }
 }
 
-/// Fixed length audio asset, basically a matrix of `channels * [f32; BUFFER_SIZE]`
+/// Internal fixed length audio asset of `RENDER_QUANTUM_SIZE` sample frames for
+/// block rendering, basically a matrix of `channels * [f32; RENDER_QUANTUM_SIZE]`
+/// cf. [https://webaudio.github.io/web-audio-api/#render-quantum]
 ///
-/// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
+/// An `AudioRenderQuantum` has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug)]
-pub struct AudioBuffer {
-    channels: ArrayVec<ChannelData, MAX_CHANNELS>,
+pub struct AudioRenderQuantum {
+    channels: ArrayVec<AudioRenderQuantumChannel, MAX_CHANNELS>,
 }
 
-impl AudioBuffer {
-    pub fn new(channel: ChannelData) -> Self {
+impl AudioRenderQuantum {
+    pub fn new(channel: AudioRenderQuantumChannel) -> Self {
         let mut channels = ArrayVec::new();
         channels.push(channel);
 
         Self { channels }
     }
 
-    /// Number of channels in this AudioBuffer
+    /// Number of channels in this AudioRenderQuantum
     pub fn number_of_channels(&self) -> usize {
         self.channels.len()
     }
 
-    /// Set number of channels in this AudioBuffer
+    /// Set number of channels in this AudioRenderQuantum
     ///
     /// Note: if the new number is higher than the previous, the new channels will be filled with
     /// garbage.
@@ -192,24 +186,24 @@ impl AudioBuffer {
     /// Get the samples from this specific channel.
     ///
     /// Panics if the index is greater than the available number of channels
-    pub fn channel_data(&self, index: usize) -> &ChannelData {
+    pub fn channel_data(&self, index: usize) -> &AudioRenderQuantumChannel {
         &self.channels[index]
     }
 
     /// Get the samples (mutable) from this specific channel.
     ///
     /// Panics if the index is greater than the available number of channels
-    pub fn channel_data_mut(&mut self, index: usize) -> &mut ChannelData {
+    pub fn channel_data_mut(&mut self, index: usize) -> &mut AudioRenderQuantumChannel {
         &mut self.channels[index]
     }
 
     /// Channel data as slice
-    pub fn channels(&self) -> &[ChannelData] {
+    pub fn channels(&self) -> &[AudioRenderQuantumChannel] {
         &self.channels[..]
     }
 
     /// Channel data as slice (mutable)
-    pub fn channels_mut(&mut self) -> &mut [ChannelData] {
+    pub fn channels_mut(&mut self) -> &mut [AudioRenderQuantumChannel] {
         &mut self.channels[..]
     }
 
@@ -453,12 +447,12 @@ impl AudioBuffer {
     }
 
     /// Modify every channel in the same way
-    pub fn modify_channels<F: Fn(&mut ChannelData)>(&mut self, fun: F) {
+    pub fn modify_channels<F: Fn(&mut AudioRenderQuantumChannel)>(&mut self, fun: F) {
         // todo, optimize for Rcs that are equal
         self.channels.iter_mut().for_each(fun)
     }
 
-    /// Sum two `AudioBuffer`s
+    /// Sum two `AudioRenderQuantum`s
     ///
     /// If the channel counts differ, the buffer with lower count will be upmixed.
     pub fn add(&mut self, other: &Self, interpretation: ChannelInterpretation) {
@@ -497,18 +491,18 @@ mod tests {
                 // take a buffer out of the pool
                 let a = alloc.allocate();
 
-                assert_float_eq!(&a[..], &[0.; BUFFER_SIZE][..], abs_all <= 0.);
+                assert_float_eq!(&a[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
                 assert_eq!(alloc.pool_size(), 1);
 
                 // mutating this buffer will not allocate
                 let mut a = a;
                 a.iter_mut().for_each(|v| *v += 1.);
-                assert_float_eq!(&a[..], &[1.; BUFFER_SIZE][..], abs_all <= 0.);
+                assert_float_eq!(&a[..], &[1.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
                 assert_eq!(alloc.pool_size(), 1);
 
                 // clone this buffer, should not allocate
                 #[allow(clippy::redundant_clone)]
-                let mut b: ChannelData = a.clone();
+                let mut b: AudioRenderQuantumChannel = a.clone();
                 assert_eq!(alloc.pool_size(), 1);
 
                 // mutate cloned buffer, this will allocate
@@ -531,9 +525,9 @@ mod tests {
                 });
 
                 // dirty allocations
-                assert_float_eq!(&a[..], &[1.; BUFFER_SIZE][..], abs_all <= 0.);
-                assert_float_eq!(&b[..], &[2.; BUFFER_SIZE][..], abs_all <= 0.);
-                assert_float_eq!(&c[..], &[0.; BUFFER_SIZE][..], abs_all <= 0.);
+                assert_float_eq!(&a[..], &[1.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
+                assert_float_eq!(&b[..], &[2.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
+                assert_float_eq!(&c[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
 
                 c
             };
@@ -557,7 +551,7 @@ mod tests {
                 assert_eq!(alloc.pool_size(), 2);
 
                 // but should be silent, even though a dirty buffer is taken
-                assert_float_eq!(&a_vals[..], &[0.; BUFFER_SIZE][..], abs_all <= 0.);
+                assert_float_eq!(&a_vals[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
 
                 // is_silent is a superficial ptr check
                 assert!(!a.is_silent());
@@ -570,23 +564,27 @@ mod tests {
         let alloc = Alloc::with_capacity(1);
         let silence = alloc.silence();
 
-        assert_float_eq!(&silence[..], &[0.; BUFFER_SIZE][..], abs_all <= 0.);
+        assert_float_eq!(&silence[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
         assert!(silence.is_silent());
 
         // changing silence is possible
         let mut changed = silence;
         changed.iter_mut().for_each(|v| *v = 1.);
-        assert_float_eq!(&changed[..], &[1.; BUFFER_SIZE][..], abs_all <= 0.);
+        assert_float_eq!(&changed[..], &[1.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
         assert!(!changed.is_silent());
 
         // but should not alter new silence
         let silence = alloc.silence();
-        assert_float_eq!(&silence[..], &[0.; BUFFER_SIZE][..], abs_all <= 0.);
+        assert_float_eq!(&silence[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
         assert!(silence.is_silent());
 
-        // can also create silence from ChannelData
+        // can also create silence from AudioRenderQuantumChannel
         let from_channel = silence.silence();
-        assert_float_eq!(&from_channel[..], &[0.; BUFFER_SIZE][..], abs_all <= 0.);
+        assert_float_eq!(
+            &from_channel[..],
+            &[0.; RENDER_QUANTUM_SIZE][..],
+            abs_all <= 0.
+        );
         assert!(from_channel.is_silent());
     }
 
@@ -596,23 +594,23 @@ mod tests {
         let silence = alloc.silence();
 
         let mut signal1 = alloc.silence();
-        signal1.copy_from_slice(&[1.; BUFFER_SIZE]);
+        signal1.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
         let mut signal2 = alloc.allocate();
-        signal2.copy_from_slice(&[2.; BUFFER_SIZE]);
+        signal2.copy_from_slice(&[2.; RENDER_QUANTUM_SIZE]);
 
         // test add silence to signal
         signal1.add(&silence);
-        assert_float_eq!(&signal1[..], &[1.; BUFFER_SIZE][..], abs_all <= 0.);
+        assert_float_eq!(&signal1[..], &[1.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
 
         // test add signal to silence
         let mut silence = alloc.silence();
         silence.add(&signal1);
-        assert_float_eq!(&silence[..], &[1.; BUFFER_SIZE][..], abs_all <= 0.);
+        assert_float_eq!(&silence[..], &[1.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
 
         // test add two signals
         signal1.add(&signal2);
-        assert_float_eq!(&signal1[..], &[3.; BUFFER_SIZE][..], abs_all <= 0.);
+        assert_float_eq!(&signal1[..], &[3.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
     }
 
     #[test]
@@ -620,7 +618,7 @@ mod tests {
         let alloc = Alloc::with_capacity(1);
         let silence = alloc.silence();
 
-        let buffer = AudioBuffer::new(silence);
+        let buffer = AudioRenderQuantum::new(silence);
         assert_eq!(buffer.number_of_channels(), 1);
 
         let mut buffer = buffer;
@@ -637,16 +635,16 @@ mod tests {
         let alloc = Alloc::with_capacity(1);
 
         let mut signal = alloc.silence();
-        signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+        signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-        let mut buffer = AudioBuffer::new(signal);
+        let mut buffer = AudioRenderQuantum::new(signal);
 
         buffer.mix(1, ChannelInterpretation::Discrete);
 
         assert_eq!(buffer.number_of_channels(), 1);
         assert_float_eq!(
             &buffer.channel_data(0)[..],
-            &[1.; BUFFER_SIZE][..],
+            &[1.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
 
@@ -656,12 +654,12 @@ mod tests {
         // first channel unchanged, second channel silent
         assert_float_eq!(
             &buffer.channel_data(0)[..],
-            &[1.; BUFFER_SIZE][..],
+            &[1.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
         assert_float_eq!(
             &buffer.channel_data(1)[..],
-            &[0.; BUFFER_SIZE][..],
+            &[0.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
 
@@ -669,7 +667,7 @@ mod tests {
         assert_eq!(buffer.number_of_channels(), 1);
         assert_float_eq!(
             &buffer.channel_data(0)[..],
-            &[1.; BUFFER_SIZE][..],
+            &[1.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
     }
@@ -681,16 +679,16 @@ mod tests {
         {
             // 1 -> 2
             let mut signal = alloc.silence();
-            signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(signal);
+            let mut buffer = AudioRenderQuantum::new(signal);
 
             // make sure 1 -> 1 does nothing
             buffer.mix(1, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 1);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
 
@@ -700,12 +698,12 @@ mod tests {
             // left and right equal
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -713,9 +711,9 @@ mod tests {
         {
             // 1 -> 4
             let mut signal = alloc.silence();
-            signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(signal);
+            let mut buffer = AudioRenderQuantum::new(signal);
 
             buffer.mix(4, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 4);
@@ -723,22 +721,22 @@ mod tests {
             // left and right equal
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -746,9 +744,9 @@ mod tests {
         {
             // 1 -> 6
             let mut signal = alloc.silence();
-            signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(signal);
+            let mut buffer = AudioRenderQuantum::new(signal);
 
             buffer.mix(6, ChannelInterpretation::Speakers);
             assert_eq!(buffer.number_of_channels(), 6);
@@ -756,32 +754,32 @@ mod tests {
             // left and right equal
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(4)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(5)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -789,22 +787,22 @@ mod tests {
         {
             // 2 -> 4
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
+            right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
 
             assert_eq!(buffer.number_of_channels(), 2);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
 
@@ -812,22 +810,22 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 4);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -835,22 +833,22 @@ mod tests {
         {
             // 2 -> 5.1
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
+            right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
 
             assert_eq!(buffer.number_of_channels(), 2);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
 
@@ -858,32 +856,32 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 6);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(4)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(5)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -891,15 +889,15 @@ mod tests {
         {
             // 4 -> 5.1
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[0.25; BUFFER_SIZE]);
+            left_signal.copy_from_slice(&[0.25; RENDER_QUANTUM_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
+            right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.75; BUFFER_SIZE]);
+            s_left_signal.copy_from_slice(&[0.75; RENDER_QUANTUM_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            s_right_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(s_left_signal);
             buffer.channels.push(s_right_signal);
@@ -907,22 +905,22 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 4);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[0.25; BUFFER_SIZE][..],
+                &[0.25; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[0.75; BUFFER_SIZE][..],
+                &[0.75; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
 
@@ -930,32 +928,32 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 6);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[0.25; BUFFER_SIZE][..],
+                &[0.25; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[0.; BUFFER_SIZE][..],
+                &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(4)[..],
-                &[0.75; BUFFER_SIZE][..],
+                &[0.75; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(5)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -968,22 +966,22 @@ mod tests {
         {
             // 2 -> 1
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
+            right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
 
             assert_eq!(buffer.number_of_channels(), 2);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
 
@@ -991,7 +989,7 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 1);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[0.75; BUFFER_SIZE][..],
+                &[0.75; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -999,15 +997,15 @@ mod tests {
         {
             // 4 -> 1
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.75; BUFFER_SIZE]);
+            right_signal.copy_from_slice(&[0.75; RENDER_QUANTUM_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
+            s_left_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[0.25; BUFFER_SIZE]);
+            s_right_signal.copy_from_slice(&[0.25; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(s_left_signal);
             buffer.channels.push(s_right_signal);
@@ -1015,22 +1013,22 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 4);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.75; BUFFER_SIZE][..],
+                &[0.75; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[0.25; BUFFER_SIZE][..],
+                &[0.25; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
 
@@ -1038,7 +1036,7 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 1);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[0.625; BUFFER_SIZE][..],
+                &[0.625; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -1046,19 +1044,19 @@ mod tests {
         {
             // 6 -> 1
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.9; BUFFER_SIZE]);
+            right_signal.copy_from_slice(&[0.9; RENDER_QUANTUM_SIZE]);
             let mut center_signal = alloc.silence();
-            center_signal.copy_from_slice(&[0.8; BUFFER_SIZE]);
+            center_signal.copy_from_slice(&[0.8; RENDER_QUANTUM_SIZE]);
             let mut low_freq_signal = alloc.silence();
-            low_freq_signal.copy_from_slice(&[0.7; BUFFER_SIZE]);
+            low_freq_signal.copy_from_slice(&[0.7; RENDER_QUANTUM_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.6; BUFFER_SIZE]);
+            s_left_signal.copy_from_slice(&[0.6; RENDER_QUANTUM_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
+            s_right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(center_signal);
             buffer.channels.push(low_freq_signal);
@@ -1068,32 +1066,32 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 6);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.9; BUFFER_SIZE][..],
+                &[0.9; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[0.8; BUFFER_SIZE][..],
+                &[0.8; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[0.7; BUFFER_SIZE][..],
+                &[0.7; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(4)[..],
-                &[0.6; BUFFER_SIZE][..],
+                &[0.6; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(5)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
 
@@ -1103,7 +1101,7 @@ mod tests {
             let res = (0.5_f32).sqrt() * (1. + 0.9) + 0.8 + 0.5 * (0.6 + 0.5);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[res; BUFFER_SIZE][..],
+                &[res; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -1111,15 +1109,15 @@ mod tests {
         {
             // 4 -> 2
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[0.25; BUFFER_SIZE]);
+            left_signal.copy_from_slice(&[0.25; RENDER_QUANTUM_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
+            right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.75; BUFFER_SIZE]);
+            s_left_signal.copy_from_slice(&[0.75; RENDER_QUANTUM_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            s_right_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(s_left_signal);
             buffer.channels.push(s_right_signal);
@@ -1127,22 +1125,22 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 4);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[0.25; BUFFER_SIZE][..],
+                &[0.25; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[0.75; BUFFER_SIZE][..],
+                &[0.75; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
 
@@ -1150,12 +1148,12 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 2);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.75; BUFFER_SIZE][..],
+                &[0.75; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -1163,19 +1161,19 @@ mod tests {
         {
             // 6 -> 2
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.9; BUFFER_SIZE]);
+            right_signal.copy_from_slice(&[0.9; RENDER_QUANTUM_SIZE]);
             let mut center_signal = alloc.silence();
-            center_signal.copy_from_slice(&[0.8; BUFFER_SIZE]);
+            center_signal.copy_from_slice(&[0.8; RENDER_QUANTUM_SIZE]);
             let mut low_freq_signal = alloc.silence();
-            low_freq_signal.copy_from_slice(&[0.7; BUFFER_SIZE]);
+            low_freq_signal.copy_from_slice(&[0.7; RENDER_QUANTUM_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.6; BUFFER_SIZE]);
+            s_left_signal.copy_from_slice(&[0.6; RENDER_QUANTUM_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
+            s_right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(center_signal);
             buffer.channels.push(low_freq_signal);
@@ -1185,32 +1183,32 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 6);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.9; BUFFER_SIZE][..],
+                &[0.9; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[0.8; BUFFER_SIZE][..],
+                &[0.8; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[0.7; BUFFER_SIZE][..],
+                &[0.7; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(4)[..],
-                &[0.6; BUFFER_SIZE][..],
+                &[0.6; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(5)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
 
@@ -1221,12 +1219,12 @@ mod tests {
             let res_right = 0.9 + (0.5_f32).sqrt() * (0.8 + 0.5);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[res_left; BUFFER_SIZE][..],
+                &[res_left; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[res_right; BUFFER_SIZE][..],
+                &[res_right; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -1234,19 +1232,19 @@ mod tests {
         {
             // 6 -> 4
             let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; BUFFER_SIZE]);
+            left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
             let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.9; BUFFER_SIZE]);
+            right_signal.copy_from_slice(&[0.9; RENDER_QUANTUM_SIZE]);
             let mut center_signal = alloc.silence();
-            center_signal.copy_from_slice(&[0.8; BUFFER_SIZE]);
+            center_signal.copy_from_slice(&[0.8; RENDER_QUANTUM_SIZE]);
             let mut low_freq_signal = alloc.silence();
-            low_freq_signal.copy_from_slice(&[0.7; BUFFER_SIZE]);
+            low_freq_signal.copy_from_slice(&[0.7; RENDER_QUANTUM_SIZE]);
             let mut s_left_signal = alloc.silence();
-            s_left_signal.copy_from_slice(&[0.6; BUFFER_SIZE]);
+            s_left_signal.copy_from_slice(&[0.6; RENDER_QUANTUM_SIZE]);
             let mut s_right_signal = alloc.silence();
-            s_right_signal.copy_from_slice(&[0.5; BUFFER_SIZE]);
+            s_right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
-            let mut buffer = AudioBuffer::new(left_signal);
+            let mut buffer = AudioRenderQuantum::new(left_signal);
             buffer.channels.push(right_signal);
             buffer.channels.push(center_signal);
             buffer.channels.push(low_freq_signal);
@@ -1256,32 +1254,32 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 6);
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[1.; BUFFER_SIZE][..],
+                &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[0.9; BUFFER_SIZE][..],
+                &[0.9; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[0.8; BUFFER_SIZE][..],
+                &[0.8; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[0.7; BUFFER_SIZE][..],
+                &[0.7; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(4)[..],
-                &[0.6; BUFFER_SIZE][..],
+                &[0.6; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(5)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
 
@@ -1292,22 +1290,22 @@ mod tests {
             let res_right = 0.9 + (0.5_f32).sqrt() * 0.8;
             assert_float_eq!(
                 &buffer.channel_data(0)[..],
-                &[res_left; BUFFER_SIZE][..],
+                &[res_left; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(1)[..],
-                &[res_right; BUFFER_SIZE][..],
+                &[res_right; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
-                &[0.6; BUFFER_SIZE][..],
+                &[0.6; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
             assert_float_eq!(
                 &buffer.channel_data(3)[..],
-                &[0.5; BUFFER_SIZE][..],
+                &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
         }
@@ -1318,25 +1316,25 @@ mod tests {
         let alloc = Alloc::with_capacity(1);
 
         let mut signal = alloc.silence();
-        signal.copy_from_slice(&[1.; BUFFER_SIZE]);
-        let mut buffer = AudioBuffer::new(signal);
+        signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
+        let mut buffer = AudioRenderQuantum::new(signal);
         buffer.mix(2, ChannelInterpretation::Speakers);
 
         let mut signal2 = alloc.silence();
-        signal2.copy_from_slice(&[2.; BUFFER_SIZE]);
-        let buffer2 = AudioBuffer::new(signal2);
+        signal2.copy_from_slice(&[2.; RENDER_QUANTUM_SIZE]);
+        let buffer2 = AudioRenderQuantum::new(signal2);
 
         buffer.add(&buffer2, ChannelInterpretation::Discrete);
 
         assert_eq!(buffer.number_of_channels(), 2);
         assert_float_eq!(
             &buffer.channel_data(0)[..],
-            &[3.; BUFFER_SIZE][..],
+            &[3.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
         assert_float_eq!(
             &buffer.channel_data(1)[..],
-            &[1.; BUFFER_SIZE][..],
+            &[1.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
     }

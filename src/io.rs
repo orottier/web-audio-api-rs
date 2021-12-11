@@ -13,7 +13,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use crate::message::ControlMessage;
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -22,8 +22,8 @@ use cpal::{
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextOptions, LatencyHint};
-use crate::graph::RenderThread;
 use crate::media::MicrophoneRender;
+use crate::render::RenderThread;
 
 use crossbeam_channel::{Receiver, Sender};
 use log::warn;
@@ -140,7 +140,7 @@ impl StreamConfigsBuilder {
     ///
     /// * `options` - options contains latency hint information from which buffer size is derived
     fn get_buffer_size(&self, options: Option<&AudioContextOptions>) -> u32 {
-        let buffer_size: u32 = u32::try_from(BUFFER_SIZE).unwrap();
+        let buffer_size: u32 = u32::try_from(RENDER_QUANTUM_SIZE).unwrap();
         let default_buffer_size = match self.supported.buffer_size() {
             SupportedBufferSize::Range { min, .. } => buffer_size.max(*min),
             SupportedBufferSize::Unknown => buffer_size,
@@ -456,13 +456,13 @@ pub fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     // clone the config, we may need to fall back on it later
     let default_config: StreamConfig = supported_config.clone().into();
 
-    // determine best buffer size. Spec requires BUFFER_SIZE, but that might not be available
-    let buffer_size: u32 = u32::try_from(BUFFER_SIZE).unwrap();
+    // determine best buffer size. Spec requires RENDER_QUANTUM_SIZE, but that might not be available
+    let buffer_size: u32 = u32::try_from(RENDER_QUANTUM_SIZE).unwrap();
     let mut input_buffer_size = match supported_config.buffer_size() {
         SupportedBufferSize::Range { min, .. } => buffer_size.max(*min),
         SupportedBufferSize::Unknown => buffer_size,
     };
-    // make buffer_size always a multiple of BUFFER_SIZE, so we can still render piecewise with
+    // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
     // the desired number of frames.
     input_buffer_size = (input_buffer_size + buffer_size - 1) / buffer_size * buffer_size;
 
@@ -476,7 +476,7 @@ pub fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let renderer = MicrophoneRender::new(channels, sample_rate, sender);
 
     let maybe_stream = spawn_input_stream(&device, sample_format, &config, renderer);
-    // our BUFFER_SIZEd config may not be supported, in that case, use the default config
+    // our RENDER_QUANTUM_SIZEd config may not be supported, in that case, use the default config
     let stream = match maybe_stream {
         Ok(stream) => stream,
         Err(e) => {

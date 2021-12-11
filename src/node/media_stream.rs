@@ -1,11 +1,11 @@
-use crate::buffer::{ChannelConfig, ChannelConfigOptions, Resampler};
+use crate::buffer::Resampler;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
 use crate::control::Scheduler;
 use crate::media::MediaStream;
 
-use crate::BUFFER_SIZE;
+use crate::RENDER_QUANTUM_SIZE;
 
-use super::{AudioNode, MediaStreamRenderer};
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer};
 
 /// Options for constructing a MediaStreamAudioSourceNode
 pub struct MediaStreamAudioSourceNodeOptions<M> {
@@ -51,8 +51,11 @@ impl MediaStreamAudioSourceNode {
                 channel_config: options.channel_config.into(),
             };
 
-            let resampler =
-                Resampler::new(context.base().sample_rate(), BUFFER_SIZE, options.media);
+            let resampler = Resampler::new(
+                context.base().sample_rate(),
+                RENDER_QUANTUM_SIZE,
+                options.media,
+            );
 
             // setup void scheduler - always on
             let scheduler = Scheduler::new();

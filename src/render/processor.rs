@@ -2,10 +2,10 @@
 
 use std::collections::HashMap;
 
-use crate::alloc::AudioBuffer;
 use crate::context::AudioParamId;
-use crate::graph::{Node, NodeIndex};
 use crate::SampleRate;
+
+use super::{AudioRenderQuantum, Node, NodeIndex};
 
 /// Interface for audio processing code that runs on the audio rendering thread.
 ///
@@ -35,8 +35,8 @@ pub trait AudioProcessor: Send {
     /// - return `true` as long as this node is a source of output (e.g. OscillatorNode)
     fn process(
         &mut self,
-        inputs: &[AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
@@ -55,13 +55,13 @@ impl<'a> AudioParamValues<'a> {
         Self { nodes }
     }
 
-    pub(crate) fn get_raw(&self, index: &AudioParamId) -> &AudioBuffer {
+    pub(crate) fn get_raw(&self, index: &AudioParamId) -> &AudioRenderQuantum {
         self.nodes.get(&index.into()).unwrap().get_buffer()
     }
 
     /// Get the computed values for the given [`crate::param::AudioParam`]
     ///
-    /// For both A & K-rate params, it will provide a slice of length [`crate::BUFFER_SIZE`]
+    /// For both A & K-rate params, it will provide a slice of length [`crate::RENDER_QUANTUM_SIZE`]
     pub fn get(&self, index: &AudioParamId) -> &[f32] {
         &self.get_raw(index).channel_data(0)[..]
     }

@@ -1,11 +1,9 @@
-use crate::alloc::AudioBuffer;
-use crate::buffer::{ChannelConfig, ChannelConfigOptions};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::{AudioParam, AudioParamOptions};
-use crate::process::{AudioParamValues, AudioProcessor};
-use crate::{SampleRate, BUFFER_SIZE};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
+use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
-use super::AudioNode;
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -112,7 +110,8 @@ impl DelayNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: DelayOptions) -> Self {
         // allocate large enough buffer to store all delayed samples
         let max_samples = options.max_delay_time * context.base().sample_rate().0 as f32;
-        let max_quanta = (max_samples.ceil() as usize + BUFFER_SIZE - 1) / BUFFER_SIZE;
+        let max_quanta =
+            (max_samples.ceil() as usize + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
         let delay_buffer = Vec::with_capacity(max_quanta);
 
         let shared_buffer = Rc::new(RefCell::new(delay_buffer));
@@ -164,17 +163,17 @@ impl DelayNode {
 
 struct DelayReader {
     delay_time: AudioParamId,
-    delay_buffer: Rc<RefCell<Vec<AudioBuffer>>>,
+    delay_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
 }
 
 struct DelayWriter {
-    delay_buffer: Rc<RefCell<Vec<AudioBuffer>>>,
+    delay_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
 }
 
 // SAFETY:
-// AudioBuffers are not Send but we promise the `delay_buffer` Vec is empty before we ship it to
+// AudioRenderQuantums are not Send but we promise the `delay_buffer` Vec is empty before we ship it to
 // the render thread.
 unsafe impl Send for DelayReader {}
 unsafe impl Send for DelayWriter {}
@@ -182,8 +181,8 @@ unsafe impl Send for DelayWriter {}
 impl AudioProcessor for DelayWriter {
     fn process(
         &mut self,
-        inputs: &[AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -216,8 +215,8 @@ impl AudioProcessor for DelayWriter {
 impl AudioProcessor for DelayReader {
     fn process(
         &mut self,
-        _inputs: &[AudioBuffer],
-        outputs: &mut [AudioBuffer],
+        _inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         _timestamp: f64,
         sample_rate: SampleRate,
@@ -228,8 +227,8 @@ impl AudioProcessor for DelayReader {
         // todo: a-rate processing
         let delay = params.get(&self.delay_time)[0];
 
-        // calculate the delay in chunks of BUFFER_SIZE (todo: sub quantum delays)
-        let quanta = (delay * sample_rate.0 as f32) as usize / BUFFER_SIZE;
+        // calculate the delay in chunks of RENDER_QUANTUM_SIZE (todo: sub quantum delays)
+        let quanta = (delay * sample_rate.0 as f32) as usize / RENDER_QUANTUM_SIZE;
 
         // a delay of zero quanta is not allowed (in cycles, we don't know wether the reader or
         // writer renders first and the ordering may change on every graph update - causing clicks)

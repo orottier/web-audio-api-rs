@@ -1,11 +1,12 @@
 use std::fmt::Debug;
 
-use crate::buffer::{ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
-use crate::process::{AudioParamValues, AudioProcessor};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
-use super::AudioNode;
+use super::{
+    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+};
 
 /// Options for constructing a ChannelSplitterNode
 pub struct ChannelSplitterOptions {
@@ -85,8 +86,8 @@ struct ChannelSplitterRenderer {
 impl AudioProcessor for ChannelSplitterRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,

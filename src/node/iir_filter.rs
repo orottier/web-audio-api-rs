@@ -6,16 +6,16 @@
     clippy::perf,
     clippy::missing_docs_in_private_items
 )]
-use super::AudioNode;
-use crate::{
-    alloc::AudioBuffer,
-    buffer::{ChannelConfig, ChannelConfigOptions},
-    context::{AsBaseAudioContext, AudioContextRegistration},
-    process::{AudioParamValues, AudioProcessor},
-    SampleRate, MAX_CHANNELS,
-};
 use num_complex::Complex;
 use std::f64::consts::PI;
+
+use crate::{
+    context::{AsBaseAudioContext, AudioContextRegistration},
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
+    SampleRate, MAX_CHANNELS,
+};
+
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 /// Filter order is limited to 20
 const MAX_IIR_COEFFS_LEN: usize = 20;
@@ -279,8 +279,8 @@ struct IirFilterRenderer {
 impl AudioProcessor for IirFilterRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -312,7 +312,7 @@ impl IirFilterRenderer {
     /// * `input` - Audiobuffer input
     /// * `output` - Audiobuffer output
     #[inline]
-    fn filter(&mut self, input: &AudioBuffer, output: &mut AudioBuffer) {
+    fn filter(&mut self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
         for (idx, (i_data, o_data)) in input
             .channels()
             .iter()
@@ -359,14 +359,13 @@ mod test {
     use std::{cmp::min, fs::File};
 
     use crate::{
-        buffer::ChannelConfigOptions,
         context::{AsBaseAudioContext, OfflineAudioContext},
         media::{MediaElement, OggVorbisDecoder},
         node::{AudioNode, AudioScheduledSourceNode},
         snapshot, SampleRate,
     };
 
-    use super::{IirFilterNode, IirFilterOptions};
+    use super::{ChannelConfigOptions, IirFilterNode, IirFilterOptions};
 
     const LENGTH: usize = 512;
 

@@ -19,15 +19,13 @@ use crossbeam_channel::{Receiver, Sender};
 use num_complex::Complex;
 
 use crate::{
-    alloc::AudioBuffer,
-    buffer::{ChannelConfig, ChannelConfigOptions},
     context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
-    process::{AudioParamValues, AudioProcessor},
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
 };
 
-use super::AudioNode;
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 /// Coefficients request
 /// This request is send by the control thread and send back by the rendering thread with
@@ -492,8 +490,8 @@ struct BiquadFilterRenderer {
 impl AudioProcessor for BiquadFilterRenderer {
     fn process(
         &mut self,
-        inputs: &[crate::alloc::AudioBuffer],
-        outputs: &mut [crate::alloc::AudioBuffer],
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         _timestamp: f64,
         _sample_rate: SampleRate,
@@ -564,8 +562,8 @@ impl BiquadFilterRenderer {
     #[inline]
     fn filter(
         &mut self,
-        input: &AudioBuffer,
-        output: &mut AudioBuffer,
+        input: &AudioRenderQuantum,
+        output: &mut AudioRenderQuantum,
         g_values: &[f32],
         det_values: &[f32],
         freq_values: &[f32],
@@ -1106,13 +1104,11 @@ mod test {
     use float_eq::assert_float_eq;
 
     use crate::{
-        buffer::ChannelConfigOptions,
         context::{AsBaseAudioContext, OfflineAudioContext},
-        node::{BiquadFilterOptions, BiquadFilterType},
         SampleRate,
     };
 
-    use super::BiquadFilterNode;
+    use super::{BiquadFilterNode, BiquadFilterOptions, BiquadFilterType, ChannelConfigOptions};
 
     const LENGTH: usize = 555;
 
