@@ -23,7 +23,7 @@ use crate::buffer::AudioBuffer;
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{
-    self, AnalyserOptions, AudioBufferSourceNodeOptions, AudioNode, ChannelConfigOptions,
+    self, AnalyserOptions, AudioBufferSourceOptions, AudioNode, ChannelConfigOptions,
     ChannelCountMode, ChannelInterpretation, ChannelMergerOptions, ChannelSplitterOptions,
     ConstantSourceOptions, DelayOptions, GainOptions, IirFilterOptions, PannerOptions,
     PeriodicWave, PeriodicWaveOptions,
@@ -195,7 +195,7 @@ pub trait AsBaseAudioContext {
     ///
     /// Note: do not forget to `start()` the node.
     fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
-        node::AudioBufferSourceNode::new(self.base(), AudioBufferSourceNodeOptions::default())
+        node::AudioBufferSourceNode::new(self.base(), AudioBufferSourceOptions::default())
     }
 
     /// Creates a `PannerNode`

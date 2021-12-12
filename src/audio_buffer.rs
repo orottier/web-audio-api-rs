@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::SampleRate;
@@ -51,6 +52,7 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
             if bits_per_sample == 16 {
                 for sample in reader.samples::<i16>() {
                     let s = sample.unwrap() as f32 / i16::MAX as f32;
+                    assert!(s.abs() < 1.);
                     decoded[channel_number].push(s);
                     // next sample belongs to the next channel
                     channel_number = (channel_number + 1) % number_of_channels;
@@ -72,7 +74,7 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
     }
 
     assert_eq!(decoded[0].len(), length); // duration is ok
-    println!("decoded length: {} - input length: {}", decoded[0].len(), length);
+    // println!("decoded length: {} - input length: {}", decoded[0].len(), length);
 
     // @todo - resample if needed
     // if (sample_rate != self.sample_rate()) {
@@ -106,8 +108,9 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
 // @note - spec does not define "audio asset" which can lead to confusion
 //
 // @see - <https://webaudio.github.io/web-audio-api/#acquire-the-content>
+#[derive(Clone)]
 pub(crate) struct AudioBufferData {
-    channels: Vec<Arc<Vec<f32>>>
+    channels: Rc<Vec<Arc<Vec<f32>>>>
 }
 
 impl AudioBufferData {
@@ -119,11 +122,13 @@ impl AudioBufferData {
         // so we use `fill_with` instead of `fill`
         // internal_data.fill_with(|| Arc::new(vec![0.; options.length as usize]));
         for _ in 0..number_of_channels {
-            let channel = Arc::new(vec![0.; length]);
-            channels.push(channel);
+            let mut channel = Vec::<f32>::with_capacity(length);
+            channel.resize(10, 0.);
+
+            channels.push(Arc::new(channel));
         }
 
-        Self { channels }
+        Self { channels: Rc::new(channels) }
     }
 }
 
@@ -136,15 +141,15 @@ impl From<Vec<Vec<f32>>> for AudioBufferData {
         // wrap each decoded channel with `Arc
         let mut channels = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
         // @note - is there a better way than using `to_vec`?
-        // basically, is there a way to grab the `decoded.channel` reference and
-        // put it where we want it to be without `clone` and memory allocation?
-        // (sometime JS feels so simple... :)
+        // basically, is there any way to grab the `decoded.channel` reference and
+        // put it where we want it to be without memory allocation?
+        // (sometimes JS feels so simple... :)
         for channel_number in 0..number_of_channels {
             let channel = decoded[channel_number].to_vec();
             channels.push(Arc::new(channel));
         }
 
-        Self { channels }
+        Self { channels: Rc::new(channels) }
     }
 }
 
@@ -166,17 +171,13 @@ pub struct AudioBufferOptions {
     sample_rate: SampleRate,    // required
 }
 
-
-// @note - maybe put that in the `node` namespace
-// this is actually not an `AudioNode` but from a user-centered point of view
-// maybe it's confusing to not have it there
+#[derive(Clone)]
 pub struct AudioBuffer {
     number_of_channels: usize,
     length: usize,
     sample_rate: SampleRate,
     internal_data: AudioBufferData,
 }
-
 
 impl AudioBuffer {
     // https://webaudio.github.io/web-audio-api/#AudioBuffer-constructors
@@ -249,8 +250,6 @@ impl AudioBuffer {
         self.copy_to_channel_with_offset(source, channel_number, 0);
     }
 
-    // some pub(crate) variation of this one without the memory allocation
-    // should be implemented for use by `audioContext.decodeAudioData(binary)`
     pub fn copy_to_channel_with_offset(&mut self, source: &Vec<f32>, channel_number: usize, offset: usize) {
         // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
         // of elements in the source array, and 𝑘 be the value of bufferOffset. Then
@@ -276,8 +275,9 @@ impl AudioBuffer {
         // data will be freed when last ref from audio node is dropped.
         // The nodes who already acquired the Arc to the previous resource
         // are therefore not impacted.
-        // @note - make sure this works as I think it is...
-        self.internal_data.channels[channel_number] = Arc::new(copy);
+        // @note - check this works as I hope it is...
+        let channels = Rc::make_mut(&mut self.internal_data.channels);
+        channels[channel_number] = Arc::new(copy);
     }
 
     // [spec] According to the rules described in acquire the content either allow writing
@@ -288,6 +288,16 @@ impl AudioBuffer {
     pub fn get_channel_data(&self, channel_number: usize) -> Vec<f32> {
         let channel = &self.internal_data.channels[channel_number];
         channel.to_vec()
+    }
+
+    // give acces to internal_data to nodes so that they can acquire the data
+    pub(crate) fn get_channel_clone(&self, channel_number: usize) -> Arc<Vec<f32>> {
+        self.internal_data.channels[channel_number].clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn get_slice(&self, channel_number: usize, start: usize, end: usize) -> &[f32] {
+        &self.internal_data.channels[channel_number][start..end]
     }
 }
 
@@ -427,6 +437,24 @@ mod tests {
     }
 
     #[test]
+    fn test_is_clonable() {
+        let options = AudioBufferOptions {
+            number_of_channels: 1,
+            length: 10,
+            sample_rate: SampleRate(1),
+        };
+
+        let audio_buffer = AudioBuffer::new(options);
+        let cloned = audio_buffer.clone();
+
+        assert_float_eq!(
+            cloned.internal_data.channels[0][..],
+            audio_buffer.internal_data.channels[0][..],
+            abs_all <= 0.
+        );
+    }
+
+    #[test]
     fn test_decode_audio_data() {
         let file = std::fs::File::open("sample.wav").unwrap();
         let audio_buffer = decode_audio_data(file);
@@ -436,10 +464,8 @@ mod tests {
         println!("- length: {:?}", audio_buffer.length());
         println!("- sample_rate: {:?}", audio_buffer.sample_rate());
 
-        let mut left_start = vec![];
-        let mut right_start = vec![];
-        left_start.extend_from_slice(&audio_buffer.internal_data.channels[0][0..100]);
-        right_start.extend_from_slice(&audio_buffer.internal_data.channels[1][0..100]);
+        let left_start = audio_buffer.get_slice(0, 0, 100);
+        let right_start = audio_buffer.get_slice(1, 0, 100);
 
         println!("----------------------------------------------");
         println!("@todo - should check that resampling is ok    ");
