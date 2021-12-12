@@ -11,7 +11,7 @@ use super::{
 
 /// Options for constructing a AudioBufferSourceNode
 #[derive(Default)]
-pub struct AudioBufferSourceNodeOptions {
+pub struct AudioBufferSourceOptions {
     pub buffer: Option<AudioBuffer>,
     pub channel_config: ChannelConfigOptions,
 }
@@ -54,7 +54,7 @@ impl AudioNode for AudioBufferSourceNode {
 }
 
 impl AudioBufferSourceNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: AudioBufferSourceNodeOptions) -> Self {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: AudioBufferSourceOptions) -> Self {
         context.base().register(move |registration| {
             // unwrap_or_default buffer
             let buffer = options

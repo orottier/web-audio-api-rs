@@ -457,6 +457,7 @@ impl AudioProcessor for AudioParamProcessor {
         param_computed_values
             .channel_data_mut(0)
             .copy_from_slice(param_intrisic_values);
+
         param_computed_values.add(input, ChannelInterpretation::Discrete);
 
         true // has intrinsic value
