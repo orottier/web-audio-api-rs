@@ -79,6 +79,8 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
     // @todo - resample if needed
     // if (sample_rate != self.sample_rate()) {
     //     // @todo - resample
+    //     // cf. https://github.com/HEnquist/rubato/blob/master/examples/fftfixedin64.rs
+    //     // already used in waveshaper
     // }
 
     AudioBuffer {
@@ -153,15 +155,6 @@ impl From<Vec<Vec<f32>>> for AudioBufferData {
     }
 }
 
-// this could be the strategy to acquire the data (basically Vec<Arc.clone()>)
-// let see if `From<Self>` works, would be funny
-// impl From<Self> for AudioBufferData {
-//     fn from(source) -> Self {
-//          // create a Vec of Arc.clone(channel);
-//          // Self { channels }
-//      }
-// }
-
 // @note - what could be default in Rust syntax? is this possible to have some
 // partial defaults? (that's not a really a big deal...)
 #[derive(Copy, Clone, Debug)]
@@ -178,6 +171,15 @@ pub struct AudioBuffer {
     sample_rate: SampleRate,
     internal_data: AudioBufferData,
 }
+
+// @todo - temporary solution to make the `offlineContext.startRendering` API compliant
+//
+// impl From<buffer::AudioBuffer> for AudioBuffer {
+//      pub(crate) fn from(source) -> Self {
+//          // create a Vec of Arc.clone(channel);
+//          // Self { channels }
+//      }
+// }
 
 impl AudioBuffer {
     // https://webaudio.github.io/web-audio-api/#AudioBuffer-constructors
@@ -211,7 +213,7 @@ impl AudioBuffer {
     }
 
     pub fn duration(&self) -> f64 {
-        (self.length * self.sample_rate.0 as usize) as f64
+        (self.length / self.sample_rate.0 as usize) as f64
     }
 
     // @note - not sure if we can handle default arguments in another way
@@ -463,6 +465,7 @@ mod tests {
         println!("- number_of_channels: {:?}", audio_buffer.number_of_channels());
         println!("- length: {:?}", audio_buffer.length());
         println!("- sample_rate: {:?}", audio_buffer.sample_rate());
+        println!("- duration: {:?}", audio_buffer.duration());
 
         let left_start = audio_buffer.get_slice(0, 0, 100);
         let right_start = audio_buffer.get_slice(1, 0, 100);
