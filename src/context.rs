@@ -589,12 +589,7 @@ impl BaseAudioContext {
     /// Construct a new pair of [`node::AudioNode`] and [`AudioProcessor`]
     ///
     /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if:
-    ///
-    /// * Message send to the render thread is not received in less than 10 ms
+    #[allow(clippy::missing_panics_doc)]
     pub fn register<
         T: node::AudioNode,
         F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
@@ -649,10 +644,10 @@ impl BaseAudioContext {
         self.inner.render_channel.send(message).unwrap();
     }
 
-    /// Schedule a connection of an AudioParam to the AudioNode it belongs to
+    /// Schedule a connection of an `AudioParam` to the `AudioNode` it belongs to
     ///
-    /// It is not performed immediately as the AudioNode is not registered at this point.
-    pub fn queue_audio_param_connect(&self, param: &AudioParam, audio_node: &AudioNodeId) {
+    /// It is not performed immediately as the `AudioNode` is not registered at this point.
+    fn queue_audio_param_connect(&self, param: &AudioParam, audio_node: &AudioNodeId) {
         let message = ControlMessage::ConnectNode {
             from: param.id().0,
             to: audio_node.0,

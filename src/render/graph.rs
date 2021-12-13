@@ -7,9 +7,13 @@ use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeInd
 
 use smallvec::{smallvec, SmallVec};
 
+/// Connection between two audio nodes
 struct Edge {
+    /// index of the current Nodes input/output port
     self_index: u32,
+    /// reference to the other Node
     other_id: NodeIndex,
+    /// index of the other Nodes input/output port
     other_index: u32,
 }
 
