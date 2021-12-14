@@ -76,6 +76,10 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
     assert_eq!(decoded[0].len(), length); // duration is ok
     // println!("decoded length: {} - input length: {}", decoded[0].len(), length);
 
+    // [spec] Take the result, representing the decoded linear PCM audio data,
+    // and resample it to the sample-rate of the BaseAudioContext if it is
+    // different from the sample-rate of audioData.
+
     // @todo - resample if needed
     // if (sample_rate != self.sample_rate()) {
     //     // @todo - resample
@@ -135,8 +139,6 @@ impl AudioBufferData {
 }
 
 // used in `decodeAudioData`
-// could be used as is in `OfflineAudioContext.startRendering()` too or just
-// write another `impl From<T>` that matches current implementation.
 impl From<Vec<Vec<f32>>> for AudioBufferData {
     fn from(decoded: Vec<Vec<f32>>) -> Self {
         let number_of_channels = decoded.len();
@@ -155,8 +157,7 @@ impl From<Vec<Vec<f32>>> for AudioBufferData {
     }
 }
 
-// @note - what could be default in Rust syntax? is this possible to have some
-// partial defaults? (that's not a really a big deal...)
+// @note - what could be default/required values in Rust syntax, is this possible?
 #[derive(Copy, Clone, Debug)]
 pub struct AudioBufferOptions {
     number_of_channels: usize,  // defaults to 1
@@ -172,14 +173,8 @@ pub struct AudioBuffer {
     internal_data: AudioBufferData,
 }
 
-// @todo - temporary solution to make the `offlineContext.startRendering` API compliant
-//
-// impl From<buffer::AudioBuffer> for AudioBuffer {
-//      pub(crate) fn from(source) -> Self {
-//          // create a Vec of Arc.clone(channel);
-//          // Self { channels }
-//      }
-// }
+// @todo - possible solution to make the `offlineContext.startRendering` API compliant
+// impl From<buffer::AudioBuffer> for AudioBuffer {}
 
 impl AudioBuffer {
     // https://webaudio.github.io/web-audio-api/#AudioBuffer-constructors
@@ -277,7 +272,10 @@ impl AudioBuffer {
         // data will be freed when last ref from audio node is dropped.
         // The nodes who already acquired the Arc to the previous resource
         // are therefore not impacted.
-        // @note - check this works as I hope it is...
+        //
+        // @note - maybe this does not handle properly some edge case where:
+        //  `buffer is set to the source -> buffer is changed -> source is started`
+        //  but for most use-cases this seems to ok
         let channels = Rc::make_mut(&mut self.internal_data.channels);
         channels[channel_number] = Arc::new(copy);
     }
