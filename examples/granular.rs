@@ -30,7 +30,7 @@ fn trigger_grain(
     env.connect(&audio_context.destination());
 
     let mut src = audio_context.create_buffer_source();
-    src.set_buffer(&audio_buffer);
+    src.set_buffer(audio_buffer);
     src.connect(&env);
 
     // ramp
