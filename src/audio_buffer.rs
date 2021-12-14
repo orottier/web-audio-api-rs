@@ -9,7 +9,7 @@ use crate::SampleRate;
 // @note - what about using https://github.com/pdeljanov/Symphonia? seems quite
 // complete and efficient
 // @note - should also be async, but that's not a big deal neither for now
-pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
+pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer {
     let buf_reader = std::io::BufReader::new(file);
     let mut reader = hound::WavReader::new(buf_reader).unwrap();
     let hound::WavSpec {
@@ -34,7 +34,7 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
     // need `mut` access and we don't want to go into `Mutex` as nothing is mutable
     // after this step. `AudioBufferChannel::from` should be the one that minimize
     // memory allocation if possible
-    let mut decoded: Vec::<Vec<f32>> = Vec::with_capacity(number_of_channels);
+    let mut decoded: Vec<Vec<f32>> = Vec::with_capacity(number_of_channels);
     // init each channel with an empty Vec
     for _ in 0..number_of_channels {
         decoded.push(Vec::<f32>::with_capacity(length));
@@ -61,7 +61,8 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
                 panic!("bits_per_sample {:?} not implemented", bits_per_sample);
             }
         }
-        hound::SampleFormat::Float => { // this one is not tested
+        hound::SampleFormat::Float => {
+            // this one is not tested
             let mut channel_number = 0;
 
             for sample in reader.samples::<f32>() {
@@ -74,7 +75,7 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
     }
 
     assert_eq!(decoded[0].len(), length); // duration is ok
-    // println!("decoded length: {} - input length: {}", decoded[0].len(), length);
+                                          // println!("decoded length: {} - input length: {}", decoded[0].len(), length);
 
     // [spec] Take the result, representing the decoded linear PCM audio data,
     // and resample it to the sample-rate of the BaseAudioContext if it is
@@ -116,7 +117,7 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer{
 // @see - <https://webaudio.github.io/web-audio-api/#acquire-the-content>
 #[derive(Clone)]
 pub(crate) struct AudioBufferData {
-    channels: Rc<Vec<Arc<Vec<f32>>>>
+    channels: Rc<Vec<Arc<Vec<f32>>>>,
 }
 
 impl AudioBufferData {
@@ -134,7 +135,9 @@ impl AudioBufferData {
             channels.push(Arc::new(channel));
         }
 
-        Self { channels: Rc::new(channels) }
+        Self {
+            channels: Rc::new(channels),
+        }
     }
 }
 
@@ -153,16 +156,18 @@ impl From<Vec<Vec<f32>>> for AudioBufferData {
             channels.push(Arc::new(channel));
         }
 
-        Self { channels: Rc::new(channels) }
+        Self {
+            channels: Rc::new(channels),
+        }
     }
 }
 
 // @note - what could be default/required values in Rust syntax, is this possible?
 #[derive(Copy, Clone, Debug)]
 pub struct AudioBufferOptions {
-    number_of_channels: usize,  // defaults to 1
-    length: usize,              // required
-    sample_rate: SampleRate,    // required
+    number_of_channels: usize, // defaults to 1
+    length: usize,             // required
+    sample_rate: SampleRate,   // required
 }
 
 #[derive(Clone)]
@@ -247,7 +252,12 @@ impl AudioBuffer {
         self.copy_to_channel_with_offset(source, channel_number, 0);
     }
 
-    pub fn copy_to_channel_with_offset(&mut self, source: &Vec<f32>, channel_number: usize, offset: usize) {
+    pub fn copy_to_channel_with_offset(
+        &mut self,
+        source: &Vec<f32>,
+        channel_number: usize,
+        offset: usize,
+    ) {
         // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
         // of elements in the source array, and 𝑘 be the value of bufferOffset. Then
         // the number of frames copied from source to the buffer is max(0,min(𝑁𝑏−𝑘,𝑁𝑓)).
@@ -303,8 +313,8 @@ impl AudioBuffer {
 
 #[cfg(test)]
 mod tests {
-    use float_eq::assert_float_eq;
     use super::*;
+    use float_eq::assert_float_eq;
 
     #[test]
     fn test_constructor() {
@@ -340,11 +350,7 @@ mod tests {
         // smaller destination
         let mut dest = vec![1.; 5];
         audio_buffer.copy_from_channel(&mut dest, 0);
-        assert_float_eq!(
-            dest[..],
-            [0., 0., 0., 0., 0.][..],
-            abs_all <= 0.
-        );
+        assert_float_eq!(dest[..], [0., 0., 0., 0., 0.][..], abs_all <= 0.);
 
         // larger destination
         let mut dest = vec![1.; 11];
@@ -373,7 +379,8 @@ mod tests {
             sample_rate: SampleRate(1),
         };
 
-        {   // same size
+        {
+            // same size
             let mut audio_buffer = AudioBuffer::new(options);
             let mut src = vec![1.; 10];
             audio_buffer.copy_to_channel(&mut src, 0);
@@ -384,7 +391,8 @@ mod tests {
             );
         }
 
-        {   // smaller source
+        {
+            // smaller source
             let mut audio_buffer = AudioBuffer::new(options);
             let mut src = vec![1.; 5];
             audio_buffer.copy_to_channel(&mut src, 0);
@@ -395,7 +403,8 @@ mod tests {
             );
         }
 
-        {   // larger source
+        {
+            // larger source
             let mut audio_buffer = AudioBuffer::new(options);
             let mut src = vec![1.; 12];
             audio_buffer.copy_to_channel(&mut src, 0);
@@ -406,7 +415,8 @@ mod tests {
             );
         }
 
-        {   // w/ offset
+        {
+            // w/ offset
             let mut audio_buffer = AudioBuffer::new(options);
             let mut src = vec![1.; 10];
             audio_buffer.copy_to_channel_with_offset(&mut src, 0, 5);
@@ -432,7 +442,9 @@ mod tests {
         // mutate channel and make sure this does not propagate to internal_data
         channel[0] = 1.;
         assert_float_eq!(
-            audio_buffer.internal_data.channels[0][..], [0.; 10][..], abs_all <= 0.
+            audio_buffer.internal_data.channels[0][..],
+            [0.; 10][..],
+            abs_all <= 0.
         );
     }
 
@@ -460,7 +472,10 @@ mod tests {
         let audio_buffer = decode_audio_data(file);
 
         println!("----------------------------------------------");
-        println!("- number_of_channels: {:?}", audio_buffer.number_of_channels());
+        println!(
+            "- number_of_channels: {:?}",
+            audio_buffer.number_of_channels()
+        );
         println!("- length: {:?}", audio_buffer.length());
         println!("- sample_rate: {:?}", audio_buffer.sample_rate());
         println!("- duration: {:?}", audio_buffer.duration());

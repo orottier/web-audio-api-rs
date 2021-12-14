@@ -1,16 +1,14 @@
-use std::sync::atomic::{Ordering, AtomicBool};
-use std::sync::Arc;
 use crossbeam_channel::{Receiver, Sender};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
-use crate::audio_buffer::{AudioBuffer};
+use crate::audio_buffer::AudioBuffer;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
 use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{SampleRate, RENDER_QUANTUM_SIZE, AtomicF64};
+use crate::{AtomicF64, SampleRate, RENDER_QUANTUM_SIZE};
 
-use super::{
-    AudioNode, ChannelConfig, ChannelConfigOptions,
-};
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 // attributes shared between the node and the renderer
 //
@@ -44,14 +42,14 @@ impl Default for SharedAttributes {
 }
 
 impl SharedAttributes {
-    fn get_start(&self, ) -> f64 {
+    fn get_start(&self) -> f64 {
         self.start.load()
     }
     fn set_start(&self, value: f64) {
         self.start.store(value);
     }
 
-    fn get_stop(&self, ) -> f64 {
+    fn get_stop(&self) -> f64 {
         self.stop.load()
     }
 
@@ -59,7 +57,7 @@ impl SharedAttributes {
         self.stop.store(value);
     }
 
-    fn get_offset(&self, ) -> f64 {
+    fn get_offset(&self) -> f64 {
         self.offset.load()
     }
 
@@ -67,7 +65,7 @@ impl SharedAttributes {
         self.offset.store(value);
     }
 
-    fn get_duration(&self, ) -> f64 {
+    fn get_duration(&self) -> f64 {
         self.duration.load()
     }
 
@@ -75,7 +73,7 @@ impl SharedAttributes {
         self.duration.store(value);
     }
 
-    fn get_loop(&self, ) -> bool {
+    fn get_loop(&self) -> bool {
         self.loop_.load(Ordering::SeqCst)
     }
 
@@ -83,7 +81,7 @@ impl SharedAttributes {
         self.loop_.store(value, Ordering::SeqCst);
     }
 
-    fn get_loop_start(&self, ) -> f64 {
+    fn get_loop_start(&self) -> f64 {
         self.loop_start.load()
     }
 
@@ -91,7 +89,7 @@ impl SharedAttributes {
         self.loop_start.store(value);
     }
 
-    fn get_loop_end(&self, ) -> f64 {
+    fn get_loop_end(&self) -> f64 {
         self.loop_end.load()
     }
 
@@ -132,7 +130,7 @@ pub struct AudioBufferSourceNode {
     attributes: SharedAttributes,
     channel_config: ChannelConfig,
     sender: Sender<BufferChannelsMessage>,
-    detune: AudioParam, // has constraints, no a-rate
+    detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
     buffer: Option<AudioBuffer>,
     source_started: bool,
@@ -366,7 +364,7 @@ impl AudioBufferSourceNode {
         let duration = buffer.duration();
         let mut channels = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
 
-         for channel_number in 0..number_of_channels {
+        for channel_number in 0..number_of_channels {
             let channel = buffer.get_channel_clone(channel_number);
             channels.push(channel);
         }
@@ -471,9 +469,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         // - the stop time has been reached.
         // - the duration has been reached.
-        if timestamp >= stop_time
-            || self.render_state.buffer_time_elapsed >= duration
-        {
+        if timestamp >= stop_time || self.render_state.buffer_time_elapsed >= duration {
             // println!("reached stopTime or duration, return false");
             output.make_silent();
             return false;
@@ -482,23 +478,18 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // - the end of the buffer has been reached.
         if loop_ == false {
             // forward playback rate
-            if computed_playback_rate > 0.
-                && self.render_state.buffer_time >= buffer_duration
-            {
+            if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
                 // println!("reached end of file, return false");
                 output.make_silent();
                 return false;
             }
 
             // backward playback rate
-            if computed_playback_rate < 0.
-                && self.render_state.buffer_time < 0.
-            {
+            if computed_playback_rate < 0. && self.render_state.buffer_time < 0. {
                 // println!("reached end of file (backward), return false");
                 output.make_silent();
                 return false;
             }
-
         }
 
         let num_channels = self.buffer.as_ref().unwrap().len();
@@ -523,7 +514,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         for index in 0..num_frames {
             if current_time < start_time
                 || current_time >= stop_time
-                || self.render_state.buffer_time_elapsed >= duration {
+                || self.render_state.buffer_time_elapsed >= duration
+            {
                 self.internal_buffer.fill(0.);
                 output.set_channels_values_at(index, &self.internal_buffer);
                 continue; // nothing more to do for this sample
@@ -546,13 +538,16 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             if loop_ == true {
                 if self.render_state.entered_loop == false {
                     // playback began before or within loop, and playhead is now past loop start
-                    if offset < actual_loop_end && self.render_state.buffer_time >= actual_loop_start {
+                    if offset < actual_loop_end
+                        && self.render_state.buffer_time >= actual_loop_start
+                    {
                         self.render_state.entered_loop = true;
                     }
 
                     // playback began after loop, and playhead is now prior to the loop end
                     // @note - only possible when playback_rate < 0 (?)
-                    if offset >= actual_loop_end && self.render_state.buffer_time < actual_loop_end {
+                    if offset >= actual_loop_end && self.render_state.buffer_time < actual_loop_end
+                    {
                         self.render_state.entered_loop = true;
                     }
                 }
@@ -570,8 +565,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             }
 
             if self.render_state.buffer_time >= 0.
-                && self.render_state.buffer_time < buffer_duration {
-
+                && self.render_state.buffer_time < buffer_duration
+            {
                 self.compute_playback_at_position(
                     self.render_state.buffer_time,
                     sample_rate.0 as f64,
@@ -588,7 +583,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             current_time += dt;
         }
 
-
         true
     }
 }
@@ -599,11 +593,7 @@ impl AudioBufferSourceRenderer {
     // for perf improvement if the playback is aligned on `sample_rate` and
     // `playback_rate.abs() = 1`
     #[allow(dead_code)]
-    fn compute_playback_at_position_direct(
-        &mut self,
-        position: f64,
-        sample_rate: f64,
-    ) {
+    fn compute_playback_at_position_direct(&mut self, position: f64, sample_rate: f64) {
         let buffer_channels = self.buffer.as_ref().unwrap();
         let sample_index = (position * sample_rate).round() as usize;
 
@@ -613,16 +603,12 @@ impl AudioBufferSourceRenderer {
     }
 
     // Linear interpolation according to position
-    fn compute_playback_at_position(
-        &mut self,
-        position: f64,
-        sample_rate: f64,
-    ) {
+    fn compute_playback_at_position(&mut self, position: f64, sample_rate: f64) {
         let buffer_channels = self.buffer.as_ref().unwrap();
         let playhead = position * sample_rate;
         let playhead_floored = playhead.floor();
-        let prev_index = playhead_floored as usize;   // can't be < 0.
-        let next_index = playhead.ceil() as usize;    // can be >= length
+        let prev_index = playhead_floored as usize; // can't be < 0.
+        let next_index = playhead.ceil() as usize; // can be >= length
 
         let k = (playhead - playhead_floored) as f32;
         let k_inv = 1. - k;
@@ -634,7 +620,11 @@ impl AudioBufferSourceRenderer {
             //
             // for now let's just interpolate with zero, does the job
             let prev_sample = channel[prev_index];
-            let next_sample = if next_index >= channel.len() { 0. } else { channel[next_index] };
+            let next_sample = if next_index >= channel.len() {
+                0.
+            } else {
+                channel[next_index]
+            };
             let value = k_inv * prev_sample + k * next_sample;
             self.internal_buffer[channel_index] = value;
         }
@@ -644,10 +634,10 @@ impl AudioBufferSourceRenderer {
 #[cfg(test)]
 mod tests {
 
-    use crate::context::{OfflineAudioContext, AsBaseAudioContext};
     use crate::audio_buffer::decode_audio_data;
+    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
+    use crate::node::AudioNode;
     use crate::{SampleRate, RENDER_QUANTUM_SIZE};
-    use crate::node::{AudioNode};
 
     use float_eq::assert_float_eq;
 

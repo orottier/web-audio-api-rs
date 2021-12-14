@@ -46,14 +46,6 @@ impl Scheduler {
     pub fn stop_at(&self, stop: f64) {
         self.stop.store(stop)
     }
-
-    pub fn start_time(&self) -> f64 {
-        self.start.load()
-    }
-
-    pub fn stop_time(&self) -> f64 {
-        self.start.load()
-    }
 }
 
 impl Default for Scheduler {

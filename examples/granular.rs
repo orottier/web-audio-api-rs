@@ -2,22 +2,22 @@ use rand::rngs::ThreadRng;
 use rand::Rng;
 use std::fs::File;
 use std::{thread, time};
+use web_audio_api::audio_buffer::AudioBuffer;
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-use web_audio_api::node::{AudioNode};
-use web_audio_api::audio_buffer::{AudioBuffer};
+use web_audio_api::node::AudioNode;
 
 // @note - experimental API
-use web_audio_api::audio_buffer::{decode_audio_data};
+use web_audio_api::audio_buffer::decode_audio_data;
 
 // run in release mode
 // cargo run --release --example granular
 
 fn trigger_grain(
-  audio_context: &AudioContext,
-  audio_buffer: &AudioBuffer,
-  position: f64,
-  duration: f64,
-  rng: &mut ThreadRng
+    audio_context: &AudioContext,
+    audio_buffer: &AudioBuffer,
+    position: f64,
+    duration: f64,
+    rng: &mut ThreadRng,
 ) {
     // don't the precision of sleep millis, but we add a small random offset
     // to avoid audible pitch due to period
@@ -37,8 +37,10 @@ fn trigger_grain(
 
     // ramp
     env.gain().set_value_at_time(0., start_time);
-    env.gain().linear_ramp_to_value_at_time(1., start_time + duration / 2.);
-    env.gain().linear_ramp_to_value_at_time(0., start_time + duration);
+    env.gain()
+        .linear_ramp_to_value_at_time(1., start_time + duration / 2.);
+    env.gain()
+        .linear_ramp_to_value_at_time(0., start_time + duration);
 
     src.start_at_with_offset(start_time, position);
     src.stop_at(start_time + duration);
@@ -65,18 +67,18 @@ fn main() {
     loop {
         // scrub forward and backward into buffer
         trigger_grain(
-          &audio_context,
-          &audio_buffer,
-          position,
-          grain_duration,
-          &mut rng
+            &audio_context,
+            &audio_buffer,
+            position,
+            grain_duration,
+            &mut rng,
         );
 
         // update position
         if position + incr_position > audio_buffer.duration() - grain_duration
-          || position + incr_position < 0.
+            || position + incr_position < 0.
         {
-          incr_position *= -1.;
+            incr_position *= -1.;
         }
 
         position += incr_position;
