@@ -19,12 +19,10 @@ fn trigger_grain(
     duration: f64,
     rng: &mut ThreadRng,
 ) {
-    // don't the precision of sleep millis, but we add a small random offset
-    // to avoid audible pitch due to period
-    let rand = rng.gen_range(0..1000) as f64;
-    let jitter = rand * 3e-6;
-    // println§
-
+    // don't know the precision of sleep millis, but we add a small random
+    // offset to avoid audible pitch due to period (even if with such period it
+    // should be ok)
+    let jitter = rng.gen_range(0..1000) as f64 * 3e-6;
     let start_time = audio_context.current_time() + jitter;
 
     let env = audio_context.create_gain();
@@ -57,15 +55,12 @@ fn main() {
 
     let mut rng = rand::thread_rng();
 
-    // let period_ms = 50;
     let period = 0.05;
     let grain_duration = 0.2;
     let mut position = 0.;
     let mut incr_position = period / 2.;
 
-    // should probably be more robust with a proper scheduler
     loop {
-        // scrub forward and backward into buffer
         trigger_grain(
             &audio_context,
             &audio_buffer,
@@ -74,7 +69,6 @@ fn main() {
             &mut rng,
         );
 
-        // update position
         if position + incr_position > audio_buffer.duration() - grain_duration
             || position + incr_position < 0.
         {

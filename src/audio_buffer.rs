@@ -6,8 +6,8 @@ use crate::SampleRate;
 // @todo - put it there, but should leave in `BaseAudioContext`
 // let's just go with Wav files for now
 //
-// @note - what about using https://github.com/pdeljanov/Symphonia? seems quite
-// complete and efficient
+// @note - what about using https://github.com/pdeljanov/Symphonia ?
+// seems quite complete and efficient
 // @note - should also be async, but that's not a big deal neither for now
 pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer {
     let buf_reader = std::io::BufReader::new(file);
@@ -15,13 +15,11 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer {
     let hound::WavSpec {
         channels,
         sample_rate,
-        bits_per_sample, // should probably use that (or some higher level library)
+        bits_per_sample,
         sample_format,
     } = reader.spec();
-    // shadow `channels`, this name is too usefull to be wasted here :)
+
     let number_of_channels = channels as usize;
-    // badly named, there is not time information here as this is the number of
-    // samples per channel, means nothing without sample_rate
     let length = reader.duration() as usize;
 
     // println!("channels {:?}", channels);
@@ -30,25 +28,19 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer {
     // println!("bits_per_sample {:?}", bits_per_sample);
     // println!("sample_format {:?}", sample_format);
 
-    // @note - we use this intermediary type (e.g. without any `Arc`), because we
-    // need `mut` access and we don't want to go into `Mutex` as nothing is mutable
-    // after this step. `AudioBufferChannel::from` should be the one that minimize
-    // memory allocation if possible
     let mut decoded: Vec<Vec<f32>> = Vec::with_capacity(number_of_channels);
     // init each channel with an empty Vec
     for _ in 0..number_of_channels {
         decoded.push(Vec::<f32>::with_capacity(length));
     }
 
-    // @note - hound retrieve interleaved values
+    // @note - hound retrieves interleaved values
     // cf. https://docs.rs/hound/latest/hound/struct.WavReader.html#method.samples
     match sample_format {
         hound::SampleFormat::Int => {
             // channel are interleaved, so we need to de-interleave
             let mut channel_number = 0;
 
-            // we should probably match `bit_per_sample` here and just create a
-            // `max` variable to scale PCM data (e.g. `i[bits_per_sample]::MAX`
             if bits_per_sample == 16 {
                 for sample in reader.samples::<i16>() {
                     let s = sample.unwrap() as f32 / i16::MAX as f32;
@@ -75,7 +67,7 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer {
     }
 
     assert_eq!(decoded[0].len(), length); // duration is ok
-                                          // println!("decoded length: {} - input length: {}", decoded[0].len(), length);
+    // println!("decoded length: {} - input length: {}", decoded[0].len(), length);
 
     // [spec] Take the result, representing the decoded linear PCM audio data,
     // and resample it to the sample-rate of the BaseAudioContext if it is
@@ -145,8 +137,9 @@ impl AudioBufferData {
 impl From<Vec<Vec<f32>>> for AudioBufferData {
     fn from(decoded: Vec<Vec<f32>>) -> Self {
         let number_of_channels = decoded.len();
-        // wrap each decoded channel with `Arc
+        // wrap each decoded channel with `Arc`
         let mut channels = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
+
         // @note - is there a better way than using `to_vec`?
         // basically, is there any way to grab the `decoded.channel` reference and
         // put it where we want it to be without memory allocation?

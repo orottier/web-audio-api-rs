@@ -13,9 +13,9 @@ fn main() {
     let file = File::open("sample.wav").unwrap();
     let audio_buffer = decode_audio_data(file);
 
-    // @fixme
-    // if only one node in the graph it is never removed even when returning false,
-    // se we put this dummy node in the graph so that other ones are properly removed
+    // @fixme - if only one node in the graph it is never removed even when returning
+    // false, se we put this dummy node in the graph so that other ones are properly
+    // removed
     let mut src = context.create_buffer_source();
     src.set_buffer(&audio_buffer);
     src.connect(&context.destination());
@@ -57,8 +57,7 @@ fn main() {
         let mut src = context.create_buffer_source();
         src.set_buffer(&audio_buffer);
         src.connect(&context.destination());
-        src.start_at_with_offset(context.current_time(), 1.);
-        src.stop_at(context.current_time() + 1.);
+        src.start_at_with_offset(context.current_time(), 1., 1.);
     }
 
     std::thread::sleep(std::time::Duration::from_millis(1500));

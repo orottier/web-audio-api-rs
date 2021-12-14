@@ -122,7 +122,8 @@ impl Default for AudioBufferSourceOptions {
     }
 }
 
-// channels & duration
+// channels, duration
+// @todo - define if we could pass an `AudioBuffer` directly
 struct BufferChannelsMessage(Vec<Arc<Vec<f32>>>, f64);
 
 pub struct AudioBufferSourceNode {
@@ -155,9 +156,7 @@ impl AudioNode for AudioBufferSourceNode {
 
 impl AudioBufferSourceNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: AudioBufferSourceOptions) -> Self {
-        // create render and register all that in the context
         context.base().register(move |registration| {
-            // @todo - hndle options
             let AudioBufferSourceOptions {
                 buffer,
                 detune,
@@ -213,17 +212,13 @@ impl AudioBufferSourceNode {
             //  maybe because of early return in case of `none` buffer
             let (sender, receiver) = crossbeam_channel::bounded(1);
 
-            // `scheduler` and `controller` are not really suited as we also need
-            // to store a `duration` here and `seek` should be renamed to `offset`,
-            // also leads to a cleaner API IMO.
-            // @note - maybe this approach could be generalized w/ a macro
             let shared_attributes = SharedAttributes::default();
 
             let renderer = AudioBufferSourceRenderer {
                 attributes: shared_attributes.clone(),
                 receiver,
-                // @todo - just grab a deep clone of the buffer would be far more simple...
-                // need to make sure how clone behave with nested structures
+                // @todo - use an `AudioBuffer` directly
+                // need to make sure how `clone` behave with nested `Arc` structures
                 buffer: None,
                 buffer_duration: None,
                 detune: d_proc,
@@ -308,7 +303,6 @@ impl AudioBufferSourceNode {
     }
 
     pub fn stop_at(&mut self, stop: f64) {
-        // https://webaudio.github.io/web-audio-api/#dom-audioscheduledsourcenode-stop
         if self.source_started == false {
             panic!("InvalidStateError cannot stop before start");
         }
@@ -355,7 +349,7 @@ impl AudioBufferSourceNode {
     // cf. https://webaudio.github.io/web-audio-api/#acquire-the-content
     //
     // @note - maybe this step is not necessary as the `Arc`s are already
-    // cloned in `set_buffer`? can't find information about nested clones
+    // cloned in `set_buffer`? can't find clear information about nested clones
     // @note - if required, this logic should live in `AudioBuffer` to be reused
     // by `ConvolverNode`
     fn acquire_buffer_channels(&self) {
@@ -407,13 +401,13 @@ struct AudioBufferSourceRenderer {
 impl AudioProcessor for AudioBufferSourceRenderer {
     fn process(
         &mut self,
-        _inputs: &[AudioRenderQuantum], // no input
+        _inputs: &[AudioRenderQuantum], // no input...
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         timestamp: f64,
         sample_rate: SampleRate,
     ) -> bool {
-        // single output node
+        // ... and single output node
         let output = &mut outputs[0];
 
         let dt = 1. / sample_rate.0 as f64;
@@ -429,13 +423,14 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             self.internal_buffer.resize(number_of_channels, 0.);
         }
 
+        // compute compound parameter at k-rate
         let detune_values = params.get(&self.detune);
         let playback_rate_values = params.get(&self.playback_rate);
-        // compute compound parameter at k-rate
         let detune = detune_values[0];
         let playback_rate = playback_rate_values[0];
         let computed_playback_rate = (playback_rate * 2_f32.powf(detune / 1200.)) as f64;
 
+        // grab all timing informations
         let start_time = self.attributes.get_start();
         let stop_time = self.attributes.get_stop();
         let mut offset = self.attributes.get_offset();
@@ -444,7 +439,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let loop_start = self.attributes.get_loop_start();
         let loop_end = self.attributes.get_loop_end();
 
-        // will only be used if `loop_` is true anyway, so no need for `Option`
+        // will only be used if `loop_` is true, so no need for `Option`
         let mut actual_loop_start = 0.;
         let mut actual_loop_end = 0.;
 
@@ -454,8 +449,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             return true;
         }
 
-        // @todo - not sure this behave as it should, maybe return true and
-        // wait for the buffer. Need to check how browsers behave on that
+        // Not sure this behave as it should, maybe return true and
+        // wait for the buffer.
+        // @todo - check how browsers behave on that
         if self.buffer.is_none() {
             output.make_silent();
             return false;
@@ -467,24 +463,24 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // the following conditions holds:
         let buffer_duration = self.buffer_duration.unwrap();
 
-        // - the stop time has been reached.
-        // - the duration has been reached.
+        // 1. the stop time has been reached.
+        // 2. the duration has been reached.
         if timestamp >= stop_time || self.render_state.buffer_time_elapsed >= duration {
             // println!("reached stopTime or duration, return false");
             output.make_silent();
             return false;
         }
 
-        // - the end of the buffer has been reached.
+        // 3. the end of the buffer has been reached.
         if loop_ == false {
-            // forward playback rate
+            // handle positive playback rate
             if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
                 // println!("reached end of file, return false");
                 output.make_silent();
                 return false;
             }
 
-            // backward playback rate
+            // handle negative playback rate
             if computed_playback_rate < 0. && self.render_state.buffer_time < 0. {
                 // println!("reached end of file (backward), return false");
                 output.make_silent();
@@ -521,7 +517,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 continue; // nothing more to do for this sample
             }
 
-            // we have reached start time
+            // we have now reached start time
             if self.render_state.started == false {
                 if loop_ && computed_playback_rate >= 0. && offset >= actual_loop_end {
                     offset = actual_loop_end;
@@ -589,7 +585,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
 impl AudioBufferSourceRenderer {
     // Pick the index closer to the given position
-    // @note keep it around as it could be usefull for testing and used to
+    //
+    // @note - keep that around as it could be usefull for testing and/or to
     // for perf improvement if the playback is aligned on `sample_rate` and
     // `playback_rate.abs() = 1`
     #[allow(dead_code)]
@@ -614,7 +611,7 @@ impl AudioBufferSourceRenderer {
         let k_inv = 1. - k;
 
         for (channel_index, channel) in buffer_channels.iter().enumerate() {
-            // @note - [spec] If |position| is greater than or equal to |loopEnd|
+            // @todo - [spec] If |position| is greater than or equal to |loopEnd|
             // and there is no subsequent sample frame in buffer, then interpolation
             // should be based on the sequence of subsequent frames beginning at |loopStart|.
             //
