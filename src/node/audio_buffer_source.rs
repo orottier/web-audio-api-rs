@@ -245,8 +245,8 @@ impl AudioBufferSourceNode {
             node.attributes.set_loop_start(loop_start);
             node.attributes.set_loop_end(loop_end);
 
-            if buffer.is_some() {
-                node.set_buffer(&buffer.unwrap());
+            if let Some(buf) = buffer {
+                node.set_buffer(&buf);
             }
 
             (node, Box::new(renderer))
@@ -303,7 +303,7 @@ impl AudioBufferSourceNode {
     }
 
     pub fn stop_at(&mut self, stop: f64) {
-        if self.source_started == false {
+        if !self.source_started {
             panic!("InvalidStateError cannot stop before start");
         }
 
@@ -472,7 +472,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         }
 
         // 3. the end of the buffer has been reached.
-        if loop_ == false {
+        if !loop_ {
             // handle positive playback rate
             if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
                 // println!("reached end of file, return false");
@@ -495,7 +495,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // @see <https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode>
         let mut current_time = timestamp;
 
-        if loop_ == true && self.buffer.is_some() {
+        if loop_ && self.buffer.is_some() {
             if loop_start >= 0. && loop_end > 0. && loop_start < loop_end {
                 actual_loop_start = loop_start;
                 actual_loop_end = loop_end.min(buffer_duration);
@@ -518,7 +518,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             }
 
             // we have now reached start time
-            if self.render_state.started == false {
+            if !self.render_state.started {
                 if loop_ && computed_playback_rate >= 0. && offset >= actual_loop_end {
                     offset = actual_loop_end;
                 }
@@ -531,8 +531,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 self.render_state.started = true;
             }
 
-            if loop_ == true {
-                if self.render_state.entered_loop == false {
+            if loop_ {
+                if !self.render_state.entered_loop {
                     // playback began before or within loop, and playhead is now past loop start
                     if offset < actual_loop_end
                         && self.render_state.buffer_time >= actual_loop_start
@@ -567,12 +567,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     self.render_state.buffer_time,
                     sample_rate.0 as f64,
                 );
-
-                output.set_channels_values_at(index, &self.internal_buffer);
             } else {
                 self.internal_buffer.fill(0.);
-                output.set_channels_values_at(index, &self.internal_buffer);
             }
+
+            output.set_channels_values_at(index, &self.internal_buffer);
 
             self.render_state.buffer_time += dt * computed_playback_rate;
             self.render_state.buffer_time_elapsed += dt * computed_playback_rate;
@@ -640,7 +639,7 @@ mod tests {
 
     #[test]
     fn type_playing_some_file() {
-        let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE * 1, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, SampleRate(44_100));
 
         // load and decode buffer
         let file = std::fs::File::open("sample.wav").unwrap();

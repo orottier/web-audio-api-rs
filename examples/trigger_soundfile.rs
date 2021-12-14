@@ -57,7 +57,7 @@ fn main() {
         let mut src = context.create_buffer_source();
         src.set_buffer(&audio_buffer);
         src.connect(&context.destination());
-        src.start_at_with_offset(context.current_time(), 1., 1.);
+        src.start_at_with_offset_and_duration(context.current_time(), 1., 1.);
     }
 
     std::thread::sleep(std::time::Duration::from_millis(1500));

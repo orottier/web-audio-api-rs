@@ -137,21 +137,18 @@ impl AudioBufferData {
 impl From<Vec<Vec<f32>>> for AudioBufferData {
     fn from(decoded: Vec<Vec<f32>>) -> Self {
         let number_of_channels = decoded.len();
-        // wrap each decoded channel with `Arc`
         let mut channels = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
 
-        // @note - is there a better way than using `to_vec`?
-        // basically, is there any way to grab the `decoded.channel` reference and
-        // put it where we want it to be without memory allocation?
-        // (sometimes JS feels so simple... :)
-        for channel_number in 0..number_of_channels {
-            let channel = decoded[channel_number].to_vec();
-            channels.push(Arc::new(channel));
+        for channel in decoded.iter() {
+            // @note - is there a better way than copy using `to_vec`?
+            // basically, is there any way to grab the `decoded.channel` reference and
+            // put it where we want it to be without memory allocation?
+            // (sometimes JS feels so simple... :)
+            let copy = channel.to_vec();
+            channels.push(Arc::new(copy));
         }
 
-        Self {
-            channels: Rc::new(channels),
-        }
+        Self { channels: Rc::new(channels) }
     }
 }
 
@@ -241,13 +238,13 @@ impl AudioBuffer {
     }
 
     // @note - not sure if we can handle default arguments in another way
-    pub fn copy_to_channel(&mut self, source: &Vec<f32>, channel_number: usize) {
+    pub fn copy_to_channel(&mut self, source: &[f32], channel_number: usize) {
         self.copy_to_channel_with_offset(source, channel_number, 0);
     }
 
     pub fn copy_to_channel_with_offset(
         &mut self,
-        source: &Vec<f32>,
+        source: &[f32],
         channel_number: usize,
         offset: usize,
     ) {
@@ -265,10 +262,7 @@ impl AudioBuffer {
         // acquired by some node and be in use.
         // @see - https://webaudio.github.io/web-audio-api/#acquire-the-content
         let mut copy = channel.to_vec();
-
-        for index in 0..max_frame {
-            copy[index + offset] = source[index];
-        }
+        copy[offset..(max_frame + offset)].copy_from_slice(&source[..max_frame]);
 
         // replace channel with modified copy and new Arc so that next time some
         // node acquire the content it will grab the updated values and the old
@@ -322,7 +316,7 @@ mod tests {
         assert_eq!(audio_buffer.number_of_channels(), 1);
         assert_eq!(audio_buffer.length(), 10);
         assert_eq!(audio_buffer.sample_rate().0, 1);
-        assert_eq!(audio_buffer.duration(), 10.);
+        assert_float_eq!(audio_buffer.duration(), 10., abs <= 0.);
     }
 
     #[test]
@@ -375,8 +369,8 @@ mod tests {
         {
             // same size
             let mut audio_buffer = AudioBuffer::new(options);
-            let mut src = vec![1.; 10];
-            audio_buffer.copy_to_channel(&mut src, 0);
+            let src = vec![1.; 10];
+            audio_buffer.copy_to_channel(&src, 0);
             assert_float_eq!(
                 audio_buffer.internal_data.channels[0][..],
                 [1.; 10][..],
@@ -387,8 +381,8 @@ mod tests {
         {
             // smaller source
             let mut audio_buffer = AudioBuffer::new(options);
-            let mut src = vec![1.; 5];
-            audio_buffer.copy_to_channel(&mut src, 0);
+            let src = vec![1.; 5];
+            audio_buffer.copy_to_channel(&src, 0);
             assert_float_eq!(
                 audio_buffer.internal_data.channels[0][..],
                 [1., 1., 1., 1., 1., 0., 0., 0., 0., 0.][..],
@@ -399,8 +393,8 @@ mod tests {
         {
             // larger source
             let mut audio_buffer = AudioBuffer::new(options);
-            let mut src = vec![1.; 12];
-            audio_buffer.copy_to_channel(&mut src, 0);
+            let src = vec![1.; 12];
+            audio_buffer.copy_to_channel(&src, 0);
             assert_float_eq!(
                 audio_buffer.internal_data.channels[0][..],
                 [1., 1., 1., 1., 1., 1., 1., 1., 1., 1.][..],
@@ -411,8 +405,8 @@ mod tests {
         {
             // w/ offset
             let mut audio_buffer = AudioBuffer::new(options);
-            let mut src = vec![1.; 10];
-            audio_buffer.copy_to_channel_with_offset(&mut src, 0, 5);
+            let src = vec![1.; 10];
+            audio_buffer.copy_to_channel_with_offset(&src, 0, 5);
             assert_float_eq!(
                 audio_buffer.internal_data.channels[0][..],
                 [0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
