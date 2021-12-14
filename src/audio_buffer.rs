@@ -67,7 +67,7 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer {
     }
 
     assert_eq!(decoded[0].len(), length); // duration is ok
-    // println!("decoded length: {} - input length: {}", decoded[0].len(), length);
+                                          // println!("decoded length: {} - input length: {}", decoded[0].len(), length);
 
     // [spec] Take the result, representing the decoded linear PCM audio data,
     // and resample it to the sample-rate of the BaseAudioContext if it is
@@ -148,7 +148,9 @@ impl From<Vec<Vec<f32>>> for AudioBufferData {
             channels.push(Arc::new(copy));
         }
 
-        Self { channels: Rc::new(channels) }
+        Self {
+            channels: Rc::new(channels),
+        }
     }
 }
 
