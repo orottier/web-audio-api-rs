@@ -233,14 +233,11 @@ impl Iterator for MediaElement {
     fn next(&mut self) -> Option<Self::Item> {
         // handle seeking
         if let Some(seek) = self.controller().should_seek() {
-            println!("seek requested {}", seek);
             self.seek(seek);
         } else if let Some(seek) = self.seeking.take() {
-            println!("leftover seek {}", seek);
             self.seek(seek);
         }
         if self.seeking.is_some() {
-            println!("leftover seek, return silence");
             return Some(Err(Box::new(BufferDepletedError {})));
         }
 
