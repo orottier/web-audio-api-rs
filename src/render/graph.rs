@@ -8,12 +8,12 @@ use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeInd
 use smallvec::{smallvec, SmallVec};
 
 /// Connection between two audio nodes
-struct Edge {
-    /// index of the current Nodes input/output port
+struct OutgoingEdge {
+    /// index of the current Nodes output port
     self_index: u32,
     /// reference to the other Node
     other_id: NodeIndex,
-    /// index of the other Nodes input/output port
+    /// index of the other Nodes input port
     other_index: u32,
 }
 
@@ -29,12 +29,13 @@ pub struct Node {
     channel_config: ChannelConfig,
 
     /// Outgoing edges: tuple of outcoming node reference, our output index and their input index
-    outgoing_edges: SmallVec<[Edge; 2]>,
-    /// Incoming edges: tuple of incoming node reference and their output index, and our input index
-    incoming_edges: SmallVec<[Edge; 2]>,
+    outgoing_edges: SmallVec<[OutgoingEdge; 2]>,
 
     /// Indicates if the control thread has dropped this Node
     free_when_finished: bool,
+
+    /// Indicates if the node has any incoming connections (for lifecycle management)
+    has_inputs_connected: bool,
 }
 
 impl Node {
@@ -69,11 +70,7 @@ impl Node {
 
         // Drop, when the node does not have any inputs connected,
         // and if the processor reports it won't yield output.
-        let has_incoming = self
-            .incoming_edges
-            .iter()
-            .any(|edge| edge.self_index != u32::MAX);
-        if !has_incoming && !tail_time {
+        if !self.has_inputs_connected && !tail_time {
             return true;
         }
 
@@ -131,9 +128,9 @@ impl Graph {
                 inputs,
                 outputs,
                 channel_config,
-                incoming_edges: smallvec![],
                 outgoing_edges: smallvec![],
                 free_when_finished: false,
+                has_inputs_connected: false,
             },
         );
     }
@@ -143,20 +140,10 @@ impl Graph {
             .get_mut(&source.0)
             .unwrap()
             .outgoing_edges
-            .push(Edge {
+            .push(OutgoingEdge {
                 self_index: source.1,
                 other_id: dest.0,
                 other_index: dest.1,
-            });
-
-        self.nodes
-            .get_mut(&dest.0)
-            .unwrap()
-            .incoming_edges
-            .push(Edge {
-                self_index: dest.1,
-                other_id: source.0,
-                other_index: source.1,
             });
 
         self.ordered.clear(); // void current ordering
@@ -169,23 +156,15 @@ impl Graph {
             .outgoing_edges
             .retain(|edge| edge.other_id != dest);
 
-        self.nodes
-            .get_mut(&dest)
-            .unwrap()
-            .incoming_edges
-            .retain(|edge| edge.other_id != source);
-
         self.ordered.clear(); // void current ordering
     }
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
         let node = self.nodes.get_mut(&source).unwrap();
         node.outgoing_edges.clear();
-        node.incoming_edges.clear();
 
         self.nodes.values_mut().for_each(|node| {
             node.outgoing_edges.retain(|edge| edge.other_id != source);
-            node.incoming_edges.retain(|edge| edge.other_id != source);
         });
 
         self.ordered.clear(); // void current ordering
@@ -204,28 +183,37 @@ impl Graph {
         ordered: &mut Vec<NodeIndex>,
         in_cycle: &mut Vec<NodeIndex>,
     ) {
-        // detect cycles
+        // if this node is in the cycle detection list, it is part of a cycle!
         if let Some(pos) = marked_temp.iter().position(|&m| m == n) {
+            // mark all nodes in the cycle
             in_cycle.extend_from_slice(&marked_temp[pos..]);
+            // do not continue, as we already have visited all these nodes
             return;
         }
+
+        // do not visit nodes multiple times
         if marked.contains(&n) {
             return;
         }
 
+        // add node to the visited list
         marked.push(n);
+        // add node to the cycle detection list
         marked_temp.push(n);
 
-        // visit nodes connecting to this one
+        // visit outgoing nodes
         self.nodes
             .get(&n)
             .unwrap()
-            .incoming_edges
+            .outgoing_edges
             .iter()
             .for_each(|edge| self.visit(edge.other_id, marked, marked_temp, ordered, in_cycle));
 
+        // then add this node to the ordered list
+        ordered.push(n);
+
+        // finished visiting all nodes in this leg, clear the cycle detection list
         marked_temp.retain(|marked| *marked != n);
-        ordered.insert(0, n);
     }
 
     /// Perform a topological sort of the graph. Mute nodes that are in a cycle
@@ -320,6 +308,7 @@ impl Graph {
                 .filter(|edge| edge.other_index != u32::MAX)
                 .for_each(|edge| {
                     let output_node = nodes.get_mut(&edge.other_id).unwrap();
+                    output_node.has_inputs_connected = true;
                     let signal = &node.outputs[edge.self_index as usize];
                     output_node.inputs[edge.other_index as usize]
                         .add(signal, channel_interpretation);
@@ -327,26 +316,18 @@ impl Graph {
 
             // audio graph cleanup of decomissioned nodes
             if node.can_free(tail_time) {
-                node.incoming_edges.iter().for_each(|edge| {
-                    nodes
-                        .get_mut(&edge.other_id)
-                        .unwrap()
-                        .outgoing_edges
-                        .retain(|e| e.other_id != *index)
-                });
-                node.outgoing_edges.iter().for_each(|edge| {
-                    nodes
-                        .get_mut(&edge.other_id)
-                        .unwrap()
-                        .incoming_edges
-                        .retain(|e| e.other_id != *index)
-                });
+                nodes
+                    .values_mut()
+                    .for_each(|n| n.outgoing_edges.retain(|e| e.other_id != *index));
                 nodes_dropped = true;
             } else {
                 // reset input buffers
                 node.inputs
                     .iter_mut()
                     .for_each(AudioRenderQuantum::make_silent);
+
+                // reset input state
+                node.has_inputs_connected = false;
 
                 // re-insert node in graph
                 nodes.insert(*index, node);
