@@ -98,6 +98,7 @@ impl SharedAttributes {
     }
 }
 
+/// Options for constructing an [`AudioBufferSourceNode`]
 pub struct AudioBufferSourceOptions {
     pub buffer: Option<AudioBuffer>,
     pub detune: f32,
@@ -126,6 +127,39 @@ impl Default for AudioBufferSourceOptions {
 // @todo - define if we could pass an `AudioBuffer` directly
 struct BufferChannelsMessage(Vec<Arc<Vec<f32>>>, f64);
 
+/// `AudioBufferSourceNode` represents an audio source that consists of
+/// in-memory audio source, stored in an [`AudioBuffer`].
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioBufferSourceNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#AudioBufferSourceNode>
+/// - see also: [`AsBaseAudioContext::create_buffer_source`]
+///
+/// # Usage
+///
+/// ```
+/// use std::fs::File;
+/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::node::AudioNode;
+/// // experimental API
+/// use web_audio_api::audio_buffer::decode_audio_data;
+///
+/// // create an `AudioContext`
+/// let context = AudioContext::new(None);
+/// // load and decode a soundfile
+/// let file = File::open("sample.wav").unwrap();
+/// let audio_buffer = decode_audio_data(file);
+/// // play the sound file
+/// let mut src = context.create_buffer_source();
+/// src.set_buffer(&audio_buffer);
+/// src.connect(&context.destination());
+/// src.start();
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example trigger_soundfile`
+/// - `cargo run --release --example granular`
+///
 pub struct AudioBufferSourceNode {
     registration: AudioContextRegistration,
     attributes: SharedAttributes,
@@ -155,6 +189,7 @@ impl AudioNode for AudioBufferSourceNode {
 }
 
 impl AudioBufferSourceNode {
+    /// Create a new [`AudioBufferSourceNode`] instance
     pub fn new<C: AsBaseAudioContext>(context: &C, options: AudioBufferSourceOptions) -> Self {
         context.base().register(move |registration| {
             let AudioBufferSourceOptions {
@@ -253,6 +288,7 @@ impl AudioBufferSourceNode {
         })
     }
 
+    /// Provide an [`AudioBuffer`] as the source of data to be played bask
     pub fn set_buffer(&mut self, audio_buffer: &AudioBuffer) {
         // - Let new buffer be the AudioBuffer or null value to be assigned to buffer.
         // - If new buffer is not null and [[buffer set]] is true, throw an
@@ -271,11 +307,13 @@ impl AudioBufferSourceNode {
         }
     }
 
+    /// Start the playback on next block
     pub fn start(&mut self) {
         let start = self.registration.context().current_time();
         self.start_at(start);
     }
 
+    /// Start the playback at the given time
     pub fn start_at(&mut self, start: f64) {
         if self.source_started {
             panic!("InvalidStateError: Cannot call `start` twice");
@@ -286,22 +324,26 @@ impl AudioBufferSourceNode {
         self.attributes.set_start(start);
     }
 
+    /// Start the playback at the given time and offset
     pub fn start_at_with_offset(&mut self, start: f64, offset: f64) {
         self.attributes.set_offset(offset);
         self.start_at(start);
     }
 
+    /// Start the playback at the given time and offset, for a given duration
     pub fn start_at_with_offset_and_duration(&mut self, start: f64, offset: f64, duration: f64) {
         self.attributes.set_offset(offset);
         self.attributes.set_duration(duration);
         self.start_at(start);
     }
 
+    /// Stop the playback on next block
     pub fn stop(&mut self) {
         let stop = self.registration.context().current_time();
         self.stop_at(stop);
     }
 
+    /// Stop the playback at given time
     pub fn stop_at(&mut self, stop: f64) {
         if !self.source_started {
             panic!("InvalidStateError cannot stop before start");
@@ -310,14 +352,24 @@ impl AudioBufferSourceNode {
         self.attributes.set_stop(stop)
     }
 
+    /// [`AudioParam`] that defines the speed at which the [`AudioBuffer`] will
+    /// be played, e.g.:
+    /// - `0.5` will play the file at half speed
+    /// - `-1` will play the file in reverse
+    ///
+    /// Note that playback rate will also alter the pitch of the [`AudioBuffer`]
     pub fn playback_rate(&self) -> &AudioParam {
         &self.playback_rate
     }
 
+    /// [`AudioParam`] that defines a pitch transposition of the file, expressed in cents
+    ///
+    /// see <https://en.wikipedia.org/wiki/Cent_(music)>
     pub fn detune(&self) -> &AudioParam {
         &self.detune
     }
 
+    /// Defines if the playback the [`AudioBuffer`] should be looped
     pub fn loop_(&self) -> bool {
         self.attributes.get_loop()
     }
@@ -326,6 +378,7 @@ impl AudioBufferSourceNode {
         self.attributes.set_loop(value);
     }
 
+    /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
     pub fn loop_start(&self) -> f64 {
         self.attributes.get_loop_start()
     }
@@ -334,6 +387,7 @@ impl AudioBufferSourceNode {
         self.attributes.set_loop_start(value);
     }
 
+    /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
     pub fn loop_end(&self) -> f64 {
         self.attributes.get_loop_end()
     }
@@ -449,13 +503,16 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             return true;
         }
 
-        // Not sure this behave as it should, maybe return true and
-        // wait for the buffer.
+        // This behave probably does not behave as it should, should rather
+        // return true and wait for the buffer.
+        // @see - `start` tries to acquire the buffer if already started
         // @todo - check how browsers behave on that
         if self.buffer.is_none() {
             output.make_silent();
             return false;
         }
+
+        // from this point we know that we have a buffer
 
         // In addition, if the buffer has more than one channel, then the
         // AudioBufferSourceNode output must change to a single channel of silence
@@ -495,7 +552,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // @see <https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode>
         let mut current_time = timestamp;
 
-        if loop_ && self.buffer.is_some() {
+        if loop_ {
             if loop_start >= 0. && loop_end > 0. && loop_start < loop_end {
                 actual_loop_start = loop_start;
                 actual_loop_end = loop_end.min(buffer_duration);

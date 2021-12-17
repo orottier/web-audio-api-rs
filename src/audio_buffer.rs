@@ -1,3 +1,4 @@
+//! Representation of an *in memory* audio asset
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -44,7 +45,7 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer {
             if bits_per_sample == 16 {
                 for sample in reader.samples::<i16>() {
                     let s = sample.unwrap() as f32 / i16::MAX as f32;
-                    assert!(s.abs() < 1.);
+                    assert!(s.abs() <= 1.);
                     decoded[channel_number].push(s);
                     // next sample belongs to the next channel
                     channel_number = (channel_number + 1) % number_of_channels;
@@ -90,7 +91,7 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer {
 }
 
 // `AudioBufferData` is basically a simple matrix representing an aligned,
-// de-interleaved "in memory" audio asset (i.e. a complete sound file), i.e.:
+// de-interleaved "in memory" audio asset (i.e. a complete sound file):
 // 0 (left) : [0.0, 1.0, ...]
 // 1 (right): [0.1, 0.9, ...]
 // ...
@@ -104,9 +105,7 @@ pub fn decode_audio_data(file: std::fs::File) -> AudioBuffer {
 // bit more bookkeeping in the node side, but allows to be a bit more efficent in
 // terms of memory, as we can discard only one channel at a time.
 //
-// @note - spec does not define "audio asset" which can lead to confusion
-//
-// @see - <https://webaudio.github.io/web-audio-api/#acquire-the-content>
+// @note - spec does not well define "audio asset" which can lead to confusion
 #[derive(Clone)]
 pub(crate) struct AudioBufferData {
     channels: Rc<Vec<Arc<Vec<f32>>>>,
@@ -117,9 +116,6 @@ impl AudioBufferData {
     fn new(number_of_channels: usize, length: usize) -> Self {
         let mut channels = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
         // [spec] Note: This initializes the underlying storage to zero.
-        // we don't want to clone just the Arc here, but the whole underlying data,
-        // so we use `fill_with` instead of `fill`
-        // internal_data.fill_with(|| Arc::new(vec![0.; options.length as usize]));
         for _ in 0..number_of_channels {
             let mut channel = Vec::<f32>::with_capacity(length);
             channel.resize(10, 0.);
@@ -139,13 +135,8 @@ impl From<Vec<Vec<f32>>> for AudioBufferData {
         let number_of_channels = decoded.len();
         let mut channels = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
 
-        for channel in decoded.iter() {
-            // @note - is there a better way than copy using `to_vec`?
-            // basically, is there any way to grab the `decoded.channel` reference and
-            // put it where we want it to be without memory allocation?
-            // (sometimes JS feels so simple... :)
-            let copy = channel.to_vec();
-            channels.push(Arc::new(copy));
+        for channel in decoded.into_iter() {
+            channels.push(Arc::new(channel));
         }
 
         Self {
@@ -154,7 +145,7 @@ impl From<Vec<Vec<f32>>> for AudioBufferData {
     }
 }
 
-// @note - what could be default/required values in Rust syntax, is this possible?
+/// Options for constructing an [`AudioBuffer`]
 #[derive(Copy, Clone, Debug)]
 pub struct AudioBufferOptions {
     number_of_channels: usize, // defaults to 1
@@ -162,6 +153,10 @@ pub struct AudioBufferOptions {
     sample_rate: SampleRate,   // required
 }
 
+/// `AudioBuffer` representats of an *in memory* audio asset (e.g. a full audio file)
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioBuffer>
+/// - specification: <https://webaudio.github.io/web-audio-api/#AudioBuffer>
 #[derive(Clone)]
 pub struct AudioBuffer {
     number_of_channels: usize,
@@ -172,7 +167,8 @@ pub struct AudioBuffer {
 
 // @todo - possible solution to make the `offlineContext.startRendering` API compliant
 // impl From<buffer::AudioBuffer> for AudioBuffer {}
-
+//
+// @todo -` AudioContext::create_buffer`
 impl AudioBuffer {
     // https://webaudio.github.io/web-audio-api/#AudioBuffer-constructors
     pub fn new(options: AudioBufferOptions) -> Self {
@@ -192,27 +188,32 @@ impl AudioBuffer {
         }
     }
 
+    /// Number of channels of the `AudioBuffer`
     pub fn number_of_channels(&self) -> usize {
         self.number_of_channels
     }
 
+    /// Number of samples for each channels
     pub fn length(&self) -> usize {
         self.length
     }
 
+    /// Sample rate of the `AudioBuffer`, matches the `AudioContext` sample rate
     pub fn sample_rate(&self) -> SampleRate {
         self.sample_rate
     }
 
+    /// Duration in seconds of the `AudioBuffer` (e.g.: `length / sample_rate`)
     pub fn duration(&self) -> f64 {
         (self.length / self.sample_rate.0 as usize) as f64
     }
 
-    // @note - not sure if we can handle default arguments in another way
+    /// Copy data from a given channel to the given `Vec`
     pub fn copy_from_channel(&self, destination: &mut Vec<f32>, channel_number: usize) {
         self.copy_from_channel_with_offset(destination, channel_number, 0);
     }
 
+    /// Copy data from a given channel to the given `Vec` starting at `offset`
     pub fn copy_from_channel_with_offset(
         &self,
         destination: &mut Vec<f32>,
@@ -239,11 +240,16 @@ impl AudioBuffer {
         }
     }
 
-    // @note - not sure if we can handle default arguments in another way
+    /// Copy data from a given source to the given channel.
+    ///
+    /// *warning:* note that this operation may rrequire the reallocation of the entire channel
     pub fn copy_to_channel(&mut self, source: &[f32], channel_number: usize) {
         self.copy_to_channel_with_offset(source, channel_number, 0);
     }
 
+    /// Copy data from a given source to the given channel starting at `offset`.
+    ///
+    /// *warning:* note that this operation may rrequire the reallocation of the entire channel
     pub fn copy_to_channel_with_offset(
         &mut self,
         source: &[f32],
@@ -263,6 +269,15 @@ impl AudioBuffer {
         // we need to copy the underlying channel here because it could have been
         // acquired by some node and be in use.
         // @see - https://webaudio.github.io/web-audio-api/#acquire-the-content
+        //
+        // @note - issue #68, we could check if some AudioBufferSource or Convolver
+        // is using a clone of the channel and only make the copy of the internal
+        // data if it's the case. e.g.:
+        // if Arc::strong_count(channel) == 1 {
+        //    ...safe to mutate the channel
+        // } else {
+        //    ...need to make a copy as it is safe
+        // }
         let mut copy = channel.to_vec();
         copy[offset..(max_frame + offset)].copy_from_slice(&source[..max_frame]);
 
@@ -271,20 +286,17 @@ impl AudioBuffer {
         // data will be freed when last ref from audio node is dropped.
         // The nodes who already acquired the Arc to the previous resource
         // are therefore not impacted.
-        //
-        // @note - maybe this does not handle properly some edge case where:
-        //  `buffer is set to the source -> buffer is changed -> source is started`
-        //  but for most use-cases this seems to ok
         let channels = Rc::make_mut(&mut self.internal_data.channels);
         channels[channel_number] = Arc::new(copy);
     }
 
-    // [spec] According to the rules described in acquire the content either allow writing
-    // into or getting a copy of the bytes stored in [[internal data]] in a new Float32Array
-    //
-    // @note - that's really not clear and kind of "do whatever you want unless it
-    // breaks something...", so just return a copy to make sure nothing can be messed up
+    /// Return a full copy of the underlying data of the channel
     pub fn get_channel_data(&self, channel_number: usize) -> Vec<f32> {
+        // [spec] According to the rules described in acquire the content either allow writing
+        // into or getting a copy of the bytes stored in [[internal data]] in a new Float32Array
+        //
+        // @note - that's really not clear and kind of "do whatever you want unless it
+        // breaks something...", so just return a copy to make sure nothing can be messed up
         let channel = &self.internal_data.channels[channel_number];
         channel.to_vec()
     }
@@ -415,6 +427,9 @@ mod tests {
                 abs_all <= 0.
             );
         }
+
+        // @todo - assert that the `Arc` of the channel changed and doesn't point
+        // to same underlying data after `copy_to_channel` has been called
     }
 
     #[test]
