@@ -1,3 +1,5 @@
+//! The audio graph topology and render algorithm
+
 use std::collections::HashMap;
 
 use crate::node::{ChannelConfig, ChannelCountMode};
@@ -27,13 +29,10 @@ pub struct Node {
     outputs: Vec<AudioRenderQuantum>,
     /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
-
     /// Outgoing edges: tuple of outcoming node reference, our output index and their input index
     outgoing_edges: SmallVec<[OutgoingEdge; 2]>,
-
     /// Indicates if the control thread has dropped this Node
     free_when_finished: bool,
-
     /// Indicates if the node has any incoming connections (for lifecycle management)
     has_inputs_connected: bool,
 }
@@ -83,18 +82,21 @@ impl Node {
     }
 }
 
+/// The audio graph
 pub(crate) struct Graph {
-    // actual audio graph
+    /// Processing Nodes
     nodes: HashMap<NodeIndex, Node>,
-
-    // topological sorting
-    marked: Vec<NodeIndex>,
-    marked_temp: Vec<NodeIndex>,
-    ordered: Vec<NodeIndex>,
-    in_cycle: Vec<NodeIndex>,
-
-    // allocator for audio buffers
+    /// Allocator for audio buffers
     alloc: Alloc,
+
+    /// Topological sorting helper
+    marked: Vec<NodeIndex>,
+    /// Topological sorting helper
+    marked_temp: Vec<NodeIndex>,
+    /// Topological sorting helper
+    ordered: Vec<NodeIndex>,
+    /// Topological sorting helper
+    in_cycle: Vec<NodeIndex>,
 }
 
 impl Graph {

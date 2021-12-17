@@ -1,3 +1,7 @@
+//! Helpers for time domain and frequency analysis
+//!
+//! These are used in the [`AnalyserNode`](crate::node::AnalyserNode)
+
 use crate::render::AudioRenderQuantumChannel;
 use crate::RENDER_QUANTUM_SIZE;
 
@@ -5,8 +9,10 @@ use realfft::{num_complex::Complex, RealFftPlanner};
 
 use std::f32::consts::PI;
 
-const MAX_QUANTA: usize = 256;
-const MAX_SAMPLES: usize = MAX_QUANTA * RENDER_QUANTUM_SIZE;
+/// FFT size is max 32768 samples, mandated in spec
+const MAX_SAMPLES: usize = 32768;
+/// Max FFT size corresponds to 256 render quanta
+const MAX_QUANTA: usize = MAX_SAMPLES / RENDER_QUANTUM_SIZE;
 
 /// Blackman window values iterator with alpha = 0.16
 pub fn generate_blackman(size: usize) -> impl Iterator<Item = f32> {
