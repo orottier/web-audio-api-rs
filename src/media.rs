@@ -7,7 +7,7 @@ use std::io::BufReader;
 use lewton::inside_ogg::OggStreamReader;
 use lewton::VorbisError;
 
-use crate::buffer::{AudioBuffer, ChannelData};
+use crate::buffer::{AudioBuffer, AudioBufferOptions, ChannelData};
 use crate::control::Controller;
 use crate::{BufferDepletedError, SampleRate, RENDER_QUANTUM_SIZE};
 
@@ -43,7 +43,12 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 /// use web_audio_api::buffer::AudioBuffer;
 ///
 /// // create a new buffer: 512 samples of silence
-/// let silence = AudioBuffer::new(1, 512, SampleRate(44_100));
+/// let options = AudioBufferOptions {
+///     number_of_channels: 0,
+///     length: 512,
+///     SampleRate(44_100),
+/// };
+/// let silence = AudioBuffer::new(options);
 ///
 /// // create a sequence of this buffer
 /// let sequence = std::iter::repeat(silence).take(5);
@@ -345,7 +350,14 @@ impl Iterator for Microphone {
             Err(TryRecvError::Empty) => {
                 // frame not received in time, emit silence
                 log::debug!("input frame delayed");
-                AudioBuffer::new(self.channels, RENDER_QUANTUM_SIZE, self.sample_rate)
+
+                let options = AudioBufferOptions {
+                    number_of_channels: self.channels,
+                    length: RENDER_QUANTUM_SIZE,
+                    sample_rate: self.sample_rate,
+                };
+
+                AudioBuffer::new(options)
             }
             Err(TryRecvError::Disconnected) => {
                 // MicrophoneRender has stopped, close stream

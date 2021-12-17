@@ -686,8 +686,6 @@ impl AudioBufferSourceRenderer {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::audio_buffer::decode_audio_data;
     use crate::context::{AsBaseAudioContext, OfflineAudioContext};
     use crate::node::AudioNode;
     use crate::{SampleRate, RENDER_QUANTUM_SIZE};
@@ -700,7 +698,7 @@ mod tests {
 
         // load and decode buffer
         let file = std::fs::File::open("sample.wav").unwrap();
-        let audio_buffer = decode_audio_data(file);
+        let audio_buffer = context.decode_audio_data(file);
 
         let mut src = context.create_buffer_source();
         src.set_buffer(&audio_buffer);

@@ -1,4 +1,4 @@
-use crate::buffer::{AudioBuffer, Resampler};
+use crate::buffer::{AudioBuffer, AudioBufferOptions, Resampler};
 use crate::context::{AsBaseAudioContext, AudioContextRegistration};
 use crate::control::{Controller, Scheduler};
 use crate::media::MediaElement;
@@ -59,7 +59,14 @@ impl AudioBufferSourceNode {
             // unwrap_or_default buffer
             let buffer = options
                 .buffer
-                .unwrap_or_else(|| AudioBuffer::new(1, RENDER_QUANTUM_SIZE, SampleRate(44_100)));
+                .unwrap_or_else(|| {
+                    let options = AudioBufferOptions {
+                        number_of_channels: 1,
+                        length: RENDER_QUANTUM_SIZE,
+                        sample_rate: SampleRate(44_100),
+                    };
+                    AudioBuffer::new(options)
+                });
 
             // wrap input in resampler
             let resampler = Resampler::new(

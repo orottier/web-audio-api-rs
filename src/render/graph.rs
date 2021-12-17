@@ -6,7 +6,7 @@ use std::sync::Arc;
 use cpal::Sample;
 use crossbeam_channel::Receiver;
 
-use crate::buffer::AudioBuffer;
+use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::message::ControlMessage;
 use crate::node::{ChannelConfig, ChannelCountMode};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
@@ -92,7 +92,13 @@ impl RenderThread {
         // assert input was properly sized
         debug_assert_eq!(length % RENDER_QUANTUM_SIZE, 0);
 
-        let mut buf = AudioBuffer::new(self.channels, 0, self.sample_rate);
+        let options = AudioBufferOptions {
+            number_of_channels: self.channels,
+            length: 0,
+            sample_rate: self.sample_rate,
+        };
+
+        let mut buf = AudioBuffer::new(options);
 
         for _ in 0..length / RENDER_QUANTUM_SIZE {
             // handle addition/removal of nodes/edges

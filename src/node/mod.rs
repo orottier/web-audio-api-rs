@@ -34,10 +34,10 @@ pub use panner::*;
 mod analyzer;
 pub use analyzer::*;
 
-// mod audio_buffer;
-// pub use audio_buffer::*;
-mod audio_buffer_source;
-pub use audio_buffer_source::*;
+mod audio_buffer;
+pub use audio_buffer::*;
+// mod audio_buffer_source;
+// pub use audio_buffer_source::*;
 
 mod media_element;
 pub use media_element::*;
