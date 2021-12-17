@@ -10,6 +10,8 @@ use crate::AtomicF64;
 pub struct Scheduler {
     start: Arc<AtomicF64>,
     stop: Arc<AtomicF64>,
+    offset: Arc<AtomicF64>,
+    duration: Arc<AtomicF64>,
 }
 
 pub enum ScheduledState {
@@ -24,6 +26,8 @@ impl Scheduler {
         Self {
             start: Arc::new(AtomicF64::new(f64::MAX)),
             stop: Arc::new(AtomicF64::new(f64::MAX)),
+            offset: Arc::new(AtomicF64::new(f64::MAX)),
+            duration: Arc::new(AtomicF64::new(f64::MAX)),
         }
     }
 
@@ -37,14 +41,44 @@ impl Scheduler {
         ScheduledState::Active
     }
 
+    /// Retrive start playback value
+    pub fn start(&self) -> f64 {
+        self.start.load()
+    }
+
     /// Schedule playback start at this timestamp
-    pub fn start_at(&self, start: f64) {
-        self.start.store(start)
+    pub fn set_start(&self, start: f64) {
+        self.start.store(start);
+    }
+
+    /// Retrive stop playback value
+    pub fn stop(&self) -> f64 {
+        self.stop.load()
     }
 
     /// Stop playback at this timestamp
-    pub fn stop_at(&self, stop: f64) {
-        self.stop.store(stop)
+    pub fn set_stop(&self, stop: f64) {
+        self.stop.store(stop);
+    }
+
+    /// Retrive offset playback value
+    pub fn offset(&self)  -> f64 {
+        self.offset.load()
+    }
+
+    /// Stop offset at this timestamp
+    pub fn set_offset(&self, offset: f64) {
+        self.offset.store(offset);
+    }
+
+    /// Retrive duration playback value
+    pub fn duration(&self) -> f64 {
+        self.duration.load()
+    }
+
+    /// Stop duration at this timestamp
+    pub fn set_duration(&self, duration: f64) {
+        self.duration.store(duration)
     }
 }
 

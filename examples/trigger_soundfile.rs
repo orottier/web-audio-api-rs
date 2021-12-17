@@ -3,7 +3,7 @@ use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 use web_audio_api::node::AudioNode;
 
 // experimental API
-use web_audio_api::audio_buffer::decode_audio_data;
+// use web_audio_api::audio_buffer::decode_audio_data;
 
 fn main() {
     let context = AudioContext::new(None);
@@ -11,7 +11,7 @@ fn main() {
 
     // load and decode buffer
     let file = File::open("sample.wav").unwrap();
-    let audio_buffer = decode_audio_data(file);
+    let audio_buffer = context.decode_audio_data(file);
 
     // @fixme - if only one node in the graph it is never removed even when returning
     // false, se we put this dummy node in the graph so that other ones are properly

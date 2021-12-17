@@ -59,7 +59,7 @@ impl MediaStreamAudioSourceNode {
 
             // setup void scheduler - always on
             let scheduler = Scheduler::new();
-            scheduler.start_at(0.);
+            scheduler.set_start(0.);
 
             let render = MediaStreamRenderer::new(resampler, scheduler);
 

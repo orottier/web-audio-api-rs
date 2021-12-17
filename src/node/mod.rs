@@ -33,12 +33,8 @@ mod panner;
 pub use panner::*;
 mod analyzer;
 pub use analyzer::*;
-
-mod audio_buffer;
-pub use audio_buffer::*;
-// mod audio_buffer_source;
-// pub use audio_buffer_source::*;
-
+mod audio_buffer_source;
+pub use audio_buffer_source::*;
 mod media_element;
 pub use media_element::*;
 mod media_stream;
@@ -280,12 +276,12 @@ pub trait AudioScheduledSourceNode {
 
     /// Schedule playback start at this timestamp
     fn start_at(&self, start: f64) {
-        self.scheduler().start_at(start)
+        self.scheduler().set_start(start)
     }
 
     /// Stop playback at this timestamp
     fn stop_at(&self, stop: f64) {
-        self.scheduler().stop_at(stop)
+        self.scheduler().set_stop(stop)
     }
 
     /// Play immediately

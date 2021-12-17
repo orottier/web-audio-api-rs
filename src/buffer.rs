@@ -283,6 +283,11 @@ impl AudioBuffer {
 
         self.sample_rate = sample_rate;
     }
+
+    // give acces to internal_data to nodes so that they can acquire the data
+    pub(crate) fn get_channel_clone(&self, channel_number: usize) -> Arc<Vec<f32>> {
+        self.channels[channel_number].clone_data()
+    }
 }
 
 /// Single channel audio samples, basically wraps a `Arc<Vec<f32>>`
@@ -321,6 +326,10 @@ impl ChannelData {
 
     pub fn as_mut_slice(&mut self) -> &mut [f32] {
         &mut Arc::make_mut(&mut self.data)[..]
+    }
+
+    fn clone_data(&self) -> Arc<Vec<f32>> {
+        self.data.clone()
     }
 }
 
