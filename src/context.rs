@@ -9,7 +9,7 @@
 
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 // magic node values
 /// Destination node id is always at index 0
@@ -68,6 +68,8 @@ struct BaseAudioContextInner {
     node_id_inc: AtomicU64,
     /// message channel from control to render thread
     render_channel: Sender<ControlMessage>,
+    /// control messages that cannot be sent immediately
+    queued_messages: Mutex<Vec<ControlMessage>>,
     /// number of frames played
     frames_played: Arc<AtomicU64>,
     /// AudioListener fields
@@ -227,8 +229,8 @@ pub trait AsBaseAudioContext {
             (node, Box::new(proc))
         });
 
-        // audio params are connected to the 'hidden' u32::MAX input. TODO make nicer
-        self.base().connect(param.id(), dest, 0, u32::MAX);
+        // Connect the param to the node, once the node is registered inside the audio graph.
+        self.base().queue_audio_param_connect(&param, dest);
 
         let proc_id = AudioParamId(param.id().0);
         (param, proc_id)
@@ -506,6 +508,7 @@ impl BaseAudioContext {
             sample_rate,
             channels,
             render_channel,
+            queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
             frames_played,
             listener_params: None,
@@ -586,12 +589,7 @@ impl BaseAudioContext {
     /// Construct a new pair of [`node::AudioNode`] and [`AudioProcessor`]
     ///
     /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if:
-    ///
-    /// * Message send to the render thread is not received in less than 10 ms
+    #[allow(clippy::missing_panics_doc)]
     pub fn register<
         T: node::AudioNode,
         F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
@@ -620,6 +618,18 @@ impl BaseAudioContext {
         };
         self.inner.render_channel.send(message).unwrap();
 
+        // resolve control messages that depend on this registration
+        let mut queued = self.inner.queued_messages.lock().unwrap();
+        let mut i = 0; // waiting for Vec::drain_filter to stabilize
+        while i < queued.len() {
+            if matches!(&queued[i], ControlMessage::ConnectNode {to, ..} if *to == id) {
+                let m = queued.remove(i);
+                self.inner.render_channel.send(m).unwrap();
+            } else {
+                i += 1;
+            }
+        }
+
         node
     }
 
@@ -632,6 +642,19 @@ impl BaseAudioContext {
             input,
         };
         self.inner.render_channel.send(message).unwrap();
+    }
+
+    /// Schedule a connection of an `AudioParam` to the `AudioNode` it belongs to
+    ///
+    /// It is not performed immediately as the `AudioNode` is not registered at this point.
+    fn queue_audio_param_connect(&self, param: &AudioParam, audio_node: &AudioNodeId) {
+        let message = ControlMessage::ConnectNode {
+            from: param.id().0,
+            to: audio_node.0,
+            output: 0,
+            input: u32::MAX, // audio params connect to the 'hidden' input port
+        };
+        self.inner.queued_messages.lock().unwrap().push(message);
     }
 
     /// connects the `from` audio node to the `to` audio node

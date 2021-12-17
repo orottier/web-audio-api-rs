@@ -51,7 +51,7 @@ impl AudioNode for PannerNode {
 
 impl PannerNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: PannerOptions) -> Self {
-        context.base().register(move |registration| {
+        let node = context.base().register(move |registration| {
             use crate::spatial::PARAM_OPTS;
             let id = registration.id();
             let (position_x, render_px) = context.base().create_audio_param(PARAM_OPTS, id);
@@ -81,10 +81,13 @@ impl PannerNode {
                 position_z,
             };
 
-            context.base().connect_listener_to_panner(node.id());
-
             (node, Box::new(render))
-        })
+        });
+
+        // after the node is registered, connect the AudioListener
+        context.base().connect_listener_to_panner(node.id());
+
+        node
     }
 
     pub fn position_x(&self) -> &AudioParam {
