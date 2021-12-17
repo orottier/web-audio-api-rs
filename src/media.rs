@@ -40,13 +40,13 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 /// ```no_run
 /// use web_audio_api::SampleRate;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
-/// use web_audio_api::buffer::AudioBuffer;
+/// use web_audio_api::buffer::{AudioBuffer, AudioBufferOptions};
 ///
 /// // create a new buffer: 512 samples of silence
 /// let options = AudioBufferOptions {
 ///     number_of_channels: 0,
 ///     length: 512,
-///     SampleRate(44_100),
+///     sample_rate: SampleRate(44_100),
 /// };
 /// let silence = AudioBuffer::new(options);
 ///
@@ -101,12 +101,16 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 ///
 /// // the media element provides an infinite iterator now
 /// for buf in element.take(5) {
-///     assert_eq!(
-///         buf.unwrap().channel_data(0),
-///         &ChannelData::from(vec![0.; 20])
-///     )
+///   match buf {
+///       Ok(b) => {
+///           assert_eq!(
+///               b.get_channel_data(0)[..],
+///               vec![0.; 20][..]
+///           )
+///       },
+///       Err(e) => (),
+///   }
 /// }
-///
 /// ```
 pub struct MediaElement {
     /// input media stream

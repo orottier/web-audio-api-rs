@@ -163,7 +163,6 @@ pub trait AsBaseAudioContext {
         AudioBuffer::from_channels(channels, self.sample_rate())
     }
 
-
     /// Creates an `OscillatorNode`, a source representing a periodic waveform. It basically
     /// generates a tone.
     fn create_oscillator(&self) -> node::OscillatorNode {
@@ -841,7 +840,6 @@ mod tests {
         // Send Sync and 'static
         require_send_sync_static(registration);
     }
-
 
     #[test]
     fn test_decode_audio_data() {

@@ -62,7 +62,7 @@ impl Scheduler {
     }
 
     /// Retrive offset playback value
-    pub fn offset(&self)  -> f64 {
+    pub fn offset(&self) -> f64 {
         self.offset.load()
     }
 

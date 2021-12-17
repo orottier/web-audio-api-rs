@@ -66,7 +66,7 @@ fn main() {
             &mut rng,
         );
 
-        if position + incr_position > audio_buffer.duration() - grain_duration
+        if position + incr_position > audio_buffer.duration() - (grain_duration * 2.)
             || position + incr_position < 0.
         {
             incr_position *= -1.;

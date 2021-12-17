@@ -94,7 +94,6 @@ impl AudioBuffer {
         }
     }
 
-
     /// Copy data from a given source to the given channel.
     ///
     /// *warning:* note that this operation may rrequire the reallocation of the entire channel
@@ -103,10 +102,6 @@ impl AudioBuffer {
     }
 
     /// Copy data from a given source to the given channel starting at `offset`.
-    ///
-    // @note - so, using `channel_data_mut().as_mut_slice()` garantees the
-    // underlying cannot be corrupted if a source is using it? (seems a bit
-    // magic to me)
     pub fn copy_to_channel_with_offset(
         &mut self,
         source: &[f32],
@@ -128,14 +123,11 @@ impl AudioBuffer {
     }
 
     /// Return a read-only copy of the underlying data of the channel
-    ///
-    // @note - Am I right about this `read-only` thing?
     pub fn get_channel_data(&self, channel_number: usize) -> &[f32] {
         // [spec] According to the rules described in acquire the content either allow writing
         // into or getting a copy of the bytes stored in [[internal data]] in a new Float32Array
         self.channel_data(channel_number).as_slice()
     }
-
 
     /// Channel data as slice
     pub(crate) fn channels(&self) -> &[ChannelData] {
@@ -241,24 +233,24 @@ impl AudioBuffer {
     /// Resample to the desired sample rate.
     ///
     /// This changes the sample_length of the buffer.
-    ///
-    /// ```
-    /// use web_audio_api::SampleRate;
-    /// use web_audio_api::buffer::{ChannelData, AudioBuffer};
-    ///
-    /// let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-    /// let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(48_000));
-    ///
-    /// // upmix from 48k to 96k Hertz sample rate
-    /// buffer.resample(SampleRate(96_000));
-    ///
-    /// assert_eq!(
-    ///     buffer.channel_data(0),
-    ///     &ChannelData::from(vec![1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,])
-    /// );
-    ///
-    /// assert_eq!(buffer.sample_rate().0, 96_000);
-    /// ```
+    //
+    // ```
+    // use web_audio_api::SampleRate;
+    // use web_audio_api::buffer::{ChannelData, AudioBuffer};
+    //
+    // let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
+    // let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(48_000));
+    //
+    // // upmix from 48k to 96k Hertz sample rate
+    // buffer.resample(SampleRate(96_000));
+    //
+    // assert_eq!(
+    //     buffer.get_channel_data(0)[..],
+    //     vec![1., 1., 2., 2., 3., 3., 4., 4., 5., 5.][..]
+    // );
+    //
+    // assert_eq!(buffer.sample_rate().0, 96_000);
+    // ```
     pub(crate) fn resample(&mut self, sample_rate: SampleRate) {
         if self.sample_rate() == sample_rate {
             return;
@@ -282,11 +274,6 @@ impl AudioBuffer {
         });
 
         self.sample_rate = sample_rate;
-    }
-
-    // give acces to internal_data to nodes so that they can acquire the data
-    pub(crate) fn get_channel_clone(&self, channel_number: usize) -> Arc<Vec<f32>> {
-        self.channels[channel_number].clone_data()
     }
 }
 
@@ -327,10 +314,6 @@ impl ChannelData {
     pub fn as_mut_slice(&mut self) -> &mut [f32] {
         &mut Arc::make_mut(&mut self.data)[..]
     }
-
-    fn clone_data(&self) -> Arc<Vec<f32>> {
-        self.data.clone()
-    }
 }
 
 impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
@@ -344,7 +327,7 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
                     sample_rate: SampleRate(0),
                 };
                 return AudioBuffer::new(options);
-            },
+            }
             Some(first) => first,
         };
 
@@ -374,19 +357,19 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
 ///
 /// // first chunk contains 10 samples
 /// let next = resampler.next().unwrap().unwrap();
-/// assert_eq!(next.sample_len(), 10);
-/// assert_eq!(next.channel_data(0), &ChannelData::from(vec![
+/// assert_eq!(next.length(), 10);
+/// assert_eq!(next.get_channel_data(0)[..], vec![
 ///     1., 2., 3., 4., 5.,
 ///     1., 2., 3., 4., 5.,
-/// ]));
+/// ][..]);
 ///
 /// // second chunk contains 5 samples of signal, and 5 silent
 /// let next = resampler.next().unwrap().unwrap();
-/// assert_eq!(next.sample_len(), 10);
-/// assert_eq!(next.channel_data(0), &ChannelData::from(vec![
+/// assert_eq!(next.length(), 10);
+/// assert_eq!(next.get_channel_data(0)[..], vec![
 ///     1., 2., 3., 4., 5.,
 ///     0., 0., 0., 0., 0.,
-/// ]));
+/// ][..]);
 ///
 /// // no further chunks
 /// assert!(resampler.next().is_none());
@@ -538,7 +521,7 @@ mod tests {
             let src = vec![1.; 10];
             audio_buffer.copy_to_channel(&src, 0);
             assert_float_eq!(
-                *audio_buffer.channel_data(0).as_slice(),
+                audio_buffer.channel_data(0).as_slice()[..],
                 [1.; 10][..],
                 abs_all <= 0.
             );
@@ -550,7 +533,7 @@ mod tests {
             let src = vec![1.; 5];
             audio_buffer.copy_to_channel(&src, 0);
             assert_float_eq!(
-                *audio_buffer.channel_data(0).as_slice(),
+                audio_buffer.channel_data(0).as_slice()[..],
                 [1., 1., 1., 1., 1., 0., 0., 0., 0., 0.][..],
                 abs_all <= 0.
             );
@@ -562,7 +545,7 @@ mod tests {
             let src = vec![1.; 12];
             audio_buffer.copy_to_channel(&src, 0);
             assert_float_eq!(
-                *audio_buffer.channel_data(0).as_slice(),
+                audio_buffer.channel_data(0).as_slice()[..],
                 [1., 1., 1., 1., 1., 1., 1., 1., 1., 1.][..],
                 abs_all <= 0.
             );
@@ -574,7 +557,7 @@ mod tests {
             let src = vec![1.; 10];
             audio_buffer.copy_to_channel_with_offset(&src, 0, 5);
             assert_float_eq!(
-                *audio_buffer.channel_data(0).as_slice(),
+                audio_buffer.channel_data(0).as_slice()[..],
                 [0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
                 abs_all <= 0.
             );

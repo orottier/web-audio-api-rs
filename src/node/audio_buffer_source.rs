@@ -1,30 +1,13 @@
 use crossbeam_channel::{Receiver, Sender};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
-use crate::control::{Controller, Scheduler};
+use crate::control::Controller;
 use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{AtomicF64, SampleRate, RENDER_QUANTUM_SIZE};
+use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
-
-
-// impl Default for SharedAttributes {
-//     fn default() -> Self {
-//         Self {
-//             start: Arc::new(AtomicF64::new(0.)),
-//             stop: Arc::new(AtomicF64::new(f64::MAX)),
-//             offset: Arc::new(AtomicF64::new(0.)),
-//             duration: Arc::new(AtomicF64::new(f64::MAX)),
-//             loop_: Arc::new(AtomicBool::new(false)),
-//             loop_start: Arc::new(AtomicF64::new(0.)),
-//             loop_end: Arc::new(AtomicF64::new(0.)),
-//         }
-//     }
-// }
 
 /// Options for constructing an [`AudioBufferSourceNode`]
 pub struct AudioBufferSourceOptions {
@@ -51,9 +34,6 @@ impl Default for AudioBufferSourceOptions {
     }
 }
 
-// channels, duration
-// @todo - define if we could pass an `AudioBuffer` directly
-// struct AudioBufferMessage(Vec<Arc<Vec<f32>>>, f64);
 struct AudioBufferMessage(AudioBuffer);
 
 /// `AudioBufferSourceNode` represents an audio source that consists of
@@ -69,14 +49,12 @@ struct AudioBufferMessage(AudioBuffer);
 /// use std::fs::File;
 /// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 /// use web_audio_api::node::AudioNode;
-/// // experimental API
-/// use web_audio_api::audio_buffer::decode_audio_data;
 ///
 /// // create an `AudioContext`
 /// let context = AudioContext::new(None);
 /// // load and decode a soundfile
 /// let file = File::open("sample.wav").unwrap();
-/// let audio_buffer = decode_audio_data(file);
+/// let audio_buffer = context.decode_audio_data(file);
 /// // play the sound file
 /// let mut src = context.create_buffer_source();
 /// src.set_buffer(&audio_buffer);
@@ -181,16 +159,14 @@ impl AudioBufferSourceNode {
             let renderer = AudioBufferSourceRenderer {
                 controller: controller.clone(),
                 receiver,
-                // @todo - use an `AudioBuffer` directly
-                // need to make sure how `clone` behave with nested `Arc` structures
                 buffer: None,
-                buffer_duration: None,
                 detune: d_proc,
                 playback_rate: pr_proc,
                 render_state: AudioBufferRendererState::default(),
-                // 2 channels is sufficient for most use-cases, the `vec` will be
-                // resized to actual buffer number_of_channels when buffer is received
-                // on the render thread
+                // This buffer is used to compute the samples per channel at each
+                // frame. 2 channels is sufficient as default value for most
+                // use-cases, the `vec` will be anyway be resized to actual buffer buffer is received
+                // number_of_channels when on the render thread.
                 internal_buffer: Vec::<f32>::with_capacity(2),
             };
 
@@ -325,32 +301,6 @@ impl AudioBufferSourceNode {
         self.controller.set_loop_end(value);
     }
 
-    // create a new Vec<Arc<Vec<f32>>> containing cloned `Arc` references from
-    // current `AudioBuffer.internal_data` so that if `set_channel_data` is
-    // called while the source is playing, it won't be impacted.
-    //
-    // cf. https://webaudio.github.io/web-audio-api/#acquire-the-content
-    //
-    // @note - maybe this step is not necessary as the `Arc`s are already
-    // cloned in `set_buffer`? can't find clear information about nested clones
-    // @note - if required, this logic should live in `AudioBuffer` to be reused
-    // by `ConvolverNode`
-    // fn send_buffer(&self) {
-    //     let buffer = self.buffer.as_ref().unwrap();
-    //     let number_of_channels = buffer.number_of_channels();
-    //     let duration = buffer.duration();
-    //     let mut channels = Vec::<Arc<Vec<f32>>>::with_capacity(number_of_channels);
-
-    //     for channel_number in 0..number_of_channels {
-    //         let channel = buffer.get_channel_clone(channel_number);
-    //         channels.push(channel);
-    //     }
-
-    //     self.sender
-    //         .send(AudioBufferMessage(channels, duration))
-    //         .expect("Sending AudioBufferMessage failed");
-    // }
-
     fn send_buffer(&self) {
         let clone = self.buffer.as_ref().unwrap().clone();
         self.sender
@@ -380,9 +330,7 @@ impl Default for AudioBufferRendererState {
 struct AudioBufferSourceRenderer {
     controller: Controller,
     receiver: Receiver<AudioBufferMessage>,
-    // buffer: Option<Vec<Arc<Vec<f32>>>>,
     buffer: Option<AudioBuffer>,
-    buffer_duration: Option<f64>,
     detune: AudioParamId,
     playback_rate: AudioParamId,
     render_state: AudioBufferRendererState,
@@ -405,19 +353,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let num_frames = RENDER_QUANTUM_SIZE;
         let next_block_time = timestamp + dt * RENDER_QUANTUM_SIZE as f64;
 
-        // check if we received some buffer_channels
-        // if let Ok(msg) = self.receiver.try_recv() {
-        //     self.buffer = Some(msg.0);
-        //     self.buffer_duration = Some(msg.1);
-
-        //     let number_of_channels = self.buffer.as_ref().unwrap().len();
-        //     self.internal_buffer.resize(number_of_channels, 0.);
-        // }
-
         if let Ok(msg) = self.receiver.try_recv() {
             let buffer = msg.0;
-            // self.buffer_duration = Some(msg.1);
-            // let number_of_channels = self.buffer.as_ref().unwrap().len();
 
             self.internal_buffer.resize(buffer.number_of_channels(), 0.);
             self.buffer = Some(buffer);
@@ -449,13 +386,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             return true;
         }
 
-        // This behave probably does not behave as it should, should rather
-        // return true and wait for the buffer.
+        // If the buffer has not been set wait for it.
         // @see - `start` tries to acquire the buffer if already started
-        // @todo - check how browsers behave on that
         if self.buffer.is_none() {
             output.make_silent();
-            return false;
+            return true;
         }
 
         // from this point we know that we have a buffer
@@ -466,7 +401,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // the following conditions holds:
         let buffer = self.buffer.as_ref().unwrap();
         let buffer_duration = buffer.duration();
-        // let buffer_duration = self.buffer_duration.unwrap();
 
         // 1. the stop time has been reached.
         // 2. the duration has been reached.
@@ -494,8 +428,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         }
 
         output.set_number_of_channels(buffer.number_of_channels());
-        // let num_channels = self.buffer.as_ref().unwrap().len();
-        // output.set_number_of_channels(num_channels);
 
         // go through the algorithm described in the spec
         // @see <https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode>
@@ -596,13 +528,10 @@ impl AudioBufferSourceRenderer {
     // `playback_rate.abs() = 1`
     #[allow(dead_code)]
     fn compute_playback_at_position_direct(&mut self, position: f64, sample_rate: f64) {
-        // let buffer_channels = self.buffer.as_ref().unwrap();
         let sample_index = (position * sample_rate).round() as usize;
 
         let iterator = self.buffer.as_ref().unwrap().channels().iter().enumerate();
         for (channel_index, channel) in iterator {
-        // for (channel_index, channel) in buffer_channels.iter().enumerate() {
-            // self.internal_buffer[channel_index] = channel[sample_index];
             self.internal_buffer[channel_index] = channel.as_slice()[sample_index];
         }
     }
@@ -619,8 +548,6 @@ impl AudioBufferSourceRenderer {
 
         let iterator = self.buffer.as_ref().unwrap().channels().iter().enumerate();
         for (channel_index, channel) in iterator {
-        // let buffer_channels = self.buffer.as_ref().unwrap();
-        // for (channel_index, channel) in buffer_channels.iter().enumerate() {
             // @todo - [spec] If |position| is greater than or equal to |loopEnd|
             // and there is no subsequent sample frame in buffer, then interpolation
             // should be based on the sequence of subsequent frames beginning at |loopStart|.
@@ -664,8 +591,8 @@ mod tests {
 
         let res = context.start_rendering();
 
-        // println!("buffer duration: {:?}", audio_buffer.duration());
-        // println!("context sample rate: {:?}", context.sample_rate());
+        println!("buffer duration: {:?}", audio_buffer.duration());
+        println!("context sample rate: {:?}", context.sample_rate());
 
         // left
         assert_float_eq!(
