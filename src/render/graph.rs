@@ -1,195 +1,21 @@
-use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::collections::HashMap;
 
-use cpal::Sample;
-use crossbeam_channel::Receiver;
-
-use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::message::ControlMessage;
 use crate::node::{ChannelConfig, ChannelCountMode};
-use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+use crate::SampleRate;
 
-use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum};
+use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeIndex};
 
-/// Operations running off the system-level audio callback
-pub(crate) struct RenderThread {
-    graph: Graph,
-    sample_rate: SampleRate,
-    channels: usize,
-    frames_played: Arc<AtomicU64>,
-    receiver: Receiver<ControlMessage>,
-    buffer_offset: Option<(usize, AudioRenderQuantum)>,
+use smallvec::{smallvec, SmallVec};
+
+/// Connection between two audio nodes
+struct Edge {
+    /// index of the current Nodes input/output port
+    self_index: u32,
+    /// reference to the other Node
+    other_id: NodeIndex,
+    /// index of the other Nodes input/output port
+    other_index: u32,
 }
-
-// SAFETY:
-// The RenderThread is not Send since it contains `AudioRenderQuantum`s (which use Rc), but these are only
-// accessed within the same thread (the render thread). Due to the cpal constraints we can neither
-// move the RenderThread object into the render thread, nor can we initialize the Rc's in that
-// thread.
-unsafe impl Send for RenderThread {}
-
-impl RenderThread {
-    pub fn new(
-        sample_rate: SampleRate,
-        channels: usize,
-        receiver: Receiver<ControlMessage>,
-        frames_played: Arc<AtomicU64>,
-    ) -> Self {
-        Self {
-            graph: Graph::new(),
-            sample_rate,
-            channels,
-            frames_played,
-            receiver,
-            buffer_offset: None,
-        }
-    }
-
-    fn handle_control_messages(&mut self) {
-        for msg in self.receiver.try_iter() {
-            use ControlMessage::*;
-
-            match msg {
-                RegisterNode {
-                    id,
-                    node,
-                    inputs,
-                    outputs,
-                    channel_config,
-                } => {
-                    self.graph
-                        .add_node(NodeIndex(id), node, inputs, outputs, channel_config);
-                }
-                ConnectNode {
-                    from,
-                    to,
-                    output,
-                    input,
-                } => {
-                    self.graph
-                        .add_edge((NodeIndex(from), output), (NodeIndex(to), input));
-                }
-                DisconnectNode { from, to } => {
-                    self.graph.remove_edge(NodeIndex(from), NodeIndex(to));
-                }
-                DisconnectAll { from } => {
-                    self.graph.remove_edges_from(NodeIndex(from));
-                }
-                FreeWhenFinished { id } => {
-                    self.graph.mark_free_when_finished(NodeIndex(id));
-                }
-                AudioParamEvent { to, event } => {
-                    to.send(event).expect("Audioparam disappeared unexpectedly")
-                }
-            }
-        }
-    }
-
-    // render method of the OfflineAudioContext
-    pub fn render_audiobuffer(&mut self, length: usize) -> AudioBuffer {
-        // assert input was properly sized
-        debug_assert_eq!(length % RENDER_QUANTUM_SIZE, 0);
-
-        let options = AudioBufferOptions {
-            number_of_channels: self.channels,
-            length: 0,
-            sample_rate: self.sample_rate,
-        };
-
-        let mut buf = AudioBuffer::new(options);
-
-        for _ in 0..length / RENDER_QUANTUM_SIZE {
-            // handle addition/removal of nodes/edges
-            self.handle_control_messages();
-
-            // update time
-            let timestamp =
-                self.frames_played
-                    .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst) as f64
-                    / self.sample_rate.0 as f64;
-
-            // render audio graph
-            let rendered = self.graph.render(timestamp, self.sample_rate);
-
-            buf.extend_alloc(rendered);
-        }
-
-        buf
-    }
-
-    // This code is not dead: false positive from clippy
-    // due to the use of #[cfg(not(test))]
-    #[allow(dead_code)]
-    pub fn render<S: Sample>(&mut self, mut buffer: &mut [S]) {
-        // There may be audio frames left over from the previous render call,
-        // if the cpal buffer size did not align with our internal RENDER_QUANTUM_SIZE
-        if let Some((offset, prev_rendered)) = self.buffer_offset.take() {
-            let leftover_len = (RENDER_QUANTUM_SIZE - offset) * self.channels;
-            // split the leftover frames slice, to fit in `buffer`
-            let (first, next) = buffer.split_at_mut(leftover_len.min(buffer.len()));
-
-            // copy rendered audio into output slice
-            for i in 0..self.channels {
-                let output = first.iter_mut().skip(i).step_by(self.channels);
-                let channel = prev_rendered.channel_data(i)[offset..].iter();
-                for (sample, input) in output.zip(channel) {
-                    let value = Sample::from::<f32>(input);
-                    *sample = value;
-                }
-            }
-
-            // exit early if we are done filling the buffer with the previously rendered data
-            if next.is_empty() {
-                self.buffer_offset = Some((offset + first.len() / self.channels, prev_rendered));
-                return;
-            }
-
-            // if there's still space left in the buffer, continue rendering
-            buffer = next;
-        }
-
-        // The audio graph is rendered in chunks of RENDER_QUANTUM_SIZE frames.  But some audio backends
-        // may not be able to emit chunks of this size.
-        let chunk_size = RENDER_QUANTUM_SIZE * self.channels as usize;
-
-        for data in buffer.chunks_mut(chunk_size) {
-            // handle addition/removal of nodes/edges
-            self.handle_control_messages();
-
-            // update time
-            // @note - this follows the spec as fetch_add returns the old value
-            let timestamp =
-                self.frames_played
-                    .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst) as f64
-                    / self.sample_rate.0 as f64;
-
-            // render audio graph
-            let rendered = self.graph.render(timestamp, self.sample_rate);
-
-            // copy rendered audio into output slice
-            for i in 0..self.channels {
-                let output = data.iter_mut().skip(i).step_by(self.channels);
-                let channel = rendered.channel_data(i).iter();
-                for (sample, input) in output.zip(channel) {
-                    let value = Sample::from::<f32>(input);
-                    *sample = value;
-                }
-            }
-
-            if data.len() != chunk_size {
-                // this is the last chunk, and it contained less than RENDER_QUANTUM_SIZE samples
-                let channel_offset = data.len() / self.channels;
-                debug_assert!(channel_offset < RENDER_QUANTUM_SIZE);
-                self.buffer_offset = Some((channel_offset, rendered.clone()));
-            }
-        }
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct NodeIndex(pub u64);
 
 /// Renderer Node in the Audio Graph
 pub struct Node {
@@ -202,21 +28,24 @@ pub struct Node {
     /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
 
-    // lifecycle management flags:
+    /// Outgoing edges: tuple of outcoming node reference, our output index and their input index
+    outgoing_edges: SmallVec<[Edge; 2]>,
+    /// Incoming edges: tuple of incoming node reference and their output index, and our input index
+    incoming_edges: SmallVec<[Edge; 2]>,
+
     /// Indicates if the control thread has dropped this Node
     free_when_finished: bool,
-    /// Indicates if the Node has had any inputs in the current render quantum
-    has_inputs_connected: bool,
-    /// Indicates if the output of this Node was consumed in the current render quantum
-    has_outputs_connected: bool,
-    /// Indicates if the Node will still output a signal if no inputs are connected
-    tail_time: bool,
 }
 
 impl Node {
     /// Render an audio quantum
-    fn process(&mut self, params: AudioParamValues, timestamp: f64, sample_rate: SampleRate) {
-        self.tail_time = self.processor.process(
+    fn process(
+        &mut self,
+        params: AudioParamValues,
+        timestamp: f64,
+        sample_rate: SampleRate,
+    ) -> bool {
+        self.processor.process(
             &self.inputs[..],
             &mut self.outputs[..],
             params,
@@ -226,7 +55,7 @@ impl Node {
     }
 
     /// Determine if this node is done playing and can be removed from the audio graph
-    fn can_free(&self) -> bool {
+    fn can_free(&self, tail_time: bool) -> bool {
         // Only drop when the Control thread has dropped its handle.
         // Otherwise the node can be reconnected/restarted etc.
         if !self.free_when_finished {
@@ -234,13 +63,17 @@ impl Node {
         }
 
         // Drop, if the node has no outputs connected
-        if !self.has_outputs_connected {
+        if self.outgoing_edges.is_empty() {
             return true;
         }
 
         // Drop, when the node does not have any inputs connected,
         // and if the processor reports it won't yield output.
-        if !self.has_inputs_connected && !self.tail_time {
+        let has_incoming = self
+            .incoming_edges
+            .iter()
+            .any(|edge| edge.self_index != u32::MAX);
+        if !has_incoming && !tail_time {
             return true;
         }
 
@@ -256,7 +89,6 @@ impl Node {
 pub(crate) struct Graph {
     // actual audio graph
     nodes: HashMap<NodeIndex, Node>,
-    edges: HashSet<((NodeIndex, u32), (NodeIndex, u32))>, // (node,output) to (node,input)
 
     // topological sorting
     marked: Vec<NodeIndex>,
@@ -272,7 +104,6 @@ impl Graph {
     pub fn new() -> Self {
         Graph {
             nodes: HashMap::new(),
-            edges: HashSet::new(),
             ordered: vec![],
             marked: vec![],
             marked_temp: vec![],
@@ -300,38 +131,68 @@ impl Graph {
                 inputs,
                 outputs,
                 channel_config,
+                incoming_edges: smallvec![],
+                outgoing_edges: smallvec![],
                 free_when_finished: false,
-                has_inputs_connected: true,
-                has_outputs_connected: true,
-                tail_time: true,
             },
         );
     }
 
     pub fn add_edge(&mut self, source: (NodeIndex, u32), dest: (NodeIndex, u32)) {
-        self.edges.insert((source, dest));
+        self.nodes
+            .get_mut(&source.0)
+            .unwrap()
+            .outgoing_edges
+            .push(Edge {
+                self_index: source.1,
+                other_id: dest.0,
+                other_index: dest.1,
+            });
+
+        self.nodes
+            .get_mut(&dest.0)
+            .unwrap()
+            .incoming_edges
+            .push(Edge {
+                self_index: dest.1,
+                other_id: source.0,
+                other_index: source.1,
+            });
+
         self.ordered.clear(); // void current ordering
     }
 
     pub fn remove_edge(&mut self, source: NodeIndex, dest: NodeIndex) {
-        self.edges.retain(|&(s, d)| s.0 != source || d.0 != dest);
+        self.nodes
+            .get_mut(&source)
+            .unwrap()
+            .outgoing_edges
+            .retain(|edge| edge.other_id != dest);
+
+        self.nodes
+            .get_mut(&dest)
+            .unwrap()
+            .incoming_edges
+            .retain(|edge| edge.other_id != source);
+
         self.ordered.clear(); // void current ordering
     }
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
-        self.edges.retain(|&(s, _d)| s.0 != source);
+        let node = self.nodes.get_mut(&source).unwrap();
+        node.outgoing_edges.clear();
+        node.incoming_edges.clear();
+
+        self.nodes.values_mut().for_each(|node| {
+            node.outgoing_edges.retain(|edge| edge.other_id != source);
+            node.incoming_edges.retain(|edge| edge.other_id != source);
+        });
+
         self.ordered.clear(); // void current ordering
     }
 
-    fn mark_free_when_finished(&mut self, index: NodeIndex) {
+    pub fn mark_free_when_finished(&mut self, index: NodeIndex) {
         self.nodes.get_mut(&index).unwrap().free_when_finished = true;
-    }
-
-    pub fn children(&self, node: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
-        self.edges
-            .iter()
-            .filter(move |&(_s, d)| d.0 == node)
-            .map(|&(s, _d)| s.0)
     }
 
     /// Traverse node for topological sort
@@ -355,8 +216,13 @@ impl Graph {
         marked.push(n);
         marked_temp.push(n);
 
-        self.children(n)
-            .for_each(|c| self.visit(c, marked, marked_temp, ordered, in_cycle));
+        // visit nodes connecting to this one
+        self.nodes
+            .get(&n)
+            .unwrap()
+            .incoming_edges
+            .iter()
+            .for_each(|edge| self.visit(edge.other_id, marked, marked_temp, ordered, in_cycle));
 
         marked_temp.retain(|marked| *marked != n);
         ordered.insert(0, n);
@@ -412,13 +278,16 @@ impl Graph {
     }
 
     pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioRenderQuantum {
+        // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
             self.order_nodes();
         }
 
+        // keep track of end-of-lifecyle nodes
+        let mut nodes_dropped = false;
+
         // split (mut) borrows
         let ordered = &self.ordered;
-        let edges = &self.edges;
         let nodes = &mut self.nodes;
 
         // process every node, in topological sorted order
@@ -426,47 +295,10 @@ impl Graph {
             // remove node from graph, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
 
-            // for lifecycle management, check if any inputs are present
-            node.has_inputs_connected = false;
-            // and check if any outputs are present
-            // (index = 0 means this is the destination node)
-            node.has_outputs_connected = index.0 == 0;
-
-            // clear current node's inputs
-            node.inputs.iter_mut().for_each(|i| i.make_silent());
-
-            // iterate all edges, find the nodes connecting to the current node,
-            // fetch their inputs and sum those together.
-            edges
-                .iter()
-                .filter_map(
-                    move |(s, d)| {
-                        if d.0 == *index {
-                            Some((s, d.1))
-                        } else {
-                            None
-                        }
-                    },
-                )
-                .for_each(|(&(node_index, output), input)| {
-                    let input_node = nodes.get_mut(&node_index).unwrap();
-                    input_node.has_outputs_connected = true;
-                    let input_node = &*input_node; // reborrow as immutable
-
-                    // audio params are connected to the 'hidden' u32::MAX input, ignore them here
-                    if input == u32::MAX {
-                        return;
-                    }
-
-                    let signal = &input_node.outputs[output as usize];
-                    node.inputs[input as usize].add(signal, node.channel_config.interpretation());
-                    node.has_inputs_connected = true;
-                });
-
             // up/down-mix the cumulative inputs to the desired channel count
+            let channel_interpretation = node.channel_config.interpretation();
             let mode = node.channel_config.count_mode();
             let count = node.channel_config.count();
-            let interpretation = node.channel_config.interpretation();
             node.inputs.iter_mut().for_each(|input_buf| {
                 let cur_channels = input_buf.number_of_channels();
                 let new_channels = match mode {
@@ -474,30 +306,56 @@ impl Graph {
                     ChannelCountMode::Explicit => count,
                     ChannelCountMode::ClampedMax => cur_channels.min(count),
                 };
-                input_buf.mix(new_channels, interpretation);
+                input_buf.mix(new_channels, channel_interpretation);
             });
 
             // let the current node process
             let params = AudioParamValues::from(&*nodes);
-            node.process(params, timestamp, sample_rate);
+            let tail_time = node.process(params, timestamp, sample_rate);
 
-            // re-insert node in graph
-            nodes.insert(*index, node);
-        });
+            // iterate all outgoing edges, lookup these nodes and add to their input
+            node.outgoing_edges
+                .iter()
+                // audio params are connected to the 'hidden' u32::MAX output, ignore them here
+                .filter(|edge| edge.other_index != u32::MAX)
+                .for_each(|edge| {
+                    let output_node = nodes.get_mut(&edge.other_id).unwrap();
+                    let signal = &node.outputs[edge.self_index as usize];
+                    output_node.inputs[edge.other_index as usize]
+                        .add(signal, channel_interpretation);
+                });
 
-        // audio graph cleanup of decomissioned nodes
-        let edges = &mut self.edges;
-        let ordered = &mut self.ordered;
-        nodes.retain(|&index, node| {
-            // check if the Node has reached end of lifecycle
-            if node.can_free() {
-                edges.retain(|&(s, d)| s.0 != index && d.0 != index);
-                ordered.clear(); // void current ordering
-                false // do no retain
+            // audio graph cleanup of decomissioned nodes
+            if node.can_free(tail_time) {
+                node.incoming_edges.iter().for_each(|edge| {
+                    nodes
+                        .get_mut(&edge.other_id)
+                        .unwrap()
+                        .outgoing_edges
+                        .retain(|e| e.other_id != *index)
+                });
+                node.outgoing_edges.iter().for_each(|edge| {
+                    nodes
+                        .get_mut(&edge.other_id)
+                        .unwrap()
+                        .incoming_edges
+                        .retain(|e| e.other_id != *index)
+                });
+                nodes_dropped = true;
             } else {
-                true
+                // reset input buffers
+                node.inputs
+                    .iter_mut()
+                    .for_each(AudioRenderQuantum::make_silent);
+
+                // re-insert node in graph
+                nodes.insert(*index, node);
             }
         });
+
+        if nodes_dropped {
+            self.ordered.clear();
+        }
 
         // return buffer of destination node
         // assume only 1 output (todo)

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::context::AudioParamId;
 use crate::SampleRate;
 
-use super::{AudioRenderQuantum, Node, NodeIndex};
+use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 
 /// Interface for audio processing code that runs on the audio rendering thread.
 ///
