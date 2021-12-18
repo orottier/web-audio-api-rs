@@ -165,6 +165,11 @@ pub trait AsBaseAudioContext {
         AudioBuffer::from_channels(channels, self.sample_rate())
     }
 
+    /// Create an new "in-memory" `AudioBuffer` with the given number of channels,
+    /// length (i.e. number of samples per channel) and sample rate.
+    ///
+    /// Note: in most cases you will want the sample rate to match the current
+    /// audio context sample rate.
     fn create_buffer(
         &self,
         number_of_channels: usize,
