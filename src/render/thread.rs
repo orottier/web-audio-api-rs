@@ -1,3 +1,5 @@
+//! Communicates with the control thread and ships audio samples to the hardware
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
