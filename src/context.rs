@@ -19,7 +19,7 @@ const LISTENER_NODE_ID: u64 = 1;
 /// listener audio parameters ids are always at index 2 through 12
 const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
-use crate::buffer::{AudioBuffer, ChannelData};
+use crate::buffer::{AudioBuffer, AudioBufferOptions, ChannelData};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{
@@ -163,6 +163,21 @@ pub trait AsBaseAudioContext {
         }
 
         AudioBuffer::from_channels(channels, self.sample_rate())
+    }
+
+    fn create_buffer(
+        &self,
+        number_of_channels: usize,
+        length: usize,
+        sample_rate: SampleRate,
+    ) -> AudioBuffer {
+        let options = AudioBufferOptions {
+            number_of_channels,
+            length,
+            sample_rate,
+        };
+
+        AudioBuffer::new(options)
     }
 
     /// Creates an `OscillatorNode`, a source representing a periodic waveform. It basically
