@@ -23,9 +23,9 @@ struct OutgoingEdge {
 pub struct Node {
     /// Renderer: converts inputs to outputs
     processor: Box<dyn AudioProcessor>,
-    /// Input buffers
+    /// Reusable input buffers
     inputs: Vec<AudioRenderQuantum>,
-    /// Output buffers, consumed by subsequent Nodes in this graph
+    /// Reusable output buffers, consumed by subsequent Nodes in this graph
     outputs: Vec<AudioRenderQuantum>,
     /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
@@ -89,12 +89,12 @@ pub(crate) struct Graph {
     /// Allocator for audio buffers
     alloc: Alloc,
 
+    /// Topological ordering of the nodes
+    ordered: Vec<NodeIndex>,
     /// Topological sorting helper
     marked: Vec<NodeIndex>,
     /// Topological sorting helper
     marked_temp: Vec<NodeIndex>,
-    /// Topological sorting helper
-    ordered: Vec<NodeIndex>,
     /// Topological sorting helper
     in_cycle: Vec<NodeIndex>,
 }
@@ -176,49 +176,61 @@ impl Graph {
         self.nodes.get_mut(&index).unwrap().free_when_finished = true;
     }
 
-    /// Traverse node for topological sort
+    /// Helper function for `order_nodes` - traverse node and outgoing edges
     fn visit(
         &self,
-        n: NodeIndex,
+        node_id: NodeIndex,
         marked: &mut Vec<NodeIndex>,
         marked_temp: &mut Vec<NodeIndex>,
         ordered: &mut Vec<NodeIndex>,
         in_cycle: &mut Vec<NodeIndex>,
     ) {
-        // if this node is in the cycle detection list, it is part of a cycle!
-        if let Some(pos) = marked_temp.iter().position(|&m| m == n) {
-            // mark all nodes in the cycle
+        // If this node is in the cycle detection list, it is part of a cycle!
+        if let Some(pos) = marked_temp.iter().position(|&m| m == node_id) {
+            // Mark all nodes in the cycle
             in_cycle.extend_from_slice(&marked_temp[pos..]);
-            // do not continue, as we already have visited all these nodes
+            // Do not continue, as we already have visited all these nodes
             return;
         }
 
-        // do not visit nodes multiple times
-        if marked.contains(&n) {
+        // Do not visit nodes multiple times
+        if marked.contains(&node_id) {
             return;
         }
 
-        // add node to the visited list
-        marked.push(n);
-        // add node to the cycle detection list
-        marked_temp.push(n);
+        // Add node to the visited list
+        marked.push(node_id);
+        // Add node to the current cycle detection list
+        marked_temp.push(node_id);
 
-        // visit outgoing nodes
+        // Visit outgoing nodes, and call `visit` on them recursively
         self.nodes
-            .get(&n)
+            .get(&node_id)
             .unwrap()
             .outgoing_edges
             .iter()
             .for_each(|edge| self.visit(edge.other_id, marked, marked_temp, ordered, in_cycle));
 
-        // then add this node to the ordered list
-        ordered.push(n);
+        // Then add this node to the ordered list
+        ordered.push(node_id);
 
-        // finished visiting all nodes in this leg, clear the cycle detection list
-        marked_temp.retain(|marked| *marked != n);
+        // Finished visiting all nodes in this leg, clear the current cycle detection list
+        marked_temp.retain(|marked| *marked != node_id);
     }
 
-    /// Perform a topological sort of the graph. Mute nodes that are in a cycle
+    /// Determine the order of the audio nodes for rendering
+    ///
+    /// By inspecting the audio node connections, we can determine which nodes should render before
+    /// other nodes. For example, in a graph with an audio source, a gain node and the destination
+    /// node, at every render quantum the source should render first and after that the gain node.
+    ///
+    /// Inspired by the spec recommendation at
+    /// https://webaudio.github.io/web-audio-api/#rendering-loop
+    ///
+    /// The goals are:
+    /// - Perform a topological sort of the graph
+    /// - Mute nodes that are in a cycle
+    /// - For performance: no new allocations (reuse Vecs)
     fn order_nodes(&mut self) {
         // For borrowck reasons, we need the `visit` call to be &self.
         // So move out the bookkeeping Vecs, and pass them around as &mut.
@@ -227,16 +239,20 @@ impl Graph {
         let mut marked_temp = std::mem::take(&mut self.marked_temp);
         let mut in_cycle = std::mem::take(&mut self.in_cycle);
 
-        // clear previous administration
+        // Clear previous administration
         ordered.clear();
         marked.clear();
         marked_temp.clear();
         in_cycle.clear();
 
-        // visit all registered nodes, depth first search
-        self.nodes.keys().for_each(|&i| {
+        // Visit all registered nodes, and perform a depth first traversal.
+        //
+        // We cannot just start from the DestinationNode and visit all nodes connecting to it,
+        // since the audio graph could contain legs detached from the destination and those should
+        // still be rendered.
+        self.nodes.keys().for_each(|&node_id| {
             self.visit(
-                i,
+                node_id,
                 &mut marked,
                 &mut marked_temp,
                 &mut ordered,
@@ -244,29 +260,22 @@ impl Graph {
             );
         });
 
-        // remove cycles from ordered nodes, leaving the ordering in place
+        // Remove nodes from the ordering if they are part of a cycle. The spec mandates that their
+        // outputs should be silenced, but with our rendering algorithm that is not necessary.
+        // `retain` leaves the ordering in place
         ordered.retain(|o| !in_cycle.contains(o));
 
-        // mute the nodes inside cycles by clearing their output
-        for key in in_cycle.iter() {
-            self.nodes
-                .get_mut(key)
-                .unwrap()
-                .outputs
-                .iter_mut()
-                .for_each(AudioRenderQuantum::make_silent);
-        }
-
-        // depth first search yields reverse order
+        // The `visit` function adds child nodes before their parent, so reverse the order
         ordered.reverse();
 
-        // re-instate vecs
+        // Re-instate Vecs
         self.ordered = ordered;
         self.marked = marked;
         self.marked_temp = marked_temp;
         self.in_cycle = in_cycle;
     }
 
+    /// Render a single audio quantum by traversing the node list
     pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
@@ -316,32 +325,35 @@ impl Graph {
                         .add(signal, channel_interpretation);
                 });
 
-            // audio graph cleanup of decomissioned nodes
+            // Check if we can decommission this node (end of life)
             if node.can_free(tail_time) {
+                // Other nodes could still connect to this one, clear these edges
                 nodes
                     .values_mut()
                     .for_each(|n| n.outgoing_edges.retain(|e| e.other_id != *index));
+
+                // We should perform a new topological sort of the graph now
                 nodes_dropped = true;
             } else {
-                // reset input buffers
+                // Reset input buffers (we don't need them so this saves allocations)
                 node.inputs
                     .iter_mut()
                     .for_each(AudioRenderQuantum::make_silent);
 
-                // reset input state
+                // Reset input state
                 node.has_inputs_connected = false;
 
-                // re-insert node in graph
+                // Re-insert node in graph
                 nodes.insert(*index, node);
             }
         });
 
+        // If there were any nodes decomissioned, clear current graph order
         if nodes_dropped {
             self.ordered.clear();
         }
 
-        // return buffer of destination node
-        // assume only 1 output (todo)
+        // Return the output buffer of destination node
         &self.nodes.get(&NodeIndex(0)).unwrap().outputs[0]
     }
 }
