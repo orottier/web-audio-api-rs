@@ -111,6 +111,7 @@ impl AudioBufferSourceNode {
 
             // @todo - these parameters can't be changed to a-rate
             // @see - <https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints>
+            // @see - https://github.com/orottier/web-audio-api-rs/issues/29
             let detune_param_options = AudioParamOptions {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
@@ -558,7 +559,6 @@ impl AudioBufferSourceRenderer {
             let next_sample = if next_index >= channel.len() {
                 0.
             } else {
-                // channel[next_index]
                 channel.as_slice()[next_index]
             };
             let value = k_inv * prev_sample + k * next_sample;

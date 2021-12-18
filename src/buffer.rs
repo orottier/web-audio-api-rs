@@ -35,6 +35,7 @@ impl AudioBuffer {
     }
 
     /// Create a multi-channel audiobuffer.
+    // @note - should be `pub(crate)` but used in `bench.rs` examples
     pub fn from_channels(channels: Vec<ChannelData>, sample_rate: SampleRate) -> Self {
         Self {
             channels,
@@ -63,14 +64,14 @@ impl AudioBuffer {
     }
 
     /// Copy data from a given channel to the given `Vec`
-    pub fn copy_from_channel(&self, destination: &mut Vec<f32>, channel_number: usize) {
+    pub fn copy_from_channel(&self, destination: &mut [f32], channel_number: usize) {
         self.copy_from_channel_with_offset(destination, channel_number, 0);
     }
 
     /// Copy data from a given channel to the given `Vec` starting at `offset`
     pub fn copy_from_channel_with_offset(
         &self,
-        destination: &mut Vec<f32>,
+        destination: &mut [f32],
         channel_number: usize,
         offset: usize,
     ) {
@@ -78,20 +79,11 @@ impl AudioBuffer {
         // of elements in the destination array, and 𝑘 be the value of bufferOffset.
         // Then the number of frames copied from buffer to destination is max(0,min(𝑁𝑏−𝑘,𝑁𝑓)).
         // If this is less than 𝑁𝑓, then the remaining elements of destination are not modified.
-        //
-        // we use the `capacity` instead of `len` because destination is a write
-        // buffer and we don't care of its current values (cf. `copy_to_channel`)
-        let dest_capacity = destination.capacity();
-        let max_frame = (self.length() - offset).min(dest_capacity).max(0);
+        let dest_length = destination.len();
+        let max_frame = (self.length() - offset).min(dest_length).max(0);
         let channel = self.channel_data(channel_number).as_slice();
 
-        for index in 0..max_frame {
-            if index < destination.len() {
-                destination[index] = channel[index + offset];
-            } else {
-                destination.push(channel[index + offset]);
-            }
-        }
+        destination[..max_frame].copy_from_slice(&channel[offset..(max_frame + offset)]);
     }
 
     /// Copy data from a given source to the given channel.
@@ -110,9 +102,6 @@ impl AudioBuffer {
         // of elements in the source array, and 𝑘 be the value of bufferOffset. Then
         // the number of frames copied from source to the buffer is max(0,min(𝑁𝑏−𝑘,𝑁𝑓)).
         // If this is less than 𝑁𝑓, then the remaining elements of buffer are not modified.
-        //
-        // we use the `len` instead of `capacity` because source is a read buffer and we
-        // want to be sure we don't access some undefined index (cf. `copy_from_channel`)
         let src_len = source.len();
         let max_frame = (self.length() - offset).min(src_len).max(0);
         let channel = self.channel_data_mut(channel_number).as_mut_slice();
@@ -278,6 +267,7 @@ impl AudioBuffer {
 /// Single channel audio samples, basically wraps a `Arc<Vec<f32>>`
 ///
 /// ChannelData has copy-on-write semantics, so it is cheap to clone.
+// @note - should be `pub(crate)` but used in `bench.rs` examples
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChannelData {
     data: Arc<Vec<f32>>,
