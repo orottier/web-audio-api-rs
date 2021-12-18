@@ -95,8 +95,6 @@ impl AudioBuffer {
     }
 
     /// Copy data from a given source to the given channel.
-    ///
-    /// *warning:* note that this operation may rrequire the reallocation of the entire channel
     pub fn copy_to_channel(&mut self, source: &[f32], channel_number: usize) {
         self.copy_to_channel_with_offset(source, channel_number, 0);
     }
