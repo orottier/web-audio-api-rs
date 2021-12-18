@@ -45,7 +45,7 @@ struct AudioBufferMessage(AudioBuffer);
 ///
 /// # Usage
 ///
-/// ```rust
+/// ```no_run
 /// use std::fs::File;
 /// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 /// use web_audio_api::node::AudioNode;
