@@ -1,3 +1,5 @@
+//! The audio graph topology and render algorithm
+
 use std::collections::HashMap;
 
 use crate::node::{ChannelConfig, ChannelCountMode};
@@ -8,12 +10,12 @@ use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeInd
 use smallvec::{smallvec, SmallVec};
 
 /// Connection between two audio nodes
-struct Edge {
-    /// index of the current Nodes input/output port
+struct OutgoingEdge {
+    /// index of the current Nodes output port
     self_index: u32,
     /// reference to the other Node
     other_id: NodeIndex,
-    /// index of the other Nodes input/output port
+    /// index of the other Nodes input port
     other_index: u32,
 }
 
@@ -21,20 +23,18 @@ struct Edge {
 pub struct Node {
     /// Renderer: converts inputs to outputs
     processor: Box<dyn AudioProcessor>,
-    /// Input buffers
+    /// Reusable input buffers
     inputs: Vec<AudioRenderQuantum>,
-    /// Output buffers, consumed by subsequent Nodes in this graph
+    /// Reusable output buffers, consumed by subsequent Nodes in this graph
     outputs: Vec<AudioRenderQuantum>,
     /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
-
     /// Outgoing edges: tuple of outcoming node reference, our output index and their input index
-    outgoing_edges: SmallVec<[Edge; 2]>,
-    /// Incoming edges: tuple of incoming node reference and their output index, and our input index
-    incoming_edges: SmallVec<[Edge; 2]>,
-
+    outgoing_edges: SmallVec<[OutgoingEdge; 2]>,
     /// Indicates if the control thread has dropped this Node
     free_when_finished: bool,
+    /// Indicates if the node has any incoming connections (for lifecycle management)
+    has_inputs_connected: bool,
 }
 
 impl Node {
@@ -69,11 +69,7 @@ impl Node {
 
         // Drop, when the node does not have any inputs connected,
         // and if the processor reports it won't yield output.
-        let has_incoming = self
-            .incoming_edges
-            .iter()
-            .any(|edge| edge.self_index != u32::MAX);
-        if !has_incoming && !tail_time {
+        if !self.has_inputs_connected && !tail_time {
             return true;
         }
 
@@ -86,18 +82,21 @@ impl Node {
     }
 }
 
+/// The audio graph
 pub(crate) struct Graph {
-    // actual audio graph
+    /// Processing Nodes
     nodes: HashMap<NodeIndex, Node>,
-
-    // topological sorting
-    marked: Vec<NodeIndex>,
-    marked_temp: Vec<NodeIndex>,
-    ordered: Vec<NodeIndex>,
-    in_cycle: Vec<NodeIndex>,
-
-    // allocator for audio buffers
+    /// Allocator for audio buffers
     alloc: Alloc,
+
+    /// Topological ordering of the nodes
+    ordered: Vec<NodeIndex>,
+    /// Topological sorting helper
+    marked: Vec<NodeIndex>,
+    /// Topological sorting helper
+    marked_temp: Vec<NodeIndex>,
+    /// Topological sorting helper
+    in_cycle: Vec<NodeIndex>,
 }
 
 impl Graph {
@@ -131,9 +130,9 @@ impl Graph {
                 inputs,
                 outputs,
                 channel_config,
-                incoming_edges: smallvec![],
                 outgoing_edges: smallvec![],
                 free_when_finished: false,
+                has_inputs_connected: false,
             },
         );
     }
@@ -143,20 +142,10 @@ impl Graph {
             .get_mut(&source.0)
             .unwrap()
             .outgoing_edges
-            .push(Edge {
+            .push(OutgoingEdge {
                 self_index: source.1,
                 other_id: dest.0,
                 other_index: dest.1,
-            });
-
-        self.nodes
-            .get_mut(&dest.0)
-            .unwrap()
-            .incoming_edges
-            .push(Edge {
-                self_index: dest.1,
-                other_id: source.0,
-                other_index: source.1,
             });
 
         self.ordered.clear(); // void current ordering
@@ -169,23 +158,15 @@ impl Graph {
             .outgoing_edges
             .retain(|edge| edge.other_id != dest);
 
-        self.nodes
-            .get_mut(&dest)
-            .unwrap()
-            .incoming_edges
-            .retain(|edge| edge.other_id != source);
-
         self.ordered.clear(); // void current ordering
     }
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
         let node = self.nodes.get_mut(&source).unwrap();
         node.outgoing_edges.clear();
-        node.incoming_edges.clear();
 
         self.nodes.values_mut().for_each(|node| {
             node.outgoing_edges.retain(|edge| edge.other_id != source);
-            node.incoming_edges.retain(|edge| edge.other_id != source);
         });
 
         self.ordered.clear(); // void current ordering
@@ -195,40 +176,61 @@ impl Graph {
         self.nodes.get_mut(&index).unwrap().free_when_finished = true;
     }
 
-    /// Traverse node for topological sort
+    /// Helper function for `order_nodes` - traverse node and outgoing edges
     fn visit(
         &self,
-        n: NodeIndex,
+        node_id: NodeIndex,
         marked: &mut Vec<NodeIndex>,
         marked_temp: &mut Vec<NodeIndex>,
         ordered: &mut Vec<NodeIndex>,
         in_cycle: &mut Vec<NodeIndex>,
     ) {
-        // detect cycles
-        if let Some(pos) = marked_temp.iter().position(|&m| m == n) {
+        // If this node is in the cycle detection list, it is part of a cycle!
+        if let Some(pos) = marked_temp.iter().position(|&m| m == node_id) {
+            // Mark all nodes in the cycle
             in_cycle.extend_from_slice(&marked_temp[pos..]);
-            return;
-        }
-        if marked.contains(&n) {
+            // Do not continue, as we already have visited all these nodes
             return;
         }
 
-        marked.push(n);
-        marked_temp.push(n);
+        // Do not visit nodes multiple times
+        if marked.contains(&node_id) {
+            return;
+        }
 
-        // visit nodes connecting to this one
+        // Add node to the visited list
+        marked.push(node_id);
+        // Add node to the current cycle detection list
+        marked_temp.push(node_id);
+
+        // Visit outgoing nodes, and call `visit` on them recursively
         self.nodes
-            .get(&n)
+            .get(&node_id)
             .unwrap()
-            .incoming_edges
+            .outgoing_edges
             .iter()
             .for_each(|edge| self.visit(edge.other_id, marked, marked_temp, ordered, in_cycle));
 
-        marked_temp.retain(|marked| *marked != n);
-        ordered.insert(0, n);
+        // Then add this node to the ordered list
+        ordered.push(node_id);
+
+        // Finished visiting all nodes in this leg, clear the current cycle detection list
+        marked_temp.retain(|marked| *marked != node_id);
     }
 
-    /// Perform a topological sort of the graph. Mute nodes that are in a cycle
+    /// Determine the order of the audio nodes for rendering
+    ///
+    /// By inspecting the audio node connections, we can determine which nodes should render before
+    /// other nodes. For example, in a graph with an audio source, a gain node and the destination
+    /// node, at every render quantum the source should render first and after that the gain node.
+    ///
+    /// Inspired by the spec recommendation at
+    /// https://webaudio.github.io/web-audio-api/#rendering-loop
+    ///
+    /// The goals are:
+    /// - Perform a topological sort of the graph
+    /// - Mute nodes that are in a cycle
+    /// - For performance: no new allocations (reuse Vecs)
     fn order_nodes(&mut self) {
         // For borrowck reasons, we need the `visit` call to be &self.
         // So move out the bookkeeping Vecs, and pass them around as &mut.
@@ -237,16 +239,20 @@ impl Graph {
         let mut marked_temp = std::mem::take(&mut self.marked_temp);
         let mut in_cycle = std::mem::take(&mut self.in_cycle);
 
-        // clear previous administration
+        // Clear previous administration
         ordered.clear();
         marked.clear();
         marked_temp.clear();
         in_cycle.clear();
 
-        // visit all registered nodes, depth first search
-        self.nodes.keys().for_each(|&i| {
+        // Visit all registered nodes, and perform a depth first traversal.
+        //
+        // We cannot just start from the DestinationNode and visit all nodes connecting to it,
+        // since the audio graph could contain legs detached from the destination and those should
+        // still be rendered.
+        self.nodes.keys().for_each(|&node_id| {
             self.visit(
-                i,
+                node_id,
                 &mut marked,
                 &mut marked_temp,
                 &mut ordered,
@@ -254,29 +260,22 @@ impl Graph {
             );
         });
 
-        // remove cycles from ordered nodes, leaving the ordering in place
+        // Remove nodes from the ordering if they are part of a cycle. The spec mandates that their
+        // outputs should be silenced, but with our rendering algorithm that is not necessary.
+        // `retain` leaves the ordering in place
         ordered.retain(|o| !in_cycle.contains(o));
 
-        // mute the nodes inside cycles by clearing their output
-        for key in in_cycle.iter() {
-            self.nodes
-                .get_mut(key)
-                .unwrap()
-                .outputs
-                .iter_mut()
-                .for_each(AudioRenderQuantum::make_silent);
-        }
-
-        // depth first search yields reverse order
+        // The `visit` function adds child nodes before their parent, so reverse the order
         ordered.reverse();
 
-        // re-instate vecs
+        // Re-instate Vecs
         self.ordered = ordered;
         self.marked = marked;
         self.marked_temp = marked_temp;
         self.in_cycle = in_cycle;
     }
 
+    /// Render a single audio quantum by traversing the node list
     pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
@@ -320,45 +319,41 @@ impl Graph {
                 .filter(|edge| edge.other_index != u32::MAX)
                 .for_each(|edge| {
                     let output_node = nodes.get_mut(&edge.other_id).unwrap();
+                    output_node.has_inputs_connected = true;
                     let signal = &node.outputs[edge.self_index as usize];
                     output_node.inputs[edge.other_index as usize]
                         .add(signal, channel_interpretation);
                 });
 
-            // audio graph cleanup of decomissioned nodes
+            // Check if we can decommission this node (end of life)
             if node.can_free(tail_time) {
-                node.incoming_edges.iter().for_each(|edge| {
-                    nodes
-                        .get_mut(&edge.other_id)
-                        .unwrap()
-                        .outgoing_edges
-                        .retain(|e| e.other_id != *index)
-                });
-                node.outgoing_edges.iter().for_each(|edge| {
-                    nodes
-                        .get_mut(&edge.other_id)
-                        .unwrap()
-                        .incoming_edges
-                        .retain(|e| e.other_id != *index)
-                });
+                // Other nodes could still connect to this one, clear these edges
+                nodes
+                    .values_mut()
+                    .for_each(|n| n.outgoing_edges.retain(|e| e.other_id != *index));
+
+                // We should perform a new topological sort of the graph now
                 nodes_dropped = true;
             } else {
-                // reset input buffers
+                // Reset input buffers (we don't need them so this saves allocations)
                 node.inputs
                     .iter_mut()
                     .for_each(AudioRenderQuantum::make_silent);
 
-                // re-insert node in graph
+                // Reset input state
+                node.has_inputs_connected = false;
+
+                // Re-insert node in graph
                 nodes.insert(*index, node);
             }
         });
 
+        // If there were any nodes decomissioned, clear current graph order
         if nodes_dropped {
             self.ordered.clear();
         }
 
-        // return buffer of destination node
-        // assume only 1 output (todo)
+        // Return the output buffer of destination node
         &self.nodes.get(&NodeIndex(0)).unwrap().outputs[0]
     }
 }
