@@ -34,15 +34,6 @@ impl AudioBuffer {
         }
     }
 
-    /// Create a multi-channel audiobuffer.
-    // @note - should be `pub(crate)` but used in `bench.rs` examples
-    pub fn from_channels(channels: Vec<ChannelData>, sample_rate: SampleRate) -> Self {
-        Self {
-            channels,
-            sample_rate,
-        }
-    }
-
     /// Number of channels in this `AudioBuffer`
     pub fn number_of_channels(&self) -> usize {
         self.channels.len()
@@ -114,6 +105,14 @@ impl AudioBuffer {
         // [spec] According to the rules described in acquire the content either allow writing
         // into or getting a copy of the bytes stored in [[internal data]] in a new Float32Array
         self.channel_data(channel_number).as_slice()
+    }
+
+    /// Create a multi-channel audiobuffer directly from `ChannelData`s.
+    pub(crate) fn from_channels(channels: Vec<ChannelData>, sample_rate: SampleRate) -> Self {
+        Self {
+            channels,
+            sample_rate,
+        }
     }
 
     /// Channel data as slice
@@ -269,7 +268,7 @@ impl AudioBuffer {
 /// ChannelData has copy-on-write semantics, so it is cheap to clone.
 // @note - should be `pub(crate)` but used in `bench.rs` examples
 #[derive(Clone, Debug, PartialEq)]
-pub struct ChannelData {
+pub(crate) struct ChannelData {
     data: Arc<Vec<f32>>,
 }
 
@@ -291,9 +290,10 @@ impl ChannelData {
         self.data.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
-    }
+    // never used
+    // pub fn is_empty(&self) -> bool {
+    //     self.data.is_empty()
+    // }
 
     pub fn as_slice(&self) -> &[f32] {
         &self.data[..]
