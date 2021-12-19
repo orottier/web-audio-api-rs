@@ -191,6 +191,11 @@ impl AudioProcessor for DelayWriter {
         let input = inputs[0].clone();
         let output = &mut outputs[0];
 
+        // handle delay_buffer up/down max, this must be tested both on the reader
+        // and on the writer as we don't know which one will processed first
+
+        // nothing special to do there
+
         let mut buffer = self.delay_buffer.borrow_mut();
 
         // add to buffer
@@ -208,6 +213,15 @@ impl AudioProcessor for DelayWriter {
         output.make_silent();
 
         // todo: return false when all inputs disconnected and buffer exhausted
+        // if input.is_silence() store block timestamp in a shared Atomic
+        // else store f64::Max
+        //
+        // if silence_timestamp + maxDelayTime >= timestamp
+        //  return false
+        // else
+        //  return true
+        // @note f64::MAX + something == f64::MAX but doesn't crashes
+
         true
     }
 }
@@ -226,6 +240,13 @@ impl AudioProcessor for DelayReader {
 
         // todo: a-rate processing
         let delay = params.get(&self.delay_time)[0];
+
+        // handle delay_buffer up/down max, this must be tested both on the reader
+        // and on the writer as we don't know which one will processed first
+
+        // get playhead position (delay) at each sample
+        // - clamp between playhead.min(RENDER_QUANTUM_SIZE * dt).max(max_delay_time);
+        // - pick samples in delay_buffer (difficulty is need to abstract the wrapped buffers)
 
         // calculate the delay in chunks of RENDER_QUANTUM_SIZE (todo: sub quantum delays)
         let quanta = (delay * sample_rate.0 as f32) as usize / RENDER_QUANTUM_SIZE;
