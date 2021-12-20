@@ -36,8 +36,9 @@ impl Default for AudioBufferSourceOptions {
 
 struct AudioBufferMessage(AudioBuffer);
 
-/// `AudioBufferSourceNode` represents an audio source that consists of
-/// in-memory audio source, stored in an [`AudioBuffer`].
+/// `AudioBufferSourceNode` represents an audio source that consists of an
+/// in-memory audio source (i.e. an audio file completely loaded in memory),
+/// stored in an [`AudioBuffer`].
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioBufferSourceNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#AudioBufferSourceNode>
@@ -138,21 +139,17 @@ impl AudioBufferSourceNode {
 
             // Channel to send buffer channels references to the renderer
             //
-            // @note: Maybe we don't want to block the control thread waiting for next
-            // `render.tick`? However it's probably better to block the control thread
-            // rather than the render thread...
-            // Wouldn't be feasible to spawn a middle man thread that could block?
+            // @note: `crossbeam_channel::bounded(1)`this will block the control
+            // thread until the buffer is received. This could maybe be improved.
+            //
+            // Would it be feasible to spawn a middle man thread that could block?
             // ```
             // let (sender, receiver) = crossbeam_channel::bounded(0);
+            // // this thread could block waiting for the render thread
             // thread::spawn(move || {
-            //     sender.send(data); // this thread could block waiting for the render thread
+            //     sender.send(data);
             // });
             // ```
-            // ...but maybe this could introduce strange race conditions, or
-            // performance penalty, I don't know...
-            //
-            // @note - for some reason it blocks the rendering in tests w/ offline audio context
-            //  maybe because of early return in case of `none` buffer
             let (sender, receiver) = crossbeam_channel::bounded(1);
 
             let controller = Controller::new();
@@ -164,10 +161,10 @@ impl AudioBufferSourceNode {
                 detune: d_proc,
                 playback_rate: pr_proc,
                 render_state: AudioBufferRendererState::default(),
-                // This buffer is used to compute the samples per channel at each
-                // frame. 2 channels is sufficient as default value for most
-                // use-cases, the `vec` will be anyway be resized to actual buffer buffer is received
-                // number_of_channels when on the render thread.
+                // `internal_buffer` is used to compute the samples per channel
+                // at each frame. 2 channels are sufficient as default value for
+                // most use-cases, note that the `vec` will always be resized to
+                // actual buffer number_of_channels when received on the render thread.
                 internal_buffer: Vec::<f32>::with_capacity(2),
             };
 
@@ -195,12 +192,16 @@ impl AudioBufferSourceNode {
     }
 
     /// Provide an [`AudioBuffer`] as the source of data to be played bask
+    ///
+    /// # Panics
+    ///
+    /// Panics if a buffer has already be given to the source (though `new`
+    /// or through `set_buffer`)
     pub fn set_buffer(&mut self, audio_buffer: &AudioBuffer) {
         // - Let new buffer be the AudioBuffer or null value to be assigned to buffer.
         // - If new buffer is not null and [[buffer set]] is true, throw an
         // InvalidStateError and abort these steps.
         if self.buffer.is_some() {
-            // buffer has already been set, panic!
             panic!("InvalidStateError - cannot assign buffer twice");
         }
         // - If new buffer is not null, set [[buffer set]] to true.
@@ -208,6 +209,8 @@ impl AudioBufferSourceNode {
         self.buffer = Some(audio_buffer.clone());
         // - If start() has previously been called on this node, perform the
         // operation acquire the content on buffer.
+        // see <https://github.com/orottier/web-audio-api-rs/issues/68> for
+        // more information on the "acquire the content" concept in this context.
         if self.source_started {
             self.send_buffer();
         }
@@ -224,12 +227,12 @@ impl AudioBufferSourceNode {
         self.start_at_with_offset_and_duration(start, 0., f64::MAX);
     }
 
-    /// Start the playback at the given time and offset
+    /// Start the playback at the given time and with a given offset
     pub fn start_at_with_offset(&mut self, start: f64, offset: f64) {
         self.start_at_with_offset_and_duration(start, offset, f64::MAX);
     }
 
-    /// Start the playback at the given time and offset, for a given duration
+    /// Start the playback at the given time, with a given offset, for a given duration
     pub fn start_at_with_offset_and_duration(&mut self, start: f64, offset: f64, duration: f64) {
         if self.source_started {
             panic!("InvalidStateError: Cannot call `start` twice");
@@ -377,7 +380,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let loop_start = self.controller.loop_start();
         let loop_end = self.controller.loop_end();
 
-        // will only be used if `loop_` is true, so no need for `Option`
+        // these will only be used if `loop_` is true, so no need for `Option`
         let mut actual_loop_start = 0.;
         let mut actual_loop_end = 0.;
 
@@ -388,7 +391,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         }
 
         // If the buffer has not been set wait for it.
-        // @see - `start` tries to acquire the buffer if already started
+        // @see - `set_buffer` tries to acquire the buffer if the source already started
         if self.buffer.is_none() {
             output.make_silent();
             return true;
@@ -406,23 +409,18 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // 1. the stop time has been reached.
         // 2. the duration has been reached.
         if timestamp >= stop_time || self.render_state.buffer_time_elapsed >= duration {
-            // println!("reached stopTime or duration, return false");
             output.make_silent();
             return false;
         }
 
         // 3. the end of the buffer has been reached.
         if !loop_ {
-            // handle positive playback rate
             if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
-                // println!("reached end of file, return false");
                 output.make_silent();
                 return false;
             }
 
-            // handle negative playback rate
             if computed_playback_rate < 0. && self.render_state.buffer_time < 0. {
-                // println!("reached end of file (backward), return false");
                 output.make_silent();
                 return false;
             }
@@ -522,11 +520,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 }
 
 impl AudioBufferSourceRenderer {
-    // Pick the index closer to the given position
+    // Pick the closest index to the given position
     //
-    // @note - keep that around as it could be usefull for testing and/or to
-    // for perf improvement if the playback is aligned on `sample_rate` and
-    // `playback_rate.abs() = 1`
+    // @note - this is not used but we keep that around as it could be usefull
+    // for testing and/or to for perf improvement if the playback is aligned on
+    // `sample_rate` and `playback_rate.abs() = 1` and as not been modified
     #[allow(dead_code)]
     fn compute_playback_at_position_direct(&mut self, position: f64, sample_rate: f64) {
         let sample_index = (position * sample_rate).round() as usize;
@@ -537,7 +535,7 @@ impl AudioBufferSourceRenderer {
         }
     }
 
-    // Linear interpolation according to position
+    // Linear interpolate betwen tow frames according to a given position
     fn compute_playback_at_position(&mut self, position: f64, sample_rate: f64) {
         let playhead = position * sample_rate;
         let playhead_floored = playhead.floor();
@@ -553,8 +551,7 @@ impl AudioBufferSourceRenderer {
             // and there is no subsequent sample frame in buffer, then interpolation
             // should be based on the sequence of subsequent frames beginning at |loopStart|.
             //
-            // for now let's just interpolate with zero, does the job
-            // let prev_sample = channel[prev_index];
+            // for now we just interpolate with zero
             let prev_sample = channel.as_slice()[prev_index];
             let next_sample = if next_index >= channel.len() {
                 0.
@@ -579,7 +576,6 @@ mod tests {
     fn type_playing_some_file() {
         let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, SampleRate(44_100));
 
-        // load and decode buffer
         let file = std::fs::File::open("sample.wav").unwrap();
         let audio_buffer = context.decode_audio_data(file);
 
@@ -590,18 +586,16 @@ mod tests {
         src.stop_at(context.current_time() + 128.);
 
         let res = context.start_rendering();
+        // println!("buffer duration: {:?}", audio_buffer.duration());
+        // println!("context sample rate: {:?}", context.sample_rate());
 
-        println!("buffer duration: {:?}", audio_buffer.duration());
-        println!("context sample rate: {:?}", context.sample_rate());
-
-        // left
+        // check first 128 samples in left and right channels
         assert_float_eq!(
             res.channel_data(0).as_slice()[..],
             audio_buffer.get_channel_data(0)[0..128],
             abs_all <= 0.
         );
 
-        // // right
         assert_float_eq!(
             res.channel_data(1).as_slice()[..],
             audio_buffer.get_channel_data(1)[0..128],

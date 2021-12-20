@@ -84,7 +84,7 @@ pub trait AsBaseAudioContext {
 
     /// Retrieves an [`AudioBuffer`] from a given [`std::fs::File`]
     ///
-    /// *warning:* in the current implementation `decode_audio_data` only accepts
+    /// *Warning:* in the current implementation `decode_audio_data` only accepts
     /// `.wav` files and do not perform any resampling operation. Be carefull
     /// to use audio files that match the current sample rate or the file will
     /// pitched when played.
@@ -113,7 +113,6 @@ pub trait AsBaseAudioContext {
         // cf. https://docs.rs/hound/latest/hound/struct.WavReader.html#method.samples
         match sample_format {
             hound::SampleFormat::Int => {
-                // channel are interleaved, so we need to de-interleave
                 let mut channel_number = 0;
 
                 if bits_per_sample == 16 {
@@ -148,11 +147,7 @@ pub trait AsBaseAudioContext {
         // different from the sample-rate of audioData.
 
         // @todo - resample if needed
-        // if (sample_rate != self.sample_rate()) {
-        //     // @todo - resample
-        //     // cf. https://github.com/HEnquist/rubato/blob/master/examples/fftfixedin64.rs
-        //     // already used in waveshaper
-        // }
+        // if (sample_rate != self.sample_rate()) {}
 
         let mut channels = Vec::<ChannelData>::with_capacity(number_of_channels);
 
@@ -168,7 +163,7 @@ pub trait AsBaseAudioContext {
     /// Create an new "in-memory" `AudioBuffer` with the given number of channels,
     /// length (i.e. number of samples per channel) and sample rate.
     ///
-    /// Note: in most cases you will want the sample rate to match the current
+    /// Note: In most cases you will want the sample rate to match the current
     /// audio context sample rate.
     fn create_buffer(
         &self,
@@ -886,6 +881,7 @@ mod tests {
 
     #[test]
     fn test_decode_audio_data() {
+        // @todo - complete and assert when resampling will be implemented
         let context = AudioContext::new(None);
 
         let file = std::fs::File::open("sample.wav").unwrap();

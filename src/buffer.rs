@@ -5,6 +5,7 @@ use crate::media::MediaStream;
 use crate::render::AudioRenderQuantum;
 use crate::SampleRate;
 
+/// Options for constructing an [`AudioBuffer`]
 #[derive(Copy, Clone, Debug)]
 pub struct AudioBufferOptions {
     pub number_of_channels: usize, // defaults to 1
@@ -15,6 +16,9 @@ pub struct AudioBufferOptions {
 /// Memory-resident audio asset, basically a matrix of channels * samples
 ///
 /// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioBuffer>
+/// - specification: <https://webaudio.github.io/web-audio-api/#AudioBuffer>
 #[derive(Clone, Debug)]
 pub struct AudioBuffer {
     channels: Vec<ChannelData>,
@@ -24,7 +28,7 @@ pub struct AudioBuffer {
 use std::error::Error;
 
 impl AudioBuffer {
-    /// Allocate a silent audiobuffer with given channel and samples count.
+    /// Allocate a silent audiobuffer with [`AudioBufferOptions`]
     pub fn new(options: AudioBufferOptions) -> Self {
         let silence = ChannelData::new(options.length);
 
@@ -126,6 +130,7 @@ impl AudioBuffer {
     }
 
     /// Create a multi-channel audiobuffer directly from `ChannelData`s.
+    // @todo - remove in favor of `AudioBuffer::from`
     pub(crate) fn from_channels(channels: Vec<ChannelData>, sample_rate: SampleRate) -> Self {
         Self {
             channels,
@@ -257,7 +262,6 @@ impl AudioBuffer {
 /// Single channel audio samples, basically wraps a `Arc<Vec<f32>>`
 ///
 /// ChannelData has copy-on-write semantics, so it is cheap to clone.
-// @note - should be `pub(crate)` but used in `bench.rs` examples
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ChannelData {
     data: Arc<Vec<f32>>,
@@ -280,11 +284,6 @@ impl ChannelData {
     pub fn len(&self) -> usize {
         self.data.len()
     }
-
-    // never used
-    // pub fn is_empty(&self) -> bool {
-    //     self.data.is_empty()
-    // }
 
     pub fn as_slice(&self) -> &[f32] {
         &self.data[..]
@@ -519,27 +518,6 @@ mod tests {
             );
         }
     }
-
-    // I can't make it compile so seems like a good point
-    // #[test]
-    // fn test_get_channel_data() {
-    //     let options = AudioBufferOptions {
-    //         number_of_channels: 1,
-    //         length: 10,
-    //         sample_rate: SampleRate(1),
-    //     };
-
-    //     let audio_buffer = AudioBuffer::new(options);
-    //     let mut channel = &audio_buffer.get_channel_data(0)[..];
-    //     assert_float_eq!(channel[..], [0.; 10][..], abs_all <= 0.);
-    //     // mutate channel and make sure this does not propagate to internal_data
-    //     channel[0] = 1.;
-    //     assert_float_eq!(
-    //         audio_buffer.get_channel_data(0)[..],
-    //         [0.; 10][..],
-    //         abs_all <= 0.
-    //     );
-    // }
 
     // internal API
     #[test]
