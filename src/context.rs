@@ -19,11 +19,11 @@ const LISTENER_NODE_ID: u64 = 1;
 /// listener audio parameters ids are always at index 2 through 12
 const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
-use crate::buffer::AudioBuffer;
+use crate::buffer::{AudioBuffer, AudioBufferOptions, ChannelData};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{
-    self, AnalyserOptions, AudioBufferSourceNodeOptions, AudioNode, ChannelConfigOptions,
+    self, AnalyserOptions, AudioBufferSourceOptions, AudioNode, ChannelConfigOptions,
     ChannelCountMode, ChannelInterpretation, ChannelMergerOptions, ChannelSplitterOptions,
     ConstantSourceOptions, DelayOptions, GainOptions, IirFilterOptions, PannerOptions,
     PeriodicWave, PeriodicWaveOptions,
@@ -81,6 +81,109 @@ struct BaseAudioContextInner {
 pub trait AsBaseAudioContext {
     /// retrieves the `BaseAudioContext` associated with the concrete `AudioContext`
     fn base(&self) -> &BaseAudioContext;
+
+    /// Retrieves an [`AudioBuffer`] from a given [`std:fs::File`]
+    ///
+    /// *warning:* in the current implementation `decode_audio_data` only accepts
+    /// `.wav` files and do not perform any resampling operation. Be carefull
+    /// to use audio files that match the current sample rate or the file will
+    /// pitched when played.
+    fn decode_audio_data(&self, file: std::fs::File) -> AudioBuffer {
+        // @see - https://github.com/orottier/web-audio-api-rs/issues/42
+        // @note - should also be async, but that's not a big deal neither for now
+        let buf_reader = std::io::BufReader::new(file);
+        let mut reader = hound::WavReader::new(buf_reader).unwrap();
+        let hound::WavSpec {
+            channels,
+            sample_rate: _, // @todo - use for resampling
+            bits_per_sample,
+            sample_format,
+        } = reader.spec();
+
+        let number_of_channels = channels as usize;
+        let length = reader.duration() as usize;
+
+        let mut decoded: Vec<Vec<f32>> = Vec::with_capacity(number_of_channels);
+
+        for _ in 0..number_of_channels {
+            decoded.push(Vec::<f32>::with_capacity(length));
+        }
+
+        // @note - hound retrieves interleaved values
+        // cf. https://docs.rs/hound/latest/hound/struct.WavReader.html#method.samples
+        match sample_format {
+            hound::SampleFormat::Int => {
+                // channel are interleaved, so we need to de-interleave
+                let mut channel_number = 0;
+
+                if bits_per_sample == 16 {
+                    for sample in reader.samples::<i16>() {
+                        let s = f32::from(sample.unwrap()) / f32::from(i16::MAX);
+                        assert!(s.abs() <= 1.);
+                        decoded[channel_number].push(s);
+                        // next sample belongs to the next channel
+                        channel_number = (channel_number + 1) % number_of_channels;
+                    }
+                } else {
+                    panic!("bits_per_sample {:?} not implemented", bits_per_sample);
+                }
+            }
+            hound::SampleFormat::Float => {
+                // this one is not tested
+                let mut channel_number = 0;
+
+                for sample in reader.samples::<f32>() {
+                    let s = sample.unwrap();
+                    decoded[channel_number].push(s);
+                    // next sample belongs to the next channel
+                    channel_number = (channel_number + 1) % number_of_channels;
+                }
+            }
+        }
+
+        assert_eq!(decoded[0].len(), length);
+
+        // [spec] Take the result, representing the decoded linear PCM audio data,
+        // and resample it to the sample-rate of the BaseAudioContext if it is
+        // different from the sample-rate of audioData.
+
+        // @todo - resample if needed
+        // if (sample_rate != self.sample_rate()) {
+        //     // @todo - resample
+        //     // cf. https://github.com/HEnquist/rubato/blob/master/examples/fftfixedin64.rs
+        //     // already used in waveshaper
+        // }
+
+        let mut channels = Vec::<ChannelData>::with_capacity(number_of_channels);
+
+        // replace raw decoded channels with `DataChannel`
+        for raw_channel in decoded {
+            let channel = ChannelData::from(raw_channel);
+            channels.push(channel);
+        }
+
+        AudioBuffer::from_channels(channels, self.sample_rate())
+    }
+
+    /// Create an new "in-memory" `AudioBuffer` with the given number of channels,
+    /// length (i.e. number of samples per channel) and sample rate.
+    ///
+    /// Note: in most cases you will want the sample rate to match the current
+    /// audio context sample rate.
+    fn create_buffer(
+        &self,
+        number_of_channels: usize,
+        length: usize,
+        sample_rate: SampleRate,
+    ) -> AudioBuffer {
+        let options = AudioBufferOptions {
+            number_of_channels,
+            length,
+            sample_rate,
+        };
+
+        AudioBuffer::new(options)
+    }
 
     /// Creates an `OscillatorNode`, a source representing a periodic waveform. It basically
     /// generates a tone.
@@ -197,7 +300,7 @@ pub trait AsBaseAudioContext {
     ///
     /// Note: do not forget to `start()` the node.
     fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
-        node::AudioBufferSourceNode::new(self.base(), AudioBufferSourceNodeOptions::default())
+        node::AudioBufferSourceNode::new(self.base(), AudioBufferSourceOptions::default())
     }
 
     /// Creates a `PannerNode`
@@ -779,5 +882,33 @@ mod tests {
         // we want to be able to ship AudioNodes to another thread, so the Registration should be
         // Send Sync and 'static
         require_send_sync_static(registration);
+    }
+
+    #[test]
+    fn test_decode_audio_data() {
+        let context = AudioContext::new(None);
+
+        let file = std::fs::File::open("sample.wav").unwrap();
+        let audio_buffer = context.decode_audio_data(file);
+
+        println!("----------------------------------------------");
+        println!(
+            "- number_of_channels: {:?}",
+            audio_buffer.number_of_channels()
+        );
+        println!("- length: {:?}", audio_buffer.length());
+        println!("- sample_rate: {:?}", audio_buffer.sample_rate());
+        println!("- duration: {:?}", audio_buffer.duration());
+
+        let left_start = &audio_buffer.get_channel_data(0)[0..100];
+        let right_start = &audio_buffer.get_channel_data(1)[0..100];
+
+        println!("----------------------------------------------");
+        println!("@todo - should check that resampling is ok    ");
+        println!("----------------------------------------------");
+        println!("- left_start: {:?}", left_start);
+        println!("----------------------------------------------");
+        println!("- right_start: {:?}", right_start);
+        println!("----------------------------------------------");
     }
 }

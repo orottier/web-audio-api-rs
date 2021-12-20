@@ -457,6 +457,7 @@ impl AudioProcessor for AudioParamProcessor {
         param_computed_values
             .channel_data_mut(0)
             .copy_from_slice(param_intrisic_values);
+
         param_computed_values.add(input, ChannelInterpretation::Discrete);
 
         true // has intrinsic value
@@ -1991,7 +1992,7 @@ mod tests {
     }
 
     #[test]
-    fn test_set_value_curve_a_rate_multiple_blocks() {
+    fn test_set_target_at_time_a_rate_multiple_blocks() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
@@ -2026,7 +2027,7 @@ mod tests {
     }
 
     #[test]
-    fn test_set_value_curve_a_rate_followed_by_set_value() {
+    fn test_set_target_at_time_a_rate_followed_by_set_value() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
@@ -2065,7 +2066,7 @@ mod tests {
     }
 
     #[test]
-    fn test_set_value_curve_a_rate_followed_by_ramp() {
+    fn test_set_target_at_time_a_rate_followed_by_ramp() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
         {
             let opts = AudioParamOptions {
@@ -2118,7 +2119,7 @@ mod tests {
     }
 
     #[test]
-    fn test_set_value_curve_k_rate_multiple_blocks() {
+    fn test_set_target_at_time_k_rate_multiple_blocks() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {

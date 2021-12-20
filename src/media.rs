@@ -7,7 +7,7 @@ use std::io::BufReader;
 use lewton::inside_ogg::OggStreamReader;
 use lewton::VorbisError;
 
-use crate::buffer::{AudioBuffer, ChannelData};
+use crate::buffer::{AudioBuffer, AudioBufferOptions, ChannelData};
 use crate::control::Controller;
 use crate::{BufferDepletedError, SampleRate, RENDER_QUANTUM_SIZE};
 
@@ -40,10 +40,15 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 /// ```no_run
 /// use web_audio_api::SampleRate;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
-/// use web_audio_api::buffer::AudioBuffer;
+/// use web_audio_api::buffer::{AudioBuffer, AudioBufferOptions};
 ///
 /// // create a new buffer: 512 samples of silence
-/// let silence = AudioBuffer::new(1, 512, SampleRate(44_100));
+/// let options = AudioBufferOptions {
+///     number_of_channels: 0,
+///     length: 512,
+///     sample_rate: SampleRate(44_100),
+/// };
+/// let silence = AudioBuffer::new(options);
 ///
 /// // create a sequence of this buffer
 /// let sequence = std::iter::repeat(silence).take(5);
@@ -96,12 +101,16 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 ///
 /// // the media element provides an infinite iterator now
 /// for buf in element.take(5) {
-///     assert_eq!(
-///         buf.unwrap().channel_data(0),
-///         &ChannelData::from(vec![0.; 20])
-///     )
+///   match buf {
+///       Ok(b) => {
+///           assert_eq!(
+///               b.get_channel_data(0)[..],
+///               vec![0.; 20][..]
+///           )
+///       },
+///       Err(e) => (),
+///   }
 /// }
-///
 /// ```
 pub struct MediaElement {
     /// input media stream
@@ -233,14 +242,11 @@ impl Iterator for MediaElement {
     fn next(&mut self) -> Option<Self::Item> {
         // handle seeking
         if let Some(seek) = self.controller().should_seek() {
-            println!("seek requested {}", seek);
             self.seek(seek);
         } else if let Some(seek) = self.seeking.take() {
-            println!("leftover seek {}", seek);
             self.seek(seek);
         }
         if self.seeking.is_some() {
-            println!("leftover seek, return silence");
             return Some(Err(Box::new(BufferDepletedError {})));
         }
 
@@ -348,7 +354,14 @@ impl Iterator for Microphone {
             Err(TryRecvError::Empty) => {
                 // frame not received in time, emit silence
                 log::debug!("input frame delayed");
-                AudioBuffer::new(self.channels, RENDER_QUANTUM_SIZE, self.sample_rate)
+
+                let options = AudioBufferOptions {
+                    number_of_channels: self.channels,
+                    length: RENDER_QUANTUM_SIZE,
+                    sample_rate: self.sample_rate,
+                };
+
+                AudioBuffer::new(options)
             }
             Err(TryRecvError::Disconnected) => {
                 // MicrophoneRender has stopped, close stream

@@ -65,7 +65,7 @@ fn test_media_buffering() {
     // should be silent since the media stream did not yield any output
     let output = context.start_rendering();
     assert_float_eq!(
-        output.channel_data(0).as_slice(),
+        output.get_channel_data(0),
         &[0.; RENDER_QUANTUM_SIZE][..],
         abs_all <= 0.
     );
@@ -76,7 +76,7 @@ fn test_media_buffering() {
     // should contain output
     let output = context.start_rendering();
     assert_float_eq!(
-        output.channel_data(0).as_slice(),
+        output.get_channel_data(0),
         &[2.; RENDER_QUANTUM_SIZE][..],
         abs_all <= 0.
     );
@@ -84,7 +84,7 @@ fn test_media_buffering() {
     // should be silent since the media stream did not yield any output
     let output = context.start_rendering();
     assert_float_eq!(
-        output.channel_data(0).as_slice(),
+        output.get_channel_data(0),
         &[0.; RENDER_QUANTUM_SIZE][..],
         abs_all <= 0.
     );
@@ -95,7 +95,7 @@ fn test_media_buffering() {
     // should contain output
     let output = context.start_rendering();
     assert_float_eq!(
-        output.channel_data(0).as_slice(),
+        output.get_channel_data(0),
         &[3.; RENDER_QUANTUM_SIZE][..],
         abs_all <= 0.
     );
@@ -107,19 +107,19 @@ fn test_media_buffering() {
     // should contain previous output (looping)
     let output = context.start_rendering();
     assert_float_eq!(
-        output.channel_data(0).as_slice(),
+        output.get_channel_data(0),
         &[2.; RENDER_QUANTUM_SIZE][..],
         abs_all <= 0.
     );
     let output = context.start_rendering();
     assert_float_eq!(
-        output.channel_data(0).as_slice(),
+        output.get_channel_data(0),
         &[3.; RENDER_QUANTUM_SIZE][..],
         abs_all <= 0.
     );
     let output = context.start_rendering();
     assert_float_eq!(
-        output.channel_data(0).as_slice(),
+        output.get_channel_data(0),
         &[2.; RENDER_QUANTUM_SIZE][..],
         abs_all <= 0.
     );
@@ -150,7 +150,7 @@ fn test_media_seeking() {
     // should be silent since the media stream did not yield any output
     let output = context.start_rendering();
     assert_float_eq!(
-        output.channel_data(0).as_slice(),
+        output.get_channel_data(0),
         &[0.; RENDER_QUANTUM_SIZE][..],
         abs_all <= 0.
     );
@@ -165,7 +165,7 @@ fn test_media_seeking() {
     // should contain output, with first 2 values skipped
     let output = context.start_rendering();
     assert_float_eq!(
-        output.channel_data(0).as_slice(),
+        output.get_channel_data(0),
         &[4.; RENDER_QUANTUM_SIZE][..],
         abs_all <= 0.
     );

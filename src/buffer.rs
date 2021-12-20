@@ -5,6 +5,13 @@ use crate::media::MediaStream;
 use crate::render::AudioRenderQuantum;
 use crate::SampleRate;
 
+#[derive(Copy, Clone, Debug)]
+pub struct AudioBufferOptions {
+    pub number_of_channels: usize, // defaults to 1
+    pub length: usize,             // required
+    pub sample_rate: SampleRate,   // required
+}
+
 /// Memory-resident audio asset, basically a matrix of channels * samples
 ///
 /// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
@@ -18,69 +25,123 @@ use std::error::Error;
 
 impl AudioBuffer {
     /// Allocate a silent audiobuffer with given channel and samples count.
-    pub fn new(channels: usize, len: usize, sample_rate: SampleRate) -> Self {
-        let silence = ChannelData::new(len);
+    pub fn new(options: AudioBufferOptions) -> Self {
+        let silence = ChannelData::new(options.length);
 
         Self {
-            channels: vec![silence; channels],
-            sample_rate,
+            channels: vec![silence; options.number_of_channels],
+            sample_rate: options.sample_rate,
         }
     }
 
-    /// Create a multi-channel audiobuffer.
-    pub fn from_channels(channels: Vec<ChannelData>, sample_rate: SampleRate) -> Self {
+    /// Number of channels in this `AudioBuffer`
+    pub fn number_of_channels(&self) -> usize {
+        self.channels.len()
+    }
+
+    /// Number of samples per channel in this `AudioBuffer`
+    pub fn length(&self) -> usize {
+        self.channels.get(0).map(ChannelData::len).unwrap_or(0)
+    }
+
+    /// Sample rate of this `AudioBuffer` in Hertz
+    pub fn sample_rate(&self) -> SampleRate {
+        self.sample_rate
+    }
+
+    /// Duration in seconds of the `AudioBuffer`
+    pub fn duration(&self) -> f64 {
+        self.length() as f64 / self.sample_rate.0 as f64
+    }
+
+    /// Copy data from a given channel to the given `Vec`
+    pub fn copy_from_channel(&self, destination: &mut [f32], channel_number: usize) {
+        self.copy_from_channel_with_offset(destination, channel_number, 0);
+    }
+
+    /// Copy data from a given channel to the given `Vec` starting at `offset`
+    pub fn copy_from_channel_with_offset(
+        &self,
+        destination: &mut [f32],
+        channel_number: usize,
+        offset: usize,
+    ) {
+        // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
+        // of elements in the destination array, and 𝑘 be the value of bufferOffset.
+        // Then the number of frames copied from buffer to destination is max(0,min(𝑁𝑏−𝑘,𝑁𝑓)).
+        // If this is less than 𝑁𝑓, then the remaining elements of destination are not modified.
+        let dest_length = destination.len();
+        let max_frame = (self.length() - offset).min(dest_length).max(0);
+        let channel = self.channel_data(channel_number).as_slice();
+
+        destination[..max_frame].copy_from_slice(&channel[offset..(max_frame + offset)]);
+    }
+
+    /// Copy data from a given source to the given channel.
+    pub fn copy_to_channel(&mut self, source: &[f32], channel_number: usize) {
+        self.copy_to_channel_with_offset(source, channel_number, 0);
+    }
+
+    /// Copy data from a given source to the given channel starting at `offset`.
+    pub fn copy_to_channel_with_offset(
+        &mut self,
+        source: &[f32],
+        channel_number: usize,
+        offset: usize,
+    ) {
+        // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
+        // of elements in the source array, and 𝑘 be the value of bufferOffset. Then
+        // the number of frames copied from source to the buffer is max(0,min(𝑁𝑏−𝑘,𝑁𝑓)).
+        // If this is less than 𝑁𝑓, then the remaining elements of buffer are not modified.
+        let src_len = source.len();
+        let max_frame = (self.length() - offset).min(src_len).max(0);
+        let channel = self.channel_data_mut(channel_number).as_mut_slice();
+
+        channel[offset..(max_frame + offset)].copy_from_slice(&source[..max_frame]);
+    }
+
+    /// Return a read-only copy of the underlying data of the channel
+    pub fn get_channel_data(&self, channel_number: usize) -> &[f32] {
+        // [spec] According to the rules described in acquire the content either allow writing
+        // into or getting a copy of the bytes stored in [[internal data]] in a new Float32Array
+        self.channel_data(channel_number).as_slice()
+    }
+
+    /// Create a multi-channel audiobuffer directly from `ChannelData`s.
+    pub(crate) fn from_channels(channels: Vec<ChannelData>, sample_rate: SampleRate) -> Self {
         Self {
             channels,
             sample_rate,
         }
     }
 
-    /// Number of channels in this AudioBuffer
-    pub fn number_of_channels(&self) -> usize {
-        self.channels.len()
-    }
-
-    /// Number of samples per channel in this AudioBuffer
-    pub fn sample_len(&self) -> usize {
-        self.channels.get(0).map(ChannelData::len).unwrap_or(0)
-    }
-
-    /// Sample rate of this AudioBuffer in Hertz
-    pub fn sample_rate(&self) -> SampleRate {
-        self.sample_rate
-    }
-
-    /// Duration in seconds of the AudioBuffer
-    pub fn duration(&self) -> f64 {
-        self.sample_len() as f64 / self.sample_rate.0 as f64
-    }
-
     /// Channel data as slice
-    pub fn channels(&self) -> &[ChannelData] {
+    pub(crate) fn channels(&self) -> &[ChannelData] {
         &self.channels
     }
 
     /// Channel data as slice (mutable)
-    pub fn channels_mut(&mut self) -> &mut [ChannelData] {
+    pub(crate) fn channels_mut(&mut self) -> &mut [ChannelData] {
         &mut self.channels
     }
 
     /// Get the samples from this specific channel.
     ///
     /// Panics if the index is greater than the available number of channels
-    pub fn channel_data(&self, index: usize) -> &ChannelData {
+    // @note - this one is used in
+    pub(crate) fn channel_data(&self, index: usize) -> &ChannelData {
         &self.channels[index]
     }
 
     /// Get the samples (mutable) from this specific channel.
     ///
     /// Panics if the index is greater than the available number of channels
-    pub fn channel_data_mut(&mut self, index: usize) -> &mut ChannelData {
+    pub(crate) fn channel_data_mut(&mut self, index: usize) -> &mut ChannelData {
         &mut self.channels[index]
     }
 
     /// Modify every channel in the same way
-    pub fn modify_channels<F: Fn(&mut ChannelData)>(&mut self, fun: F) {
+    pub(crate) fn modify_channels<F: Fn(&mut ChannelData)>(&mut self, fun: F) {
         // todo, optimize for Arcs that are equal
         self.channels.iter_mut().for_each(fun)
     }
@@ -88,7 +149,7 @@ impl AudioBuffer {
     /// Extends an AudioBuffer with the contents of another.
     ///
     /// This function will panic if the sample_rate and channel_count are not equal
-    pub fn extend(&mut self, other: &Self) {
+    pub(crate) fn extend(&mut self, other: &Self) {
         assert_eq!(self.sample_rate, other.sample_rate);
         assert_eq!(self.number_of_channels(), other.number_of_channels());
 
@@ -104,7 +165,7 @@ impl AudioBuffer {
     /// Extends an AudioBuffer with an [`AudioRenderQuantum`]
     ///
     /// This assumes the sample_rate matches. No up/down-mixing is performed
-    pub fn extend_alloc(&mut self, other: &AudioRenderQuantum) {
+    pub(crate) fn extend_alloc(&mut self, other: &AudioRenderQuantum) {
         self.channels_mut()
             .iter_mut()
             .zip(other.channels())
@@ -117,9 +178,10 @@ impl AudioBuffer {
     /// Split an AudioBuffer in chunks with length `sample_len`.
     ///
     /// The last chunk may be shorter than `sample_len`
-    pub fn split(mut self, sample_len: u32) -> Vec<AudioBuffer> {
+    #[cfg(test)]
+    pub(crate) fn split(mut self, sample_len: u32) -> Vec<AudioBuffer> {
         let sample_len = sample_len as usize;
-        let total_len = self.sample_len();
+        let total_len = self.length();
         let sample_rate = self.sample_rate();
 
         let mut channels: Vec<_> = self
@@ -141,7 +203,7 @@ impl AudioBuffer {
     }
 
     /// Split an AudioBuffer in two at the given index.
-    pub fn split_off(&mut self, index: usize) -> AudioBuffer {
+    pub(crate) fn split_off(&mut self, index: usize) -> AudioBuffer {
         let sample_rate = self.sample_rate();
 
         let channels: Vec<_> = self
@@ -157,25 +219,25 @@ impl AudioBuffer {
     /// Resample to the desired sample rate.
     ///
     /// This changes the sample_length of the buffer.
-    ///
-    /// ```
-    /// use web_audio_api::SampleRate;
-    /// use web_audio_api::buffer::{ChannelData, AudioBuffer};
-    ///
-    /// let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-    /// let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(48_000));
-    ///
-    /// // upmix from 48k to 96k Hertz sample rate
-    /// buffer.resample(SampleRate(96_000));
-    ///
-    /// assert_eq!(
-    ///     buffer.channel_data(0),
-    ///     &ChannelData::from(vec![1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,])
-    /// );
-    ///
-    /// assert_eq!(buffer.sample_rate().0, 96_000);
-    /// ```
-    pub fn resample(&mut self, sample_rate: SampleRate) {
+    //
+    // ```
+    // use web_audio_api::SampleRate;
+    // use web_audio_api::buffer::{ChannelData, AudioBuffer};
+    //
+    // let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
+    // let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(48_000));
+    //
+    // // upmix from 48k to 96k Hertz sample rate
+    // buffer.resample(SampleRate(96_000));
+    //
+    // assert_eq!(
+    //     buffer.get_channel_data(0)[..],
+    //     vec![1., 1., 2., 2., 3., 3., 4., 4., 5., 5.][..]
+    // );
+    //
+    // assert_eq!(buffer.sample_rate().0, 96_000);
+    // ```
+    pub(crate) fn resample(&mut self, sample_rate: SampleRate) {
         if self.sample_rate() == sample_rate {
             return;
         }
@@ -204,8 +266,9 @@ impl AudioBuffer {
 /// Single channel audio samples, basically wraps a `Arc<Vec<f32>>`
 ///
 /// ChannelData has copy-on-write semantics, so it is cheap to clone.
+// @note - should be `pub(crate)` but used in `bench.rs` examples
 #[derive(Clone, Debug, PartialEq)]
-pub struct ChannelData {
+pub(crate) struct ChannelData {
     data: Arc<Vec<f32>>,
 }
 
@@ -227,9 +290,10 @@ impl ChannelData {
         self.data.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
-    }
+    // never used
+    // pub fn is_empty(&self) -> bool {
+    //     self.data.is_empty()
+    // }
 
     pub fn as_slice(&self) -> &[f32] {
         &self.data[..]
@@ -244,7 +308,14 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
     fn from_iter<I: IntoIterator<Item = AudioBuffer>>(iter: I) -> Self {
         let mut iter = iter.into_iter();
         let mut collect: AudioBuffer = match iter.next() {
-            None => return AudioBuffer::new(0, 0, SampleRate(0)),
+            None => {
+                let options = AudioBufferOptions {
+                    number_of_channels: 0,
+                    length: 0,
+                    sample_rate: SampleRate(0),
+                };
+                return AudioBuffer::new(options);
+            }
             Some(first) => first,
         };
 
@@ -274,19 +345,19 @@ impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
 ///
 /// // first chunk contains 10 samples
 /// let next = resampler.next().unwrap().unwrap();
-/// assert_eq!(next.sample_len(), 10);
-/// assert_eq!(next.channel_data(0), &ChannelData::from(vec![
+/// assert_eq!(next.length(), 10);
+/// assert_eq!(next.get_channel_data(0)[..], vec![
 ///     1., 2., 3., 4., 5.,
 ///     1., 2., 3., 4., 5.,
-/// ]));
+/// ][..]);
 ///
 /// // second chunk contains 5 samples of signal, and 5 silent
 /// let next = resampler.next().unwrap().unwrap();
-/// assert_eq!(next.sample_len(), 10);
-/// assert_eq!(next.channel_data(0), &ChannelData::from(vec![
+/// assert_eq!(next.length(), 10);
+/// assert_eq!(next.get_channel_data(0)[..], vec![
 ///     1., 2., 3., 4., 5.,
 ///     0., 0., 0., 0., 0.,
-/// ]));
+/// ][..]);
 ///
 /// // no further chunks
 /// assert!(resampler.next().is_none());
@@ -329,15 +400,17 @@ impl<M: MediaStream> Iterator for Resampler<M> {
             Some(data) => data,
         };
 
-        while buffer.sample_len() < self.sample_len {
+        while buffer.length() < self.sample_len {
             // buffer is smaller than desired len
             match self.input.next() {
                 None => {
-                    let padding = AudioBuffer::new(
-                        buffer.number_of_channels(),
-                        self.sample_len - buffer.sample_len(),
-                        self.sample_rate,
-                    );
+                    let options = AudioBufferOptions {
+                        number_of_channels: buffer.number_of_channels(),
+                        length: self.sample_len - buffer.length(),
+                        sample_rate: self.sample_rate,
+                    };
+
+                    let padding = AudioBuffer::new(options);
                     buffer.extend(&padding);
 
                     return Some(Ok(buffer));
@@ -350,7 +423,7 @@ impl<M: MediaStream> Iterator for Resampler<M> {
             }
         }
 
-        if buffer.sample_len() == self.sample_len {
+        if buffer.length() == self.sample_len {
             return Some(Ok(buffer));
         }
 
@@ -366,11 +439,151 @@ mod tests {
 
     use super::*;
 
+    // public WebAudio API
+    #[test]
+    fn test_constructor() {
+        let options = AudioBufferOptions {
+            number_of_channels: 1,
+            length: 10,
+            sample_rate: SampleRate(1),
+        };
+
+        let audio_buffer = AudioBuffer::new(options);
+
+        assert_eq!(audio_buffer.number_of_channels(), 1);
+        assert_eq!(audio_buffer.length(), 10);
+        assert_eq!(audio_buffer.sample_rate().0, 1);
+        assert_float_eq!(audio_buffer.duration(), 10., abs <= 0.);
+    }
+
+    #[test]
+    fn test_copy_from_channel() {
+        let options = AudioBufferOptions {
+            number_of_channels: 1,
+            length: 10,
+            sample_rate: SampleRate(1),
+        };
+
+        let audio_buffer = AudioBuffer::new(options);
+
+        // same size
+        let mut dest = vec![1.; 10];
+        audio_buffer.copy_from_channel(&mut dest, 0);
+        assert_float_eq!(dest[..], vec![0.; 10][..], abs_all <= 0.);
+
+        // smaller destination
+        let mut dest = vec![1.; 5];
+        audio_buffer.copy_from_channel(&mut dest, 0);
+        assert_float_eq!(dest[..], [0., 0., 0., 0., 0.][..], abs_all <= 0.);
+
+        // larger destination
+        let mut dest = vec![1.; 11];
+        audio_buffer.copy_from_channel(&mut dest, 0);
+        assert_float_eq!(
+            dest[..],
+            [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1.][..],
+            abs_all <= 0.
+        );
+
+        // with offset
+        let mut dest = vec![1.; 10];
+        audio_buffer.copy_from_channel_with_offset(&mut dest, 0, 5);
+        assert_float_eq!(
+            dest[..],
+            [0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
+            abs_all <= 0.
+        );
+    }
+
+    #[test]
+    fn test_copy_to_channel() {
+        let options = AudioBufferOptions {
+            number_of_channels: 1,
+            length: 10,
+            sample_rate: SampleRate(1),
+        };
+
+        {
+            // same size
+            let mut audio_buffer = AudioBuffer::new(options);
+            let src = vec![1.; 10];
+            audio_buffer.copy_to_channel(&src, 0);
+            assert_float_eq!(
+                audio_buffer.channel_data(0).as_slice()[..],
+                [1.; 10][..],
+                abs_all <= 0.
+            );
+        }
+
+        {
+            // smaller source
+            let mut audio_buffer = AudioBuffer::new(options);
+            let src = vec![1.; 5];
+            audio_buffer.copy_to_channel(&src, 0);
+            assert_float_eq!(
+                audio_buffer.channel_data(0).as_slice()[..],
+                [1., 1., 1., 1., 1., 0., 0., 0., 0., 0.][..],
+                abs_all <= 0.
+            );
+        }
+
+        {
+            // larger source
+            let mut audio_buffer = AudioBuffer::new(options);
+            let src = vec![1.; 12];
+            audio_buffer.copy_to_channel(&src, 0);
+            assert_float_eq!(
+                audio_buffer.channel_data(0).as_slice()[..],
+                [1., 1., 1., 1., 1., 1., 1., 1., 1., 1.][..],
+                abs_all <= 0.
+            );
+        }
+
+        {
+            // w/ offset
+            let mut audio_buffer = AudioBuffer::new(options);
+            let src = vec![1.; 10];
+            audio_buffer.copy_to_channel_with_offset(&src, 0, 5);
+            assert_float_eq!(
+                audio_buffer.channel_data(0).as_slice()[..],
+                [0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
+                abs_all <= 0.
+            );
+        }
+    }
+
+    // I can't make it compile so seems like a good point
+    // #[test]
+    // fn test_get_channel_data() {
+    //     let options = AudioBufferOptions {
+    //         number_of_channels: 1,
+    //         length: 10,
+    //         sample_rate: SampleRate(1),
+    //     };
+
+    //     let audio_buffer = AudioBuffer::new(options);
+    //     let mut channel = &audio_buffer.get_channel_data(0)[..];
+    //     assert_float_eq!(channel[..], [0.; 10][..], abs_all <= 0.);
+    //     // mutate channel and make sure this does not propagate to internal_data
+    //     channel[0] = 1.;
+    //     assert_float_eq!(
+    //         audio_buffer.get_channel_data(0)[..],
+    //         [0.; 10][..],
+    //         abs_all <= 0.
+    //     );
+    // }
+
+    // internal API
     #[test]
     fn test_silent() {
-        let b = AudioBuffer::new(2, 10, SampleRate(44_100));
+        let options = AudioBufferOptions {
+            number_of_channels: 2,
+            length: 10,
+            sample_rate: SampleRate(44_100),
+        };
+        let b = AudioBuffer::new(options);
 
-        assert_eq!(b.sample_len(), 10);
+        assert_eq!(b.length(), 10);
         assert_eq!(b.number_of_channels(), 2);
         assert_eq!(b.sample_rate().0, 44_100);
         assert_float_eq!(b.channel_data(0).as_slice(), &[0.; 10][..], abs_all <= 0.);
@@ -380,11 +593,16 @@ mod tests {
 
     #[test]
     fn test_concat_split() {
-        let mut b1 = AudioBuffer::new(2, 5, SampleRate(44_100));
-        let b2 = AudioBuffer::new(2, 5, SampleRate(44_100));
+        let options = AudioBufferOptions {
+            number_of_channels: 2,
+            length: 5,
+            sample_rate: SampleRate(44_100),
+        };
+        let mut b1 = AudioBuffer::new(options);
+        let b2 = AudioBuffer::new(options);
         b1.extend(&b2);
 
-        assert_eq!(b1.sample_len(), 10);
+        assert_eq!(b1.length(), 10);
         assert_eq!(b1.number_of_channels(), 2);
         assert_eq!(b1.sample_rate().0, 44_100);
 
@@ -393,7 +611,7 @@ mod tests {
 
         b1.extend(&b3);
 
-        assert_eq!(b1.sample_len(), 15);
+        assert_eq!(b1.length(), 15);
         assert_eq!(b1.number_of_channels(), 2);
         assert_eq!(b1.sample_rate().0, 44_100);
         assert_float_eq!(
@@ -449,7 +667,7 @@ mod tests {
         let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
 
         let next = resampler.next().unwrap().unwrap();
-        assert_eq!(next.sample_len(), 10);
+        assert_eq!(next.length(), 10);
         assert_float_eq!(
             next.channel_data(0).as_slice(),
             &[1., 2., 3., 4., 5., 1., 2., 3., 4., 5.,][..],
@@ -457,7 +675,7 @@ mod tests {
         );
 
         let next = resampler.next().unwrap().unwrap();
-        assert_eq!(next.sample_len(), 10);
+        assert_eq!(next.length(), 10);
         assert_float_eq!(
             next.channel_data(0).as_slice(),
             &[1., 2., 3., 4., 5., 0., 0., 0., 0., 0.][..],
@@ -478,7 +696,7 @@ mod tests {
         let mut resampler = Resampler::new(SampleRate(44_100), 5, input);
 
         let next = resampler.next().unwrap().unwrap();
-        assert_eq!(next.sample_len(), 5);
+        assert_eq!(next.length(), 5);
         assert_float_eq!(
             next.channel_data(0).as_slice(),
             &[1., 2., 3., 4., 5.][..],
@@ -486,7 +704,7 @@ mod tests {
         );
 
         let next = resampler.next().unwrap().unwrap();
-        assert_eq!(next.sample_len(), 5);
+        assert_eq!(next.length(), 5);
         assert_float_eq!(
             next.channel_data(0).as_slice(),
             &[6., 7., 8., 9., 10.][..],
