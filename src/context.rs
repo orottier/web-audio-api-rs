@@ -82,7 +82,7 @@ pub trait AsBaseAudioContext {
     /// retrieves the `BaseAudioContext` associated with the concrete `AudioContext`
     fn base(&self) -> &BaseAudioContext;
 
-    /// Retrieves an [`AudioBuffer`] from a given [`std:fs::File`]
+    /// Retrieves an [`AudioBuffer`] from a given [`std::fs::File`]
     ///
     /// *warning:* in the current implementation `decode_audio_data` only accepts
     /// `.wav` files and do not perform any resampling operation. Be carefull

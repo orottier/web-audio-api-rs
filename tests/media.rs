@@ -1,5 +1,5 @@
 use float_eq::assert_float_eq;
-use web_audio_api::buffer::{AudioBuffer, ChannelData};
+use web_audio_api::buffer::AudioBuffer;
 use web_audio_api::context::AsBaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::media::MediaElement;
@@ -33,8 +33,8 @@ impl Iterator for SlowMedia {
 
         self.value += 1.;
 
-        let channel_data = ChannelData::from(vec![self.value; RENDER_QUANTUM_SIZE]);
-        let buffer = AudioBuffer::from_channels(vec![channel_data], self.sample_rate);
+        let samples = vec![vec![self.value; RENDER_QUANTUM_SIZE]];
+        let buffer = AudioBuffer::from(samples, self.sample_rate);
 
         Some(Ok(buffer))
     }
