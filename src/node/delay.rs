@@ -3,15 +3,15 @@ use crate::param::{AudioParam, AudioParamOptions};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
 
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
 /// Options for constructing a DelayNode
 pub struct DelayOptions {
-    pub max_delay_time: f32,
-    pub delay_time: f32,
+    pub max_delay_time: f64,
+    pub delay_time: f64,
     pub channel_config: ChannelConfigOptions,
 }
 
@@ -108,8 +108,9 @@ impl AudioNode for DelayNode {
 
 impl DelayNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: DelayOptions) -> Self {
+        let max_delay_time = options.max_delay_time;
         // allocate large enough buffer to store all delayed samples
-        let max_samples = options.max_delay_time * context.base().sample_rate().0 as f32;
+        let max_samples = max_delay_time * context.base().sample_rate().0 as f64;
         let max_quanta =
             (max_samples.ceil() as usize + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
         let delay_buffer = Vec::with_capacity(max_quanta);
@@ -121,7 +122,7 @@ impl DelayNode {
             let node = context.base().register(move |reader_registration| {
                 let param_opts = AudioParamOptions {
                     min_value: 0.,
-                    max_value: options.max_delay_time,
+                    max_value: max_delay_time as f32,
                     default_value: 0.,
                     automation_rate: crate::param::AutomationRate::A,
                 };
@@ -129,12 +130,15 @@ impl DelayNode {
                     .base()
                     .create_audio_param(param_opts, reader_registration.id());
 
-                param.set_value_at_time(options.delay_time, 0.);
+                param.set_value_at_time(options.delay_time as f32, 0.);
 
                 let reader_render = DelayReader {
                     delay_time: proc,
                     delay_buffer: shared_buffer_clone,
                     index: 0,
+                    // internal buffer used to compute output per channel at each frame
+                    internal_buffer: Vec::<f32>::with_capacity(2),
+                    max_delay_time,
                 };
 
                 let node = DelayNode {
@@ -161,22 +165,73 @@ impl DelayNode {
     }
 }
 
-struct DelayReader {
-    delay_time: AudioParamId,
-    delay_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
-    index: usize,
-}
-
 struct DelayWriter {
     delay_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
 }
 
+struct DelayReader {
+    delay_time: AudioParamId,
+    delay_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
+    index: usize,
+    internal_buffer: Vec<f32>,
+    max_delay_time: f64,
+}
+
 // SAFETY:
-// AudioRenderQuantums are not Send but we promise the `delay_buffer` Vec is empty before we ship it to
-// the render thread.
-unsafe impl Send for DelayReader {}
+// AudioRenderQuantums are not Send but we promise the `delay_buffer` Vec is
+// empty before we ship it to the render thread.
 unsafe impl Send for DelayWriter {}
+unsafe impl Send for DelayReader {}
+
+trait RingBufferChecker {
+    fn ring_buffer_mut(&self) -> RefMut<Vec<AudioRenderQuantum>>;
+
+    // this step, while not necessary per se, guarantees the ring buffer is filled
+    // with silence buffers, simplifying the code in both Writer and Reader as we
+    // know `len() == capacity()` and all the buffers is initialized with zeros.
+    #[inline(always)]
+    fn check_ring_buffer_size(&self, render_quantum: &AudioRenderQuantum) {
+        let mut ring_buffer = self.ring_buffer_mut();
+
+        if ring_buffer.len() < ring_buffer.capacity() {
+            let len = ring_buffer.capacity();
+            let mut silence = render_quantum.clone();
+            silence.make_silent();
+
+            ring_buffer.resize(len, silence);
+        }
+    }
+
+    #[inline(always)]
+    fn check_ring_buffer_up_down_mix(&self, input: &AudioRenderQuantum) {
+        // When the number of channels in a DelayNode's input changes (thus changing
+        // the output channel count also), there may be delayed audio samples which
+        // have not yet been output by the node and are part of its internal state.
+        // If these samples were received earlier with a different channel count,
+        // they MUST be upmixed or downmixed before being combined with newly received
+        // input so that all internal delay-line mixing takes place using the single
+        // prevailing channel layout.
+        let mut ring_buffer = self.ring_buffer_mut();
+        let buffer_number_of_channels = ring_buffer[0].number_of_channels();
+        let input_number_of_channels = input.number_of_channels();
+
+        if buffer_number_of_channels != input_number_of_channels {
+            // println!("mix ring_buffer channels to {:?}", input_number_of_channels);
+            for render_quantum in ring_buffer.iter_mut() {
+                // @todo - use node current channel interpretation
+                render_quantum.mix(input_number_of_channels, ChannelInterpretation::Speakers);
+            }
+        }
+    }
+}
+
+impl RingBufferChecker for DelayWriter {
+    #[inline(always)]
+    fn ring_buffer_mut(&self) -> RefMut<Vec<AudioRenderQuantum>> {
+        self.delay_buffer.borrow_mut()
+    }
+}
 
 impl AudioProcessor for DelayWriter {
     fn process(
@@ -189,31 +244,24 @@ impl AudioProcessor for DelayWriter {
     ) -> bool {
         // single input/output node
         let input = inputs[0].clone();
+        // We must perform the checks (buffer size and up/down mix) on both Writer
+        // and Reader as the order of processing between them is not guaranteed.
+        self.check_ring_buffer_size(&input);
+        self.check_ring_buffer_up_down_mix(&input);
+
         let output = &mut outputs[0];
 
-        // handle delay_buffer up/down max, this must be tested both on the reader
-        // and on the writer as we don't know which one will processed first
-
-        // nothing special to do there
-
         let mut buffer = self.delay_buffer.borrow_mut();
-
         // add to buffer
-        if buffer.len() < buffer.capacity() {
-            buffer.push(input);
-        } else {
-            buffer[self.index] = input;
-        }
-
+        buffer[self.index] = input;
         // increment cursor
         self.index = (self.index + 1) % buffer.capacity();
-
         // The writer end does not produce output.
         // Clear output buffer, it may have been re-used
         output.make_silent();
 
         // todo: return false when all inputs disconnected and buffer exhausted
-        // if input.is_silence() store block timestamp in a shared Atomic
+        // if input.is_silence() store block timestamp
         // else store f64::Max
         //
         // if silence_timestamp + maxDelayTime >= timestamp
@@ -226,20 +274,39 @@ impl AudioProcessor for DelayWriter {
     }
 }
 
+impl RingBufferChecker for DelayReader {
+    #[inline(always)]
+    fn ring_buffer_mut(&self) -> RefMut<Vec<AudioRenderQuantum>> {
+        self.delay_buffer.borrow_mut()
+    }
+}
+
 impl AudioProcessor for DelayReader {
     fn process(
         &mut self,
-        _inputs: &[AudioRenderQuantum],
+        inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _timestamp: f64,
+        timestamp: f64,
         sample_rate: SampleRate,
     ) -> bool {
+        // @note - are we sure we receive the same input as the writer?
+        //
+        // Input is only used here to make the checks (buffer size and up/down mix)
+        // We must perform the checks (buffer size and up/down mix) on both Writer
+        // and Reader as the order of processing between them is not guaranteed.
+        let input = inputs[0].clone(); // @note - this clone may not be necessary
+        self.check_ring_buffer_size(&input);
+        self.check_ring_buffer_up_down_mix(&input);
+
+        let number_of_channels = input.number_of_channels();
+        // resize internal buffer if needed
+        if self.internal_buffer.len() != number_of_channels {
+            self.internal_buffer.resize(number_of_channels, 0.);
+        }
+
         // single input/output node
         let output = &mut outputs[0];
-
-        // todo: a-rate processing
-        let delay = params.get(&self.delay_time)[0];
 
         // handle delay_buffer up/down max, this must be tested both on the reader
         // and on the writer as we don't know which one will processed first
@@ -247,28 +314,86 @@ impl AudioProcessor for DelayReader {
         // get playhead position (delay) at each sample
         // - clamp between playhead.min(RENDER_QUANTUM_SIZE * dt).max(max_delay_time);
         // - pick samples in delay_buffer (difficulty is need to abstract the wrapped buffers)
+        let sample_rate = sample_rate.0 as f64; // shadow sample_rate, we don't need the type
+        let dt = 1. / sample_rate;
+        let num_frames = RENDER_QUANTUM_SIZE;
+        let quantum_duration = num_frames as f64 * dt;
 
-        // calculate the delay in chunks of RENDER_QUANTUM_SIZE (todo: sub quantum delays)
-        let quanta = (delay * sample_rate.0 as f32) as usize / RENDER_QUANTUM_SIZE;
+        let delay = params.get(&self.delay_time);
+        let ring_buffer = self.delay_buffer.borrow(); // no need for `mut` here
 
-        // a delay of zero quanta is not allowed (in cycles, we don't know wether the reader or
-        // writer renders first and the ordering may change on every graph update - causing clicks)
-        let quanta = quanta.max(1);
+        let mut current_time = 0.;
 
-        let buffer = self.delay_buffer.borrow_mut();
+        // println!("{:?}", current_time + delay[0] as f64);
 
-        let delayed_index = (self.index + buffer.capacity() - quanta) % buffer.capacity();
-        if delayed_index >= buffer.len() {
-            // still waiting to fill buffer for given delay
-            output.make_silent();
-        } else {
-            *output = buffer[delayed_index].clone();
+        for index in 0..num_frames {
+            // Compute clamped `delayed_position` at a-rate relatively
+            // to ring_buffer current `index`.
+            let position = current_time + delay[index] as f64;
+            // @todo - allow 0. delay if not in loop (mostly impacts graph processing)
+            let delayed_position = position.clamp(quantum_duration, self.max_delay_time);
+
+            // As previous and next samples might not be in the same render_quantum
+            // stored in the ring buffer, we need to compute both block index in
+            // ring buffer and sample index in given block for both previous and
+            // next samples.
+            let playhead = delayed_position * sample_rate;
+            let playhead_floored = playhead.floor();
+
+            let prev_raw = playhead_floored as usize;
+            let prev_block_index_raw = prev_raw / RENDER_QUANTUM_SIZE; // block in ring_buffer
+            let prev_sample_index = prev_raw - prev_block_index_raw * RENDER_QUANTUM_SIZE; // sample in block
+            let prev_block_index = (self.index + prev_block_index_raw) % ring_buffer.len(); // offset block
+
+            let next_raw = playhead.ceil() as usize;
+            let next_block_index_raw = next_raw / RENDER_QUANTUM_SIZE;
+            let next_sample_index = next_raw - next_block_index_raw * RENDER_QUANTUM_SIZE;
+            let next_block_index = (self.index + next_block_index_raw) % ring_buffer.len();
+
+            let k = (playhead - playhead_floored) as f32;
+            let k_inv = 1. - k;
+
+            for channel_number in 0..number_of_channels {
+                let prev_sample =
+                    ring_buffer[prev_block_index].channel_data(channel_number)[prev_sample_index];
+                let next_sample =
+                    ring_buffer[next_block_index].channel_data(channel_number)[next_sample_index];
+
+                let value = k_inv * prev_sample + k * next_sample;
+
+                self.internal_buffer[channel_number] = value;
+            }
+
+            // internal buffer is populated for this sample, push in ouput
+            output.set_channels_values_at(index, &self.internal_buffer);
+
+            current_time += dt;
         }
 
         // increment cursor
-        self.index = (self.index + 1) % buffer.capacity();
+        self.index = (self.index + 1) % ring_buffer.len();
 
         // todo: return false when all inputs disconnected and buffer exhausted
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // use float_eq::assert_float_eq;
+
+    use crate::SampleRate;
+    use crate::context::OfflineAudioContext;
+
+    use super::*;
+
+    #[test]
+    fn test_create_delay_node() {
+        let mut context = OfflineAudioContext::new(1, 256, SampleRate(44_100));
+
+        let options = DelayOptions::default();
+        let delay = DelayNode::new(&context, options);
+
+        context.start_rendering();
     }
 }
