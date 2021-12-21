@@ -42,7 +42,7 @@ struct AudioBufferMessage(AudioBuffer);
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioBufferSourceNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#AudioBufferSourceNode>
-/// - see also: [`AsBaseAudioContext::create_buffer_source`]
+/// - see also: [`AsBaseAudioContext::create_buffer_source`](crate::context::AsBaseAudioContext::create_buffer_source)
 ///
 /// # Usage
 ///
@@ -195,7 +195,7 @@ impl AudioBufferSourceNode {
     ///
     /// # Panics
     ///
-    /// Panics if a buffer has already be given to the source (though `new`
+    /// Panics if a buffer has already been given to the source (though `new`
     /// or through `set_buffer`)
     pub fn set_buffer(&mut self, audio_buffer: &AudioBuffer) {
         // - Let new buffer be the AudioBuffer or null value to be assigned to buffer.

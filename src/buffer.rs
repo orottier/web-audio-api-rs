@@ -19,6 +19,7 @@ pub struct AudioBufferOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioBuffer>
 /// - specification: <https://webaudio.github.io/web-audio-api/#AudioBuffer>
+/// - see also: [`AsBaseAudioContext::create_buffer`](crate::context::AsBaseAudioContext::create_buffer)
 #[derive(Clone, Debug)]
 pub struct AudioBuffer {
     channels: Vec<ChannelData>,
