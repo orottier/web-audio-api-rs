@@ -2,12 +2,9 @@ use std::fs::File;
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 use web_audio_api::node::AudioNode;
 
-// experimental API
-// use web_audio_api::audio_buffer::decode_audio_data;
-
 fn main() {
     let context = AudioContext::new(None);
-    // @note - `resume` does not seem to be needed
+    // @note - `context.resume` is not needed for now
 
     // load and decode buffer
     let file = File::open("sample.wav").unwrap();

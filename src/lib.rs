@@ -99,7 +99,7 @@ pub(crate) struct AtomicF32 {
     inner: AtomicU32,
 }
 
-// @note - `swap()` is not implemented as `AtomicF32` is only used in `param.rs` for now
+// `swap()` is not implemented as `AtomicF32` is only used in `param.rs` for now
 impl AtomicF32 {
     pub fn new(v: f32) -> Self {
         Self {

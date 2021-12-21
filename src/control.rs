@@ -41,7 +41,7 @@ impl Scheduler {
         ScheduledState::Active
     }
 
-    /// Retrive start playback value
+    /// Retrieve playback start value
     pub fn start(&self) -> f64 {
         self.start.load()
     }
@@ -51,7 +51,7 @@ impl Scheduler {
         self.start.store(start);
     }
 
-    /// Retrive stop playback value
+    /// Retrieve playback stop value
     pub fn stop(&self) -> f64 {
         self.stop.load()
     }
@@ -61,22 +61,22 @@ impl Scheduler {
         self.stop.store(stop);
     }
 
-    /// Retrive offset playback value
+    /// Retrieve playback offset value
     pub fn offset(&self) -> f64 {
         self.offset.load()
     }
 
-    /// Stop offset at this timestamp
+    /// Store given playback offset
     pub fn set_offset(&self, offset: f64) {
         self.offset.store(offset);
     }
 
-    /// Retrive duration playback value
+    /// Retrieve playback duration value
     pub fn duration(&self) -> f64 {
         self.duration.load()
     }
 
-    /// Stop duration at this timestamp
+    /// Store given playback duration
     pub fn set_duration(&self, duration: f64) {
         self.duration.store(duration)
     }
@@ -92,12 +92,10 @@ impl Default for Scheduler {
 #[derive(Clone, Debug)]
 pub struct Controller {
     scheduler: Arc<Scheduler>,
-    // duration: Arc<AtomicF64>,
     seek: Arc<AtomicF64>,
     loop_: Arc<AtomicBool>,
     loop_start: Arc<AtomicF64>,
     loop_end: Arc<AtomicF64>,
-    //playback_rate: Arc<AudioParam>,
 }
 
 impl Controller {
@@ -105,15 +103,11 @@ impl Controller {
     pub fn new() -> Self {
         Self {
             scheduler: Arc::new(Scheduler::new()),
-            // duration: Arc::new(AtomicF64::new(f64::MAX)),
-
             // treat NaN as niche: no seeking
             seek: Arc::new(AtomicF64::new(f64::NAN)),
-
             loop_: Arc::new(AtomicBool::new(false)),
             loop_start: Arc::new(AtomicF64::new(0.)),
             loop_end: Arc::new(AtomicF64::new(f64::MAX)),
-            //playback_rate: ... create audio param pair
         }
     }
 

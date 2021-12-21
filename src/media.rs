@@ -79,15 +79,13 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// ```rust
 /// use web_audio_api::SampleRate;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
-/// use web_audio_api::buffer::{AudioBuffer, ChannelData};
+/// use web_audio_api::buffer::AudioBuffer;
 /// use web_audio_api::media::MediaElement;
 /// use web_audio_api::node::AudioControllableSourceNode;
 ///
 /// // create a new buffer with a few samples of silence
-/// let silence = AudioBuffer::from_channels(
-///     vec![ChannelData::from(vec![0.; 20])],
-///     SampleRate(44_100)
-/// );
+/// let samples = vec![vec![0.; 20]];
+/// let silence = AudioBuffer::from(samples, SampleRate(44_100));
 ///
 /// // create a sequence of this buffer
 /// let sequence = std::iter::repeat(silence).take(3);

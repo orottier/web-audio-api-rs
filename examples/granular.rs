@@ -1,5 +1,3 @@
-use rand::rngs::ThreadRng;
-use rand::Rng;
 use std::fs::File;
 use std::{thread, time};
 use web_audio_api::buffer::AudioBuffer;
@@ -14,13 +12,8 @@ fn trigger_grain(
     audio_buffer: &AudioBuffer,
     position: f64,
     duration: f64,
-    rng: &mut ThreadRng,
 ) {
-    // don't know the precision of sleep millis, but we add a small random
-    // offset to avoid audible pitch due to period (even if with such period it
-    // should be ok)
-    let jitter = rng.gen_range(0..1000) as f64 * 3e-6;
-    let start_time = audio_context.current_time() + jitter;
+    let start_time = audio_context.current_time();
 
     let env = audio_context.create_gain();
     env.gain().set_value(0.);
@@ -50,21 +43,13 @@ fn main() {
     let file = File::open("sample.wav").unwrap();
     let audio_buffer = audio_context.decode_audio_data(file);
 
-    let mut rng = rand::thread_rng();
-
     let period = 0.05;
     let grain_duration = 0.2;
     let mut position = 0.;
     let mut incr_position = period / 2.;
 
     loop {
-        trigger_grain(
-            &audio_context,
-            &audio_buffer,
-            position,
-            grain_duration,
-            &mut rng,
-        );
+        trigger_grain(&audio_context, &audio_buffer, position, grain_duration);
 
         if position + incr_position > audio_buffer.duration() - (grain_duration * 2.)
             || position + incr_position < 0.

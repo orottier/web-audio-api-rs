@@ -5,6 +5,7 @@ use crate::media::MediaStream;
 use crate::render::AudioRenderQuantum;
 use crate::SampleRate;
 
+/// Options for constructing an [`AudioBuffer`]
 #[derive(Copy, Clone, Debug)]
 pub struct AudioBufferOptions {
     pub number_of_channels: usize, // defaults to 1
@@ -15,6 +16,10 @@ pub struct AudioBufferOptions {
 /// Memory-resident audio asset, basically a matrix of channels * samples
 ///
 /// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioBuffer>
+/// - specification: <https://webaudio.github.io/web-audio-api/#AudioBuffer>
+/// - see also: [`AsBaseAudioContext::create_buffer`](crate::context::AsBaseAudioContext::create_buffer)
 #[derive(Clone, Debug)]
 pub struct AudioBuffer {
     channels: Vec<ChannelData>,
@@ -24,13 +29,31 @@ pub struct AudioBuffer {
 use std::error::Error;
 
 impl AudioBuffer {
-    /// Allocate a silent audiobuffer with given channel and samples count.
+    /// Allocate a silent audiobuffer with [`AudioBufferOptions`]
     pub fn new(options: AudioBufferOptions) -> Self {
         let silence = ChannelData::new(options.length);
 
         Self {
             channels: vec![silence; options.number_of_channels],
             sample_rate: options.sample_rate,
+        }
+    }
+
+    /// Convert raw samples to an AudioBuffer
+    ///
+    /// The outer Vec determine the channels. The inner Vecs should have the same length.
+    ///
+    /// # Panics
+    /// This function will panic if `samples` is an empty Vec or if any of its elements have
+    /// different lengths.
+    pub fn from(samples: Vec<Vec<f32>>, sample_rate: SampleRate) -> Self {
+        let channels: Vec<_> = samples.into_iter().map(ChannelData::from).collect();
+        if !channels.iter().all(|c| c.len() == channels[0].len()) {
+            panic!("Trying to create AudioBuffer from channel data with unequal length");
+        }
+        Self {
+            channels,
+            sample_rate,
         }
     }
 
@@ -108,6 +131,7 @@ impl AudioBuffer {
     }
 
     /// Create a multi-channel audiobuffer directly from `ChannelData`s.
+    // @todo - remove in favor of `AudioBuffer::from`
     pub(crate) fn from_channels(channels: Vec<ChannelData>, sample_rate: SampleRate) -> Self {
         Self {
             channels,
@@ -175,33 +199,6 @@ impl AudioBuffer {
             })
     }
 
-    /// Split an AudioBuffer in chunks with length `sample_len`.
-    ///
-    /// The last chunk may be shorter than `sample_len`
-    #[cfg(test)]
-    pub(crate) fn split(mut self, sample_len: u32) -> Vec<AudioBuffer> {
-        let sample_len = sample_len as usize;
-        let total_len = self.length();
-        let sample_rate = self.sample_rate();
-
-        let mut channels: Vec<_> = self
-            .channels_mut()
-            .iter()
-            .map(|channel_data| channel_data.as_slice().chunks(sample_len))
-            .collect();
-
-        (0..total_len)
-            .step_by(sample_len)
-            .map(|_| {
-                let cur: Vec<_> = channels
-                    .iter_mut()
-                    .map(|c| ChannelData::from(c.next().unwrap().to_vec()))
-                    .collect();
-                AudioBuffer::from_channels(cur, sample_rate)
-            })
-            .collect()
-    }
-
     /// Split an AudioBuffer in two at the given index.
     pub(crate) fn split_off(&mut self, index: usize) -> AudioBuffer {
         let sample_rate = self.sample_rate();
@@ -266,7 +263,6 @@ impl AudioBuffer {
 /// Single channel audio samples, basically wraps a `Arc<Vec<f32>>`
 ///
 /// ChannelData has copy-on-write semantics, so it is cheap to clone.
-// @note - should be `pub(crate)` but used in `bench.rs` examples
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ChannelData {
     data: Arc<Vec<f32>>,
@@ -290,11 +286,6 @@ impl ChannelData {
         self.data.len()
     }
 
-    // never used
-    // pub fn is_empty(&self) -> bool {
-    //     self.data.is_empty()
-    // }
-
     pub fn as_slice(&self) -> &[f32] {
         &self.data[..]
     }
@@ -304,40 +295,17 @@ impl ChannelData {
     }
 }
 
-impl std::iter::FromIterator<AudioBuffer> for AudioBuffer {
-    fn from_iter<I: IntoIterator<Item = AudioBuffer>>(iter: I) -> Self {
-        let mut iter = iter.into_iter();
-        let mut collect: AudioBuffer = match iter.next() {
-            None => {
-                let options = AudioBufferOptions {
-                    number_of_channels: 0,
-                    length: 0,
-                    sample_rate: SampleRate(0),
-                };
-                return AudioBuffer::new(options);
-            }
-            Some(first) => first,
-        };
-
-        for elem in iter {
-            collect.extend(&elem);
-        }
-
-        collect
-    }
-}
-
 /// Sample rate converter and buffer chunk splitter.
 ///
 /// A `MediaElement` can be wrapped inside a `Resampler` to yield AudioBuffers of the desired sample_rate and length
 ///
 /// ```
 /// use web_audio_api::SampleRate;
-/// use web_audio_api::buffer::{ChannelData, AudioBuffer, Resampler};
+/// use web_audio_api::buffer::{AudioBuffer, Resampler};
 ///
 /// // construct an input of 3 chunks of 5 samples
-/// let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-/// let input_buf = AudioBuffer::from_channels(vec![channel], SampleRate(44_100));
+/// let samples = vec![vec![1., 2., 3., 4., 5.]];
+/// let input_buf = AudioBuffer::from(samples, SampleRate(44_100));
 /// let input = vec![input_buf; 3].into_iter().map(|b| Ok(b));
 ///
 /// // resample to chunks of 10 samples
@@ -552,27 +520,6 @@ mod tests {
         }
     }
 
-    // I can't make it compile so seems like a good point
-    // #[test]
-    // fn test_get_channel_data() {
-    //     let options = AudioBufferOptions {
-    //         number_of_channels: 1,
-    //         length: 10,
-    //         sample_rate: SampleRate(1),
-    //     };
-
-    //     let audio_buffer = AudioBuffer::new(options);
-    //     let mut channel = &audio_buffer.get_channel_data(0)[..];
-    //     assert_float_eq!(channel[..], [0.; 10][..], abs_all <= 0.);
-    //     // mutate channel and make sure this does not propagate to internal_data
-    //     channel[0] = 1.;
-    //     assert_float_eq!(
-    //         audio_buffer.get_channel_data(0)[..],
-    //         [0.; 10][..],
-    //         abs_all <= 0.
-    //     );
-    // }
-
     // internal API
     #[test]
     fn test_silent() {
@@ -592,7 +539,7 @@ mod tests {
     }
 
     #[test]
-    fn test_concat_split() {
+    fn test_concat() {
         let options = AudioBufferOptions {
             number_of_channels: 2,
             length: 5,
@@ -617,18 +564,6 @@ mod tests {
         assert_float_eq!(
             b1.channel_data(0).as_slice(),
             &[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
-            abs_all <= 0.
-        );
-
-        let split = b1.split(8);
-        assert_float_eq!(
-            split[0].channel_data(0).as_slice(),
-            &[0., 0., 0., 0., 0., 0., 0., 0.][..],
-            abs_all <= 0.
-        );
-        assert_float_eq!(
-            split[1].channel_data(0).as_slice(),
-            &[0., 0., 1., 1., 1., 1., 1.][..],
             abs_all <= 0.
         );
     }
