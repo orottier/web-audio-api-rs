@@ -39,6 +39,13 @@ impl Default for DelayOptions {
  * (The only way would be to connect the writer to the reader, but that would kill the
  * cycle-breaker feature of the delay node.)
  */
+// one possible strategy here would be to create a connection between Reader and
+// Writer in `DelayNode::new` just to guarantee the order of the processing if the
+// delay is not in a loop. In the graph process if the node is found in a cycle,
+// this connection could be removed and the Reader marked as "in_cycle" so that
+// it would clamp the min delay to quantum duration.
+// > no need to make this cancellable, once in a cycle the node behaves like that
+// even if the cycle is broken later (user have to know what they are doing)
 pub struct DelayNode {
     reader_registration: AudioContextRegistration,
     writer_registration: AudioContextRegistration,
@@ -274,7 +281,7 @@ impl AudioProcessor for DelayWriter {
         // @note - `check_ring_buffer_up_down_mix` can only be done on the Writer
         // side as Reader do not access the "real" input, this might become a
         // problem for delays < RENDER_QUANTUM_SIZE depending on the chosen
-        // strategy to implement that feature.
+        // strategy to implement this feature.
         self.check_ring_buffer_up_down_mix(&input);
 
         // track silent / non-silent input changes for tail_time checks
@@ -330,7 +337,7 @@ impl AudioProcessor for DelayReader {
 
         // @note - `check_ring_buffer_up_down_mix` can't be done as the number of
         // input never change on this side, this is not a problem for now as the
-        // delay >= QUANTUM_SIZE duration but might be in the future.
+        // delay >= QUANTUM_SIZE duration but it might be one in the future.
         // self.check_ring_buffer_up_down_mix(&input);
 
         // tail time check
