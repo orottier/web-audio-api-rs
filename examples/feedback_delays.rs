@@ -60,11 +60,13 @@ impl<'a> FeedbackDelay<'a> {
 
     fn set_delay(&self, value: f32) {
         let now = self.audio_context.current_time();
-        self.delay.delay_time().set_target_at_time(value, now, 0.005);
+        self.delay
+            .delay_time()
+            .set_target_at_time(value, now, 0.005);
     }
 }
 
-fn trigger_chord(audio_context: &AudioContext, delays: &Vec<FeedbackDelay>, rng: &mut ThreadRng) {
+fn trigger_chord(audio_context: &AudioContext, delays: &[FeedbackDelay], rng: &mut ThreadRng) {
     let num_notes = rng.gen_range(2..8);
     let base_freq = 100.;
     let now = audio_context.current_time();
@@ -83,13 +85,17 @@ fn trigger_chord(audio_context: &AudioContext, delays: &Vec<FeedbackDelay>, rng:
 
         let panner = audio_context.create_stereo_panner();
         panner.connect(&feedback_delay.input);
-        panner.pan().set_value(rng.gen_range(0..10) as f32 / 5. - 1.);
+        panner
+            .pan()
+            .set_value(rng.gen_range(0..10) as f32 / 5. - 1.);
 
         let env = audio_context.create_gain();
         env.connect(&panner);
         env.gain().set_value_at_time(0., start_time);
-        env.gain().linear_ramp_to_value_at_time(gain, start_time + 0.02);
-        env.gain().exponential_ramp_to_value_at_time(0.0001, end_time);
+        env.gain()
+            .linear_ramp_to_value_at_time(gain, start_time + 0.02);
+        env.gain()
+            .exponential_ramp_to_value_at_time(0.0001, end_time);
 
         let osc = audio_context.create_oscillator();
         osc.connect(&env);

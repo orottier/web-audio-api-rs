@@ -305,11 +305,7 @@ impl AudioProcessor for DelayWriter {
         // clear the buffer so that it can be re-used
         output.make_silent();
 
-        if self.silent_timestamp.get() + self.max_delay_time < timestamp {
-            false
-        } else {
-            true
-        }
+        self.silent_timestamp.get() + self.max_delay_time > timestamp
     }
 }
 
@@ -333,7 +329,7 @@ impl AudioProcessor for DelayReader {
         let output = &mut outputs[0];
         // We must perform the checks (buffer size and up/down mix) on both Writer
         // and Reader as the order of processing between them is not guaranteed.
-        self.check_ring_buffer_size(&output);
+        self.check_ring_buffer_size(output);
 
         // @note - `check_ring_buffer_up_down_mix` can't be done as the number of
         // input never change on this side, this is not a problem for now as the
