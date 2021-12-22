@@ -305,7 +305,7 @@ impl AudioProcessor for DelayWriter {
         // clear the buffer so that it can be re-used
         output.make_silent();
 
-        self.silent_timestamp.get() + self.max_delay_time > timestamp
+        timestamp <= self.silent_timestamp.get() + self.max_delay_time
     }
 }
 
@@ -336,11 +336,10 @@ impl AudioProcessor for DelayReader {
         // delay >= QUANTUM_SIZE duration but it might be one in the future.
         // self.check_ring_buffer_up_down_mix(&input);
 
-        // tail time check
-        let silent_timestamp = self.silent_timestamp.get();
         let ring_buffer = self.ring_buffer.borrow();
 
-        if timestamp > silent_timestamp + self.max_delay_time {
+        // tail time check
+        if timestamp > self.silent_timestamp.get() + self.max_delay_time {
             output.make_silent();
             // increment ring buffer index as an input could be reconnected later
             self.index = (self.index + 1) % ring_buffer.capacity();
@@ -409,13 +408,14 @@ impl AudioProcessor for DelayReader {
 
 impl DelayReader {
     #[inline(always)]
+    // note that `position` is negative as we look into the past
     fn find_frame_adress_at_position(&self, position: f64) -> (usize, usize) {
         let num_frames = RENDER_QUANTUM_SIZE as i32;
         let buffer_len = self.ring_buffer.borrow().len() as i32;
         let current_index = self.index as i32;
 
         // offset of the block in which the target sample is recorded
-        // we need to be `float` here so the floor behaves as expected
+        // we need to be `float` here so that `floor()` behaves as expected
         let block_offset = (position / num_frames as f64).floor();
         // offset of the block in which the target sample is recorded
         let mut block_index = current_index + block_offset as i32;
@@ -564,7 +564,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ring_buffer_up_down_mix() {
+    fn test_input_number_of_channels_change() {
         let delay_in_samples = 128.;
         let sample_rate = SampleRate(128);
         let mut context = OfflineAudioContext::new(2, 3 * 128, sample_rate);
@@ -606,8 +606,32 @@ mod tests {
         assert_float_eq!(channel_right[..], expected_right[..], abs_all <= 0.);
     }
 
-    // @note - this test is not really a unit test but allows to check the internals of
-    // the delay in a controller manner. Don't see how we could properly unit test that.
+    // @note - this test is not really a unit test but allows to inspect the internals of
+    // the delay in a controller manner (don't see how this could be properly unit tested).
+    //
+    // expect the following behavior on both writer and reader
+    // @note: we could check against next_time_stamp, but it is more simple
+    // and clean to output a full buffer of silence before returning false
+    // (... and this is coherent with how `AudioBufferSourceNode` works)
+    //
+    // quantum 0
+    //  - delay receive src buffer
+    // quantum 1
+    //  - src outputs silence and return false, delay stores the silence_timestamp
+    //  - timestamp <= silence_timestamp + max_delay_time
+    //  - return true
+    // quantum 2
+    //  - timestamp <= silence_timestamp + max_delay_time
+    //  - possibly compute end of delay
+    //  - -return true
+    // quantum 3
+    //  - timestamp > silence_timestamp + max_delay_time
+    //  - reader outputs silence
+    //  - return false
+    //
+    //  note that as a source could be reconnected later
+    //  - both writer and reader will continue to update their index
+    //  - writer will continue to store the incomming (silent) inputs
     #[test]
     fn test_tail_time() {
         let delay_in_samples = 128.;
@@ -626,12 +650,6 @@ mod tests {
         src.set_buffer(&dirac);
         src.start_at(0.);
 
-        // expect the following behavior (to be dirty tracked with prints):
-        //
-        // quantum 0 - delay receive src buffer
-        // quantum 1 - src outputs silence, delay stores the silence_timestamp
-        // quantum 2 - timestamp <= silence_timestamp + max_delay_time - return true
-        // quantum 3 - timestamp > silence_timestamp + max_delay_time  - return false
         let _result = context.start_rendering();
     }
 }
