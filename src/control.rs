@@ -37,14 +37,24 @@ impl Scheduler {
         ScheduledState::Active
     }
 
+    /// Retrieve playback start value
+    pub fn get_start_at(&self) -> f64 {
+        self.start.load()
+    }
+
     /// Schedule playback start at this timestamp
     pub fn start_at(&self, start: f64) {
-        self.start.store(start)
+        self.start.store(start);
+    }
+
+    /// Retrieve playback stop value
+    pub fn get_stop_at(&self) -> f64 {
+        self.stop.load()
     }
 
     /// Stop playback at this timestamp
     pub fn stop_at(&self, stop: f64) {
-        self.stop.store(stop)
+        self.stop.store(stop);
     }
 }
 
@@ -58,12 +68,12 @@ impl Default for Scheduler {
 #[derive(Clone, Debug)]
 pub struct Controller {
     scheduler: Arc<Scheduler>,
-    // duration: Arc<AtomicF64>,
     seek: Arc<AtomicF64>,
     loop_: Arc<AtomicBool>,
     loop_start: Arc<AtomicF64>,
     loop_end: Arc<AtomicF64>,
-    //playback_rate: Arc<AudioParam>,
+    offset: Arc<AtomicF64>,
+    duration: Arc<AtomicF64>,
 }
 
 impl Controller {
@@ -71,15 +81,13 @@ impl Controller {
     pub fn new() -> Self {
         Self {
             scheduler: Arc::new(Scheduler::new()),
-            // duration: Arc::new(AtomicF64::new(f64::MAX)),
-
             // treat NaN as niche: no seeking
             seek: Arc::new(AtomicF64::new(f64::NAN)),
-
             loop_: Arc::new(AtomicBool::new(false)),
             loop_start: Arc::new(AtomicF64::new(0.)),
             loop_end: Arc::new(AtomicF64::new(f64::MAX)),
-            //playback_rate: ... create audio param pair
+            offset: Arc::new(AtomicF64::new(f64::MAX)),
+            duration: Arc::new(AtomicF64::new(f64::MAX)),
         }
     }
 
@@ -109,6 +117,22 @@ impl Controller {
 
     pub fn set_loop_end(&self, loop_end: f64) {
         self.loop_end.store(loop_end);
+    }
+
+    pub fn offset(&self) -> f64 {
+        self.offset.load()
+    }
+
+    pub fn set_offset(&self, offset: f64) {
+        self.offset.store(offset);
+    }
+
+    pub fn duration(&self) -> f64 {
+        self.duration.load()
+    }
+
+    pub fn set_duration(&self, duration: f64) {
+        self.duration.store(duration)
     }
 
     pub fn seek(&self, timestamp: f64) {
