@@ -276,12 +276,12 @@ pub trait AudioScheduledSourceNode {
 
     /// Schedule playback start at this timestamp
     fn start_at(&self, start: f64) {
-        self.scheduler().set_start(start)
+        self.scheduler().start_at(start)
     }
 
     /// Stop playback at this timestamp
     fn stop_at(&self, stop: f64) {
-        self.scheduler().set_stop(stop)
+        self.scheduler().stop_at(stop)
     }
 
     /// Play immediately

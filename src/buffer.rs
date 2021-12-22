@@ -89,6 +89,7 @@ impl AudioBuffer {
         channel_number: usize,
         offset: usize,
     ) {
+        let offset = offset.min(self.length());
         // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
         // of elements in the destination array, and 𝑘 be the value of bufferOffset.
         // Then the number of frames copied from buffer to destination is max(0,min(𝑁𝑏−𝑘,𝑁𝑓)).
@@ -112,6 +113,7 @@ impl AudioBuffer {
         channel_number: usize,
         offset: usize,
     ) {
+        let offset = offset.min(self.length());
         // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
         // of elements in the source array, and 𝑘 be the value of bufferOffset. Then
         // the number of frames copied from source to the buffer is max(0,min(𝑁𝑏−𝑘,𝑁𝑓)).
@@ -200,7 +202,7 @@ impl AudioBuffer {
     }
 
     /// Split an AudioBuffer in two at the given index.
-    pub(crate) fn split_off(&mut self, index: usize) -> AudioBuffer {
+    pub(crate) fn split_off(&mut self, index: usize) -> Self {
         let sample_rate = self.sample_rate();
 
         let channels: Vec<_> = self
@@ -284,6 +286,12 @@ impl ChannelData {
 
     pub fn len(&self) -> usize {
         self.data.len()
+    }
+
+    // clippy wants to keep it, so keep it :)
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 
     pub fn as_slice(&self) -> &[f32] {
@@ -461,6 +469,12 @@ mod tests {
             [0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
             abs_all <= 0.
         );
+
+        // w/ offset ouside range
+        let mut dest = vec![1.; 10];
+        audio_buffer.copy_from_channel_with_offset(&mut dest, 0, usize::MAX);
+
+        assert_float_eq!(dest[..], vec![1.; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -515,6 +529,18 @@ mod tests {
             assert_float_eq!(
                 audio_buffer.channel_data(0).as_slice()[..],
                 [0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
+                abs_all <= 0.
+            );
+        }
+
+        {
+            // w/ offset ouside range
+            let mut audio_buffer = AudioBuffer::new(options);
+            let src = vec![1.; 10];
+            audio_buffer.copy_to_channel_with_offset(&src, 0, usize::MAX);
+            assert_float_eq!(
+                audio_buffer.channel_data(0).as_slice()[..],
+                [0.; 10][..],
                 abs_all <= 0.
             );
         }
