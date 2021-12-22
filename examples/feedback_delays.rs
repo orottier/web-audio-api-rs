@@ -5,7 +5,7 @@ use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, DelayNode, GainNode};
 
 // run in release mode
-// `cargo run --release --example cyclic_graph`
+// `cargo run --release --example feedback_delays`
 
 struct FeedbackDelay<'a> {
     audio_context: &'a AudioContext,
@@ -28,11 +28,11 @@ impl<'a> FeedbackDelay<'a> {
         delay.connect(&feedback);
 
         let pre_gain = audio_context.create_gain();
-        pre_gain.connect(&feedback); // delay line
-        pre_gain.connect(&output); // direct sound
+        pre_gain.connect(&feedback);
 
         let input = audio_context.create_gain();
         input.connect(&pre_gain);
+        input.connect(&output); // direct sound
 
         Self {
             audio_context,
@@ -120,7 +120,10 @@ fn main() {
     }
 
     loop {
-        trigger_chord(&audio_context, &delays, &mut rng);
+        if rng.gen_range(0..100) > 20 {
+            trigger_chord(&audio_context, &delays, &mut rng);
+        }
+
         thread::sleep(time::Duration::from_millis(2000));
     }
 }
