@@ -29,6 +29,41 @@ impl Default for DelayOptions {
 ///
 /// The current implementation does not allow for zero delay. The minimum delay is one render
 /// quantum (e.g. ~2.9ms at 44.1kHz).
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/DelayNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#DelayNode>
+/// - see also: [`AsBaseAudioContext::create_delay`](crate::context::AsBaseAudioContext::create_delay)
+///
+/// # Usage
+///
+/// ```no_run
+/// use std::fs::File;
+/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::node::AudioNode;
+///
+/// // create an `AudioContext` and load a sound file
+/// let context = AudioContext::new(None);
+/// let file = File::open("sample.wav").unwrap();
+/// let audio_buffer = context.decode_audio_data(file);
+///
+/// // create a delay of 0.5s
+/// let delay = context.create_delay(1.);
+/// delay.delay_time().set_value(0.5);
+/// delay.connect(&context.destination());
+///
+/// let mut src = context.create_buffer_source();
+/// src.set_buffer(&audio_buffer);
+/// // connect to both delay and destination
+/// src.connect(&delay);
+/// src.connect(&context.destination());
+/// src.start();
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example simple_delay`
+/// - `cargo run --release --example feedback_delay`
+///
 /*
  * For simplicity in the audio graph rendering, we have made the conscious decision to deviate from
  * the spec and split the delay node up front in a reader and writer node (instead of during the
@@ -183,6 +218,7 @@ impl DelayNode {
         })
     }
 
+    /// A-rate [`AudioParam`] representing the amount of delay (in seconds) to apply.
     pub fn delay_time(&self) -> &AudioParam {
         &self.delay_time
     }
