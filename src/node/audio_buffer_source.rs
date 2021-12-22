@@ -239,9 +239,9 @@ impl AudioBufferSourceNode {
         }
 
         self.source_started = true;
-        self.controller.scheduler().set_start(start);
-        self.controller.scheduler().set_offset(offset);
-        self.controller.scheduler().set_duration(duration);
+        self.controller.set_offset(offset);
+        self.controller.set_duration(duration);
+        self.controller.scheduler().start_at(start);
 
         self.send_buffer();
     }
@@ -258,7 +258,7 @@ impl AudioBufferSourceNode {
             panic!("InvalidStateError cannot stop before start");
         }
 
-        self.controller.scheduler().set_stop(stop)
+        self.controller.scheduler().stop_at(stop)
     }
 
     /// K-rate [`AudioParam`] that defines the speed at which the [`AudioBuffer`]
@@ -373,10 +373,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let computed_playback_rate = (playback_rate * 2_f32.powf(detune / 1200.)) as f64;
 
         // grab all timing informations
-        let start_time = self.controller.scheduler().start();
-        let stop_time = self.controller.scheduler().stop();
-        let mut offset = self.controller.scheduler().offset();
-        let duration = self.controller.scheduler().duration();
+        let start_time = self.controller.scheduler().get_start_at();
+        let stop_time = self.controller.scheduler().get_stop_at();
+        let mut offset = self.controller.offset();
+        let duration = self.controller.duration();
         let loop_ = self.controller.loop_();
         let loop_start = self.controller.loop_start();
         let loop_end = self.controller.loop_end();

@@ -10,8 +10,6 @@ use crate::AtomicF64;
 pub struct Scheduler {
     start: Arc<AtomicF64>,
     stop: Arc<AtomicF64>,
-    offset: Arc<AtomicF64>,
-    duration: Arc<AtomicF64>,
 }
 
 pub enum ScheduledState {
@@ -26,8 +24,6 @@ impl Scheduler {
         Self {
             start: Arc::new(AtomicF64::new(f64::MAX)),
             stop: Arc::new(AtomicF64::new(f64::MAX)),
-            offset: Arc::new(AtomicF64::new(f64::MAX)),
-            duration: Arc::new(AtomicF64::new(f64::MAX)),
         }
     }
 
@@ -42,43 +38,23 @@ impl Scheduler {
     }
 
     /// Retrieve playback start value
-    pub fn start(&self) -> f64 {
+    pub fn get_start_at(&self) -> f64 {
         self.start.load()
     }
 
     /// Schedule playback start at this timestamp
-    pub fn set_start(&self, start: f64) {
+    pub fn start_at(&self, start: f64) {
         self.start.store(start);
     }
 
     /// Retrieve playback stop value
-    pub fn stop(&self) -> f64 {
+    pub fn get_stop_at(&self) -> f64 {
         self.stop.load()
     }
 
     /// Stop playback at this timestamp
-    pub fn set_stop(&self, stop: f64) {
+    pub fn stop_at(&self, stop: f64) {
         self.stop.store(stop);
-    }
-
-    /// Retrieve playback offset value
-    pub fn offset(&self) -> f64 {
-        self.offset.load()
-    }
-
-    /// Store given playback offset
-    pub fn set_offset(&self, offset: f64) {
-        self.offset.store(offset);
-    }
-
-    /// Retrieve playback duration value
-    pub fn duration(&self) -> f64 {
-        self.duration.load()
-    }
-
-    /// Store given playback duration
-    pub fn set_duration(&self, duration: f64) {
-        self.duration.store(duration)
     }
 }
 
@@ -96,6 +72,8 @@ pub struct Controller {
     loop_: Arc<AtomicBool>,
     loop_start: Arc<AtomicF64>,
     loop_end: Arc<AtomicF64>,
+    offset: Arc<AtomicF64>,
+    duration: Arc<AtomicF64>,
 }
 
 impl Controller {
@@ -108,6 +86,8 @@ impl Controller {
             loop_: Arc::new(AtomicBool::new(false)),
             loop_start: Arc::new(AtomicF64::new(0.)),
             loop_end: Arc::new(AtomicF64::new(f64::MAX)),
+            offset: Arc::new(AtomicF64::new(f64::MAX)),
+            duration: Arc::new(AtomicF64::new(f64::MAX)),
         }
     }
 
@@ -137,6 +117,22 @@ impl Controller {
 
     pub fn set_loop_end(&self, loop_end: f64) {
         self.loop_end.store(loop_end);
+    }
+
+    pub fn offset(&self) -> f64 {
+        self.offset.load()
+    }
+
+    pub fn set_offset(&self, offset: f64) {
+        self.offset.store(offset);
+    }
+
+    pub fn duration(&self) -> f64 {
+        self.duration.load()
+    }
+
+    pub fn set_duration(&self, duration: f64) {
+        self.duration.store(duration)
     }
 
     pub fn seek(&self, timestamp: f64) {
