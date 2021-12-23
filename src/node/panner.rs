@@ -281,13 +281,15 @@ impl AudioProcessor for PannerRenderer {
         let dist_gain = 1. / distance; // inverse distance model is assumed (todo issue #44)
 
         // determine cone effect gain
-        let cone_gain = {
+        let abs_inner_angle = self.cone_inner_angle.load().abs() / 2.;
+        let abs_outer_angle = self.cone_outer_angle.load().abs() / 2.;
+        let cone_gain = if abs_inner_angle >= 180. && abs_outer_angle >= 180. {
+            1. // no cone specified
+        } else {
+            let cone_outer_gain = self.cone_outer_gain.load();
+
             let abs_angle =
                 crate::spatial::angle(source_position, source_orientation, listener_position);
-
-            let abs_inner_angle = self.cone_inner_angle.load().abs() / 2.;
-            let abs_outer_angle = self.cone_outer_angle.load().abs() / 2.;
-            let cone_outer_gain = self.cone_outer_gain.load();
 
             if abs_angle < abs_inner_angle {
                 1. // No attenuation
