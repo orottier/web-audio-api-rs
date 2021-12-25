@@ -23,6 +23,9 @@ fn test_offline_render() {
         let constant2 = context.create_constant_source();
         constant2.offset().set_value(-4.);
         constant2.connect(&context.destination());
+
+        constant1.start();
+        constant2.start();
     }
 
     let output = context.start_rendering();
@@ -87,6 +90,7 @@ fn test_delayed_constant_source() {
 
         let source = context.create_constant_source();
         source.connect(&delay);
+        source.start();
     }
 
     let output = context.start_rendering();
@@ -125,6 +129,10 @@ fn test_audio_param_graph() {
         let param_input2 = context.create_constant_source();
         param_input2.offset().set_value(0.3);
         param_input2.connect(gain.gain());
+
+        source.start();
+        param_input1.start();
+        param_input2.start();
     }
 
     let output = context.start_rendering();
@@ -181,6 +189,9 @@ fn test_cycle() {
         let other = context.create_constant_source();
         other.offset().set_value(2.);
         other.connect(&context.destination());
+
+        source_cycle.start();
+        other.start();
     }
 
     let output = context.start_rendering();
@@ -212,6 +223,8 @@ fn test_cycle_breaker() {
         source.offset().set_value(1.);
         source.connect(&delay);
         source.connect(&context.destination());
+
+        source.start();
     }
 
     let output = context.start_rendering();
