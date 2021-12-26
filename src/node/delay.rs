@@ -688,4 +688,37 @@ mod tests {
 
         let _result = context.start_rendering();
     }
+
+    #[test]
+    fn test_max_delay_exactly_one_quantum() {
+        // Regression test for delaynode not applying delay depending on graph ordering.  We need
+        // to test multiple times since (currently) the topological sort of the graph depends on
+        // randomized hash values. This bug only occurs when the Writer is called earlier than the
+        // Reader. 10 times should do:
+        for _ in 0..10 {
+            let sample_rate = SampleRate(128);
+            let mut context = OfflineAudioContext::new(1, 256, sample_rate);
+
+            // set max delay time exactly one render quantum
+            let delay = context.create_delay(1.);
+            delay.delay_time.set_value(1.);
+            delay.connect(&context.destination());
+
+            let mut dirac = context.create_buffer(1, 1, sample_rate);
+            dirac.copy_to_channel(&[1.], 0);
+
+            let mut src = context.create_buffer_source();
+            src.connect(&delay);
+            src.set_buffer(&dirac);
+            src.start_at(0.);
+
+            let result = context.start_rendering();
+            let channel = result.get_channel_data(0);
+
+            let mut expected = vec![0.; 256];
+            expected[128] = 1.;
+
+            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+        }
+    }
 }
