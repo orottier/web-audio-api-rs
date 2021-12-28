@@ -39,7 +39,53 @@ impl Default for PannerOptions {
     }
 }
 
-/// Positions / spatializes an incoming audio stream in three-dimensional space.
+/// Node that positions / spatializes an incoming audio stream in three-dimensional space.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/PannerNode>
+/// - specification: <https://www.w3.org/TR/webaudio/#pannernode> and
+/// <https://www.w3.org/TR/webaudio/#Spatialization>
+/// - see also:
+/// [`AsBaseAudioContext::create_panner`](crate::context::AsBaseAudioContext::create_panner)
+///
+/// # Usage
+/// ```no_run
+/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::node::AudioNode;
+/// use web_audio_api::node::AudioScheduledSourceNode;
+///
+/// // Setup a new audio context
+/// let context = AudioContext::new(None);
+///
+/// // Create a friendly tone
+/// let tone = context.create_oscillator();
+/// tone.frequency().set_value_at_time(300.0f32, 0.);
+/// tone.start();
+///
+/// // Connect tone > panner node > destination node
+/// let panner = context.create_panner();
+/// tone.connect(&panner);
+/// panner.connect(&context.destination());
+///
+/// // The panner node is 1 unit in front of listener
+/// panner.position_z().set_value_at_time(1., 0.);
+///
+/// // And sweeps 10 units left to right, every second
+/// let moving = context.create_oscillator();
+/// moving.start();
+/// moving.frequency().set_value_at_time(1., 0.);
+/// let gain = context.create_gain();
+/// gain.gain().set_value_at_time(10., 0.);
+/// moving.connect(&gain);
+/// gain.connect(panner.position_x());
+///
+/// // enjoy listening
+/// std::thread::sleep(std::time::Duration::from_secs(4));
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example spatial`
+/// - `cargo run --release --example panner_cone`
 pub struct PannerNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
