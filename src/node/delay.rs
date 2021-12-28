@@ -152,14 +152,22 @@ impl DelayNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: DelayOptions) -> Self {
         let sample_rate = context.base().sample_rate().0 as f64;
 
-        let max_delay_time = options.max_delay_time;
         // Specifies the maximum delay time in seconds allowed for the delay line.
         // If specified, this value MUST be greater than zero and less than three
         // minutes or a NotSupportedError exception MUST be thrown. If not specified,
         // then 1 will be used.
-        if max_delay_time <= 0. || max_delay_time >= 180. {
+        if options.max_delay_time <= 0. || options.max_delay_time >= 180. {
             panic!("NotSupportedError: MUST be greater than zero and less than three minutes");
         }
+
+        // we internally clamp max delay to quantum duration because the current
+        // implementation doesn't allow sub-quantum delays. Later, this will
+        // ensure that even if the declared max_delay_time and max_delay are smaller
+        // than quantum duration, the node, if found in a loop, will gracefully
+        // fallback to the clamped behavior. (e.g. we ensure that ring buffer size
+        // is always >= 2)
+        let quantum_duration = 1. / sample_rate * RENDER_QUANTUM_SIZE as f64;
+        let max_delay_time = options.max_delay_time.max(quantum_duration);
 
         // allocate large enough buffer to store all delayed samples
         //
@@ -404,6 +412,7 @@ impl AudioProcessor for DelayReader {
         let delay_param = params.get(&self.delay_time);
 
         for (index, delay) in delay_param.iter().enumerate() {
+            // @note - this check w/ self.max_delay_time should maybe be reviewed later
             let clamped_delay = (*delay as f64).clamp(quantum_duration, self.max_delay_time);
             let num_samples = clamped_delay * sample_rate;
             // negative position of the playhead relative to this block start
@@ -695,7 +704,7 @@ mod tests {
 
     #[test]
     fn test_max_delay_multiple_of_quantum_size() {
-        // test that delaynode have enough internal buffer size in edge cases where
+        // regression test that delay node has always enough internal buffer size when
         // max_delay is a multiple of quantum size and delay == max_delay. We need
         // to test multiple times since (currently) the topological sort of the
         // graph depends on randomized hash values. This bug only occurs when the
@@ -748,6 +757,40 @@ mod tests {
 
             let mut expected = vec![0.; 3 * 128];
             expected[256] = 1.;
+
+            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+        }
+    }
+
+    #[test]
+    fn test_max_delay_smaller_than_quantum_size() {
+        // regression test that even if the declared max_delay_time is smaller than
+        // a quantum duration (which is not allowed for now), the node internally
+        // clamp it to quantum duration so that everything works even if order
+        // of processing is not garanteed (which is the default behavior for now).
+        // When allowing sub quantum delay, this will also guarantees that the node
+        // gracefully fallback to min
+        for _ in 0..10 {
+            let sample_rate = SampleRate(128);
+            let mut context = OfflineAudioContext::new(1, 256, sample_rate);
+
+            let delay = context.create_delay(0.5); // this will be internally clamped to 1.
+            delay.delay_time.set_value(0.5); // this will be clamped to 1. by the Reader
+            delay.connect(&context.destination());
+
+            let mut dirac = context.create_buffer(1, 1, sample_rate);
+            dirac.copy_to_channel(&[1.], 0);
+
+            let mut src = context.create_buffer_source();
+            src.connect(&delay);
+            src.set_buffer(&dirac);
+            src.start_at(0.);
+
+            let result = context.start_rendering();
+            let channel = result.get_channel_data(0);
+
+            let mut expected = vec![0.; 256];
+            expected[128] = 1.;
 
             assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
         }
