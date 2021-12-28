@@ -1,3 +1,11 @@
+# Version 0.13.0 (2021-12-28)
+
+- Support cyclic audio graphs with DelayNode acting as cycle breaker
+- Greatly improved AudioBufferSourceNode (sub quantum scheduling, more
+  controls, performance)
+- Added cone gain functionality for PannerNode
+- Improved performance of audio graph rendering
+
 # Version 0.12.0 (2021-12-08)
 
 - Support all AudioParam automation methods
