@@ -573,7 +573,7 @@ mod tests {
     use float_eq::assert_float_eq;
 
     #[test]
-    fn type_playing_some_file() {
+    fn test_playing_some_file() {
         let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, SampleRate(44_100));
 
         let file = std::fs::File::open("sample.wav").unwrap();
