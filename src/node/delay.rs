@@ -703,6 +703,37 @@ mod tests {
     }
 
     #[test]
+    fn test_node_stays_alive_long_enough() {
+        let sample_rate = SampleRate(128);
+        let mut context = OfflineAudioContext::new(1, 4 * 128, sample_rate);
+
+        // Set up a source that starts only after 5 render quanta.
+        // The delay writer and reader should stay alive in this period of silence.
+        // We set up the nodes in a separate block {} so they are dropped in the control thread,
+        // otherwise the lifecycle rules do not kick in
+        {
+            let delay = context.create_delay(1.);
+            delay.delay_time.set_value(1.);
+            delay.connect(&context.destination());
+
+            let mut dirac = context.create_buffer(1, 1, sample_rate);
+            dirac.copy_to_channel(&[1.], 0);
+
+            let mut src = context.create_buffer_source();
+            src.connect(&delay);
+            src.set_buffer(&dirac);
+            src.start_at(2.);
+        } // src and delay nodes are dropped
+
+        let result = context.start_rendering();
+        let mut expected = vec![0.; 4 * 128];
+        // source starts after 2 * 128 samples, then is delayed another 128
+        expected[3 * 128] = 1.;
+
+        assert_float_eq!(result.get_channel_data(0), &expected[..], abs_all <= 0.);
+    }
+
+    #[test]
     fn test_max_delay_multiple_of_quantum_size() {
         // regression test that delay node has always enough internal buffer size when
         // max_delay is a multiple of quantum size and delay == max_delay. We need
