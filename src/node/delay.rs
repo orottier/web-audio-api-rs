@@ -700,7 +700,8 @@ mod tests {
         // to test multiple times since (currently) the topological sort of the
         // graph depends on randomized hash values. This bug only occurs when the
         // Writer is called earlier than the Reader. 10 times should do:
-        for _ in 0..10 { // set delay and max delay time exactly 1 render quantum
+        for _ in 0..10 {
+            // set delay and max delay time exactly 1 render quantum
             let sample_rate = SampleRate(128);
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
