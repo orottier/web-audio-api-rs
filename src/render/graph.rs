@@ -62,17 +62,14 @@ impl Node {
             return false;
         }
 
-        // Drop, if the node has no outputs connected
-        if self.outgoing_edges.is_empty() {
-            return true;
-        }
-
         // Drop, when the node does not have any inputs connected,
         // and if the processor reports it won't yield output.
         if !self.has_inputs_connected && !tail_time {
             return true;
         }
 
+        // Otherwise, do not drop the node.
+        // (Even if it has no outputs connected, it may have side effects)
         false
     }
 
@@ -327,15 +324,15 @@ impl Graph {
 
             // Check if we can decommission this node (end of life)
             if node.can_free(tail_time) {
-                // Other nodes could still connect to this one, clear these edges
-                nodes
-                    .values_mut()
-                    .for_each(|n| n.outgoing_edges.retain(|e| e.other_id != *index));
-
-                // We should perform a new topological sort of the graph now
+                // Node is dropped, we should perform a new topological sort of the audio graph
                 nodes_dropped = true;
+
+                // Nodes are only dropped when they do not have incoming connections.
+                // But they may have AudioParams feeding into them, these can de dropped too.
+                nodes.retain(|_id, n| !n.outgoing_edges.iter().any(|e| e.other_id == *index));
             } else {
-                // Reset input buffers (we don't need them so this saves allocations)
+                // Node is not dropped.
+                // Reset input buffers as they will be summed up in the next render quantum.
                 node.inputs
                     .iter_mut()
                     .for_each(AudioRenderQuantum::make_silent);
