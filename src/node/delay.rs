@@ -162,10 +162,14 @@ impl DelayNode {
         }
 
         // allocate large enough buffer to store all delayed samples
-        let max_samples = max_delay_time * sample_rate;
-        let max_quanta =
-            (max_samples.ceil() as usize + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
-        let ring_buffer = Vec::with_capacity(max_quanta);
+        //
+        // we add 1 here so that in edge cases where num_samples is a multiple of
+        // RENDER_QUANTUM_SIZE and delay_time == max_delay_time we are sure to
+        // enough room for history. (see. test_max_delay_multiple_of_quantum_size)
+        let num_samples = max_delay_time * sample_rate + 1.;
+        let num_quanta =
+            (num_samples.ceil() as usize + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
+        let ring_buffer = Vec::with_capacity(num_quanta);
 
         let shared_ring_buffer = Rc::new(RefCell::new(ring_buffer));
         let shared_ring_buffer_clone = shared_ring_buffer.clone();
@@ -690,18 +694,44 @@ mod tests {
     }
 
     #[test]
-    fn test_max_delay_exactly_one_quantum() {
-        // Regression test for delaynode not applying delay depending on graph ordering.  We need
-        // to test multiple times since (currently) the topological sort of the graph depends on
-        // randomized hash values. This bug only occurs when the Writer is called earlier than the
-        // Reader. 10 times should do:
-        for _ in 0..10 {
-            let sample_rate = SampleRate(128);
-            let mut context = OfflineAudioContext::new(1, 256, sample_rate);
+    fn test_max_delay_multiple_of_quantum_size() {
+        // test that delaynode have enough internal buffer size in edge cases where
+        // max_delay is a multiple of quantum size and delay == max_delay. We need
+        // to test multiple times since (currently) the topological sort of the
+        // graph depends on randomized hash values. This bug only occurs when the
+        // Writer is called earlier than the Reader. 10 times should do:
+        // for _ in 0..10 { // set delay and max delay time exactly 1 render quantum
+        //     let sample_rate = SampleRate(128);
+        //     let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
-            // set max delay time exactly one render quantum
-            let delay = context.create_delay(1.);
-            delay.delay_time.set_value(1.);
+        //     let delay = context.create_delay(1.);
+        //     delay.delay_time.set_value(1.);
+        //     delay.connect(&context.destination());
+
+        //     let mut dirac = context.create_buffer(1, 1, sample_rate);
+        //     dirac.copy_to_channel(&[1.], 0);
+
+        //     let mut src = context.create_buffer_source();
+        //     src.connect(&delay);
+        //     src.set_buffer(&dirac);
+        //     src.start_at(0.);
+
+        //     let result = context.start_rendering();
+        //     let channel = result.get_channel_data(0);
+
+        //     let mut expected = vec![0.; 256];
+        //     expected[128] = 1.;
+
+        //     assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+        // }
+
+        for _ in 0..10 {
+            // set delay and max delay time exactly 2 render quantum
+            let sample_rate = SampleRate(128);
+            let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
+
+            let delay = context.create_delay(2.);
+            delay.delay_time.set_value(2.);
             delay.connect(&context.destination());
 
             let mut dirac = context.create_buffer(1, 1, sample_rate);
@@ -715,8 +745,8 @@ mod tests {
             let result = context.start_rendering();
             let channel = result.get_channel_data(0);
 
-            let mut expected = vec![0.; 256];
-            expected[128] = 1.;
+            let mut expected = vec![0.; 3 * 128];
+            expected[256] = 1.;
 
             assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
         }
