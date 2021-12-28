@@ -301,6 +301,30 @@ pub fn distance(source_position: Vector3<f32>, listener_position: Vector3<f32>) 
     vec3_len(vec3_sub(source_position, listener_position))
 }
 
+/// Angle between two vectors in 3D
+pub fn angle(
+    source_position: Vector3<f32>,
+    source_orientation: Vector3<f32>,
+    listener_position: Vector3<f32>,
+) -> f32 {
+    // handle edge case of missing source orientation
+    if vec3_square_len(source_orientation) == 0. {
+        return 0.;
+    }
+    let normalized_source_orientation = vec3_normalized(source_orientation);
+
+    let relative_pos = vec3_sub(source_position, listener_position);
+    // Handle degenerate case if source and listener are at the same point.
+    if vec3_square_len(relative_pos) <= f32::MIN_POSITIVE {
+        return 0.;
+    }
+    // Calculate the source-listener vector.
+    let source_listener = vec3_normalized(relative_pos);
+
+    let angle = 180. * vec3_dot(source_listener, normalized_source_orientation).acos() / PI;
+    angle.abs()
+}
+
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
@@ -357,5 +381,41 @@ mod tests {
         let (azimuth, elevation) = azimuth_and_elevation(pos, LP, LF, LU);
         assert_float_eq!(azimuth, 0., abs <= 0.001);
         assert_float_eq!(elevation, 90., abs <= 0.001);
+    }
+
+    #[test]
+    fn angle_equal_pos() {
+        let pos = [0., 0., 0.];
+        let orientation = [1., 0., 0.];
+        let angle = angle(pos, orientation, LP);
+
+        assert_float_eq!(angle, 0., abs <= 0.);
+    }
+
+    #[test]
+    fn angle_no_orientation() {
+        let pos = [10., 0., 0.];
+        let orientation = [0., 0., 0.];
+        let angle = angle(pos, orientation, LP);
+
+        assert_float_eq!(angle, 0., abs <= 0.);
+    }
+
+    #[test]
+    fn test_angle() {
+        let pos = [1., 0., 0.];
+        let orientation = [0., 1., 0.];
+        let angle = angle(pos, orientation, LP);
+
+        assert_float_eq!(angle, 90., abs <= 0.);
+    }
+
+    #[test]
+    fn test_angle_abs_value() {
+        let pos = [1., 0., 0.];
+        let orientation = [0., -1., 0.];
+        let angle = angle(pos, orientation, LP);
+
+        assert_float_eq!(angle, 90., abs <= 0.);
     }
 }
