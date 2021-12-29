@@ -434,9 +434,10 @@ impl AudioProcessor for DelayReader {
             output.set_channels_values_at(index, &self.internal_buffer);
         }
 
-        if self.last_written_index_checked.is_some() &&
-            self.index == self.last_written_index_checked.unwrap() {
-            return false
+        if self.last_written_index_checked.is_some()
+            && self.index == self.last_written_index_checked.unwrap()
+        {
+            return false;
         }
 
         // check if the writer has been decommisionned
@@ -656,7 +657,8 @@ mod tests {
 
     #[test]
     fn test_node_stays_alive_long_enough() {
-        for _ in 0..10 { // make sure there is no hidden order problem
+        // make sure there are no hidden order problem
+        for _ in 0..10 {
             let sample_rate = SampleRate(128);
             let mut context = OfflineAudioContext::new(1, 5 * 128, sample_rate);
 
