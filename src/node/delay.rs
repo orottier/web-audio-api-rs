@@ -434,9 +434,7 @@ impl AudioProcessor for DelayReader {
             output.set_channels_values_at(index, &self.internal_buffer);
         }
 
-        if self.last_written_index_checked.is_some()
-            && self.index == self.last_written_index_checked.unwrap()
-        {
+        if matches!(self.last_written_index_checked, Some(index) if index == self.index) {
             return false;
         }
 
