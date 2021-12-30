@@ -192,10 +192,11 @@ impl StreamConfigsBuilder {
     /// # Argument
     ///
     /// * `options` - options contains sample rate information
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn with_sample_rate(mut self, options: Option<&AudioContextOptions>) -> Self {
         if let Some(opts) = options {
             if let Some(fs) = opts.sample_rate {
-                self.prefered.sample_rate.0 = fs;
+                self.prefered.sample_rate.0 = fs as u32;
             }
         };
 
@@ -210,7 +211,7 @@ impl StreamConfigsBuilder {
     ///
     /// # Warning
     ///
-    /// `with_latency_hint` has to be called *after* `with_sample_rate` on whcih it depends on.
+    /// `with_latency_hint` has to be called *after* `with_sample_rate` on which it depends on.
     /// For now, this dependency is not enforce by the type system itself.
     fn with_latency_hint(mut self, options: Option<&AudioContextOptions>) -> Self {
         let buffer_size = self.get_buffer_size(options);
@@ -312,7 +313,8 @@ impl OutputStreamer {
         let config = &self.configs.prefered;
 
         // Creates the render thread
-        let sample_rate = SampleRate(config.sample_rate.0);
+        #[allow(clippy::cast_precision_loss)]
+        let sample_rate = SampleRate(config.sample_rate.0 as f32);
 
         // communication channel to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
@@ -386,7 +388,8 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
                 let config = &streamer.configs.fallback;
 
                 // Creates the renderer thread
-                let sample_rate = SampleRate(config.sample_rate.0);
+                #[allow(clippy::cast_precision_loss)]
+                let sample_rate = SampleRate(config.sample_rate.0 as f32);
 
                 // communication channel to the render thread
                 let (sender, receiver) = crossbeam_channel::unbounded();
@@ -468,7 +471,8 @@ pub fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
 
     let mut config: StreamConfig = supported_config.into();
     config.buffer_size = cpal::BufferSize::Fixed(input_buffer_size);
-    let sample_rate = SampleRate(config.sample_rate.0);
+    #[allow(clippy::cast_precision_loss)]
+    let sample_rate = SampleRate(config.sample_rate.0 as f32);
     let channels = config.channels as usize;
 
     let smoothing = 3; // todo, use buffering to smooth frame drops

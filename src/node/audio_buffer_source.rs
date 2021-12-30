@@ -575,7 +575,7 @@ mod tests {
 
     #[test]
     fn test_playing_some_file() {
-        let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, SampleRate(44_100.));
 
         let file = std::fs::File::open("sample.wav").unwrap();
         let audio_buffer = context.decode_audio_data(file);

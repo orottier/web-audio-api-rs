@@ -277,13 +277,13 @@ mod test {
 
     #[test]
     fn build_with_new() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
         let _panner = StereoPannerNode::new(&context, None);
     }
 
     #[test]
     fn build_with_factory_func() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
         let _panner = context.create_stereo_panner();
     }
 
@@ -291,7 +291,7 @@ mod test {
     fn assert_stereo_default_build() {
         let default_pan = 0.;
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
 
         let panner = StereoPannerNode::new(&context, None);
 
@@ -306,7 +306,7 @@ mod test {
         let default_pan = 0.;
         let new_pan = 0.1;
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
 
         let panner = StereoPannerNode::new(&context, None);
 
@@ -363,7 +363,7 @@ mod test {
         let default_pan = 0.;
         let new_pan = 1.1;
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
 
         let panner = StereoPannerNode::new(&context, None);
 
@@ -383,7 +383,7 @@ mod test {
         let default_pan = 0.;
         let new_pan = -1.1;
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
 
         let panner = StereoPannerNode::new(&context, None);
 

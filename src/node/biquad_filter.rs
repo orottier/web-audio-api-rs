@@ -209,7 +209,7 @@ impl BiquadFilterNode {
 
             d_param.set_value(d_value);
 
-            let niquyst = context.base().sample_rate().0 / 2;
+            let niquyst = context.base().sample_rate().0 / 2.;
             // It should be fine for usual fs
             #[allow(clippy::cast_precision_loss)]
             let f_param_opts = AudioParamOptions {
@@ -1114,13 +1114,13 @@ mod test {
 
     #[test]
     fn build_with_new() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
         let _biquad = BiquadFilterNode::new(&context, None);
     }
 
     #[test]
     fn build_with_factory_func() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
         let _biquad = context.create_biquad_filter();
     }
 
@@ -1131,7 +1131,7 @@ mod test {
         let default_gain = 0.;
         let default_freq = 350.;
         let default_type = BiquadFilterType::Lowpass;
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
         let biquad = BiquadFilterNode::new(&context, None);
 
         context.start_rendering();
@@ -1159,7 +1159,7 @@ mod test {
             type_: None,
             channel_config: ChannelConfigOptions::default(),
         };
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
         let biquad = BiquadFilterNode::new(&context, Some(options));
 
         context.start_rendering();
@@ -1178,7 +1178,7 @@ mod test {
         let default_gain = 0.;
         let default_freq = 350.;
         let default_type = BiquadFilterType::Lowpass;
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
 
         let options = BiquadFilterOptions::default();
 
@@ -1200,7 +1200,7 @@ mod test {
         let gain = 1.;
         let frequency = 3050.;
         let type_ = BiquadFilterType::Highpass;
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
 
         let options = BiquadFilterOptions {
             q: Some(q),
@@ -1229,7 +1229,7 @@ mod test {
         let gain = 1.;
         let frequency = 3050.;
         let type_ = BiquadFilterType::Highpass;
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
 
         let mut biquad = BiquadFilterNode::new(&context, None);
 
@@ -1251,7 +1251,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_not_the_same_length() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
         let biquad = BiquadFilterNode::new(&context, None);
 
         let mut frequency_hz = [0.];
@@ -1264,7 +1264,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_not_the_same_length_2() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
         let biquad = BiquadFilterNode::new(&context, None);
 
         let mut frequency_hz = [0.];
@@ -1276,7 +1276,7 @@ mod test {
 
     #[test]
     fn frequencies_are_clamped() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
         let biquad = BiquadFilterNode::new(&context, None);
         // It will be fine for the usual fs
         #[allow(clippy::cast_precision_loss)]
