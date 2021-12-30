@@ -261,8 +261,8 @@ impl AudioBufferSourceNode {
         self.controller.scheduler().stop_at(stop)
     }
 
-    /// [`AudioParam`] that defines the speed at which the [`AudioBuffer`] will
-    /// be played, e.g.:
+    /// K-rate [`AudioParam`] that defines the speed at which the [`AudioBuffer`]
+    /// will be played, e.g.:
     /// - `0.5` will play the file at half speed
     /// - `-1` will play the file in reverse
     ///
@@ -271,7 +271,8 @@ impl AudioBufferSourceNode {
         &self.playback_rate
     }
 
-    /// [`AudioParam`] that defines a pitch transposition of the file, expressed in cents
+    /// K-rate [`AudioParam`] that defines a pitch transposition of the file,
+    /// expressed in cents
     ///
     /// see <https://en.wikipedia.org/wiki/Cent_(music)>
     pub fn detune(&self) -> &AudioParam {

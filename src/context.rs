@@ -219,7 +219,7 @@ pub trait AsBaseAudioContext {
     }
 
     /// Creates a `DelayNode`, delaying the audio signal
-    fn create_delay(&self, max_delay_time: f32) -> node::DelayNode {
+    fn create_delay(&self, max_delay_time: f64) -> node::DelayNode {
         let opts = node::DelayOptions {
             max_delay_time,
             ..DelayOptions::default()
