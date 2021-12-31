@@ -1,13 +1,9 @@
-//! Microphone input and OGG, WAV and MP3 decoding
+//! Microphone input and media decoding (OGG, WAV, FLAC, ..)
 
 use std::error::Error;
-use std::fs::File;
-use std::io::BufReader;
-
-use lewton::inside_ogg::OggStreamReader;
-use lewton::VorbisError;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions, ChannelData};
+use crate::codecs::MediaInput;
 use crate::control::Controller;
 use crate::{BufferDepletedError, SampleRate, RENDER_QUANTUM_SIZE};
 
@@ -23,7 +19,7 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 
 /// Interface for media streaming.
 ///
-/// This is a trait alias for an [`AudioBuffer`] Iterator, for example the [`OggVorbisDecoder`] or
+/// This is a trait alias for an [`AudioBuffer`] Iterator, for example the [`MediaDecoder`] or
 /// [`Microphone`].
 ///
 /// Below is an example showing how to play the stream directly in the audio context. However, this
@@ -41,6 +37,7 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 /// use web_audio_api::SampleRate;
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::buffer::{AudioBuffer, AudioBufferOptions};
+/// use web_audio_api::node::AudioNode;
 ///
 /// // create a new buffer: 512 samples of silence
 /// let options = AudioBufferOptions {
@@ -59,6 +56,7 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 /// // media is now a proper `MediaStream` and can be used in the audio graph
 /// let context = AudioContext::new(None);
 /// let node = context.create_media_stream_source(media);
+/// node.connect(&context.destination());
 /// ```
 pub trait MediaStream:
     Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'static
@@ -285,9 +283,28 @@ impl Iterator for MediaElement {
 
 /// Microphone input stream
 ///
-/// It implements the [`MediaStream`] trait so can be used inside a [`crate::node::MediaStreamAudioSourceNode`]
+/// It implements the [`MediaStream`] trait so can be used inside a
+/// [`MediaStreamAudioSourceNode`](crate::node::MediaStreamAudioSourceNode)
 ///
-/// Check the `microphone.rs` example for usage.
+/// # Example
+///
+/// ```no_run
+/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::media::Microphone;
+/// use web_audio_api::node::AudioNode;
+///
+/// env_logger::init();
+/// let context = AudioContext::new(None);
+///
+/// let stream = Microphone::new();
+/// // register as media element in the audio context
+/// let background = context.create_media_stream_source(stream);
+/// // connect the node directly to the destination node (speakers)
+/// background.connect(&context.destination());
+///
+/// // enjoy listening
+/// std::thread::sleep(std::time::Duration::from_secs(4));
+/// ```
 pub struct Microphone {
     receiver: Receiver<AudioBuffer>,
     channels: usize,
@@ -410,20 +427,27 @@ impl MicrophoneRender {
     }
 }
 
-/// Ogg Vorbis (.ogg) file decoder
+/// Media stream decoder (OGG, WAV, FLAC, ..)
 ///
-/// It implements the [`MediaStream`] trait so can be used inside a `MediaElementAudioSourceNode`
+/// Using the `MediaDecoder` is the preferred way to play large audio files and streams. For small
+/// soundbites, consider using `decode_audio_data` on the audio context which will create a single
+/// AudioBuffer which can be played/looped with high precision in an `AudioBufferSourceNode`.
+///
+/// The MediaDecoder implements the [`MediaStream`] trait so can be used inside a
+/// `MediaElementAudioSourceNode`
+///
+/// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
 ///
 /// # Usage
 ///
 /// ```no_run
-/// use web_audio_api::media::{MediaElement, OggVorbisDecoder};
+/// use web_audio_api::media::{MediaElement, MediaDecoder};
 /// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// // construct the decoder
 /// let file = std::fs::File::open("sample.ogg").unwrap();
-/// let media = OggVorbisDecoder::try_new(file).unwrap();
+/// let media = MediaDecoder::try_new(file).unwrap();
 ///
 /// // Wrap in a `MediaElement` so buffering/decoding does not take place on the render thread
 /// let element = MediaElement::new(media);
@@ -436,126 +460,158 @@ impl MicrophoneRender {
 /// node.connect(&context.destination());
 /// node.start();
 /// ```
-///
-pub struct OggVorbisDecoder {
-    stream: OggStreamReader<BufReader<File>>,
+pub struct MediaDecoder {
+    format: Box<dyn FormatReader>,
+    decoder: Box<dyn Decoder>,
 }
 
-impl OggVorbisDecoder {
-    /// Try to construct a new instance from a [`File`]
-    pub fn try_new(file: File) -> Result<Self, VorbisError> {
-        OggStreamReader::new(BufReader::new(file)).map(|stream| Self { stream })
+use symphonia::core::codecs::Decoder;
+use symphonia::core::formats::FormatReader;
+
+use symphonia::core::audio::SampleBuffer;
+use symphonia::core::codecs::DecoderOptions;
+use symphonia::core::errors::Error as SymphoniaError;
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::probe::Hint;
+
+impl MediaDecoder {
+    /// Try to construct a new instance from a `Read` implementor
+    ///
+    /// # Errors
+    ///
+    /// This method returns an Error in various cases (IO, mime sniffing, decoding).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::io::Cursor;
+    /// use web_audio_api::media::MediaDecoder;
+    ///
+    /// let input = Cursor::new(vec![0; 32]); // or a File, TcpStream, ...
+    /// let media = MediaDecoder::try_new(input);
+    ///
+    /// assert!(media.is_err()); // the input was not a valid MIME type
+    pub fn try_new<R: std::io::Read + Send + 'static>(
+        input: R,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        // Symfonia lib needs a Box<dyn MediaSource> - use our own MediaInput
+        let input = Box::new(MediaInput::new(input));
+
+        // Create the media source stream using the boxed media source from above.
+        let mss = symphonia::core::io::MediaSourceStream::new(input, Default::default());
+
+        // Create a hint to help the format registry guess what format reader is appropriate. In this
+        // function we'll leave it empty.
+        let hint = Hint::new();
+
+        // Use the default options when reading and decoding.
+        let format_opts: FormatOptions = Default::default();
+        let metadata_opts: MetadataOptions = Default::default();
+        let decoder_opts: DecoderOptions = Default::default();
+
+        // Probe the media source stream for a format.
+        let probed =
+            symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts)?;
+
+        // Get the format reader yielded by the probe operation.
+        let format = probed.format;
+
+        // Get the default track.
+        let track = format.default_track().unwrap();
+
+        // Create a (stateful) decoder for the track.
+        let decoder = symphonia::default::get_codecs()
+            .make(&track.codec_params, &decoder_opts)
+            .unwrap();
+
+        Ok(Self { format, decoder })
     }
 }
 
-impl Iterator for OggVorbisDecoder {
+impl Iterator for MediaDecoder {
     type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let packet: Vec<Vec<f32>> = match self.stream.read_dec_packet_generic() {
-            Err(e) => return Some(Err(Box::new(e))),
-            Ok(None) => return None,
-            Ok(Some(packet)) => packet,
-        };
+        let format = &mut self.format;
+        let decoder = &mut self.decoder;
 
-        let channel_data: Vec<_> = packet.into_iter().map(ChannelData::from).collect();
-        let sample_rate = SampleRate(self.stream.ident_hdr.audio_sample_rate);
-        let result = AudioBuffer::from_channels(channel_data, sample_rate);
+        // Get the default track.
+        let track = format.default_track().unwrap();
+        let number_of_channels = track.codec_params.channels.unwrap().count();
+        let input_sample_rate = SampleRate(track.codec_params.sample_rate.unwrap() as _);
 
-        Some(Ok(result))
-    }
-}
+        // Store the track identifier, we'll use it to filter packets.
+        let track_id = track.id;
 
-/// WAV file decoder
-///
-/// It implements the [`MediaStream`] trait so can be used inside a `MediaElementAudioSourceNode`
-///
-/// # Usage
-///
-/// ```no_run
-/// use web_audio_api::media::{MediaElement, WavDecoder};
-/// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
-/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
-///
-/// // construct the decoder
-/// let file = std::fs::File::open("sample.wav").unwrap();
-/// let media = WavDecoder::try_new(file).unwrap();
-///
-/// // Wrap in a `MediaElement` so buffering/decoding does not take place on the render thread
-/// let element = MediaElement::new(media);
-///
-/// // register the media element node
-/// let context = AudioContext::new(None);
-/// let node = context.create_media_element_source(element);
-///
-/// // play media
-/// node.connect(&context.destination());
-/// node.start();
-/// ```
-///
-pub struct WavDecoder {
-    //stream: hound::WavIntoSamples<BufReader<File>, f32>,
-    stream: Box<dyn Iterator<Item = Result<f32, hound::Error>> + Send>,
-    channels: u32,
-    sample_rate: SampleRate,
-}
+        let mut sample_buf = None;
+        let mut data = vec![vec![]; number_of_channels as usize];
 
-impl WavDecoder {
-    /// Try to construct a new instance from a [`File`]
-    pub fn try_new(file: File) -> Result<Self, hound::Error> {
-        hound::WavReader::new(BufReader::new(file)).map(|wav| {
-            let channels = wav.spec().channels as u32;
-            let sample_rate = SampleRate(wav.spec().sample_rate);
+        loop {
+            // Get the next packet from the format reader.
+            let packet = match format.next_packet() {
+                Err(e) => {
+                    log::error!("next packet err {:?}", e);
+                    return None;
+                }
+                Ok(p) => p,
+            };
 
-            // convert samples to f32, always
-            let stream: Box<dyn Iterator<Item = Result<_, _>> + Send> =
-                match wav.spec().sample_format {
-                    hound::SampleFormat::Float => Box::new(wav.into_samples::<f32>()),
-                    hound::SampleFormat::Int => {
-                        let bits = wav.spec().bits_per_sample as f32;
-                        Box::new(
-                            wav.into_samples::<i32>()
-                                .map(move |r| r.map(|i| i as f32 / bits)),
-                        )
+            // If the packet does not belong to the selected track, skip it.
+            if packet.track_id() != track_id {
+                continue;
+            }
+
+            // Decode the packet into audio samples, ignoring any decode errors.
+            match decoder.decode(&packet) {
+                Ok(audio_buf) => {
+                    // The decoded audio samples may now be accessed via the audio buffer if per-channel
+                    // slices of samples in their native decoded format is desired. Use-cases where
+                    // the samples need to be accessed in an interleaved order or converted into
+                    // another sample format, or a byte buffer is required, are covered by copying the
+                    // audio buffer into a sample buffer or raw sample buffer, respectively. In the
+                    // example below, we will copy the audio buffer into a sample buffer in an
+                    // interleaved order while also converting to a f32 sample format.
+
+                    // If this is the *first* decoded packet, create a sample buffer matching the
+                    // decoded audio buffer format.
+                    if sample_buf.is_none() {
+                        // Get the audio buffer specification.
+                        let spec = *audio_buf.spec();
+
+                        // Get the capacity of the decoded buffer. Note: This is capacity, not length!
+                        let duration = audio_buf.capacity() as u64;
+
+                        // Create the f32 sample buffer.
+                        sample_buf = Some(SampleBuffer::<f32>::new(duration, spec));
                     }
-                };
 
-            Self {
-                stream,
-                channels,
-                sample_rate,
-            }
-        })
-    }
-}
+                    // Copy the decoded audio buffer into the sample buffer in an interleaved format.
+                    if let Some(buf) = &mut sample_buf {
+                        buf.copy_interleaved_ref(audio_buf);
 
-impl Iterator for WavDecoder {
-    type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
+                        for (i, v) in buf.samples().iter().enumerate() {
+                            data[i % number_of_channels].push(*v);
+                        }
+                    }
+                    println!("got samples {}", data[0].len());
 
-    fn next(&mut self) -> Option<Self::Item> {
-        // read data in chunks of channels * RENDER_QUANTUM_SIZE
-        let mut data = vec![vec![]; self.channels as usize];
-        for (i, res) in self
-            .stream
-            .by_ref()
-            .take(self.channels as usize * RENDER_QUANTUM_SIZE)
-            .enumerate()
-        {
-            match res {
-                Err(e) => return Some(Err(Box::new(e))),
-                Ok(v) => data[i % self.channels as usize].push(v),
+                    break;
+                }
+                Err(SymphoniaError::DecodeError(e)) => {
+                    // continue processing but log the error
+                    log::error!("decode err {:?}", e);
+                }
+                Err(e) => {
+                    // do not continue processing, return error result
+                    return Some(Err(Box::new(e)));
+                }
             }
         }
 
-        // exhausted?
-        if data[0].is_empty() {
-            return None;
-        }
-
-        // convert data to AudioBuffer
         let channels = data.into_iter().map(ChannelData::from).collect();
-        let result = AudioBuffer::from_channels(channels, self.sample_rate);
+        let buffer = AudioBuffer::from_channels(channels, input_sample_rate);
 
-        Some(Ok(result))
+        Some(Ok(buffer))
     }
 }
