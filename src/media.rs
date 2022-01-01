@@ -1,9 +1,9 @@
 //! Microphone input and media decoding (OGG, WAV, FLAC, ..)
 
 use std::error::Error;
+use std::io::{Read, Seek, SeekFrom};
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions, ChannelData};
-use crate::codecs::MediaInput;
 use crate::control::Controller;
 use crate::{BufferDepletedError, SampleRate, RENDER_QUANTUM_SIZE};
 
@@ -293,7 +293,6 @@ impl Iterator for MediaElement {
 /// use web_audio_api::media::Microphone;
 /// use web_audio_api::node::AudioNode;
 ///
-/// env_logger::init();
 /// let context = AudioContext::new(None);
 ///
 /// let stream = Microphone::new();
@@ -424,6 +423,41 @@ impl MicrophoneRender {
         if result.is_err() {
             log::debug!("input frame dropped");
         }
+    }
+}
+
+/// Wrapper for `Read` implementors to be used in Symphonia decoding
+///
+/// Symphonia requires its input to impl `Seek` - but allows non-seekable sources. Hence we
+/// implement Seek but return false for `is_seekable()`.
+struct MediaInput<R> {
+    input: R,
+}
+
+impl<R: Read> MediaInput<R> {
+    pub fn new(input: R) -> Self {
+        Self { input }
+    }
+}
+
+impl<R: Read> Read for MediaInput<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.input.read(buf)
+    }
+}
+
+impl<R> Seek for MediaInput<R> {
+    fn seek(&mut self, _pos: SeekFrom) -> std::io::Result<u64> {
+        panic!("MediaInput does not support seeking")
+    }
+}
+
+impl<R: Read + Send> symphonia::core::io::MediaSource for MediaInput<R> {
+    fn is_seekable(&self) -> bool {
+        false
+    }
+    fn byte_len(&self) -> Option<u64> {
+        None
     }
 }
 

@@ -20,7 +20,7 @@ const LISTENER_NODE_ID: u64 = 1;
 const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::media::{MediaElement, MediaStream};
+use crate::media::{MediaDecoder, MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{
     self, AnalyserOptions, AudioBufferSourceOptions, AudioNode, ChannelConfigOptions,
@@ -119,7 +119,20 @@ pub trait AsBaseAudioContext {
         &self,
         input: R,
     ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
-        crate::codecs::decode_audio_data(input, self.sample_rate())
+        // Set up a media decoder, consume the stream in full and construct a single buffer out of it
+        let mut buffer = MediaDecoder::try_new(input)?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .reduce(|mut accum, item| {
+                accum.extend(&item);
+                accum
+            })
+            .unwrap();
+
+        // resample to desired rate (no-op if already matching)
+        buffer.resample(self.sample_rate());
+
+        Ok(buffer)
     }
 
     /// Create an new "in-memory" `AudioBuffer` with the given number of channels,

@@ -65,7 +65,6 @@ mod snapshot;
 mod io;
 
 mod analysis;
-mod codecs;
 mod message;
 
 /// Number of samples processed per second (Hertz) for a single channel of audio

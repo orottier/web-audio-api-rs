@@ -19,7 +19,7 @@ struct SlowMedia {
 }
 
 impl Iterator for SlowMedia {
-    type Item = Result<AudioBuffer, Box<dyn std::error::Error + Send>>;
+    type Item = Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // spin until we can emit
