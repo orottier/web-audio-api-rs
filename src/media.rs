@@ -59,11 +59,11 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 /// node.connect(&context.destination());
 /// ```
 pub trait MediaStream:
-    Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'static
+    Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>> + Send + 'static
 {
 }
-impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'static> MediaStream
-    for M
+impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>> + Send + 'static>
+    MediaStream for M
 {
 }
 
@@ -110,7 +110,7 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 /// ```
 pub struct MediaElement {
     /// input media stream
-    input: Receiver<Option<Result<AudioBuffer, Box<dyn Error + Send>>>>,
+    input: Receiver<Option<Result<AudioBuffer, Box<dyn Error + Send + Sync>>>>,
     /// media buffer
     buffer: Vec<AudioBuffer>,
     /// true when input stream is finished
@@ -158,7 +158,7 @@ impl MediaElement {
         &self.controller
     }
 
-    fn load_next(&mut self) -> Option<Result<AudioBuffer, Box<dyn Error + Send>>> {
+    fn load_next(&mut self) -> Option<Result<AudioBuffer, Box<dyn Error + Send + Sync>>> {
         if !self.buffer_complete {
             let next = match self.input.try_recv() {
                 Err(_) => return Some(Err(Box::new(BufferDepletedError {}))),
@@ -233,7 +233,7 @@ impl MediaElement {
 }
 
 impl Iterator for MediaElement {
-    type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
+    type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // handle seeking
@@ -358,7 +358,7 @@ impl Default for Microphone {
 }
 
 impl Iterator for Microphone {
-    type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
+    type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = match self.receiver.try_recv() {
@@ -530,7 +530,7 @@ impl MediaDecoder {
 }
 
 impl Iterator for MediaDecoder {
-    type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
+    type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let format = &mut self.format;
