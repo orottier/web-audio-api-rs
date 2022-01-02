@@ -17,6 +17,14 @@ use crate::io;
 #[cfg(not(test))]
 use cpal::{traits::StreamTrait, Sample, Stream};
 
+use symphonia::core::audio::Signal;
+use symphonia::core::codecs::{Decoder, DecoderOptions};
+use symphonia::core::conv::FromSample;
+use symphonia::core::errors::Error as SymphoniaError;
+use symphonia::core::formats::{FormatOptions, FormatReader};
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::probe::Hint;
+
 /// Interface for media streaming.
 ///
 /// This is a trait alias for an [`AudioBuffer`] Iterator, for example the [`MediaDecoder`] or
@@ -499,16 +507,6 @@ pub struct MediaDecoder {
     decoder: Box<dyn Decoder>,
 }
 
-use symphonia::core::codecs::Decoder;
-use symphonia::core::formats::FormatReader;
-
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::FormatOptions;
-use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
-
 impl MediaDecoder {
     /// Try to construct a new instance from a `Read` implementor
     ///
@@ -578,10 +576,7 @@ impl Iterator for MediaDecoder {
         // Store the track identifier, we'll use it to filter packets.
         let track_id = track.id;
 
-        let mut sample_buf = None;
-        let mut data = vec![vec![]; number_of_channels as usize];
-
-        loop {
+        let data: Vec<Vec<f32>> = loop {
             // Get the next packet from the format reader.
             let packet = match format.next_packet() {
                 Err(e) => {
@@ -597,51 +592,56 @@ impl Iterator for MediaDecoder {
             }
 
             // Decode the packet into audio samples, ignoring any decode errors.
-            match decoder.decode(&packet) {
+            break match decoder.decode(&packet) {
                 Ok(audio_buf) => {
-                    // The decoded audio samples may now be accessed via the audio buffer if per-channel
-                    // slices of samples in their native decoded format is desired. Use-cases where
-                    // the samples need to be accessed in an interleaved order or converted into
-                    // another sample format, or a byte buffer is required, are covered by copying the
-                    // audio buffer into a sample buffer or raw sample buffer, respectively. In the
-                    // example below, we will copy the audio buffer into a sample buffer in an
-                    // interleaved order while also converting to a f32 sample format.
-
-                    // If this is the *first* decoded packet, create a sample buffer matching the
-                    // decoded audio buffer format.
-                    if sample_buf.is_none() {
-                        // Get the audio buffer specification.
-                        let spec = *audio_buf.spec();
-
-                        // Get the capacity of the decoded buffer. Note: This is capacity, not length!
-                        let duration = audio_buf.capacity() as u64;
-
-                        // Create the f32 sample buffer.
-                        sample_buf = Some(SampleBuffer::<f32>::new(duration, spec));
+                    // This looks a bit awkward but this may be the only way to get the f32 samples
+                    // out without making double copies.
+                    let chans = 0..number_of_channels;
+                    use symphonia::core::audio::AudioBufferRef::*;
+                    match audio_buf {
+                        U8(buf) => chans
+                            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
+                            .collect(),
+                        U16(buf) => chans
+                            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
+                            .collect(),
+                        U24(buf) => chans
+                            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
+                            .collect(),
+                        U32(buf) => chans
+                            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
+                            .collect(),
+                        S8(buf) => chans
+                            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
+                            .collect(),
+                        S16(buf) => chans
+                            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
+                            .collect(),
+                        S24(buf) => chans
+                            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
+                            .collect(),
+                        S32(buf) => chans
+                            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
+                            .collect(),
+                        F32(buf) => chans
+                            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
+                            .collect(),
+                        F64(buf) => chans
+                            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
+                            .collect(),
                     }
-
-                    // Copy the decoded audio buffer into the sample buffer in an interleaved format.
-                    if let Some(buf) = &mut sample_buf {
-                        buf.copy_interleaved_ref(audio_buf);
-
-                        for (i, v) in buf.samples().iter().enumerate() {
-                            data[i % number_of_channels].push(*v);
-                        }
-                    }
-                    println!("got samples {}", data[0].len());
-
-                    break;
                 }
                 Err(SymphoniaError::DecodeError(e)) => {
                     // continue processing but log the error
                     log::error!("decode err {:?}", e);
+                    continue;
                 }
                 Err(e) => {
                     // do not continue processing, return error result
                     return Some(Err(Box::new(e)));
                 }
-            }
-        }
+            };
+        };
 
         let channels = data.into_iter().map(ChannelData::from).collect();
         let buffer = AudioBuffer::from_channels(channels, input_sample_rate);
