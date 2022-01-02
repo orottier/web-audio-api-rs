@@ -40,13 +40,11 @@ fn main() {
 
     loop {
         let now = audio_context.current_time();
-        constant_source.offset().set_target_at_time(target, now, 0.1);
+        constant_source
+            .offset()
+            .set_target_at_time(target, now, 0.1);
 
-        target = if target == 0. {
-            1.
-        } else {
-            0.
-        };
+        target = if target == 0. { 1. } else { 0. };
 
         thread::sleep(time::Duration::from_millis(1000));
     }
