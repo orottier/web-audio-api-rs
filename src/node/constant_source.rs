@@ -21,7 +21,40 @@ impl Default for ConstantSourceOptions {
     }
 }
 
-/// Audio source whose output is nominally a constant value
+/// Audio source whose output is nominally a constant value. A `ConstantSourceNode`
+/// can be used as a constructible `AudioParam` by automating the value of its offset.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/ConstantSourceNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#ConstantSourceNode>
+/// - see also: [`AsBaseAudioContext::create_constant_source`](crate::context::AsBaseAudioContext::create_constant_source)
+///
+/// # Usage
+///
+/// ```no_run
+/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::node::AudioNode;
+///
+/// let audio_context = AudioContext::new(None);
+///
+/// let gain1 = audio_context.create_gain();
+/// gain1.gain().set_value(0.);
+///
+/// let gain2 = audio_context.create_gain();
+/// gain2.gain().set_value(0.);
+///
+/// let automation = audio_context.create_constant_source();
+/// automation.offset().set_value(0.);
+/// automation.connect(gain1.gain());
+/// automation.connect(gain2.gain());
+///
+/// // control both `GainNode`s with 1 automation
+/// automation.offset().set_target_at_time(1., audio_context.current_time(), 0.1);
+/// ```
+///
+/// # Example
+///
+/// - `cargo run --release --example constant_source`
+///
 pub struct ConstantSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
