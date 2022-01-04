@@ -42,7 +42,7 @@ impl Iterator for SlowMedia {
 
 #[test]
 fn test_media_buffering() {
-    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, SampleRate(44_100.));
+    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, SampleRate(44_100));
 
     let block = Arc::new(AtomicBool::new(true));
     let finished = Arc::new(AtomicBool::new(false));
@@ -51,7 +51,7 @@ fn test_media_buffering() {
         let media = SlowMedia {
             block: block.clone(),
             finished: finished.clone(),
-            sample_rate: SampleRate(44_100.),
+            sample_rate: SampleRate(44_100),
             value: 1.,
         };
 
@@ -127,7 +127,7 @@ fn test_media_buffering() {
 
 #[test]
 fn test_media_seeking() {
-    const SAMPLE_RATE: SampleRate = SampleRate(RENDER_QUANTUM_SIZE as f32); // 1 render quantum = 1 second
+    const SAMPLE_RATE: SampleRate = SampleRate(RENDER_QUANTUM_SIZE as u32); // 1 render quantum = 1 second
     let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, SAMPLE_RATE);
 
     let block = Arc::new(AtomicBool::new(true));

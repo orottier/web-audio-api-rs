@@ -371,7 +371,7 @@ mod test {
 
     #[test]
     fn build_with_new() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
         let feedforward = vec![
             0.000_016_636_797_512_844_526,
@@ -391,7 +391,7 @@ mod test {
 
     #[test]
     fn build_with_factory_func() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
         let feedforward = vec![
             0.000_016_636_797_512_844_526,
@@ -406,7 +406,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_ffs_is_above_max_len() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let feedforward = vec![
             0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
         ];
@@ -418,7 +418,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_fbs_is_above_max_len() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let feedback = vec![
             0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
         ];
@@ -430,7 +430,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_fbs_is_empty() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let feedback = vec![];
         let feedforward = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
@@ -440,7 +440,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_ffs_is_empty() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let feedforward = vec![];
         let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
@@ -450,7 +450,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_ffs_are_zeros() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let feedforward = vec![0., 0.];
         let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
@@ -460,7 +460,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_fbs_are_zeros() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let feedback = vec![0., 0.];
         let feedforward = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
@@ -470,7 +470,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_not_the_same_length() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let feedforward = vec![
             0.000_016_636_797_512_844_526,
             0.000_033_273_595_025_689_05,
@@ -495,7 +495,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_not_the_same_length_2() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let feedforward = vec![
             0.000_016_636_797_512_844_526,
             0.000_033_273_595_025_689_05,
@@ -519,7 +519,7 @@ mod test {
 
     #[test]
     fn frequencies_are_clamped() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let feedforward = vec![
             0.000_016_636_797_512_844_526,
             0.000_033_273_595_025_689_05,
@@ -564,7 +564,7 @@ mod test {
             2.146_620_2e-1,
             6.802_952e-1,
         ];
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let feedforward = vec![
             0.019_618_022_238_052_212,
             -0.036_007_928_102_449_24,
@@ -597,7 +597,7 @@ mod test {
         let ref_filtered =
             snapshot::read("./snapshots/white_hp.json").expect("Reading snapshot file failed");
 
-        let mut context = OfflineAudioContext::new(1, LENGTH, SampleRate(44_100.));
+        let mut context = OfflineAudioContext::new(1, LENGTH, SampleRate(44_100));
 
         // setup background music:
         // read from local file

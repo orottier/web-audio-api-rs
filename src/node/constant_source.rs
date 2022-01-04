@@ -157,7 +157,7 @@ mod tests {
     fn test_start_stop() {
         let start_in_samples = (128 + 1) as f64; // start rendering in 2d block
         let stop_in_samples = (256 + 1) as f64; // stop rendering of 3rd block
-        let mut context = OfflineAudioContext::new(1, 128 * 4, SampleRate(128.));
+        let mut context = OfflineAudioContext::new(1, 128 * 4, SampleRate(128));
 
         let src = context.create_constant_source();
         src.connect(&context.destination());

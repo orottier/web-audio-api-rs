@@ -224,17 +224,17 @@ impl AudioBuffer {
     // use web_audio_api::buffer::{ChannelData, AudioBuffer};
     //
     // let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-    // let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(48_000.));
+    // let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(48_000));
     //
     // // upmix from 48k to 96k Hertz sample rate
-    // buffer.resample(SampleRate(96_000.));
+    // buffer.resample(SampleRate(96_000));
     //
     // assert_eq!(
     //     buffer.get_channel_data(0)[..],
     //     vec![1., 1., 2., 2., 3., 3., 4., 4., 5., 5.][..]
     // );
     //
-    // assert_eq!(buffer.sample_rate().0, 96_000.);
+    // assert_eq!(buffer.sample_rate().0, 96_000);
     // ```
     pub(crate) fn resample(&mut self, sample_rate: SampleRate) {
         if self.sample_rate() == sample_rate {
@@ -313,11 +313,11 @@ impl ChannelData {
 ///
 /// // construct an input of 3 chunks of 5 samples
 /// let samples = vec![vec![1., 2., 3., 4., 5.]];
-/// let input_buf = AudioBuffer::from(samples, SampleRate(44_100.));
+/// let input_buf = AudioBuffer::from(samples, SampleRate(44_100));
 /// let input = vec![input_buf; 3].into_iter().map(|b| Ok(b));
 ///
 /// // resample to chunks of 10 samples
-/// let mut resampler = Resampler::new(SampleRate(44_100.), 10, input);
+/// let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
 ///
 /// // first chunk contains 10 samples
 /// let next = resampler.next().unwrap().unwrap();
@@ -421,14 +421,14 @@ mod tests {
         let options = AudioBufferOptions {
             number_of_channels: 1,
             length: 10,
-            sample_rate: SampleRate(1.),
+            sample_rate: SampleRate(1),
         };
 
         let audio_buffer = AudioBuffer::new(options);
 
         assert_eq!(audio_buffer.number_of_channels(), 1);
         assert_eq!(audio_buffer.length(), 10);
-        assert_eq!(audio_buffer.sample_rate().0, 1.);
+        assert_eq!(audio_buffer.sample_rate().0, 1);
         assert_float_eq!(audio_buffer.duration(), 10., abs <= 0.);
     }
 
@@ -437,7 +437,7 @@ mod tests {
         let options = AudioBufferOptions {
             number_of_channels: 1,
             length: 10,
-            sample_rate: SampleRate(1.),
+            sample_rate: SampleRate(1),
         };
 
         let audio_buffer = AudioBuffer::new(options);
@@ -482,7 +482,7 @@ mod tests {
         let options = AudioBufferOptions {
             number_of_channels: 1,
             length: 10,
-            sample_rate: SampleRate(1.),
+            sample_rate: SampleRate(1),
         };
 
         {
@@ -552,13 +552,13 @@ mod tests {
         let options = AudioBufferOptions {
             number_of_channels: 2,
             length: 10,
-            sample_rate: SampleRate(44_100.),
+            sample_rate: SampleRate(44_100),
         };
         let b = AudioBuffer::new(options);
 
         assert_eq!(b.length(), 10);
         assert_eq!(b.number_of_channels(), 2);
-        assert_eq!(b.sample_rate().0, 44_100.);
+        assert_eq!(b.sample_rate().0, 44_100);
         assert_float_eq!(b.channel_data(0).as_slice(), &[0.; 10][..], abs_all <= 0.);
         assert_float_eq!(b.channel_data(1).as_slice(), &[0.; 10][..], abs_all <= 0.);
         assert_eq!(b.channels().get(2), None);
@@ -569,7 +569,7 @@ mod tests {
         let options = AudioBufferOptions {
             number_of_channels: 2,
             length: 5,
-            sample_rate: SampleRate(44_100.),
+            sample_rate: SampleRate(44_100),
         };
         let mut b1 = AudioBuffer::new(options);
         let b2 = AudioBuffer::new(options);
@@ -577,16 +577,16 @@ mod tests {
 
         assert_eq!(b1.length(), 10);
         assert_eq!(b1.number_of_channels(), 2);
-        assert_eq!(b1.sample_rate().0, 44_100.);
+        assert_eq!(b1.sample_rate().0, 44_100);
 
         let channel_data = ChannelData::from(vec![1.; 5]);
-        let b3 = AudioBuffer::from_channels(vec![channel_data; 2], SampleRate(44_100.));
+        let b3 = AudioBuffer::from_channels(vec![channel_data; 2], SampleRate(44_100));
 
         b1.extend(&b3);
 
         assert_eq!(b1.length(), 15);
         assert_eq!(b1.number_of_channels(), 2);
-        assert_eq!(b1.sample_rate().0, 44_100.);
+        assert_eq!(b1.sample_rate().0, 44_100);
         assert_float_eq!(
             b1.channel_data(0).as_slice(),
             &[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
@@ -597,35 +597,35 @@ mod tests {
     #[test]
     fn test_resample_upmix() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-        let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(100.));
-        buffer.resample(SampleRate(200.));
+        let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(100));
+        buffer.resample(SampleRate(200));
         assert_float_eq!(
             buffer.channel_data(0).as_slice(),
             &[1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,][..],
             abs_all <= 0.
         );
-        assert_eq!(buffer.sample_rate().0, 200.);
+        assert_eq!(buffer.sample_rate().0, 200);
     }
 
     #[test]
     fn test_resample_downmix() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-        let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(200.));
-        buffer.resample(SampleRate(100.));
+        let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(200));
+        buffer.resample(SampleRate(100));
         assert_float_eq!(
             buffer.channel_data(0).as_slice(),
             &[2., 4.][..],
             abs_all <= 0.
         );
-        assert_eq!(buffer.sample_rate().0, 100.);
+        assert_eq!(buffer.sample_rate().0, 100);
     }
 
     #[test]
     fn test_resampler_concat() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-        let input_buf = AudioBuffer::from_channels(vec![channel], SampleRate(44_100.));
+        let input_buf = AudioBuffer::from_channels(vec![channel], SampleRate(44_100));
         let input = vec![input_buf; 3].into_iter().map(Ok);
-        let mut resampler = Resampler::new(SampleRate(44_100.), 10, input);
+        let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.length(), 10);
@@ -651,10 +651,10 @@ mod tests {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);
         let input_buf = Ok(AudioBuffer::from_channels(
             vec![channel],
-            SampleRate(44_100.),
+            SampleRate(44_100),
         ));
         let input = vec![input_buf].into_iter();
-        let mut resampler = Resampler::new(SampleRate(44_100.), 5, input);
+        let mut resampler = Resampler::new(SampleRate(44_100), 5, input);
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.length(), 5);

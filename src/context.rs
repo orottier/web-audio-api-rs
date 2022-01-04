@@ -418,7 +418,7 @@ pub struct AudioContextOptions {
     /// tradeoffs between audio output latency and power consumption
     pub latency_hint: Option<LatencyHint>,
     /// Sample rate of the audio Context and audio output hardware
-    pub sample_rate: Option<f32>,
+    pub sample_rate: Option<u32>,
     /// Number of output channels of destination node and audio output hardware
     pub channels: Option<u16>,
 }
@@ -475,8 +475,7 @@ impl AudioContext {
 
         let (stream, config, sender) = io::build_output(frames_played_clone, options.as_ref());
         let channels = u32::from(config.channels);
-        #[allow(clippy::cast_precision_loss)]
-        let sample_rate = SampleRate(config.sample_rate.0 as f32);
+        let sample_rate = SampleRate(config.sample_rate.0);
 
         let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
@@ -488,11 +487,11 @@ impl AudioContext {
     pub fn new(options: Option<AudioContextOptions>) -> Self {
         let options = options.unwrap_or(AudioContextOptions {
             latency_hint: Some(LatencyHint::Interactive),
-            sample_rate: Some(44_100.),
+            sample_rate: Some(44_100),
             channels: Some(2),
         });
 
-        let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100.));
+        let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100));
         let channels = u32::from(options.channels.unwrap_or(2));
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
@@ -872,7 +871,7 @@ mod tests {
 
     #[test]
     fn test_audio_context_registration_traits() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0.));
+        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
         let registration = context.mock_registration();
 
         // we want to be able to ship AudioNodes to another thread, so the Registration should be

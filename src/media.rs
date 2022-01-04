@@ -46,7 +46,7 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 /// let options = AudioBufferOptions {
 ///     number_of_channels: 0,
 ///     length: 512,
-///     sample_rate: SampleRate(44_100.),
+///     sample_rate: SampleRate(44_100),
 /// };
 /// let silence = AudioBuffer::new(options);
 ///
@@ -85,7 +85,7 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send>>> + Send + 'st
 ///
 /// // create a new buffer with a few samples of silence
 /// let samples = vec![vec![0.; 20]];
-/// let silence = AudioBuffer::from(samples, SampleRate(44_100.));
+/// let silence = AudioBuffer::from(samples, SampleRate(44_100));
 ///
 /// // create a sequence of this buffer
 /// let sequence = std::iter::repeat(silence).take(3);
@@ -308,7 +308,7 @@ impl Microphone {
         let (stream, config, receiver) = io::build_input();
         log::debug!("Input {:?}", config);
 
-        let sample_rate = SampleRate(config.sample_rate.0 as f32);
+        let sample_rate = SampleRate(config.sample_rate.0);
         let channels = config.channels as usize;
 
         Self {
@@ -459,7 +459,7 @@ impl Iterator for OggVorbisDecoder {
         };
 
         let channel_data: Vec<_> = packet.into_iter().map(ChannelData::from).collect();
-        let sample_rate = SampleRate(self.stream.ident_hdr.audio_sample_rate as f32);
+        let sample_rate = SampleRate(self.stream.ident_hdr.audio_sample_rate);
         let result = AudioBuffer::from_channels(channel_data, sample_rate);
 
         Some(Ok(result))
@@ -505,7 +505,7 @@ impl WavDecoder {
     pub fn try_new(file: File) -> Result<Self, hound::Error> {
         hound::WavReader::new(BufReader::new(file)).map(|wav| {
             let channels = wav.spec().channels as u32;
-            let sample_rate = SampleRate(wav.spec().sample_rate as f32);
+            let sample_rate = SampleRate(wav.spec().sample_rate);
 
             // convert samples to f32, always
             let stream: Box<dyn Iterator<Item = Result<_, _>> + Send> =

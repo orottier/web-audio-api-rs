@@ -1393,7 +1393,7 @@ mod tests {
         let default_det = 0.;
         let default_type = OscillatorType::Sine;
 
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
         let osc = context.create_oscillator();
 
@@ -1413,7 +1413,7 @@ mod tests {
         let default_det = 0.;
         let default_type = OscillatorType::Sine;
 
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
         let osc = OscillatorNode::new(&context, None);
 
@@ -1430,7 +1430,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn set_type_to_custom_should_panic() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
         let osc = OscillatorNode::new(&context, None);
 
@@ -1441,7 +1441,7 @@ mod tests {
     fn type_is_custom_when_periodic_wave_is_some() {
         let expected_type = OscillatorType::Custom;
 
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
         let periodic_opt = PeriodicWaveOptions {
             real: None,
@@ -1466,7 +1466,7 @@ mod tests {
     fn set_type_is_ignored_when_periodic_wave_is_some() {
         let expected_type = OscillatorType::Custom;
 
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
         let periodic_opt = PeriodicWaveOptions {
             real: None,
@@ -1491,7 +1491,7 @@ mod tests {
 
     #[test]
     fn silence_rendering_if_osc_is_not_started() {
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let osc = OscillatorNode::new(&context, None);
 
         osc.set_type(OscillatorType::Sine);
@@ -1516,7 +1516,7 @@ mod tests {
         let ref_sine =
             snapshot::read("./snapshots/sine.json").expect("Reading snapshot file failed");
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let osc = OscillatorNode::new(&context, None);
 
         osc.set_type(OscillatorType::Sine);
@@ -1542,7 +1542,7 @@ mod tests {
         let ref_sine =
             snapshot::read("./snapshots/square.json").expect("Reading snapshot file failed");
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let osc = OscillatorNode::new(&context, None);
 
         osc.set_type(OscillatorType::Square);
@@ -1568,7 +1568,7 @@ mod tests {
         let ref_sine =
             snapshot::read("./snapshots/triangle.json").expect("Reading snapshot file failed");
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let osc = OscillatorNode::new(&context, None);
 
         osc.set_type(OscillatorType::Triangle);
@@ -1594,7 +1594,7 @@ mod tests {
         let ref_sine =
             snapshot::read("./snapshots/sawtooth.json").expect("Reading snapshot file failed");
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let osc = OscillatorNode::new(&context, None);
 
         osc.set_type(OscillatorType::Sawtooth);
@@ -1620,7 +1620,7 @@ mod tests {
         let ref_sine =
             snapshot::read("./snapshots/periodic_2f.json").expect("Reading snapshot file failed");
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let options = Some(PeriodicWaveOptions {
             real: Some(vec![0., 0.5, 0.5]),
             imag: Some(vec![0., 0., 0.]),
@@ -1659,7 +1659,7 @@ mod tests {
         let ref_sine = snapshot::read("./snapshots/default_periodic.json")
             .expect("Reading snapshot file failed");
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100.));
+        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let options = Some(PeriodicWaveOptions {
             real: None,
             imag: None,

@@ -495,7 +495,7 @@ mod tests {
     #[test]
     fn test_sample_accurate() {
         for delay_in_samples in [128., 131., 197.].iter() {
-            let sample_rate = SampleRate(128.);
+            let sample_rate = SampleRate(128);
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(2.);
@@ -524,7 +524,7 @@ mod tests {
     fn test_sub_sample_accurate() {
         {
             let delay_in_samples = 128.5;
-            let sample_rate = SampleRate(128.);
+            let sample_rate = SampleRate(128);
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(2.);
@@ -551,7 +551,7 @@ mod tests {
 
         {
             let delay_in_samples = 128.8;
-            let sample_rate = SampleRate(128.);
+            let sample_rate = SampleRate(128);
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(2.);
@@ -580,7 +580,7 @@ mod tests {
     #[test]
     fn test_multichannel() {
         let delay_in_samples = 128.;
-        let sample_rate = SampleRate(128.);
+        let sample_rate = SampleRate(128);
         let mut context = OfflineAudioContext::new(2, 2 * 128, sample_rate);
 
         let delay = context.create_delay(2.);
@@ -613,7 +613,7 @@ mod tests {
     #[test]
     fn test_input_number_of_channels_change() {
         let delay_in_samples = 128.;
-        let sample_rate = SampleRate(128.);
+        let sample_rate = SampleRate(128);
         let mut context = OfflineAudioContext::new(2, 3 * 128, sample_rate);
 
         let delay = context.create_delay(2.);
@@ -657,7 +657,7 @@ mod tests {
     fn test_node_stays_alive_long_enough() {
         // make sure there are no hidden order problem
         for _ in 0..10 {
-            let sample_rate = SampleRate(128.);
+            let sample_rate = SampleRate(128);
             let mut context = OfflineAudioContext::new(1, 5 * 128, sample_rate);
 
             // Set up a source that starts only after 5 render quanta.
@@ -698,7 +698,7 @@ mod tests {
         // Writer is called earlier than the Reader. 10 times should do:
         for _ in 0..10 {
             // set delay and max delay time exactly 1 render quantum
-            let sample_rate = SampleRate(128.);
+            let sample_rate = SampleRate(128);
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(1.);
@@ -724,7 +724,7 @@ mod tests {
 
         for _ in 0..10 {
             // set delay and max delay time exactly 2 render quantum
-            let sample_rate = SampleRate(128.);
+            let sample_rate = SampleRate(128);
             let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
 
             let delay = context.create_delay(2.);
@@ -758,7 +758,7 @@ mod tests {
         // When allowing sub quantum delay, this will also guarantees that the node
         // gracefully fallback to min
         for _ in 0..10 {
-            let sample_rate = SampleRate(128.);
+            let sample_rate = SampleRate(128);
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(0.5); // this will be internally clamped to 1.
