@@ -157,7 +157,7 @@ pub trait AsBaseAudioContext {
             channels.push(channel);
         }
 
-        AudioBuffer::from_channels(channels, self.sample_rate())
+        AudioBuffer::from_channels(channels, self.sample_rate_raw())
     }
 
     /// Create an new "in-memory" `AudioBuffer` with the given number of channels,
@@ -369,8 +369,17 @@ pub trait AsBaseAudioContext {
     }
 
     /// The sample rate (in sample-frames per second) at which the `AudioContext` handles audio.
-    fn sample_rate(&self) -> SampleRate {
+    #[allow(clippy::cast_precision_loss)]
+    #[must_use]
+    fn sample_rate(&self) -> f32 {
         self.base().sample_rate()
+    }
+
+    /// The raw sample rate of the `AudioContext` (which has more precision than the float
+    /// [`sample_rate()`](AsBaseAudioContext::sample_rate) value).
+    #[must_use]
+    fn sample_rate_raw(&self) -> SampleRate {
+        self.base().sample_rate_raw()
     }
 
     /// This is the time in seconds of the sample frame immediately following the last sample-frame
@@ -662,8 +671,16 @@ impl BaseAudioContext {
     }
 
     /// The sample rate (in sample-frames per second) at which the `AudioContext` handles audio.
+    #[allow(clippy::cast_precision_loss)]
     #[must_use]
-    pub fn sample_rate(&self) -> SampleRate {
+    pub fn sample_rate(&self) -> f32 {
+        self.inner.sample_rate.0 as f32
+    }
+
+    /// The raw sample rate of the `AudioContext` (which has more precision than the float
+    /// [`sample_rate()`](AsBaseAudioContext::sample_rate) value).
+    #[must_use]
+    pub fn sample_rate_raw(&self) -> SampleRate {
         self.inner.sample_rate
     }
 
@@ -877,6 +894,13 @@ mod tests {
         // we want to be able to ship AudioNodes to another thread, so the Registration should be
         // Send Sync and 'static
         require_send_sync_static(registration);
+    }
+
+    #[test]
+    fn test_sample_rate() {
+        let context = OfflineAudioContext::new(1, 0, SampleRate(96000));
+        assert_eq!(context.sample_rate(), 96000.);
+        assert_eq!(context.sample_rate_raw(), SampleRate(96000));
     }
 
     #[test]

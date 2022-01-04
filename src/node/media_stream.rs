@@ -52,7 +52,7 @@ impl MediaStreamAudioSourceNode {
             };
 
             let resampler = Resampler::new(
-                context.base().sample_rate(),
+                context.sample_rate_raw(),
                 RENDER_QUANTUM_SIZE,
                 options.media,
             );

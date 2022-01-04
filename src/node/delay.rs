@@ -151,7 +151,7 @@ impl AudioNode for DelayNode {
 
 impl DelayNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: DelayOptions) -> Self {
-        let sample_rate = context.base().sample_rate().0 as f64;
+        let sample_rate = context.sample_rate_raw().0 as f64;
 
         // Specifies the maximum delay time in seconds allowed for the delay line.
         // If specified, this value MUST be greater than zero and less than three
