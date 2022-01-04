@@ -2,7 +2,6 @@
 #![warn(
     clippy::all,
     clippy::pedantic,
-    clippy::nursery,
     clippy::perf,
     clippy::missing_docs_in_private_items
 )]
@@ -269,25 +268,25 @@ impl BiquadFilterNode {
 
     /// Returns the gain audio paramter
     #[must_use]
-    pub const fn gain(&self) -> &AudioParam {
+    pub fn gain(&self) -> &AudioParam {
         &self.gain
     }
 
     /// Returns the frequency audio paramter
     #[must_use]
-    pub const fn frequency(&self) -> &AudioParam {
+    pub fn frequency(&self) -> &AudioParam {
         &self.frequency
     }
 
     /// Returns the detune audio paramter
     #[must_use]
-    pub const fn detune(&self) -> &AudioParam {
+    pub fn detune(&self) -> &AudioParam {
         &self.detune
     }
 
     /// Returns the Q audio paramter
     #[must_use]
-    pub const fn q(&self) -> &AudioParam {
+    pub fn q(&self) -> &AudioParam {
         &self.q
     }
 

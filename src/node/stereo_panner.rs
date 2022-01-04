@@ -2,7 +2,6 @@
 #![warn(
     clippy::all,
     clippy::pedantic,
-    clippy::nursery,
     clippy::perf,
     clippy::missing_docs_in_private_items
 )]
@@ -148,7 +147,7 @@ impl StereoPannerNode {
 
     /// Returns the pan audio paramter
     #[must_use]
-    pub const fn pan(&self) -> &AudioParam {
+    pub fn pan(&self) -> &AudioParam {
         &self.pan
     }
 }
