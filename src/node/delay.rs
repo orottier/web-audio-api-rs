@@ -51,8 +51,8 @@ impl Default for DelayOptions {
 /// delay.delay_time().set_value(0.5);
 /// delay.connect(&context.destination());
 ///
-/// let mut src = context.create_buffer_source();
-/// src.set_buffer(&audio_buffer);
+/// let src = context.create_buffer_source();
+/// src.set_buffer(audio_buffer);
 /// // connect to both delay and destination
 /// src.connect(&delay);
 /// src.connect(&context.destination());
@@ -505,9 +505,9 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
+            let src = context.create_buffer_source();
             src.connect(&delay);
-            src.set_buffer(&dirac);
+            src.set_buffer(dirac);
             src.start_at(0.);
 
             let result = context.start_rendering();
@@ -534,9 +534,9 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
+            let src = context.create_buffer_source();
             src.connect(&delay);
-            src.set_buffer(&dirac);
+            src.set_buffer(dirac);
             src.start_at(0.);
 
             let result = context.start_rendering();
@@ -561,9 +561,9 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
+            let src = context.create_buffer_source();
             src.connect(&delay);
-            src.set_buffer(&dirac);
+            src.set_buffer(dirac);
             src.start_at(0.);
 
             let result = context.start_rendering();
@@ -592,9 +592,9 @@ mod tests {
         two_chan_dirac.copy_to_channel(&[1.], 0);
         two_chan_dirac.copy_to_channel(&[0., 1.], 1);
 
-        let mut src = context.create_buffer_source();
+        let src = context.create_buffer_source();
         src.connect(&delay);
-        src.set_buffer(&two_chan_dirac);
+        src.set_buffer(two_chan_dirac);
         src.start_at(0.);
 
         let result = context.start_rendering();
@@ -623,9 +623,9 @@ mod tests {
         let mut one_chan_dirac = context.create_buffer(1, 128, sample_rate);
         one_chan_dirac.copy_to_channel(&[1.], 0);
 
-        let mut src1 = context.create_buffer_source();
+        let src1 = context.create_buffer_source();
         src1.connect(&delay);
-        src1.set_buffer(&one_chan_dirac);
+        src1.set_buffer(one_chan_dirac);
         src1.start_at(0.);
 
         let mut two_chan_dirac = context.create_buffer(2, 256, sample_rate);
@@ -633,9 +633,9 @@ mod tests {
         two_chan_dirac.copy_to_channel(&[1.], 0);
         two_chan_dirac.copy_to_channel(&[0., 1.], 1);
         // start second buffer at next block
-        let mut src2 = context.create_buffer_source();
+        let src2 = context.create_buffer_source();
         src2.connect(&delay);
-        src2.set_buffer(&two_chan_dirac);
+        src2.set_buffer(two_chan_dirac);
         src2.start_at(1.);
 
         let result = context.start_rendering();
@@ -672,9 +672,9 @@ mod tests {
                 let mut dirac = context.create_buffer(1, 1, sample_rate);
                 dirac.copy_to_channel(&[1.], 0);
 
-                let mut src = context.create_buffer_source();
+                let src = context.create_buffer_source();
                 src.connect(&delay);
-                src.set_buffer(&dirac);
+                src.set_buffer(dirac);
                 // 3rd block - play buffer
                 // 4th block - play silence and dropped in render thread
                 src.start_at(3.);
@@ -708,9 +708,9 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
+            let src = context.create_buffer_source();
             src.connect(&delay);
-            src.set_buffer(&dirac);
+            src.set_buffer(dirac);
             src.start_at(0.);
 
             let result = context.start_rendering();
@@ -734,9 +734,9 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
+            let src = context.create_buffer_source();
             src.connect(&delay);
-            src.set_buffer(&dirac);
+            src.set_buffer(dirac);
             src.start_at(0.);
 
             let result = context.start_rendering();
@@ -768,9 +768,9 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
+            let src = context.create_buffer_source();
             src.connect(&delay);
-            src.set_buffer(&dirac);
+            src.set_buffer(dirac);
             src.start_at(0.);
 
             let result = context.start_rendering();

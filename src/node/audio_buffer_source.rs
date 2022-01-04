@@ -1,4 +1,6 @@
 use crossbeam_channel::{Receiver, Sender};
+use once_cell::sync::OnceCell;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
@@ -57,8 +59,8 @@ struct AudioBufferMessage(AudioBuffer);
 /// let file = File::open("sample.wav").unwrap();
 /// let audio_buffer = context.decode_audio_data(file);
 /// // play the sound file
-/// let mut src = context.create_buffer_source();
-/// src.set_buffer(&audio_buffer);
+/// let src = context.create_buffer_source();
+/// src.set_buffer(audio_buffer);
 /// src.connect(&context.destination());
 /// src.start();
 /// ```
@@ -75,8 +77,8 @@ pub struct AudioBufferSourceNode {
     sender: Sender<AudioBufferMessage>,
     detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
-    buffer: Option<AudioBuffer>,
-    source_started: bool,
+    buffer: OnceCell<AudioBuffer>,
+    source_started: AtomicBool,
 }
 
 impl AudioNode for AudioBufferSourceNode {
@@ -137,19 +139,8 @@ impl AudioBufferSourceNode {
 
             pr_param.set_value(playback_rate);
 
-            // Channel to send buffer channels references to the renderer
-            //
-            // @note: `crossbeam_channel::bounded(1)`this will block the control
-            // thread until the buffer is received. This could maybe be improved.
-            //
-            // Would it be feasible to spawn a middle man thread that could block?
-            // ```
-            // let (sender, receiver) = crossbeam_channel::bounded(0);
-            // // this thread could block waiting for the render thread
-            // thread::spawn(move || {
-            //     sender.send(data);
-            // });
-            // ```
+            // Channel to send buffer channels references to the renderer.
+            // A capacity of 1 suffices since it is not allowed to set the value multiple times
             let (sender, receiver) = crossbeam_channel::bounded(1);
 
             let controller = Controller::new();
@@ -161,22 +152,21 @@ impl AudioBufferSourceNode {
                 detune: d_proc,
                 playback_rate: pr_proc,
                 render_state: AudioBufferRendererState::default(),
-                // `internal_buffer` is used to compute the samples per channel
-                // at each frame. 2 channels are sufficient as default value for
-                // most use-cases, note that the `vec` will always be resized to
-                // actual buffer number_of_channels when received on the render thread.
-                internal_buffer: Vec::<f32>::with_capacity(2),
+                // `internal_buffer` is used to compute the samples per channel at each frame. Note
+                // that the `vec` will always be resized to actual buffer number_of_channels when
+                // received on the render thread.
+                internal_buffer: Vec::<f32>::with_capacity(crate::MAX_CHANNELS),
             };
 
-            let mut node = Self {
+            let node = Self {
                 registration,
                 controller,
                 channel_config: channel_config.into(),
                 sender,
                 detune: d_param,
                 playback_rate: pr_param,
-                buffer: None,
-                source_started: false,
+                buffer: OnceCell::new(),
+                source_started: AtomicBool::new(false),
             };
 
             node.controller.set_loop(loop_);
@@ -184,77 +174,72 @@ impl AudioBufferSourceNode {
             node.controller.set_loop_end(loop_end);
 
             if let Some(buf) = buffer {
-                node.set_buffer(&buf);
+                node.set_buffer(buf);
             }
 
             (node, Box::new(renderer))
         })
     }
 
+    /// Current buffer value (nullable)
+    pub fn buffer(&self) -> Option<&AudioBuffer> {
+        self.buffer.get()
+    }
+
     /// Provide an [`AudioBuffer`] as the source of data to be played bask
     ///
     /// # Panics
     ///
-    /// Panics if a buffer has already been given to the source (though `new`
-    /// or through `set_buffer`)
-    pub fn set_buffer(&mut self, audio_buffer: &AudioBuffer) {
-        // - Let new buffer be the AudioBuffer or null value to be assigned to buffer.
-        // - If new buffer is not null and [[buffer set]] is true, throw an
-        // InvalidStateError and abort these steps.
-        if self.buffer.is_some() {
+    /// Panics if a buffer has already been given to the source (though `new` or through
+    /// `set_buffer`)
+    pub fn set_buffer(&self, audio_buffer: AudioBuffer) {
+        let clone = audio_buffer.clone();
+
+        if self.buffer.set(audio_buffer).is_err() {
             panic!("InvalidStateError - cannot assign buffer twice");
         }
-        // - If new buffer is not null, set [[buffer set]] to true.
-        // - Assign new buffer to the buffer attribute.
-        self.buffer = Some(audio_buffer.clone());
-        // - If start() has previously been called on this node, perform the
-        // operation acquire the content on buffer.
-        // see <https://github.com/orottier/web-audio-api-rs/issues/68> for
-        // more information on the "acquire the content" concept in this context.
-        if self.source_started {
-            self.send_buffer();
-        }
+
+        self.sender
+            .send(AudioBufferMessage(clone))
+            .expect("Sending AudioBufferMessage failed");
     }
 
     /// Start the playback on next block
-    pub fn start(&mut self) {
+    pub fn start(&self) {
         let start = self.registration.context().current_time();
         self.start_at_with_offset_and_duration(start, 0., f64::MAX);
     }
 
     /// Start the playback at the given time
-    pub fn start_at(&mut self, start: f64) {
+    pub fn start_at(&self, start: f64) {
         self.start_at_with_offset_and_duration(start, 0., f64::MAX);
     }
 
     /// Start the playback at the given time and with a given offset
-    pub fn start_at_with_offset(&mut self, start: f64, offset: f64) {
+    pub fn start_at_with_offset(&self, start: f64, offset: f64) {
         self.start_at_with_offset_and_duration(start, offset, f64::MAX);
     }
 
     /// Start the playback at the given time, with a given offset, for a given duration
-    pub fn start_at_with_offset_and_duration(&mut self, start: f64, offset: f64, duration: f64) {
-        if self.source_started {
+    pub fn start_at_with_offset_and_duration(&self, start: f64, offset: f64, duration: f64) {
+        if self.source_started.swap(true, Ordering::SeqCst) {
             panic!("InvalidStateError: Cannot call `start` twice");
         }
 
-        self.source_started = true;
         self.controller.set_offset(offset);
         self.controller.set_duration(duration);
         self.controller.scheduler().start_at(start);
-
-        self.send_buffer();
     }
 
     /// Stop the playback on next block
-    pub fn stop(&mut self) {
+    pub fn stop(&self) {
         let stop = self.registration.context().current_time();
         self.stop_at(stop);
     }
 
     /// Stop the playback at given time
-    pub fn stop_at(&mut self, stop: f64) {
-        if !self.source_started {
+    pub fn stop_at(&self, stop: f64) {
+        if !self.source_started.load(Ordering::SeqCst) {
             panic!("InvalidStateError cannot stop before start");
         }
 
@@ -305,13 +290,6 @@ impl AudioBufferSourceNode {
     pub fn set_loop_end(&self, value: f64) {
         self.controller.set_loop_end(value);
     }
-
-    fn send_buffer(&self) {
-        let clone = self.buffer.as_ref().unwrap().clone();
-        self.sender
-            .send(AudioBufferMessage(clone))
-            .expect("Sending AudioBufferMessage failed");
-    }
 }
 
 struct AudioBufferRendererState {
@@ -351,7 +329,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         timestamp: f64,
         sample_rate: SampleRate,
     ) -> bool {
-        // ... and single output node
+        // single output node
         let output = &mut outputs[0];
 
         let dt = 1. / sample_rate.0 as f64;
@@ -393,36 +371,38 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         // If the buffer has not been set wait for it.
         // @see - `set_buffer` tries to acquire the buffer if the source already started
-        if self.buffer.is_none() {
-            output.make_silent();
-            return true;
-        }
+        let buffer = match &self.buffer {
+            None => {
+                output.make_silent();
+                return true;
+            }
+            Some(b) => b,
+        };
 
         // from this point we know that we have a buffer
+        let buffer_duration = buffer.duration();
 
         // In addition, if the buffer has more than one channel, then the
         // AudioBufferSourceNode output must change to a single channel of silence
         // at the beginning of a render quantum after the time at which any one of
         // the following conditions holds:
-        let buffer = self.buffer.as_ref().unwrap();
-        let buffer_duration = buffer.duration();
 
         // 1. the stop time has been reached.
         // 2. the duration has been reached.
         if timestamp >= stop_time || self.render_state.buffer_time_elapsed >= duration {
-            output.make_silent();
+            output.make_silent(); // also converts to mono
             return false;
         }
 
         // 3. the end of the buffer has been reached.
         if !loop_ {
             if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
-                output.make_silent();
+                output.make_silent(); // also converts to mono
                 return false;
             }
 
             if computed_playback_rate < 0. && self.render_state.buffer_time < 0. {
-                output.make_silent();
+                output.make_silent(); // also converts to mono
                 return false;
             }
         }
@@ -580,8 +560,8 @@ mod tests {
         let file = std::fs::File::open("sample.wav").unwrap();
         let audio_buffer = context.decode_audio_data(file);
 
-        let mut src = context.create_buffer_source();
-        src.set_buffer(&audio_buffer);
+        let src = context.create_buffer_source();
+        src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.start_at(context.current_time());
         src.stop_at(context.current_time() + 128.);

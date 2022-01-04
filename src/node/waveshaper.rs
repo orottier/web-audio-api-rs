@@ -12,6 +12,7 @@ use std::sync::{
 };
 
 use crossbeam_channel::{Receiver, Sender};
+use once_cell::sync::OnceCell;
 use rubato::{FftFixedInOut, Resampler};
 
 use crate::{
@@ -90,10 +91,9 @@ pub struct WaveShaperNode {
     /// Infos about audio node channel configuration
     channel_config: ChannelConfig,
     /// distortion curve
-    curve: Option<Vec<f32>>,
+    curve: OnceCell<Vec<f32>>,
 
-    set_curve: bool,
-    /// ovesample type
+    /// oversample type
     oversample: Arc<AtomicU32>,
     /// Channel between node and renderer (sender part)
     sender: Sender<CurveMessage>,
@@ -138,13 +138,13 @@ impl WaveShaperNode {
             let oversample = Arc::new(AtomicU32::new(
                 oversample.expect("oversample should be OversampleType variant") as u32,
             ));
-            let set_curve = curve.is_some();
 
-            let (sender, receiver) = crossbeam_channel::bounded(0);
+            // Channel to send the `curve` to the renderer
+            // A capacity of 1 suffices since it is not allowed to set the value multiple times
+            let (sender, receiver) = crossbeam_channel::bounded(1);
 
             let config = RendererConfig {
                 sample_rate,
-                curve: curve.clone(),
                 oversample: oversample.clone(),
                 receiver,
             };
@@ -153,11 +153,14 @@ impl WaveShaperNode {
             let node = Self {
                 registration,
                 channel_config,
-                curve,
-                set_curve,
+                curve: OnceCell::new(),
                 oversample,
                 sender,
             };
+
+            if let Some(c) = curve {
+                node.set_curve(c);
+            }
 
             (node, Box::new(renderer))
         })
@@ -166,47 +169,29 @@ impl WaveShaperNode {
     /// Returns the distortion curve
     #[must_use]
     pub fn curve(&self) -> Option<&[f32]> {
-        self.curve.as_deref()
+        self.curve.get().map(Vec::as_slice)
     }
 
-    /// set the distortion `curve` of this node
+    /// Set the distortion `curve` of this node
     ///
     /// # Arguments
     ///
     /// * `curve` - the desired distortion `curve`
-    pub fn set_curve(&mut self, curve: Option<Vec<f32>>) {
-        self.validate_input_curve(curve.clone());
-        let c = curve.unwrap_or_else(Vec::new);
+    ///
+    /// # Panics
+    ///
+    /// Panics if a curve has already been given to the source (though `new` or through
+    /// `set_curve`)
+    pub fn set_curve(&self, curve: Vec<f32>) {
+        let clone = curve.clone();
+
+        if self.curve.set(curve).is_err() {
+            panic!("InvalidStateError - cannot assign curve twice");
+        }
+
         self.sender
-            .send(CurveMessage(c))
+            .send(CurveMessage(clone))
             .expect("Sending CurveMessage failed");
-    }
-
-    /// Mock of `set_curve`
-    /// This function is the same as `set_curve` except it never send the `CurveMessage`.
-    /// In tests, we use `OfflineAudioContext` and in this context the `CurveMessage` is not sendable to the renderer,
-    /// because the renderer is not instantiated in this context.
-    ///
-    /// # Arguments
-    ///
-    /// * `curve` - the desired distortion `curve`
-    #[cfg(test)]
-    pub fn set_curve_mock(&mut self, curve: Option<Vec<f32>>) {
-        self.validate_input_curve(curve.clone());
-        let _c = curve.unwrap_or_else(Vec::new);
-    }
-
-    fn validate_input_curve(&mut self, curve: Option<Vec<f32>>) {
-        match (self.set_curve, curve) {
-            (true, Some(_)) => panic!("InvalidStateError"),
-            (false, opt_c @ Some(_)) => {
-                self.set_curve = true;
-                self.curve = opt_c;
-            }
-            (_, opt_c) => {
-                self.curve = opt_c;
-            }
-        };
     }
 
     /// Returns the `oversample` faactor of this node
@@ -232,8 +217,6 @@ struct RendererConfig {
     sample_rate: usize,
     /// oversample factor
     oversample: Arc<AtomicU32>,
-    /// distortion curve
-    curve: Option<Vec<f32>>,
     /// Channel between node and renderer (receiver part)
     receiver: Receiver<CurveMessage>,
 }
@@ -257,9 +240,7 @@ struct WaveShaperRenderer {
     // down sampler configured to divide by 4 the input fs
     downsampler_x4: FftFixedInOut<f32>,
     /// distortion curve
-    curve: Vec<f32>,
-    /// set to true if curve is not None
-    curve_set: bool,
+    curve: Option<Vec<f32>>,
     /// Channel between node and renderer (receiver part)
     receiver: Receiver<CurveMessage>,
 }
@@ -279,10 +260,10 @@ impl AudioProcessor for WaveShaperRenderer {
 
         // Respond to request at K-rate
         if let Ok(msg) = self.receiver.try_recv() {
-            self.curve = msg.0;
+            self.curve = Some(msg.0);
         }
 
-        if !self.curve_set {
+        if self.curve.is_none() {
             self.no_process(input, output);
         }
 
@@ -319,14 +300,8 @@ impl WaveShaperRenderer {
         let RendererConfig {
             sample_rate,
             oversample,
-            curve,
             receiver,
         } = config;
-
-        let (curve, curve_set) = match curve {
-            Some(c) => (c, true),
-            None => (Vec::new(), false),
-        };
 
         let channels_x2 = 1;
         let channels_x4 = 1;
@@ -368,8 +343,7 @@ impl WaveShaperRenderer {
             upsampler_x4,
             downsampler_x2,
             downsampler_x4,
-            curve,
-            curve_set,
+            curve: None,
             receiver,
         }
     }
@@ -436,21 +410,24 @@ impl WaveShaperRenderer {
 
     #[inline]
     fn tick(&self, input: f32) -> f32 {
-        if self.curve.is_empty() {
+        // curve is always set at this point
+        let curve = self.curve.as_deref().unwrap();
+
+        if curve.is_empty() {
             return 0.;
         }
 
-        let n = self.curve.len() as f32;
+        let n = curve.len() as f32;
         let v = (n - 1.) / 2.0 * (input + 1.);
 
         if v <= 0. {
-            self.curve[0]
+            curve[0]
         } else if v > n - 1. {
-            self.curve[(n - 1.) as usize]
+            curve[(n - 1.) as usize]
         } else {
             let k = v.floor();
             let f = v - k;
-            (1. - f) * self.curve[k as usize] + f * self.curve[(k + 1.) as usize]
+            (1. - f) * curve[k as usize] + f * curve[(k + 1.) as usize]
         }
     }
 
@@ -555,11 +532,11 @@ mod test {
             ..Default::default()
         };
 
-        let mut shaper = WaveShaperNode::new(&context, Some(options));
+        let shaper = WaveShaperNode::new(&context, Some(options));
         assert_eq!(shaper.curve(), Some(&[1.0][..]));
         assert_eq!(shaper.oversample(), OverSampleType::X2);
 
-        shaper.set_curve_mock(Some(vec![2.0]));
+        shaper.set_curve(vec![2.0]);
         shaper.set_oversample(OverSampleType::X4);
 
         context.start_rendering();
@@ -578,11 +555,11 @@ mod test {
             ..Default::default()
         };
 
-        let mut shaper = WaveShaperNode::new(&context, Some(options));
+        let shaper = WaveShaperNode::new(&context, Some(options));
         assert_eq!(shaper.curve(), None);
         assert_eq!(shaper.oversample(), OverSampleType::X2);
 
-        shaper.set_curve_mock(Some(vec![2.0]));
+        shaper.set_curve(vec![2.0]);
         shaper.set_oversample(OverSampleType::X4);
 
         context.start_rendering();
