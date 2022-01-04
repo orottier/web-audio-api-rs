@@ -301,7 +301,7 @@ impl BiquadFilterNode {
     /// # Arguments
     ///
     /// * `type_` - the biquad filter type (lowpass, highpass,...)
-    pub fn set_type(&mut self, type_: BiquadFilterType) {
+    pub fn set_type(&self, type_: BiquadFilterType) {
         self.type_.store(type_ as u32, Ordering::SeqCst);
     }
 
@@ -1230,7 +1230,7 @@ mod test {
         let type_ = BiquadFilterType::Highpass;
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
-        let mut biquad = BiquadFilterNode::new(&context, None);
+        let biquad = BiquadFilterNode::new(&context, None);
 
         biquad.q().set_value(q);
         biquad.detune().set_value(detune);

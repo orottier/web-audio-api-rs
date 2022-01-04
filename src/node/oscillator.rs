@@ -482,7 +482,7 @@ impl OscillatorNode {
 
     /// set the oscillator type to custom and generate
     /// a perdioc waveform following the `PeriodicWave` characteristics
-    pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
+    pub fn set_periodic_wave(&self, periodic_wave: PeriodicWave) {
         // The oscillator type is set to custom following the spec
         self.change_type(OscillatorType::Custom);
 

@@ -220,7 +220,7 @@ impl WaveShaperNode {
     /// # Arguments
     ///
     /// * `oversample` - the desired `OversampleType` variant
-    pub fn set_oversample(&mut self, oversample: OverSampleType) {
+    pub fn set_oversample(&self, oversample: OverSampleType) {
         self.oversample.store(oversample as u32, Ordering::SeqCst);
     }
 }
