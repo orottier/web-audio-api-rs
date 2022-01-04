@@ -369,7 +369,6 @@ pub trait AsBaseAudioContext {
     }
 
     /// The sample rate (in sample-frames per second) at which the `AudioContext` handles audio.
-    #[allow(clippy::cast_precision_loss)]
     #[must_use]
     fn sample_rate(&self) -> f32 {
         self.base().sample_rate()
