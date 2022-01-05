@@ -1,11 +1,7 @@
 use std::f32::consts::PI;
 use std::fs::File;
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-use web_audio_api::media::{MediaDecoder, MediaElement};
-use web_audio_api::node::{
-    AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode, OverSampleType,
-    WaveShaperNode, WaveShaperOptions,
-};
+use web_audio_api::node::AudioNode;
 
 /// Creates a sigmoid curve
 /// see [curve graph](http://kevincennis.github.io/transfergraph/)
@@ -28,43 +24,20 @@ fn main() {
     env_logger::init();
     let context = AudioContext::new(None);
 
-    // setup background music:
-    // read from local file
-    let file = File::open("sample.ogg").unwrap();
-    // decode file to media stream
-    let stream = MediaDecoder::try_new(file).unwrap();
-    // wrap stream in MediaElement, so we can control it (loop, play/pause)
-    let media = MediaElement::new(stream);
-    // register as media element in the audio context
-    let background = context.create_media_element_source(media);
+    let file = File::open("sample.wav").unwrap();
+    let buffer = context.decode_audio_data(file).unwrap();
 
-    // use a gain node to control volume
-    let gain = context.create_gain();
-    // play at low volume
-    gain.gain().set_value(0.5);
-
-    // Create the distortion curve
+    let shaper = context.create_wave_shaper();
     let curve = make_distortion_curve(40);
-
-    // Create wave shaper options
-    let options = WaveShaperOptions {
-        curve: Some(curve),
-        ..Default::default()
-    };
-    // Create the waveshaper
-    let shaper = WaveShaperNode::new(&context, Some(options));
-    shaper.set_oversample(OverSampleType::None);
-
-    // connect the media node to the gain node
-    background.connect(&gain);
-    // connect the gain node to the shaper node
-    gain.connect(&shaper);
-    // connect the shaper node to the destination node (speakers)
     shaper.connect(&context.destination());
-    // start playback
-    background.set_loop(true);
-    background.start();
+    shaper.set_curve(curve);
+
+    let src = context.create_buffer_source();
+    src.connect(&shaper);
+    src.set_buffer(buffer);
+
+    src.start();
 
     // enjoy listening
-    std::thread::sleep(std::time::Duration::from_secs(4));
+    std::thread::sleep(std::time::Duration::from_secs(5));
 }
