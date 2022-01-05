@@ -207,7 +207,10 @@ impl DelayNode {
                     index: 0,
                     last_written_index: last_written_index_clone,
                     last_written_index_checked: None,
-                    internal_buffer: Vec::<f32>::with_capacity(2),
+                    // `internal_buffer` is used to compute the samples per channel at each frame.
+                    // Note that the `vec` will always be resized to actual buffer
+                    // number_of_channels when received on the render thread.
+                    internal_buffer: Vec::<f32>::with_capacity(crate::MAX_CHANNELS),
                 };
 
                 let node = DelayNode {
