@@ -11,7 +11,7 @@ fn main() {
     let context = AudioContext::new(None);
 
     // Create an oscillator node with sine (default) type
-    let mut osc = context.create_oscillator();
+    let osc = context.create_oscillator();
 
     // Connect osc to the destination node which is the default output device
     osc.connect(&context.destination());

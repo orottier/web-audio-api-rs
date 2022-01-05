@@ -2,7 +2,6 @@
 #![warn(
     clippy::all,
     clippy::pedantic,
-    clippy::nursery,
     clippy::perf,
     clippy::missing_docs_in_private_items
 )]
@@ -418,7 +417,7 @@ impl OscillatorNode {
     /// The oscillator frequency is calculated as follow:
     /// frequency * 2^(detune/1200)
     #[must_use]
-    pub const fn frequency(&self) -> &AudioParam {
+    pub fn frequency(&self) -> &AudioParam {
         &self.frequency
     }
 
@@ -426,7 +425,7 @@ impl OscillatorNode {
     /// The oscillator frequency is calculated as follow:
     /// frequency * 2^(detune/1200)
     #[must_use]
-    pub const fn detune(&self) -> &AudioParam {
+    pub fn detune(&self) -> &AudioParam {
         &self.detune
     }
 
@@ -483,7 +482,7 @@ impl OscillatorNode {
 
     /// set the oscillator type to custom and generate
     /// a perdioc waveform following the `PeriodicWave` characteristics
-    pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
+    pub fn set_periodic_wave(&self, periodic_wave: PeriodicWave) {
         // The oscillator type is set to custom following the spec
         self.change_type(OscillatorType::Custom);
 

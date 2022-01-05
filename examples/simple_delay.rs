@@ -14,8 +14,8 @@ fn main() {
     delay.delay_time().set_value(0.5);
     delay.connect(&context.destination());
 
-    let mut src = context.create_buffer_source();
-    src.set_buffer(&audio_buffer);
+    let src = context.create_buffer_source();
+    src.set_buffer(audio_buffer);
     // connect to both delay and destination
     src.connect(&delay);
     src.connect(&context.destination());

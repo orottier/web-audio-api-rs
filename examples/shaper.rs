@@ -52,8 +52,7 @@ fn main() {
         ..Default::default()
     };
     // Create the waveshaper
-    let mut shaper = WaveShaperNode::new(&context, Some(options));
-
+    let shaper = WaveShaperNode::new(&context, Some(options));
     shaper.set_oversample(OverSampleType::None);
 
     // connect the media node to the gain node
