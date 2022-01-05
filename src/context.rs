@@ -86,7 +86,7 @@ pub trait AsBaseAudioContext {
     ///
     /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
     ///
-    /// Contrary to the official spec, the input parameter can be any byte stream (not just an
+    /// In addition to the official spec, the input parameter can be any byte stream (not just an
     /// array). This means you can decode audio data from a file, network stream, or in memory
     /// buffer, and any other [`std::io::Read`] implementor. The data if buffered internally so you
     /// should not wrap the source in a `BufReader`.
