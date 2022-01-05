@@ -360,7 +360,7 @@ mod test {
 
     use crate::{
         context::{AsBaseAudioContext, OfflineAudioContext},
-        media::{MediaElement, OggVorbisDecoder},
+        media::{MediaDecoder, MediaElement},
         node::{AudioNode, AudioScheduledSourceNode},
         snapshot, SampleRate,
     };
@@ -603,7 +603,7 @@ mod test {
         // read from local file
         let file = File::open("white.ogg").unwrap();
         // decode file to media stream
-        let stream = OggVorbisDecoder::try_new(file).unwrap();
+        let stream = MediaDecoder::try_new(file).unwrap();
         // wrap stream in MediaElement, so we can control it (loop, play/pause)
         let media = MediaElement::new(stream);
         // register as media element in the audio context

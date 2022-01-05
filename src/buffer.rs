@@ -361,7 +361,7 @@ impl<M: MediaStream> Resampler<M> {
 }
 
 impl<M: MediaStream> Iterator for Resampler<M> {
-    type Item = Result<AudioBuffer, Box<dyn Error + Send>>;
+    type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut buffer = match self.buffer.take() {

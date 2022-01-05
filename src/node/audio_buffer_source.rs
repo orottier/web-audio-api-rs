@@ -57,7 +57,7 @@ struct AudioBufferMessage(AudioBuffer);
 /// let context = AudioContext::new(None);
 /// // load and decode a soundfile
 /// let file = File::open("sample.wav").unwrap();
-/// let audio_buffer = context.decode_audio_data(file);
+/// let audio_buffer = context.decode_audio_data(file).unwrap();
 /// // play the sound file
 /// let src = context.create_buffer_source();
 /// src.set_buffer(audio_buffer);
@@ -558,7 +558,7 @@ mod tests {
         let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, SampleRate(44_100));
 
         let file = std::fs::File::open("sample.wav").unwrap();
-        let audio_buffer = context.decode_audio_data(file);
+        let audio_buffer = context.decode_audio_data(file).unwrap();
 
         let src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());

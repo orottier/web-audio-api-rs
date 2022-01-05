@@ -1,6 +1,6 @@
 use std::fs::File;
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-use web_audio_api::media::{MediaElement, OggVorbisDecoder};
+use web_audio_api::media::{MediaDecoder, MediaElement};
 use web_audio_api::node::{AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode};
 
 fn main() {
@@ -11,7 +11,7 @@ fn main() {
     // read from local file
     let file = File::open("sample.ogg").unwrap();
     // decode file to media stream
-    let stream = OggVorbisDecoder::try_new(file).unwrap();
+    let stream = MediaDecoder::try_new(file).unwrap();
     // wrap stream in MediaElement, so we can control it (loop, play/pause)
     let media = MediaElement::new(stream);
     // register as media element in the audio context
