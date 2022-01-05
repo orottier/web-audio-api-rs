@@ -263,21 +263,21 @@ impl AudioProcessor for WaveShaperRenderer {
             self.curve = Some(msg.0);
         }
 
-        if !self.curve_set {
+        if self.curve.is_none() {
             self.pass_through(input, output);
         } else {
             match self.oversample.load(Ordering::SeqCst).into() {
-                None => {
+                OverSampleType::None => {
                     self.process_1x(input, output);
                 }
-                X2 => {
+                OverSampleType::X2 => {
                     // maybe this is not necessary, the up/down sampler could be reused per channel
                     if input.channels().len() != self.channels_x2 {
                         self.update_2x(input.channels().len());
                     }
                     self.process_2x(input, output);
                 }
-                X4 => {
+                OverSampleType::X4 => {
                     // maybe this is not necessary, the up/down sampler could be reused per channel
                     if input.channels().len() != self.channels_x4 {
                         self.update_4x(input.channels().len());
@@ -458,11 +458,13 @@ impl WaveShaperRenderer {
 
 #[cfg(test)]
 mod tests {
-    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
-    use crate::node::{AudioNode};
+    use float_eq::assert_float_eq;
+
+    use crate::context::{OfflineAudioContext};
+    // use crate::node::{AudioNode};
     use crate::SampleRate;
 
-    use super::{OverSampleType, WaveShaperNode, WaveShaperOptions};
+    use super::*;
 
     const LENGTH: usize = 555;
 
@@ -569,35 +571,73 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_shape_boundaries() {
+    fn test_shape_boundaries() {
         let sample_rate = SampleRate(128);
         let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
 
-        let mut shaper = context.create_wave_shaper();
+        let shaper = context.create_wave_shaper();
         let curve = vec![-0.5, 0., 0.5];
-        shaper.set_curve(Some(curve));
+        shaper.set_curve(curve);
         shaper.connect(&context.destination());
 
         let mut data = vec![0.; 3 * 128];
+        let mut expected = vec![0.; 3 * 128];
         for i in 0..(3 * 128) {
             if i < 128 {
-                data[i] = -1.; // should be shaped to -0.5.
+                data[i] = -1.;
+                expected[i] = -0.5;
             } else if i < 2 * 128 {
-                data[i] = 0.; // should be shaped to 0.
+                data[i] = 0.;
+                expected[i] = 0.;
             } else {
-                data[i] = 1.; // should be shaped to 0.5.
+                data[i] = 1.;
+                expected[i] = 0.5;
             }
         }
         let mut buffer = context.create_buffer(1, 3 * 128, sample_rate);
         buffer.copy_to_channel(&data, 0);
 
-        let mut src = context.create_buffer_source();
+        let src = context.create_buffer_source();
         src.connect(&shaper);
-        src.set_buffer(&buffer);
+        src.set_buffer(buffer);
         src.start_at(0.);
 
         let result = context.start_rendering();
+        let channel = result.get_channel_data(0);
 
-        println!("{:?}", result);
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_shape_interpolation() {
+        let sample_rate = SampleRate(128);
+        let mut context = OfflineAudioContext::new(1, 128, sample_rate);
+
+        let shaper = context.create_wave_shaper();
+        let curve = vec![-0.5, 0., 0.5];
+        shaper.set_curve(curve);
+        shaper.connect(&context.destination());
+
+        let mut data = vec![0.; 128];
+        let mut expected = vec![0.; 128];
+
+        for i in 0..128 {
+            let sample = i as f32 / 128. * 2. - 1.;
+            data[i] = sample;
+            expected[i] = sample / 2.;
+        }
+
+        let mut buffer = context.create_buffer(1, 3 * 128, sample_rate);
+        buffer.copy_to_channel(&data, 0);
+
+        let src = context.create_buffer_source();
+        src.connect(&shaper);
+        src.set_buffer(buffer);
+        src.start_at(0.);
+
+        let result = context.start_rendering();
+        let channel = result.get_channel_data(0);
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
 }
