@@ -263,31 +263,32 @@ impl AudioProcessor for WaveShaperRenderer {
             self.curve = Some(msg.0);
         }
 
-        if self.curve.is_none() {
-            self.no_process(input, output);
+        if !self.curve_set {
+            self.pass_through(input, output);
+        } else {
+            match self.oversample.load(Ordering::SeqCst).into() {
+                None => {
+                    self.process_1x(input, output);
+                }
+                X2 => {
+                    // maybe this is not necessary, the up/down sampler could be reused per channel
+                    if input.channels().len() != self.channels_x2 {
+                        self.update_2x(input.channels().len());
+                    }
+                    self.process_2x(input, output);
+                }
+                X4 => {
+                    // maybe this is not necessary, the up/down sampler could be reused per channel
+                    if input.channels().len() != self.channels_x4 {
+                        self.update_4x(input.channels().len());
+                    }
+                    self.process_4x(input, output);
+                }
+            }
         }
 
-        use OverSampleType::*;
-        match self.oversample.load(Ordering::SeqCst).into() {
-            None => {
-                self.process_none(input, output);
-                false
-            }
-            X2 => {
-                if input.channels().len() != self.channels_x2 {
-                    self.update_2x(input.channels().len());
-                }
-                self.process_2x(input, output);
-                true // todo proper tail-time - issue #34
-            }
-            X4 => {
-                if input.channels().len() != self.channels_x4 {
-                    self.update_4x(input.channels().len());
-                }
-                self.process_4x(input, output);
-                true // todo proper tail-time - issue #34
-            }
-        }
+        // @tbc - rubato::FftFixedInOut doesn't seem to introduce any latency
+        false
     }
 }
 
@@ -349,18 +350,19 @@ impl WaveShaperRenderer {
     }
 
     #[inline]
-    fn no_process(&self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
+    fn pass_through(&self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
         for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
-            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = i;
-            }
+            o_data.copy_from_slice(&i_data[..]);
         }
     }
 
     #[inline]
-    fn process_none(&self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
+    fn process_1x(&self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
+        // this does nothing...
         for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
-            o_data.copy_from_slice(&i_data[..]);
+            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
+                *o = self.apply_shape(i);
+            }
         }
     }
 
@@ -369,11 +371,11 @@ impl WaveShaperRenderer {
         let wave_in = input.channels();
 
         let up_wave_in = self.upsampler_x2.process(wave_in).unwrap();
-        let mut up_wave_out = up_wave_in.clone();
+        let mut up_wave_out = up_wave_in.clone(); // this looks like allocation
 
         for (i_data, o_data) in up_wave_in.iter().zip(&mut up_wave_out) {
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.tick(i);
+                *o = self.apply_shape(i);
             }
         }
 
@@ -391,11 +393,11 @@ impl WaveShaperRenderer {
         let wave_in = input.channels();
 
         let up_wave_in = self.upsampler_x4.process(wave_in).unwrap();
-        let mut up_wave_out = up_wave_in.clone();
+        let mut up_wave_out = up_wave_in.clone(); // this looks like allocation
 
         for (i_data, o_data) in up_wave_in.iter().zip(&mut up_wave_out) {
             for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.tick(i);
+                *o = self.apply_shape(i);
             }
         }
 
@@ -409,7 +411,7 @@ impl WaveShaperRenderer {
     }
 
     #[inline]
-    fn tick(&self, input: f32) -> f32 {
+    fn apply_shape(&self, input: f32) -> f32 {
         // curve is always set at this point
         let curve = self.curve.as_deref().unwrap();
 
@@ -422,7 +424,7 @@ impl WaveShaperRenderer {
 
         if v <= 0. {
             curve[0]
-        } else if v > n - 1. {
+        } else if v >= n - 1. {
             curve[(n - 1.) as usize]
         } else {
             let k = v.floor();
@@ -455,14 +457,12 @@ impl WaveShaperRenderer {
 }
 
 #[cfg(test)]
-mod test {
-    use crate::{
-        context::{AsBaseAudioContext, OfflineAudioContext},
-        node::WaveShaperOptions,
-        SampleRate,
-    };
+mod tests {
+    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
+    use crate::node::{AudioNode};
+    use crate::SampleRate;
 
-    use super::{OverSampleType, WaveShaperNode};
+    use super::{OverSampleType, WaveShaperNode, WaveShaperOptions};
 
     const LENGTH: usize = 555;
 
@@ -566,5 +566,38 @@ mod test {
 
         assert_eq!(shaper.curve(), Some(&[2.0][..]));
         assert_eq!(shaper.oversample(), OverSampleType::X4);
+    }
+
+    #[test]
+    fn test_apply_shape_boundaries() {
+        let sample_rate = SampleRate(128);
+        let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
+
+        let mut shaper = context.create_wave_shaper();
+        let curve = vec![-0.5, 0., 0.5];
+        shaper.set_curve(Some(curve));
+        shaper.connect(&context.destination());
+
+        let mut data = vec![0.; 3 * 128];
+        for i in 0..(3 * 128) {
+            if i < 128 {
+                data[i] = -1.; // should be shaped to -0.5.
+            } else if i < 2 * 128 {
+                data[i] = 0.; // should be shaped to 0.
+            } else {
+                data[i] = 1.; // should be shaped to 0.5.
+            }
+        }
+        let mut buffer = context.create_buffer(1, 3 * 128, sample_rate);
+        buffer.copy_to_channel(&data, 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&shaper);
+        src.set_buffer(&buffer);
+        src.start_at(0.);
+
+        let result = context.start_rendering();
+
+        println!("{:?}", result);
     }
 }
