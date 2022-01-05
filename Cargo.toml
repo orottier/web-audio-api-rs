@@ -23,7 +23,7 @@ rubato = "0.10"
 float_eq = "0.7"
 smallvec = "1.7.0"
 once_cell = "1.9.0"
-symphonia = "0.4.0"
+symphonia = { version = "0.4.0", default-features = false }
 
 [dev-dependencies]
 rand = "0.8.*"
@@ -34,3 +34,10 @@ env_logger = "0.9.0"
 # during CPU profiling
 # [profile.release]
 # debug = true
+
+[features]
+default = ["mp3", "ogg", "flac", "wav"]
+mp3 = ["symphonia/mp3"]
+ogg = ["symphonia/ogg", "symphonia/vorbis"]
+flac = ["symphonia/flac"]
+wav = ["symphonia/wav", "symphonia/pcm"]
