@@ -601,7 +601,7 @@ mod test {
 
         // setup background music:
         // read from local file
-        let file = File::open("white.ogg").unwrap();
+        let file = File::open("samples/white.ogg").unwrap();
         // decode file to media stream
         let stream = MediaDecoder::try_new(file).unwrap();
         // wrap stream in MediaElement, so we can control it (loop, play/pause)

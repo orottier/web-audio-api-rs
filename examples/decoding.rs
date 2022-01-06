@@ -6,23 +6,25 @@ fn main() {
     let files = [
         "samples/sample.wav",
         "samples/sample.flac",
-        "samples/sample.mp3",
         "samples/sample.ogg",
-        // "samples/sample.aiff", // not supported by decoding
-        // no opus
+        "samples/sample.mp3",
+        // not supported by decoder:
+        // "samples/sample.aiff",
+        // "samples/sample.webm", // 48kHz,
     ];
 
     let audio_context = AudioContext::new(None);
 
     for filepath in files.iter() {
         println!("> --------------------------------");
-        println!("> reading file {:?}", filepath);
+        println!("> reading file: {:?}", filepath);
 
         let file = File::open(filepath).unwrap();
         let buffer = audio_context.decode_audio_data(file).unwrap();
 
-        println!("> duration {:?}", buffer.duration());
-        println!("> num samples {:?}", buffer.get_channel_data(0).len());
+        println!("> duration: {:?}", buffer.duration());
+        println!("> num samples: {:?}", buffer.get_channel_data(0).len());
+        println!("> --------------------------------");
 
         let src = audio_context.create_buffer_source();
         src.connect(&audio_context.destination());

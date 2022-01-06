@@ -859,7 +859,7 @@ mod tests {
         // @todo - complete and assert when resampling will be implemented
         let context = AudioContext::new(None);
 
-        let file = std::fs::File::open("sample.wav").unwrap();
+        let file = std::fs::File::open("samples/sample.wav").unwrap();
         let audio_buffer = context.decode_audio_data(file).unwrap();
 
         println!("----------------------------------------------");
