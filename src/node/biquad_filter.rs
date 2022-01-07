@@ -117,8 +117,6 @@ impl Default for BiquadFilterOptions {
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 pub struct BiquadFilterNode {
-    /// Sample rate (equals to audio context sample rate)
-    sample_rate: f32,
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
     /// Infos about audio node channel configuration
@@ -168,10 +166,6 @@ impl BiquadFilterNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<BiquadFilterOptions>) -> Self {
         context.base().register(move |registration| {
             let options = options.unwrap_or_default();
-            // cannot guarantee that the cast will be without loss of precision for all fs
-            // but for usual sample rate (44.1kHz, 48kHz, 96kHz) it is
-            #[allow(clippy::cast_precision_loss)]
-            let sample_rate = context.base().sample_rate().0 as f32;
 
             let default_freq = 350.;
             let default_gain = 0.;
@@ -208,12 +202,10 @@ impl BiquadFilterNode {
 
             d_param.set_value(d_value);
 
-            let niquyst = context.base().sample_rate().0 / 2;
-            // It should be fine for usual fs
-            #[allow(clippy::cast_precision_loss)]
+            let niquyst = context.sample_rate() / 2.;
             let f_param_opts = AudioParamOptions {
                 min_value: 0.,
-                max_value: niquyst as f32,
+                max_value: niquyst,
                 default_value: default_freq,
                 automation_rate: crate::param::AutomationRate::A,
             };
@@ -240,7 +232,6 @@ impl BiquadFilterNode {
             let (sender, receiver) = crossbeam_channel::bounded(0);
 
             let config = RendererConfig {
-                sample_rate,
                 gain: g_proc,
                 detune: d_proc,
                 frequency: f_proc,
@@ -251,7 +242,6 @@ impl BiquadFilterNode {
 
             let renderer = BiquadFilterRenderer::new(config);
             let node = Self {
-                sample_rate,
                 registration,
                 channel_config: options.channel_config.into(),
                 type_,
@@ -335,7 +325,7 @@ impl BiquadFilterNode {
             Ok([b0, b1, b2, a1, a2]) => {
                 for (i, &f) in frequency_hz.iter().enumerate() {
                     let f = f64::from(f);
-                    let sample_rate = f64::from(self.sample_rate);
+                    let sample_rate = f64::from(self.context().sample_rate_raw().0);
                     let num = b0
                         + Complex::from_polar(b1, -1.0 * 2.0 * PI * f / sample_rate)
                         + Complex::from_polar(b2, -2.0 * 2.0 * PI * f / sample_rate);
@@ -374,7 +364,7 @@ impl BiquadFilterNode {
 
         // Ensures that given frequencies are in the correct range
         let min = 0.;
-        let max = self.sample_rate / 2.;
+        let max = self.context().sample_rate() / 2.;
         for f in frequency_hz.iter_mut() {
             *f = f.clamp(min, max);
         }
@@ -423,8 +413,6 @@ struct CoeffsConfig {
 /// Helper struct which regroups all parameters
 /// required to build `BiquadFilterRenderer`
 struct RendererConfig {
-    /// Sample rate (equals to audio context sample rate)
-    sample_rate: f32,
     /// quality factor - its impact on the frequency response of the filter
     /// depends on the `BiquadFilterType`
     q: AudioParamId,
@@ -460,8 +448,6 @@ struct Coefficients {
 
 /// `BiquadFilterRenderer` represents the rendering part of `BiquadFilterNode`
 struct BiquadFilterRenderer {
-    /// Sample rate (equals to audio context sample rate)
-    sample_rate: f32,
     /// quality factor - its impact on the frequency response of the filter
     /// depends on the `BiquadFilterType`
     q: AudioParamId,
@@ -493,7 +479,7 @@ impl AudioProcessor for BiquadFilterRenderer {
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         _timestamp: f64,
-        _sample_rate: SampleRate,
+        sample_rate: SampleRate,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];
@@ -504,7 +490,15 @@ impl AudioProcessor for BiquadFilterRenderer {
         let freq_values = params.get(&self.frequency);
         let q_values = params.get(&self.q);
 
-        self.filter(input, output, g_values, det_values, freq_values, q_values);
+        self.filter(
+            input,
+            output,
+            g_values,
+            det_values,
+            freq_values,
+            q_values,
+            sample_rate,
+        );
 
         true // todo tail time - issue #34
     }
@@ -517,7 +511,6 @@ impl BiquadFilterRenderer {
     #[allow(clippy::missing_const_for_fn)]
     fn new(config: RendererConfig) -> Self {
         let RendererConfig {
-            sample_rate,
             q,
             detune,
             frequency,
@@ -538,7 +531,6 @@ impl BiquadFilterRenderer {
         let s2 = [0.; MAX_CHANNELS];
 
         Self {
-            sample_rate,
             gain,
             detune,
             frequency,
@@ -559,6 +551,7 @@ impl BiquadFilterRenderer {
     /// * `output` - Audiobuffer output
     /// * `params` - biquadfilter params which resolves into biquad coeffs
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     fn filter(
         &mut self,
         input: &AudioRenderQuantum,
@@ -567,6 +560,7 @@ impl BiquadFilterRenderer {
         det_values: &[f32],
         freq_values: &[f32],
         q_values: &[f32],
+        sample_rate: SampleRate,
     ) {
         for (channel_idx, (i_data, o_data)) in input
             .channels()
@@ -584,7 +578,7 @@ impl BiquadFilterRenderer {
                 };
 
                 // A-rate params
-                self.update_coeffs(&p);
+                self.update_coeffs(&p, sample_rate);
                 *o = self.tick(i, channel_idx);
             }
         }
@@ -624,7 +618,7 @@ impl BiquadFilterRenderer {
     ///
     /// * `params` - params resolving into biquad coeffs
     #[inline]
-    fn update_coeffs(&mut self, params: &CoeffsConfig) {
+    fn update_coeffs(&mut self, params: &CoeffsConfig, sample_rate: SampleRate) {
         let CoeffsConfig {
             q,
             detune,
@@ -635,7 +629,7 @@ impl BiquadFilterRenderer {
 
         let computed_freq = frequency * 10_f32.powf(detune / 1200.);
 
-        let sample_rate = f64::from(self.sample_rate);
+        let sample_rate = f64::from(sample_rate.0);
         let computed_freq = f64::from(computed_freq);
         let q = f64::from(*q);
         let gain = f64::from(*gain);
@@ -1277,9 +1271,7 @@ mod test {
     fn frequencies_are_clamped() {
         let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let biquad = BiquadFilterNode::new(&context, None);
-        // It will be fine for the usual fs
-        #[allow(clippy::cast_precision_loss)]
-        let niquyst = context.sample_rate().0 as f32 / 2.0;
+        let niquyst = context.sample_rate() / 2.0;
 
         let mut frequency_hz = [-100., 1_000_000.];
         let mut mag_response = [0., 0.];

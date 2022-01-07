@@ -130,10 +130,7 @@ impl WaveShaperNode {
                 oversample,
                 channel_config,
             } = options.unwrap_or_default();
-            // cannot guarantee that the cast will be without loss of precision for all fs
-            // but for usual sample rate (44.1kHz, 48kHz, 96kHz) it is
-            #[allow(clippy::cast_precision_loss)]
-            let sample_rate = context.base().sample_rate().0 as usize;
+            let sample_rate = context.sample_rate_raw().0 as usize;
             let channel_config = channel_config.unwrap_or_default().into();
             let oversample = Arc::new(AtomicU32::new(
                 oversample.expect("oversample should be OversampleType variant") as u32,

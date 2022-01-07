@@ -36,8 +36,6 @@ pub struct IirFilterOptions {
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 pub struct IirFilterNode {
-    /// Sample rate (equals to audio context sample rate)
-    sample_rate: f32,
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
     /// Infos about audio node channel configuration
@@ -95,10 +93,6 @@ impl IirFilterNode {
             assert!(!feedback.is_empty(), "NotSupportedError");
             assert!(!feedback.iter().all(|&ff| ff == 0.), "InvalidStateError");
 
-            // cast will be without loss of precission for usual fs
-            #[allow(clippy::cast_precision_loss)]
-            let sample_rate = context.base().sample_rate().0 as f32;
-
             let config = RendererConfig {
                 feedforward: feedforward.clone(),
                 feedback: feedback.clone(),
@@ -107,7 +101,6 @@ impl IirFilterNode {
             let render = IirFilterRenderer::new(config);
 
             let node = Self {
-                sample_rate,
                 registration,
                 channel_config: channel_config.into(),
                 feedforward,
@@ -133,6 +126,7 @@ impl IirFilterNode {
         phase_response: &mut [f32],
     ) {
         self.validate_inputs(frequency_hz, mag_response, phase_response);
+        let sample_rate = f64::from(self.context().sample_rate_raw().0);
 
         for (i, &f) in frequency_hz.iter().enumerate() {
             let mut num: Complex<f64> = Complex::new(0., 0.);
@@ -141,19 +135,14 @@ impl IirFilterNode {
             // 0 through 20 casts without loss of precision
             #[allow(clippy::cast_precision_loss)]
             for (idx, &ff) in self.feedforward.iter().enumerate() {
-                num += Complex::from_polar(
-                    ff,
-                    idx as f64 * -2.0 * PI * f64::from(f) / f64::from(self.sample_rate),
-                );
+                num += Complex::from_polar(ff, idx as f64 * -2.0 * PI * f64::from(f) / sample_rate);
             }
 
             // 0 through 20 casts without loss of precision
             #[allow(clippy::cast_precision_loss)]
             for (idx, &fb) in self.feedback.iter().enumerate() {
-                denom += Complex::from_polar(
-                    fb,
-                    idx as f64 * -2.0 * PI * f64::from(f) / f64::from(self.sample_rate),
-                );
+                denom +=
+                    Complex::from_polar(fb, idx as f64 * -2.0 * PI * f64::from(f) / sample_rate);
             }
 
             let h_f = num / denom;
@@ -186,7 +175,7 @@ impl IirFilterNode {
 
         // Ensures that given frequencies are in the correct range
         let min = 0.;
-        let max = self.sample_rate / 2.;
+        let max = self.context().sample_rate() / 2.;
         for f in frequency_hz.iter_mut() {
             *f = f.clamp(min, max);
         }
@@ -535,7 +524,7 @@ mod test {
         let iir = IirFilterNode::new(&context, options);
         // It will be fine for the usual fs
         #[allow(clippy::cast_precision_loss)]
-        let niquyst = context.sample_rate().0 as f32 / 2.0;
+        let niquyst = context.sample_rate() / 2.0;
 
         let mut frequency_hz = [-100., 1_000_000.];
         let mut mag_response = [0., 0.];

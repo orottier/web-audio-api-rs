@@ -283,8 +283,6 @@ pub struct OscillatorNode {
     registration: AudioContextRegistration,
     /// Infos about audio node channel configuration
     channel_config: ChannelConfig,
-    /// Sample rate (equals to audio context sample rate)
-    sample_rate: f32,
     /// The frequency of the fundamental frequency.
     frequency: AudioParam,
     /// A detuning value (in cents) which will offset the frequency by the given amount.
@@ -335,7 +333,7 @@ impl OscillatorNode {
             // Cannot guarantee that the cast is safe for all possible sample rate
             // cast without loss of precision for usual sample rates
             #[allow(clippy::cast_precision_loss)]
-            let sample_rate = context.base().sample_rate().0 as f32;
+            let sample_rate = context.sample_rate();
             let nyquist = sample_rate / 2.;
             let default_freq = 440.;
             let default_det = 0.;
@@ -393,7 +391,7 @@ impl OscillatorNode {
                 scheduler: scheduler.clone(),
                 receiver,
                 computed_freq,
-                sample_rate,
+                sample_rate: context.sample_rate(),
                 periodic_wave,
             };
             let renderer = OscillatorRenderer::new(config);
@@ -401,7 +399,6 @@ impl OscillatorNode {
             let node = Self {
                 registration,
                 channel_config: channel_config.unwrap_or_default().into(),
-                sample_rate,
                 frequency: f_param,
                 detune: det_param,
                 type_,
@@ -520,7 +517,9 @@ impl OscillatorNode {
             // update incr_phases
             // 0 through max value 8192 casts without loss of precision
             #[allow(clippy::cast_precision_loss)]
-            incr_phases.push(TABLE_LENGTH_F32 * idx as f32 * (computed_freq / self.sample_rate));
+            incr_phases.push(
+                TABLE_LENGTH_F32 * idx as f32 * (computed_freq / self.context().sample_rate()),
+            );
         }
 
         // update interpol_ratios
@@ -657,10 +656,10 @@ struct OscillatorRenderer {
     scheduler: Scheduler,
     /// channel between control and renderer parts (receiver part)
     receiver: Receiver<OscMsg>,
+    /// sample rate at which the processor should render
+    sample_rate: f32,
     /// `computed_freq` is precomputed from `frequency` and `detune`
     computed_freq: f32,
-    /// channel between control and renderer parts (sender part)
-    sample_rate: f32,
     /// current phase of the oscillator
     phase: f32,
     /// phase amount to add to phase at each tick
@@ -763,7 +762,7 @@ struct OscRendererConfig {
     receiver: Receiver<OscMsg>,
     /// `computed_freq` is precomputed from `frequency` and `detune`
     computed_freq: f32,
-    /// channel between control and renderer parts (sender part)
+    /// sample rate at which the processor should render
     sample_rate: f32,
     /// The PeriodicWave for the OscillatorNode
     /// If this is specified, then any valid value for type is ignored;
