@@ -2,7 +2,6 @@
 #![warn(
     clippy::all,
     clippy::pedantic,
-    clippy::nursery,
     clippy::perf,
     clippy::missing_docs_in_private_items
 )]
@@ -259,25 +258,25 @@ impl BiquadFilterNode {
 
     /// Returns the gain audio paramter
     #[must_use]
-    pub const fn gain(&self) -> &AudioParam {
+    pub fn gain(&self) -> &AudioParam {
         &self.gain
     }
 
     /// Returns the frequency audio paramter
     #[must_use]
-    pub const fn frequency(&self) -> &AudioParam {
+    pub fn frequency(&self) -> &AudioParam {
         &self.frequency
     }
 
     /// Returns the detune audio paramter
     #[must_use]
-    pub const fn detune(&self) -> &AudioParam {
+    pub fn detune(&self) -> &AudioParam {
         &self.detune
     }
 
     /// Returns the Q audio paramter
     #[must_use]
-    pub const fn q(&self) -> &AudioParam {
+    pub fn q(&self) -> &AudioParam {
         &self.q
     }
 
@@ -292,7 +291,7 @@ impl BiquadFilterNode {
     /// # Arguments
     ///
     /// * `type_` - the biquad filter type (lowpass, highpass,...)
-    pub fn set_type(&mut self, type_: BiquadFilterType) {
+    pub fn set_type(&self, type_: BiquadFilterType) {
         self.type_.store(type_ as u32, Ordering::SeqCst);
     }
 
@@ -1225,7 +1224,7 @@ mod test {
         let type_ = BiquadFilterType::Highpass;
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
-        let mut biquad = BiquadFilterNode::new(&context, None);
+        let biquad = BiquadFilterNode::new(&context, None);
 
         biquad.q().set_value(q);
         biquad.detune().set_value(detune);

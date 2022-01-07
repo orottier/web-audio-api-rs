@@ -1,6 +1,6 @@
 [package]
 name = "web-audio-api"
-version = "0.12.0"
+version = "0.13.0"
 authors = ["Otto <otto@ot-to.nl>"]
 edition = "2018"
 description = "A pure Rust implementation of the Web Audio API, for use in non-browser contexts"
@@ -12,10 +12,8 @@ categories = ["multimedia::audio"]
 
 [dependencies]
 cpal = "0.13.1"
-lewton = "0.10.2"
 vecmath = "1.0.0"
 arrayvec = "0.7.1"
-hound = "3.4.0"
 log = "0.4.14"
 realfft = "2.0.1"
 crossbeam-channel = "0.5.1"
@@ -24,15 +22,22 @@ lazy_static = "1.4.0"
 rubato = "0.10"
 float_eq = "0.7"
 smallvec = "1.7.0"
+once_cell = "1.9.0"
+symphonia = { version = "0.4.0", default-features = false }
 
 [dev-dependencies]
 rand = "0.8.*"
 alloc_counter = "0.0.4"
 env_logger = "0.9.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 
 # Uncomment the following lines to enable debug symbols
 # during CPU profiling
 # [profile.release]
 # debug = true
+
+[features]
+default = ["mp3", "ogg", "flac", "wav"]
+mp3 = ["symphonia/mp3"]
+ogg = ["symphonia/ogg", "symphonia/vorbis"]
+flac = ["symphonia/flac"]
+wav = ["symphonia/wav", "symphonia/pcm"]

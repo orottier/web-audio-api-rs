@@ -7,15 +7,15 @@ fn main() {
     // create an `AudioContext` and load a sound file
     let context = AudioContext::new(None);
     let file = File::open("sample.wav").unwrap();
-    let audio_buffer = context.decode_audio_data(file);
+    let audio_buffer = context.decode_audio_data(file).unwrap();
 
     // create a delay of 0.5s
     let delay = context.create_delay(1.);
     delay.delay_time().set_value(0.5);
     delay.connect(&context.destination());
 
-    let mut src = context.create_buffer_source();
-    src.set_buffer(&audio_buffer);
+    let src = context.create_buffer_source();
+    src.set_buffer(audio_buffer);
     // connect to both delay and destination
     src.connect(&delay);
     src.connect(&context.destination());

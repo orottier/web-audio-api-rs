@@ -19,8 +19,8 @@ const LISTENER_NODE_ID: u64 = 1;
 /// listener audio parameters ids are always at index 2 through 12
 const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
-use crate::buffer::{AudioBuffer, AudioBufferOptions, ChannelData};
-use crate::media::{MediaElement, MediaStream};
+use crate::buffer::{AudioBuffer, AudioBufferOptions};
+use crate::media::{MediaDecoder, MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{
     self, AnalyserOptions, AudioBufferSourceOptions, AudioNode, ChannelConfigOptions,
@@ -82,82 +82,57 @@ pub trait AsBaseAudioContext {
     /// retrieves the `BaseAudioContext` associated with the concrete `AudioContext`
     fn base(&self) -> &BaseAudioContext;
 
-    /// Retrieves an [`AudioBuffer`] from a given [`std::fs::File`]
+    /// Decode an [`AudioBuffer`] from a given input stream.
     ///
-    /// *Warning:* in the current implementation `decode_audio_data` only accepts
-    /// `.wav` files and do not perform any resampling operation. Be carefull
-    /// to use audio files that match the current sample rate or the file will
-    /// pitched when played.
-    fn decode_audio_data(&self, file: std::fs::File) -> AudioBuffer {
-        // @see - https://github.com/orottier/web-audio-api-rs/issues/42
-        // @note - should also be async, but that's not a big deal neither for now
-        let buf_reader = std::io::BufReader::new(file);
-        let mut reader = hound::WavReader::new(buf_reader).unwrap();
-        let hound::WavSpec {
-            channels,
-            sample_rate: _, // @todo - use for resampling
-            bits_per_sample,
-            sample_format,
-        } = reader.spec();
+    /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
+    ///
+    /// In addition to the official spec, the input parameter can be any byte stream (not just an
+    /// array). This means you can decode audio data from a file, network stream, or in memory
+    /// buffer, and any other [`std::io::Read`] implementor. The data if buffered internally so you
+    /// should not wrap the source in a `BufReader`.
+    ///
+    /// This function operates synchronously, which may be undesirable on the control thread. The
+    /// example shows how to avoid this.
+    ///
+    /// # Errors
+    ///
+    /// This method returns an Error in various cases (IO, mime sniffing, decoding).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use std::io::Cursor;
+    /// use web_audio_api::SampleRate;
+    /// use web_audio_api::context::{AsBaseAudioContext, OfflineAudioContext};
+    ///
+    /// let input = Cursor::new(vec![0; 32]); // or a File, TcpStream, ...
+    ///
+    /// let context = OfflineAudioContext::new(2, 44_100, SampleRate(44_100));
+    /// let handle = std::thread::spawn(move || context.decode_audio_data(input));
+    ///
+    /// // do other things
+    ///
+    /// // await result from the decoder thread
+    /// let decode_buffer_result = handle.join();
+    /// ```
+    fn decode_audio_data<R: std::io::Read + Send + 'static>(
+        &self,
+        input: R,
+    ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
+        // Set up a media decoder, consume the stream in full and construct a single buffer out of it
+        let mut buffer = MediaDecoder::try_new(input)?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .reduce(|mut accum, item| {
+                accum.extend(&item);
+                accum
+            })
+            .unwrap();
 
-        let number_of_channels = channels as usize;
-        let length = reader.duration() as usize;
+        // resample to desired rate (no-op if already matching)
+        buffer.resample(self.sample_rate_raw());
 
-        let mut decoded: Vec<Vec<f32>> = Vec::with_capacity(number_of_channels);
-
-        for _ in 0..number_of_channels {
-            decoded.push(Vec::<f32>::with_capacity(length));
-        }
-
-        // @note - hound retrieves interleaved values
-        // cf. https://docs.rs/hound/latest/hound/struct.WavReader.html#method.samples
-        match sample_format {
-            hound::SampleFormat::Int => {
-                let mut channel_number = 0;
-
-                if bits_per_sample == 16 {
-                    for sample in reader.samples::<i16>() {
-                        let s = f32::from(sample.unwrap()) / f32::from(i16::MAX);
-                        assert!(s.abs() <= 1.);
-                        decoded[channel_number].push(s);
-                        // next sample belongs to the next channel
-                        channel_number = (channel_number + 1) % number_of_channels;
-                    }
-                } else {
-                    panic!("bits_per_sample {:?} not implemented", bits_per_sample);
-                }
-            }
-            hound::SampleFormat::Float => {
-                // this one is not tested
-                let mut channel_number = 0;
-
-                for sample in reader.samples::<f32>() {
-                    let s = sample.unwrap();
-                    decoded[channel_number].push(s);
-                    // next sample belongs to the next channel
-                    channel_number = (channel_number + 1) % number_of_channels;
-                }
-            }
-        }
-
-        assert_eq!(decoded[0].len(), length);
-
-        // [spec] Take the result, representing the decoded linear PCM audio data,
-        // and resample it to the sample-rate of the BaseAudioContext if it is
-        // different from the sample-rate of audioData.
-
-        // @todo - resample if needed
-        // if (sample_rate != self.sample_rate()) {}
-
-        let mut channels = Vec::<ChannelData>::with_capacity(number_of_channels);
-
-        // replace raw decoded channels with `DataChannel`
-        for raw_channel in decoded {
-            let channel = ChannelData::from(raw_channel);
-            channels.push(channel);
-        }
-
-        AudioBuffer::from_channels(channels, self.sample_rate_raw())
+        Ok(buffer)
     }
 
     /// Create an new "in-memory" `AudioBuffer` with the given number of channels,
@@ -909,7 +884,7 @@ mod tests {
         let context = AudioContext::new(None);
 
         let file = std::fs::File::open("sample.wav").unwrap();
-        let audio_buffer = context.decode_audio_data(file);
+        let audio_buffer = context.decode_audio_data(file).unwrap();
 
         println!("----------------------------------------------");
         println!(

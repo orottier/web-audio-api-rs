@@ -24,7 +24,7 @@ jobs:
 
     # check it builds
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --all-targets
 
     # run tests
     - name: Run tests
