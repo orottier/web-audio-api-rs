@@ -1,11 +1,3 @@
-//! The wave shaper control and renderer parts
-// #![warn(
-//     clippy::all,
-//     clippy::pedantic,
-//     clippy::nursery,
-//     clippy::perf,
-//     clippy::missing_docs_in_private_items
-// )]
 use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc,
@@ -46,21 +38,16 @@ impl Default for OverSampleType {
 
 impl From<u32> for OverSampleType {
     fn from(i: u32) -> Self {
-        use OverSampleType::{None, X2, X4};
-
         match i {
-            0 => None,
-            1 => X2,
-            2 => X4,
+            0 => OverSampleType::None,
+            1 => OverSampleType::X2,
+            2 => OverSampleType::X4,
             _ => unreachable!(),
         }
     }
 }
 
-/// `WaveShaperOptions` is used to pass options
-/// during the construction of `WaveShaperNode` using its
-/// constructor method `new`
-// the naming comes from the web audio specfication
+/// `WaveShaperNode` options
 #[allow(clippy::module_name_repetitions)]
 pub struct WaveShaperOptions {
     /// The distortion curve
@@ -81,9 +68,51 @@ impl Default for WaveShaperOptions {
     }
 }
 
-/// `WaveShaperNode` implemnets non-linear distortion effects
-/// Arbitrary non-linear shaping curves may be specified.
-// the naming comes from the web audio specfication
+/// `WaveShaperNode` allows to apply non-linear distortion effect on a audio
+/// signal. Arbitrary non-linear shaping curves may be specified.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/WaveShaperNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#WaveShaperNode>
+/// - see also: [`AsBaseAudioContext::create_wave_whaper`](crate::context::AsBaseAudioContext::create_wave_whaper)
+///
+/// # Usage
+///
+/// ```no_run
+/// use std::fs::File;
+/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::node::AudioNode;
+///
+/// # use std::f32::consts::PI;
+/// # fn make_distortion_curve(size: usize, amount: usize) -> Vec<f32> {
+/// #     let mut curve = vec![0.; size];
+/// #     let deg = PI / 180.;
+/// #     for (i, c) in curve.iter_mut().enumerate() {
+/// #         let x = i as f32 * 2. / size as f32 - 1.;
+/// #         *c = (3.0 + amount as f32) * x * 20. * deg / (PI + amount as f32 * x.abs());
+/// #     }
+/// #     curve
+/// # }
+/// let context = AudioContext::new(None);
+///
+/// let file = File::open("sample.wav").unwrap();
+/// let buffer = context.decode_audio_data(file).unwrap();
+/// let curve = make_distortion_curve(2048, 40);
+///
+/// let shaper = context.create_wave_shaper();
+/// shaper.connect(&context.destination());
+/// shaper.set_curve(curve);
+///
+/// let src = context.create_buffer_source();
+/// src.connect(&shaper);
+/// src.set_buffer(buffer);
+///
+/// src.start();
+/// ```
+///
+/// # Example
+///
+/// - `cargo run --release --example waveshaper`
+///
 #[allow(clippy::module_name_repetitions)]
 pub struct WaveShaperNode {
     /// Represents the node instance and its associated audio context
@@ -92,7 +121,6 @@ pub struct WaveShaperNode {
     channel_config: ChannelConfig,
     /// distortion curve
     curve: OnceCell<Vec<f32>>,
-
     /// oversample type
     oversample: Arc<AtomicU32>,
     /// Channel between node and renderer (sender part)
@@ -231,13 +259,13 @@ struct WaveShaperRenderer {
     channels_x2: usize,
     /// Number of channels used to build the up/down sampler X4
     channels_x4: usize,
-    // up sampler configured to multiply by 2 the input fs
+    // up sampler configured to multiply by 2 the input signal
     upsampler_x2: FftFixedInOut<f32>,
-    // up sampler configured to multiply by 4 the input fs
+    // up sampler configured to multiply by 4 the input signal
     upsampler_x4: FftFixedInOut<f32>,
-    // down sampler configured to divide by 4 the input fs
+    // down sampler configured to divide by 4 the upsampled signal
     downsampler_x2: FftFixedInOut<f32>,
-    // down sampler configured to divide by 4 the input fs
+    // down sampler configured to divide by 4 the upsampled signal
     downsampler_x4: FftFixedInOut<f32>,
     /// distortion curve
     curve: Option<Vec<f32>>,
@@ -258,31 +286,91 @@ impl AudioProcessor for WaveShaperRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        // Respond to request at K-rate
+        // Check if a curve have been set at k-rate
         if let Ok(msg) = self.receiver.try_recv() {
             self.curve = Some(msg.0);
         }
 
-        if self.curve.is_none() {
-            self.pass_through(input, output);
-        } else {
+        *output = input.clone();
+
+        if self.curve.is_some() {
             match self.oversample.load(Ordering::SeqCst).into() {
                 OverSampleType::None => {
-                    self.process_1x(input, output);
+                    output.modify_channels(|channel| {
+                        channel.iter_mut().for_each(|o| *o = self.apply_curve(*o));
+                    });
                 }
                 OverSampleType::X2 => {
-                    // maybe this is not necessary, the up/down sampler could be reused per channel
-                    if input.channels().len() != self.channels_x2 {
-                        self.update_2x(input.channels().len());
+                    let channels = output.channels();
+
+                    // recreate up/down sampler if number of channels changed
+                    if channels.len() != self.channels_x2 {
+                        self.channels_x2 = channels.len();
+
+                        self.upsampler_x2 = FftFixedInOut::<f32>::new(
+                            self.sample_rate,
+                            self.sample_rate * 2,
+                            256,
+                            self.channels_x2,
+                        );
+
+                        self.downsampler_x2 = FftFixedInOut::<f32>::new(
+                            self.sample_rate * 2,
+                            self.sample_rate,
+                            128,
+                            self.channels_x2,
+                        );
                     }
-                    self.process_2x(input, output);
+
+                    let mut up_channels = self.upsampler_x2.process(channels).unwrap();
+
+                    for channel in up_channels.iter_mut() {
+                        for s in channel.iter_mut() {
+                            *s = self.apply_curve(*s);
+                        }
+                    }
+
+                    let down_channels = self.downsampler_x2.process(&up_channels).unwrap();
+
+                    for (processed, output) in down_channels.iter().zip(output.channels_mut()) {
+                        output.copy_from_slice(&processed[..]);
+                    }
                 }
                 OverSampleType::X4 => {
-                    // maybe this is not necessary, the up/down sampler could be reused per channel
-                    if input.channels().len() != self.channels_x4 {
-                        self.update_4x(input.channels().len());
+                    let channels = output.channels();
+
+                    // recreate up/down sampler if number of channels changed
+                    if channels.len() != self.channels_x4 {
+                        self.channels_x4 = channels.len();
+
+                        self.upsampler_x4 = FftFixedInOut::<f32>::new(
+                            self.sample_rate,
+                            self.sample_rate * 4,
+                            512,
+                            self.channels_x4,
+                        );
+
+                        self.downsampler_x4 = FftFixedInOut::<f32>::new(
+                            self.sample_rate * 4,
+                            self.sample_rate,
+                            128,
+                            self.channels_x4,
+                        );
                     }
-                    self.process_4x(input, output);
+
+                    let mut up_channels = self.upsampler_x4.process(channels).unwrap();
+
+                    for channel in up_channels.iter_mut() {
+                        for s in channel.iter_mut() {
+                            *s = self.apply_curve(*s);
+                        }
+                    }
+
+                    let down_channels = self.downsampler_x4.process(&up_channels).unwrap();
+
+                    for (processed, output) in down_channels.iter().zip(output.channels_mut()) {
+                        output.copy_from_slice(&processed[..]);
+                    }
                 }
             }
         }
@@ -294,8 +382,6 @@ impl AudioProcessor for WaveShaperRenderer {
 
 impl WaveShaperRenderer {
     /// returns an `WaveShaperRenderer` instance
-    // new cannot be qualified as const, since constant functions cannot evaluate destructors
-    // and config param need this evaluation
     #[allow(clippy::missing_const_for_fn)]
     fn new(config: RendererConfig) -> Self {
         let RendererConfig {
@@ -315,8 +401,8 @@ impl WaveShaperRenderer {
         );
 
         let downsampler_x2 = FftFixedInOut::<f32>::new(
+            sample_rate as usize * 2,
             sample_rate as usize,
-            sample_rate as usize / 2,
             128,
             channels_x2,
         );
@@ -329,8 +415,8 @@ impl WaveShaperRenderer {
         );
 
         let downsampler_x4 = FftFixedInOut::<f32>::new(
+            sample_rate as usize * 4,
             sample_rate as usize,
-            sample_rate as usize / 4,
             128,
             channels_x4,
         );
@@ -350,68 +436,7 @@ impl WaveShaperRenderer {
     }
 
     #[inline]
-    fn pass_through(&self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
-        for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
-            o_data.copy_from_slice(&i_data[..]);
-        }
-    }
-
-    #[inline]
-    fn process_1x(&self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
-        // this does nothing...
-        for (i_data, o_data) in input.channels().iter().zip(output.channels_mut()) {
-            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.apply_shape(i);
-            }
-        }
-    }
-
-    #[inline]
-    fn process_2x(&mut self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
-        let wave_in = input.channels();
-
-        let up_wave_in = self.upsampler_x2.process(wave_in).unwrap();
-        let mut up_wave_out = up_wave_in.clone(); // this looks like allocation
-
-        for (i_data, o_data) in up_wave_in.iter().zip(&mut up_wave_out) {
-            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.apply_shape(i);
-            }
-        }
-
-        let wave_out = self.downsampler_x2.process(&up_wave_out).unwrap();
-
-        for (i_data, o_data) in wave_out.iter().zip(output.channels_mut()) {
-            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = i;
-            }
-        }
-    }
-
-    #[inline]
-    fn process_4x(&mut self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
-        let wave_in = input.channels();
-
-        let up_wave_in = self.upsampler_x4.process(wave_in).unwrap();
-        let mut up_wave_out = up_wave_in.clone(); // this looks like allocation
-
-        for (i_data, o_data) in up_wave_in.iter().zip(&mut up_wave_out) {
-            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.apply_shape(i);
-            }
-        }
-
-        let wave_out = self.downsampler_x4.process(&up_wave_out).unwrap();
-
-        for (i_data, o_data) in wave_out.iter().zip(output.channels_mut()) {
-            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = i;
-            }
-        }
-    }
-
-    #[inline]
-    fn apply_shape(&self, input: f32) -> f32 {
+    fn apply_curve(&self, input: f32) -> f32 {
         // curve is always set at this point
         let curve = self.curve.as_deref().unwrap();
 
@@ -431,28 +456,6 @@ impl WaveShaperRenderer {
             let f = v - k;
             (1. - f) * curve[k as usize] + f * curve[(k + 1.) as usize]
         }
-    }
-
-    #[inline]
-    fn update_2x(&mut self, channels_x2: usize) {
-        self.channels_x2 = channels_x2;
-
-        self.upsampler_x2 =
-            FftFixedInOut::<f32>::new(self.sample_rate, self.sample_rate * 2, 256, channels_x2);
-
-        self.downsampler_x2 =
-            FftFixedInOut::<f32>::new(self.sample_rate, self.sample_rate / 2, 128, channels_x2);
-    }
-
-    #[inline]
-    fn update_4x(&mut self, channels_x4: usize) {
-        self.channels_x4 = channels_x4;
-
-        self.upsampler_x4 =
-            FftFixedInOut::<f32>::new(self.sample_rate, self.sample_rate * 4, 512, channels_x4);
-
-        self.downsampler_x4 =
-            FftFixedInOut::<f32>::new(self.sample_rate, self.sample_rate / 4, 128, channels_x4);
     }
 }
 
