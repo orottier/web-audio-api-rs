@@ -20,7 +20,6 @@ struct CurveMessage(Vec<f32>);
 /// enumerates the oversampling rate available for `WaveShaperNode`
 #[derive(Debug, Clone, Copy, PartialEq)]
 // the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
 pub enum OverSampleType {
     /// No oversampling is applied
     None,
@@ -48,7 +47,6 @@ impl From<u32> for OverSampleType {
 }
 
 /// `WaveShaperNode` options
-#[allow(clippy::module_name_repetitions)]
 pub struct WaveShaperOptions {
     /// The distortion curve
     pub curve: Option<Vec<f32>>,
@@ -112,8 +110,6 @@ impl Default for WaveShaperOptions {
 /// # Example
 ///
 /// - `cargo run --release --example waveshaper`
-///
-#[allow(clippy::module_name_repetitions)]
 pub struct WaveShaperNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
