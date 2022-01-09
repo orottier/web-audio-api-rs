@@ -7,7 +7,7 @@ fn main() {
     // @note - `context.resume` is not needed for now
 
     // load and decode buffer
-    let file = File::open("sample.wav").unwrap();
+    let file = File::open("samples/sample.wav").unwrap();
     let audio_buffer = context.decode_audio_data(file).unwrap();
 
     // @fixme - if only one node in the graph it is never removed even when returning

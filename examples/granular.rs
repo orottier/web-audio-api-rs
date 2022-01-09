@@ -40,7 +40,7 @@ fn main() {
     println!("++ scrub into file forward and backward at 0.5 speed");
 
     // grab audio buffer
-    let file = File::open("sample.wav").unwrap();
+    let file = File::open("samples/sample.wav").unwrap();
     let audio_buffer = audio_context.decode_audio_data(file).unwrap();
 
     let period = 0.05;

@@ -6,7 +6,7 @@ use web_audio_api::node::AudioNode;
 fn main() {
     // create an `AudioContext` and load a sound file
     let context = AudioContext::new(None);
-    let file = File::open("sample.wav").unwrap();
+    let file = File::open("samples/sample.wav").unwrap();
     let audio_buffer = context.decode_audio_data(file).unwrap();
 
     // create a delay of 0.5s

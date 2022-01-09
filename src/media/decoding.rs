@@ -69,7 +69,7 @@ impl<R: Read + Send> symphonia::core::io::MediaSource for MediaInput<R> {
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// // construct the decoder
-/// let file = std::fs::File::open("sample.ogg").unwrap();
+/// let file = std::fs::File::open("samples/major-scale.ogg").unwrap();
 /// let media = MediaDecoder::try_new(file).unwrap();
 ///
 /// // Wrap in a `MediaElement` so buffering/decoding does not take place on the render thread
