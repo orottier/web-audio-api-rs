@@ -127,7 +127,8 @@ pub trait AsBaseAudioContext {
                 accum.extend(&item);
                 accum
             })
-            .unwrap();
+            // if there are no samples decoded, return an empty buffer
+            .unwrap_or_else(|| AudioBuffer::from(vec![vec![]], self.sample_rate_raw()));
 
         // resample to desired rate (no-op if already matching)
         buffer.resample(self.sample_rate_raw());
@@ -880,30 +881,35 @@ mod tests {
 
     #[test]
     fn test_decode_audio_data() {
-        // @todo - complete and assert when resampling will be implemented
         let context = AudioContext::new(None);
-
         let file = std::fs::File::open("samples/sample.wav").unwrap();
         let audio_buffer = context.decode_audio_data(file).unwrap();
 
-        println!("----------------------------------------------");
-        println!(
-            "- number_of_channels: {:?}",
-            audio_buffer.number_of_channels()
-        );
-        println!("- length: {:?}", audio_buffer.length());
-        println!("- sample_rate: {:?}", audio_buffer.sample_rate());
-        println!("- duration: {:?}", audio_buffer.duration());
+        assert_eq!(audio_buffer.sample_rate(), SampleRate(44100));
+        assert_eq!(audio_buffer.length(), 142187);
+        assert_eq!(audio_buffer.number_of_channels(), 2);
+        assert_float_eq!(audio_buffer.duration(), 3.2241950113378683, abs_all <= 0.);
 
         let left_start = &audio_buffer.get_channel_data(0)[0..100];
         let right_start = &audio_buffer.get_channel_data(1)[0..100];
+        // assert distinct two channel data
+        assert!(left_start != right_start);
+    }
 
-        println!("----------------------------------------------");
-        println!("@todo - should check that resampling is ok    ");
-        println!("----------------------------------------------");
-        println!("- left_start: {:?}", left_start);
-        println!("----------------------------------------------");
-        println!("- right_start: {:?}", right_start);
-        println!("----------------------------------------------");
+    // #[test]
+    // disabled: symphonia cannot handle empty WAV-files
+    #[allow(dead_code)]
+    fn test_decode_audio_data_empty() {
+        let context = AudioContext::new(None);
+        let file = std::fs::File::open("samples/empty_2c.wav").unwrap();
+        let audio_buffer = context.decode_audio_data(file).unwrap();
+        assert_eq!(audio_buffer.length(), 0);
+    }
+
+    #[test]
+    fn test_decode_audio_data_decoding_error() {
+        let context = AudioContext::new(None);
+        let file = std::fs::File::open("samples/corrupt.wav").unwrap();
+        assert!(context.decode_audio_data(file).is_err());
     }
 }
