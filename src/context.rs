@@ -881,11 +881,11 @@ mod tests {
 
     #[test]
     fn test_decode_audio_data() {
-        let context = AudioContext::new(None);
+        let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
         let file = std::fs::File::open("samples/sample.wav").unwrap();
         let audio_buffer = context.decode_audio_data(file).unwrap();
 
-        assert_eq!(audio_buffer.sample_rate(), SampleRate(44100));
+        assert_eq!(audio_buffer.sample_rate_raw(), SampleRate(44100));
         assert_eq!(audio_buffer.length(), 142187);
         assert_eq!(audio_buffer.number_of_channels(), 2);
         assert_float_eq!(audio_buffer.duration(), 3.2241950113378683, abs_all <= 0.);
@@ -900,7 +900,7 @@ mod tests {
     // disabled: symphonia cannot handle empty WAV-files
     #[allow(dead_code)]
     fn test_decode_audio_data_empty() {
-        let context = AudioContext::new(None);
+        let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
         let file = std::fs::File::open("samples/empty_2c.wav").unwrap();
         let audio_buffer = context.decode_audio_data(file).unwrap();
         assert_eq!(audio_buffer.length(), 0);
@@ -908,7 +908,7 @@ mod tests {
 
     #[test]
     fn test_decode_audio_data_decoding_error() {
-        let context = AudioContext::new(None);
+        let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
         let file = std::fs::File::open("samples/corrupt.wav").unwrap();
         assert!(context.decode_audio_data(file).is_err());
     }

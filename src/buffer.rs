@@ -68,7 +68,13 @@ impl AudioBuffer {
     }
 
     /// Sample rate of this `AudioBuffer` in Hertz
-    pub fn sample_rate(&self) -> SampleRate {
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate.0 as f32
+    }
+
+    /// The raw sample rate of the `AudioBuffer` (which has more precision than the float
+    /// [`sample_rate()`](AudioBuffer::sample_rate) value).
+    pub fn sample_rate_raw(&self) -> SampleRate {
         self.sample_rate
     }
 
@@ -203,7 +209,7 @@ impl AudioBuffer {
 
     /// Split an AudioBuffer in two at the given index.
     pub(crate) fn split_off(&mut self, index: usize) -> Self {
-        let sample_rate = self.sample_rate();
+        let sample_rate = self.sample_rate_raw();
 
         let channels: Vec<_> = self
             .channels_mut()
@@ -237,7 +243,7 @@ impl AudioBuffer {
     // assert_eq!(buffer.sample_rate().0, 96_000);
     // ```
     pub(crate) fn resample(&mut self, sample_rate: SampleRate) {
-        if self.sample_rate() == sample_rate {
+        if self.sample_rate_raw() == sample_rate {
             return;
         }
 
@@ -428,7 +434,8 @@ mod tests {
 
         assert_eq!(audio_buffer.number_of_channels(), 1);
         assert_eq!(audio_buffer.length(), 10);
-        assert_eq!(audio_buffer.sample_rate().0, 1);
+        assert_float_eq!(audio_buffer.sample_rate(), 1., abs <= 0.);
+        assert_eq!(audio_buffer.sample_rate_raw().0, 1);
         assert_float_eq!(audio_buffer.duration(), 10., abs <= 0.);
     }
 
@@ -558,7 +565,7 @@ mod tests {
 
         assert_eq!(b.length(), 10);
         assert_eq!(b.number_of_channels(), 2);
-        assert_eq!(b.sample_rate().0, 44_100);
+        assert_eq!(b.sample_rate_raw().0, 44_100);
         assert_float_eq!(b.channel_data(0).as_slice(), &[0.; 10][..], abs_all <= 0.);
         assert_float_eq!(b.channel_data(1).as_slice(), &[0.; 10][..], abs_all <= 0.);
         assert_eq!(b.channels().get(2), None);
@@ -577,7 +584,7 @@ mod tests {
 
         assert_eq!(b1.length(), 10);
         assert_eq!(b1.number_of_channels(), 2);
-        assert_eq!(b1.sample_rate().0, 44_100);
+        assert_eq!(b1.sample_rate_raw().0, 44_100);
 
         let channel_data = ChannelData::from(vec![1.; 5]);
         let b3 = AudioBuffer::from_channels(vec![channel_data; 2], SampleRate(44_100));
@@ -586,7 +593,7 @@ mod tests {
 
         assert_eq!(b1.length(), 15);
         assert_eq!(b1.number_of_channels(), 2);
-        assert_eq!(b1.sample_rate().0, 44_100);
+        assert_eq!(b1.sample_rate_raw().0, 44_100);
         assert_float_eq!(
             b1.channel_data(0).as_slice(),
             &[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
@@ -604,7 +611,7 @@ mod tests {
             &[1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,][..],
             abs_all <= 0.
         );
-        assert_eq!(buffer.sample_rate().0, 200);
+        assert_eq!(buffer.sample_rate_raw().0, 200);
     }
 
     #[test]
@@ -617,7 +624,7 @@ mod tests {
             &[2., 4.][..],
             abs_all <= 0.
         );
-        assert_eq!(buffer.sample_rate().0, 100);
+        assert_eq!(buffer.sample_rate_raw().0, 100);
     }
 
     #[test]
