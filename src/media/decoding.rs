@@ -184,7 +184,9 @@ impl Iterator for MediaDecoder {
                     log::error!("Symphonia DecodeError {:?} - abort stream", e);
                     return Some(Err(Box::new(SymphoniaError::DecodeError(e))));
                 }
-                Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                Err(SymphoniaError::IoError(e))
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
                     // this happens for Wav-files, running into EOF is expected
                 }
                 Err(e) => {
