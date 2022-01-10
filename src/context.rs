@@ -886,9 +886,9 @@ mod tests {
         let audio_buffer = context.decode_audio_data(file).unwrap();
 
         assert_eq!(audio_buffer.sample_rate_raw(), SampleRate(44100));
-        assert_eq!(audio_buffer.length(), 142187);
+        assert_eq!(audio_buffer.length(), 142_187);
         assert_eq!(audio_buffer.number_of_channels(), 2);
-        assert_float_eq!(audio_buffer.duration(), 3.2241950113378683, abs_all <= 0.);
+        assert_float_eq!(audio_buffer.duration(), 3.224, abs_all <= 0.001);
 
         let left_start = &audio_buffer.get_channel_data(0)[0..100];
         let right_start = &audio_buffer.get_channel_data(1)[0..100];
