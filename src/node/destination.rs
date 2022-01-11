@@ -7,7 +7,7 @@ use super::{
 };
 
 /// Representing the final audio destination and is what the user will ultimately hear.
-pub struct DestinationNode {
+pub struct AudioDestinationNode {
     pub(crate) registration: AudioContextRegistration,
     pub(crate) channel_count: usize,
 }
@@ -34,7 +34,7 @@ impl AudioProcessor for DestinationRenderer {
     }
 }
 
-impl AudioNode for DestinationNode {
+impl AudioNode for AudioDestinationNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -72,7 +72,7 @@ impl AudioNode for DestinationNode {
     }
 }
 
-impl DestinationNode {
+impl AudioDestinationNode {
     pub fn new<C: AsBaseAudioContext>(context: &C, channel_count: usize) -> Self {
         context.base().register(move |registration| {
             let node = Self {
