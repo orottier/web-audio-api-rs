@@ -39,7 +39,7 @@ fn main() {
                 src.start();
 
                 std::thread::sleep(std::time::Duration::from_secs(4));
-            },
+            }
             Err(e) => {
                 println!("> Error decoding audio file: {:?}", filepath);
                 eprintln!("> {:?}", e);

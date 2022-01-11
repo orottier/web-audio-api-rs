@@ -81,12 +81,13 @@ impl Default for WaveShaperOptions {
 /// use web_audio_api::node::AudioNode;
 ///
 /// # use std::f32::consts::PI;
-/// # fn make_distortion_curve(size: usize, amount: usize) -> Vec<f32> {
+/// # fn make_distortion_curve(size: usize) -> Vec<f32> {
 /// #     let mut curve = vec![0.; size];
-/// #     let deg = PI / 180.;
-/// #     for (i, c) in curve.iter_mut().enumerate() {
-/// #         let x = i as f32 * 2. / size as f32 - 1.;
-/// #         *c = (3.0 + amount as f32) * x * 20. * deg / (PI + amount as f32 * x.abs());
+/// #     let mut phase = 0.;
+/// #     let phase_incr = PI / (size - 1) as f32;
+/// #     for i in 0..size {
+/// #         curve[i] = (PI + phase).cos();
+/// #         phase += phase_incr;
 /// #     }
 /// #     curve
 /// # }
@@ -94,14 +95,23 @@ impl Default for WaveShaperOptions {
 ///
 /// let file = File::open("sample.wav").unwrap();
 /// let buffer = context.decode_audio_data(file).unwrap();
-/// let curve = make_distortion_curve(2048, 40);
+/// let curve = make_distortion_curve(2048);
+/// let drive = 4.;
+///
+/// let post_gain = context.create_gain();
+/// post_gain.connect(&context.destination());
+/// post_gain.gain().set_value(1. / drive);
 ///
 /// let shaper = context.create_wave_shaper();
-/// shaper.connect(&context.destination());
+/// shaper.connect(&post_gain);
 /// shaper.set_curve(curve);
 ///
+/// let pre_gain = context.create_gain();
+/// pre_gain.connect(&shaper);
+/// pre_gain.gain().set_value(drive);
+///
 /// let src = context.create_buffer_source();
-/// src.connect(&shaper);
+/// src.connect(&pre_gain);
 /// src.set_buffer(buffer);
 ///
 /// src.start();
