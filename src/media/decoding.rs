@@ -179,8 +179,15 @@ impl Iterator for MediaDecoder {
                     return Some(Ok(output));
                 }
                 Err(SymphoniaError::DecodeError(e)) => {
-                    // continue processing but log the error
-                    log::error!("decode err {:?}", e);
+                    // Todo: treat decoding errors as fatal or move to next packet? Context:
+                    // https://github.com/RustAudio/rodio/issues/401#issuecomment-974747404
+                    log::error!("Symphonia DecodeError {:?} - abort stream", e);
+                    return Some(Err(Box::new(SymphoniaError::DecodeError(e))));
+                }
+                Err(SymphoniaError::IoError(e))
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    // this happens for Wav-files, running into EOF is expected
                 }
                 Err(e) => {
                     // do not continue processing, return error result
