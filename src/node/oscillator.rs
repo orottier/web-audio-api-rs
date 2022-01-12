@@ -5,20 +5,19 @@
     clippy::perf,
     clippy::missing_docs_in_private_items
 )]
+use crossbeam_channel::{self, Receiver, Sender};
 use std::f32::consts::PI;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
-use crate::control::{ScheduledState, Scheduler};
-use crate::param::{AudioParam, AudioParamOptions};
+use crate::control::Scheduler;
+use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
 use crate::render::{
     AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioRenderQuantumChannel,
 };
-use crate::SampleRate;
-
-use crossbeam_channel::{self, Receiver, Sender};
+use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::{
     AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions, SINETABLE,
@@ -190,10 +189,68 @@ impl PeriodicWave {
     }
 }
 
+/// Compute the normalization factor
+///
+/// The normalization factor is applied as a gain to the periodic wave
+/// to normalize the signal peak amplitude in the interval [-1.0,1.0].
+///
+/// # Arguments
+///
+/// * `buffer` - the wavetable generated from periodic wave charateristics
+#[inline]
+fn norm_factor(buffer: &[f32]) -> f32 {
+    // we is abs value here ?
+    1. / buffer
+        .iter()
+        .copied()
+        .reduce(f32::max)
+        .expect("Maximum value not found")
+}
+
+/// Generate the wavetable
+///
+/// # Arguments
+///
+/// * `wavetable` - generated wavetable data (avoid allocation)
+/// * `phases` - the phase of each harmonics
+/// * `norms` - the norm of each harmonics
+/// * `incr_phases` - the phase to increment of each harmonics
+/// * `interpol_ratios` - the interpolation ratio of each harmonics used by linear interpolatio
+#[inline]
+fn generate_wavetable(
+    wavetable: &mut Vec<f32>,
+    phases: &mut [f32],
+    norms: &[f32],
+    incr_phases: &[f32],
+    interpol_ratios: &[f32],
+) {
+    wavetable.clear();
+
+    while phases[1] <= TABLE_LENGTH_F32 {
+        let mut sample = 0.0;
+        for i in 1..phases.len() {
+            let gain = norms[i];
+            let phase = phases[i];
+            let incr_phase = incr_phases[i];
+            let mu = interpol_ratios[i];
+            // truncation is desired
+            #[allow(clippy::cast_possible_truncation)]
+            // phase + incr_phase is always positive
+            #[allow(clippy::cast_sign_loss)]
+            let idx = (phase + incr_phase) as usize;
+            let inf_idx = idx % TABLE_LENGTH_USIZE;
+            let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+            // Linear interpolation
+            sample += SINETABLE[inf_idx].mul_add(1. - mu, SINETABLE[sup_idx] * mu) * gain;
+            phases[i] = phase + incr_phase;
+        }
+
+        wavetable.push(sample);
+    }
+}
+
 /// Options for constructing an `OscillatorNode`
 #[derive(Debug)]
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
 pub struct OscillatorOptions {
     /// The shape of the periodic waveform
     pub type_: Option<OscillatorType>,
@@ -223,8 +280,6 @@ impl Default for OscillatorOptions {
 
 /// Waveform of an oscillator
 #[derive(Debug, Copy, Clone, PartialEq)]
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
 pub enum OscillatorType {
     /// Sine wave
     Sine,
@@ -276,8 +331,6 @@ enum OscMsg {
 }
 
 /// Audio source generating a periodic waveform
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
 pub struct OscillatorNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
@@ -351,7 +404,7 @@ impl OscillatorNode {
                 min_value: -nyquist,
                 max_value: nyquist,
                 default_value: default_freq,
-                automation_rate: crate::param::AutomationRate::A,
+                automation_rate: AutomationRate::A,
             };
             let (f_param, f_proc) = context
                 .base()
@@ -363,7 +416,7 @@ impl OscillatorNode {
                 min_value: -153_600.,
                 max_value: 153_600.,
                 default_value: default_det,
-                automation_rate: crate::param::AutomationRate::A,
+                automation_rate: AutomationRate::A,
             };
             let (det_param, det_proc) = context
                 .base()
@@ -379,9 +432,7 @@ impl OscillatorNode {
             };
 
             let scheduler = Scheduler::new();
-
-            let (sender, receiver) = crossbeam_channel::bounded(0);
-
+            let (sender, receiver) = crossbeam_channel::bounded(1);
             let computed_freq = default_freq * (default_det / 1200.).exp2();
 
             let config = OscRendererConfig {
@@ -426,13 +477,6 @@ impl OscillatorNode {
         &self.detune
     }
 
-    /// Returns the `computedOscFrequency` which is the oscillator frequency.
-    fn computed_freq(&self) -> f32 {
-        let frequency = self.frequency().value();
-        let detune = self.detune().value();
-        frequency * (detune / 1200.).exp2()
-    }
-
     /// Returns the oscillator type
     #[must_use]
     pub fn type_(&self) -> OscillatorType {
@@ -447,9 +491,7 @@ impl OscillatorNode {
     ///
     /// # Panics
     ///
-    /// Will panic if:
-    ///
-    /// * `type_` is `OscillatorType::Custom`
+    /// if `type_` is `OscillatorType::Custom`
     pub fn set_type(&self, type_: OscillatorType) {
         assert_ne!(
             type_,
@@ -466,22 +508,12 @@ impl OscillatorNode {
         self.type_.store(type_ as u32, Ordering::SeqCst);
     }
 
-    /// set the oscillator type to any `OscillatorType` variant.
-    /// This private function is used internally. To modify `OscillatorNode` type,
-    /// you should use the public function `set_type`
-    ///
-    /// # Arguments
-    ///
-    /// * `type_` - oscillator type (sine,square,triangle,sawtooth, and custom)
-    fn change_type(&self, type_: OscillatorType) {
-        self.type_.store(type_ as u32, Ordering::SeqCst);
-    }
-
     /// set the oscillator type to custom and generate
     /// a perdioc waveform following the `PeriodicWave` characteristics
     pub fn set_periodic_wave(&self, periodic_wave: PeriodicWave) {
         // The oscillator type is set to custom following the spec
-        self.change_type(OscillatorType::Custom);
+        self.type_
+            .store(OscillatorType::Custom as u32, Ordering::SeqCst);
 
         let PeriodicWave {
             real,
@@ -500,7 +532,9 @@ impl OscillatorNode {
             cplxs.push(cplx);
         }
 
-        let computed_freq = self.computed_freq();
+        let frequency = self.frequency().value();
+        let detune = self.detune().value();
+        let computed_freq = frequency * (detune / 1200.).exp2();
 
         for (idx, (real, img)) in cplxs.iter().enumerate() {
             // update norms
@@ -528,11 +562,17 @@ impl OscillatorNode {
         }
 
         // generate the wavetable following periodic wave characteristics
-        let dyn_wavetable =
-            Self::generate_wavetable(&norms, &mut phases, &incr_phases, &interpol_ratios);
+        let mut dyn_wavetable = Vec::with_capacity(TABLE_LENGTH_USIZE);
+        generate_wavetable(
+            &mut dyn_wavetable,
+            &mut phases,
+            &norms,
+            &incr_phases,
+            &interpol_ratios,
+        );
 
         // update norm_factor
-        let norm_factor = Self::norm_factor(&dyn_wavetable);
+        let norm_factor = norm_factor(&dyn_wavetable);
 
         self.sender
             .send(OscMsg::PeriodicWaveMsg {
@@ -543,63 +583,29 @@ impl OscillatorNode {
             })
             .expect("Sending periodic wave to the node renderer failed");
     }
+}
 
-    /// Generate the wavetable
-    ///
-    /// # Arguments
-    ///
-    /// * `norms` - the norm of each harmonics
-    /// * `phases` - the phase of each harmonics
-    /// * `incr_phases` - the phase to increment of each harmonics
-    /// * `interpol_ratios` - the interpolation ratio of each harmonics used by linear interpolation
-    fn generate_wavetable(
-        norms: &[f32],
-        phases: &mut [f32],
-        incr_phases: &[f32],
-        interpol_ratios: &[f32],
-    ) -> Vec<f32> {
-        let mut buffer = Vec::new();
-
-        while phases[1] <= TABLE_LENGTH_F32 {
-            let mut sample = 0.0;
-            for i in 1..phases.len() {
-                let gain = norms[i];
-                let phase = phases[i];
-                let incr_phase = incr_phases[i];
-                let mu = interpol_ratios[i];
-                // truncation is desired
-                #[allow(clippy::cast_possible_truncation)]
-                // phase + incr_phase is always positive
-                #[allow(clippy::cast_sign_loss)]
-                let idx = (phase + incr_phase) as usize;
-                let inf_idx = idx % TABLE_LENGTH_USIZE;
-                let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
-                // Linear interpolation
-                sample += SINETABLE[inf_idx].mul_add(1. - mu, SINETABLE[sup_idx] * mu) * gain;
-                phases[i] = phase + incr_phase;
-            }
-
-            buffer.push(sample);
-        }
-
-        buffer
-    }
-
-    /// Compute the normalization factor
-    ///
-    /// The normalization factor is applied as a gain to the periodic wave
-    /// to normalize the signal peak amplitude in the interval [-1.0,1.0].
-    ///
-    /// # Arguments
-    ///
-    /// * `buffer` - the wavetable generated from periodic wave charateristics
-    fn norm_factor(buffer: &[f32]) -> f32 {
-        1. / buffer
-            .iter()
-            .copied()
-            .reduce(f32::max)
-            .expect("Maximum value not found")
-    }
+/// Helper struct which regroups all parameters
+/// required to build `OscillatorRenderer`
+struct OscRendererConfig {
+    /// The shape of the periodic waveform
+    type_: Arc<AtomicU32>,
+    /// The frequency of the fundamental frequency.
+    frequency: AudioParamId,
+    /// A detuning value (in cents) which will offset the frequency by the given amount.
+    detune: AudioParamId,
+    /// starts and stops oscillator audio streams
+    scheduler: Scheduler,
+    /// channel between control and renderer parts (receiver part)
+    receiver: Receiver<OscMsg>,
+    /// `computed_freq` is precomputed from `frequency` and `detune`
+    computed_freq: f32,
+    /// sample rate at which the processor should render
+    sample_rate: f32,
+    /// The PeriodicWave for the OscillatorNode
+    /// If this is specified, then any valid value for type is ignored;
+    /// it is treated as if "custom" were specified.
+    periodic_wave: Option<PeriodicWave>,
 }
 
 /// States relative to Sine `OscillatorType`
@@ -652,6 +658,8 @@ struct OscillatorRenderer {
     frequency: AudioParamId,
     /// A detuning value (in cents) which will offset the frequency by the given amount.
     detune: AudioParamId,
+    /// buffer for holding compound param
+    computed_freqs: Vec<f32>,
     /// starts and stops oscillator audio streams
     scheduler: Scheduler,
     /// channel between control and renderer parts (receiver part)
@@ -679,50 +687,12 @@ impl AudioProcessor for OscillatorRenderer {
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
         timestamp: f64,
-        _sample_rate: SampleRate,
+        sample_rate: SampleRate,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];
-
-        // re-use previous buffer
-        output.force_mono();
-
-        // todo, sub-quantum start/stop
-        match self.scheduler.state(timestamp) {
-            ScheduledState::Active => (),
-            ScheduledState::NotStarted => {
-                output.make_silent();
-                return true; // will output in the future
-            }
-            ScheduledState::Ended => {
-                output.make_silent();
-                return false; // can clean up
-            }
-        }
-
-        let freq_values = params.get(&self.frequency);
-
-        let det_values = params.get(&self.detune);
-
-        let mut computed_freqs: [f32; 128] = [0.; 128];
-
-        if det_values
-            .windows(2)
-            .all(|w| (w[0] - w[1]).abs() < 0.000_001)
-        {
-            let d = (det_values[0] / 1200.).exp2();
-            for (i, f) in freq_values.iter().enumerate() {
-                computed_freqs[i] = f * d;
-            }
-        } else {
-            for (i, (f, d)) in freq_values.iter().zip(det_values).enumerate() {
-                computed_freqs[i] = f * (d / 1200.).exp2();
-            }
-        }
-
-        let type_ = self.type_.load(Ordering::SeqCst).into();
-
-        let buffer = output.channel_data_mut(0);
+        // 1 channel output
+        output.set_number_of_channels(1);
 
         // check if any message was send from the control thread
         if let Ok(msg) = self.receiver.try_recv() {
@@ -732,42 +702,74 @@ impl AudioProcessor for OscillatorRenderer {
                     dyn_wavetable,
                     norm_factor,
                     disable_normalization,
-                } => self.set_periodic_wave(
-                    computed_freq,
-                    dyn_wavetable,
-                    norm_factor,
-                    disable_normalization,
-                ),
+                } => {
+                    self.periodic.wavetable.ref_freq = computed_freq;
+                    self.periodic.wavetable.dyn_table = dyn_wavetable;
+                    self.periodic.norm_factor = Some(norm_factor);
+                    self.periodic.disable_normalization = disable_normalization;
+                }
             }
         }
 
-        self.generate_output(type_, buffer, &computed_freqs[..]);
+        let dt = 1. / sample_rate.0 as f64;
+        let num_frames = RENDER_QUANTUM_SIZE;
+        let next_block_time = timestamp + dt * num_frames as f64;
+
+        let start_time = self.scheduler.get_start_at();
+        let stop_time = self.scheduler.get_stop_at();
+
+        if start_time >= next_block_time {
+            output.make_silent();
+            return true;
+        } else if stop_time < timestamp {
+            output.make_silent();
+            return false;
+        }
+
+        let type_ = self.type_.load(Ordering::SeqCst).into();
+        let channel_data = output.channel_data_mut(0);
+        let freq_values = params.get(&self.frequency);
+        let det_values = params.get(&self.detune);
+
+        for (i, (f, d)) in freq_values.iter().zip(det_values).enumerate() {
+            self.computed_freqs[i] = f * (d / 1200.).exp2();
+
+            // we don't need for `self.computed_freqs`, compute at each samples
+
+            // now, we need to loop through samples
+            // let s = match type_ {
+
+            // }
+
+            // channel_data[i] = s;
+        }
+
+        // now, we need to loop through samples
+        //
+        // if det_values
+        //     .windows(2)
+        //     .all(|w| (w[0] - w[1]).abs() < 0.000_001)
+        // {
+        //     let d = (det_values[0] / 1200.).exp2();
+        //     for (i, f) in freq_values.iter().enumerate() {
+        //         computed_freqs[i] = f * d;
+        //     }
+        // } else {
+        //     for (i, (f, d)) in freq_values.iter().zip(det_values).enumerate() {
+        //         computed_freqs[i] = f * (d / 1200.).exp2();
+        //     }
+        // }
+
+        match type_ {
+            OscillatorType::Sine => self.generate_sine(type_, channel_data),
+            OscillatorType::Square => self.generate_square(type_, channel_data),
+            OscillatorType::Sawtooth => self.generate_sawtooth(type_, channel_data),
+            OscillatorType::Triangle => self.generate_triangle(type_, channel_data),
+            OscillatorType::Custom => self.generate_custom(channel_data),
+        }
 
         true // do not clean up source nodes
     }
-}
-
-/// Helper struct which regroups all parameters
-/// required to build `OscillatorRenderer`
-struct OscRendererConfig {
-    /// The shape of the periodic waveform
-    type_: Arc<AtomicU32>,
-    /// The frequency of the fundamental frequency.
-    frequency: AudioParamId,
-    /// A detuning value (in cents) which will offset the frequency by the given amount.
-    detune: AudioParamId,
-    /// starts and stops oscillator audio streams
-    scheduler: Scheduler,
-    /// channel between control and renderer parts (receiver part)
-    receiver: Receiver<OscMsg>,
-    /// `computed_freq` is precomputed from `frequency` and `detune`
-    computed_freq: f32,
-    /// sample rate at which the processor should render
-    sample_rate: f32,
-    /// The PeriodicWave for the OscillatorNode
-    /// If this is specified, then any valid value for type is ignored;
-    /// it is treated as if "custom" were specified.
-    periodic_wave: Option<PeriodicWave>,
 }
 
 impl OscillatorRenderer {
@@ -788,6 +790,7 @@ impl OscillatorRenderer {
             sample_rate,
             periodic_wave,
         } = config;
+
         let incr_phase = computed_freq / sample_rate;
         let interpol_ratio = (incr_phase - incr_phase.floor()) * TABLE_LENGTH_F32;
 
@@ -836,27 +839,30 @@ impl OscillatorRenderer {
             .map(|incr_phase| incr_phase - incr_phase.floor())
             .collect();
 
-        let mut periodic_wavetable = Vec::with_capacity(2048);
-
-        Self::generate_wavetable(
-            &norms,
+        let mut periodic_wavetable = Vec::with_capacity(TABLE_LENGTH_USIZE);
+        generate_wavetable(
+            &mut periodic_wavetable,
             &mut phases,
+            &norms,
             &incr_phases,
             &interpol_ratios,
-            &mut periodic_wavetable,
         );
 
         let norm_factor = if disable_normalization {
             None
         } else {
-            let norm_factor = Self::norm_factor(&periodic_wavetable);
+            let norm_factor = norm_factor(&periodic_wavetable);
             Some(norm_factor)
         };
+
+        let mut computed_freqs = Vec::with_capacity(RENDER_QUANTUM_SIZE);
+        computed_freqs.resize(RENDER_QUANTUM_SIZE, 0.);
 
         Self {
             type_,
             frequency,
             detune,
+            computed_freqs,
             scheduler,
             receiver,
             computed_freq,
@@ -883,27 +889,6 @@ impl OscillatorRenderer {
         }
     }
 
-    /// set periodic states
-    ///
-    /// # Arguments
-    ///
-    /// * `ref_freq` - the `computedOscFrequency` used to build the wavetable
-    /// * `dyn_wavetable` - wavetable following periodic wave characteristics
-    /// * `norm_factor` - normalization factor applied when `disable_normalization` is false
-    /// * `disable_normalization` - disable normalization. If false, the peak amplitude signal is 1.0
-    fn set_periodic_wave(
-        &mut self,
-        ref_freq: f32,
-        dyn_wavetable: Vec<f32>,
-        norm_factor: f32,
-        disable_normalization: bool,
-    ) {
-        self.periodic.wavetable.ref_freq = ref_freq;
-        self.periodic.wavetable.dyn_table = dyn_wavetable;
-        self.periodic.norm_factor = Some(norm_factor);
-        self.periodic.disable_normalization = disable_normalization;
-    }
-
     /// Compute params at each audio sample for the following oscillator type:
     /// * sine
     /// * sawtooth
@@ -917,15 +902,19 @@ impl OscillatorRenderer {
                 self.sine.needs_init = false;
                 self.incr_phase = computed_freq / self.sample_rate * TABLE_LENGTH_F32;
             }
+            // this is wrong, oscillator can be
             if (self.computed_freq - computed_freq).abs() < 0.01 {
                 return;
             }
             self.computed_freq = computed_freq;
             self.incr_phase = computed_freq / self.sample_rate * TABLE_LENGTH_F32;
         }
+
         if (self.computed_freq - computed_freq).abs() < 0.01 {
             return;
         }
+
+        // only keep that...
         self.computed_freq = computed_freq;
         self.incr_phase = computed_freq / self.sample_rate;
     }
@@ -955,30 +944,6 @@ impl OscillatorRenderer {
         self.computed_freq = new_comp_freq;
     }
 
-    /// generate the audio data according to the oscillator type and frequency parameters
-    /// buffer is filled with the generated audio data.
-    ///
-    /// # Arguments
-    ///
-    /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
-    /// * `buffer` - audio output buffer
-    /// * `freq_values` - frequencies at which each sample should be generated
-    #[inline]
-    fn generate_output(
-        &mut self,
-        type_: OscillatorType,
-        buffer: &mut AudioRenderQuantumChannel,
-        freq_values: &[f32],
-    ) {
-        match type_ {
-            OscillatorType::Sine => self.generate_sine(type_, buffer, freq_values),
-            OscillatorType::Square => self.generate_square(type_, buffer, freq_values),
-            OscillatorType::Sawtooth => self.generate_sawtooth(type_, buffer, freq_values),
-            OscillatorType::Triangle => self.generate_triangle(type_, buffer, freq_values),
-            OscillatorType::Custom => self.generate_custom(buffer, freq_values),
-        }
-    }
-
     /// generate the audio data when oscillator is of type sine
     /// buffer is filled with the sine audio data.
     ///
@@ -992,22 +957,31 @@ impl OscillatorRenderer {
         &mut self,
         type_: OscillatorType,
         buffer: &mut AudioRenderQuantumChannel,
-        freq_values: &[f32],
     ) {
-        for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
+        for (index, o) in buffer.iter_mut().enumerate() {
+            let computed_freq = self.computed_freqs[index];
+
             self.arate_params(type_, computed_freq);
             // truncation is desired
             #[allow(clippy::cast_possible_truncation)]
             // phase is always positive
             #[allow(clippy::cast_sign_loss)]
+            // @todo - replace with
+            // let inf_idx = (self.phase * TABLE_LENGTH_USIZE) as usize;
+            // so that phases are all the same [0, 1] amongst all the types
             let inf_idx = self.phase as usize;
             let sup_idx = (inf_idx + 1) % TABLE_LENGTH_USIZE;
 
             // Linear interpolation
-            *o = SINETABLE[inf_idx].mul_add(
+            let s = SINETABLE[inf_idx].mul_add(
+                // this is never updated !!!
                 1. - self.sine.interpol_ratio,
                 SINETABLE[sup_idx] * self.sine.interpol_ratio,
             );
+
+            // how can we get 896.0 ?? this should be [0, 1[
+            // println!("{:?}", self.sine.interpol_ratio);
+            *o = s;
 
             // Optimized float modulo op
             self.phase = if self.phase + self.incr_phase >= TABLE_LENGTH_F32 {
@@ -1031,18 +1005,16 @@ impl OscillatorRenderer {
         &mut self,
         type_: OscillatorType,
         buffer: &mut AudioRenderQuantumChannel,
-        freq_values: &[f32],
     ) {
-        for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
+        for (index, o) in buffer.iter_mut().enumerate() {
+            let computed_freq = self.computed_freqs[index];
+
             self.arate_params(type_, computed_freq);
             let mut sample = (2.0 * self.phase) - 1.0;
             sample -= self.poly_blep(self.phase);
 
             // Optimized float modulo op
-            self.phase += self.incr_phase;
-            while self.phase >= 1. {
-                self.phase -= 1.;
-            }
+            self.phase = Self::unroll_phase(self.phase + self.incr_phase);
 
             *o = sample;
         }
@@ -1061,9 +1033,10 @@ impl OscillatorRenderer {
         &mut self,
         type_: OscillatorType,
         buffer: &mut AudioRenderQuantumChannel,
-        freq_values: &[f32],
     ) {
-        for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
+        for (index, o) in buffer.iter_mut().enumerate() {
+            let computed_freq = self.computed_freqs[index];
+
             self.arate_params(type_, computed_freq);
             let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
 
@@ -1074,13 +1047,11 @@ impl OscillatorRenderer {
             while shift_phase >= 1. {
                 shift_phase -= 1.;
             }
+
             sample -= self.poly_blep(shift_phase);
 
-            // Optimized float modulo op
-            self.phase += self.incr_phase;
-            while self.phase >= 1. {
-                self.phase -= 1.;
-            }
+            self.phase = Self::unroll_phase(self.phase + self.incr_phase);
+
             *o = sample;
         }
     }
@@ -1098,9 +1069,10 @@ impl OscillatorRenderer {
         &mut self,
         type_: OscillatorType,
         buffer: &mut AudioRenderQuantumChannel,
-        freq_values: &[f32],
     ) {
-        for (o, &computed_freq) in buffer.iter_mut().zip(freq_values) {
+        for (index, o) in buffer.iter_mut().enumerate() {
+            let computed_freq = self.computed_freqs[index];
+
             self.arate_params(type_, computed_freq);
             let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
 
@@ -1111,13 +1083,10 @@ impl OscillatorRenderer {
             while shift_phase >= 1. {
                 shift_phase -= 1.;
             }
+
             sample -= self.poly_blep(shift_phase);
 
-            // Optimized float modulo op
-            self.phase += self.incr_phase;
-            while self.phase >= 1. {
-                self.phase -= 1.;
-            }
+            self.phase = Self::unroll_phase(self.phase + self.incr_phase);
 
             // Leaky integrator: y[n] = A * x[n] + (1 - A) * y[n-1]
             // Classic integration cannot be used due to float errors accumulation over execution time
@@ -1140,8 +1109,13 @@ impl OscillatorRenderer {
     /// * `buffer` - audio output buffer
     /// * `freq_values` - frequencies at which each sample should be generated
     #[inline]
-    fn generate_custom(&mut self, output: &mut AudioRenderQuantumChannel, freq_values: &[f32]) {
-        for (o, &computed_freq) in output.iter_mut().zip(freq_values) {
+    fn generate_custom(
+        &mut self,
+        output: &mut AudioRenderQuantumChannel,
+    ) {
+        for (index, o) in output.iter_mut().enumerate() {
+            let computed_freq = self.computed_freqs[index];
+
             self.arate_periodic_params(computed_freq);
 
             let phase = self.periodic.wavetable.phase;
@@ -1171,62 +1145,22 @@ impl OscillatorRenderer {
         }
     }
 
-    /// Generate the wavetable
-    ///
-    /// # Arguments
-    ///
-    /// * `norms` - the norm of each harmonics
-    /// * `phases` - the phase of each harmonics
-    /// * `incr_phases` - the phase to increment of each harmonics
-    /// * `interpol_ratios` - the interpolation ratio of each harmonics used by linear interpolatio
-    /// * `buffer` - the buffer is filled with generated wavetable data (avoid allocation)
+
     #[inline]
-    fn generate_wavetable(
-        norms: &[f32],
-        phases: &mut [f32],
-        incr_phases: &[f32],
-        interpol_ratios: &[f32],
-        buffer: &mut Vec<f32>,
-    ) {
-        buffer.clear();
-
-        while phases[1] <= TABLE_LENGTH_F32 {
-            let mut sample = 0.0;
-            for i in 1..phases.len() {
-                let gain = norms[i];
-                let phase = phases[i];
-                let incr_phase = incr_phases[i];
-                let mu = interpol_ratios[i];
-                // truncation is desired
-                #[allow(clippy::cast_possible_truncation)]
-                // phase + incr_phase is always positive
-                #[allow(clippy::cast_sign_loss)]
-                let idx = (phase + incr_phase) as usize;
-                let inf_idx = idx % TABLE_LENGTH_USIZE;
-                let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
-                // Linear interpolation
-                sample += SINETABLE[inf_idx].mul_add(1. - mu, SINETABLE[sup_idx] * mu) * gain;
-                phases[i] = phase + incr_phase;
-            }
-
-            buffer.push(sample);
+    fn unroll_phase(mut phase: f32) -> f32 {
+        while phase >= 1. {
+            phase -= 1.
         }
+
+        phase
     }
 
-    /// normalizes the given buffer
-    fn norm_factor(buffer: &[f32]) -> f32 {
-        1. / buffer
-            .iter()
-            .copied()
-            .reduce(f32::max)
-            .expect("Maximum value not found")
-    }
-
-    /// computes the `polyBLEP` corrections to apply to aliasing signal
-    ///
-    /// `polyBLEP` stands for `polyBandLimitedstEP`
+    // computes the `polyBLEP` corrections to apply to aliasing signal
+    // `polyBLEP` stands for `polyBandLimitedstEP`
+    #[inline]
     fn poly_blep(&self, mut t: f32) -> f32 {
         let dt = self.incr_phase;
+
         if t < dt {
             t /= dt;
             t + t - t * t - 1.0
@@ -1690,4 +1624,37 @@ mod tests {
             abs_all <= 1.0e-6
         );
     }
+
+    #[test]
+    fn control_interpolation_in_low_freqs() {
+        let mut context = OfflineAudioContext::new(1, 128, SampleRate(128));
+
+        let sine = context.create_oscillator();
+        sine.connect(&context.destination());
+        sine.frequency.set_value(2.); // oscillator can be used for modulation too
+        sine.start();
+
+        let output = context.start_rendering();
+        let channel_data = output.get_channel_data(0);
+
+        // ouch...
+        println!("{:?}", channel_data);
+        // output
+        // [2.7488892, 2.83326, 2.8903303, 2.919622, 2.9207008, 2.8937066, 2.838819, 2.7566009, 2.6479256, 2.513695, 2.3551664, 2.1739745, 1.97196, 1.7508476, 1.5129433, 1.2604816, 0.9957886, 0.7215412, 0.44036472, 0.1549536, -0.13192189, -0.41764694, -0.69923115, -0.9741514, -1.2396476, -1.4932237, -1.7324471, -1.954911, -2.1585765, -2.3414788, -2.5018072, -2.6380591, -2.7488973, -2.8332686, -2.8903515, -2.9194047, -2.9207275, -2.8937104, -2.838888, -2.7566087, -2.6479409, -2.513634, -2.355121, -2.1740355, -1.9719219, -1.7508476, -1.5129966, -1.2604816, -0.9957886, -0.7215412, -0.44036472, -0.15506798, 0.13192958, 0.41763926, 0.69923884, 0.97415906, 1.2396173, 1.4931779, 1.7323706, 1.954892, 2.1585877, 2.34146, 2.5018167, 2.6380558, 2.7488892, 2.83326, 2.8903303, 2.919622, 2.9207008, 2.8937066, 2.838819, 2.7566009, 2.6479256, 2.513695, 2.3551664, 2.1739745, 1.97196, 1.7508476, 1.5129433, 1.2604816, 0.9957886, 0.7215412, 0.44036472, 0.1549536, -0.13192189, -0.41764694, -0.69923115, -0.9741514, -1.2396476, -1.4932237, -1.7324471, -1.954911, -2.1585765, -2.3414788, -2.5018072, -2.6380591, -2.7488973, -2.8332686, -2.8903515, -2.9194047, -2.9207275, -2.8937104, -2.838888, -2.7566087, -2.6479409, -2.513634, -2.355121, -2.1740355, -1.9719219, -1.7508476, -1.5129966, -1.2604816, -0.9957886, -0.7215412, -0.44036472, -0.15506798, 0.13192958, 0.41763926, 0.69923884, 0.97415906, 1.2396173, 1.4931779, 1.7323706, 1.954892, 2.1585877, 2.34146, 2.5018167, 2.6380558]
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 }

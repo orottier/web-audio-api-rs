@@ -334,7 +334,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         let dt = 1. / sample_rate.0 as f64;
         let num_frames = RENDER_QUANTUM_SIZE;
-        let next_block_time = timestamp + dt * RENDER_QUANTUM_SIZE as f64;
+        let next_block_time = timestamp + dt * num_frames as f64;
 
         if let Ok(msg) = self.receiver.try_recv() {
             let buffer = msg.0;
