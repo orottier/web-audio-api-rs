@@ -312,12 +312,12 @@ pub trait AsBaseAudioContext {
 
     /// Returns an `AudioDestinationNode` representing the final destination of all audio in the
     /// context. It can be thought of as the audio-rendering device.
-    fn destination(&self) -> node::DestinationNode {
+    fn destination(&self) -> node::AudioDestinationNode {
         let registration = AudioContextRegistration {
             id: AudioNodeId(DESTINATION_NODE_ID),
             context: self.base().clone(),
         };
-        node::DestinationNode {
+        node::AudioDestinationNode {
             registration,
             channel_count: self.base().channels() as usize,
         }
@@ -604,7 +604,7 @@ impl BaseAudioContext {
             // will create a cyclic reference, but we can reconstruct a new instance on the fly
             // when requested
 
-            let dest = node::DestinationNode::new(&base, channels as usize);
+            let dest = node::AudioDestinationNode::new(&base, channels as usize);
             let listener = crate::spatial::AudioListenerNode::new(&base);
 
             // hack: Connect the listener to the destination node to force it to render at each

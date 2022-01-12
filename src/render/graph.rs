@@ -244,7 +244,7 @@ impl Graph {
 
         // Visit all registered nodes, and perform a depth first traversal.
         //
-        // We cannot just start from the DestinationNode and visit all nodes connecting to it,
+        // We cannot just start from the AudioDestinationNode and visit all nodes connecting to it,
         // since the audio graph could contain legs detached from the destination and those should
         // still be rendered.
         self.nodes.keys().for_each(|&node_id| {

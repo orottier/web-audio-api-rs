@@ -69,8 +69,8 @@ impl AudioListener {
 /// This node has no input, but takes the position/orientation AudioParams and copies them into the
 /// 9 outputs. The outputs are connected to the PannerNodes (via an AudioParam).
 ///
-/// The AudioListener is always connected to the DestinationNode so each render quantum its
-/// positions are recalculated.
+/// The AudioListener is always connected to the AudioDestinationNode so at each
+/// render quantum its positions are recalculated.
 pub(crate) struct AudioListenerNode {
     registration: AudioContextRegistration,
     fields: AudioListener,
