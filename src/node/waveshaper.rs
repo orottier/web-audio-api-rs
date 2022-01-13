@@ -71,7 +71,7 @@ impl Default for WaveShaperOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/WaveShaperNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#WaveShaperNode>
-/// - see also: [`AsBaseAudioContext::create_wave_shaper`](crate::context::AsBaseAudioContext::create_wave_whaper)
+/// - see also: [`AsBaseAudioContext::create_wave_shaper`](crate::context::AsBaseAudioContext::create_wave_shaper)
 ///
 /// # Usage
 ///

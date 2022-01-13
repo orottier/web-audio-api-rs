@@ -39,3 +39,7 @@ jobs:
     - run: rustup component add clippy
     - name: cargo clippy
       run: cargo clippy --all-targets -- -D warnings
+
+    # check for rustdoc warnings
+    - name: generate and verify rustdoc
+      run: ! cargo doc --lib 2>&1 | grep -A 10 warning
