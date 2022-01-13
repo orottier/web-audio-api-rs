@@ -42,4 +42,4 @@ jobs:
 
     # check for rustdoc warnings
     - name: generate and verify rustdoc
-      run: ! cargo doc --lib 2>&1 | grep -A 10 warning
+      run: "! cargo doc --lib 2>&1 | grep -A 10 warning"
