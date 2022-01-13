@@ -239,7 +239,7 @@ impl AudioParam {
     // with the current AudioContext's currentTime and [[current value]].
     // Any exceptions that would be thrown by setValueAtTime() will also be
     // thrown by setting this attribute.
-    pub fn set_value(&self, value: f32) {
+    pub fn set_value(&self, value: f32) -> &Self {
         let clamped = value.clamp(self.min_value, self.max_value);
         self.current_value.store(clamped);
 
@@ -256,9 +256,11 @@ impl AudioParam {
         };
 
         self.send_event(event);
+
+        self
     }
 
-    pub fn set_value_at_time(&self, value: f32, start_time: f64) {
+    pub fn set_value_at_time(&self, value: f32, start_time: f64) -> &Self {
         let event = AudioParamEvent {
             event_type: AudioParamEventType::SetValueAtTime,
             value,
@@ -270,9 +272,11 @@ impl AudioParam {
         };
 
         self.send_event(event);
+
+        self
     }
 
-    pub fn linear_ramp_to_value_at_time(&self, value: f32, end_time: f64) {
+    pub fn linear_ramp_to_value_at_time(&self, value: f32, end_time: f64) -> &Self {
         let event = AudioParamEvent {
             event_type: AudioParamEventType::LinearRampToValueAtTime,
             value,
@@ -284,9 +288,11 @@ impl AudioParam {
         };
 
         self.send_event(event);
+
+        self
     }
 
-    pub fn exponential_ramp_to_value_at_time(&self, value: f32, end_time: f64) {
+    pub fn exponential_ramp_to_value_at_time(&self, value: f32, end_time: f64) -> &Self {
         // @note - this should probably not `panic` as this could crash at runtime.
         // cf. Error pattern in `iir_filter.rs`
         // @todo - implement clean Errors
@@ -311,9 +317,11 @@ impl AudioParam {
         };
 
         self.send_event(event);
+
+        self
     }
 
-    pub fn set_target_at_time(&self, value: f32, start_time: f64, time_constant: f64) {
+    pub fn set_target_at_time(&self, value: f32, start_time: f64, time_constant: f64) -> &Self {
         if time_constant <= 0. {
             panic!(
                 "RangeError: Failed to execute 'setTargetAtTime' on 'AudioParam':
@@ -335,9 +343,11 @@ impl AudioParam {
         };
 
         self.send_event(event);
+
+        self
     }
 
-    pub fn cancel_scheduled_values(&self, cancel_time: f64) {
+    pub fn cancel_scheduled_values(&self, cancel_time: f64) -> &Self {
         let event = AudioParamEvent {
             event_type: AudioParamEventType::CancelScheduledValues,
             value: 0., // no value
@@ -349,9 +359,11 @@ impl AudioParam {
         };
 
         self.send_event(event);
+
+        self
     }
 
-    pub fn cancel_and_hold_at_time(&self, cancel_time: f64) {
+    pub fn cancel_and_hold_at_time(&self, cancel_time: f64) -> &Self {
         let event = AudioParamEvent {
             event_type: AudioParamEventType::CancelAndHoldAtTime,
             value: 0., // value will be defined by cancel event
@@ -363,9 +375,11 @@ impl AudioParam {
         };
 
         self.send_event(event);
+
+        self
     }
 
-    pub fn set_value_curve_at_time(&self, values: &[f32], start_time: f64, duration: f64) {
+    pub fn set_value_curve_at_time(&self, values: &[f32], start_time: f64, duration: f64) -> &Self {
         // @todo - An InvalidStateError MUST be thrown if this attribute is a
         // sequence<float> object that has a length less than 2.
 
@@ -385,6 +399,8 @@ impl AudioParam {
         };
 
         self.send_event(event);
+
+        self
     }
 
     // helper function to detach from context (for borrow reasons)
