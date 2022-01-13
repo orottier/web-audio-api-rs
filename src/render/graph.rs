@@ -170,7 +170,12 @@ impl Graph {
     }
 
     pub fn mark_free_when_finished(&mut self, index: NodeIndex) {
-        self.nodes.get_mut(&index).unwrap().free_when_finished = true;
+        // Issue #92, a race condition can occur for AudioParams. They may have already been
+        // removed from the audio graph if the node they feed into was dropped.
+        // Therefore, do not assume this node still exists:
+        if let Some(node) = self.nodes.get_mut(&index) {
+            node.free_when_finished = true;
+        }
     }
 
     /// Helper function for `order_nodes` - traverse node and outgoing edges
