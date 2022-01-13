@@ -348,7 +348,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let playback_rate_values = params.get(&self.playback_rate);
         let detune = detune_values[0];
         let playback_rate = playback_rate_values[0];
-        let computed_playback_rate = (playback_rate * 2_f32.powf(detune / 1200.)) as f64;
+        let computed_playback_rate = (playback_rate * (detune / 1200.).exp2()) as f64;
 
         // grab all timing informations
         let start_time = self.controller.scheduler().get_start_at();
