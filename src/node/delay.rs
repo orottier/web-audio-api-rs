@@ -261,7 +261,9 @@ struct DelayReader {
 // SAFETY:
 // AudioRenderQuantums are not Send but we promise the `ring_buffer` Vec is
 // empty before we ship it to the render thread.
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for DelayWriter {}
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for DelayReader {}
 
 trait RingBufferChecker {
