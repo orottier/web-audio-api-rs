@@ -71,17 +71,6 @@ mod message;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SampleRate(pub u32);
 
-/// Input/output with this index does not exist
-#[derive(Debug, Clone, Copy)]
-pub struct IndexSizeError {}
-
-impl fmt::Display for IndexSizeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-impl std::error::Error for IndexSizeError {}
-
 /// Media stream buffering lags behind
 #[derive(Debug, Clone, Copy)]
 pub struct BufferDepletedError {}

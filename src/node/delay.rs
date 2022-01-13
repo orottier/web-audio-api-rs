@@ -116,19 +116,21 @@ impl AudioNode for DelayNode {
         dest: &'a dyn AudioNode,
         output: u32,
         input: u32,
-    ) -> Result<&'a dyn AudioNode, crate::IndexSizeError> {
+    ) -> &'a dyn AudioNode {
         if self.context() != dest.context() {
-            panic!("attempting to connect nodes from different contexts");
+            panic!("InvalidAccessError: Attempting to connect nodes from different contexts");
         }
-
-        if self.number_of_outputs() <= output || dest.number_of_inputs() <= input {
-            return Err(crate::IndexSizeError {});
+        if self.number_of_outputs() <= output {
+            panic!("IndexSizeError: output port {} is out of bounds", output);
+        }
+        if dest.number_of_inputs() <= input {
+            panic!("IndexSizeError: input port {} is out of bounds", input);
         }
 
         self.context()
             .connect(self.reader_registration.id(), dest.id(), output, input);
 
-        Ok(dest)
+        dest
     }
 
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
