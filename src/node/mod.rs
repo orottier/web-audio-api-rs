@@ -198,28 +198,41 @@ pub trait AudioNode {
     }
 
     /// Connect the output of this AudioNode to the input of another node.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic when
+    /// - the AudioContext of the source and destination does not match
     fn connect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
-        self.connect_at(dest, 0, 0).unwrap()
+        self.connect_at(dest, 0, 0)
     }
 
     /// Connect a specific output of this AudioNode to a specific input of another node.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic when
+    /// - the AudioContext of the source and destination does not match
+    /// - if the input port is out of bounds for the destination node
+    /// - if the output port is out of bounds for the source node
     fn connect_at<'a>(
         &self,
         dest: &'a dyn AudioNode,
         output: u32,
         input: u32,
-    ) -> Result<&'a dyn AudioNode, crate::IndexSizeError> {
+    ) -> &'a dyn AudioNode {
         if self.context() != dest.context() {
-            panic!("attempting to connect nodes from different contexts");
+            panic!("InvalidAccessError: Attempting to connect nodes from different contexts");
         }
-
-        if self.number_of_outputs() <= output || dest.number_of_inputs() <= input {
-            return Err(crate::IndexSizeError {});
+        if self.number_of_outputs() <= output {
+            panic!("IndexSizeError: output port {} is out of bounds", output);
+        }
+        if dest.number_of_inputs() <= input {
+            panic!("IndexSizeError: input port {} is out of bounds", input);
         }
 
         self.context().connect(self.id(), dest.id(), output, input);
-
-        Ok(dest)
+        dest
     }
 
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.

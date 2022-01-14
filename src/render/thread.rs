@@ -28,6 +28,7 @@ pub(crate) struct RenderThread {
 // accessed within the same thread (the render thread). Due to the cpal constraints we can neither
 // move the RenderThread object into the render thread, nor can we initialize the Rc's in that
 // thread.
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for RenderThread {}
 
 impl RenderThread {
