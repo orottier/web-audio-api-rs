@@ -1,6 +1,7 @@
 /target
 Cargo.lock
 /.vscode
+/.idea
 *.svg
 *.data
 *.data.old

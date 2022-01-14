@@ -1,3 +1,10 @@
+# Version 0.14.0 (2021-01-13)
+
+- Implemented context.decodeAudioData
+- New media decoder using symphonia crate (with MP3 support)
+- WaveShaper fixes
+- Spec compliance: float for sample rate, thread safe nodes, naming of nodes
+
 # Version 0.13.0 (2021-12-28)
 
 - Support cyclic audio graphs with DelayNode acting as cycle breaker

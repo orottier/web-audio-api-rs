@@ -159,6 +159,7 @@ struct AnalyserRenderer {
 
 // SAFETY:
 // AudioBuffer is not Send, but the buffer Vec is empty when we move it to the render thread.
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for AnalyserRenderer {}
 
 impl AudioProcessor for AnalyserRenderer {

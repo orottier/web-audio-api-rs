@@ -20,9 +20,9 @@ fn trigger_sine(audio_context: &AudioContext, rng: &mut ThreadRng) {
     let freq = rng.gen_range(100..3000) as f32;
     osc.frequency().set_value(freq);
 
-    env.gain().set_value_at_time(0., now);
-    env.gain().linear_ramp_to_value_at_time(0.1, now + 0.01);
     env.gain()
+        .set_value_at_time(0., now)
+        .linear_ramp_to_value_at_time(0.1, now + 0.01)
         .exponential_ramp_to_value_at_time(0.0001, now + 2.);
 
     osc.start_at(now);
