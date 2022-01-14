@@ -651,8 +651,7 @@ mod tests {
 
         let result = context.start_rendering();
         let channel = result.get_channel_data(0);
-
-        let mut expected = vec![0.; 1 * sample_rate];
+        let expected = vec![0.; 1 * sample_rate];
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }

@@ -187,6 +187,88 @@ impl PeriodicWave {
     }
 }
 
+/// Generate the wavetable
+///
+/// # Arguments
+///
+/// * `wavetable` - placeholder for generated wavetable data
+/// * `phases` - the phase of each harmonics
+/// * `norms` - the norm of each harmonics
+/// * `incr_phases` - the phase to increment of each harmonics
+/// * `interpol_ratios` - the interpolation ratio of each harmonics used by linear interpolatio
+#[inline]
+fn generate_wavetable(
+    wavetable: &mut Vec<f32>,
+    phases: &mut [f32],
+    norms: &[f32],
+    incr_phases: &[f32],
+    interpol_ratios: &[f32],
+) {
+    wavetable.clear();
+
+    while phases[1] <= TABLE_LENGTH_F32 {
+        let mut sample = 0.0;
+        for i in 1..phases.len() { // the phase offset problem might come from...
+            let gain = norms[i];
+            let phase = phases[i];
+            let incr_phase = incr_phases[i];
+            let mu = interpol_ratios[i];
+            // truncation is desired
+            #[allow(clippy::cast_possible_truncation)]
+            // phase + incr_phase is always positive
+            #[allow(clippy::cast_sign_loss)]
+            let idx = (phase + incr_phase) as usize;
+            let inf_idx = idx % TABLE_LENGTH_USIZE;
+            let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
+            // Linear interpolation
+            sample += SINETABLE[inf_idx].mul_add(1. - mu, SINETABLE[sup_idx] * mu) * gain;
+            phases[i] = phase + incr_phase;
+        }
+
+        wavetable.push(sample);
+    }
+
+    println!("length: {:?}", wavetable.len());
+    println!("content: {:?}", wavetable);
+}
+
+pub(crate) fn generate_wavetable_test(reals: &[f32], imags: &[f32], size: usize, normalize: bool) {
+    let mut output = Vec::with_capacity(size);
+    let pi_2 = 2. * PI;
+
+    for i in 0..size {
+        let mut sample = 0.;
+        let phase = pi_2 * i as f32 / size as f32;
+
+        for j in 1..reals.len() {
+            let freq = j as f32;
+            let real = reals[j];
+            let imag = imags[j];
+            let rad = phase * freq;
+            let contrib = real * rad.cos() + imag * rad.sin();
+            sample += contrib;
+        }
+
+        output.push(sample);
+    }
+
+    println!("-------------------------------------------------");
+    println!("{:?}", output);
+    println!("-------------------------------------------------");
+
+    if normalize {
+        let norm = norm_factor(&output);
+
+        for sample in output.iter_mut() {
+            *sample *= norm;
+        }
+    }
+
+    println!("-------------------------------------------------");
+    println!("{:?}", output);
+    println!("-------------------------------------------------");
+}
+
 /// Compute the normalization factor
 ///
 /// The normalization factor is applied as a gain to the periodic wave
@@ -207,48 +289,6 @@ fn norm_factor(buffer: &[f32]) -> f32 {
     }
 
     1. / max
-}
-
-/// Generate the wavetable
-///
-/// # Arguments
-///
-/// * `wavetable` - generated wavetable data (avoid allocation)
-/// * `phases` - the phase of each harmonics
-/// * `norms` - the norm of each harmonics
-/// * `incr_phases` - the phase to increment of each harmonics
-/// * `interpol_ratios` - the interpolation ratio of each harmonics used by linear interpolatio
-#[inline]
-fn generate_wavetable(
-    wavetable: &mut Vec<f32>,
-    phases: &mut [f32],
-    norms: &[f32],
-    incr_phases: &[f32],
-    interpol_ratios: &[f32],
-) {
-    wavetable.clear();
-
-    while phases[1] <= TABLE_LENGTH_F32 {
-        let mut sample = 0.0;
-        for i in 1..phases.len() {
-            let gain = norms[i];
-            let phase = phases[i];
-            let incr_phase = incr_phases[i];
-            let mu = interpol_ratios[i];
-            // truncation is desired
-            #[allow(clippy::cast_possible_truncation)]
-            // phase + incr_phase is always positive
-            #[allow(clippy::cast_sign_loss)]
-            let idx = (phase + incr_phase) as usize;
-            let inf_idx = idx % TABLE_LENGTH_USIZE;
-            let sup_idx = (idx + 1) % TABLE_LENGTH_USIZE;
-            // Linear interpolation
-            sample += SINETABLE[inf_idx].mul_add(1. - mu, SINETABLE[sup_idx] * mu) * gain;
-            phases[i] = phase + incr_phase;
-        }
-
-        wavetable.push(sample);
-    }
 }
 
 /// Options for constructing an `OscillatorNode`
@@ -525,6 +565,8 @@ impl OscillatorNode {
         let mut incr_phases = Vec::with_capacity(real.len());
         let mut interpol_ratios = Vec::with_capacity(real.len());
 
+        // let result = generate_wavetable_test(&real, &imag, 2048);
+
         // update cplxs
         for cplx in real.into_iter().zip(imag) {
             cplxs.push(cplx);
@@ -744,6 +786,7 @@ impl AudioProcessor for OscillatorRenderer {
             let frequency = frequency_values[index];
             let detune = detune_values[index];
             let computed_frequency = frequency * (detune / 1200.).exp2();
+
             // first sample
             if !self.started {
                 // if sstart time was between last frame and current frame
@@ -759,12 +802,31 @@ impl AudioProcessor for OscillatorRenderer {
 
             let phase_incr = computed_frequency as f64 / sample_rate as f64;
 
+            // none of this is used in the generation...
+            // if (self.type_ === OscillatorType::Custom) {
+            //     for incr_phase in &mut self.periodic.incr_phases {
+            //         *incr_phase *= new_comp_freq / self.computed_freq;
+            //     }
+
+            //     for (r, incr_ph) in self
+            //         .periodic
+            //         .interpol_ratios
+            //         .iter_mut()
+            //         .zip(self.periodic.incr_phases.iter())
+            //     {
+            //         *r = incr_ph - incr_ph.floor();
+            //     }
+
+            //     self.periodic.wavetable.incr_phase =
+            //         computed_frequency / self.periodic.wavetable.ref_freq;
+            // }
+
             *output_sample = match type_ {
                 OscillatorType::Sine => self.generate_sine(),
                 OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
                 OscillatorType::Square => self.generate_square(phase_incr),
                 OscillatorType::Triangle => self.generate_triangle(),
-                // OscillatorType::Custom => self.generate_custom(),
+                OscillatorType::Custom => self.generate_custom(),
                 _ => 0.,
             };
 
@@ -801,8 +863,8 @@ impl OscillatorRenderer {
             disable_normalization,
         } = periodic_wave.map_or_else(
             || PeriodicWave {
-                real: vec![0., 1.],
-                imag: vec![0., 0.],
+                real: vec![0., 1.], // this is a cosine
+                imag: vec![0., 0.], // [0., 1.] should be there
                 disable_normalization: false,
             },
             |p_w| p_w,
@@ -891,61 +953,6 @@ impl OscillatorRenderer {
         }
     }
 
-    /// Compute params at each audio sample for the following oscillator type:
-    /// * sine
-    /// * sawtooth
-    /// * triangle
-    /// * and square
-    // #[inline]
-    // fn arate_params(&mut self, type_: OscillatorType, computed_freq: f32) {
-    //     // No need to compute if frequency has not changed
-    //     if type_ == OscillatorType::Sine {
-    //         if self.sine.needs_init {
-    //             self.sine.needs_init = false;
-    //             self.incr_phase = computed_freq / self.sample_rate * TABLE_LENGTH_F32;
-    //         }
-    //         // this is wrong, oscillator can be
-    //         if (self.computed_freq - computed_freq).abs() < 0.01 {
-    //             return;
-    //         }
-    //         self.computed_freq = computed_freq;
-    //         self.incr_phase = computed_freq / self.sample_rate * TABLE_LENGTH_F32;
-    //     }
-
-    //     if (self.computed_freq - computed_freq).abs() < 0.01 {
-    //         return;
-    //     }
-
-    //     // only keep that...
-    //     self.computed_freq = computed_freq;
-    //     self.incr_phase = computed_freq / self.sample_rate;
-    // }
-
-    // /// Compute params at each audio sample for the custom oscillator type
-    // #[inline]
-    // fn arate_periodic_params(&mut self, new_comp_freq: f32) {
-    //     // No need to compute if frequency has not changed
-    //     if (self.computed_freq - new_comp_freq).abs() < 0.01 {
-    //         return;
-    //     }
-
-    //     for incr_phase in &mut self.periodic.incr_phases {
-    //         *incr_phase *= new_comp_freq / self.computed_freq;
-    //     }
-
-    //     for (r, incr_ph) in self
-    //         .periodic
-    //         .interpol_ratios
-    //         .iter_mut()
-    //         .zip(self.periodic.incr_phases.iter())
-    //     {
-    //         *r = incr_ph - incr_ph.floor();
-    //     }
-
-    //     self.periodic.wavetable.incr_phase = new_comp_freq / self.periodic.wavetable.ref_freq;
-    //     self.computed_freq = new_comp_freq;
-    // }
-
     #[inline]
     fn generate_sine(&mut self) -> f32 {
         let position = self.phase * TABLE_LENGTH_USIZE as f64;
@@ -979,7 +986,7 @@ impl OscillatorRenderer {
 
     #[inline]
     fn generate_square(&mut self, phase_incr: f64) -> f32 {
-        let mut sample = if self.phase <= 0.5 { 1.0 } else { -1.0 };
+        let mut sample = if self.phase < 0.5 { 1.0 } else { -1.0 };
         sample += Self::poly_blep(self.phase, phase_incr);
 
         let shift_phase = Self::unroll_phase(self.phase + 0.5);
@@ -1009,42 +1016,57 @@ impl OscillatorRenderer {
     /// * `type_` - oscillator type (sine,sawtooth,triangle,square, or custom)
     /// * `buffer` - audio output buffer
     /// * `freq_values` - frequencies at which each sample should be generated
-    // #[inline]
-    // fn generate_custom(
-    //     &mut self,
-    //     output: &mut AudioRenderQuantumChannel,
-    // ) {
-    //     for (index, o) in output.iter_mut().enumerate() {
-    //         let computed_freq = self.computed_freqs[index];
+    #[inline]
+    fn generate_custom(&mut self) -> f32 {
+        // TABLE_LENGTH_F32
+        // TABLE_LENGTH_USIZE
+        // // that's basically a table lookup ??
+        //     let phase = self.periodic.wavetable.phase;
+        //     let incr_phase = self.periodic.wavetable.incr_phase;
+        //     let table_len = self.periodic.wavetable.dyn_table.len();
 
-    //         self.arate_periodic_params(computed_freq);
+        //     // 2048 casts without loss of precision
+        //     #[allow(clippy::cast_precision_loss)]
+        //     let table_len_f32 = table_len as f32;
+        //     let buffer = &self.periodic.wavetable.dyn_table;
+        //     // truncation is desired
+        //     #[allow(clippy::cast_possible_truncation)]
+        //     // phase is always positive
+        //     #[allow(clippy::cast_sign_loss)]
+        //     let inf_idx = phase as usize;
+        //     let sup_idx = (inf_idx + 1) % table_len;
+        //     let interpol_ratio = phase - phase.trunc();
 
-    //         let phase = self.periodic.wavetable.phase;
-    //         let incr_phase = self.periodic.wavetable.incr_phase;
-    //         let table_len = self.periodic.wavetable.dyn_table.len();
+        //     *o = (1.0 - interpol_ratio).mul_add(buffer[inf_idx], interpol_ratio * buffer[sup_idx]);
 
-    //         // 2048 casts without loss of precision
-    //         #[allow(clippy::cast_precision_loss)]
-    //         let table_len_f32 = table_len as f32;
-    //         let buffer = &self.periodic.wavetable.dyn_table;
-    //         // truncation is desired
-    //         #[allow(clippy::cast_possible_truncation)]
-    //         // phase is always positive
-    //         #[allow(clippy::cast_sign_loss)]
-    //         let inf_idx = phase as usize;
-    //         let sup_idx = (inf_idx + 1) % table_len;
-    //         let interpol_ratio = phase - phase.trunc();
+        //     // Update phase with optimized float modulo op
+        //     self.periodic.wavetable.phase = if phase + incr_phase >= table_len_f32 {
+        //         (phase + incr_phase) - table_len_f32
+        //     } else {
+        //         phase + incr_phase
+        //     };
 
-    //         *o = (1.0 - interpol_ratio).mul_add(buffer[inf_idx], interpol_ratio * buffer[sup_idx]);
+        // println!("> {:?}", );
+        let len = self.periodic.wavetable.dyn_table.len();
 
-    //         // Update phase with optimized float modulo op
-    //         self.periodic.wavetable.phase = if phase + incr_phase >= table_len_f32 {
-    //             (phase + incr_phase) - table_len_f32
-    //         } else {
-    //             phase + incr_phase
-    //         };
-    //     }
-    // }
+        let position = self.phase * len as f64;
+        let floored = position.floor();
+
+        let prev_index = floored as usize;
+        let mut next_index = prev_index + 1;
+        if next_index == len {
+            next_index = 0;
+        }
+
+        let k = (position - floored) as f32;
+        let lookup_table = &self.periodic.wavetable.dyn_table;
+        let sample = lookup_table[prev_index].mul_add(
+            1. - k,
+            lookup_table[prev_index] * k
+        );
+
+        sample
+    }
 
 
     #[inline]
@@ -1086,6 +1108,7 @@ impl OscillatorRenderer {
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
+    use std::f64::consts::PI;
 
     use crate::context::{AsBaseAudioContext, AudioContext, OfflineAudioContext};
     use crate::node::{AudioNode, AudioScheduledSourceNode};
@@ -1345,104 +1368,6 @@ mod tests {
         assert_eq!(type_, expected_type as u32);
     }
 
-    // #[test]
-    // fn silence_rendering_if_osc_is_not_started() {
-    //     let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-    //     let osc = OscillatorNode::new(&context, None);
-
-    //     osc.set_type(OscillatorType::Sine);
-    //     osc.connect(&context.destination());
-
-    //     let output = context.start_rendering();
-
-    //     assert_float_eq!(
-    //         output.get_channel_data(0)[..],
-    //         &[0.; LENGTH][..],
-    //         abs_all <= 0.
-    //     );
-    //     assert_float_eq!(
-    //         output.get_channel_data(1)[..],
-    //         &[0.; LENGTH][..],
-    //         abs_all <= 0.
-    //     );
-    // }
-
-    // don't trust this file (does not begin with 0, sine(0) == 0)
-    // #[test]
-    // fn default_sine_rendering_should_match_snapshot() {
-    //     let ref_sine =
-    //         snapshot::read("./snapshots/sine.json").expect("Reading snapshot file failed");
-
-    //     let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-    //     let osc = OscillatorNode::new(&context, None);
-
-    //     osc.set_type(OscillatorType::Sine);
-    //     osc.connect(&context.destination());
-    //     osc.start();
-
-    //     let output = context.start_rendering();
-
-    //     assert_float_eq!(
-    //         output.get_channel_data(0)[..],
-    //         &ref_sine.data[..],
-    //         abs_all <= 1.0e-2
-    //     );
-    //     assert_float_eq!(
-    //         output.get_channel_data(1)[..],
-    //         &ref_sine.data[..],
-    //         abs_all <= 1.0e-2
-    //     );
-    // }
-
-    #[test]
-    fn default_square_rendering_should_match_snapshot() {
-        let ref_sine =
-            snapshot::read("./snapshots/square.json").expect("Reading snapshot file failed");
-
-        let mut context = OfflineAudioContext::new(1, LENGTH, SampleRate(44_100));
-        let osc = OscillatorNode::new(&context, None);
-
-        osc.set_type(OscillatorType::Square);
-        osc.connect(&context.destination());
-        osc.start();
-
-        let output = context.start_rendering();
-        let result = output.get_channel_data(0);
-
-        assert_float_eq!(
-            result[..],
-            &ref_sine.data[..],
-            abs_all <= 5.0e-4
-        );
-    }
-
-    // this file is garbage... (values > 1.)
-    // #[test]
-    // fn default_triangle_rendering_should_match_snapshot() {
-    //     let ref_sine =
-    //         snapshot::read("./snapshots/triangle.json").expect("Reading snapshot file failed");
-
-    //     let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-    //     let osc = OscillatorNode::new(&context, None);
-
-    //     osc.set_type(OscillatorType::Triangle);
-    //     osc.connect(&context.destination());
-    //     osc.start();
-
-    //     let output = context.start_rendering();
-
-    //     assert_float_eq!(
-    //         output.get_channel_data(0)[..],
-    //         &ref_sine.data[..],
-    //         abs_all <= 1.0e-10
-    //     );
-    //     assert_float_eq!(
-    //         output.get_channel_data(1)[..],
-    //         &ref_sine.data[..],
-    //         abs_all <= 1.0e-10
-    //     );
-    // }
-
     #[test]
     fn periodic_wave_rendering_should_match_snapshot() {
         let ref_sine =
@@ -1451,7 +1376,7 @@ mod tests {
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let options = Some(PeriodicWaveOptions {
             real: Some(vec![0., 0.5, 0.5]),
-            imag: Some(vec![0., 0., 0.]),
+            imag: Some(vec![0., 0., 0.]), //
             disable_normalization: Some(false),
         });
 
@@ -1521,35 +1446,6 @@ mod tests {
         );
     }
 
-    // remove this later
-    // #[test]
-    // fn default_sine_rendering_should_match_snapshot_with_zero() {
-    //     let ref_sine =
-    //         snapshot::read("./snapshots/sine-with-0.json").expect("Reading snapshot file failed");
-
-    //     let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-    //     let osc = OscillatorNode::new(&context, None);
-
-    //     osc.set_type(OscillatorType::Sine);
-    //     osc.connect(&context.destination());
-    //     osc.start();
-
-    //     let output = context.start_rendering();
-
-    //     assert_float_eq!(
-    //         output.get_channel_data(0)[..],
-    //         &ref_sine.data[..],
-    //         abs_all <= 1.0e-4
-    //     );
-    //     assert_float_eq!(
-    //         output.get_channel_data(1)[..],
-    //         &ref_sine.data[..],
-    //         abs_all <= 1.0e-4
-    //     );
-    // }
-
-    use std::f64::consts::PI;
-
     #[test]
     fn sine_raw() {
          // 1, 10, 100, 1_000, 10_000 Hz
@@ -1568,33 +1464,103 @@ mod tests {
             let result = output.get_channel_data(0);
 
             let mut expected = Vec::<f32>::with_capacity(sample_rate);
-
-            // we use phase increment, just as in the renderer, to calculate the
-            // expected result because this is where the error adds up
             let mut phase: f64 = 0.;
             let phase_incr = freq as f64 / sample_rate as f64;
 
             for _i in 0..sample_rate {
                 let sample = (phase * 2. * PI).sin();
+
+                expected.push(sample as f32);
+
                 phase += phase_incr;
+                if phase >= 1. { phase -= 1.; }
+            }
+
+            assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
+        }
+    }
+
+     #[test]
+    fn sine_raw_exact_phase() {
+        // 1, 10, 100, 1_000, 10_000 Hz
+        for i in 0..5 {
+            let freq = 10_f32.powf(i as f32);
+            let sample_rate = 44_100;
+
+            let mut context = OfflineAudioContext::new(1, 1 * sample_rate, SampleRate(sample_rate as u32));
+
+            let osc = context.create_oscillator();
+            osc.connect(&context.destination());
+            osc.frequency().set_value(freq);
+            osc.start_at(0.);
+
+            let output = context.start_rendering();
+            let result = output.get_channel_data(0);
+            let mut expected = Vec::<f32>::with_capacity(sample_rate);
+
+            for i in 0..sample_rate {
+                let phase =  freq as f64 * i as f64 / sample_rate as f64;
+                let sample = (phase * 2. * PI).sin();
+                // phase += phase_incr;
                 expected.push(sample as f32);
             }
 
-            // we loose accuracy in higher frequencies, probably because of
-            // bigger error accumulation in phase with small phase_incr.
-            //
-            // @todo - make the test show that
             assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
+        }
+    }
+
+    // ## Notes:
+    //
+    // - PolyBlep is not applied on `square` and `triangle` for tests, so we can
+    //   compared according to a crude synthesis
+    // - for `square`, `triangle` and `sawtooth` the tests may appear a bit
+    //   tautological (and they are) as the code from the test is the mostly as same
+    //   as in the renderer, just written in a more compact way. However they
+    //   should help to prevent regression, and/or allow testing against some trusted
+    //   and simple implementation in case of future changes in the renderer
+    //   (for performance improvements or whatever).
+    #[test]
+    fn square_raw() {
+        // 1, 10, 100, 1_000, 10_000 Hz
+        for i in 0..5 {
+            let freq = 10_f32.powf(i as f32);
+            let sample_rate = 44100;
+
+            let mut context = OfflineAudioContext::new(1, 1 * sample_rate, SampleRate(sample_rate as u32));
+
+            let osc = context.create_oscillator();
+            osc.connect(&context.destination());
+            osc.frequency().set_value(freq);
+            osc.set_type(OscillatorType::Square);
+            osc.start_at(0.);
+
+            let output = context.start_rendering();
+            let result = output.get_channel_data(0);
+
+            let mut expected = Vec::<f32>::with_capacity(sample_rate);
+            let mut phase: f64 = 0.;
+            let phase_incr = freq as f64 / sample_rate as f64;
+
+            for _i in 0..sample_rate {
+                // 0.5 belongs to the second half of the waveform
+                let sample = if phase < 0.5 { 1. } else { -1. };
+
+                expected.push(sample as f32);
+
+                phase += phase_incr;
+                if phase >= 1. { phase -= 1.; }
+            }
+
+            assert_float_eq!(result[..], expected[..], abs_all <= 1e-10);
         }
     }
 
     #[test]
     fn triangle_raw() {
-         // 1, 10, 100, 1_000, 10_000 Hz
-        // for i in 0..5 {
-            // let freq = 10_f32.powf(i as f32);
-            let freq = 1.;
-            let sample_rate = 128;
+        // 1, 10, 100, 1_000, 10_000 Hz
+        for i in 0..5 {
+            let freq = 10_f32.powf(i as f32);
+            let sample_rate = 44_100;
 
             let mut context = OfflineAudioContext::new(1, 1 * sample_rate, SampleRate(sample_rate as u32));
 
@@ -1607,31 +1573,38 @@ mod tests {
             let output = context.start_rendering();
             let result = output.get_channel_data(0);
 
-            println!("{:?}", result);
+            let mut expected = Vec::<f32>::with_capacity(sample_rate);
+            let mut phase: f64 = 0.;
+            let phase_incr = freq as f64 / sample_rate as f64;
 
-            // let mut expected = Vec::<f32>::with_capacity(sample_rate);
+            for _i in 0..sample_rate {
+                // triangle starts a 0.
+                // [0., 1.]  between [0, 0.25]
+                // [1., -1.] between [0.25, 0.75]
+                // [-1., 0.] between [0.75, 1]
+                let mut sample = -4. * phase + 2.;
 
-            // // we use phase increment, just as in the renderer, to calculate the
-            // // expected result because this is where the error adds up
-            // let mut phase: f64 = 0.;
-            // let phase_incr = freq as f64 / sample_rate as f64;
+                if sample > 1. {
+                    sample = 2. - sample;
+                } else if sample < -1. {
+                    sample = -2. - sample;
+                }
 
-            // for _i in 0..sample_rate {
-            //     let sample = (phase * 2. * PI).sin();
-            //     phase += phase_incr;
-            //     expected.push(sample as f32);
-            // }
+                expected.push(sample as f32);
 
-            // assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
-        // }
+                phase += phase_incr;
+                if phase >= 1. { phase -= 1.; }
+            }
+
+            assert_float_eq!(result[..], expected[..], abs_all <= 1e-10);
+        }
     }
 
     #[test]
     fn sawtooth_raw() {
         // 1, 10, 100, 1_000, 10_000 Hz
-        // for i in 0..5 {
-            // let freq = 10_f32.powf(i as f32);
-            let freq = 1.;
+        for i in 0..1 {
+            let freq = 10_f32.powf(i as f32);
             let sample_rate = 128;
 
             let mut context = OfflineAudioContext::new(1, 1 * sample_rate, SampleRate(sample_rate as u32));
@@ -1645,116 +1618,162 @@ mod tests {
             let output = context.start_rendering();
             let result = output.get_channel_data(0);
 
-            println!("{:?}", result);
+            let mut expected = Vec::<f32>::with_capacity(sample_rate);
+            let mut phase: f64 = 0.;
+            let phase_incr = freq as f64 / sample_rate as f64;
 
-            // let mut expected = Vec::<f32>::with_capacity(sample_rate);
+            for _i in 0..sample_rate {
+                // triangle starts a 0.
+                // [0, 1] between [0, 0.5]
+                // [-1, 0] between [0.5, 1]
+                let mut offset_phase = phase + 0.5;
+                if offset_phase >= 1. { offset_phase -= 1.; }
+                let sample = 2. * offset_phase - 1.;
 
-            // // we use phase increment, just as in the renderer, to calculate the
-            // // expected result because this is where the error adds up
-            // let mut phase: f64 = 0.;
-            // let phase_incr = freq as f64 / sample_rate as f64;
+                expected.push(sample as f32);
 
-            // for _i in 0..sample_rate {
-            //     let sample = (phase * 2. * PI).sin();
-            //     phase += phase_incr;
-            //     expected.push(sample as f32);
-            // }
+                phase += phase_incr;
+                if phase >= 1. { phase -= 1.; }
+            }
 
-            // assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
-        // }
+            assert_float_eq!(result[..], expected[..], abs_all <= 1e-10);
+        }
     }
 
     #[test]
     fn osc_sub_quantum_start() {
-         // 1, 10, 100, 1_000, 10_000 Hz
-        for i in 0..5 {
-            let freq = 10_f32.powf(i as f32);
-            let sample_rate = 44_100;
+        let freq = 1.25;
+        let sample_rate = 44_100;
 
-            let mut context = OfflineAudioContext::new(1, 1 * sample_rate, SampleRate(sample_rate as u32));
-            let osc = context.create_oscillator();
-            osc.connect(&context.destination());
-            osc.frequency().set_value(freq);
-            osc.start_at(2. / sample_rate as f64);
+        let mut context = OfflineAudioContext::new(1, 1 * sample_rate, SampleRate(sample_rate as u32));
+        let osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(freq);
+        osc.start_at(2. / sample_rate as f64);
 
-            let output = context.start_rendering();
-            let result = output.get_channel_data(0);
+        let output = context.start_rendering();
+        let result = output.get_channel_data(0);
 
-            let mut expected = Vec::<f32>::with_capacity(sample_rate);
+        let mut expected = Vec::<f32>::with_capacity(sample_rate);
+        let mut phase: f64 = 0.;
+        let phase_incr = freq as f64 / sample_rate as f64;
 
-            // we use phase increment as in the renderer to calculate the expected
-            // result because this is where most of the error adds up
-            let mut phase: f64 = 0.;
-            let phase_incr = freq as f64 / sample_rate as f64;
+        expected.push(0.);
+        expected.push(0.);
 
-            expected.push(0.);
-            expected.push(0.);
-
-            for _i in 2..sample_rate {
-                let sample = (phase * 2. * PI).sin();
-                phase += phase_incr;
-                expected.push(sample as f32);
-            }
-
-            assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
+        for _i in 2..sample_rate {
+            let sample = (phase * 2. * PI).sin();
+            phase += phase_incr;
+            expected.push(sample as f32);
         }
+
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
     }
 
     #[test]
     fn osc_sub_sample_start() {
-         // 1, 10, 100, 1_000, 10_000 Hz
-        for i in 0..5 {
-            let freq = 10_f32.powf(i as f32);
-            let sample_rate = 44_100;
+        let freq = 444.;
+        let sample_rate = 44_100;
 
-            let mut context = OfflineAudioContext::new(1, 1 * sample_rate, SampleRate(sample_rate as u32));
-            let osc = context.create_oscillator();
-            osc.connect(&context.destination());
-            osc.frequency().set_value(freq);
-            // start between second and third sample
-            osc.start_at(1.3 / sample_rate as f64);
+        let mut context = OfflineAudioContext::new(1, 1 * sample_rate, SampleRate(sample_rate as u32));
+        let osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(freq);
+        // start between second and third sample
+        osc.start_at(1.3 / sample_rate as f64);
 
-            let output = context.start_rendering();
-            let result = output.get_channel_data(0);
+        let output = context.start_rendering();
+        let result = output.get_channel_data(0);
 
-            let mut expected = Vec::<f32>::with_capacity(sample_rate);
+        let mut expected = Vec::<f32>::with_capacity(sample_rate);
+        let phase_incr = freq as f64 / sample_rate as f64;
+        // on first computed sample, phase is 0.7 (e.g. 2. - 1.3)
+        let mut phase: f64 = 0.7 * phase_incr;
 
-            // we use phase increment as in the renderer to calculate the expected
-            // result because this is where most of the error adds up
-            let phase_incr = freq as f64 / sample_rate as f64;
-            // on first computed sample phase (0.7 is 2. - 1.3)
-            let mut phase: f64 = 0.7 * phase_incr;
+        expected.push(0.);
+        expected.push(0.);
 
-            expected.push(0.);
-            expected.push(0.);
-
-            for _i in 2..sample_rate {
-                let sample = (phase * 2. * PI).sin();
-                phase += phase_incr;
-                expected.push(sample as f32);
-            }
-
-            assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
+        for _i in 2..sample_rate {
+            let sample = (phase * 2. * PI).sin();
+            phase += phase_incr;
+            expected.push(sample as f32);
         }
+
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
     }
 
     #[test]
-    fn control_interpolation_in_low_freqs() {
-        let mut context = OfflineAudioContext::new(1, 128, SampleRate(128));
+    fn osc_sub_quantum_stop() {
+        let freq = 2345.6;
+        let sample_rate = 44_100;
 
-        let sine = context.create_oscillator();
-        sine.connect(&context.destination());
-        sine.frequency.set_value(2.); // oscillator can be used for modulation too
-        sine.start();
+        let mut context = OfflineAudioContext::new(1, 1 * sample_rate, SampleRate(sample_rate as u32));
+        let osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(freq);
+        osc.start_at(0.);
+        osc.stop_at(6. / sample_rate as f64);
 
         let output = context.start_rendering();
-        let channel_data = output.get_channel_data(0);
+        let result = output.get_channel_data(0);
 
-        // ouch...
-        println!("{:?}", channel_data);
-        // output
-        // [2.7488892, 2.83326, 2.8903303, 2.919622, 2.9207008, 2.8937066, 2.838819, 2.7566009, 2.6479256, 2.513695, 2.3551664, 2.1739745, 1.97196, 1.7508476, 1.5129433, 1.2604816, 0.9957886, 0.7215412, 0.44036472, 0.1549536, -0.13192189, -0.41764694, -0.69923115, -0.9741514, -1.2396476, -1.4932237, -1.7324471, -1.954911, -2.1585765, -2.3414788, -2.5018072, -2.6380591, -2.7488973, -2.8332686, -2.8903515, -2.9194047, -2.9207275, -2.8937104, -2.838888, -2.7566087, -2.6479409, -2.513634, -2.355121, -2.1740355, -1.9719219, -1.7508476, -1.5129966, -1.2604816, -0.9957886, -0.7215412, -0.44036472, -0.15506798, 0.13192958, 0.41763926, 0.69923884, 0.97415906, 1.2396173, 1.4931779, 1.7323706, 1.954892, 2.1585877, 2.34146, 2.5018167, 2.6380558, 2.7488892, 2.83326, 2.8903303, 2.919622, 2.9207008, 2.8937066, 2.838819, 2.7566009, 2.6479256, 2.513695, 2.3551664, 2.1739745, 1.97196, 1.7508476, 1.5129433, 1.2604816, 0.9957886, 0.7215412, 0.44036472, 0.1549536, -0.13192189, -0.41764694, -0.69923115, -0.9741514, -1.2396476, -1.4932237, -1.7324471, -1.954911, -2.1585765, -2.3414788, -2.5018072, -2.6380591, -2.7488973, -2.8332686, -2.8903515, -2.9194047, -2.9207275, -2.8937104, -2.838888, -2.7566087, -2.6479409, -2.513634, -2.355121, -2.1740355, -1.9719219, -1.7508476, -1.5129966, -1.2604816, -0.9957886, -0.7215412, -0.44036472, -0.15506798, 0.13192958, 0.41763926, 0.69923884, 0.97415906, 1.2396173, 1.4931779, 1.7323706, 1.954892, 2.1585877, 2.34146, 2.5018167, 2.6380558]
+        let mut expected = Vec::<f32>::with_capacity(sample_rate);
+        let mut phase: f64 = 0.;
+        let phase_incr = freq as f64 / sample_rate as f64;
+
+        for i in 0..sample_rate {
+            if i < 6 {
+                let sample = (phase * 2. * PI).sin();
+                phase += phase_incr;
+                expected.push(sample as f32);
+            } else {
+                expected.push(0.);
+            }
+        }
+
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
     }
 
+    #[test]
+    fn osc_sub_sample_stop() {
+        let freq = 8910.1;
+        let sample_rate = 44_100;
 
+        let mut context = OfflineAudioContext::new(1, 1 * sample_rate, SampleRate(sample_rate as u32));
+        let osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(freq);
+        osc.start_at(0.);
+        osc.stop_at(19.4 / sample_rate as f64);
+
+        let output = context.start_rendering();
+        let result = output.get_channel_data(0);
+
+        let mut expected = Vec::<f32>::with_capacity(sample_rate);
+        let mut phase: f64 = 0.;
+        let phase_incr = freq as f64 / sample_rate as f64;
+
+        for i in 0..sample_rate {
+            if i < 20 {
+                let sample = (phase * 2. * PI).sin();
+                phase += phase_incr;
+                expected.push(sample as f32);
+            } else {
+                expected.push(0.);
+            }
+        }
+
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
+    }
+
+    use super::generate_wavetable_test;
+
+    #[test]
+    fn test_periodic_wave() {
+        // this is what should be the 2f file
+        let reals = [0., 0., 0., 0., 0., 0., 0.];
+        let imags = [0., 0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
+
+        generate_wavetable_test(&reals, &imags, 128, true);
+    }
 }
