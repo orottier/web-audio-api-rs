@@ -7,18 +7,18 @@ fn main() {
 
     let context = AudioContext::new(None);
 
-    let am = context.create_gain();
-    am.gain().set_value(0.5);
-    am.connect(&context.destination());
+    let modulated = context.create_gain();
+    modulated.gain().set_value(0.5);
+    modulated.connect(&context.destination());
 
     let carrier = context.create_oscillator();
-    carrier.connect(&am);
+    carrier.connect(&modulated);
     carrier.frequency().set_value(300.);
 
     // mod branch
     let depth = context.create_gain();
     depth.gain().set_value(0.5);
-    depth.connect(am.gain());
+    depth.connect(modulated.gain());
 
     let modulator = context.create_oscillator();
     modulator.connect(&depth);
@@ -27,10 +27,10 @@ fn main() {
     carrier.start();
     modulator.start();
 
-    let mut flag = 0.;
+    let mut flag = 1.;
 
     loop {
-        let freq = if flag == 1. { 0. } else { 300. };
+        let freq = flag * 300.;
         let when = context.current_time() + 10.;
         modulator.frequency().linear_ramp_to_value_at_time(freq, when);
 
