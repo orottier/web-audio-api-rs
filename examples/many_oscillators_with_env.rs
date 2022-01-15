@@ -9,7 +9,7 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn trigger_sine(audio_context: &AudioContext, rng: &mut ThreadRng) {
     let env = audio_context.create_gain();
-    env.gain().set_value(0.05);
+    env.gain().set_value(0.);
     env.connect(&audio_context.destination());
 
     let osc = audio_context.create_oscillator();
