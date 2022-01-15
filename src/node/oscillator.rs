@@ -44,7 +44,7 @@ impl Default for OscillatorOptions {
     }
 }
 
-/// Waveform of an oscillator
+/// Type of the waveform rendered by an `OscillatorNode`
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum OscillatorType {
     /// Sine wave
@@ -80,7 +80,34 @@ impl From<u32> for OscillatorType {
 
 struct OscillatorMessage(PeriodicWave);
 
-/// Audio source generating a periodic waveform
+/// `OscillatorNode` represents an audio source generating a periodic waveform.
+/// It can generate a few common waveforms (i.e. sine, square, sawtooth, triangle),
+/// or can be set to an arbitrary periodic waveform using a [`PeriodicWave`] object.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/OscillatorNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#OscillatorNode>
+/// - see also: [`AsBaseAudioContext::create_oscillator`](crate::context::AsBaseAudioContext::create_oscillator)
+/// - see also: [`PeriodicWave`](crate::periodic_wave::PeriodicWave)
+///
+/// # Usage
+///
+/// ```no_run
+/// use std::fs::File;
+/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+///
+/// let context = AudioContext::new(None);
+///
+/// let osc = context.create_oscillator();
+/// osc.frequency().set_value(200.);
+/// osc.connect(&context.destination());
+/// osc.start();
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example oscillators`
+/// - `cargo run --release --example many_oscillators_with_env`
+///
 pub struct OscillatorNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
@@ -205,17 +232,21 @@ impl OscillatorNode {
         })
     }
 
-    /// Returns the frequency audio parameter (in Hz)
-    /// The oscillator frequency is calculated as follow:
-    /// frequency * 2^(detune/1200)
+    /// A-rate [`AudioParam`] that defines the fondamental frequency of the
+    /// oscillator, expressed in Hz
+    ///
+    /// The final frequency is calculated as follow: frequency * 2^(detune/1200)
     #[must_use]
     pub fn frequency(&self) -> &AudioParam {
         &self.frequency
     }
 
-    /// Returns the detune audio parameter. (in cents).
-    /// The oscillator frequency is calculated as follow:
-    /// frequency * 2^(detune/1200)
+    /// A-rate [`AudioParam`] that defines a transposition according to the
+    /// frequency, expressed in cents.
+    ///
+    /// see <https://en.wikipedia.org/wiki/Cent_(music)>
+    ///
+    /// The final frequency is calculated as follow: frequency * 2^(detune/1200)
     #[must_use]
     pub fn detune(&self) -> &AudioParam {
         &self.detune
@@ -251,7 +282,10 @@ impl OscillatorNode {
         self.type_.store(type_ as u32, Ordering::SeqCst);
     }
 
-    /// Use the given `PeriodicWave` wavetable, sets the oscillator type to custom
+    /// Sets a `PeriodicWave` which describes a waveform to be used by the oscillator.
+    ///
+    /// Calling this sets the oscillator type to `custom`, once set to `custom`
+    /// the oscillator cannot be reverted back to a standard waveform.
     pub fn set_periodic_wave(&self, periodic_wave: PeriodicWave) {
         self.type_
             .store(OscillatorType::Custom as u32, Ordering::SeqCst);
@@ -512,15 +546,13 @@ mod tests {
     //     file.write(tmp.to_string().as_bytes()).unwrap();
     // }
 
-    const LENGTH: usize = 555;
-
     #[test]
     fn assert_osc_default_build_with_factory_func() {
         let default_freq = 440.;
         let default_det = 0.;
         let default_type = OscillatorType::Sine;
 
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, 1, SampleRate(44_100));
 
         let osc = context.create_oscillator();
 
@@ -540,7 +572,7 @@ mod tests {
         let default_det = 0.;
         let default_type = OscillatorType::Sine;
 
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, 1, SampleRate(44_100));
 
         let osc = OscillatorNode::new(&context, None);
 
@@ -557,7 +589,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn set_type_to_custom_should_panic() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, 1, SampleRate(44_100));
 
         let osc = OscillatorNode::new(&context, None);
 
@@ -568,7 +600,7 @@ mod tests {
     fn type_is_custom_when_periodic_wave_is_some() {
         let expected_type = OscillatorType::Custom;
 
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, 1, SampleRate(44_100));
 
         let periodic_opt = PeriodicWaveOptions {
             real: None,
@@ -593,7 +625,7 @@ mod tests {
     fn set_type_is_ignored_when_periodic_wave_is_some() {
         let expected_type = OscillatorType::Custom;
 
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, 1, SampleRate(44_100));
 
         let periodic_opt = PeriodicWaveOptions {
             real: None,
@@ -882,9 +914,6 @@ mod tests {
         for i in 0..5 {
             let freq = 10_f32.powf(i as f32);
             let sample_rate = 44_100;
-
-            // let freq = 1.;
-            // let sample_rate = 128;
 
             let mut context =
                 OfflineAudioContext::new(1, sample_rate, SampleRate(sample_rate as u32));

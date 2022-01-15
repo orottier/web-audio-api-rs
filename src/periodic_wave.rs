@@ -1,3 +1,4 @@
+//! PeriodicWave interface
 use std::f32::consts::PI;
 use std::sync::Arc;
 
@@ -5,7 +6,7 @@ use crate::context::AsBaseAudioContext;
 
 use crate::node::TABLE_LENGTH_USIZE;
 
-/// Options for constructing a periodic wave
+/// Options for constructing an `PeriodicWave`
 pub struct PeriodicWaveOptions {
     /// The real parameter represents an array of cosine terms of Fourrier series.
     ///
@@ -30,8 +31,38 @@ pub struct PeriodicWaveOptions {
     pub disable_normalization: Option<bool>,
 }
 
-/// `PeriodicWave` is a setup struct required to build
-/// custom periodic waveform oscillator type.
+/// `PeriodicWave` represents an arbitrary periodic waveform to be used with an `OscillatorNode`.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/PeriodicWave>
+/// - specification: <https://webaudio.github.io/web-audio-api/#PeriodicWave>
+/// - see also: [`AsBaseAudioContext::create_periodic_wave`](crate::context::AsBaseAudioContext::create_periodic_wave)
+/// - see also: [`OscillatorNode`](crate::node::OscillatorNode)
+///
+/// # Usage
+///
+/// ```no_run
+/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
+///
+/// let context = AudioContext::new(None);
+///
+/// // generate a simple waveform with 2 harmonics
+/// let options = PeriodicWaveOptions {
+///   real: Some(vec![0., 0., 0.]),
+///   imag: Some(vec![0., 0.5, 0.5]),
+///   disable_normalization: Some(false),
+/// };
+///
+/// let periodic_wave = PeriodicWave::new(&context, Some(options));
+///
+/// let osc = context.create_oscillator();
+/// osc.set_periodic_wave(periodic_wave);
+/// osc.connect(&context.destination());
+/// osc.start();
+/// ```
+/// # Examples
+///
+/// - `cargo run --release --example oscillators`
 ///
 // Basically a wrapper around Arc<Vec<f32>>, so `PeriodicWave` are cheap to clone
 #[derive(Debug, Clone)]
@@ -56,24 +87,6 @@ impl PeriodicWave {
     /// * `imag` is defined and its length is less than 2
     /// * `real` and `imag` are defined and theirs lengths are not equal
     /// * `PeriodicWave` is more than 8192 components
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use web_audio_api::context::{AudioContext};
-    /// use web_audio_api::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
-    ///
-    /// let context = AudioContext::new(None);
-    ///
-    /// let options = PeriodicWaveOptions {
-    ///   real: Some(vec![0.,1.,1.]),
-    ///   imag: Some(vec![0.,0.,0.]),
-    ///   disable_normalization: Some(false),
-    /// };
-    ///
-    /// let periodic_wave = PeriodicWave::new(&context, Some(options));
-    /// ```
-    ///
     pub fn new<C: AsBaseAudioContext>(_context: &C, options: Option<PeriodicWaveOptions>) -> Self {
         let (real, imag, normalize) = if let Some(PeriodicWaveOptions {
             real,
@@ -179,27 +192,27 @@ impl PeriodicWave {
         }
 
         if normalize {
-            let norm = Self::norm_factor(&wavetable);
-
-            for sample in wavetable.iter_mut() {
-                *sample *= norm;
-            }
+            Self::normalize(&mut wavetable);
         }
 
         wavetable
     }
 
-    fn norm_factor(buffer: &[f32]) -> f32 {
+    fn normalize(wavetable: &mut [f32]) {
         let mut max = 0.;
 
-        for sample in buffer.iter() {
+        for sample in wavetable.iter() {
             let abs = sample.abs();
             if abs > max {
                 max = abs;
             }
         }
 
-        1. / max
+        let norm_factor = 1. / max;
+
+        for sample in wavetable.iter_mut() {
+            *sample *= norm_factor;
+        }
     }
 }
 
@@ -363,6 +376,25 @@ mod tests {
     }
 
     #[test]
+    fn normalize() {
+        {
+            let mut signal = [-0.5, 0.2];
+            PeriodicWave::normalize(&mut signal);
+            let expected = [-1., 0.4];
+
+            assert_float_eq!(signal[..], expected[..], abs_all <= 0.);
+        }
+
+        {
+            let mut signal = [0.5, -0.2];
+            PeriodicWave::normalize(&mut signal);
+            let expected = [1., -0.4];
+
+            assert_float_eq!(signal[..], expected[..], abs_all <= 0.);
+        }
+    }
+
+    #[test]
     fn wavetable_generate_2f_norm() {
         let reals = [0., 0., 0.];
         let imags = [0., 0.5, 0.5];
@@ -380,11 +412,7 @@ mod tests {
             expected.push(sample);
         }
 
-        let norm_factor = PeriodicWave::norm_factor(&expected);
-
-        for s in expected.iter_mut() {
-            *s *= norm_factor;
-        }
+        PeriodicWave::normalize(&mut expected);
 
         assert_float_eq!(result[..], expected[..], abs_all <= 0.);
     }
