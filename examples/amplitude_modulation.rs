@@ -32,7 +32,9 @@ fn main() {
     loop {
         let freq = flag * 300.;
         let when = context.current_time() + 10.;
-        modulator.frequency().linear_ramp_to_value_at_time(freq, when);
+        modulator
+            .frequency()
+            .linear_ramp_to_value_at_time(freq, when);
 
         flag = 1. - flag;
 
