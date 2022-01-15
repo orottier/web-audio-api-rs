@@ -598,7 +598,7 @@ mod tests {
     fn test_sub_quantum_start() {
         let sample_rate = 128;
         let sr = SampleRate(sample_rate as u32);
-        let mut context = OfflineAudioContext::new(1, 1 * sample_rate, sr);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
 
         let mut dirac = context.create_buffer(1, 1, sr);
         dirac.copy_to_channel(&[1.], 0);
@@ -611,7 +611,7 @@ mod tests {
         let result = context.start_rendering();
         let channel = result.get_channel_data(0);
 
-        let mut expected = vec![0.; 1 * sample_rate];
+        let mut expected = vec![0.; sample_rate];
         expected[1] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
@@ -622,7 +622,7 @@ mod tests {
         // sub sample
         let sample_rate = 128;
         let sr = SampleRate(sample_rate as u32);
-        let mut context = OfflineAudioContext::new(1, 1 * sample_rate, sr);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
 
         let mut dirac = context.create_buffer(1, sample_rate, sr);
         dirac.copy_to_channel(&[1.], 0);
@@ -635,7 +635,7 @@ mod tests {
         let result = context.start_rendering();
         let channel = result.get_channel_data(0);
 
-        let mut expected = vec![0.; 1 * sample_rate];
+        let mut expected = vec![0.; sample_rate];
         expected[2] = 0.5;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
@@ -645,7 +645,7 @@ mod tests {
     fn test_sub_quantum_stop() {
         let sample_rate = 128;
         let sr = SampleRate(sample_rate as u32);
-        let mut context = OfflineAudioContext::new(1, 1 * sample_rate, sr);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
 
         let mut dirac = context.create_buffer(1, sample_rate, sr);
         dirac.copy_to_channel(&[0., 0., 0., 0., 1.], 0);
@@ -659,7 +659,7 @@ mod tests {
 
         let result = context.start_rendering();
         let channel = result.get_channel_data(0);
-        let expected = vec![0.; 1 * sample_rate];
+        let expected = vec![0.; sample_rate];
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
@@ -668,7 +668,7 @@ mod tests {
     fn test_sub_sample_stop() {
         let sample_rate = 128;
         let sr = SampleRate(sample_rate as u32);
-        let mut context = OfflineAudioContext::new(1, 1 * sample_rate, sr);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
 
         let mut dirac = context.create_buffer(1, sample_rate, sr);
         dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
@@ -683,7 +683,7 @@ mod tests {
         let result = context.start_rendering();
         let channel = result.get_channel_data(0);
 
-        let mut expected = vec![0.; 1 * sample_rate];
+        let mut expected = vec![0.; sample_rate];
         expected[4] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
@@ -693,7 +693,7 @@ mod tests {
     fn test_schedule_in_the_past() {
         let sample_rate = 128;
         let sr = SampleRate(sample_rate as u32);
-        let mut context = OfflineAudioContext::new(1, 1 * sample_rate, sr);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
 
         let mut dirac = context.create_buffer(1, 1, sr);
         dirac.copy_to_channel(&[1.], 0);
@@ -706,7 +706,7 @@ mod tests {
         let result = context.start_rendering();
         let channel = result.get_channel_data(0);
 
-        let mut expected = vec![0.; 1 * sample_rate];
+        let mut expected = vec![0.; sample_rate];
         expected[0] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);

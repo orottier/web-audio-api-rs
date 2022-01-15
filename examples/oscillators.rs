@@ -1,8 +1,7 @@
 //! This example plays each oscillator type sequentially
 use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-use web_audio_api::node::{
-    AudioNode, AudioScheduledSourceNode, OscillatorType, PeriodicWaveOptions,
-};
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, OscillatorType};
+use web_audio_api::periodic_wave::PeriodicWaveOptions;
 
 fn main() {
     env_logger::init();

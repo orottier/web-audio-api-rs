@@ -55,6 +55,7 @@ pub mod control;
 pub mod media;
 pub mod node;
 pub mod param;
+pub mod periodic_wave;
 pub mod render;
 pub mod spatial;
 
