@@ -107,6 +107,7 @@ struct OscillatorMessage(PeriodicWave);
 ///
 /// - `cargo run --release --example oscillators`
 /// - `cargo run --release --example many_oscillators_with_env`
+/// - `cargo run --release --example amplitude_modulation`
 ///
 pub struct OscillatorNode {
     /// Represents the node instance and its associated audio context
