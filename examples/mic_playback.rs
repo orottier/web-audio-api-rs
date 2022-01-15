@@ -1,17 +1,20 @@
 use web_audio_api::buffer::AudioBuffer;
 use web_audio_api::context::{AsBaseAudioContext, AudioContext, AudioContextRegistration};
 use web_audio_api::media::Microphone;
-use web_audio_api::node::BiquadFilterType;
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions,
 };
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use web_audio_api::SampleRate;
 
+use std::io::{stdin, stdout, Write};
+use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use std::sync::Arc;
+
 use crossbeam_channel::{self, Receiver, Sender};
 
 use simplelog::{Config, LevelFilter, WriteLogger};
-use std::io::{stdin, stdout, Write};
+
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
@@ -132,70 +135,21 @@ fn print_logs(stdout: &mut termion::raw::RawTerminal<std::io::Stdout>, receiver:
     }
 }
 
-fn main() {
-    let (sender, receiver) = crossbeam_channel::unbounded();
-    let target = WriteAdapter { sender };
-    WriteLogger::init(LevelFilter::Debug, Config::default(), target).unwrap();
-
-    log::info!("Running the microphone playback example");
-
-    // setup UI
-    let stdin = stdin();
-    let mut stdout = stdout().into_raw_mode().unwrap();
-
-    write!(
-        stdout,
-        "{}{}q to exit. Type stuff, use alt, and so on.{}",
-        termion::clear::All,
-        termion::cursor::Goto(1, 1),
-        termion::cursor::Hide
-    )
-    .unwrap();
-
-    print_logs(&mut stdout, &receiver);
-
-    stdout.flush().unwrap();
-
-    for c in stdin.keys() {
-        log::info!("got key {:?}", c);
-        write!(
-            stdout,
-            "{}{}",
-            termion::cursor::Goto(1, 1),
-            termion::clear::CurrentLine
-        )
-        .unwrap();
-
-        match c.unwrap() {
-            Key::Char('q') => break,
-            Key::Char(c) => println!("{}", c),
-            Key::Alt(c) => println!("^{}", c),
-            Key::Ctrl(c) => println!("*{}", c),
-            Key::Esc => println!("ESC"),
-            Key::Left => println!("←"),
-            Key::Right => println!("→"),
-            Key::Up => println!("↑"),
-            Key::Down => println!("↓"),
-            Key::Backspace => println!("×"),
-            _ => {}
-        }
-
-        print_logs(&mut stdout, &receiver);
-
-        stdout.flush().unwrap();
-    }
-
-    write!(stdout, "{}", termion::cursor::Show).unwrap();
-    panic!("Done");
-
+fn audio_thread(
+    gain_factor: Arc<AtomicI32>,
+    playback_rate_factor: Arc<AtomicI32>,
+    biquad_filter: Arc<AtomicU32>,
+) {
     let context = AudioContext::new(None);
 
     let stream = Microphone::new();
-    // register as media element in the audio context
     let mic_in = context.create_media_stream_source(stream);
 
+    let playback_step = 1.05_f32; // playback increases by 5% per setting
+    let gain_step = 1.1_f32; // gain increases by 10% per setting
+
     loop {
-        println!("beep - now recording");
+        log::info!("beep - now recording");
         let osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.start();
@@ -207,7 +161,6 @@ fn main() {
         std::thread::sleep(std::time::Duration::from_millis(4000));
         mic_in.disconnect_all();
 
-        println!("beep - end recording");
         let osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.start();
@@ -216,20 +169,116 @@ fn main() {
         std::thread::sleep(std::time::Duration::from_millis(200));
         osc.disconnect_all();
 
-        println!("playback buf - duration {:.2}", buf.duration());
-        println!("applying LowPass and Gain");
+        log::info!("playback buf - duration {:.2}", buf.duration());
+
         let src = context.create_buffer_source();
+        let playback_rate = playback_step.powi(playback_rate_factor.load(Ordering::Relaxed));
+        src.playback_rate().set_value(playback_rate);
         src.set_buffer(buf);
+
         let biquad = context.create_biquad_filter();
-        biquad.set_type(BiquadFilterType::Lowpass);
+        biquad.set_type(biquad_filter.load(Ordering::Relaxed).into());
+
         let gain = context.create_gain();
-        gain.gain().set_value(2.);
+        let gain_value = gain_step.powi(gain_factor.load(Ordering::Relaxed));
+        gain.gain().set_value(gain_value);
+
         src.connect(&biquad);
         biquad.connect(&gain);
         gain.connect(&context.destination());
-        src.start();
 
-        std::thread::sleep(std::time::Duration::from_millis(4000));
-        println!("end playback");
+        src.start();
+        let duration = (4. / playback_rate * 1000.) as u64; // millis
+        std::thread::sleep(std::time::Duration::from_millis(duration));
     }
+}
+
+fn main() {
+    /*
+     * First, setup logging facility. Use a WriteLogger to catch the log entries and ship them to
+     * the UI. We will render the log lines at the bottom of the interface.
+     */
+    let (sender, receiver) = crossbeam_channel::unbounded();
+    let target = WriteAdapter { sender };
+    WriteLogger::init(LevelFilter::Debug, Config::default(), target).unwrap();
+    log::info!("Running the microphone playback example");
+
+    /*
+     * Create thread safe user controllable variables
+     */
+    let gain_factor = Arc::new(AtomicI32::new(0));
+    let playback_rate_factor = Arc::new(AtomicI32::new(0));
+    let biquad_filter = Arc::new(AtomicU32::new(7)); // allpass
+
+    /*
+     * Then, setup the audio loop in a separate thread. It will record audio for a few seconds,
+     * then play it back to the speakers with some transformations applied. Repeat.
+     */
+    let gain_factor_clone = gain_factor.clone();
+    let playback_rate_factor_clone = playback_rate_factor.clone();
+    let biquad_filter_clone = biquad_filter.clone();
+    std::thread::spawn(move || {
+        audio_thread(
+            gain_factor_clone,
+            playback_rate_factor_clone,
+            biquad_filter_clone,
+        )
+    });
+
+    /*
+     * Spawn another thread to handle user input. It reads key presses and uses message passing to
+     * send them back to the main UI thread.
+     */
+    let (stdin_send, stdin_recv) = crossbeam_channel::unbounded();
+    std::thread::spawn(move || {
+        stdin().keys().for_each(|c| {
+            let _ = stdin_send.send(c);
+        })
+    });
+
+    /*
+     * Now, the `main` thread will serve as the UI thread. It will respond to key presses from the
+     * 'user input thread', and log messages from the log WriteAdapter.
+     */
+    let mut stdout = stdout().into_raw_mode().unwrap();
+    write!(
+        stdout,
+        "{}{}Press q to exit.Use + or - to adjust microphone gain{}",
+        termion::clear::All,
+        termion::cursor::Goto(1, 1),
+        termion::cursor::Hide
+    )
+    .unwrap();
+
+    'outer: loop {
+        print_logs(&mut stdout, &receiver);
+
+        for c in stdin_recv.try_iter() {
+            match c.unwrap() {
+                Key::Char('q') => break 'outer,
+                Key::Char('+') => {
+                    let prev = gain_factor.fetch_add(1, Ordering::Relaxed);
+                    log::info!("Volume: {:+}", prev + 1);
+                }
+                Key::Char('-') => {
+                    let prev = gain_factor.fetch_add(-1, Ordering::Relaxed);
+                    log::info!("Volume: {:+}", prev - 1);
+                }
+                Key::Char('n') => {
+                    let prev = playback_rate_factor.fetch_add(1, Ordering::Relaxed);
+                    log::info!("Playback speed: {:+}", prev + 1);
+                }
+                Key::Char('m') => {
+                    let prev = playback_rate_factor.fetch_add(-1, Ordering::Relaxed);
+                    log::info!("Playback speed: {:+}", prev - 1);
+                }
+                Key::Char(c) => println!("{}", c),
+                _ => {}
+            }
+        }
+        stdout.flush().unwrap();
+    }
+
+    // restore cursor
+    write!(stdout, "{}", termion::cursor::Show).unwrap();
 }
