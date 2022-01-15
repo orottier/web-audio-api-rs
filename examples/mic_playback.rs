@@ -10,6 +10,7 @@ use web_audio_api::SampleRate;
 
 use crossbeam_channel::{self, Receiver, Sender};
 
+use simplelog::{Config, LevelFilter, WriteLogger};
 use std::io::{stdin, stdout, Write};
 use termion::event::Key;
 use termion::input::TermRead;
@@ -97,8 +98,46 @@ impl AudioProcessor for MediaRecorderProcessor {
     }
 }
 
+// This struct is used as an adaptor, it implements std::io::Write and forwards the buffer to a mpsc::Sender
+struct WriteAdapter {
+    sender: Sender<u8>,
+}
+
+impl std::io::Write for WriteAdapter {
+    // On write we forward each u8 of the buffer to the sender and return the length of the buffer
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        for chr in buf {
+            self.sender.send(*chr).unwrap();
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn print_logs(stdout: &mut termion::raw::RawTerminal<std::io::Stdout>, receiver: &Receiver<u8>) {
+    // Collect all messages send to the channel and parse the result as a string
+    let msg = String::from_utf8(receiver.try_iter().collect::<Vec<u8>>()).unwrap();
+    if !msg.is_empty() {
+        write!(
+            stdout,
+            "{}{}{}",
+            termion::cursor::Goto(1, 10),
+            termion::clear::CurrentLine,
+            msg
+        )
+        .unwrap();
+    }
+}
+
 fn main() {
-    env_logger::init();
+    let (sender, receiver) = crossbeam_channel::unbounded();
+    let target = WriteAdapter { sender };
+    WriteLogger::init(LevelFilter::Debug, Config::default(), target).unwrap();
+
+    log::info!("Running the microphone playback example");
 
     // setup UI
     let stdin = stdin();
@@ -112,9 +151,13 @@ fn main() {
         termion::cursor::Hide
     )
     .unwrap();
+
+    print_logs(&mut stdout, &receiver);
+
     stdout.flush().unwrap();
 
     for c in stdin.keys() {
+        log::info!("got key {:?}", c);
         write!(
             stdout,
             "{}{}",
@@ -136,6 +179,9 @@ fn main() {
             Key::Backspace => println!("×"),
             _ => {}
         }
+
+        print_logs(&mut stdout, &receiver);
+
         stdout.flush().unwrap();
     }
 
