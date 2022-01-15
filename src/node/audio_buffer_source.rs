@@ -351,7 +351,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let computed_playback_rate = (playback_rate * (detune / 1200.).exp2()) as f64;
 
         // grab all timing informations
-        let start_time = self.controller.scheduler().get_start_at();
+        let mut start_time = self.controller.scheduler().get_start_at();
         let stop_time = self.controller.scheduler().get_stop_at();
         let mut offset = self.controller.offset();
         let duration = self.controller.duration();
@@ -412,6 +412,14 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // go through the algorithm described in the spec
         // @see <https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode>
         let mut current_time = timestamp;
+
+        // prevent scheduling in the past
+        // If 0 is passed in for this value or if the value is less than
+        // currentTime, then the sound will start playing immediately
+        // cf. https://webaudio.github.io/web-audio-api/#dom-audioscheduledsourcenode-start-when-when
+        if !self.render_state.started && start_time < current_time {
+            start_time = current_time;
+        }
 
         if loop_ {
             if loop_start >= 0. && loop_end > 0. && loop_start < loop_end {
@@ -677,6 +685,29 @@ mod tests {
 
         let mut expected = vec![0.; 1 * sample_rate];
         expected[4] = 1.;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_schedule_in_the_past() {
+        let sample_rate = 128;
+        let sr = SampleRate(sample_rate as u32);
+        let mut context = OfflineAudioContext::new(1, 1 * sample_rate, sr);
+
+        let mut dirac = context.create_buffer(1, 1, sr);
+        dirac.copy_to_channel(&[1.], 0);
+
+        let src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(dirac);
+        src.start_at(-1.);
+
+        let result = context.start_rendering();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; 1 * sample_rate];
+        expected[0] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
