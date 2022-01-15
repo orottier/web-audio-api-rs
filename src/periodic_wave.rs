@@ -209,10 +209,13 @@ impl PeriodicWave {
             }
         }
 
-        let norm_factor = 1. / max;
+        // prevent division by 0. (nothing to normalize anyway...)
+        if max > 0. {
+            let norm_factor = 1. / max;
 
-        for sample in wavetable.iter_mut() {
-            *sample *= norm_factor;
+            for sample in wavetable.iter_mut() {
+                *sample *= norm_factor;
+            }
         }
     }
 }
