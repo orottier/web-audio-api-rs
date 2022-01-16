@@ -1,3 +1,6 @@
+// run in release mode
+// `cargo run --release --example mic_playback`
+
 use web_audio_api::buffer::AudioBuffer;
 use web_audio_api::context::{AsBaseAudioContext, AudioContext, AudioContextRegistration};
 use web_audio_api::media::Microphone;
@@ -258,7 +261,7 @@ fn audio_thread(
     let gain_step = 1.1_f32; // gain increases by 10% per setting
 
     loop {
-        log::info!("beep - now recording");
+        log::info!("Start recording - 4 seconds");
         let osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.start();
@@ -279,7 +282,7 @@ fn audio_thread(
         std::thread::sleep(std::time::Duration::from_millis(200));
         osc.disconnect_all();
 
-        log::info!("playback buf - duration {:.2}", buf.duration());
+        log::info!("Playback recording");
 
         let src = context.create_buffer_source();
         let playback_rate = playback_step.powi(playback_rate_factor.load(Ordering::Relaxed));
