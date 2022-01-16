@@ -198,15 +198,61 @@ fn print_logs(
     })
 }
 
+fn draw_plot(stdout: &mut termion::raw::RawTerminal<std::io::Stdout>, plot: String, offset: u16) {
+    plot.split('\n').enumerate().for_each(|(i, l)| {
+        write!(
+            stdout,
+            "{}{}",
+            termion::cursor::Goto(1, offset + i as u16),
+            l
+        )
+        .unwrap()
+    });
+}
+
 fn audio_thread(
     gain_factor: Arc<AtomicI32>,
     playback_rate_factor: Arc<AtomicI32>,
     biquad_filter: Arc<AtomicU32>,
+    width: u16,
+    height: u16,
+    plot_send: Sender<String>,
 ) {
     let context = AudioContext::new(None);
 
     let stream = Microphone::new();
     let mic_in = context.create_media_stream_source(stream);
+
+    let analyser = Arc::new(context.create_analyser());
+    let analyser_clone = analyser.clone();
+    let mut freq_buffer = Some(vec![0.; analyser.frequency_bin_count()]);
+    // spawn thread to poll analyser updates
+    std::thread::spawn(move || {
+        use textplots::{Chart, Plot, Shape};
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let tmp_buf = freq_buffer.take().unwrap();
+            freq_buffer = Some(analyser_clone.get_float_frequency_data(tmp_buf));
+            let points: Vec<_> = freq_buffer
+                .as_ref()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(i, &f)| (i as f32, f))
+                .collect();
+            let plot = Chart::new_with_y_range(
+                width as u32 * 2,
+                (height - 25) as u32 * 4,
+                0.0,
+                analyser_clone.frequency_bin_count() as f32,
+                -80.,
+                20.,
+            )
+            .lineplot(&Shape::Bars(&points[..]))
+            .to_string();
+            plot_send.send(plot).unwrap();
+        }
+    });
 
     let playback_step = 1.05_f32; // playback increases by 5% per setting
     let gain_step = 1.1_f32; // gain increases by 10% per setting
@@ -221,6 +267,7 @@ fn audio_thread(
 
         let recorder = MediaRecorder::new(&context);
         mic_in.connect(&recorder);
+        mic_in.connect(&*analyser);
         std::thread::sleep(std::time::Duration::from_millis(4000));
         mic_in.disconnect_all();
 
@@ -249,6 +296,7 @@ fn audio_thread(
         src.connect(&biquad);
         biquad.connect(&gain);
         gain.connect(&context.destination());
+        gain.connect(&*analyser);
 
         src.start();
         let duration = (4. / playback_rate * 1000.) as u64; // millis
@@ -257,6 +305,8 @@ fn audio_thread(
 }
 
 fn main() {
+    let (width, height) = termion::terminal_size().unwrap();
+
     /*
      * First, setup logging facility. Use a WriteLogger to catch the log entries and ship them to
      * the UI. We will render the log lines at the bottom of the interface.
@@ -283,11 +333,15 @@ fn main() {
     let gain_factor_clone = gain_factor.clone();
     let playback_rate_factor_clone = playback_rate_factor.clone();
     let biquad_filter_clone = biquad_filter.clone();
+    let (plot_send, plot_recv) = crossbeam_channel::unbounded();
     std::thread::spawn(move || {
         audio_thread(
             gain_factor_clone,
             playback_rate_factor_clone,
             biquad_filter_clone,
+            width,
+            height,
+            plot_send,
         )
     });
 
@@ -306,7 +360,6 @@ fn main() {
      * Now, the `main` thread will serve as the UI thread. It will respond to key presses from the
      * 'user input thread', and log messages from the log WriteAdapter.
      */
-    let (width, height) = termion::terminal_size().unwrap();
     let mut stdout = stdout().into_raw_mode().unwrap();
     print_static_ui(&mut stdout, width, height);
 
@@ -322,6 +375,11 @@ fn main() {
                 logs.remove(0);
             }
             print_logs(&mut stdout, &logs, log_offset);
+            stdout.flush().unwrap();
+        }
+
+        if let Ok(plot) = plot_recv.try_recv() {
+            draw_plot(&mut stdout, plot, 11);
         }
 
         for c in stdin_recv.try_iter() {
@@ -352,7 +410,6 @@ fn main() {
                 _ => {}
             }
         }
-        stdout.flush().unwrap();
     }
 
     // restore cursor
