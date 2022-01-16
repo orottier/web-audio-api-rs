@@ -1,6 +1,7 @@
 use web_audio_api::buffer::AudioBuffer;
 use web_audio_api::context::{AsBaseAudioContext, AudioContext, AudioContextRegistration};
 use web_audio_api::media::Microphone;
+use web_audio_api::node::BiquadFilterType;
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions,
 };
@@ -103,14 +104,19 @@ impl AudioProcessor for MediaRecorderProcessor {
 
 // This struct is used as an adaptor, it implements std::io::Write and forwards the buffer to a mpsc::Sender
 struct WriteAdapter {
-    sender: Sender<u8>,
+    buffer: Vec<u8>,
+    sender: Sender<String>,
 }
 
 impl std::io::Write for WriteAdapter {
     // On write we forward each u8 of the buffer to the sender and return the length of the buffer
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        for chr in buf {
-            self.sender.send(*chr).unwrap();
+        self.buffer.extend_from_slice(buf);
+        while let Some(pos) = self.buffer.iter().position(|&b| b == b'\n') {
+            let mut other = self.buffer.split_off(pos + 1);
+            std::mem::swap(&mut self.buffer, &mut other);
+            let string = String::from_utf8(other).unwrap();
+            self.sender.send(string).unwrap();
         }
         Ok(buf.len())
     }
@@ -120,19 +126,76 @@ impl std::io::Write for WriteAdapter {
     }
 }
 
-fn print_logs(stdout: &mut termion::raw::RawTerminal<std::io::Stdout>, receiver: &Receiver<u8>) {
+fn print_header(
+    stdout: &mut termion::raw::RawTerminal<std::io::Stdout>,
+    height: u16,
+    width: u16,
+    s: &str,
+) {
+    let char_count = s.chars().count() as u16; // assume ascii
+    let pad_count = width / 2 - char_count / 2 - 2;
+    let pad = "=".repeat(pad_count as usize);
+    write!(
+        stdout,
+        "{}{}  {}  {}",
+        termion::cursor::Goto(1, height),
+        &pad,
+        s,
+        &pad
+    )
+    .unwrap();
+}
+
+fn print_static_ui(
+    stdout: &mut termion::raw::RawTerminal<std::io::Stdout>,
+    width: u16,
+    height: u16,
+) {
+    // clear screen and hide cursor
+    write!(stdout, "{}{}", termion::clear::All, termion::cursor::Hide).unwrap();
+
+    print_header(stdout, 1, width, "Controls");
+    write!(stdout, "{}Press q to exit", termion::cursor::Goto(1, 2)).unwrap();
+    write!(
+        stdout,
+        "{}Use + and - for recorded output volume",
+        termion::cursor::Goto(1, 3)
+    )
+    .unwrap();
+    write!(
+        stdout,
+        "{}Use n and m to adjust playback speed",
+        termion::cursor::Goto(1, 4)
+    )
+    .unwrap();
+    write!(
+        stdout,
+        "{}Use x to cycle through output effects",
+        termion::cursor::Goto(1, 5)
+    )
+    .unwrap();
+
+    print_header(stdout, 10, width, "Frequency response");
+    print_header(stdout, height - 11, width, "Logs");
+}
+
+fn print_logs(
+    stdout: &mut termion::raw::RawTerminal<std::io::Stdout>,
+    logs: &[String],
+    offset: u16,
+) {
+    let offset = offset + 10 - logs.len() as u16;
     // Collect all messages send to the channel and parse the result as a string
-    let msg = String::from_utf8(receiver.try_iter().collect::<Vec<u8>>()).unwrap();
-    if !msg.is_empty() {
+    logs.iter().enumerate().for_each(|(i, msg)| {
         write!(
             stdout,
             "{}{}{}",
-            termion::cursor::Goto(1, 10),
+            termion::cursor::Goto(1, offset + i as u16),
             termion::clear::CurrentLine,
             msg
         )
         .unwrap();
-    }
+    })
 }
 
 fn audio_thread(
@@ -177,7 +240,7 @@ fn audio_thread(
         src.set_buffer(buf);
 
         let biquad = context.create_biquad_filter();
-        biquad.set_type(biquad_filter.load(Ordering::Relaxed).into());
+        biquad.set_type((biquad_filter.load(Ordering::Relaxed) % 8).into());
 
         let gain = context.create_gain();
         let gain_value = gain_step.powi(gain_factor.load(Ordering::Relaxed));
@@ -199,7 +262,10 @@ fn main() {
      * the UI. We will render the log lines at the bottom of the interface.
      */
     let (sender, receiver) = crossbeam_channel::unbounded();
-    let target = WriteAdapter { sender };
+    let target = WriteAdapter {
+        buffer: vec![],
+        sender,
+    };
     WriteLogger::init(LevelFilter::Debug, Config::default(), target).unwrap();
     log::info!("Running the microphone playback example");
 
@@ -240,18 +306,23 @@ fn main() {
      * Now, the `main` thread will serve as the UI thread. It will respond to key presses from the
      * 'user input thread', and log messages from the log WriteAdapter.
      */
+    let (width, height) = termion::terminal_size().unwrap();
     let mut stdout = stdout().into_raw_mode().unwrap();
-    write!(
-        stdout,
-        "{}{}Press q to exit.Use + or - to adjust microphone gain{}",
-        termion::clear::All,
-        termion::cursor::Goto(1, 1),
-        termion::cursor::Hide
-    )
-    .unwrap();
+    print_static_ui(&mut stdout, width, height);
 
+    let log_offset = height - 10;
+
+    let mut logs = vec![];
     'outer: loop {
-        print_logs(&mut stdout, &receiver);
+        // collect logs
+        let prev_log_len = logs.len();
+        logs.extend(receiver.try_iter());
+        if logs.len() > prev_log_len {
+            while logs.len() > 10 {
+                logs.remove(0);
+            }
+            print_logs(&mut stdout, &logs, log_offset);
+        }
 
         for c in stdin_recv.try_iter() {
             match c.unwrap() {
@@ -264,15 +335,20 @@ fn main() {
                     let prev = gain_factor.fetch_add(-1, Ordering::Relaxed);
                     log::info!("Volume: {:+}", prev - 1);
                 }
-                Key::Char('n') => {
+                Key::Char('m') => {
                     let prev = playback_rate_factor.fetch_add(1, Ordering::Relaxed);
                     log::info!("Playback speed: {:+}", prev + 1);
                 }
-                Key::Char('m') => {
+                Key::Char('n') => {
                     let prev = playback_rate_factor.fetch_add(-1, Ordering::Relaxed);
                     log::info!("Playback speed: {:+}", prev - 1);
                 }
-                Key::Char(c) => println!("{}", c),
+                Key::Char('x') => {
+                    let prev = biquad_filter.fetch_add(1, Ordering::Relaxed);
+                    let biquad_filter_type = BiquadFilterType::from((prev + 1) % 8);
+                    log::info!("Filter type now: {:?}", biquad_filter_type);
+                }
+                Key::Char(c) => log::debug!("Unknown input - {}", c),
                 _ => {}
             }
         }
