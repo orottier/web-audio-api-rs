@@ -440,7 +440,7 @@ impl OscillatorRenderer {
         // offset phase to start at 0. (not -1.)
         let phase = Self::unroll_phase(self.phase + 0.5);
         let mut sample = 2.0 * phase - 1.0;
-        sample -= Self::poly_blep(phase, phase_incr);
+        sample -= Self::poly_blep(phase, phase_incr, cfg!(test));
 
         sample as f32
     }
@@ -448,10 +448,10 @@ impl OscillatorRenderer {
     #[inline]
     fn generate_square(&mut self, phase_incr: f64) -> f32 {
         let mut sample = if self.phase < 0.5 { 1.0 } else { -1.0 };
-        sample += Self::poly_blep(self.phase, phase_incr);
+        sample += Self::poly_blep(self.phase, phase_incr, cfg!(test));
 
         let shift_phase = Self::unroll_phase(self.phase + 0.5);
-        sample -= Self::poly_blep(shift_phase, phase_incr);
+        sample -= Self::poly_blep(shift_phase, phase_incr, cfg!(test));
 
         sample as f32
     }
@@ -494,8 +494,8 @@ impl OscillatorRenderer {
     //
     // @note: do not apply in tests so we can avoid relying on snapshots
     #[inline]
-    fn poly_blep(mut t: f64, dt: f64) -> f64 {
-        if cfg!(test) {
+    fn poly_blep(mut t: f64, dt: f64, is_test: bool) -> f64 {
+        if is_test {
             0.
         } else if t < dt {
             t /= dt;
@@ -528,7 +528,7 @@ mod tests {
     use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
     use crate::SampleRate;
 
-    use super::{OscillatorNode, OscillatorOptions, OscillatorType};
+    use super::{OscillatorNode, OscillatorOptions, OscillatorRenderer, OscillatorType};
 
     // keep that around, usefull to write data into files and plot long signals
     // use std::fs::File;
@@ -957,6 +957,46 @@ mod tests {
             }
 
             assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
+        }
+    }
+
+    #[test]
+    fn polyblep_isolated() {
+        // @note: Only first branch of the polyblep seems to be used here.
+        // May be due on the simplicity of the test itself where everything is
+        // well aligned.
+
+        // square
+        {
+            let mut signal = [1., 1., 1., 1., -1., -1., -1., -1.];
+            let len = signal.len() as f64;
+            let dt = 1. / len;
+
+            for (index, s) in signal.iter_mut().enumerate() {
+                let phase = index as f64 / len;
+
+                *s += OscillatorRenderer::poly_blep(phase, dt, false);
+                *s -= OscillatorRenderer::poly_blep((phase + 0.5) % 1., dt, false);
+            }
+
+            let expected = [0., 1., 1., 1., 0., -1., -1., -1.];
+
+            assert_float_eq!(signal[..], expected[..], abs_all <= 0.);
+        }
+
+        // sawtooth
+        {
+            let mut signal = [0., 0.25, 0.75, 1., -1., -0.75, -0.5, -0.25];
+            let len = signal.len() as f64;
+            let dt = 1. / len;
+
+            for (index, s) in signal.iter_mut().enumerate() {
+                let phase = index as f64 / len;
+                *s -= OscillatorRenderer::poly_blep((phase + 0.5) % 1., dt, false);
+            }
+
+            let expected = [0., 0.25, 0.75, 1., 0., -0.75, -0.5, -0.25];
+            assert_float_eq!(signal[..], expected[..], abs_all <= 0.);
         }
     }
 
