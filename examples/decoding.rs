@@ -3,6 +3,7 @@ use web_audio_api::context::{AsBaseAudioContext, AudioContext};
 use web_audio_api::node::AudioNode;
 
 fn main() {
+    // env_logger::init();
     let files = [
         "samples/sample-faulty.wav",
         "samples/sample.wav",

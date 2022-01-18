@@ -334,7 +334,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         let dt = 1. / sample_rate.0 as f64;
         let num_frames = RENDER_QUANTUM_SIZE;
-        let next_block_time = timestamp + dt * RENDER_QUANTUM_SIZE as f64;
+        let next_block_time = timestamp + dt * num_frames as f64;
 
         if let Ok(msg) = self.receiver.try_recv() {
             let buffer = msg.0;
@@ -348,10 +348,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let playback_rate_values = params.get(&self.playback_rate);
         let detune = detune_values[0];
         let playback_rate = playback_rate_values[0];
-        let computed_playback_rate = (playback_rate * 2_f32.powf(detune / 1200.)) as f64;
+        let computed_playback_rate = (playback_rate * (detune / 1200.).exp2()) as f64;
 
         // grab all timing informations
-        let start_time = self.controller.scheduler().get_start_at();
+        let mut start_time = self.controller.scheduler().get_start_at();
         let stop_time = self.controller.scheduler().get_stop_at();
         let mut offset = self.controller.offset();
         let duration = self.controller.duration();
@@ -413,6 +413,14 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // @see <https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode>
         let mut current_time = timestamp;
 
+        // prevent scheduling in the past
+        // If 0 is passed in for this value or if the value is less than
+        // currentTime, then the sound will start playing immediately
+        // cf. https://webaudio.github.io/web-audio-api/#dom-audioscheduledsourcenode-start-when-when
+        if !self.render_state.started && start_time < current_time {
+            start_time = current_time;
+        }
+
         if loop_ {
             if loop_start >= 0. && loop_end > 0. && loop_start < loop_end {
                 actual_loop_start = loop_start;
@@ -432,11 +440,15 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             {
                 self.internal_buffer.fill(0.);
                 output.set_channels_values_at(index, &self.internal_buffer);
+                current_time += dt;
+
                 continue; // nothing more to do for this sample
             }
 
             // we have now reached start time
             if !self.render_state.started {
+                offset += current_time - start_time;
+
                 if loop_ && computed_playback_rate >= 0. && offset >= actual_loop_end {
                     offset = actual_loop_end;
                 }
@@ -580,5 +592,123 @@ mod tests {
             audio_buffer.get_channel_data(1)[0..128],
             abs_all <= 0.
         );
+    }
+
+    #[test]
+    fn test_sub_quantum_start() {
+        let sample_rate = 128;
+        let sr = SampleRate(sample_rate as u32);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
+
+        let mut dirac = context.create_buffer(1, 1, sr);
+        dirac.copy_to_channel(&[1.], 0);
+
+        let src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(dirac);
+        src.start_at(1. / sample_rate as f64);
+
+        let result = context.start_rendering();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; sample_rate];
+        expected[1] = 1.;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_sub_sample_start() {
+        // sub sample
+        let sample_rate = 128;
+        let sr = SampleRate(sample_rate as u32);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
+
+        let mut dirac = context.create_buffer(1, sample_rate, sr);
+        dirac.copy_to_channel(&[1.], 0);
+
+        let src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(dirac);
+        src.start_at(1.5 / sample_rate as f64);
+
+        let result = context.start_rendering();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; sample_rate];
+        expected[2] = 0.5;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_sub_quantum_stop() {
+        let sample_rate = 128;
+        let sr = SampleRate(sample_rate as u32);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
+
+        let mut dirac = context.create_buffer(1, sample_rate, sr);
+        dirac.copy_to_channel(&[0., 0., 0., 0., 1.], 0);
+
+        let src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(dirac);
+        src.start_at(0. / sample_rate as f64);
+        // stop at time of dirac, shoud not be played
+        src.stop_at(4. / sample_rate as f64);
+
+        let result = context.start_rendering();
+        let channel = result.get_channel_data(0);
+        let expected = vec![0.; sample_rate];
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_sub_sample_stop() {
+        let sample_rate = 128;
+        let sr = SampleRate(sample_rate as u32);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
+
+        let mut dirac = context.create_buffer(1, sample_rate, sr);
+        dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
+
+        let src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(dirac);
+        src.start_at(0. / sample_rate as f64);
+        // stop at between two diracs, only first one should be played
+        src.stop_at(4.5 / sample_rate as f64);
+
+        let result = context.start_rendering();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; sample_rate];
+        expected[4] = 1.;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_schedule_in_the_past() {
+        let sample_rate = 128;
+        let sr = SampleRate(sample_rate as u32);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
+
+        let mut dirac = context.create_buffer(1, 1, sr);
+        dirac.copy_to_channel(&[1.], 0);
+
+        let src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(dirac);
+        src.start_at(-1.);
+
+        let result = context.start_rendering();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; sample_rate];
+        expected[0] = 1.;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
 }

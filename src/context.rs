@@ -26,9 +26,9 @@ use crate::node::{
     self, AnalyserOptions, AudioBufferSourceOptions, AudioNode, ChannelConfigOptions,
     ChannelCountMode, ChannelInterpretation, ChannelMergerOptions, ChannelSplitterOptions,
     ConstantSourceOptions, DelayOptions, GainOptions, IirFilterOptions, PannerOptions,
-    PeriodicWave, PeriodicWaveOptions,
 };
 use crate::param::{AudioParam, AudioParamEvent, AudioParamOptions};
+use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::render::{AudioProcessor, NodeIndex, RenderThread};
 use crate::spatial::{AudioListener, AudioListenerParams};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};

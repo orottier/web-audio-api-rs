@@ -25,7 +25,7 @@ fn main() {
     gain_right.connect_at(&merger, 0, 1);
 
     let src_right = audio_context.create_oscillator();
-    src_right.frequency().set_value(500.);
+    src_right.frequency().set_value(300.);
     src_right.connect(&gain_right);
     src_right.start();
 

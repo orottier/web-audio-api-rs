@@ -166,8 +166,8 @@ impl AudioProcessor for ConstantSourceRenderer {
                 output_channel[index] = 0.;
             } else {
                 // as we pick values directly from the offset param which is already
-                // computed at sub-sample accuracy, we don't need to do anything
-                // special here more than copy the value to its right place.
+                // computed at sub-sample accuracy, we don't need to do more than
+                // copying the values to their right place.
                 output_channel[index] = *sample_value;
             }
 
@@ -216,5 +216,20 @@ mod tests {
 
         // 4th block is silence
         assert_float_eq!(channel[384..512], vec![0.; 128][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_start_in_the_past() {
+        let mut context = OfflineAudioContext::new(1, 128, SampleRate(128));
+
+        let src = context.create_constant_source();
+        src.connect(&context.destination());
+        src.start_at(-1.);
+
+        let buffer = context.start_rendering();
+        let channel = buffer.get_channel_data(0);
+
+        // 1rst block should be silence
+        assert_float_eq!(channel[0..128], vec![1.; 128][..], abs_all <= 0.);
     }
 }
