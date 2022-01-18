@@ -78,8 +78,6 @@ impl From<u32> for OscillatorType {
     }
 }
 
-struct OscillatorMessage(PeriodicWave);
-
 /// `OscillatorNode` represents an audio source generating a periodic waveform.
 /// It can generate a few common waveforms (i.e. sine, square, sawtooth, triangle),
 /// or can be set to an arbitrary periodic waveform using a [`PeriodicWave`] object.
@@ -124,7 +122,7 @@ pub struct OscillatorNode {
     /// starts and stops Oscillator audio streams
     scheduler: Scheduler,
     /// channel between control and renderer parts (sender part)
-    sender: Sender<OscillatorMessage>,
+    sender: Sender<PeriodicWave>,
 }
 
 impl AudioScheduledSourceNode for OscillatorNode {
@@ -293,7 +291,7 @@ impl OscillatorNode {
             .store(OscillatorType::Custom as u32, Ordering::SeqCst);
 
         self.sender
-            .send(OscillatorMessage(periodic_wave))
+            .send(periodic_wave)
             .expect("Sending periodic wave to the node renderer failed");
     }
 }
@@ -309,10 +307,10 @@ struct OscillatorRenderer {
     /// starts and stops oscillator audio streams
     scheduler: Scheduler,
     /// channel between control and renderer parts (receiver part)
-    receiver: Receiver<OscillatorMessage>,
+    receiver: Receiver<PeriodicWave>,
     /// current phase of the oscillator
     phase: f64,
-    // define is the oscillator has started
+    // defines if the oscillator has started
     started: bool,
     // wavetable placeholder for custom oscillators
     periodic_wave: Option<PeriodicWave>,
@@ -333,8 +331,7 @@ impl AudioProcessor for OscillatorRenderer {
         output.set_number_of_channels(1);
 
         // check if any message was send from the control thread
-        if let Ok(msg) = self.receiver.try_recv() {
-            let periodic_wave = msg.0;
+        if let Ok(periodic_wave) = self.receiver.try_recv() {
             self.periodic_wave = Some(periodic_wave);
         }
 

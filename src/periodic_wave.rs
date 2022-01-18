@@ -170,8 +170,9 @@ impl PeriodicWave {
     // cf. https://webaudio.github.io/web-audio-api/#waveform-generation
     // note that sines are in the imaginary components
     //
-    // the current implementation is naive and could be improved using inverse FFT
-    // or table lookup on SINETABLE
+    // @note: Current implementation is naive and could be improved using inverse
+    // FFT or table lookup on SINETABLE. Such performance improvements should be
+    // however tested also against this implementation.
     fn generate_wavetable(reals: &[f32], imags: &[f32], normalize: bool, size: usize) -> Vec<f32> {
         let mut wavetable = Vec::with_capacity(size);
         let pi_2 = 2. * PI;
