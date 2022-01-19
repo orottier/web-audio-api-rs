@@ -6,7 +6,7 @@ use web_audio_api::context::{AsBaseAudioContext, AudioContext, AudioContextRegis
 use web_audio_api::media::Microphone;
 use web_audio_api::node::BiquadFilterType;
 use web_audio_api::node::{
-    AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions,
+    AnalyserNode, AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions,
 };
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use web_audio_api::SampleRate;
@@ -22,6 +22,8 @@ use simplelog::{Config, LevelFilter, WriteLogger};
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
+
+use textplots::{Chart, Plot, Shape};
 
 /// Instruction box height
 const INFO_PANEL_HEIGHT: u16 = 9;
@@ -219,6 +221,46 @@ fn draw_plot(stdout: &mut termion::raw::RawTerminal<std::io::Stdout>, plot: Stri
     });
 }
 
+fn poll_frequency_graph(
+    analyser: Arc<AnalyserNode>,
+    plot_send: Sender<UiEvent>,
+    width: u16,
+    height: u16,
+) -> ! {
+    let bin_count = analyser.frequency_bin_count();
+    let mut freq_buffer = Some(vec![0.; bin_count]);
+
+    loop {
+        // 5 frames per second
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        let tmp_buf = freq_buffer.take().unwrap();
+
+        let points: Vec<_> = tmp_buf
+            .iter()
+            .enumerate()
+            .map(|(i, &f)| (i as f32, f))
+            .collect();
+
+        let plot = Chart::new_with_y_range(
+            width as u32 * 2,
+            (height - 25) as u32 * 4,
+            0.0,
+            bin_count as f32,
+            -80.,
+            20.,
+        )
+        .lineplot(&Shape::Bars(&points[..]))
+        .to_string();
+
+        let event = UiEvent::GraphUpdate(plot);
+        let _ = plot_send.send(event); // allowed to fail if the main thread is shutting down
+
+        // restore Vec
+        freq_buffer = Some(analyser.get_float_frequency_data(tmp_buf));
+    }
+}
+
 fn audio_thread(
     gain_factor: Arc<AtomicI32>,
     playback_rate_factor: Arc<AtomicI32>,
@@ -233,37 +275,12 @@ fn audio_thread(
     let mic_in = context.create_media_stream_source(stream);
 
     let analyser = Arc::new(context.create_analyser());
-    let analyser_clone = analyser.clone();
-    let mut freq_buffer = Some(vec![0.; analyser.frequency_bin_count()]);
 
     // spawn thread to poll analyser updates
-    std::thread::spawn(move || {
-        use textplots::{Chart, Plot, Shape};
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            let tmp_buf = freq_buffer.take().unwrap();
-            freq_buffer = Some(analyser_clone.get_float_frequency_data(tmp_buf));
-            let points: Vec<_> = freq_buffer
-                .as_ref()
-                .unwrap()
-                .iter()
-                .enumerate()
-                .map(|(i, &f)| (i as f32, f))
-                .collect();
-            let plot = Chart::new_with_y_range(
-                width as u32 * 2,
-                (height - 25) as u32 * 4,
-                0.0,
-                analyser_clone.frequency_bin_count() as f32,
-                -80.,
-                20.,
-            )
-            .lineplot(&Shape::Bars(&points[..]))
-            .to_string();
-            let event = UiEvent::GraphUpdate(plot);
-            let _ = plot_send.send(event); // allowed to fail if the main thread is shutting down
-        }
-    });
+    {
+        let analyser = analyser.clone();
+        std::thread::spawn(move || poll_frequency_graph(analyser, plot_send, width, height));
+    }
 
     let playback_step = 1.05_f32; // playback increases by 5% per setting
     let gain_step = 1.1_f32; // gain increases by 10% per setting
@@ -380,11 +397,10 @@ fn main() {
      * Spawn another thread to handle user input. It reads key presses and uses message passing to
      * send them back to the main UI thread.
      */
-    let key_sender = ui_event_sender.clone();
     std::thread::spawn(move || {
         stdin().keys().for_each(|key| {
             let event = UiEvent::UserInput(key.unwrap());
-            let _ = key_sender.send(event); // allowed to fail if the main thread is shutting down
+            let _ = ui_event_sender.send(event); // allowed to fail if the main thread is shutting down
         })
     });
 
