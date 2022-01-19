@@ -23,6 +23,11 @@ use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 
+/// Instruction box height
+const INFO_PANEL_HEIGHT: u16 = 9;
+/// The number of log lines to show at the bottom of the screen
+const LOG_LEN: usize = 10;
+
 struct MediaRecorder {
     /// handle to the audio context, required for all audio nodes
     registration: AudioContextRegistration,
@@ -108,7 +113,7 @@ impl AudioProcessor for MediaRecorderProcessor {
 // This struct is used as an adaptor, it implements std::io::Write and forwards the buffer to a mpsc::Sender
 struct WriteAdapter {
     buffer: Vec<u8>,
-    sender: Sender<String>,
+    sender: Sender<UiEvent>,
 }
 
 impl std::io::Write for WriteAdapter {
@@ -119,7 +124,8 @@ impl std::io::Write for WriteAdapter {
             let mut other = self.buffer.split_off(pos + 1);
             std::mem::swap(&mut self.buffer, &mut other);
             let string = String::from_utf8(other).unwrap();
-            self.sender.send(string).unwrap();
+            let event = UiEvent::LogMessage(string);
+            let _ = self.sender.send(event); // allowed to fail if the main thread is shutting down
         }
         Ok(buf.len())
     }
@@ -178,8 +184,8 @@ fn print_static_ui(
     )
     .unwrap();
 
-    print_header(stdout, 10, width, "Frequency response");
-    print_header(stdout, height - 11, width, "Logs");
+    print_header(stdout, INFO_PANEL_HEIGHT + 1, width, "Frequency response");
+    print_header(stdout, height - 1 - LOG_LEN as u16, width, "Logs");
 }
 
 fn print_logs(
@@ -187,7 +193,7 @@ fn print_logs(
     logs: &[String],
     offset: u16,
 ) {
-    let offset = offset + 10 - logs.len() as u16;
+    let offset = offset + LOG_LEN as u16 - logs.len() as u16;
     // Collect all messages send to the channel and parse the result as a string
     logs.iter().enumerate().for_each(|(i, msg)| {
         write!(
@@ -219,7 +225,7 @@ fn audio_thread(
     biquad_filter: Arc<AtomicU32>,
     width: u16,
     height: u16,
-    plot_send: Sender<String>,
+    plot_send: Sender<UiEvent>,
 ) {
     let context = AudioContext::new(None);
 
@@ -229,6 +235,7 @@ fn audio_thread(
     let analyser = Arc::new(context.create_analyser());
     let analyser_clone = analyser.clone();
     let mut freq_buffer = Some(vec![0.; analyser.frequency_bin_count()]);
+
     // spawn thread to poll analyser updates
     std::thread::spawn(move || {
         use textplots::{Chart, Plot, Shape};
@@ -253,7 +260,8 @@ fn audio_thread(
             )
             .lineplot(&Shape::Bars(&points[..]))
             .to_string();
-            plot_send.send(plot).unwrap();
+            let event = UiEvent::GraphUpdate(plot);
+            let _ = plot_send.send(event); // allowed to fail if the main thread is shutting down
         }
     });
 
@@ -307,17 +315,33 @@ fn audio_thread(
     }
 }
 
+enum UiEvent {
+    UserInput(termion::event::Key),
+    LogMessage(String),
+    GraphUpdate(String),
+}
+
 fn main() {
     let (width, height) = termion::terminal_size().unwrap();
+
+    /*
+     * The UI is drawn on the main thread. We will spawn other threads to
+     * - collect user input
+     * - handle the audio graph
+     * - submit logs.
+     *
+     * All communication is sent over a single channel, which has multiple senders and one
+     * receiver.
+     */
+    let (ui_event_sender, ui_event_receiver) = crossbeam_channel::unbounded();
 
     /*
      * First, setup logging facility. Use a WriteLogger to catch the log entries and ship them to
      * the UI. We will render the log lines at the bottom of the interface.
      */
-    let (sender, receiver) = crossbeam_channel::unbounded();
     let target = WriteAdapter {
         buffer: vec![],
-        sender,
+        sender: ui_event_sender.clone(),
     };
     WriteLogger::init(LevelFilter::Debug, Config::default(), target).unwrap();
     log::info!("Running the microphone playback example");
@@ -333,88 +357,94 @@ fn main() {
      * Then, setup the audio loop in a separate thread. It will record audio for a few seconds,
      * then play it back to the speakers with some transformations applied. Repeat.
      */
-    let gain_factor_clone = gain_factor.clone();
-    let playback_rate_factor_clone = playback_rate_factor.clone();
-    let biquad_filter_clone = biquad_filter.clone();
-    let (plot_send, plot_recv) = crossbeam_channel::unbounded();
-    std::thread::spawn(move || {
-        audio_thread(
-            gain_factor_clone,
-            playback_rate_factor_clone,
-            biquad_filter_clone,
-            width,
-            height,
-            plot_send,
-        )
-    });
+    {
+        // create clones in a new { }-block and shadow original bindings
+        let gain_factor = gain_factor.clone();
+        let playback_rate_factor = playback_rate_factor.clone();
+        let biquad_filter = biquad_filter.clone();
+        let ui_event_sender = ui_event_sender.clone();
+
+        std::thread::spawn(move || {
+            audio_thread(
+                gain_factor,
+                playback_rate_factor,
+                biquad_filter,
+                width,
+                height,
+                ui_event_sender,
+            )
+        });
+    }
 
     /*
      * Spawn another thread to handle user input. It reads key presses and uses message passing to
      * send them back to the main UI thread.
      */
-    let (stdin_send, stdin_recv) = crossbeam_channel::unbounded();
+    let key_sender = ui_event_sender.clone();
     std::thread::spawn(move || {
-        stdin().keys().for_each(|c| {
-            let _ = stdin_send.send(c);
+        stdin().keys().for_each(|key| {
+            let event = UiEvent::UserInput(key.unwrap());
+            let _ = key_sender.send(event); // allowed to fail if the main thread is shutting down
         })
     });
 
     /*
-     * Now, the `main` thread will serve as the UI thread. It will respond to key presses from the
-     * 'user input thread', and log messages from the log WriteAdapter.
+     * Now, the `main` thread will serve as the UI thread. It will respond to all the UI events
+     * that are sent from the various threads we have set up above
      */
     let mut stdout = stdout().into_raw_mode().unwrap();
-    print_static_ui(&mut stdout, width, height);
+    print_static_ui(&mut stdout, width, height); // print headers, usage instructions
 
-    let log_offset = height - 10;
+    // the log section is put at the bottom 10 lines of the terminal
+    let log_offset = height - LOG_LEN as u16;
+    let mut logs = Vec::with_capacity(LOG_LEN);
 
-    let mut logs = vec![];
-    'outer: loop {
-        // collect logs
-        let prev_log_len = logs.len();
-        logs.extend(receiver.try_iter());
-        if logs.len() > prev_log_len {
-            while logs.len() > 10 {
-                logs.remove(0);
+    for ui_event in ui_event_receiver.iter() {
+        match ui_event {
+            UiEvent::LogMessage(msg) => {
+                logs.push(msg);
+                if logs.len() > LOG_LEN {
+                    logs.remove(0);
+                }
+                print_logs(&mut stdout, &logs, log_offset);
             }
-            print_logs(&mut stdout, &logs, log_offset);
-            stdout.flush().unwrap();
-        }
-
-        if let Ok(plot) = plot_recv.try_recv() {
-            draw_plot(&mut stdout, plot, 11);
-        }
-
-        for c in stdin_recv.try_iter() {
-            match c.unwrap() {
-                Key::Char('q') => break 'outer,
-                Key::Char('+') => {
-                    let prev = gain_factor.fetch_add(1, Ordering::Relaxed);
-                    log::info!("Volume: {:+}", prev + 1);
+            UiEvent::GraphUpdate(plot) => {
+                draw_plot(&mut stdout, plot, INFO_PANEL_HEIGHT + 2);
+            }
+            UiEvent::UserInput(c) => {
+                match c {
+                    Key::Char('q') => break, // halt UI loop
+                    Key::Char('+') => {
+                        let prev = gain_factor.fetch_add(1, Ordering::Relaxed);
+                        log::info!("Volume: {:+}", prev + 1);
+                    }
+                    Key::Char('-') => {
+                        let prev = gain_factor.fetch_add(-1, Ordering::Relaxed);
+                        log::info!("Volume: {:+}", prev - 1);
+                    }
+                    Key::Char('m') => {
+                        let prev = playback_rate_factor.fetch_add(1, Ordering::Relaxed);
+                        log::info!("Playback speed: {:+}", prev + 1);
+                    }
+                    Key::Char('n') => {
+                        let prev = playback_rate_factor.fetch_add(-1, Ordering::Relaxed);
+                        log::info!("Playback speed: {:+}", prev - 1);
+                    }
+                    Key::Char('x') => {
+                        let prev = biquad_filter.fetch_add(1, Ordering::Relaxed);
+                        let biquad_filter_type = BiquadFilterType::from((prev + 1) % 8);
+                        log::info!("Filter type now: {:?}", biquad_filter_type);
+                    }
+                    Key::Char(c) => log::debug!("Unknown input - {}", c),
+                    _ => {} // ignore backspace, arrows, etc
                 }
-                Key::Char('-') => {
-                    let prev = gain_factor.fetch_add(-1, Ordering::Relaxed);
-                    log::info!("Volume: {:+}", prev - 1);
-                }
-                Key::Char('m') => {
-                    let prev = playback_rate_factor.fetch_add(1, Ordering::Relaxed);
-                    log::info!("Playback speed: {:+}", prev + 1);
-                }
-                Key::Char('n') => {
-                    let prev = playback_rate_factor.fetch_add(-1, Ordering::Relaxed);
-                    log::info!("Playback speed: {:+}", prev - 1);
-                }
-                Key::Char('x') => {
-                    let prev = biquad_filter.fetch_add(1, Ordering::Relaxed);
-                    let biquad_filter_type = BiquadFilterType::from((prev + 1) % 8);
-                    log::info!("Filter type now: {:?}", biquad_filter_type);
-                }
-                Key::Char(c) => log::debug!("Unknown input - {}", c),
-                _ => {}
             }
         }
+
+        // force screen update
+        stdout.flush().unwrap();
     }
 
-    // restore cursor
+    // shutting down, restore cursor
     write!(stdout, "{}", termion::cursor::Show).unwrap();
 }
