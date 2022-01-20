@@ -235,6 +235,7 @@ fn poll_frequency_graph(
         std::thread::sleep(std::time::Duration::from_millis(200));
 
         let tmp_buf = freq_buffer.take().unwrap();
+        let tmp_buf = analyser.get_float_frequency_data(tmp_buf);
 
         let points: Vec<_> = tmp_buf
             .iter()
@@ -257,7 +258,7 @@ fn poll_frequency_graph(
         let _ = plot_send.send(event); // allowed to fail if the main thread is shutting down
 
         // restore Vec
-        freq_buffer = Some(analyser.get_float_frequency_data(tmp_buf));
+        freq_buffer = Some(tmp_buf);
     }
 }
 
