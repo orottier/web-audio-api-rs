@@ -11,6 +11,8 @@ use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use delegate_attr::delegate;
+
 // magic node values
 /// Destination node id is always at index 0
 const DESTINATION_NODE_ID: u64 = 0;
@@ -47,7 +49,7 @@ use crossbeam_channel::Sender;
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
-pub struct BaseAudioContext {
+struct BaseAudioContext {
     /// inner makes `BaseAudioContextInner` cheap to clone
     inner: Arc<BaseAudioContextInner>,
 }
@@ -59,6 +61,8 @@ impl PartialEq for BaseAudioContext {
 }
 
 /// Inner representation of the `BaseAudioContext`
+/// 
+/// Required for internal synchronization.
 struct BaseAudioContextInner {
     /// sample rate in Hertz
     sample_rate: SampleRate,
@@ -76,12 +80,156 @@ struct BaseAudioContextInner {
     listener_params: Option<AudioListenerParams>,
 }
 
+macro_rules! delegate_context {
+    ($name:ident, $parent:ident) => {
+        impl Context for $name {
+            fn decode_audio_data<R: std::io::Read + Send + 'static>(
+                &self,
+                input: R,
+            ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
+                self.$parent.decode_audio_data(input)
+            }
+
+            fn create_buffer(
+                &self,
+                number_of_channels: usize,
+                length: usize,
+                sample_rate: SampleRate,
+            ) -> AudioBuffer {
+                self.$parent
+                    .create_buffer(number_of_channels, length, sample_rate)
+            }
+
+            fn create_oscillator(&self) -> node::OscillatorNode {
+                self.$parent.create_oscillator()
+            }
+
+            fn create_stereo_panner(&self) -> node::StereoPannerNode {
+                self.$parent.create_stereo_panner()
+            }
+
+            fn create_gain(&self) -> node::GainNode {
+                self.$parent.create_gain()
+            }
+
+            fn create_constant_source(&self) -> node::ConstantSourceNode {
+                self.$parent.create_constant_source()
+            }
+
+            fn create_iir_filter(
+                &self,
+                feedforward: Vec<f64>,
+                feedback: Vec<f64>,
+            ) -> node::IirFilterNode {
+                self.$parent.create_iir_filter(feedforward, feedback)
+            }
+
+            fn create_delay(&self, max_delay_time: f64) -> node::DelayNode {
+                self.$parent.create_delay(max_delay_time)
+            }
+
+            fn create_biquad_filter(&self) -> node::BiquadFilterNode {
+                self.$parent.create_biquad_filter()
+            }
+
+            fn create_wave_shaper(&self) -> node::WaveShaperNode {
+                self.$parent.create_wave_shaper()
+            }
+
+            fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
+                self.$parent.create_channel_splitter(number_of_outputs)
+            }
+
+            fn create_channel_merger(&self, number_of_inputs: u32) -> node::ChannelMergerNode {
+                self.$parent.create_channel_merger(number_of_inputs)
+            }
+
+            fn create_media_stream_source<M: MediaStream>(
+                &self,
+                media: M,
+            ) -> node::MediaStreamAudioSourceNode {
+                self.$parent.create_media_stream_source(media)
+            }
+
+            fn create_media_element_source(
+                &self,
+                media: MediaElement,
+            ) -> node::MediaElementAudioSourceNode {
+                self.$parent.create_media_element_source(media)
+            }
+
+            fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
+                self.$parent.create_buffer_source()
+            }
+
+            fn create_panner(&self) -> node::PannerNode {
+                self.$parent.create_panner()
+            }
+
+            fn create_analyser(&self) -> node::AnalyserNode {
+                self.$parent.create_analyser()
+            }
+
+            fn create_periodic_wave(&self, options: Option<PeriodicWaveOptions>) -> PeriodicWave {
+                self.$parent.create_periodic_wave(options)
+            }
+
+            fn create_audio_param(
+                &self,
+                opts: AudioParamOptions,
+                dest: &AudioNodeId,
+            ) -> (crate::param::AudioParam, AudioParamId) {
+                self.$parent.create_audio_param(opts, dest)
+            }
+
+            fn destination(&self) -> node::AudioDestinationNode {
+                self.$parent.destination()
+            }
+
+            fn listener(&self) -> AudioListener {
+                self.$parent.listener()
+            }
+
+            #[must_use]
+            fn sample_rate(&self) -> f32 {
+                self.$parent.sample_rate()
+            }
+
+            #[must_use]
+            fn sample_rate_raw(&self) -> SampleRate {
+                self.$parent.sample_rate_raw()
+            }
+
+            fn current_time(&self) -> f64 {
+                self.$parent.current_time()
+            }
+
+            fn channels(&self) -> u32 {
+                self.$parent.channels()
+            }
+
+            #[allow(clippy::missing_panics_doc)]
+            fn register<
+                T: node::AudioNode,
+                F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
+            >(
+                &self,
+                f: F,
+            ) -> T {
+                self.$parent.register(f)
+            }
+
+            #[cfg(test)]
+            fn mock_registration(&self) -> AudioContextRegistration {
+                self.$parent.mock_registration()
+            }
+        }
+    };
+}
+
 /// Retrieve the `BaseAudioContext` from the concrete `AudioContext`
 #[allow(clippy::module_name_repetitions)]
-pub trait AsBaseAudioContext {
-    /// retrieves the `BaseAudioContext` associated with the concrete `AudioContext`
-    fn base(&self) -> &BaseAudioContext;
-
+pub trait Context {
     /// Decode an [`AudioBuffer`] from a given input stream.
     ///
     /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
@@ -103,7 +251,7 @@ pub trait AsBaseAudioContext {
     /// ```no_run
     /// use std::io::Cursor;
     /// use web_audio_api::SampleRate;
-    /// use web_audio_api::context::{AsBaseAudioContext, OfflineAudioContext};
+    /// use web_audio_api::context::{Context, OfflineAudioContext};
     ///
     /// let input = Cursor::new(vec![0; 32]); // or a File, TcpStream, ...
     ///
@@ -118,23 +266,7 @@ pub trait AsBaseAudioContext {
     fn decode_audio_data<R: std::io::Read + Send + 'static>(
         &self,
         input: R,
-    ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
-        // Set up a media decoder, consume the stream in full and construct a single buffer out of it
-        let mut buffer = MediaDecoder::try_new(input)?
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .reduce(|mut accum, item| {
-                accum.extend(&item);
-                accum
-            })
-            // if there are no samples decoded, return an empty buffer
-            .unwrap_or_else(|| AudioBuffer::from(vec![vec![]], self.sample_rate_raw()));
-
-        // resample to desired rate (no-op if already matching)
-        buffer.resample(self.sample_rate_raw());
-
-        Ok(buffer)
-    }
+    ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>>;
 
     /// Create an new "in-memory" `AudioBuffer` with the given number of channels,
     /// length (i.e. number of samples per channel) and sample rate.
@@ -146,36 +278,20 @@ pub trait AsBaseAudioContext {
         number_of_channels: usize,
         length: usize,
         sample_rate: SampleRate,
-    ) -> AudioBuffer {
-        let options = AudioBufferOptions {
-            number_of_channels,
-            length,
-            sample_rate,
-        };
-
-        AudioBuffer::new(options)
-    }
+    ) -> AudioBuffer;
 
     /// Creates an `OscillatorNode`, a source representing a periodic waveform. It basically
     /// generates a tone.
-    fn create_oscillator(&self) -> node::OscillatorNode {
-        node::OscillatorNode::new(self.base(), None)
-    }
+    fn create_oscillator(&self) -> node::OscillatorNode;
 
     /// Creates an `StereoPannerNode` to pan a stereo output
-    fn create_stereo_panner(&self) -> node::StereoPannerNode {
-        node::StereoPannerNode::new(self.base(), None)
-    }
+    fn create_stereo_panner(&self) -> node::StereoPannerNode;
 
     /// Creates an `GainNode`, to control audio volume
-    fn create_gain(&self) -> node::GainNode {
-        node::GainNode::new(self.base(), GainOptions::default())
-    }
+    fn create_gain(&self) -> node::GainNode;
 
     /// Creates an `ConstantSourceNode`, a source representing a constant value
-    fn create_constant_source(&self) -> node::ConstantSourceNode {
-        node::ConstantSourceNode::new(self.base(), ConstantSourceOptions::default())
-    }
+    fn create_constant_source(&self) -> node::ConstantSourceNode;
 
     /// Creates an `IirFilterNode`
     ///
@@ -185,109 +301,48 @@ pub trait AsBaseAudioContext {
     /// The maximum length of this array is 20
     /// * `feedback` - An array of the feedback (denominator) coefficients for the transfer function of the IIR filter.
     /// The maximum length of this array is 20
-    fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IirFilterNode {
-        let options = IirFilterOptions {
-            channel_config: ChannelConfigOptions::default(),
-            feedforward,
-            feedback,
-        };
-        node::IirFilterNode::new(self.base(), options)
-    }
+    fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IirFilterNode;
 
     /// Creates a `DelayNode`, delaying the audio signal
-    fn create_delay(&self, max_delay_time: f64) -> node::DelayNode {
-        let opts = node::DelayOptions {
-            max_delay_time,
-            ..DelayOptions::default()
-        };
-        node::DelayNode::new(self.base(), opts)
-    }
+    fn create_delay(&self, max_delay_time: f64) -> node::DelayNode;
 
     /// Creates an `BiquadFilterNode` which implements a second order filter
-    fn create_biquad_filter(&self) -> node::BiquadFilterNode {
-        node::BiquadFilterNode::new(self.base(), None)
-    }
+    fn create_biquad_filter(&self) -> node::BiquadFilterNode;
 
     /// Creates a `WaveShaperNode`
-    fn create_wave_shaper(&self) -> node::WaveShaperNode {
-        node::WaveShaperNode::new(self.base(), None)
-    }
+    fn create_wave_shaper(&self) -> node::WaveShaperNode;
 
     /// Creates a `ChannelSplitterNode`
-    fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
-        let opts = node::ChannelSplitterOptions {
-            number_of_outputs,
-            ..ChannelSplitterOptions::default()
-        };
-        node::ChannelSplitterNode::new(self.base(), opts)
-    }
+    fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode;
 
     /// Creates a `ChannelMergerNode`
-    fn create_channel_merger(&self, number_of_inputs: u32) -> node::ChannelMergerNode {
-        let opts = node::ChannelMergerOptions {
-            number_of_inputs,
-            ..ChannelMergerOptions::default()
-        };
-        node::ChannelMergerNode::new(self.base(), opts)
-    }
+    fn create_channel_merger(&self, number_of_inputs: u32) -> node::ChannelMergerNode;
 
     /// Creates a `MediaStreamAudioSourceNode` from a `MediaElement`
     fn create_media_stream_source<M: MediaStream>(
         &self,
         media: M,
-    ) -> node::MediaStreamAudioSourceNode {
-        let channel_config = ChannelConfigOptions {
-            count: 1,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Speakers,
-        };
-        let opts = node::MediaStreamAudioSourceNodeOptions {
-            media,
-            channel_config,
-        };
-        node::MediaStreamAudioSourceNode::new(self.base(), opts)
-    }
+    ) -> node::MediaStreamAudioSourceNode;
 
     /// Creates a `MediaElementAudioSourceNode` from a `MediaElement`
     ///
     /// Note: do not forget to `start()` the node.
-    fn create_media_element_source(
-        &self,
-        media: MediaElement,
-    ) -> node::MediaElementAudioSourceNode {
-        let channel_config = ChannelConfigOptions {
-            count: 1,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Speakers,
-        };
-        let opts = node::MediaElementAudioSourceNodeOptions {
-            media,
-            channel_config,
-        };
-        node::MediaElementAudioSourceNode::new(self.base(), opts)
-    }
+    fn create_media_element_source(&self, media: MediaElement)
+        -> node::MediaElementAudioSourceNode;
 
     /// Creates an `AudioBufferSourceNode`
     ///
     /// Note: do not forget to `start()` the node.
-    fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
-        node::AudioBufferSourceNode::new(self.base(), AudioBufferSourceOptions::default())
-    }
+    fn create_buffer_source(&self) -> node::AudioBufferSourceNode;
 
     /// Creates a `PannerNode`
-    fn create_panner(&self) -> node::PannerNode {
-        node::PannerNode::new(self.base(), PannerOptions::default())
-    }
+    fn create_panner(&self) -> node::PannerNode;
 
     /// Creates a `AnalyserNode`
-    fn create_analyser(&self) -> node::AnalyserNode {
-        node::AnalyserNode::new(self.base(), AnalyserOptions::default())
-    }
+    fn create_analyser(&self) -> node::AnalyserNode;
 
     /// Creates a periodic wave
-    fn create_periodic_wave(&self, options: Option<PeriodicWaveOptions>) -> PeriodicWave {
-        PeriodicWave::new(self.base(), options)
-    }
+    fn create_periodic_wave(&self, options: Option<PeriodicWaveOptions>) -> PeriodicWave;
 
     /// Create an `AudioParam`.
     ///
@@ -296,87 +351,89 @@ pub trait AsBaseAudioContext {
         &self,
         opts: AudioParamOptions,
         dest: &AudioNodeId,
-    ) -> (crate::param::AudioParam, AudioParamId) {
-        let param = self.base().register(move |registration| {
-            let (node, proc) = crate::param::audio_param_pair(opts, registration);
-
-            (node, Box::new(proc))
-        });
-
-        // Connect the param to the node, once the node is registered inside the audio graph.
-        self.base().queue_audio_param_connect(&param, dest);
-
-        let proc_id = AudioParamId(param.id().0);
-        (param, proc_id)
-    }
+    ) -> (crate::param::AudioParam, AudioParamId);
 
     /// Returns an `AudioDestinationNode` representing the final destination of all audio in the
     /// context. It can be thought of as the audio-rendering device.
-    fn destination(&self) -> node::AudioDestinationNode {
-        let registration = AudioContextRegistration {
-            id: AudioNodeId(DESTINATION_NODE_ID),
-            context: self.base().clone(),
-        };
-        node::AudioDestinationNode {
-            registration,
-            channel_count: self.base().channels() as usize,
-        }
-    }
+    fn destination(&self) -> node::AudioDestinationNode;
 
     /// Returns the `AudioListener` which is used for 3D spatialization
-    fn listener(&self) -> AudioListener {
-        let mut ids = LISTENER_PARAM_IDS.map(|i| AudioContextRegistration {
-            id: AudioNodeId(i),
-            context: self.base().clone(),
-        });
-        let params = self.base().inner.listener_params.as_ref().unwrap();
-
-        AudioListener {
-            position_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_x.clone()),
-            position_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_y.clone()),
-            position_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_z.clone()),
-            forward_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_x.clone()),
-            forward_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_y.clone()),
-            forward_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_z.clone()),
-            up_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_x.clone()),
-            up_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_y.clone()),
-            up_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_z.clone()),
-        }
-    }
+    fn listener(&self) -> AudioListener;
 
     /// The sample rate (in sample-frames per second) at which the `AudioContext` handles audio.
     #[must_use]
-    fn sample_rate(&self) -> f32 {
-        self.base().sample_rate()
-    }
+    fn sample_rate(&self) -> f32;
 
     /// The raw sample rate of the `AudioContext` (which has more precision than the float
-    /// [`sample_rate()`](AsBaseAudioContext::sample_rate) value).
+    /// [`sample_rate()`](Context::sample_rate) value).
     #[must_use]
-    fn sample_rate_raw(&self) -> SampleRate {
-        self.base().sample_rate_raw()
-    }
+    fn sample_rate_raw(&self) -> SampleRate;
 
     /// This is the time in seconds of the sample frame immediately following the last sample-frame
     /// in the block of audio most recently processed by the context’s rendering graph.
-    fn current_time(&self) -> f64 {
-        self.base().current_time()
-    }
+    fn current_time(&self) -> f64;
+
+    /// Number of channels for the audio destination
+    fn channels(&self) -> u32;
+
+    /// Construct a new pair of [`node::AudioNode`] and [`AudioProcessor`]
+    ///
+    /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.
+    #[allow(clippy::missing_panics_doc)]
+    fn register<
+        T: node::AudioNode,
+        F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
+    >(
+        &self,
+        f: F,
+    ) -> T;
 
     #[cfg(test)]
-    fn mock_registration(&self) -> AudioContextRegistration {
-        AudioContextRegistration {
-            id: AudioNodeId(0),
-            context: self.base().clone(),
-        }
+    fn mock_registration(&self) -> AudioContextRegistration;
+}
+
+delegate_context!(AudioContext, base);
+delegate_context!(OfflineAudioContext, base);
+
+pub(crate) mod private {
+    pub trait Private {}
+}
+
+pub trait ConnectListenerToPannerRole: self::private::Private {
+    /// Attach the 9 `AudioListener` coordinates to a `PannerNode`
+    fn connect_listener_to_panner(&self, panner: &crate::context::AudioNodeId);
+}
+
+impl private::Private for BaseAudioContext {}
+
+impl ConnectListenerToPannerRole for BaseAudioContext {
+    fn connect_listener_to_panner(&self, panner: &crate::context::AudioNodeId) {
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 0, 1);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 1, 2);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 2, 3);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 3, 4);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 4, 5);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 5, 6);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 6, 7);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 7, 8);
+        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 8, 9);
     }
 }
 
-impl AsBaseAudioContext for BaseAudioContext {
-    fn base(&self) -> &BaseAudioContext {
-        self
-    }
+macro_rules! impl_connect_listener_to_panner {
+    ($name:ident, $parent:ident) => {
+        impl crate::context::private::Private for $name {}
+
+        impl crate::context::ConnectListenerToPannerRole for $name {
+            fn connect_listener_to_panner(&self, panner: &crate::context::AudioNodeId) {
+                self.$parent.connect_listener_to_panner(panner)
+            }
+        }
+    };
 }
+
+impl_connect_listener_to_panner!(AudioContext, base);
+impl_connect_listener_to_panner!(OfflineAudioContext, base);
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
@@ -420,12 +477,6 @@ pub struct AudioContext {
     stream: Stream,
 }
 
-impl AsBaseAudioContext for AudioContext {
-    fn base(&self) -> &BaseAudioContext {
-        &self.base
-    }
-}
-
 /// The `OfflineAudioContext` doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an `AudioBuffer`.
 // the naming comes from the web audio specfication
@@ -437,12 +488,6 @@ pub struct OfflineAudioContext {
     length: usize,
     /// the rendering 'thread', fully controlled by the offline context
     renderer: RenderThread,
-}
-
-impl AsBaseAudioContext for OfflineAudioContext {
-    fn base(&self) -> &BaseAudioContext {
-        &self.base
-    }
 }
 
 impl AudioContext {
@@ -547,6 +592,19 @@ pub struct AudioContextRegistration {
     id: AudioNodeId,
 }
 
+delegate_context!(AudioContextRegistration, context);
+
+#[delegate(self.context)]
+impl AudioContextRegistration {
+    pub(crate) fn connect(&self, from: &AudioNodeId, to: &AudioNodeId, output: u32, input: u32);
+
+    pub(crate) fn disconnect(&self, from: &AudioNodeId, to: &AudioNodeId);
+
+    pub(crate) fn disconnect_all(&self, from: &AudioNodeId);
+
+    pub(crate) fn pass_audio_param_event(&self, to: &Sender<AudioParamEvent>, event: AudioParamEvent);
+}
+
 impl AudioContextRegistration {
     /// get the audio node id of the registration
     // false positive: AudioContextRegistration is not const
@@ -555,12 +613,11 @@ impl AudioContextRegistration {
     pub fn id(&self) -> &AudioNodeId {
         &self.id
     }
-    /// get the context of the registration
-    // false positive: AudioContextRegistration is not const
-    #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    #[must_use]
-    pub fn context(&self) -> &BaseAudioContext {
-        &self.context
+}
+
+impl PartialEq for AudioContextRegistration {
+    fn eq(&self, other: &Self) -> bool {
+        self.context.eq(&other.context)
     }
 }
 
@@ -574,6 +631,283 @@ impl Drop for AudioContextRegistration {
         if !magic {
             let message = ControlMessage::FreeWhenFinished { id: self.id.0 };
             self.context.inner.render_channel.send(message).unwrap();
+        }
+    }
+}
+
+impl Context for BaseAudioContext {
+    fn decode_audio_data<R: std::io::Read + Send + 'static>(
+        &self,
+        input: R,
+    ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
+        // Set up a media decoder, consume the stream in full and construct a single buffer out of it
+        let mut buffer = MediaDecoder::try_new(input)?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .reduce(|mut accum, item| {
+                accum.extend(&item);
+                accum
+            })
+            // if there are no samples decoded, return an empty buffer
+            .unwrap_or_else(|| AudioBuffer::from(vec![vec![]], self.sample_rate_raw()));
+
+        // resample to desired rate (no-op if already matching)
+        buffer.resample(self.sample_rate_raw());
+
+        Ok(buffer)
+    }
+
+    fn create_buffer(
+        &self,
+        number_of_channels: usize,
+        length: usize,
+        sample_rate: SampleRate,
+    ) -> AudioBuffer {
+        let options = AudioBufferOptions {
+            number_of_channels,
+            length,
+            sample_rate,
+        };
+
+        AudioBuffer::new(options)
+    }
+
+    fn create_oscillator(&self) -> node::OscillatorNode {
+        node::OscillatorNode::new(self, None)
+    }
+
+    fn create_stereo_panner(&self) -> node::StereoPannerNode {
+        node::StereoPannerNode::new(self, None)
+    }
+
+    fn create_gain(&self) -> node::GainNode {
+        node::GainNode::new(self, GainOptions::default())
+    }
+
+    fn create_constant_source(&self) -> node::ConstantSourceNode {
+        node::ConstantSourceNode::new(self, ConstantSourceOptions::default())
+    }
+
+    fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IirFilterNode {
+        let options = IirFilterOptions {
+            channel_config: ChannelConfigOptions::default(),
+            feedforward,
+            feedback,
+        };
+        node::IirFilterNode::new(self, options)
+    }
+
+    fn create_delay(&self, max_delay_time: f64) -> node::DelayNode {
+        let opts = node::DelayOptions {
+            max_delay_time,
+            ..DelayOptions::default()
+        };
+        node::DelayNode::new(self, opts)
+    }
+
+    fn create_biquad_filter(&self) -> node::BiquadFilterNode {
+        node::BiquadFilterNode::new(self, None)
+    }
+
+    fn create_wave_shaper(&self) -> node::WaveShaperNode {
+        node::WaveShaperNode::new(self, None)
+    }
+
+    fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
+        let opts = node::ChannelSplitterOptions {
+            number_of_outputs,
+            ..ChannelSplitterOptions::default()
+        };
+        node::ChannelSplitterNode::new(self, opts)
+    }
+
+    fn create_channel_merger(&self, number_of_inputs: u32) -> node::ChannelMergerNode {
+        let opts = node::ChannelMergerOptions {
+            number_of_inputs,
+            ..ChannelMergerOptions::default()
+        };
+        node::ChannelMergerNode::new(self, opts)
+    }
+
+    fn create_media_stream_source<M: MediaStream>(
+        &self,
+        media: M,
+    ) -> node::MediaStreamAudioSourceNode {
+        let channel_config = ChannelConfigOptions {
+            count: 1,
+            mode: ChannelCountMode::Explicit,
+            interpretation: ChannelInterpretation::Speakers,
+        };
+        let opts = node::MediaStreamAudioSourceNodeOptions {
+            media,
+            channel_config,
+        };
+        node::MediaStreamAudioSourceNode::new(self, opts)
+    }
+
+    fn create_media_element_source(
+        &self,
+        media: MediaElement,
+    ) -> node::MediaElementAudioSourceNode {
+        let channel_config = ChannelConfigOptions {
+            count: 1,
+            mode: ChannelCountMode::Explicit,
+            interpretation: ChannelInterpretation::Speakers,
+        };
+        let opts = node::MediaElementAudioSourceNodeOptions {
+            media,
+            channel_config,
+        };
+        node::MediaElementAudioSourceNode::new(self, opts)
+    }
+
+    fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
+        node::AudioBufferSourceNode::new(self, AudioBufferSourceOptions::default())
+    }
+
+    fn create_panner(&self) -> node::PannerNode {
+        node::PannerNode::new(self, PannerOptions::default())
+    }
+
+    fn create_analyser(&self) -> node::AnalyserNode {
+        node::AnalyserNode::new(self, AnalyserOptions::default())
+    }
+
+    fn create_periodic_wave(&self, options: Option<PeriodicWaveOptions>) -> PeriodicWave {
+        PeriodicWave::new(self, options)
+    }
+
+    fn create_audio_param(
+        &self,
+        opts: AudioParamOptions,
+        dest: &AudioNodeId,
+    ) -> (crate::param::AudioParam, AudioParamId) {
+        let param = self.register(move |registration| {
+            let (node, proc) = crate::param::audio_param_pair(opts, registration);
+
+            (node, Box::new(proc))
+        });
+
+        // Connect the param to the node, once the node is registered inside the audio graph.
+        self.queue_audio_param_connect(&param, dest);
+
+        let proc_id = AudioParamId(param.id().0);
+        (param, proc_id)
+    }
+
+    fn destination(&self) -> node::AudioDestinationNode {
+        let registration = AudioContextRegistration {
+            id: AudioNodeId(DESTINATION_NODE_ID),
+            context: self.clone(),
+        };
+        node::AudioDestinationNode {
+            registration,
+            channel_count: self.channels() as usize,
+        }
+    }
+
+    fn listener(&self) -> AudioListener {
+        let mut ids = LISTENER_PARAM_IDS.map(|i| AudioContextRegistration {
+            id: AudioNodeId(i),
+            context: self.clone(),
+        });
+        let params = self.inner.listener_params.as_ref().unwrap();
+
+        AudioListener {
+            position_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_x.clone()),
+            position_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_y.clone()),
+            position_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_z.clone()),
+            forward_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_x.clone()),
+            forward_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_y.clone()),
+            forward_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_z.clone()),
+            up_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_x.clone()),
+            up_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_y.clone()),
+            up_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_z.clone()),
+        }
+    }
+
+    /// The sample rate (in sample-frames per second) at which the `AudioContext` handles audio.
+    #[allow(clippy::cast_precision_loss)]
+    #[must_use]
+    fn sample_rate(&self) -> f32 {
+        self.inner.sample_rate.0 as f32
+    }
+
+    /// The raw sample rate of the `AudioContext` (which has more precision than the float
+    /// [`sample_rate()`](Context::sample_rate) value).
+    #[must_use]
+    fn sample_rate_raw(&self) -> SampleRate {
+        self.inner.sample_rate
+    }
+
+    /// This is the time in seconds of the sample frame immediately following the last sample-frame
+    /// in the block of audio most recently processed by the context’s rendering graph.
+    #[must_use]
+    // web audio api specification requires that `current_time` returns an f64
+    // std::sync::AtomicsF64 is not currently implemented in the standard library
+    // Currently, we have no other choice than casting an u64 into f64, with possible loss of precision
+    #[allow(clippy::cast_precision_loss)]
+    fn current_time(&self) -> f64 {
+        self.inner.frames_played.load(Ordering::SeqCst) as f64 / f64::from(self.inner.sample_rate.0)
+    }
+
+    #[must_use]
+    fn channels(&self) -> u32 {
+        self.inner.channels
+    }
+
+    /// Construct a new pair of [`node::AudioNode`] and [`AudioProcessor`]
+    ///
+    /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.
+    #[allow(clippy::missing_panics_doc)]
+    fn register<
+        T: node::AudioNode,
+        F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
+    >(
+        &self,
+        f: F,
+    ) -> T {
+        // create unique identifier for this node
+        let id = self.inner.node_id_inc.fetch_add(1, Ordering::SeqCst);
+        let node_id = AudioNodeId(id);
+        let registration = AudioContextRegistration {
+            id: node_id,
+            context: self.clone(),
+        };
+
+        // create the node and its renderer
+        let (node, render) = (f)(registration);
+
+        // pass the renderer to the audio graph
+        let message = ControlMessage::RegisterNode {
+            id,
+            node: render,
+            inputs: node.number_of_inputs() as usize,
+            outputs: node.number_of_outputs() as usize,
+            channel_config: node.channel_config_cloned(),
+        };
+        self.inner.render_channel.send(message).unwrap();
+
+        // resolve control messages that depend on this registration
+        let mut queued = self.inner.queued_messages.lock().unwrap();
+        let mut i = 0; // waiting for Vec::drain_filter to stabilize
+        while i < queued.len() {
+            if matches!(&queued[i], ControlMessage::ConnectNode {to, ..} if *to == id) {
+                let m = queued.remove(i);
+                self.inner.render_channel.send(m).unwrap();
+            } else {
+                i += 1;
+            }
+        }
+
+        node
+    }
+
+    #[cfg(test)]
+    fn mock_registration(&self) -> AudioContextRegistration {
+        AudioContextRegistration {
+            id: AudioNodeId(0),
+            context: self.clone(),
         }
     }
 }
@@ -644,96 +978,10 @@ impl BaseAudioContext {
 
         base
     }
+}
 
-    /// The sample rate (in sample-frames per second) at which the `AudioContext` handles audio.
-    #[allow(clippy::cast_precision_loss)]
-    #[must_use]
-    pub fn sample_rate(&self) -> f32 {
-        self.inner.sample_rate.0 as f32
-    }
-
-    /// The raw sample rate of the `AudioContext` (which has more precision than the float
-    /// [`sample_rate()`](AsBaseAudioContext::sample_rate) value).
-    #[must_use]
-    pub fn sample_rate_raw(&self) -> SampleRate {
-        self.inner.sample_rate
-    }
-
-    /// This is the time in seconds of the sample frame immediately following the last sample-frame
-    /// in the block of audio most recently processed by the context’s rendering graph.
-    #[must_use]
-    // web audio api specification requires that `current_time` returns an f64
-    // std::sync::AtomicsF64 is not currently implemented in the standard library
-    // Currently, we have no other choice than casting an u64 into f64, with possible loss of precision
-    #[allow(clippy::cast_precision_loss)]
-    pub fn current_time(&self) -> f64 {
-        self.inner.frames_played.load(Ordering::SeqCst) as f64 / f64::from(self.inner.sample_rate.0)
-    }
-
-    /// Number of channels for the audio destination
-    #[must_use]
-    pub fn channels(&self) -> u32 {
-        self.inner.channels
-    }
-
-    /// Construct a new pair of [`node::AudioNode`] and [`AudioProcessor`]
-    ///
-    /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.
-    #[allow(clippy::missing_panics_doc)]
-    pub fn register<
-        T: node::AudioNode,
-        F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
-    >(
-        &self,
-        f: F,
-    ) -> T {
-        // create unique identifier for this node
-        let id = self.inner.node_id_inc.fetch_add(1, Ordering::SeqCst);
-        let node_id = AudioNodeId(id);
-        let registration = AudioContextRegistration {
-            id: node_id,
-            context: self.clone(),
-        };
-
-        // create the node and its renderer
-        let (node, render) = (f)(registration);
-
-        // pass the renderer to the audio graph
-        let message = ControlMessage::RegisterNode {
-            id,
-            node: render,
-            inputs: node.number_of_inputs() as usize,
-            outputs: node.number_of_outputs() as usize,
-            channel_config: node.channel_config_cloned(),
-        };
-        self.inner.render_channel.send(message).unwrap();
-
-        // resolve control messages that depend on this registration
-        let mut queued = self.inner.queued_messages.lock().unwrap();
-        let mut i = 0; // waiting for Vec::drain_filter to stabilize
-        while i < queued.len() {
-            if matches!(&queued[i], ControlMessage::ConnectNode {to, ..} if *to == id) {
-                let m = queued.remove(i);
-                self.inner.render_channel.send(m).unwrap();
-            } else {
-                i += 1;
-            }
-        }
-
-        node
-    }
-
-    /// connects the output of the `from` audio node to the input of the `to` audio node
-    pub(crate) fn connect(&self, from: &AudioNodeId, to: &AudioNodeId, output: u32, input: u32) {
-        let message = ControlMessage::ConnectNode {
-            from: from.0,
-            to: to.0,
-            output,
-            input,
-        };
-        self.inner.render_channel.send(message).unwrap();
-    }
-
+/// for [BaseAudioContext::create_audio_param]
+impl BaseAudioContext {
     /// Schedule a connection of an `AudioParam` to the `AudioNode` it belongs to
     ///
     /// It is not performed immediately as the `AudioNode` is not registered at this point.
@@ -745,6 +993,19 @@ impl BaseAudioContext {
             input: u32::MAX, // audio params connect to the 'hidden' input port
         };
         self.inner.queued_messages.lock().unwrap().push(message);
+    }
+}
+
+impl BaseAudioContext {
+    /// connects the output of the `from` audio node to the input of the `to` audio node
+    pub(crate) fn connect(&self, from: &AudioNodeId, to: &AudioNodeId, output: u32, input: u32) {
+        let message = ControlMessage::ConnectNode {
+            from: from.0,
+            to: to.0,
+            output,
+            input,
+        };
+        self.inner.render_channel.send(message).unwrap();
     }
 
     /// connects the `from` audio node to the `to` audio node
@@ -766,29 +1027,12 @@ impl BaseAudioContext {
     ///
     /// This clunky setup (wrapping a Sender in a message sent by another Sender) ensures
     /// automation events will never be handled out of order.
-    pub(crate) fn pass_audio_param_event(
-        &self,
-        to: &Sender<AudioParamEvent>,
-        event: AudioParamEvent,
-    ) {
+    pub(crate) fn pass_audio_param_event(&self, to: &Sender<AudioParamEvent>, event: AudioParamEvent) {
         let message = ControlMessage::AudioParamEvent {
             to: to.clone(),
             event,
         };
         self.inner.render_channel.send(message).unwrap();
-    }
-
-    /// Attach the 9 `AudioListener` coordinates to a `PannerNode`
-    pub(crate) fn connect_listener_to_panner(&self, panner: &AudioNodeId) {
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 0, 1);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 1, 2);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 2, 3);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 3, 4);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 4, 5);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 5, 6);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 6, 7);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 7, 8);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 8, 9);
     }
 }
 

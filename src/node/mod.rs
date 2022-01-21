@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::context::{AudioContextRegistration, AudioNodeId, BaseAudioContext};
+use crate::context::{AudioContextRegistration, AudioNodeId};
 use crate::control::{Controller, ScheduledState, Scheduler};
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
@@ -180,7 +180,7 @@ impl From<ChannelConfigOptions> for ChannelConfig {
 /// to the audio hardware. Each node can have inputs and/or outputs.
 ///
 /// Note that the AudioNode is typically constructed together with an [`AudioProcessor`]
-/// (the object that lives the render thread). See [`BaseAudioContext::register`].
+/// (the object that lives the render thread). See [`crate::context::Context::register`].
 pub trait AudioNode {
     fn registration(&self) -> &AudioContextRegistration;
 
@@ -190,11 +190,6 @@ pub trait AudioNode {
     fn channel_config_raw(&self) -> &ChannelConfig;
     fn channel_config_cloned(&self) -> ChannelConfig {
         self.channel_config_raw().clone()
-    }
-
-    /// The BaseAudioContext which owns this AudioNode.
-    fn context(&self) -> &BaseAudioContext {
-        self.registration().context()
     }
 
     /// Connect the output of this AudioNode to the input of another node.
@@ -221,7 +216,7 @@ pub trait AudioNode {
         output: u32,
         input: u32,
     ) -> &'a dyn AudioNode {
-        if self.context() != dest.context() {
+        if self.registration() != dest.registration() {
             panic!("InvalidAccessError: Attempting to connect nodes from different contexts");
         }
         if self.number_of_outputs() <= output {
@@ -231,24 +226,24 @@ pub trait AudioNode {
             panic!("IndexSizeError: input port {} is out of bounds", input);
         }
 
-        self.context().connect(self.id(), dest.id(), output, input);
+        self.registration().connect(self.id(), dest.id(), output, input);
         dest
     }
 
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
     fn disconnect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
-        if self.context() != dest.context() {
+        if self.registration() != dest.registration() {
             panic!("attempting to disconnect nodes from different contexts");
         }
 
-        self.context().disconnect(self.id(), dest.id());
+        self.registration().disconnect(self.id(), dest.id());
 
         dest
     }
 
     /// Disconnects all outgoing connections from the AudioNode.
     fn disconnect_all(&self) {
-        self.context().disconnect_all(self.id());
+        self.registration().disconnect_all(self.id());
     }
 
     /// The number of inputs feeding into the AudioNode. For source nodes, this will be 0.

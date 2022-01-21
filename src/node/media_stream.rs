@@ -1,5 +1,5 @@
 use crate::buffer::Resampler;
-use crate::context::{AsBaseAudioContext, AudioContextRegistration};
+use crate::context::{Context, AudioContextRegistration};
 use crate::control::Scheduler;
 use crate::media::MediaStream;
 
@@ -41,11 +41,11 @@ impl AudioNode for MediaStreamAudioSourceNode {
 }
 
 impl MediaStreamAudioSourceNode {
-    pub fn new<C: AsBaseAudioContext, M: MediaStream>(
+    pub fn new<C: Context, M: MediaStream>(
         context: &C,
         options: MediaStreamAudioSourceNodeOptions<M>,
     ) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             let node = MediaStreamAudioSourceNode {
                 registration,
                 channel_config: options.channel_config.into(),

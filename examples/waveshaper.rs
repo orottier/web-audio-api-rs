@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 use std::fs::File;
-use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+use web_audio_api::context::{Context, AudioContext};
 use web_audio_api::node::{AudioNode, OverSampleType};
 
 // use part of cosine, between [π, 2π] as shaping cureve

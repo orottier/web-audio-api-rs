@@ -3,7 +3,7 @@ use once_cell::sync::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::buffer::AudioBuffer;
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
+use crate::context::{Context, AudioContextRegistration, AudioParamId};
 use crate::control::Controller;
 use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
@@ -44,13 +44,13 @@ struct AudioBufferMessage(AudioBuffer);
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioBufferSourceNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#AudioBufferSourceNode>
-/// - see also: [`AsBaseAudioContext::create_buffer_source`](crate::context::AsBaseAudioContext::create_buffer_source)
+/// - see also: [`Context::create_buffer_source`](crate::context::Context::create_buffer_source)
 ///
 /// # Usage
 ///
 /// ```no_run
 /// use std::fs::File;
-/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::context::{Context, AudioContext};
 /// use web_audio_api::node::AudioNode;
 ///
 /// // create an `AudioContext`
@@ -100,8 +100,8 @@ impl AudioNode for AudioBufferSourceNode {
 
 impl AudioBufferSourceNode {
     /// Create a new [`AudioBufferSourceNode`] instance
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: AudioBufferSourceOptions) -> Self {
-        context.base().register(move |registration| {
+    pub fn new<C: Context>(context: &C, options: AudioBufferSourceOptions) -> Self {
+        context.register(move |registration| {
             let AudioBufferSourceOptions {
                 buffer,
                 detune,
@@ -122,7 +122,7 @@ impl AudioBufferSourceNode {
                 automation_rate: AutomationRate::K,
             };
             let (d_param, d_proc) = context
-                .base()
+                
                 .create_audio_param(detune_param_options, registration.id());
 
             d_param.set_value(detune);
@@ -134,7 +134,7 @@ impl AudioBufferSourceNode {
                 automation_rate: AutomationRate::K,
             };
             let (pr_param, pr_proc) = context
-                .base()
+                
                 .create_audio_param(playback_rate_param_options, registration.id());
 
             pr_param.set_value(playback_rate);
@@ -206,7 +206,7 @@ impl AudioBufferSourceNode {
 
     /// Start the playback on next block
     pub fn start(&self) {
-        let start = self.registration.context().current_time();
+        let start = self.registration.current_time();
         self.start_at_with_offset_and_duration(start, 0., f64::MAX);
     }
 
@@ -233,7 +233,7 @@ impl AudioBufferSourceNode {
 
     /// Stop the playback on next block
     pub fn stop(&self) {
-        let stop = self.registration.context().current_time();
+        let stop = self.registration.current_time();
         self.stop_at(stop);
     }
 
@@ -559,7 +559,7 @@ impl AudioBufferSourceRenderer {
 
 #[cfg(test)]
 mod tests {
-    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
+    use crate::context::{Context, OfflineAudioContext};
     use crate::node::AudioNode;
     use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 

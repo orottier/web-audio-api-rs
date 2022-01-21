@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::context::{AsBaseAudioContext, AudioContextRegistration};
+use crate::context::{Context,AudioContextRegistration};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
@@ -60,8 +60,8 @@ impl AudioNode for ChannelSplitterNode {
 }
 
 impl ChannelSplitterNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, mut options: ChannelSplitterOptions) -> Self {
-        context.base().register(move |registration| {
+    pub fn new<C: Context>(context: &C, mut options: ChannelSplitterOptions) -> Self {
+        context.register(move |registration| {
             options.channel_config.count = options.number_of_outputs as _;
 
             let node = ChannelSplitterNode {

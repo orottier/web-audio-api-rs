@@ -10,7 +10,7 @@ use num_complex::Complex;
 use std::f64::consts::PI;
 
 use crate::{
-    context::{AsBaseAudioContext, AudioContextRegistration},
+    context::{Context,AudioContextRegistration},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
 };
@@ -78,8 +78,8 @@ impl IirFilterNode {
     /// * `feedforward` or/and `feedback` is an empty vector
     /// * all `feedforward` element or/and all `feedback` element are eqaul to 0.
     /// *
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: IirFilterOptions) -> Self {
-        context.base().register(move |registration| {
+    pub fn new<C: Context>(context: &C, options: IirFilterOptions) -> Self {
+        context.register(move |registration| {
             let IirFilterOptions {
                 feedforward,
                 feedback,
@@ -126,7 +126,7 @@ impl IirFilterNode {
         phase_response: &mut [f32],
     ) {
         self.validate_inputs(frequency_hz, mag_response, phase_response);
-        let sample_rate = f64::from(self.context().sample_rate_raw().0);
+        let sample_rate = f64::from(self.registration().sample_rate_raw().0);
 
         for (i, &f) in frequency_hz.iter().enumerate() {
             let mut num: Complex<f64> = Complex::new(0., 0.);
@@ -175,7 +175,7 @@ impl IirFilterNode {
 
         // Ensures that given frequencies are in the correct range
         let min = 0.;
-        let max = self.context().sample_rate() / 2.;
+        let max = self.registration().sample_rate() / 2.;
         for f in frequency_hz.iter_mut() {
             *f = f.clamp(min, max);
         }
@@ -348,7 +348,7 @@ mod test {
     use std::{cmp::min, fs::File};
 
     use crate::{
-        context::{AsBaseAudioContext, OfflineAudioContext},
+        context::{Context, OfflineAudioContext},
         media::{MediaDecoder, MediaElement},
         node::{AudioNode, AudioScheduledSourceNode},
         snapshot, SampleRate,

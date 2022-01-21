@@ -10,7 +10,7 @@ use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 /// Interface for audio processing code that runs on the audio rendering thread.
 ///
 /// Note that the AudioProcessor is typically constructed together with an [`crate::node::AudioNode`]
-/// (the user facing object that lives in the control thread). See [`crate::context::BaseAudioContext::register`].
+/// (the user facing object that lives in the control thread). See [`crate::context::Context::register`].
 ///
 /// Check the `examples/worklet.rs` file for example usage of this trait.
 pub trait AudioProcessor: Send {

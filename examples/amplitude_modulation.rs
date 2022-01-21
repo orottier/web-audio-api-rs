@@ -1,5 +1,5 @@
 use std::{thread, time};
-use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+use web_audio_api::context::{Context, AudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {

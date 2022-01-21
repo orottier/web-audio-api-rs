@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
+use crate::context::{AudioContextRegistration, AudioParamId, Context};
 use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
 use crate::periodic_wave::PeriodicWave;
@@ -84,14 +84,14 @@ impl From<u32> for OscillatorType {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/OscillatorNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#OscillatorNode>
-/// - see also: [`AsBaseAudioContext::create_oscillator`](crate::context::AsBaseAudioContext::create_oscillator)
+/// - see also: [`Context::create_oscillator`](crate::context::Context::create_oscillator)
 /// - see also: [`PeriodicWave`](crate::periodic_wave::PeriodicWave)
 ///
 /// # Usage
 ///
 /// ```no_run
 /// use std::fs::File;
-/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::context::{Context, AudioContext};
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// let context = AudioContext::new(None);
@@ -158,8 +158,8 @@ impl OscillatorNode {
     ///
     /// * `context` - The `AudioContext`
     /// * `options` - The OscillatorOptions
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<OscillatorOptions>) -> Self {
-        context.base().register(move |registration| {
+    pub fn new<C: Context>(context: &C, options: Option<OscillatorOptions>) -> Self {
+        context.register(move |registration| {
             let sample_rate = context.sample_rate();
             let nyquist = sample_rate / 2.;
             let default_freq = 440.;
@@ -180,9 +180,7 @@ impl OscillatorNode {
                 default_value: default_freq,
                 automation_rate: AutomationRate::A,
             };
-            let (f_param, f_proc) = context
-                .base()
-                .create_audio_param(freq_param_opts, registration.id());
+            let (f_param, f_proc) = context.create_audio_param(freq_param_opts, registration.id());
             f_param.set_value(frequency.unwrap_or(default_freq));
 
             // detune audio parameter
@@ -192,9 +190,8 @@ impl OscillatorNode {
                 default_value: default_det,
                 automation_rate: AutomationRate::A,
             };
-            let (det_param, det_proc) = context
-                .base()
-                .create_audio_param(det_param_opts, registration.id());
+            let (det_param, det_proc) =
+                context.create_audio_param(det_param_opts, registration.id());
             det_param.set_value(detune.unwrap_or(default_det));
 
             let type_ = Arc::new(AtomicU32::new(type_.unwrap_or(OscillatorType::Sine) as u32));
@@ -520,7 +517,7 @@ mod tests {
     use float_eq::assert_float_eq;
     use std::f64::consts::PI;
 
-    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
+    use crate::context::{Context, OfflineAudioContext};
     use crate::node::{AudioNode, AudioScheduledSourceNode};
     use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
     use crate::SampleRate;

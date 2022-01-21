@@ -1,4 +1,4 @@
-use crate::context::{AsBaseAudioContext, AudioContextRegistration};
+use crate::context::{AudioContextRegistration, Context};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
@@ -73,8 +73,8 @@ impl AudioNode for AudioDestinationNode {
 }
 
 impl AudioDestinationNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, channel_count: usize) -> Self {
-        context.base().register(move |registration| {
+    pub fn new<C: Context>(context: &C, channel_count: usize) -> Self {
+        context.register(move |registration| {
             let node = Self {
                 registration,
                 channel_count,
@@ -88,6 +88,6 @@ impl AudioDestinationNode {
     /// The maximum number of channels that the channelCount attribute can be set to
     /// This is the limit number that audio hardware can support.
     pub fn max_channels_count(&self) -> u32 {
-        self.registration.context().base().channels()
+        self.registration.channels()
     }
 }

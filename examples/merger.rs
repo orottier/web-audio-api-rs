@@ -1,4 +1,4 @@
-use web_audio_api::context::{AsBaseAudioContext, AudioContext, AudioContextOptions, LatencyHint};
+use web_audio_api::context::{Context, AudioContext, AudioContextOptions, LatencyHint};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {

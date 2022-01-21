@@ -18,7 +18,7 @@ use crossbeam_channel::{Receiver, Sender};
 use num_complex::Complex;
 
 use crate::{
-    context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
+    context::{Context,AudioContextRegistration, AudioParamId},
     param::{AudioParam, AudioParamOptions},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
@@ -163,8 +163,8 @@ impl BiquadFilterNode {
     ///
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - biquad filter options
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<BiquadFilterOptions>) -> Self {
-        context.base().register(move |registration| {
+    pub fn new<C: Context>(context: &C, options: Option<BiquadFilterOptions>) -> Self {
+        context.register(move |registration| {
             let options = options.unwrap_or_default();
 
             let default_freq = 350.;
@@ -185,7 +185,7 @@ impl BiquadFilterNode {
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (q_param, q_proc) = context
-                .base()
+                
                 .create_audio_param(q_param_opts, registration.id());
 
             q_param.set_value(q_value);
@@ -197,7 +197,7 @@ impl BiquadFilterNode {
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (d_param, d_proc) = context
-                .base()
+                
                 .create_audio_param(d_param_opts, registration.id());
 
             d_param.set_value(d_value);
@@ -210,7 +210,7 @@ impl BiquadFilterNode {
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (f_param, f_proc) = context
-                .base()
+                
                 .create_audio_param(f_param_opts, registration.id());
 
             f_param.set_value(f_value);
@@ -222,7 +222,7 @@ impl BiquadFilterNode {
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (g_param, g_proc) = context
-                .base()
+                
                 .create_audio_param(g_param_opts, registration.id());
 
             g_param.set_value(g_value);
@@ -325,7 +325,7 @@ impl BiquadFilterNode {
             Ok([b0, b1, b2, a1, a2]) => {
                 for (i, &f) in frequency_hz.iter().enumerate() {
                     let f = f64::from(f);
-                    let sample_rate = f64::from(self.context().sample_rate_raw().0);
+                    let sample_rate = f64::from(self.registration().sample_rate_raw().0);
                     let num = b0
                         + Complex::from_polar(b1, -1.0 * 2.0 * PI * f / sample_rate)
                         + Complex::from_polar(b2, -2.0 * 2.0 * PI * f / sample_rate);
@@ -364,7 +364,7 @@ impl BiquadFilterNode {
 
         // Ensures that given frequencies are in the correct range
         let min = 0.;
-        let max = self.context().sample_rate() / 2.;
+        let max = self.registration().sample_rate() / 2.;
         for f in frequency_hz.iter_mut() {
             *f = f.clamp(min, max);
         }
@@ -1097,7 +1097,7 @@ mod test {
     use float_eq::assert_float_eq;
 
     use crate::{
-        context::{AsBaseAudioContext, OfflineAudioContext},
+        context::{Context, OfflineAudioContext},
         SampleRate,
     };
 

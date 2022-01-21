@@ -2,9 +2,8 @@
 use std::f32::consts::PI;
 use std::sync::Arc;
 
-use crate::context::AsBaseAudioContext;
-
 use crate::node::TABLE_LENGTH_USIZE;
+use crate::context::Context;
 
 /// Options for constructing an `PeriodicWave`
 pub struct PeriodicWaveOptions {
@@ -35,13 +34,13 @@ pub struct PeriodicWaveOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/PeriodicWave>
 /// - specification: <https://webaudio.github.io/web-audio-api/#PeriodicWave>
-/// - see also: [`AsBaseAudioContext::create_periodic_wave`](crate::context::AsBaseAudioContext::create_periodic_wave)
+/// - see also: [`Context::create_periodic_wave`](crate::context::Context::create_periodic_wave)
 /// - see also: [`OscillatorNode`](crate::node::OscillatorNode)
 ///
 /// # Usage
 ///
 /// ```no_run
-/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::context::{Context, AudioContext};
 /// use web_audio_api::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
@@ -88,7 +87,7 @@ impl PeriodicWave {
     /// * `imag` is defined and its length is less than 2
     /// * `real` and `imag` are defined and theirs lengths are not equal
     /// * `PeriodicWave` is more than 8192 components
-    pub fn new<C: AsBaseAudioContext>(_context: &C, options: Option<PeriodicWaveOptions>) -> Self {
+    pub fn new<C: Context>(_context: &C, options: Option<PeriodicWaveOptions>) -> Self {
         let (real, imag, normalize) = if let Some(PeriodicWaveOptions {
             real,
             imag,

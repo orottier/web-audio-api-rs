@@ -436,7 +436,7 @@ impl AudioParam {
             // bypass audiocontext enveloping of control messages for simpler testing
             self.sender.send(event).unwrap();
         } else {
-            self.context().pass_audio_param_event(&self.sender, event);
+            self.registration().pass_audio_param_event(&self.sender, event);
         }
     }
 }
@@ -1338,7 +1338,7 @@ pub(crate) fn audio_param_pair(
 mod tests {
     use float_eq::assert_float_eq;
 
-    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
+    use crate::context::{Context, OfflineAudioContext};
 
     use super::*;
 

@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::analysis::Analyser;
-use crate::context::{AsBaseAudioContext, AudioContextRegistration};
+use crate::context::{Context,AudioContextRegistration};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
@@ -77,8 +77,8 @@ impl AudioNode for AnalyserNode {
 }
 
 impl AnalyserNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: AnalyserOptions) -> Self {
-        context.base().register(move |registration| {
+    pub fn new<C: Context>(context: &C, options: AnalyserOptions) -> Self {
+        context.register(move |registration| {
             let fft_size = Arc::new(AtomicUsize::new(options.fft_size));
             let smoothing_time_constant = Arc::new(AtomicU32::new(
                 (options.smoothing_time_constant * 100.) as u32,
