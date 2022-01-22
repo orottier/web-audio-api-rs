@@ -6,13 +6,13 @@ use web_audio_api::context::{AsBaseAudioContext, AudioContext, AudioContextRegis
 use web_audio_api::media::Microphone;
 use web_audio_api::node::BiquadFilterType;
 use web_audio_api::node::{
-    AnalyserNode, AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions,
+    AnalyserNode, AudioBufferSourceNode, AudioNode, AudioScheduledSourceNode, BiquadFilterNode,
+    ChannelConfig, ChannelConfigOptions, GainNode, MediaStreamAudioSourceNode,
 };
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use web_audio_api::SampleRate;
 
 use std::io::{stdin, stdout, Write};
-use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::sync::Arc;
 
 use crossbeam_channel::{self, Receiver, Sender};
@@ -75,17 +75,14 @@ impl MediaRecorder {
         })
     }
 
-    fn get_data(self, sample_rate: SampleRate) -> AudioBuffer {
-        let data = self
-            .receiver
+    fn get_data(self, sample_rate: SampleRate) -> Option<AudioBuffer> {
+        self.receiver
             .try_iter()
             .reduce(|mut accum, item| {
                 accum.iter_mut().zip(item).for_each(|(a, i)| a.extend(i));
                 accum
             })
-            .unwrap();
-
-        AudioBuffer::from(data, sample_rate)
+            .map(|data| AudioBuffer::from(data, sample_rate))
     }
 }
 
@@ -169,20 +166,26 @@ fn print_static_ui(
     write!(stdout, "{}Press q to exit", termion::cursor::Goto(1, 2)).unwrap();
     write!(
         stdout,
-        "{}Use + and - for recorded output volume",
+        "{}Tap the spacebar to start and stop recording",
         termion::cursor::Goto(1, 3)
     )
     .unwrap();
     write!(
         stdout,
-        "{}Use n and m to adjust playback speed",
+        "{}Use + and - for recorded output volume",
         termion::cursor::Goto(1, 4)
     )
     .unwrap();
     write!(
         stdout,
-        "{}Use x to cycle through output effects",
+        "{}Use n and m to adjust playback speed",
         termion::cursor::Goto(1, 5)
+    )
+    .unwrap();
+    write!(
+        stdout,
+        "{}Use x to cycle through output effects",
+        termion::cursor::Goto(1, 6)
     )
     .unwrap();
 
@@ -234,6 +237,8 @@ fn poll_frequency_graph(
         // 5 frames per second
         std::thread::sleep(std::time::Duration::from_millis(200));
 
+        // todo, check BaseAudioContext.state if it is still running
+
         let tmp_buf = freq_buffer.take().unwrap();
         let tmp_buf = analyser.get_float_frequency_data(tmp_buf);
 
@@ -262,74 +267,156 @@ fn poll_frequency_graph(
     }
 }
 
-fn audio_thread(
-    gain_factor: Arc<AtomicI32>,
-    playback_rate_factor: Arc<AtomicI32>,
-    biquad_filter: Arc<AtomicU32>,
-    width: u16,
-    height: u16,
-    plot_send: Sender<UiEvent>,
-) {
-    let context = AudioContext::new(None);
+struct AudioThread {
+    context: AudioContext,
+    mic_in: MediaStreamAudioSourceNode,
+    analyser: Arc<AnalyserNode>,
+    recorder: Option<MediaRecorder>,
+    buffer_source: AudioBufferSourceNode,
+    gain_node: Option<GainNode>,
+    biquad_node: Option<BiquadFilterNode>,
+    gain_factor: i32,
+    playback_rate_factor: i32,
+    biquad_filter_type: u32,
+}
 
-    let stream = Microphone::new();
-    let mic_in = context.create_media_stream_source(stream);
+impl Drop for AudioThread {
+    fn drop(&mut self) {
+        self.context.close();
+    }
+}
 
-    let analyser = Arc::new(context.create_analyser());
+impl AudioThread {
+    const PLAYBACK_STEP: f32 = 1.05; // playback increases by 5% per setting
+    const GAIN_STEP: f32 = 1.1_f32; // gain increases by 10% per setting
 
-    // spawn thread to poll analyser updates
-    {
-        let analyser = analyser.clone();
-        std::thread::spawn(move || poll_frequency_graph(analyser, plot_send, width, height));
+    fn new() -> Self {
+        let context = AudioContext::new(None);
+
+        let stream = Microphone::new();
+        let mic_in = context.create_media_stream_source(stream);
+
+        let analyser = Arc::new(context.create_analyser());
+        let buffer_source = context.create_buffer_source();
+
+        let mut instance = Self {
+            context,
+            mic_in,
+            analyser,
+            recorder: None,
+            buffer_source,
+            gain_node: None,
+            biquad_node: None,
+            gain_factor: 0,
+            playback_rate_factor: 0,
+            biquad_filter_type: 7,
+        };
+
+        instance.playback(false); // start playing silence
+
+        instance
     }
 
-    let playback_step = 1.05_f32; // playback increases by 5% per setting
-    let gain_step = 1.1_f32; // gain increases by 10% per setting
+    fn analyser(&self) -> Arc<AnalyserNode> {
+        self.analyser.clone()
+    }
 
-    loop {
-        log::info!("Start recording - 4 seconds");
-        let osc = context.create_oscillator();
-        osc.connect(&context.destination());
-        osc.start();
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        osc.disconnect_all();
+    fn add_volume(&mut self, diff: i32) {
+        self.gain_factor += diff;
+        log::info!("Microphone gain: {:+}", self.gain_factor);
 
-        let recorder = MediaRecorder::new(&context);
-        mic_in.connect(&recorder);
-        mic_in.connect(&*analyser);
-        std::thread::sleep(std::time::Duration::from_millis(4000));
-        mic_in.disconnect_all();
+        if let Some(gain) = &mut self.gain_node {
+            let gain_value = Self::GAIN_STEP.powi(self.gain_factor);
+            gain.gain().set_value(gain_value);
+        }
+    }
 
-        let osc = context.create_oscillator();
-        osc.connect(&context.destination());
-        osc.start();
-        let buf = recorder.get_data(context.sample_rate_raw());
+    fn add_playback_rate(&mut self, diff: i32) {
+        self.playback_rate_factor += diff;
+        let playback_rate = Self::PLAYBACK_STEP.powi(self.playback_rate_factor);
+        self.buffer_source.playback_rate().set_value(playback_rate);
+        log::info!("Playback rate: {:+}", self.playback_rate_factor);
+    }
 
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        osc.disconnect_all();
+    fn update_biquad_filter(&mut self) {
+        self.biquad_filter_type = (self.biquad_filter_type + 1) % 8;
+        let name = BiquadFilterType::from(self.biquad_filter_type);
+        log::info!("Biquad filter type: {:?}", name);
 
-        log::info!("Playback recording");
+        if let Some(biquad) = &mut self.biquad_node {
+            biquad.set_type((self.biquad_filter_type % 8).into());
+        }
+    }
 
-        let src = context.create_buffer_source();
-        let playback_rate = playback_step.powi(playback_rate_factor.load(Ordering::Relaxed));
-        src.playback_rate().set_value(playback_rate);
-        src.set_buffer(buf);
+    fn playback(&mut self, beep: bool) {
+        // stop mic input
+        self.mic_in.disconnect_all();
 
-        let biquad = context.create_biquad_filter();
-        biquad.set_type((biquad_filter.load(Ordering::Relaxed) % 8).into());
+        if beep {
+            let osc = self.context.create_oscillator();
+            osc.connect(&self.context.destination());
+            osc.start();
+            osc.stop_at(self.context.current_time() + 0.2);
 
-        let gain = context.create_gain();
-        let gain_value = gain_step.powi(gain_factor.load(Ordering::Relaxed));
+            log::info!("Playback audio - press space to stop");
+        } else {
+            log::info!("Press space to start recording!");
+        }
+
+        let buf = self
+            .recorder
+            .take()
+            .and_then(|r| r.get_data(self.context.sample_rate_raw()));
+
+        let buffer_source = self.context.create_buffer_source();
+        let playback_rate = Self::PLAYBACK_STEP.powi(self.playback_rate_factor);
+        buffer_source.playback_rate().set_value(playback_rate);
+        buffer_source.set_loop(true);
+        if let Some(buf) = buf {
+            buffer_source.set_buffer(buf);
+        }
+
+        let biquad = self.context.create_biquad_filter();
+        biquad.set_type((self.biquad_filter_type % 8).into());
+
+        let gain = self.context.create_gain();
+        let gain_value = Self::GAIN_STEP.powi(self.gain_factor);
         gain.gain().set_value(gain_value);
 
-        src.connect(&biquad);
+        buffer_source.connect(&biquad);
         biquad.connect(&gain);
-        gain.connect(&context.destination());
-        gain.connect(&*analyser);
+        gain.connect(&self.context.destination());
+        gain.connect(&*self.analyser);
 
-        src.start();
-        let duration = (4. / playback_rate * 1000.) as u64; // millis
-        std::thread::sleep(std::time::Duration::from_millis(duration));
+        buffer_source.start();
+
+        self.buffer_source = buffer_source;
+        self.gain_node = Some(gain);
+        self.biquad_node = Some(biquad);
+    }
+
+    fn record(&mut self) {
+        self.buffer_source.stop();
+        log::info!("Start recording - press space to stop");
+
+        let osc = self.context.create_oscillator();
+        osc.connect(&self.context.destination());
+        osc.start();
+        osc.stop_at(self.context.current_time() + 0.2);
+
+        let recorder = MediaRecorder::new(&self.context);
+        self.mic_in.connect(&recorder);
+        self.mic_in.connect(&*self.analyser);
+
+        self.recorder = Some(recorder);
+    }
+
+    fn switch_state(&mut self) {
+        if self.recorder.is_some() {
+            self.playback(true)
+        } else {
+            self.record()
+        }
     }
 }
 
@@ -365,33 +452,17 @@ fn main() {
     log::info!("Running the microphone playback example");
 
     /*
-     * Create thread safe user controllable variables
+     * Then, setup the audio graph. It has two modes: record audio and playback audio.
      */
-    let gain_factor = Arc::new(AtomicI32::new(0));
-    let playback_rate_factor = Arc::new(AtomicI32::new(0));
-    let biquad_filter = Arc::new(AtomicU32::new(7)); // allpass
+    let mut audio_thread = AudioThread::new();
 
     /*
-     * Then, setup the audio loop in a separate thread. It will record audio for a few seconds,
-     * then play it back to the speakers with some transformations applied. Repeat.
+     * Spawn thread to periodically poll analyser updates from the audio graph
      */
     {
-        // create clones in a new { }-block and shadow original bindings
-        let gain_factor = gain_factor.clone();
-        let playback_rate_factor = playback_rate_factor.clone();
-        let biquad_filter = biquad_filter.clone();
-        let ui_event_sender = ui_event_sender.clone();
-
-        std::thread::spawn(move || {
-            audio_thread(
-                gain_factor,
-                playback_rate_factor,
-                biquad_filter,
-                width,
-                height,
-                ui_event_sender,
-            )
-        });
+        let plot_send = ui_event_sender.clone();
+        let analyser = audio_thread.analyser();
+        std::thread::spawn(move || poll_frequency_graph(analyser, plot_send, width, height));
     }
 
     /*
@@ -432,28 +503,25 @@ fn main() {
                 match c {
                     Key::Char('q') => break, // halt UI loop
                     Key::Char('+') => {
-                        let prev = gain_factor.fetch_add(1, Ordering::Relaxed);
-                        log::info!("Volume: {:+}", prev + 1);
+                        audio_thread.add_volume(1);
                     }
                     Key::Char('-') => {
-                        let prev = gain_factor.fetch_add(-1, Ordering::Relaxed);
-                        log::info!("Volume: {:+}", prev - 1);
+                        audio_thread.add_volume(-1);
                     }
                     Key::Char('m') => {
-                        let prev = playback_rate_factor.fetch_add(1, Ordering::Relaxed);
-                        log::info!("Playback speed: {:+}", prev + 1);
+                        audio_thread.add_playback_rate(1);
                     }
                     Key::Char('n') => {
-                        let prev = playback_rate_factor.fetch_add(-1, Ordering::Relaxed);
-                        log::info!("Playback speed: {:+}", prev - 1);
+                        audio_thread.add_playback_rate(-1);
                     }
                     Key::Char('x') => {
-                        let prev = biquad_filter.fetch_add(1, Ordering::Relaxed);
-                        let biquad_filter_type = BiquadFilterType::from((prev + 1) % 8);
-                        log::info!("Filter type now: {:?}", biquad_filter_type);
+                        audio_thread.update_biquad_filter();
+                    }
+                    Key::Char(' ') => {
+                        audio_thread.switch_state();
                     }
                     Key::Char(c) => log::debug!("Unknown input - {}", c),
-                    _ => {} // ignore backspace, arrows, etc
+                    _ => {} // control chars etc
                 }
             }
         }
@@ -463,5 +531,11 @@ fn main() {
     }
 
     // shutting down, restore cursor
-    write!(stdout, "{}", termion::cursor::Show).unwrap();
+    write!(
+        stdout,
+        "{}{}",
+        termion::cursor::Goto(1, height),
+        termion::cursor::Show,
+    )
+    .unwrap();
 }
