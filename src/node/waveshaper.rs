@@ -8,7 +8,7 @@ use once_cell::sync::OnceCell;
 use rubato::{FftFixedInOut, Resampler};
 
 use crate::{
-    context::{Context, AudioContextRegistration},
+    context::{AudioContextRegistration, Context},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate,
 };

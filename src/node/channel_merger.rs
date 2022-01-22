@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::context::{Context,AudioContextRegistration};
+use crate::context::{AudioContextRegistration, Context};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 

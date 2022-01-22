@@ -1,7 +1,9 @@
 use std::f32::consts::PI;
 use std::sync::Arc;
 
-use crate::context::{AudioContextRegistration, AudioParamId, Context, ConnectListenerToPannerRole};
+use crate::context::{
+    AudioContextRegistration, AudioParamId, ConnectListenerToPannerRole, Context,
+};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{AtomicF32, SampleRate};

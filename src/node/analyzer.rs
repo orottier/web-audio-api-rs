@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::analysis::Analyser;
-use crate::context::{Context,AudioContextRegistration};
+use crate::context::{AudioContextRegistration, Context};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 

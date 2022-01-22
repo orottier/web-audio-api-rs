@@ -226,7 +226,8 @@ pub trait AudioNode {
             panic!("IndexSizeError: input port {} is out of bounds", input);
         }
 
-        self.registration().connect(self.id(), dest.id(), output, input);
+        self.registration()
+            .connect(self.id(), dest.id(), output, input);
         dest
     }
 

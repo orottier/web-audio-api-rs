@@ -1,4 +1,4 @@
-use crate::context::{Context,AudioContextRegistration, AudioParamId};
+use crate::context::{AudioContextRegistration, AudioParamId, Context};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
@@ -53,9 +53,7 @@ impl GainNode {
                 default_value: 1.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (param, proc) = context
-                
-                .create_audio_param(param_opts, registration.id());
+            let (param, proc) = context.create_audio_param(param_opts, registration.id());
 
             param.set_value_at_time(options.gain, 0.);
 

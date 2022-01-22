@@ -1,4 +1,4 @@
-use crate::context::{Context,AudioContextRegistration, AudioParamId};
+use crate::context::{AudioContextRegistration, AudioParamId, Context};
 use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
@@ -94,9 +94,7 @@ impl ConstantSourceNode {
                 default_value: 1.,
                 automation_rate: AutomationRate::A,
             };
-            let (param, proc) = context
-                
-                .create_audio_param(param_opts, registration.id());
+            let (param, proc) = context.create_audio_param(param_opts, registration.id());
             param.set_value(options.offset);
 
             let scheduler = Scheduler::new();

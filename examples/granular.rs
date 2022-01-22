@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::{thread, time};
 use web_audio_api::buffer::AudioBuffer;
-use web_audio_api::context::{Context, AudioContext};
+use web_audio_api::context::{AudioContext, Context};
 use web_audio_api::node::AudioNode;
 
 // run in release mode

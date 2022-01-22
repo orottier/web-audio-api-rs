@@ -2,8 +2,8 @@
 use std::f32::consts::PI;
 use std::sync::Arc;
 
-use crate::node::TABLE_LENGTH_USIZE;
 use crate::context::Context;
+use crate::node::TABLE_LENGTH_USIZE;
 
 /// Options for constructing an `PeriodicWave`
 pub struct PeriodicWaveOptions {

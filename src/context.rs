@@ -61,7 +61,7 @@ impl PartialEq for BaseAudioContext {
 }
 
 /// Inner representation of the `BaseAudioContext`
-/// 
+///
 /// Required for internal synchronization.
 struct BaseAudioContextInner {
     /// sample rate in Hertz
@@ -602,7 +602,11 @@ impl AudioContextRegistration {
 
     pub(crate) fn disconnect_all(&self, from: &AudioNodeId);
 
-    pub(crate) fn pass_audio_param_event(&self, to: &Sender<AudioParamEvent>, event: AudioParamEvent);
+    pub(crate) fn pass_audio_param_event(
+        &self,
+        to: &Sender<AudioParamEvent>,
+        event: AudioParamEvent,
+    );
 }
 
 impl AudioContextRegistration {
@@ -1027,7 +1031,11 @@ impl BaseAudioContext {
     ///
     /// This clunky setup (wrapping a Sender in a message sent by another Sender) ensures
     /// automation events will never be handled out of order.
-    pub(crate) fn pass_audio_param_event(&self, to: &Sender<AudioParamEvent>, event: AudioParamEvent) {
+    pub(crate) fn pass_audio_param_event(
+        &self,
+        to: &Sender<AudioParamEvent>,
+        event: AudioParamEvent,
+    ) {
         let message = ControlMessage::AudioParamEvent {
             to: to.clone(),
             event,

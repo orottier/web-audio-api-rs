@@ -1,4 +1,4 @@
-use web_audio_api::context::{Context, AudioContext};
+use web_audio_api::context::{AudioContext, Context};
 use web_audio_api::node::AudioNode;
 use web_audio_api::node::AudioScheduledSourceNode;
 

@@ -127,7 +127,8 @@ impl AudioNode for DelayNode {
             panic!("IndexSizeError: input port {} is out of bounds", input);
         }
 
-        self.registration().connect(self.reader_registration.id(), dest.id(), output, input);
+        self.registration()
+            .connect(self.reader_registration.id(), dest.id(), output, input);
 
         dest
     }
@@ -146,7 +147,8 @@ impl AudioNode for DelayNode {
 
     /// Disconnects all outgoing connections from the AudioNode.
     fn disconnect_all(&self) {
-        self.registration().disconnect_all(self.reader_registration.id());
+        self.registration()
+            .disconnect_all(self.reader_registration.id());
     }
 }
 

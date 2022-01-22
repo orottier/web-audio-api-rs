@@ -3,7 +3,7 @@ use once_cell::sync::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::buffer::AudioBuffer;
-use crate::context::{Context, AudioContextRegistration, AudioParamId};
+use crate::context::{AudioContextRegistration, AudioParamId, Context};
 use crate::control::Controller;
 use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
@@ -121,9 +121,8 @@ impl AudioBufferSourceNode {
                 default_value: 0.,
                 automation_rate: AutomationRate::K,
             };
-            let (d_param, d_proc) = context
-                
-                .create_audio_param(detune_param_options, registration.id());
+            let (d_param, d_proc) =
+                context.create_audio_param(detune_param_options, registration.id());
 
             d_param.set_value(detune);
 
@@ -133,9 +132,8 @@ impl AudioBufferSourceNode {
                 default_value: 1.,
                 automation_rate: AutomationRate::K,
             };
-            let (pr_param, pr_proc) = context
-                
-                .create_audio_param(playback_rate_param_options, registration.id());
+            let (pr_param, pr_proc) =
+                context.create_audio_param(playback_rate_param_options, registration.id());
 
             pr_param.set_value(playback_rate);
 

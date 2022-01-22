@@ -1,5 +1,5 @@
 use crate::buffer::Resampler;
-use crate::context::{Context, AudioContextRegistration};
+use crate::context::{AudioContextRegistration, Context};
 use crate::control::{Controller, Scheduler};
 use crate::media::MediaElement;
 use crate::RENDER_QUANTUM_SIZE;
@@ -55,10 +55,7 @@ impl AudioNode for MediaElementAudioSourceNode {
 }
 
 impl MediaElementAudioSourceNode {
-    pub fn new<C: Context>(
-        context: &C,
-        options: MediaElementAudioSourceNodeOptions,
-    ) -> Self {
+    pub fn new<C: Context>(context: &C, options: MediaElementAudioSourceNodeOptions) -> Self {
         context.register(move |registration| {
             let controller = options.media.controller().clone();
             let scheduler = controller.scheduler().clone();

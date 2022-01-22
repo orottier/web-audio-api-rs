@@ -436,7 +436,8 @@ impl AudioParam {
             // bypass audiocontext enveloping of control messages for simpler testing
             self.sender.send(event).unwrap();
         } else {
-            self.registration().pass_audio_param_event(&self.sender, event);
+            self.registration()
+                .pass_audio_param_event(&self.sender, event);
         }
     }
 }

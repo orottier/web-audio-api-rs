@@ -1,8 +1,6 @@
 use rand::Rng;
 
-use web_audio_api::context::{
-    Context, AudioContext, AudioContextRegistration, AudioParamId,
-};
+use web_audio_api::context::{AudioContext, AudioContextRegistration, AudioParamId, Context};
 use web_audio_api::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
 use web_audio_api::param::{AudioParam, AudioParamOptions, AutomationRate};
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};

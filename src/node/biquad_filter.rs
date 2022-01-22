@@ -18,7 +18,7 @@ use crossbeam_channel::{Receiver, Sender};
 use num_complex::Complex;
 
 use crate::{
-    context::{Context,AudioContextRegistration, AudioParamId},
+    context::{AudioContextRegistration, AudioParamId, Context},
     param::{AudioParam, AudioParamOptions},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
@@ -184,9 +184,7 @@ impl BiquadFilterNode {
                 default_value: default_q,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (q_param, q_proc) = context
-                
-                .create_audio_param(q_param_opts, registration.id());
+            let (q_param, q_proc) = context.create_audio_param(q_param_opts, registration.id());
 
             q_param.set_value(q_value);
 
@@ -196,9 +194,7 @@ impl BiquadFilterNode {
                 default_value: default_det,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (d_param, d_proc) = context
-                
-                .create_audio_param(d_param_opts, registration.id());
+            let (d_param, d_proc) = context.create_audio_param(d_param_opts, registration.id());
 
             d_param.set_value(d_value);
 
@@ -209,9 +205,7 @@ impl BiquadFilterNode {
                 default_value: default_freq,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (f_param, f_proc) = context
-                
-                .create_audio_param(f_param_opts, registration.id());
+            let (f_param, f_proc) = context.create_audio_param(f_param_opts, registration.id());
 
             f_param.set_value(f_value);
 
@@ -221,9 +215,7 @@ impl BiquadFilterNode {
                 default_value: default_gain,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (g_param, g_proc) = context
-                
-                .create_audio_param(g_param_opts, registration.id());
+            let (g_param, g_proc) = context.create_audio_param(g_param_opts, registration.id());
 
             g_param.set_value(g_value);
 

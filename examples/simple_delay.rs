@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::{thread, time};
-use web_audio_api::context::{Context, AudioContext};
+use web_audio_api::context::{AudioContext, Context};
 use web_audio_api::node::AudioNode;
 
 fn main() {
