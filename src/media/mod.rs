@@ -35,7 +35,7 @@ use crossbeam_channel::{self, Receiver};
 ///
 /// ```no_run
 /// use web_audio_api::SampleRate;
-/// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
+/// use web_audio_api::context::{AudioContext, BaseAudioContext};
 /// use web_audio_api::buffer::{AudioBuffer, AudioBufferOptions};
 /// use web_audio_api::node::AudioNode;
 ///
@@ -76,7 +76,7 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>> + Sen
 ///
 /// ```rust
 /// use web_audio_api::SampleRate;
-/// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
+/// use web_audio_api::context::{AudioContext, BaseAudioContext};
 /// use web_audio_api::buffer::AudioBuffer;
 /// use web_audio_api::media::MediaElement;
 /// use web_audio_api::node::AudioControllableSourceNode;
@@ -103,7 +103,7 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>> + Sen
 ///               b.get_channel_data(0)[..],
 ///               vec![0.; 20][..]
 ///           )
-///       },
+///       }
 ///       Err(e) => (),
 ///   }
 /// }

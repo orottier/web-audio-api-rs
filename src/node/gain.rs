@@ -1,4 +1,4 @@
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
@@ -45,7 +45,7 @@ impl AudioNode for GainNode {
 }
 
 impl GainNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: GainOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: GainOptions) -> Self {
         context.base().register(move |registration| {
             let param_opts = AudioParamOptions {
                 min_value: f32::MIN,

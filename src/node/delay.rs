@@ -1,4 +1,4 @@
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
@@ -32,13 +32,13 @@ impl Default for DelayOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/DelayNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#DelayNode>
-/// - see also: [`AsBaseAudioContext::create_delay`](crate::context::AsBaseAudioContext::create_delay)
+/// - see also: [`BaseAudioContext::create_delay`](crate::context::BaseAudioContext::create_delay)
 ///
 /// # Usage
 ///
 /// ```no_run
 /// use std::fs::File;
-/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
 /// use web_audio_api::node::AudioNode;
 ///
 /// // create an `AudioContext` and load a sound file
@@ -152,7 +152,7 @@ impl AudioNode for DelayNode {
 }
 
 impl DelayNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: DelayOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: DelayOptions) -> Self {
         let sample_rate = context.sample_rate_raw().0 as f64;
 
         // Specifies the maximum delay time in seconds allowed for the delay line.

@@ -1338,7 +1338,7 @@ pub(crate) fn audio_param_pair(
 mod tests {
     use float_eq::assert_float_eq;
 
-    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
 
     use super::*;
 
