@@ -30,7 +30,13 @@ use std::error::Error;
 
 impl AudioBuffer {
     /// Allocate a silent audiobuffer with [`AudioBufferOptions`]
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the channel count is zero.
     pub fn new(options: AudioBufferOptions) -> Self {
+        assert!(options.number_of_channels > 0);
+
         let silence = ChannelData::new(options.length);
 
         Self {
@@ -44,9 +50,12 @@ impl AudioBuffer {
     /// The outer Vec determine the channels. The inner Vecs should have the same length.
     ///
     /// # Panics
-    /// This function will panic if `samples` is an empty Vec or if any of its elements have
-    /// different lengths.
+    ///
+    /// This function will panic if `samples` is an empty Vec or any of its items have different
+    /// lengths.
     pub fn from(samples: Vec<Vec<f32>>, sample_rate: SampleRate) -> Self {
+        assert!(!samples.is_empty());
+
         let channels: Vec<_> = samples.into_iter().map(ChannelData::from).collect();
         if !channels.iter().all(|c| c.len() == channels[0].len()) {
             panic!("Trying to create AudioBuffer from channel data with unequal length");
@@ -437,6 +446,27 @@ mod tests {
         assert_float_eq!(audio_buffer.sample_rate(), 1., abs <= 0.);
         assert_eq!(audio_buffer.sample_rate_raw().0, 1);
         assert_float_eq!(audio_buffer.duration(), 10., abs <= 0.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_zero_channels() {
+        let options = AudioBufferOptions {
+            number_of_channels: 0,
+            length: 10,
+            sample_rate: SampleRate(1),
+        };
+
+        AudioBuffer::new(options); // should panic
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_zero_channels_from() {
+        let samples = vec![];
+        let sample_rate = SampleRate(1);
+
+        AudioBuffer::from(samples, sample_rate); // should panic
     }
 
     #[test]

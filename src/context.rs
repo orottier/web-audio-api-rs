@@ -417,7 +417,7 @@ pub struct AudioContext {
 
     /// cpal stream (play/pause functionality)
     #[cfg(not(test))] // in tests, do not set up a cpal Stream
-    stream: Stream,
+    stream: Mutex<Option<Stream>>,
 }
 
 impl AsBaseAudioContext for AudioContext {
@@ -463,7 +463,10 @@ impl AudioContext {
 
         let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
-        Self { base, stream }
+        Self {
+            base,
+            stream: Mutex::new(Some(stream)),
+        }
     }
 
     #[cfg(test)] // in tests, do not set up a cpal Stream
@@ -497,7 +500,11 @@ impl AudioContext {
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn suspend(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        self.stream.pause().unwrap();
+        if let Some(s) = self.stream.lock().unwrap().as_ref() {
+            if let Err(e) = s.pause() {
+                panic!("Error suspending cpal stream: {:?}", e);
+            }
+        }
     }
 
     /// Resumes the progression of time in an audio context that has previously been
@@ -513,7 +520,25 @@ impl AudioContext {
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn resume(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        self.stream.play().expect("Audio device refuse to play");
+        if let Some(s) = self.stream.lock().unwrap().as_ref() {
+            if let Err(e) = s.play() {
+                panic!("Error resuming cpal stream: {:?}", e);
+            }
+        }
+    }
+
+    /// Closes the `AudioContext`, releasing the system resources being used. This will not
+    /// automatically release all `AudioContext`-created objects, but will suspend the progression of
+    /// the currentTime, and stop processing audio data.
+    ///
+    /// # Panics
+    ///
+    /// Will panic when this function is called multiple times
+    // false positive due to #[cfg(not(test))]
+    #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
+    pub fn close(&self) {
+        #[cfg(not(test))] // in tests, do not set up a cpal Stream
+        self.stream.lock().unwrap().take(); // will Drop
     }
 }
 
@@ -573,7 +598,10 @@ impl Drop for AudioContextRegistration {
 
         if !magic {
             let message = ControlMessage::FreeWhenFinished { id: self.id.0 };
-            self.context.inner.render_channel.send(message).unwrap();
+
+            // Sending the message will fail when the render thread has already shut down.
+            // This is fine
+            let _r = self.context.inner.render_channel.send(message);
         }
     }
 }

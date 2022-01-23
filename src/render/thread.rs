@@ -188,3 +188,9 @@ impl RenderThread {
         }
     }
 }
+
+impl Drop for RenderThread {
+    fn drop(&mut self) {
+        log::info!("Audio render thread has been dropped");
+    }
+}
