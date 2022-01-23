@@ -232,7 +232,7 @@ impl FilterRendererBuilder {
     }
 
     /// Generate normalized filter's coeffs and filter's states
-    /// coeffs are normalized by a[0] coefficient
+    /// coeffs are normalized by `a[0]` coefficient
     fn finish(mut self) -> IirFilterRenderer {
         let a_0 = self.coeffs[0].1;
 
@@ -251,15 +251,15 @@ impl FilterRendererBuilder {
 /// Helper struct which regroups all parameters
 /// required to build `IirFilterRenderer` with the help of `FilterRendererBuilder`
 struct RendererConfig {
-    /// feedforward coeffs -- b[n] -- numerator coeffs
+    /// feedforward coeffs -- `b[n]` -- numerator coeffs
     feedforward: Vec<f64>,
-    /// feedback coeffs -- a[n] -- denominator coeffs
+    /// feedback coeffs -- `a[n]` -- denominator coeffs
     feedback: Vec<f64>,
 }
 
 /// Renderer associated with the `IirFilterNode`
 struct IirFilterRenderer {
-    /// Normalized filter's coeffs -- (b[n],a[n])
+    /// Normalized filter's coeffs -- `(b[n], a[n])`
     norm_coeffs: Vec<(f64, f64)>,
     /// filter's states
     states: Vec<[f64; MAX_CHANNELS]>,

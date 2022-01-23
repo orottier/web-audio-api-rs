@@ -36,7 +36,7 @@
 //! osc.start();
 //!
 //! // enjoy listening
-//! //std::thread::sleep(std::time::Duration::from_secs(4));
+//! std::thread::sleep(std::time::Duration::from_secs(4));
 //! ```
 
 use std::fmt;

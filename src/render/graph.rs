@@ -227,7 +227,7 @@ impl Graph {
     /// node, at every render quantum the source should render first and after that the gain node.
     ///
     /// Inspired by the spec recommendation at
-    /// https://webaudio.github.io/web-audio-api/#rendering-loop
+    /// <https://webaudio.github.io/web-audio-api/#rendering-loop>
     ///
     /// The goals are:
     /// - Perform a topological sort of the graph
