@@ -268,7 +268,7 @@ pub trait AsBaseAudioContext {
     }
 
     /// Creates a periodic wave
-    fn create_periodic_wave(&self, options: Option<PeriodicWaveOptions>) -> PeriodicWave {
+    fn create_periodic_wave(&self, options: PeriodicWaveOptions) -> PeriodicWave {
         PeriodicWave::new(self.base(), options)
     }
 

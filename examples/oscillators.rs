@@ -16,11 +16,11 @@ fn main() {
     osc.connect(&context.destination());
 
     // defined periodic wave characteristics
-    let options = Some(PeriodicWaveOptions {
+    let options = PeriodicWaveOptions {
         real: Some(vec![0., 0.5, 0.5]),
         imag: Some(vec![0., 0., 0.]),
-        disable_normalization: Some(false),
-    });
+        disable_normalization: false,
+    };
 
     // Create a custom periodic wave
     let periodic_wave = context.create_periodic_wave(options);

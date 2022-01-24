@@ -583,13 +583,7 @@ mod tests {
 
         let context = OfflineAudioContext::new(2, 1, SampleRate(44_100));
 
-        let periodic_opt = PeriodicWaveOptions {
-            real: None,
-            imag: None,
-            disable_normalization: None,
-        };
-
-        let periodic_wave = PeriodicWave::new(&context, Some(periodic_opt));
+        let periodic_wave = PeriodicWave::new(&context, PeriodicWaveOptions::default());
 
         let options = OscillatorOptions {
             periodic_wave: Some(periodic_wave),
@@ -608,13 +602,7 @@ mod tests {
 
         let context = OfflineAudioContext::new(2, 1, SampleRate(44_100));
 
-        let periodic_opt = PeriodicWaveOptions {
-            real: None,
-            imag: None,
-            disable_normalization: None,
-        };
-
-        let periodic_wave = PeriodicWave::new(&context, Some(periodic_opt));
+        let periodic_wave = PeriodicWave::new(&context, PeriodicWaveOptions::default());
 
         let options = OscillatorOptions {
             periodic_wave: Some(periodic_wave),
@@ -852,11 +840,11 @@ mod tests {
             let mut context =
                 OfflineAudioContext::new(1, sample_rate, SampleRate(sample_rate as u32));
 
-            let options = Some(PeriodicWaveOptions {
+            let options = PeriodicWaveOptions {
                 real: Some(vec![0., 0.]),
                 imag: Some(vec![0., 1.]), // sine is in imaginary component
-                disable_normalization: Some(false),
-            });
+                disable_normalization: false,
+            };
 
             let periodic_wave = context.create_periodic_wave(options);
 
@@ -899,12 +887,12 @@ mod tests {
             let mut context =
                 OfflineAudioContext::new(1, sample_rate, SampleRate(sample_rate as u32));
 
-            let options = Some(PeriodicWaveOptions {
+            let options = PeriodicWaveOptions {
                 real: Some(vec![0., 0., 0.]),
                 imag: Some(vec![0., 0.5, 0.5]),
                 // disable norm, is already tested in `PeriodicWave`
-                disable_normalization: Some(true),
-            });
+                disable_normalization: true,
+            };
 
             let periodic_wave = context.create_periodic_wave(options);
 
