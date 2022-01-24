@@ -1,6 +1,6 @@
 use float_eq::assert_float_eq;
 use web_audio_api::buffer::AudioBuffer;
-use web_audio_api::context::AsBaseAudioContext;
+use web_audio_api::context::BaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::media::MediaElement;
 use web_audio_api::node::{AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode};

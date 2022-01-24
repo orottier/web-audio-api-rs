@@ -52,7 +52,7 @@ impl<R: Read + Send> symphonia::core::io::MediaSource for MediaInput<R> {
 ///
 /// Using the `MediaDecoder` is the preferred way to play large audio files and streams. For small
 /// soundbites, consider using
-/// [`decode_audio_data`](crate::context::AsBaseAudioContext::decode_audio_data) on the audio
+/// [`decode_audio_data`](crate::context::BaseAudioContext::decode_audio_data) on the audio
 /// context which will create a single AudioBuffer which can be played/looped with high precision
 /// in an `AudioBufferSourceNode`.
 ///
@@ -65,7 +65,7 @@ impl<R: Read + Send> symphonia::core::io::MediaSource for MediaInput<R> {
 ///
 /// ```no_run
 /// use web_audio_api::media::{MediaElement, MediaDecoder};
-/// use web_audio_api::context::{AudioContext, AsBaseAudioContext};
+/// use web_audio_api::context::{AudioContext, BaseAudioContext};
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// // construct the decoder

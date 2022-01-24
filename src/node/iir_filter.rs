@@ -10,7 +10,7 @@ use num_complex::Complex;
 use std::f64::consts::PI;
 
 use crate::{
-    context::{AsBaseAudioContext, AudioContextRegistration},
+    context::{AudioContextRegistration, BaseAudioContext},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
 };
@@ -78,7 +78,7 @@ impl IirFilterNode {
     /// * `feedforward` or/and `feedback` is an empty vector
     /// * all `feedforward` element or/and all `feedback` element are eqaul to 0.
     /// *
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: IirFilterOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: IirFilterOptions) -> Self {
         context.base().register(move |registration| {
             let IirFilterOptions {
                 feedforward,
@@ -348,7 +348,7 @@ mod test {
     use std::{cmp::min, fs::File};
 
     use crate::{
-        context::{AsBaseAudioContext, OfflineAudioContext},
+        context::{BaseAudioContext, OfflineAudioContext},
         media::{MediaDecoder, MediaElement},
         node::{AudioNode, AudioScheduledSourceNode},
         snapshot, SampleRate,

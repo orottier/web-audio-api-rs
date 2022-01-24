@@ -2,7 +2,7 @@
 // `cargo run --release --example mic_playback`
 
 use web_audio_api::buffer::AudioBuffer;
-use web_audio_api::context::{AsBaseAudioContext, AudioContext, AudioContextRegistration};
+use web_audio_api::context::{AudioContext, AudioContextRegistration, BaseAudioContext};
 use web_audio_api::media::Microphone;
 use web_audio_api::node::BiquadFilterType;
 use web_audio_api::node::{
@@ -57,7 +57,7 @@ impl AudioNode for MediaRecorder {
 
 impl MediaRecorder {
     /// Construct a new MediaRecorder
-    fn new<C: AsBaseAudioContext>(context: &C) -> Self {
+    fn new<C: BaseAudioContext>(context: &C) -> Self {
         context.base().register(move |registration| {
             let (sender, receiver) = crossbeam_channel::unbounded();
 
