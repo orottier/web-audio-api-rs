@@ -22,11 +22,7 @@ const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::media::{MediaDecoder, MediaElement, MediaStream};
 use crate::message::ControlMessage;
-use crate::node::{
-    self, AnalyserOptions, AudioBufferSourceOptions, AudioNode, ChannelConfigOptions,
-    ChannelCountMode, ChannelInterpretation, ChannelMergerOptions, ChannelSplitterOptions,
-    ConstantSourceOptions, DelayOptions, GainOptions, IirFilterOptions, PannerOptions,
-};
+use crate::node::{self, AudioNode, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
 use crate::param::{AudioParam, AudioParamEvent, AudioParamOptions};
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::render::{AudioProcessor, NodeIndex, RenderThread};
@@ -156,25 +152,56 @@ pub trait AsBaseAudioContext {
         AudioBuffer::new(options)
     }
 
-    /// Creates an `OscillatorNode`, a source representing a periodic waveform. It basically
-    /// generates a tone.
-    fn create_oscillator(&self) -> node::OscillatorNode {
-        node::OscillatorNode::new(self.base(), node::OscillatorOptions::default())
+    /// Creates a `AnalyserNode`
+    fn create_analyser(&self) -> node::AnalyserNode {
+        node::AnalyserNode::new(self.base(), node::AnalyserOptions::default())
     }
 
-    /// Creates an `StereoPannerNode` to pan a stereo output
-    fn create_stereo_panner(&self) -> node::StereoPannerNode {
-        node::StereoPannerNode::new(self.base(), node::StereoPannerOptions::default())
+    /// Creates an `BiquadFilterNode` which implements a second order filter
+    fn create_biquad_filter(&self) -> node::BiquadFilterNode {
+        node::BiquadFilterNode::new(self.base(), node::BiquadFilterOptions::default())
     }
 
-    /// Creates an `GainNode`, to control audio volume
-    fn create_gain(&self) -> node::GainNode {
-        node::GainNode::new(self.base(), GainOptions::default())
+    /// Creates an `AudioBufferSourceNode`
+    fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
+        node::AudioBufferSourceNode::new(self.base(), node::AudioBufferSourceOptions::default())
     }
 
     /// Creates an `ConstantSourceNode`, a source representing a constant value
     fn create_constant_source(&self) -> node::ConstantSourceNode {
-        node::ConstantSourceNode::new(self.base(), ConstantSourceOptions::default())
+        node::ConstantSourceNode::new(self.base(), node::ConstantSourceOptions::default())
+    }
+
+    /// Creates a `ChannelMergerNode`
+    fn create_channel_merger(&self, number_of_inputs: u32) -> node::ChannelMergerNode {
+        let opts = node::ChannelMergerOptions {
+            number_of_inputs,
+            ..node::ChannelMergerOptions::default()
+        };
+        node::ChannelMergerNode::new(self.base(), opts)
+    }
+
+    /// Creates a `ChannelSplitterNode`
+    fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
+        let opts = node::ChannelSplitterOptions {
+            number_of_outputs,
+            ..node::ChannelSplitterOptions::default()
+        };
+        node::ChannelSplitterNode::new(self.base(), opts)
+    }
+
+    /// Creates a `DelayNode`, delaying the audio signal
+    fn create_delay(&self, max_delay_time: f64) -> node::DelayNode {
+        let opts = node::DelayOptions {
+            max_delay_time,
+            ..node::DelayOptions::default()
+        };
+        node::DelayNode::new(self.base(), opts)
+    }
+
+    /// Creates an `GainNode`, to control audio volume
+    fn create_gain(&self) -> node::GainNode {
+        node::GainNode::new(self.base(), node::GainOptions::default())
     }
 
     /// Creates an `IirFilterNode`
@@ -186,66 +213,12 @@ pub trait AsBaseAudioContext {
     /// * `feedback` - An array of the feedback (denominator) coefficients for the transfer function of the IIR filter.
     /// The maximum length of this array is 20
     fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IirFilterNode {
-        let options = IirFilterOptions {
+        let options = node::IirFilterOptions {
             channel_config: ChannelConfigOptions::default(),
             feedforward,
             feedback,
         };
         node::IirFilterNode::new(self.base(), options)
-    }
-
-    /// Creates a `DelayNode`, delaying the audio signal
-    fn create_delay(&self, max_delay_time: f64) -> node::DelayNode {
-        let opts = node::DelayOptions {
-            max_delay_time,
-            ..DelayOptions::default()
-        };
-        node::DelayNode::new(self.base(), opts)
-    }
-
-    /// Creates an `BiquadFilterNode` which implements a second order filter
-    fn create_biquad_filter(&self) -> node::BiquadFilterNode {
-        node::BiquadFilterNode::new(self.base(), node::BiquadFilterOptions::default())
-    }
-
-    /// Creates a `WaveShaperNode`
-    fn create_wave_shaper(&self) -> node::WaveShaperNode {
-        node::WaveShaperNode::new(self.base(), node::WaveShaperOptions::default())
-    }
-
-    /// Creates a `ChannelSplitterNode`
-    fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
-        let opts = node::ChannelSplitterOptions {
-            number_of_outputs,
-            ..ChannelSplitterOptions::default()
-        };
-        node::ChannelSplitterNode::new(self.base(), opts)
-    }
-
-    /// Creates a `ChannelMergerNode`
-    fn create_channel_merger(&self, number_of_inputs: u32) -> node::ChannelMergerNode {
-        let opts = node::ChannelMergerOptions {
-            number_of_inputs,
-            ..ChannelMergerOptions::default()
-        };
-        node::ChannelMergerNode::new(self.base(), opts)
-    }
-
-    /// Creates a `MediaStreamAudioSourceNode` from a `MediaElement`
-    fn create_media_stream_source<M: MediaStream>(
-        &self,
-        media: M,
-    ) -> node::MediaStreamAudioSourceNode {
-        let channel_config = ChannelConfigOptions {
-            count: 1,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Speakers,
-        };
-        let opts = node::MediaStreamAudioSourceNodeOptions {
-            media,
-            channel_config,
-        };
-        node::MediaStreamAudioSourceNode::new(self.base(), opts)
     }
 
     /// Creates a `MediaElementAudioSourceNode` from a `MediaElement`
@@ -267,26 +240,46 @@ pub trait AsBaseAudioContext {
         node::MediaElementAudioSourceNode::new(self.base(), opts)
     }
 
-    /// Creates an `AudioBufferSourceNode`
-    ///
-    /// Note: do not forget to `start()` the node.
-    fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
-        node::AudioBufferSourceNode::new(self.base(), AudioBufferSourceOptions::default())
+    /// Creates a `MediaStreamAudioSourceNode` from a `MediaElement`
+    fn create_media_stream_source<M: MediaStream>(
+        &self,
+        media: M,
+    ) -> node::MediaStreamAudioSourceNode {
+        let channel_config = ChannelConfigOptions {
+            count: 1,
+            mode: ChannelCountMode::Explicit,
+            interpretation: ChannelInterpretation::Speakers,
+        };
+        let opts = node::MediaStreamAudioSourceNodeOptions {
+            media,
+            channel_config,
+        };
+        node::MediaStreamAudioSourceNode::new(self.base(), opts)
+    }
+
+    /// Creates an `OscillatorNode`, a source representing a periodic waveform.
+    fn create_oscillator(&self) -> node::OscillatorNode {
+        node::OscillatorNode::new(self.base(), node::OscillatorOptions::default())
     }
 
     /// Creates a `PannerNode`
     fn create_panner(&self) -> node::PannerNode {
-        node::PannerNode::new(self.base(), PannerOptions::default())
-    }
-
-    /// Creates a `AnalyserNode`
-    fn create_analyser(&self) -> node::AnalyserNode {
-        node::AnalyserNode::new(self.base(), AnalyserOptions::default())
+        node::PannerNode::new(self.base(), node::PannerOptions::default())
     }
 
     /// Creates a periodic wave
     fn create_periodic_wave(&self, options: Option<PeriodicWaveOptions>) -> PeriodicWave {
         PeriodicWave::new(self.base(), options)
+    }
+
+    /// Creates an `StereoPannerNode` to pan a stereo output
+    fn create_stereo_panner(&self) -> node::StereoPannerNode {
+        node::StereoPannerNode::new(self.base(), node::StereoPannerOptions::default())
+    }
+
+    /// Creates a `WaveShaperNode`
+    fn create_wave_shaper(&self) -> node::WaveShaperNode {
+        node::WaveShaperNode::new(self.base(), node::WaveShaperOptions::default())
     }
 
     /// Create an `AudioParam`.
