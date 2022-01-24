@@ -46,14 +46,16 @@ use crossbeam_channel::Sender;
 /// Please note that in rust, we need to differentiate between the [`BaseAudioContext`] trait and
 /// the [`ConcreteBaseAudioContext`] concrete implementation.
 ///
-/// This object is returned from the `base()` method on `AudioContext` and `OfflineAudioContext`,
-/// or the `context()` method on `AudioNode`s.
+/// This object is returned from the `base()` method on [`AudioContext`] and
+/// [`OfflineAudioContext`], or the `context()` method on `AudioNode`s.
+///
+/// The `ConcreteBaseAudioContext` allows for cheap cloning (using an `Arc` internally).
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
 pub struct ConcreteBaseAudioContext {
-    /// inner makes `BaseAudioContextInner` cheap to clone
-    inner: Arc<BaseAudioContextInner>,
+    /// inner makes `ConcreteBaseAudioContext` cheap to clone
+    inner: Arc<ConcreteBaseAudioContextInner>,
 }
 
 impl PartialEq for ConcreteBaseAudioContext {
@@ -62,8 +64,10 @@ impl PartialEq for ConcreteBaseAudioContext {
     }
 }
 
-/// Inner representation of the `BaseAudioContext`
-struct BaseAudioContextInner {
+/// Inner representation of the `ConcreteBaseAudioContext`
+///
+/// These fields are wrapped inside an `Arc` in the actual `ConcreteBaseAudioContext`.
+struct ConcreteBaseAudioContextInner {
     /// sample rate in Hertz
     sample_rate: SampleRate,
     /// number of speaker output channels
@@ -625,7 +629,7 @@ impl ConcreteBaseAudioContext {
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
     ) -> Self {
-        let base_inner = BaseAudioContextInner {
+        let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             channels,
             render_channel,
