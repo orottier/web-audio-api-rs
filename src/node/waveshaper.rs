@@ -47,21 +47,26 @@ impl From<u32> for OverSampleType {
 }
 
 /// `WaveShaperNode` options
+// dictionary WaveShaperOptions : AudioNodeOptions {
+//   sequence<float> curve;
+//   OverSampleType oversample = "none";
+// };
+#[derive(Clone, Debug)]
 pub struct WaveShaperOptions {
     /// The distortion curve
     pub curve: Option<Vec<f32>>,
     /// Oversampling rate - default to `None`
-    pub oversample: Option<OverSampleType>,
+    pub oversample: OverSampleType,
     /// audio node options
-    pub channel_config: Option<ChannelConfigOptions>,
+    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for WaveShaperOptions {
     fn default() -> Self {
         Self {
-            curve: Default::default(),
-            oversample: Some(OverSampleType::None),
-            channel_config: Default::default(),
+            curve: None,
+            oversample: OverSampleType::None,
+            channel_config: ChannelConfigOptions::default(),
         }
     }
 }
@@ -145,6 +150,7 @@ impl AudioNode for WaveShaperNode {
     fn number_of_inputs(&self) -> u32 {
         1
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
@@ -157,18 +163,17 @@ impl WaveShaperNode {
     ///
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - waveshaper options
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<WaveShaperOptions>) -> Self {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: WaveShaperOptions) -> Self {
         context.base().register(move |registration| {
             let WaveShaperOptions {
                 curve,
                 oversample,
                 channel_config,
-            } = options.unwrap_or_default();
+            } = options;
+
             let sample_rate = context.sample_rate_raw().0 as usize;
-            let channel_config = channel_config.unwrap_or_default().into();
-            let oversample = Arc::new(AtomicU32::new(
-                oversample.expect("oversample should be OversampleType variant") as u32,
-            ));
+            let channel_config = channel_config.into();
+            let oversample = Arc::new(AtomicU32::new(oversample as u32));
 
             // Channel to send the `curve` to the renderer
             // A capacity of 1 suffices since it is not allowed to set the value multiple times
@@ -476,7 +481,7 @@ mod tests {
     #[test]
     fn build_with_new() {
         let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-        let _shaper = WaveShaperNode::new(&context, None);
+        let _shaper = WaveShaperNode::new(&context, WaveShaperOptions::default());
     }
 
     #[test]
@@ -486,41 +491,25 @@ mod tests {
     }
 
     #[test]
-    fn default_audio_params_are_correct_with_no_options() {
-        let default_oversample = OverSampleType::None;
-        let default_curve = None;
+    fn test_default_options() {
         let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-        let shaper = WaveShaperNode::new(&context, None);
+        let shaper = WaveShaperNode::new(&context, WaveShaperOptions::default());
 
-        assert_eq!(shaper.curve(), default_curve);
-        assert_eq!(shaper.oversample(), default_oversample);
+        assert_eq!(shaper.curve(), None);
+        assert_eq!(shaper.oversample(), OverSampleType::None);
     }
 
     #[test]
-    fn default_audio_params_are_correct_with_default_options() {
-        let default_oversample = OverSampleType::None;
-        let default_curve = None;
-
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-
-        let options = WaveShaperOptions::default();
-        let shaper = WaveShaperNode::new(&context, Some(options));
-
-        assert_eq!(shaper.curve(), default_curve);
-        assert_eq!(shaper.oversample(), default_oversample);
-    }
-
-    #[test]
-    fn options_sets_audio_params() {
+    fn test_user_defined_options() {
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
         let options = WaveShaperOptions {
             curve: Some(vec![1.0]),
-            oversample: Some(OverSampleType::X2),
+            oversample: OverSampleType::X2,
             ..Default::default()
         };
 
-        let shaper = WaveShaperNode::new(&context, Some(options));
+        let shaper = WaveShaperNode::new(&context, options);
 
         context.start_rendering();
 
@@ -535,11 +524,11 @@ mod tests {
 
         let options = WaveShaperOptions {
             curve: Some(vec![1.0]),
-            oversample: Some(OverSampleType::X2),
+            oversample: OverSampleType::X2,
             ..Default::default()
         };
 
-        let shaper = WaveShaperNode::new(&context, Some(options));
+        let shaper = WaveShaperNode::new(&context, options);
         assert_eq!(shaper.curve(), Some(&[1.0][..]));
         assert_eq!(shaper.oversample(), OverSampleType::X2);
 
@@ -558,11 +547,11 @@ mod tests {
 
         let options = WaveShaperOptions {
             curve: None,
-            oversample: Some(OverSampleType::X2),
+            oversample: OverSampleType::X2,
             ..Default::default()
         };
 
-        let shaper = WaveShaperNode::new(&context, Some(options));
+        let shaper = WaveShaperNode::new(&context, options);
         assert_eq!(shaper.curve(), None);
         assert_eq!(shaper.oversample(), OverSampleType::X2);
 

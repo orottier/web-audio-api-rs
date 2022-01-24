@@ -52,11 +52,11 @@ fn test_start_stop() {
 
     {
         let opts = OscillatorOptions {
-            type_: Some(OscillatorType::Square),
-            frequency: Some(0.), // constant signal
+            type_: OscillatorType::Square,
+            frequency: 0., // constant signal
             ..Default::default()
         };
-        let osc = OscillatorNode::new(&context, Some(opts));
+        let osc = OscillatorNode::new(&context, opts);
         osc.connect(&context.destination());
 
         osc.start_at(1.);

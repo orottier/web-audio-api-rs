@@ -159,12 +159,12 @@ pub trait AsBaseAudioContext {
     /// Creates an `OscillatorNode`, a source representing a periodic waveform. It basically
     /// generates a tone.
     fn create_oscillator(&self) -> node::OscillatorNode {
-        node::OscillatorNode::new(self.base(), None)
+        node::OscillatorNode::new(self.base(), node::OscillatorOptions::default())
     }
 
     /// Creates an `StereoPannerNode` to pan a stereo output
     fn create_stereo_panner(&self) -> node::StereoPannerNode {
-        node::StereoPannerNode::new(self.base(), None)
+        node::StereoPannerNode::new(self.base(), node::StereoPannerOptions::default())
     }
 
     /// Creates an `GainNode`, to control audio volume
@@ -205,12 +205,12 @@ pub trait AsBaseAudioContext {
 
     /// Creates an `BiquadFilterNode` which implements a second order filter
     fn create_biquad_filter(&self) -> node::BiquadFilterNode {
-        node::BiquadFilterNode::new(self.base(), None)
+        node::BiquadFilterNode::new(self.base(), node::BiquadFilterOptions::default())
     }
 
     /// Creates a `WaveShaperNode`
     fn create_wave_shaper(&self) -> node::WaveShaperNode {
-        node::WaveShaperNode::new(self.base(), None)
+        node::WaveShaperNode::new(self.base(), node::WaveShaperOptions::default())
     }
 
     /// Creates a `ChannelSplitterNode`

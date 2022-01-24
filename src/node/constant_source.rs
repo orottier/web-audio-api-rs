@@ -6,7 +6,11 @@ use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions};
 
-/// Options for constructing an ConstantSourceNode
+/// Options for constructing an [`ConstantSourceNode`]
+// dictionary ConstantSourceOptions {
+//   float offset = 1;
+// };
+#[derive(Clone, Debug)]
 pub struct ConstantSourceOptions {
     pub offset: f32,
     pub channel_config: ChannelConfigOptions,
@@ -74,6 +78,7 @@ impl AudioNode for ConstantSourceNode {
     fn number_of_inputs(&self) -> u32 {
         0
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }

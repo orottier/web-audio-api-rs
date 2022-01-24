@@ -9,10 +9,14 @@ use super::{
     ChannelConfigOptions, MediaStreamRenderer,
 };
 
-/// Options for constructing a MediaElementAudioSourceNode
+/// Options for constructing a [`MediaElementAudioSourceNode`]
+// dictionary MediaElementAudioSourceOptions {
+//   required HTMLMediaElement mediaElement;
+// };
+// note that `MediaElementAudioSourceOptions` does not extend `AudioNodeOptions`
 pub struct MediaElementAudioSourceNodeOptions {
     pub media: MediaElement,
-    pub channel_config: ChannelConfigOptions,
+    pub channel_config: ChannelConfigOptions, // should not have this
 }
 
 /// An audio source from a [`MediaElement`] (e.g. .ogg, .wav, .mp3 files)
@@ -42,6 +46,7 @@ impl AudioNode for MediaElementAudioSourceNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
+
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
     }
@@ -49,6 +54,7 @@ impl AudioNode for MediaElementAudioSourceNode {
     fn number_of_inputs(&self) -> u32 {
         0
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }

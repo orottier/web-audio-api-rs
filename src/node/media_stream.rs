@@ -7,10 +7,14 @@ use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer};
 
-/// Options for constructing a MediaStreamAudioSourceNode
+/// Options for constructing a [`MediaStreamAudioSourceNode`]
+// dictionary MediaStreamAudioSourceOptions {
+//   required MediaStream mediaStream;
+// };
+// note that `MediaElementAudioSourceOptions` does not extend `AudioNodeOptions`
 pub struct MediaStreamAudioSourceNodeOptions<M> {
     pub media: M,
-    pub channel_config: ChannelConfigOptions,
+    pub channel_config: ChannelConfigOptions, // should not have this
 }
 
 /// An audio source from a [`MediaStream`] (e.g. microphone input)
@@ -35,6 +39,7 @@ impl AudioNode for MediaStreamAudioSourceNode {
     fn number_of_inputs(&self) -> u32 {
         0
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }

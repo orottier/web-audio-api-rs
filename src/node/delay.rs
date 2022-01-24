@@ -8,7 +8,12 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretatio
 use std::cell::{Cell, RefCell, RefMut};
 use std::rc::Rc;
 
-/// Options for constructing a DelayNode
+/// Options for constructing a [`DelayNode`]
+// dictionary DelayOptions : AudioNodeOptions {
+//   double maxDelayTime = 1;
+//   double delayTime = 0;
+// };
+#[derive(Clone, Debug)]
 pub struct DelayOptions {
     pub max_delay_time: f64,
     pub delay_time: f64,
@@ -106,6 +111,7 @@ impl AudioNode for DelayNode {
     fn number_of_inputs(&self) -> u32 {
         1
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }

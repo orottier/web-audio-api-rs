@@ -15,31 +15,35 @@ use super::{
     TABLE_LENGTH_USIZE,
 };
 
-/// Options for constructing an `OscillatorNode`
-#[derive(Debug)]
+/// Options for constructing an [`OscillatorNode`]
+// dictionary OscillatorOptions : AudioNodeOptions {
+//   OscillatorType type = "sine";
+//   float frequency = 440;
+//   float detune = 0;
+//   PeriodicWave periodicWave;
+// };
+#[derive(Clone, Debug)]
 pub struct OscillatorOptions {
     /// The shape of the periodic waveform
-    pub type_: Option<OscillatorType>,
+    pub type_: OscillatorType,
     /// The frequency of the fundamental frequency.
-    pub frequency: Option<f32>,
+    pub frequency: f32,
     /// A detuning value (in cents) which will offset the frequency by the given amount.
-    pub detune: Option<f32>,
-    /// channel config options
-    pub channel_config: Option<ChannelConfigOptions>,
-    /// The PeriodicWave for the OscillatorNode
-    /// If this is specified, then any valid value for type is ignored;
-    /// it is treated as if "custom" were specified.
+    pub detune: f32,
+    /// Optionnal custom waveform, if specified (set `type` to "custom")
     pub periodic_wave: Option<PeriodicWave>,
+    /// channel config options
+    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for OscillatorOptions {
     fn default() -> Self {
         Self {
-            type_: Some(OscillatorType::default()),
-            frequency: Some(440.),
-            detune: Some(0.),
-            channel_config: Some(ChannelConfigOptions::default()),
+            type_: OscillatorType::default(),
+            frequency: 440.,
+            detune: 0.,
             periodic_wave: None,
+            channel_config: ChannelConfigOptions::default(),
         }
     }
 }
@@ -158,12 +162,10 @@ impl OscillatorNode {
     ///
     /// * `context` - The `AudioContext`
     /// * `options` - The OscillatorOptions
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: Option<OscillatorOptions>) -> Self {
+    pub fn new<C: AsBaseAudioContext>(context: &C, options: OscillatorOptions) -> Self {
         context.base().register(move |registration| {
             let sample_rate = context.sample_rate();
             let nyquist = sample_rate / 2.;
-            let default_freq = 440.;
-            let default_det = 0.;
 
             let OscillatorOptions {
                 type_,
@@ -171,33 +173,33 @@ impl OscillatorNode {
                 detune,
                 channel_config,
                 periodic_wave,
-            } = options.unwrap_or_default();
+            } = options;
 
             // frequency audio parameter
             let freq_param_opts = AudioParamOptions {
                 min_value: -nyquist,
                 max_value: nyquist,
-                default_value: default_freq,
+                default_value: 440.,
                 automation_rate: AutomationRate::A,
             };
             let (f_param, f_proc) = context
                 .base()
                 .create_audio_param(freq_param_opts, registration.id());
-            f_param.set_value(frequency.unwrap_or(default_freq));
+            f_param.set_value(frequency);
 
             // detune audio parameter
             let det_param_opts = AudioParamOptions {
                 min_value: -153_600.,
                 max_value: 153_600.,
-                default_value: default_det,
+                default_value: 0.,
                 automation_rate: AutomationRate::A,
             };
             let (det_param, det_proc) = context
                 .base()
                 .create_audio_param(det_param_opts, registration.id());
-            det_param.set_value(detune.unwrap_or(default_det));
+            det_param.set_value(detune);
 
-            let type_ = Arc::new(AtomicU32::new(type_.unwrap_or(OscillatorType::Sine) as u32));
+            let type_ = Arc::new(AtomicU32::new(type_ as u32));
 
             let scheduler = Scheduler::new();
             let (sender, receiver) = crossbeam_channel::bounded(1);
@@ -215,7 +217,7 @@ impl OscillatorNode {
 
             let node = Self {
                 registration,
-                channel_config: channel_config.unwrap_or_default().into(),
+                channel_config: channel_config.into(),
                 frequency: f_param,
                 detune: det_param,
                 type_,
@@ -527,24 +529,6 @@ mod tests {
 
     use super::{OscillatorNode, OscillatorOptions, OscillatorRenderer, OscillatorType};
 
-    // keep that around, usefull to write data into files and plot long signals
-    // use std::fs::File;
-    // use std::io::Write;
-
-    // let mut file = File::create("_signal-expected.txt").unwrap();
-    // for i in expected.iter() {
-    //     let mut tmp = String::from(i.to_string());
-    //     tmp += ",\n";
-    //     file.write(tmp.to_string().as_bytes()).unwrap();
-    // }
-
-    // let mut file = File::create("_signal-result.txt").unwrap();
-    // for i in result.iter() {
-    //     let mut tmp = String::from(i.to_string());
-    //     tmp += ",\n";
-    //     file.write(tmp.to_string().as_bytes()).unwrap();
-    // }
-
     #[test]
     fn assert_osc_default_build_with_factory_func() {
         let default_freq = 440.;
@@ -573,7 +557,7 @@ mod tests {
 
         let context = OfflineAudioContext::new(2, 1, SampleRate(44_100));
 
-        let osc = OscillatorNode::new(&context, None);
+        let osc = OscillatorNode::new(&context, OscillatorOptions::default());
 
         let freq = osc.frequency.value();
         assert_float_eq!(freq, default_freq, abs_all <= 0.);
@@ -589,9 +573,7 @@ mod tests {
     #[should_panic]
     fn set_type_to_custom_should_panic() {
         let context = OfflineAudioContext::new(2, 1, SampleRate(44_100));
-
-        let osc = OscillatorNode::new(&context, None);
-
+        let osc = OscillatorNode::new(&context, OscillatorOptions::default());
         osc.set_type(OscillatorType::Custom);
     }
 
@@ -614,7 +596,7 @@ mod tests {
             ..OscillatorOptions::default()
         };
 
-        let osc = OscillatorNode::new(&context, Some(options));
+        let osc = OscillatorNode::new(&context, options);
 
         let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
         assert_eq!(type_, expected_type as u32);
@@ -639,7 +621,7 @@ mod tests {
             ..OscillatorOptions::default()
         };
 
-        let osc = OscillatorNode::new(&context, Some(options));
+        let osc = OscillatorNode::new(&context, options);
 
         osc.set_type(OscillatorType::Sine);
 

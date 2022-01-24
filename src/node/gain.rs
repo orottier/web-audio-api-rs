@@ -5,7 +5,11 @@ use crate::SampleRate;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
-/// Options for constructing a GainNode
+/// Options for constructing a [`GainNode`]
+// dictionary GainOptions : AudioNodeOptions {
+//   float gain = 1.0;
+// };
+#[derive(Clone, Debug)]
 pub struct GainOptions {
     pub gain: f32,
     pub channel_config: ChannelConfigOptions,
@@ -39,6 +43,7 @@ impl AudioNode for GainNode {
     fn number_of_inputs(&self) -> u32 {
         1
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }

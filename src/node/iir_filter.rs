@@ -1,11 +1,11 @@
 //! The IIR filter control and renderer parts
-#![warn(
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    clippy::perf,
-    clippy::missing_docs_in_private_items
-)]
+// #![warn(
+//     clippy::all,
+//     clippy::pedantic,
+//     clippy::nursery,
+//     clippy::perf,
+//     clippy::missing_docs_in_private_items
+// )]
 use num_complex::Complex;
 use std::f64::consts::PI;
 
@@ -20,21 +20,21 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 /// Filter order is limited to 20
 const MAX_IIR_COEFFS_LEN: usize = 20;
 
-/// The `IirFilterOptions` is used to specify the filter coefficients
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
+/// Options for constructing a [`IirFilterNode`]
+// dictionary IIRFilterOptions : AudioNodeOptions {
+//   required sequence<double> feedforward;
+//   required sequence<double> feedback;
+// };
 pub struct IirFilterOptions {
     /// audio node options
     pub channel_config: ChannelConfigOptions,
     /// feedforward coefficients
-    pub feedforward: Vec<f64>,
+    pub feedforward: Vec<f64>, // go for Option<Vec<f32>> w/ default to None?
     /// feedback coefficients
-    pub feedback: Vec<f64>,
+    pub feedback: Vec<f64>, // go for Option<Vec<f32>> w/ default to None?
 }
 
 /// An `AudioNode` implementing a general IIR filter
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
 pub struct IirFilterNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
@@ -58,6 +58,7 @@ impl AudioNode for IirFilterNode {
     fn number_of_inputs(&self) -> u32 {
         1
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }

@@ -12,6 +12,15 @@ use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 /// Options for constructing an [`AudioBufferSourceNode`]
+// dictionary AudioBufferSourceOptions {
+//   AudioBuffer? buffer;
+//   float detune = 0;
+//   boolean loop = false;
+//   double loopEnd = 0;
+//   double loopStart = 0;
+//   float playbackRate = 1;
+// };
+#[derive(Clone, Debug)]
 pub struct AudioBufferSourceOptions {
     pub buffer: Option<AudioBuffer>,
     pub detune: f32,
@@ -31,7 +40,7 @@ impl Default for AudioBufferSourceOptions {
             loop_start: 0.,
             loop_end: 0.,
             playback_rate: 1.,
-            channel_config: Default::default(),
+            channel_config: ChannelConfigOptions::default(),
         }
     }
 }
@@ -93,6 +102,7 @@ impl AudioNode for AudioBufferSourceNode {
     fn number_of_inputs(&self) -> u32 {
         0
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
