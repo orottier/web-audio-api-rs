@@ -37,25 +37,33 @@ use cpal::{traits::StreamTrait, Stream};
 
 use crossbeam_channel::Sender;
 
-/// The `BaseAudioContext` interface represents an audio-processing graph built from audio modules
-/// linked together, each represented by an `AudioNode`. An audio context controls both the creation
-/// of the nodes it contains and the execution of the audio processing, or decoding.
+/// The struct that corresponds to the Javascript `BaseAudioContext` object.
+///
+/// Please note that in rust, we need to differentiate between the [`BaseAudioContext`] trait and
+/// the [`ConcreteBaseAudioContext`] concrete implementation.
+///
+/// This object is returned from the `base()` method on [`AudioContext`] and
+/// [`OfflineAudioContext`], or the `context()` method on `AudioNode`s.
+///
+/// The `ConcreteBaseAudioContext` allows for cheap cloning (using an `Arc` internally).
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
-pub struct BaseAudioContext {
-    /// inner makes `BaseAudioContextInner` cheap to clone
-    inner: Arc<BaseAudioContextInner>,
+pub struct ConcreteBaseAudioContext {
+    /// inner makes `ConcreteBaseAudioContext` cheap to clone
+    inner: Arc<ConcreteBaseAudioContextInner>,
 }
 
-impl PartialEq for BaseAudioContext {
+impl PartialEq for ConcreteBaseAudioContext {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
-/// Inner representation of the `BaseAudioContext`
-struct BaseAudioContextInner {
+/// Inner representation of the `ConcreteBaseAudioContext`
+///
+/// These fields are wrapped inside an `Arc` in the actual `ConcreteBaseAudioContext`.
+struct ConcreteBaseAudioContextInner {
     /// sample rate in Hertz
     sample_rate: SampleRate,
     /// number of speaker output channels
@@ -72,11 +80,18 @@ struct BaseAudioContextInner {
     listener_params: Option<AudioListenerParams>,
 }
 
-/// Retrieve the `BaseAudioContext` from the concrete `AudioContext`
+/// The interface representing an audio-processing graph built from audio modules linked together,
+/// each represented by an `AudioNode`.
+///
+/// An audio context controls both the creation of the nodes it contains and the execution of the
+/// audio processing, or decoding.
+///
+/// Please note that in rust, we need to differentiate between the [`BaseAudioContext`] trait and
+/// the [`ConcreteBaseAudioContext`] concrete implementation.
 #[allow(clippy::module_name_repetitions)]
-pub trait AsBaseAudioContext {
-    /// retrieves the `BaseAudioContext` associated with the concrete `AudioContext`
-    fn base(&self) -> &BaseAudioContext;
+pub trait BaseAudioContext {
+    /// retrieves the `ConcreteBaseAudioContext` associated with this `AudioContext`
+    fn base(&self) -> &ConcreteBaseAudioContext;
 
     /// Decode an [`AudioBuffer`] from a given input stream.
     ///
@@ -99,7 +114,7 @@ pub trait AsBaseAudioContext {
     /// ```no_run
     /// use std::io::Cursor;
     /// use web_audio_api::SampleRate;
-    /// use web_audio_api::context::{AsBaseAudioContext, OfflineAudioContext};
+    /// use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
     ///
     /// let input = Cursor::new(vec![0; 32]); // or a File, TcpStream, ...
     ///
@@ -344,7 +359,7 @@ pub trait AsBaseAudioContext {
     }
 
     /// The raw sample rate of the `AudioContext` (which has more precision than the float
-    /// [`sample_rate()`](AsBaseAudioContext::sample_rate) value).
+    /// [`sample_rate()`](BaseAudioContext::sample_rate) value).
     #[must_use]
     fn sample_rate_raw(&self) -> SampleRate {
         self.base().sample_rate_raw()
@@ -365,8 +380,8 @@ pub trait AsBaseAudioContext {
     }
 }
 
-impl AsBaseAudioContext for BaseAudioContext {
-    fn base(&self) -> &BaseAudioContext {
+impl BaseAudioContext for ConcreteBaseAudioContext {
+    fn base(&self) -> &ConcreteBaseAudioContext {
         self
     }
 }
@@ -406,15 +421,15 @@ pub struct AudioContextOptions {
 #[allow(clippy::module_name_repetitions)]
 pub struct AudioContext {
     /// represents the underlying `BaseAudioContext`
-    base: BaseAudioContext,
+    base: ConcreteBaseAudioContext,
 
     /// cpal stream (play/pause functionality)
     #[cfg(not(test))] // in tests, do not set up a cpal Stream
     stream: Mutex<Option<Stream>>,
 }
 
-impl AsBaseAudioContext for AudioContext {
-    fn base(&self) -> &BaseAudioContext {
+impl BaseAudioContext for AudioContext {
+    fn base(&self) -> &ConcreteBaseAudioContext {
         &self.base
     }
 }
@@ -425,15 +440,15 @@ impl AsBaseAudioContext for AudioContext {
 #[allow(clippy::module_name_repetitions)]
 pub struct OfflineAudioContext {
     /// represents the underlying `BaseAudioContext`
-    base: BaseAudioContext,
+    base: ConcreteBaseAudioContext,
     /// the size of the buffer in sample-frames
     length: usize,
     /// the rendering 'thread', fully controlled by the offline context
     renderer: RenderThread,
 }
 
-impl AsBaseAudioContext for OfflineAudioContext {
-    fn base(&self) -> &BaseAudioContext {
+impl BaseAudioContext for OfflineAudioContext {
+    fn base(&self) -> &ConcreteBaseAudioContext {
         &self.base
     }
 }
@@ -454,7 +469,7 @@ impl AudioContext {
         let channels = u32::from(config.channels);
         let sample_rate = SampleRate(config.sample_rate.0);
 
-        let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
         Self {
             base,
@@ -475,7 +490,7 @@ impl AudioContext {
         let channels = u32::from(options.channels.unwrap_or(2));
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
-        let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
         Self { base }
     }
@@ -557,10 +572,10 @@ impl From<&AudioParamId> for NodeIndex {
 ///
 /// This allows for communication with the render thread and lifetime management.
 ///
-/// The only way to construct this object is by calling [`BaseAudioContext::register`]
+/// The only way to construct this object is by calling [`ConcreteBaseAudioContext::register`]
 pub struct AudioContextRegistration {
     /// the audio context in wich nodes and connections lives
-    context: BaseAudioContext,
+    context: ConcreteBaseAudioContext,
     /// identify a specific `AudioNode`
     id: AudioNodeId,
 }
@@ -577,7 +592,7 @@ impl AudioContextRegistration {
     // false positive: AudioContextRegistration is not const
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
-    pub fn context(&self) -> &BaseAudioContext {
+    pub fn context(&self) -> &ConcreteBaseAudioContext {
         &self.context
     }
 }
@@ -599,7 +614,7 @@ impl Drop for AudioContextRegistration {
     }
 }
 
-impl BaseAudioContext {
+impl ConcreteBaseAudioContext {
     /// Creates a `BaseAudioContext` instance
     fn new(
         sample_rate: SampleRate,
@@ -607,7 +622,7 @@ impl BaseAudioContext {
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
     ) -> Self {
-        let base_inner = BaseAudioContextInner {
+        let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             channels,
             render_channel,
@@ -674,7 +689,7 @@ impl BaseAudioContext {
     }
 
     /// The raw sample rate of the `AudioContext` (which has more precision than the float
-    /// [`sample_rate()`](AsBaseAudioContext::sample_rate) value).
+    /// [`sample_rate()`](BaseAudioContext::sample_rate) value).
     #[must_use]
     pub fn sample_rate_raw(&self) -> SampleRate {
         self.inner.sample_rate
@@ -845,7 +860,7 @@ impl OfflineAudioContext {
         );
 
         // first, setup the base audio context
-        let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
         Self {
             base,

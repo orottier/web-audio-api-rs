@@ -1,7 +1,7 @@
 //! Spatialization/Panning primitives
 //!
 //! Required for panning algorithm, distance and cone effects of [`crate::node::PannerNode`]s
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
@@ -116,7 +116,7 @@ impl AudioNode for AudioListenerNode {
 }
 
 impl AudioListenerNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C) -> Self {
         context.base().register(move |registration| {
             let reg_id = registration.id();
             let base = context.base();

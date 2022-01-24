@@ -1,4 +1,4 @@
-use crate::context::{AsBaseAudioContext, AudioContextRegistration};
+use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
@@ -73,7 +73,7 @@ impl AudioNode for AudioDestinationNode {
 }
 
 impl AudioDestinationNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, channel_count: usize) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, channel_count: usize) -> Self {
         context.base().register(move |registration| {
             let node = Self {
                 registration,

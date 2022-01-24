@@ -10,7 +10,7 @@ use float_eq::debug_assert_float_eq;
 use std::f32::consts::PI;
 
 use crate::{
-    context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
+    context::{AudioContextRegistration, AudioParamId, BaseAudioContext},
     param::{AudioParam, AudioParamOptions},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate,
@@ -102,7 +102,7 @@ impl StereoPannerNode {
     ///
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - stereo panner options
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: StereoPannerOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: StereoPannerOptions) -> Self {
         context.base().register(move |registration| {
             assert!(
                 options.channel_config.count <= 2,
@@ -260,7 +260,7 @@ mod test {
     use float_eq::assert_float_eq;
 
     use crate::{
-        context::{AsBaseAudioContext, OfflineAudioContext},
+        context::{BaseAudioContext, OfflineAudioContext},
         SampleRate,
     };
 

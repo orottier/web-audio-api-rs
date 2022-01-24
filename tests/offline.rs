@@ -1,5 +1,5 @@
 use float_eq::assert_float_eq;
-use web_audio_api::context::AsBaseAudioContext;
+use web_audio_api::context::BaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, OscillatorNode, OscillatorOptions, OscillatorType,

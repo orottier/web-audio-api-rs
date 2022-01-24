@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::context::{AudioContextRegistration, AudioNodeId, BaseAudioContext};
+use crate::context::{AudioContextRegistration, AudioNodeId, ConcreteBaseAudioContext};
 use crate::control::{Controller, ScheduledState, Scheduler};
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
@@ -180,7 +180,7 @@ impl From<ChannelConfigOptions> for ChannelConfig {
 /// to the audio hardware. Each node can have inputs and/or outputs.
 ///
 /// Note that the AudioNode is typically constructed together with an [`AudioProcessor`]
-/// (the object that lives the render thread). See [`BaseAudioContext::register`].
+/// (the object that lives the render thread). See [`ConcreteBaseAudioContext::register`].
 pub trait AudioNode {
     fn registration(&self) -> &AudioContextRegistration;
 
@@ -193,7 +193,7 @@ pub trait AudioNode {
     }
 
     /// The BaseAudioContext which owns this AudioNode.
-    fn context(&self) -> &BaseAudioContext {
+    fn context(&self) -> &ConcreteBaseAudioContext {
         self.registration().context()
     }
 

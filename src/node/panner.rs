@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 use std::sync::Arc;
 
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamOptions};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{AtomicF64, SampleRate};
@@ -87,11 +87,11 @@ impl Default for PannerOptions {
 /// - specification: <https://www.w3.org/TR/webaudio/#pannernode> and
 /// <https://www.w3.org/TR/webaudio/#Spatialization>
 /// - see also:
-/// [`AsBaseAudioContext::create_panner`](crate::context::AsBaseAudioContext::create_panner)
+/// [`BaseAudioContext::create_panner`](crate::context::BaseAudioContext::create_panner)
 ///
 /// # Usage
 /// ```no_run
-/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
 /// use web_audio_api::node::AudioNode;
 /// use web_audio_api::node::AudioScheduledSourceNode;
 ///
@@ -161,7 +161,7 @@ impl AudioNode for PannerNode {
 }
 
 impl PannerNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: PannerOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: PannerOptions) -> Self {
         let node = context.base().register(move |registration| {
             let id = registration.id();
 

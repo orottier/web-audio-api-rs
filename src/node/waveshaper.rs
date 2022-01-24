@@ -8,7 +8,7 @@ use once_cell::sync::OnceCell;
 use rubato::{FftFixedInOut, Resampler};
 
 use crate::{
-    context::{AsBaseAudioContext, AudioContextRegistration},
+    context::{AudioContextRegistration, BaseAudioContext},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate,
 };
@@ -76,13 +76,13 @@ impl Default for WaveShaperOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/WaveShaperNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#WaveShaperNode>
-/// - see also: [`AsBaseAudioContext::create_wave_shaper`](crate::context::AsBaseAudioContext::create_wave_shaper)
+/// - see also: [`BaseAudioContext::create_wave_shaper`](crate::context::BaseAudioContext::create_wave_shaper)
 ///
 /// # Usage
 ///
 /// ```no_run
 /// use std::fs::File;
-/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
 /// use web_audio_api::node::AudioNode;
 ///
 /// # use std::f32::consts::PI;
@@ -163,7 +163,7 @@ impl WaveShaperNode {
     ///
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - waveshaper options
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: WaveShaperOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: WaveShaperOptions) -> Self {
         context.base().register(move |registration| {
             let WaveShaperOptions {
                 curve,

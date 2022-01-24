@@ -1,4 +1,4 @@
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
@@ -30,12 +30,12 @@ impl Default for ConstantSourceOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/ConstantSourceNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#ConstantSourceNode>
-/// - see also: [`AsBaseAudioContext::create_constant_source`](crate::context::AsBaseAudioContext::create_constant_source)
+/// - see also: [`BaseAudioContext::create_constant_source`](crate::context::BaseAudioContext::create_constant_source)
 ///
 /// # Usage
 ///
 /// ```no_run
-/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
 /// use web_audio_api::node::AudioNode;
 ///
 /// let audio_context = AudioContext::new(None);
@@ -91,7 +91,7 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 }
 
 impl ConstantSourceNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
         context.base().register(move |registration| {
             let param_opts = AudioParamOptions {
                 min_value: f32::MIN,
@@ -185,7 +185,7 @@ impl AudioProcessor for ConstantSourceRenderer {
 
 #[cfg(test)]
 mod tests {
-    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::node::{AudioNode, AudioScheduledSourceNode};
     use crate::SampleRate;
 

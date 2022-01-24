@@ -12,7 +12,7 @@ use crossbeam_channel::{Receiver, Sender};
 use num_complex::Complex;
 
 use crate::{
-    context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId},
+    context::{AudioContextRegistration, AudioParamId, BaseAudioContext},
     param::{AudioParam, AudioParamOptions},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
@@ -152,7 +152,7 @@ impl BiquadFilterNode {
     ///
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - biquad filter options
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: BiquadFilterOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: BiquadFilterOptions) -> Self {
         context.base().register(move |registration| {
             let q_value = options.q;
             let d_value = options.detune;
@@ -1079,7 +1079,7 @@ mod test {
     use float_eq::assert_float_eq;
 
     use crate::{
-        context::{AsBaseAudioContext, OfflineAudioContext},
+        context::{BaseAudioContext, OfflineAudioContext},
         SampleRate,
     };
 

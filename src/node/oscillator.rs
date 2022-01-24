@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
 use crate::periodic_wave::PeriodicWave;
@@ -88,14 +88,14 @@ impl From<u32> for OscillatorType {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/OscillatorNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#OscillatorNode>
-/// - see also: [`AsBaseAudioContext::create_oscillator`](crate::context::AsBaseAudioContext::create_oscillator)
+/// - see also: [`BaseAudioContext::create_oscillator`](crate::context::BaseAudioContext::create_oscillator)
 /// - see also: [`PeriodicWave`](crate::periodic_wave::PeriodicWave)
 ///
 /// # Usage
 ///
 /// ```no_run
 /// use std::fs::File;
-/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// let context = AudioContext::new(None);
@@ -162,7 +162,7 @@ impl OscillatorNode {
     ///
     /// * `context` - The `AudioContext`
     /// * `options` - The OscillatorOptions
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: OscillatorOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: OscillatorOptions) -> Self {
         context.base().register(move |registration| {
             let sample_rate = context.sample_rate();
             let nyquist = sample_rate / 2.;
@@ -522,7 +522,7 @@ mod tests {
     use float_eq::assert_float_eq;
     use std::f64::consts::PI;
 
-    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::node::{AudioNode, AudioScheduledSourceNode};
     use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
     use crate::SampleRate;

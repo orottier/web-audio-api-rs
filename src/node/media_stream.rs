@@ -1,5 +1,5 @@
 use crate::buffer::Resampler;
-use crate::context::{AsBaseAudioContext, AudioContextRegistration};
+use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::control::Scheduler;
 use crate::media::MediaStream;
 
@@ -46,7 +46,7 @@ impl AudioNode for MediaStreamAudioSourceNode {
 }
 
 impl MediaStreamAudioSourceNode {
-    pub fn new<C: AsBaseAudioContext, M: MediaStream>(
+    pub fn new<C: BaseAudioContext, M: MediaStream>(
         context: &C,
         options: MediaStreamAudioSourceNodeOptions<M>,
     ) -> Self {
