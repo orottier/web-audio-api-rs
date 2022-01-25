@@ -388,7 +388,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
-pub enum LatencyHint {
+pub enum AudioContextLatencyCategory {
     /// Balance audio output latency and power consumption.
     Balanced,
     /// Provide the lowest audio output latency possible without glitching. This is the default.
@@ -408,7 +408,7 @@ pub enum LatencyHint {
 pub struct AudioContextOptions {
     /// Identify the type of playback, which affects
     /// tradeoffs between audio output latency and power consumption
-    pub latency_hint: Option<LatencyHint>,
+    pub latency_hint: Option<AudioContextLatencyCategory>,
     /// Sample rate of the audio Context and audio output hardware
     pub sample_rate: Option<u32>,
     /// Number of output channels of destination node and audio output hardware
@@ -481,7 +481,7 @@ impl AudioContext {
     #[allow(clippy::must_use_candidate)]
     pub fn new(options: Option<AudioContextOptions>) -> Self {
         let options = options.unwrap_or(AudioContextOptions {
-            latency_hint: Some(LatencyHint::Interactive),
+            latency_hint: Some(AudioContextLatencyCategory::Interactive),
             sample_rate: Some(44_100),
             channels: Some(2),
         });
