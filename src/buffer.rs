@@ -6,11 +6,14 @@ use crate::render::AudioRenderQuantum;
 use crate::SampleRate;
 
 /// Options for constructing an [`AudioBuffer`]
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct AudioBufferOptions {
-    pub number_of_channels: usize, // defaults to 1
-    pub length: usize,             // required
-    pub sample_rate: SampleRate,   // required
+    /// The number of channels for the buffer
+    pub number_of_channels: usize,
+    /// The length in sample frames of the buffer
+    pub length: usize,
+    /// The sample rate in Hz for the buffer
+    pub sample_rate: SampleRate,
 }
 
 /// Memory-resident audio asset, basically a matrix of channels * samples
@@ -524,7 +527,7 @@ mod tests {
 
         {
             // same size
-            let mut audio_buffer = AudioBuffer::new(options);
+            let mut audio_buffer = AudioBuffer::new(options.clone());
             let src = vec![1.; 10];
             audio_buffer.copy_to_channel(&src, 0);
             assert_float_eq!(
@@ -536,7 +539,7 @@ mod tests {
 
         {
             // smaller source
-            let mut audio_buffer = AudioBuffer::new(options);
+            let mut audio_buffer = AudioBuffer::new(options.clone());
             let src = vec![1.; 5];
             audio_buffer.copy_to_channel(&src, 0);
             assert_float_eq!(
@@ -548,7 +551,7 @@ mod tests {
 
         {
             // larger source
-            let mut audio_buffer = AudioBuffer::new(options);
+            let mut audio_buffer = AudioBuffer::new(options.clone());
             let src = vec![1.; 12];
             audio_buffer.copy_to_channel(&src, 0);
             assert_float_eq!(
@@ -560,7 +563,7 @@ mod tests {
 
         {
             // w/ offset
-            let mut audio_buffer = AudioBuffer::new(options);
+            let mut audio_buffer = AudioBuffer::new(options.clone());
             let src = vec![1.; 10];
             audio_buffer.copy_to_channel_with_offset(&src, 0, 5);
             assert_float_eq!(
@@ -608,7 +611,7 @@ mod tests {
             length: 5,
             sample_rate: SampleRate(44_100),
         };
-        let mut b1 = AudioBuffer::new(options);
+        let mut b1 = AudioBuffer::new(options.clone());
         let b2 = AudioBuffer::new(options);
         b1.extend(&b2);
 
