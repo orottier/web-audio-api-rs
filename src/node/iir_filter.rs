@@ -20,7 +20,7 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 /// Filter order is limited to 20
 const MAX_IIR_COEFFS_LEN: usize = 20;
 
-/// Options for constructing a [`IirFilterNode`]
+/// Options for constructing a [`IIRFilterNode`]
 // dictionary IIRFilterOptions : AudioNodeOptions {
 //   required sequence<double> feedforward;
 //   required sequence<double> feedback;
