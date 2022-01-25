@@ -227,13 +227,13 @@ pub trait BaseAudioContext {
     /// The maximum length of this array is 20
     /// * `feedback` - An array of the feedback (denominator) coefficients for the transfer function of the IIR filter.
     /// The maximum length of this array is 20
-    fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IirFilterNode {
-        let options = node::IirFilterOptions {
+    fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IIRFilterNode {
+        let options = node::IIRFilterOptions {
             channel_config: ChannelConfigOptions::default(),
             feedforward,
             feedback,
         };
-        node::IirFilterNode::new(self.base(), options)
+        node::IIRFilterNode::new(self.base(), options)
     }
 
     /// Creates a `MediaElementAudioSourceNode` from a `MediaElement`
@@ -248,7 +248,7 @@ pub trait BaseAudioContext {
             mode: ChannelCountMode::Explicit,
             interpretation: ChannelInterpretation::Speakers,
         };
-        let opts = node::MediaElementAudioSourceNodeOptions {
+        let opts = node::MediaElementAudioSourceOptions {
             media,
             channel_config,
         };
@@ -265,7 +265,7 @@ pub trait BaseAudioContext {
             mode: ChannelCountMode::Explicit,
             interpretation: ChannelInterpretation::Speakers,
         };
-        let opts = node::MediaStreamAudioSourceNodeOptions {
+        let opts = node::MediaStreamAudioSourceOptions {
             media,
             channel_config,
         };

@@ -12,7 +12,7 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer}
 //   required MediaStream mediaStream;
 // };
 // note that `MediaElementAudioSourceOptions` does not extend `AudioNodeOptions`
-pub struct MediaStreamAudioSourceNodeOptions<M> {
+pub struct MediaStreamAudioSourceOptions<M> {
     pub media: M,
     pub channel_config: ChannelConfigOptions, // should not have this
 }
@@ -48,7 +48,7 @@ impl AudioNode for MediaStreamAudioSourceNode {
 impl MediaStreamAudioSourceNode {
     pub fn new<C: BaseAudioContext, M: MediaStream>(
         context: &C,
-        options: MediaStreamAudioSourceNodeOptions<M>,
+        options: MediaStreamAudioSourceOptions<M>,
     ) -> Self {
         context.base().register(move |registration| {
             let node = MediaStreamAudioSourceNode {

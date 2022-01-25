@@ -14,7 +14,7 @@ use super::{
 //   required HTMLMediaElement mediaElement;
 // };
 // note that `MediaElementAudioSourceOptions` does not extend `AudioNodeOptions`
-pub struct MediaElementAudioSourceNodeOptions {
+pub struct MediaElementAudioSourceOptions {
     pub media: MediaElement,
     pub channel_config: ChannelConfigOptions, // should not have this
 }
@@ -61,10 +61,7 @@ impl AudioNode for MediaElementAudioSourceNode {
 }
 
 impl MediaElementAudioSourceNode {
-    pub fn new<C: BaseAudioContext>(
-        context: &C,
-        options: MediaElementAudioSourceNodeOptions,
-    ) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: MediaElementAudioSourceOptions) -> Self {
         context.base().register(move |registration| {
             let controller = options.media.controller().clone();
             let scheduler = controller.scheduler().clone();
