@@ -56,6 +56,8 @@ pub struct PannerOptions {
     pub ref_distance: f64,
     #[allow(dead_code)]
     pub max_distance: f64,
+    #[allow(dead_code)]
+    pub rolloff_factor: f64,
     pub cone_inner_angle: f64,
     pub cone_outer_angle: f64,
     pub cone_outer_gain: f64,
@@ -74,6 +76,7 @@ impl Default for PannerOptions {
             orientation_z: 0.,
             ref_distance: 1.,
             max_distance: 10000.,
+            rolloff_factor: 1.,
             cone_inner_angle: 360.,
             cone_outer_angle: 360.,
             cone_outer_gain: 0.,
