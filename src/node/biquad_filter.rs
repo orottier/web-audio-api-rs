@@ -13,7 +13,7 @@ use num_complex::Complex;
 
 use crate::{
     context::{AudioContextRegistration, AudioParamId, BaseAudioContext},
-    param::{AudioParam, AudioParamOptions},
+    param::{AudioParam, AudioParamDescriptor},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
 };
@@ -160,7 +160,7 @@ impl BiquadFilterNode {
             let g_value = options.gain;
             let t_value = options.type_;
 
-            let q_param_opts = AudioParamOptions {
+            let q_param_opts = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,
@@ -172,7 +172,7 @@ impl BiquadFilterNode {
 
             q_param.set_value(q_value);
 
-            let d_param_opts = AudioParamOptions {
+            let d_param_opts = AudioParamDescriptor {
                 min_value: -153_600.,
                 max_value: 153_600.,
                 default_value: 0.,
@@ -185,7 +185,7 @@ impl BiquadFilterNode {
             d_param.set_value(d_value);
 
             let niquyst = context.sample_rate() / 2.;
-            let f_param_opts = AudioParamOptions {
+            let f_param_opts = AudioParamDescriptor {
                 min_value: 0.,
                 max_value: niquyst,
                 default_value: 350.,
@@ -197,7 +197,7 @@ impl BiquadFilterNode {
 
             f_param.set_value(f_value);
 
-            let g_param_opts = AudioParamOptions {
+            let g_param_opts = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 0.,

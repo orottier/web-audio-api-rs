@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Controller;
-use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
+use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
@@ -125,7 +125,7 @@ impl AudioBufferSourceNode {
             // @todo - these parameters can't be changed to a-rate
             // @see - <https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints>
             // @see - https://github.com/orottier/web-audio-api-rs/issues/29
-            let detune_param_options = AudioParamOptions {
+            let detune_param_options = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 0.,
@@ -137,7 +137,7 @@ impl AudioBufferSourceNode {
 
             d_param.set_value(detune);
 
-            let playback_rate_param_options = AudioParamOptions {
+            let playback_rate_param_options = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,

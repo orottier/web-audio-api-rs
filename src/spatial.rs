@@ -5,14 +5,14 @@ use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
-use crate::param::{AudioParam, AudioParamOptions, AudioParamRaw, AutomationRate};
+use crate::param::{AudioParam, AudioParamDescriptor, AudioParamRaw, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
 use std::f32::consts::PI;
 
 /// AudioParam settings for the carthesian coordinates
-pub(crate) const PARAM_OPTS: AudioParamOptions = AudioParamOptions {
+pub(crate) const PARAM_OPTS: AudioParamDescriptor = AudioParamDescriptor {
     min_value: f32::MIN,
     max_value: f32::MAX,
     default_value: 0.,
@@ -121,11 +121,11 @@ impl AudioListenerNode {
             let reg_id = registration.id();
             let base = context.base();
 
-            let forward_z_opts = AudioParamOptions {
+            let forward_z_opts = AudioParamDescriptor {
                 default_value: -1.,
                 ..PARAM_OPTS
             };
-            let up_y_opts = AudioParamOptions {
+            let up_y_opts = AudioParamDescriptor {
                 default_value: 1.,
                 ..PARAM_OPTS
             };

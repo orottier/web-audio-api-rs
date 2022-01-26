@@ -23,7 +23,7 @@ use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::media::{MediaDecoder, MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{self, AudioNode, ChannelConfigOptions};
-use crate::param::{AudioParam, AudioParamEvent, AudioParamOptions};
+use crate::param::{AudioParam, AudioParamDescriptor, AudioParamEvent};
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::render::{AudioProcessor, NodeIndex, RenderThread};
 use crate::spatial::{AudioListener, AudioListenerParams};
@@ -290,7 +290,7 @@ pub trait BaseAudioContext {
     /// Call this inside the `register` closure when setting up your `AudioNode`
     fn create_audio_param(
         &self,
-        opts: AudioParamOptions,
+        opts: AudioParamDescriptor,
         dest: &AudioNodeId,
     ) -> (crate::param::AudioParam, AudioParamId) {
         let param = self.base().register(move |registration| {

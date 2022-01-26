@@ -11,7 +11,7 @@ use std::f32::consts::PI;
 
 use crate::{
     context::{AudioContextRegistration, AudioParamId, BaseAudioContext},
-    param::{AudioParam, AudioParamOptions},
+    param::{AudioParam, AudioParamDescriptor},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate,
 };
@@ -115,7 +115,7 @@ impl StereoPannerNode {
 
             let pan_value = options.pan;
 
-            let pan_param_opts = AudioParamOptions {
+            let pan_param_opts = AudioParamDescriptor {
                 min_value: -1.,
                 max_value: 1.,
                 default_value: 0.,

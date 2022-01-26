@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
-use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
+use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::periodic_wave::PeriodicWave;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
@@ -176,7 +176,7 @@ impl OscillatorNode {
             } = options;
 
             // frequency audio parameter
-            let freq_param_opts = AudioParamOptions {
+            let freq_param_opts = AudioParamDescriptor {
                 min_value: -nyquist,
                 max_value: nyquist,
                 default_value: 440.,
@@ -188,7 +188,7 @@ impl OscillatorNode {
             f_param.set_value(frequency);
 
             // detune audio parameter
-            let det_param_opts = AudioParamOptions {
+            let det_param_opts = AudioParamDescriptor {
                 min_value: -153_600.,
                 max_value: 153_600.,
                 default_value: 0.,

@@ -1,6 +1,6 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
-use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
+use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
@@ -89,7 +89,7 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 impl ConstantSourceNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
         context.base().register(move |registration| {
-            let param_opts = AudioParamOptions {
+            let param_opts = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,

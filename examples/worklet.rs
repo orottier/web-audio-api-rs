@@ -4,7 +4,7 @@ use web_audio_api::context::{
     AudioContext, AudioContextRegistration, AudioParamId, BaseAudioContext,
 };
 use web_audio_api::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
-use web_audio_api::param::{AudioParam, AudioParamOptions, AutomationRate};
+use web_audio_api::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use web_audio_api::SampleRate;
 
@@ -44,7 +44,7 @@ impl WhiteNoiseNode {
     fn new<C: BaseAudioContext>(context: &C) -> Self {
         context.base().register(move |registration| {
             // setup the amplitude audio param
-            let param_opts = AudioParamOptions {
+            let param_opts = AudioParamDescriptor {
                 min_value: 0.,
                 max_value: 1.,
                 default_value: 1.,

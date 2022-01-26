@@ -1,5 +1,5 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::param::{AudioParam, AudioParamOptions};
+use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
@@ -197,7 +197,7 @@ impl DelayNode {
 
         context.base().register(move |writer_registration| {
             let node = context.base().register(move |reader_registration| {
-                let param_opts = AudioParamOptions {
+                let param_opts = AudioParamDescriptor {
                     min_value: 0.,
                     max_value: max_delay_time as f32,
                     default_value: 0.,

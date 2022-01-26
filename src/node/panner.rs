@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::param::{AudioParam, AudioParamOptions};
+use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{AtomicF64, SampleRate};
 
@@ -178,7 +178,7 @@ impl PannerNode {
             position_z.set_value_at_time(options.position_z, 0.);
 
             // orientation params
-            let orientation_x_opts = AudioParamOptions {
+            let orientation_x_opts = AudioParamDescriptor {
                 default_value: 1.0,
                 ..PARAM_OPTS
             };
