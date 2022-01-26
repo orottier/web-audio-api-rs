@@ -28,7 +28,7 @@ use super::{
 #[derive(Clone, Debug)]
 pub struct StereoPannerOptions {
     /// initial value for the pan parameter
-    pan: f32,
+    pub pan: f32,
     /// audio node options
     pub channel_config: ChannelConfigOptions,
 }
