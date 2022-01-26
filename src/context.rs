@@ -22,7 +22,7 @@ const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::media::{MediaDecoder, MediaElement, MediaStream};
 use crate::message::ControlMessage;
-use crate::node::{self, AudioNode, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation};
+use crate::node::{self, AudioNode, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamEvent, AudioParamOptions};
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::render::{AudioProcessor, NodeIndex, RenderThread};
@@ -243,15 +243,7 @@ pub trait BaseAudioContext {
         &self,
         media: MediaElement,
     ) -> node::MediaElementAudioSourceNode {
-        let channel_config = ChannelConfigOptions {
-            count: 1,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Speakers,
-        };
-        let opts = node::MediaElementAudioSourceOptions {
-            media,
-            channel_config,
-        };
+        let opts = node::MediaElementAudioSourceOptions { media };
         node::MediaElementAudioSourceNode::new(self.base(), opts)
     }
 
@@ -260,15 +252,7 @@ pub trait BaseAudioContext {
         &self,
         media: M,
     ) -> node::MediaStreamAudioSourceNode {
-        let channel_config = ChannelConfigOptions {
-            count: 1,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Speakers,
-        };
-        let opts = node::MediaStreamAudioSourceOptions {
-            media,
-            channel_config,
-        };
+        let opts = node::MediaStreamAudioSourceOptions { media };
         node::MediaStreamAudioSourceNode::new(self.base(), opts)
     }
 

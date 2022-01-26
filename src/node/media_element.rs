@@ -13,10 +13,8 @@ use super::{
 // dictionary MediaElementAudioSourceOptions {
 //   required HTMLMediaElement mediaElement;
 // };
-// note that `MediaElementAudioSourceOptions` does not extend `AudioNodeOptions`
 pub struct MediaElementAudioSourceOptions {
     pub media: MediaElement,
-    pub channel_config: ChannelConfigOptions, // should not have this
 }
 
 /// An audio source from a [`MediaElement`] (e.g. .ogg, .wav, .mp3 files)
@@ -65,10 +63,11 @@ impl MediaElementAudioSourceNode {
         context.base().register(move |registration| {
             let controller = options.media.controller().clone();
             let scheduler = controller.scheduler().clone();
+            let channel_config = ChannelConfigOptions::default().into();
 
             let node = MediaElementAudioSourceNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config,
                 controller,
             };
 

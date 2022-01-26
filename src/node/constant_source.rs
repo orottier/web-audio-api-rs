@@ -13,15 +13,11 @@ use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOpt
 #[derive(Clone, Debug)]
 pub struct ConstantSourceOptions {
     pub offset: f32,
-    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for ConstantSourceOptions {
     fn default() -> Self {
-        Self {
-            offset: 1.,
-            channel_config: ChannelConfigOptions::default(),
-        }
+        Self { offset: 1. }
     }
 }
 
@@ -111,9 +107,11 @@ impl ConstantSourceNode {
                 scheduler: scheduler.clone(),
             };
 
+            let channel_config = ChannelConfigOptions::default().into();
+
             let node = ConstantSourceNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config,
                 offset: param,
                 scheduler,
             };

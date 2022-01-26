@@ -11,10 +11,8 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer}
 // dictionary MediaStreamAudioSourceOptions {
 //   required MediaStream mediaStream;
 // };
-// note that `MediaElementAudioSourceOptions` does not extend `AudioNodeOptions`
 pub struct MediaStreamAudioSourceOptions<M> {
     pub media: M,
-    pub channel_config: ChannelConfigOptions, // should not have this
 }
 
 /// An audio source from a [`MediaStream`] (e.g. microphone input)
@@ -51,9 +49,10 @@ impl MediaStreamAudioSourceNode {
         options: MediaStreamAudioSourceOptions<M>,
     ) -> Self {
         context.base().register(move |registration| {
+            let channel_config = ChannelConfigOptions::default().into();
             let node = MediaStreamAudioSourceNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config,
             };
 
             let resampler = Resampler::new(
