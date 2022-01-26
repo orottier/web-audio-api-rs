@@ -12,7 +12,7 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer}
 //   required MediaStream mediaStream;
 // };
 pub struct MediaStreamAudioSourceOptions<M> {
-    pub media: M,
+    pub media_stream: M,
 }
 
 /// An audio source from a [`MediaStream`] (e.g. microphone input)
@@ -58,7 +58,7 @@ impl MediaStreamAudioSourceNode {
             let resampler = Resampler::new(
                 context.sample_rate_raw(),
                 RENDER_QUANTUM_SIZE,
-                options.media,
+                options.media_stream,
             );
 
             // setup void scheduler - always on

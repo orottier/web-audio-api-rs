@@ -243,7 +243,9 @@ pub trait BaseAudioContext {
         &self,
         media: MediaElement,
     ) -> node::MediaElementAudioSourceNode {
-        let opts = node::MediaElementAudioSourceOptions { media };
+        let opts = node::MediaElementAudioSourceOptions {
+            media_element: media,
+        };
         node::MediaElementAudioSourceNode::new(self.base(), opts)
     }
 
@@ -252,7 +254,9 @@ pub trait BaseAudioContext {
         &self,
         media: M,
     ) -> node::MediaStreamAudioSourceNode {
-        let opts = node::MediaStreamAudioSourceOptions { media };
+        let opts = node::MediaStreamAudioSourceOptions {
+            media_stream: media,
+        };
         node::MediaStreamAudioSourceNode::new(self.base(), opts)
     }
 

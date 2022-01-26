@@ -14,7 +14,7 @@ use super::{
 //   required HTMLMediaElement mediaElement;
 // };
 pub struct MediaElementAudioSourceOptions {
-    pub media: MediaElement,
+    pub media_element: MediaElement,
 }
 
 /// An audio source from a [`MediaElement`] (e.g. .ogg, .wav, .mp3 files)
@@ -61,7 +61,7 @@ impl AudioNode for MediaElementAudioSourceNode {
 impl MediaElementAudioSourceNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: MediaElementAudioSourceOptions) -> Self {
         context.base().register(move |registration| {
-            let controller = options.media.controller().clone();
+            let controller = options.media_element.controller().clone();
             let scheduler = controller.scheduler().clone();
             let channel_config = ChannelConfigOptions::default().into();
 
@@ -74,7 +74,7 @@ impl MediaElementAudioSourceNode {
             let resampler = Resampler::new(
                 context.sample_rate_raw(),
                 RENDER_QUANTUM_SIZE,
-                options.media,
+                options.media_element,
             );
             let render = MediaStreamRenderer::new(resampler, scheduler);
 
