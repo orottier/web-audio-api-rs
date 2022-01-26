@@ -2,36 +2,81 @@ use std::f32::consts::PI;
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::param::{AudioParam, AudioParamOptions};
+use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{AtomicF32, SampleRate};
+use crate::{AtomicF64, SampleRate};
 
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
-/// Options for constructing a PannerNode
+#[derive(Copy, Clone, Debug)]
+pub enum PanningModelType {
+    EqualPower,
+    HRTF,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum DistanceModelType {
+    Linear,
+    Inverse,
+    Exponential,
+}
+
+/// Options for constructing a [`PannerNode`]
+// dictionary PannerOptions : AudioNodeOptions {
+//   PanningModelType panningModel = "equalpower";
+//   DistanceModelType distanceModel = "inverse";
+//   float positionX = 0;
+//   float positionY = 0;
+//   float positionZ = 0;
+//   float orientationX = 1;
+//   float orientationY = 0;
+//   float orientationZ = 0;
+//   double refDistance = 1;
+//   double maxDistance = 10000;
+//   double rolloffFactor = 1;
+//   double coneInnerAngle = 360;
+//   double coneOuterAngle = 360;
+//   double coneOuterGain = 0;
+// };
+#[derive(Clone, Debug)]
 pub struct PannerOptions {
+    #[allow(dead_code)]
+    pub panning_model: PanningModelType,
+    #[allow(dead_code)]
+    pub distance_model: DistanceModelType,
     pub position_x: f32,
     pub position_y: f32,
     pub position_z: f32,
     pub orientation_x: f32,
     pub orientation_y: f32,
     pub orientation_z: f32,
-    pub cone_inner_angle: f32,
-    pub cone_outer_angle: f32,
-    pub cone_outer_gain: f32,
+    #[allow(dead_code)]
+    pub ref_distance: f64,
+    #[allow(dead_code)]
+    pub max_distance: f64,
+    #[allow(dead_code)]
+    pub rolloff_factor: f64,
+    pub cone_inner_angle: f64,
+    pub cone_outer_angle: f64,
+    pub cone_outer_gain: f64,
 }
 
 impl Default for PannerOptions {
     fn default() -> Self {
         PannerOptions {
+            panning_model: PanningModelType::EqualPower,
+            distance_model: DistanceModelType::Inverse,
             position_x: 0.,
             position_y: 0.,
             position_z: 0.,
             orientation_x: 1.,
             orientation_y: 0.,
             orientation_z: 0.,
+            ref_distance: 1.,
+            max_distance: 10000.,
+            rolloff_factor: 1.,
             cone_inner_angle: 360.,
             cone_outer_angle: 360.,
             cone_outer_gain: 0.,
@@ -95,9 +140,9 @@ pub struct PannerNode {
     orientation_x: AudioParam,
     orientation_y: AudioParam,
     orientation_z: AudioParam,
-    cone_inner_angle: Arc<AtomicF32>,
-    cone_outer_angle: Arc<AtomicF32>,
-    cone_outer_gain: Arc<AtomicF32>,
+    cone_inner_angle: Arc<AtomicF64>,
+    cone_outer_angle: Arc<AtomicF64>,
+    cone_outer_gain: Arc<AtomicF64>,
 }
 
 impl AudioNode for PannerNode {
@@ -112,6 +157,7 @@ impl AudioNode for PannerNode {
     fn number_of_inputs(&self) -> u32 {
         1 + 9 // todo, user should not be able to see these ports
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
@@ -132,7 +178,7 @@ impl PannerNode {
             position_z.set_value_at_time(options.position_z, 0.);
 
             // orientation params
-            let orientation_x_opts = AudioParamOptions {
+            let orientation_x_opts = AudioParamDescriptor {
                 default_value: 1.0,
                 ..PARAM_OPTS
             };
@@ -145,9 +191,9 @@ impl PannerNode {
             orientation_z.set_value_at_time(options.orientation_z, 0.);
 
             // cone attributes
-            let cone_inner_angle = Arc::new(AtomicF32::new(options.cone_inner_angle));
-            let cone_outer_angle = Arc::new(AtomicF32::new(options.cone_outer_angle));
-            let cone_outer_gain = Arc::new(AtomicF32::new(options.cone_outer_gain));
+            let cone_inner_angle = Arc::new(AtomicF64::new(options.cone_inner_angle));
+            let cone_outer_angle = Arc::new(AtomicF64::new(options.cone_outer_angle));
+            let cone_outer_gain = Arc::new(AtomicF64::new(options.cone_outer_gain));
 
             let render = PannerRenderer {
                 position_x: render_px,
@@ -213,27 +259,27 @@ impl PannerNode {
         &self.orientation_z
     }
 
-    pub fn cone_inner_angle(&self) -> f32 {
+    pub fn cone_inner_angle(&self) -> f64 {
         self.cone_inner_angle.load()
     }
 
-    pub fn set_cone_inner_angle(&self, value: f32) {
+    pub fn set_cone_inner_angle(&self, value: f64) {
         self.cone_inner_angle.store(value);
     }
 
-    pub fn cone_outer_angle(&self) -> f32 {
+    pub fn cone_outer_angle(&self) -> f64 {
         self.cone_outer_angle.load()
     }
 
-    pub fn set_cone_outer_angle(&self, value: f32) {
+    pub fn set_cone_outer_angle(&self, value: f64) {
         self.cone_outer_angle.store(value);
     }
 
-    pub fn cone_outer_gain(&self) -> f32 {
+    pub fn cone_outer_gain(&self) -> f64 {
         self.cone_outer_gain.load()
     }
 
-    pub fn set_cone_outer_gain(&self, value: f32) {
+    pub fn set_cone_outer_gain(&self, value: f64) {
         self.cone_outer_gain.store(value);
     }
 }
@@ -245,9 +291,9 @@ struct PannerRenderer {
     orientation_x: AudioParamId,
     orientation_y: AudioParamId,
     orientation_z: AudioParamId,
-    cone_inner_angle: Arc<AtomicF32>,
-    cone_outer_angle: Arc<AtomicF32>,
-    cone_outer_gain: Arc<AtomicF32>,
+    cone_inner_angle: Arc<AtomicF64>,
+    cone_outer_angle: Arc<AtomicF64>,
+    cone_outer_gain: Arc<AtomicF64>,
 }
 
 impl AudioProcessor for PannerRenderer {
@@ -327,12 +373,12 @@ impl AudioProcessor for PannerRenderer {
         let dist_gain = 1. / distance; // inverse distance model is assumed (todo issue #44)
 
         // determine cone effect gain
-        let abs_inner_angle = self.cone_inner_angle.load().abs() / 2.;
-        let abs_outer_angle = self.cone_outer_angle.load().abs() / 2.;
+        let abs_inner_angle = self.cone_inner_angle.load().abs() as f32 / 2.;
+        let abs_outer_angle = self.cone_outer_angle.load().abs() as f32 / 2.;
         let cone_gain = if abs_inner_angle >= 180. && abs_outer_angle >= 180. {
             1. // no cone specified
         } else {
-            let cone_outer_gain = self.cone_outer_gain.load();
+            let cone_outer_gain = self.cone_outer_gain.load() as f32;
 
             let abs_angle =
                 crate::spatial::angle(source_position, source_orientation, listener_position);

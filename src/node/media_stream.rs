@@ -7,10 +7,12 @@ use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer};
 
-/// Options for constructing a MediaStreamAudioSourceNode
-pub struct MediaStreamAudioSourceNodeOptions<M> {
-    pub media: M,
-    pub channel_config: ChannelConfigOptions,
+/// Options for constructing a [`MediaStreamAudioSourceNode`]
+// dictionary MediaStreamAudioSourceOptions {
+//   required MediaStream mediaStream;
+// };
+pub struct MediaStreamAudioSourceOptions<M> {
+    pub media_stream: M,
 }
 
 /// An audio source from a [`MediaStream`] (e.g. microphone input)
@@ -35,6 +37,7 @@ impl AudioNode for MediaStreamAudioSourceNode {
     fn number_of_inputs(&self) -> u32 {
         0
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
@@ -43,18 +46,19 @@ impl AudioNode for MediaStreamAudioSourceNode {
 impl MediaStreamAudioSourceNode {
     pub fn new<C: BaseAudioContext, M: MediaStream>(
         context: &C,
-        options: MediaStreamAudioSourceNodeOptions<M>,
+        options: MediaStreamAudioSourceOptions<M>,
     ) -> Self {
         context.base().register(move |registration| {
+            let channel_config = ChannelConfigOptions::default().into();
             let node = MediaStreamAudioSourceNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config,
             };
 
             let resampler = Resampler::new(
                 context.sample_rate_raw(),
                 RENDER_QUANTUM_SIZE,
-                options.media,
+                options.media_stream,
             );
 
             // setup void scheduler - always on

@@ -1,18 +1,17 @@
 //! The stereo panner control and renderer parts
-#![warn(
-    clippy::all,
-    clippy::pedantic,
-    clippy::perf,
-    clippy::missing_docs_in_private_items
-)]
-
-use std::f32::consts::PI;
+// #![warn(
+//     clippy::all,
+//     clippy::pedantic,
+//     clippy::perf,
+//     clippy::missing_docs_in_private_items
+// )]
 
 use float_eq::debug_assert_float_eq;
+use std::f32::consts::PI;
 
 use crate::{
     context::{AudioContextRegistration, AudioParamId, BaseAudioContext},
-    param::{AudioParam, AudioParamOptions},
+    param::{AudioParam, AudioParamDescriptor},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate,
 };
@@ -22,14 +21,14 @@ use super::{
     SINETABLE, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE,
 };
 
-/// `StereoPannerOptions` is used to pass options
-/// during the construction of `StereoPannerNode` using its
-/// constructor method `new`
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
+/// Options for constructing a [`StereoPannerOptions`]
+// dictionary StereoPannerOptions : AudioNodeOptions {
+//   float pan = 0;
+// };
+#[derive(Clone, Debug)]
 pub struct StereoPannerOptions {
     /// initial value for the pan parameter
-    pan: Option<f32>,
+    pub pan: f32,
     /// audio node options
     pub channel_config: ChannelConfigOptions,
 }
@@ -37,7 +36,7 @@ pub struct StereoPannerOptions {
 impl Default for StereoPannerOptions {
     fn default() -> Self {
         Self {
-            pan: Some(0.),
+            pan: 0.,
             channel_config: ChannelConfigOptions {
                 count: 2,
                 mode: ChannelCountMode::ClampedMax,
@@ -48,8 +47,6 @@ impl Default for StereoPannerOptions {
 }
 
 /// `StereoPannerNode` positions an incoming audio stream in a stereo image
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
 pub struct StereoPannerNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
@@ -105,10 +102,8 @@ impl StereoPannerNode {
     ///
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - stereo panner options
-    pub fn new<C: BaseAudioContext>(context: &C, options: Option<StereoPannerOptions>) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: StereoPannerOptions) -> Self {
         context.base().register(move |registration| {
-            let options = options.unwrap_or_default();
-
             assert!(
                 options.channel_config.count <= 2,
                 "NotSupportedError: channel count"
@@ -118,14 +113,12 @@ impl StereoPannerNode {
                 "NotSupportedError: count mode"
             );
 
-            let default_pan = 0.;
+            let pan_value = options.pan;
 
-            let pan_value = options.pan.unwrap_or(default_pan);
-
-            let pan_param_opts = AudioParamOptions {
+            let pan_param_opts = AudioParamDescriptor {
                 min_value: -1.,
                 max_value: 1.,
-                default_value: default_pan,
+                default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (pan_param, pan_proc) = context
@@ -271,13 +264,13 @@ mod test {
         SampleRate,
     };
 
-    use super::{StereoPannerNode, StereoPannerRenderer};
+    use super::{StereoPannerNode, StereoPannerOptions, StereoPannerRenderer};
     const LENGTH: usize = 555;
 
     #[test]
     fn build_with_new() {
         let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-        let _panner = StereoPannerNode::new(&context, None);
+        let _panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
     }
 
     #[test]
@@ -292,7 +285,7 @@ mod test {
 
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
-        let panner = StereoPannerNode::new(&context, None);
+        let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
 
         context.start_rendering();
 
@@ -307,7 +300,7 @@ mod test {
 
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
-        let panner = StereoPannerNode::new(&context, None);
+        let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
 
         let pan = panner.pan.value();
         assert_float_eq!(pan, default_pan, abs_all <= 0.);
@@ -364,7 +357,7 @@ mod test {
 
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
-        let panner = StereoPannerNode::new(&context, None);
+        let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
 
         let pan = panner.pan.value();
         assert_float_eq!(pan, default_pan, abs_all <= 0.);
@@ -384,7 +377,7 @@ mod test {
 
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
-        let panner = StereoPannerNode::new(&context, None);
+        let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
 
         let pan = panner.pan.value();
         assert_float_eq!(pan, default_pan, abs_all <= 0.);

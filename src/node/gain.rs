@@ -1,11 +1,15 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::param::{AudioParam, AudioParamOptions};
+use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
-/// Options for constructing a GainNode
+/// Options for constructing a [`GainNode`]
+// dictionary GainOptions : AudioNodeOptions {
+//   float gain = 1.0;
+// };
+#[derive(Clone, Debug)]
 pub struct GainOptions {
     pub gain: f32,
     pub channel_config: ChannelConfigOptions,
@@ -39,6 +43,7 @@ impl AudioNode for GainNode {
     fn number_of_inputs(&self) -> u32 {
         1
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
@@ -47,7 +52,7 @@ impl AudioNode for GainNode {
 impl GainNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: GainOptions) -> Self {
         context.base().register(move |registration| {
-            let param_opts = AudioParamOptions {
+            let param_opts = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,

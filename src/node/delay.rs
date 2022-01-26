@@ -1,5 +1,5 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::param::{AudioParam, AudioParamOptions};
+use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
@@ -8,7 +8,12 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretatio
 use std::cell::{Cell, RefCell, RefMut};
 use std::rc::Rc;
 
-/// Options for constructing a DelayNode
+/// Options for constructing a [`DelayNode`]
+// dictionary DelayOptions : AudioNodeOptions {
+//   double maxDelayTime = 1;
+//   double delayTime = 0;
+// };
+#[derive(Clone, Debug)]
 pub struct DelayOptions {
     pub max_delay_time: f64,
     pub delay_time: f64,
@@ -106,6 +111,7 @@ impl AudioNode for DelayNode {
     fn number_of_inputs(&self) -> u32 {
         1
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
@@ -191,7 +197,7 @@ impl DelayNode {
 
         context.base().register(move |writer_registration| {
             let node = context.base().register(move |reader_registration| {
-                let param_opts = AudioParamOptions {
+                let param_opts = AudioParamDescriptor {
                     min_value: 0.,
                     max_value: max_delay_time as f32,
                     default_value: 0.,

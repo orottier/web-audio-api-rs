@@ -1,10 +1,4 @@
 //! The biquad filter control and renderer parts
-#![warn(
-    clippy::all,
-    clippy::pedantic,
-    clippy::perf,
-    clippy::missing_docs_in_private_items
-)]
 use std::{
     f64::consts::{PI, SQRT_2},
     sync::{
@@ -19,7 +13,7 @@ use num_complex::Complex;
 
 use crate::{
     context::{AudioContextRegistration, AudioParamId, BaseAudioContext},
-    param::{AudioParam, AudioParamOptions},
+    param::{AudioParam, AudioParamDescriptor},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
 };
@@ -33,8 +27,6 @@ struct CoeffsReq(Sender<[f64; 5]>);
 
 /// enumerates all the biquad filter types
 #[derive(Debug, Clone, Copy, PartialEq)]
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
 pub enum BiquadFilterType {
     /// Allows frequencies below the cutoff frequency to pass through and attenuates frequencies above the cutoff. (12dB/oct rolloff)
     Lowpass,
@@ -80,42 +72,38 @@ impl From<u32> for BiquadFilterType {
     }
 }
 
-/// `BiquadFilterOptions` is used to pass options
-/// during the construction of `BiquadFilterNode` using its
-/// constructor method `new`
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
+/// Options for constructing a [`BiquadFilterNode`]
+// dictionary BiquadFilterOptions : AudioNodeOptions {
+//   BiquadFilterType type = "lowpass";
+//   float Q = 1;
+//   float detune = 0;
+//   float frequency = 350;
+//   float gain = 0;
+// };
+#[derive(Clone, Debug)]
 pub struct BiquadFilterOptions {
-    /// The desired initial value for Q, if None default to 1.
-    pub q: Option<f32>,
-    /// The desired initial value for detune, if None default to 0.
-    pub detune: Option<f32>,
-    /// The desired initial value for frequency, if None default to 350.
-    pub frequency: Option<f32>,
-    /// The desired initial value for gain, if None default to 0.
-    pub gain: Option<f32>,
-    /// The desired initial value for type, if None default to Lowpass.
-    pub type_: Option<BiquadFilterType>,
-    /// audio node options
+    pub q: f32,
+    pub detune: f32,
+    pub frequency: f32,
+    pub gain: f32,
+    pub type_: BiquadFilterType,
     pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for BiquadFilterOptions {
     fn default() -> Self {
         Self {
-            q: Some(1.),
-            detune: Some(0.),
-            frequency: Some(350.),
-            gain: Some(0.),
-            type_: Some(BiquadFilterType::default()),
+            q: 1.,
+            detune: 0.,
+            frequency: 350.,
+            gain: 0.,
+            type_: BiquadFilterType::default(),
             channel_config: ChannelConfigOptions::default(),
         }
     }
 }
 
 /// `BiquadFilterNode` is a second order IIR filter
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
 pub struct BiquadFilterNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
@@ -151,6 +139,7 @@ impl AudioNode for BiquadFilterNode {
     fn number_of_inputs(&self) -> u32 {
         1
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
@@ -163,25 +152,18 @@ impl BiquadFilterNode {
     ///
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - biquad filter options
-    pub fn new<C: BaseAudioContext>(context: &C, options: Option<BiquadFilterOptions>) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: BiquadFilterOptions) -> Self {
         context.base().register(move |registration| {
-            let options = options.unwrap_or_default();
+            let q_value = options.q;
+            let d_value = options.detune;
+            let f_value = options.frequency;
+            let g_value = options.gain;
+            let t_value = options.type_;
 
-            let default_freq = 350.;
-            let default_gain = 0.;
-            let default_det = 0.;
-            let default_q = 1.;
-
-            let q_value = options.q.unwrap_or(default_q);
-            let d_value = options.detune.unwrap_or(default_det);
-            let f_value = options.frequency.unwrap_or(default_freq);
-            let g_value = options.gain.unwrap_or(default_gain);
-            let t_value = options.type_.unwrap_or(BiquadFilterType::Lowpass);
-
-            let q_param_opts = AudioParamOptions {
+            let q_param_opts = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
-                default_value: default_q,
+                default_value: 1.,
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (q_param, q_proc) = context
@@ -190,10 +172,10 @@ impl BiquadFilterNode {
 
             q_param.set_value(q_value);
 
-            let d_param_opts = AudioParamOptions {
+            let d_param_opts = AudioParamDescriptor {
                 min_value: -153_600.,
                 max_value: 153_600.,
-                default_value: default_det,
+                default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (d_param, d_proc) = context
@@ -203,10 +185,10 @@ impl BiquadFilterNode {
             d_param.set_value(d_value);
 
             let niquyst = context.sample_rate() / 2.;
-            let f_param_opts = AudioParamOptions {
+            let f_param_opts = AudioParamDescriptor {
                 min_value: 0.,
                 max_value: niquyst,
-                default_value: default_freq,
+                default_value: 350.,
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (f_param, f_proc) = context
@@ -215,10 +197,10 @@ impl BiquadFilterNode {
 
             f_param.set_value(f_value);
 
-            let g_param_opts = AudioParamOptions {
+            let g_param_opts = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
-                default_value: default_gain,
+                default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (g_param, g_proc) = context
@@ -1101,14 +1083,14 @@ mod test {
         SampleRate,
     };
 
-    use super::{BiquadFilterNode, BiquadFilterOptions, BiquadFilterType, ChannelConfigOptions};
+    use super::{BiquadFilterNode, BiquadFilterOptions, BiquadFilterType};
 
     const LENGTH: usize = 555;
 
     #[test]
     fn build_with_new() {
         let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-        let _biquad = BiquadFilterNode::new(&context, None);
+        let _biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
     }
 
     #[test]
@@ -1118,64 +1100,15 @@ mod test {
     }
 
     #[test]
-    fn default_audio_params_are_correct_with_no_options() {
-        let default_q = 1.0;
-        let default_detune = 0.;
-        let default_gain = 0.;
-        let default_freq = 350.;
-        let default_type = BiquadFilterType::Lowpass;
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-        let biquad = BiquadFilterNode::new(&context, None);
-
-        context.start_rendering();
-
-        assert_float_eq!(biquad.q().value(), default_q, abs <= 0.);
-        assert_float_eq!(biquad.detune().value(), default_detune, abs <= 0.);
-        assert_float_eq!(biquad.gain().value(), default_gain, abs <= 0.);
-        assert_float_eq!(biquad.frequency().value(), default_freq, abs <= 0.);
-        assert_eq!(biquad.type_(), default_type);
-    }
-
-    #[test]
-    fn default_audio_params_are_correct_with_no_options_in_options() {
+    fn test_default_audio_params() {
         let default_q = 1.0;
         let default_detune = 0.;
         let default_gain = 0.;
         let default_freq = 350.;
         let default_type = BiquadFilterType::Lowpass;
 
-        let options = BiquadFilterOptions {
-            q: None,
-            detune: None,
-            frequency: None,
-            gain: None,
-            type_: None,
-            channel_config: ChannelConfigOptions::default(),
-        };
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-        let biquad = BiquadFilterNode::new(&context, Some(options));
-
-        context.start_rendering();
-
-        assert_float_eq!(biquad.q().value(), default_q, abs <= 0.);
-        assert_float_eq!(biquad.detune().value(), default_detune, abs <= 0.);
-        assert_float_eq!(biquad.gain().value(), default_gain, abs <= 0.);
-        assert_float_eq!(biquad.frequency().value(), default_freq, abs <= 0.);
-        assert_eq!(biquad.type_(), default_type);
-    }
-
-    #[test]
-    fn default_audio_params_are_correct_with_default_options() {
-        let default_q = 1.0;
-        let default_detune = 0.;
-        let default_gain = 0.;
-        let default_freq = 350.;
-        let default_type = BiquadFilterType::Lowpass;
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-
-        let options = BiquadFilterOptions::default();
-
-        let biquad = BiquadFilterNode::new(&context, Some(options));
+        let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
         context.start_rendering();
 
@@ -1196,15 +1129,15 @@ mod test {
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
         let options = BiquadFilterOptions {
-            q: Some(q),
-            detune: Some(detune),
-            gain: Some(gain),
-            frequency: Some(frequency),
-            type_: Some(type_),
+            q,
+            detune,
+            gain,
+            frequency,
+            type_,
             ..BiquadFilterOptions::default()
         };
 
-        let biquad = BiquadFilterNode::new(&context, Some(options));
+        let biquad = BiquadFilterNode::new(&context, options);
 
         context.start_rendering();
 
@@ -1224,7 +1157,7 @@ mod test {
         let type_ = BiquadFilterType::Highpass;
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
 
-        let biquad = BiquadFilterNode::new(&context, None);
+        let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
         biquad.q().set_value(q);
         biquad.detune().set_value(detune);
@@ -1245,7 +1178,7 @@ mod test {
     #[should_panic]
     fn panics_when_not_the_same_length() {
         let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-        let biquad = BiquadFilterNode::new(&context, None);
+        let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
         let mut frequency_hz = [0.];
         let mut mag_response = [0., 1.0];
@@ -1258,7 +1191,7 @@ mod test {
     #[should_panic]
     fn panics_when_not_the_same_length_2() {
         let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-        let biquad = BiquadFilterNode::new(&context, None);
+        let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
         let mut frequency_hz = [0.];
         let mut mag_response = [0.];
@@ -1270,7 +1203,7 @@ mod test {
     #[test]
     fn frequencies_are_clamped() {
         let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
-        let biquad = BiquadFilterNode::new(&context, None);
+        let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
         let niquyst = context.sample_rate() / 2.0;
 
         let mut frequency_hz = [-100., 1_000_000.];

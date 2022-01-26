@@ -1,23 +1,23 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
-use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
+use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions};
 
-/// Options for constructing an ConstantSourceNode
+/// Options for constructing an [`ConstantSourceNode`]
+// dictionary ConstantSourceOptions {
+//   float offset = 1;
+// };
+#[derive(Clone, Debug)]
 pub struct ConstantSourceOptions {
     pub offset: f32,
-    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for ConstantSourceOptions {
     fn default() -> Self {
-        Self {
-            offset: 1.,
-            channel_config: ChannelConfigOptions::default(),
-        }
+        Self { offset: 1. }
     }
 }
 
@@ -74,6 +74,7 @@ impl AudioNode for ConstantSourceNode {
     fn number_of_inputs(&self) -> u32 {
         0
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
@@ -88,7 +89,7 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 impl ConstantSourceNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
         context.base().register(move |registration| {
-            let param_opts = AudioParamOptions {
+            let param_opts = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,
@@ -106,9 +107,11 @@ impl ConstantSourceNode {
                 scheduler: scheduler.clone(),
             };
 
+            let channel_config = ChannelConfigOptions::default().into();
+
             let node = ConstantSourceNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config,
                 offset: param,
                 scheduler,
             };

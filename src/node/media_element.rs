@@ -9,10 +9,12 @@ use super::{
     ChannelConfigOptions, MediaStreamRenderer,
 };
 
-/// Options for constructing a MediaElementAudioSourceNode
-pub struct MediaElementAudioSourceNodeOptions {
-    pub media: MediaElement,
-    pub channel_config: ChannelConfigOptions,
+/// Options for constructing a [`MediaElementAudioSourceNode`]
+// dictionary MediaElementAudioSourceOptions {
+//   required HTMLMediaElement mediaElement;
+// };
+pub struct MediaElementAudioSourceOptions {
+    pub media_element: MediaElement,
 }
 
 /// An audio source from a [`MediaElement`] (e.g. .ogg, .wav, .mp3 files)
@@ -42,6 +44,7 @@ impl AudioNode for MediaElementAudioSourceNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
+
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
     }
@@ -49,30 +52,29 @@ impl AudioNode for MediaElementAudioSourceNode {
     fn number_of_inputs(&self) -> u32 {
         0
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
 }
 
 impl MediaElementAudioSourceNode {
-    pub fn new<C: BaseAudioContext>(
-        context: &C,
-        options: MediaElementAudioSourceNodeOptions,
-    ) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: MediaElementAudioSourceOptions) -> Self {
         context.base().register(move |registration| {
-            let controller = options.media.controller().clone();
+            let controller = options.media_element.controller().clone();
             let scheduler = controller.scheduler().clone();
+            let channel_config = ChannelConfigOptions::default().into();
 
             let node = MediaElementAudioSourceNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config,
                 controller,
             };
 
             let resampler = Resampler::new(
                 context.sample_rate_raw(),
                 RENDER_QUANTUM_SIZE,
-                options.media,
+                options.media_element,
             );
             let render = MediaStreamRenderer::new(resampler, scheduler);
 
