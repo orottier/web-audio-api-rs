@@ -1,6 +1,6 @@
 use crate::buffer::Resampler;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::control::{Controller, Scheduler};
+// use crate::control::{Controller, Scheduler};
 use crate::media::MediaElement;
 use crate::RENDER_QUANTUM_SIZE;
 
@@ -26,7 +26,7 @@ pub struct MediaElementAudioSourceOptions {
 pub struct MediaElementAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
-    controller: Controller,
+    // controller: Controller,
 }
 
 impl AudioNode for MediaElementAudioSourceNode {
@@ -50,14 +50,14 @@ impl AudioNode for MediaElementAudioSourceNode {
 impl MediaElementAudioSourceNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: MediaElementAudioSourceOptions) -> Self {
         context.base().register(move |registration| {
-            let controller = options.media_element.controller().clone();
-            let scheduler = controller.scheduler().clone();
+            // let controller = options.media_element.controller().clone();
+            // let scheduler = controller.scheduler().clone();
             let channel_config = ChannelConfigOptions::default().into();
 
             let node = MediaElementAudioSourceNode {
                 registration,
                 channel_config,
-                controller,
+                // controller,
             };
 
             let resampler = Resampler::new(
@@ -65,7 +65,8 @@ impl MediaElementAudioSourceNode {
                 RENDER_QUANTUM_SIZE,
                 options.media_element,
             );
-            let render = MediaStreamRenderer::new(resampler, scheduler);
+
+            let render = MediaStreamRenderer::new(resampler);
 
             (node, Box::new(render))
         })

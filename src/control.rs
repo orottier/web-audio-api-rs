@@ -12,11 +12,11 @@ pub(crate) struct Scheduler {
     stop: Arc<AtomicF64>,
 }
 
-pub(crate) enum ScheduledState {
-    NotStarted,
-    Active,
-    Ended,
-}
+// pub(crate) enum ScheduledState {
+//     NotStarted,
+//     Active,
+//     Ended,
+// }
 
 impl Scheduler {
     /// Create a new Scheduler. Initial playback state will be: inactive.
@@ -28,14 +28,14 @@ impl Scheduler {
     }
 
     /// Check if the stream should be active at this timestamp
-    pub fn state(&self, ts: f64) -> ScheduledState {
-        if ts < self.start.load() {
-            return ScheduledState::NotStarted;
-        } else if ts >= self.stop.load() {
-            return ScheduledState::Ended;
-        }
-        ScheduledState::Active
-    }
+    // pub fn state(&self, ts: f64) -> ScheduledState {
+    //     if ts < self.start.load() {
+    //         return ScheduledState::NotStarted;
+    //     } else if ts >= self.stop.load() {
+    //         return ScheduledState::Ended;
+    //     }
+    //     ScheduledState::Active
+    // }
 
     /// Retrieve playback start value
     pub fn get_start_at(&self) -> f64 {

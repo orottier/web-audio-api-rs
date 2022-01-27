@@ -1,6 +1,6 @@
 use crate::buffer::Resampler;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::control::Scheduler;
+// use crate::control::Scheduler;
 use crate::media::MediaStream;
 
 use crate::RENDER_QUANTUM_SIZE;
@@ -50,6 +50,7 @@ impl MediaStreamAudioSourceNode {
     ) -> Self {
         context.base().register(move |registration| {
             let channel_config = ChannelConfigOptions::default().into();
+
             let node = MediaStreamAudioSourceNode {
                 registration,
                 channel_config,
@@ -62,10 +63,10 @@ impl MediaStreamAudioSourceNode {
             );
 
             // setup void scheduler - always on
-            let scheduler = Scheduler::new();
-            scheduler.start_at(0.);
+            // let scheduler = Scheduler::new();
+            // scheduler.start_at(0.);
 
-            let render = MediaStreamRenderer::new(resampler, scheduler);
+            let render = MediaStreamRenderer::new(resampler);
 
             (node, Box::new(render))
         })

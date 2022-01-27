@@ -330,15 +330,15 @@ pub trait AudioScheduledSourceNode {
 
 struct MediaStreamRenderer<R> {
     stream: R,
-    scheduler: Scheduler,
+    // scheduler: Scheduler,
     finished: bool,
 }
 
 impl<R> MediaStreamRenderer<R> {
-    fn new(stream: R, scheduler: Scheduler) -> Self {
+    fn new(stream: R/*, scheduler: Scheduler*/) -> Self {
         Self {
             stream,
-            scheduler,
+            // scheduler,
             finished: false,
         }
     }
@@ -358,17 +358,17 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
 
         // @todo - remove that
         // todo, sub-quantum start/stop
-        match self.scheduler.state(timestamp) {
-            ScheduledState::Active => (),
-            ScheduledState::NotStarted => {
-                output.make_silent();
-                return true; // will output in the future
-            }
-            ScheduledState::Ended => {
-                output.make_silent();
-                return false; // can clean up
-            }
-        }
+        // match self.scheduler.state(timestamp) {
+        //     ScheduledState::Active => (),
+        //     ScheduledState::NotStarted => {
+        //         output.make_silent();
+        //         return true; // will output in the future
+        //     }
+        //     ScheduledState::Ended => {
+        //         output.make_silent();
+        //         return false; // can clean up
+        //     }
+        // }
 
         match self.stream.next() {
             Some(Ok(buffer)) => {
