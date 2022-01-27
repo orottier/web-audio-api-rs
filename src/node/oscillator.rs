@@ -645,7 +645,7 @@ mod tests {
             osc.frequency().set_value(freq);
             osc.start_at(0.);
 
-            let output = context.start_rendering();
+            let output = context.start_rendering_sync();
             let result = output.get_channel_data(0);
 
             let mut expected = Vec::<f32>::with_capacity(sample_rate);
@@ -682,7 +682,7 @@ mod tests {
             osc.frequency().set_value(freq);
             osc.start_at(0.);
 
-            let output = context.start_rendering();
+            let output = context.start_rendering_sync();
             let result = output.get_channel_data(0);
             let mut expected = Vec::<f32>::with_capacity(sample_rate);
 
@@ -713,7 +713,7 @@ mod tests {
             osc.set_type(OscillatorType::Square);
             osc.start_at(0.);
 
-            let output = context.start_rendering();
+            let output = context.start_rendering_sync();
             let result = output.get_channel_data(0);
 
             let mut expected = Vec::<f32>::with_capacity(sample_rate);
@@ -752,7 +752,7 @@ mod tests {
             osc.set_type(OscillatorType::Triangle);
             osc.start_at(0.);
 
-            let output = context.start_rendering();
+            let output = context.start_rendering_sync();
             let result = output.get_channel_data(0);
 
             let mut expected = Vec::<f32>::with_capacity(sample_rate);
@@ -800,7 +800,7 @@ mod tests {
             osc.set_type(OscillatorType::Sawtooth);
             osc.start_at(0.);
 
-            let output = context.start_rendering();
+            let output = context.start_rendering_sync();
             let result = output.get_channel_data(0);
 
             let mut expected = Vec::<f32>::with_capacity(sample_rate);
@@ -855,7 +855,7 @@ mod tests {
             osc.set_type(OscillatorType::Sawtooth);
             osc.start_at(0.);
 
-            let output = context.start_rendering();
+            let output = context.start_rendering_sync();
             let result = output.get_channel_data(0);
 
             let mut expected = Vec::<f32>::with_capacity(sample_rate);
@@ -903,7 +903,7 @@ mod tests {
             osc.set_type(OscillatorType::Sawtooth);
             osc.start_at(0.);
 
-            let output = context.start_rendering();
+            let output = context.start_rendering_sync();
             let result = output.get_channel_data(0);
 
             let mut expected = Vec::<f32>::with_capacity(sample_rate);
@@ -978,7 +978,7 @@ mod tests {
         osc.frequency().set_value(freq);
         osc.start_at(2. / sample_rate as f64);
 
-        let output = context.start_rendering();
+        let output = context.start_rendering_sync();
         let result = output.get_channel_data(0);
 
         let mut expected = Vec::<f32>::with_capacity(sample_rate);
@@ -1011,7 +1011,7 @@ mod tests {
         // start between second and third sample
         osc.start_at(1.3 / sample_rate as f64);
 
-        let output = context.start_rendering();
+        let output = context.start_rendering_sync();
         let result = output.get_channel_data(0);
 
         let mut expected = Vec::<f32>::with_capacity(sample_rate);
@@ -1043,7 +1043,7 @@ mod tests {
         osc.start_at(0.);
         osc.stop_at(6. / sample_rate as f64);
 
-        let output = context.start_rendering();
+        let output = context.start_rendering_sync();
         let result = output.get_channel_data(0);
 
         let mut expected = Vec::<f32>::with_capacity(sample_rate);
@@ -1075,7 +1075,7 @@ mod tests {
         osc.start_at(0.);
         osc.stop_at(19.4 / sample_rate as f64);
 
-        let output = context.start_rendering();
+        let output = context.start_rendering_sync();
         let result = output.get_channel_data(0);
 
         let mut expected = Vec::<f32>::with_capacity(sample_rate);
@@ -1106,7 +1106,7 @@ mod tests {
         osc.frequency().set_value(freq);
         osc.start_at(-1.);
 
-        let output = context.start_rendering();
+        let output = context.start_rendering_sync();
         let result = output.get_channel_data(0);
 
         let mut expected = Vec::<f32>::with_capacity(sample_rate);

@@ -617,7 +617,7 @@ mod test {
         iir.connect(&context.destination());
 
         background.start();
-        let output = context.start_rendering();
+        let output = context.start_rendering_sync();
 
         // retrieve processed data by removing silence chunk
         // These silence slices are inserted inconsistently from an test execution to another
