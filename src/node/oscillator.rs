@@ -129,12 +129,6 @@ pub struct OscillatorNode {
     sender: Sender<PeriodicWave>,
 }
 
-impl AudioScheduledSourceNode for OscillatorNode {
-    fn scheduler(&self) -> &Scheduler {
-        &self.scheduler
-    }
-}
-
 impl AudioNode for OscillatorNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
@@ -152,6 +146,26 @@ impl AudioNode for OscillatorNode {
     /// `OscillatorNode` is a mono source node.
     fn number_of_outputs(&self) -> u32 {
         1
+    }
+}
+
+impl AudioScheduledSourceNode for OscillatorNode {
+    fn start(&self) {
+        let when = self.registration.context().current_time();
+        self.start_at(when);
+    }
+
+    fn start_at(&self, when: f64) {
+        self.scheduler.start_at(when);
+    }
+
+    fn stop(&self) {
+        let when = self.registration.context().current_time();
+        self.stop_at(when);
+    }
+
+    fn stop_at(&self, when: f64) {
+        self.scheduler.stop_at(when);
     }
 }
 

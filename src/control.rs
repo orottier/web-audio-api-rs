@@ -7,12 +7,12 @@ use crate::AtomicF64;
 
 /// Helper struct to start and stop audio streams
 #[derive(Clone, Debug)]
-pub struct Scheduler {
+pub(crate) struct Scheduler {
     start: Arc<AtomicF64>,
     stop: Arc<AtomicF64>,
 }
 
-pub enum ScheduledState {
+pub(crate) enum ScheduledState {
     NotStarted,
     Active,
     Ended,
@@ -66,7 +66,7 @@ impl Default for Scheduler {
 
 /// Helper struct to control audio streams
 #[derive(Clone, Debug)]
-pub struct Controller {
+pub(crate) struct Controller {
     scheduler: Arc<Scheduler>,
     seek: Arc<AtomicF64>,
     loop_: Arc<AtomicBool>,
@@ -139,7 +139,7 @@ impl Controller {
         self.seek.store(timestamp);
     }
 
-    pub(crate) fn should_seek(&self) -> Option<f64> {
+    pub fn should_seek(&self) -> Option<f64> {
         let prev = self.seek.swap(f64::NAN);
         if prev.is_nan() {
             None

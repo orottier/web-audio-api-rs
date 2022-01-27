@@ -29,17 +29,6 @@ pub struct MediaElementAudioSourceNode {
     controller: Controller,
 }
 
-impl AudioScheduledSourceNode for MediaElementAudioSourceNode {
-    fn scheduler(&self) -> &Scheduler {
-        self.controller.scheduler()
-    }
-}
-impl AudioControllableSourceNode for MediaElementAudioSourceNode {
-    fn controller(&self) -> &Controller {
-        &self.controller
-    }
-}
-
 impl AudioNode for MediaElementAudioSourceNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration

@@ -472,6 +472,7 @@ mod tests {
     use float_eq::assert_float_eq;
 
     use crate::context::OfflineAudioContext;
+    use crate::node::{AudioScheduledSourceNode};
     use crate::SampleRate;
 
     use super::*;

@@ -68,9 +68,15 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>> + Sen
 }
 
 /// Wrapper for [`MediaStream`]s, for buffering and playback controls.
+/// Mimic API of HTMLMediaElement: <https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/>
+///
+/// Warning: this abstraction is not part of the Web Audio API and does not aim at
+/// implementing the full HTMLMediaElement API. It is only provided for convenience
+/// reasons.
 ///
 /// Currently, the media element will start a new thread to buffer all available media. (todo
 /// async executor)
+///
 ///
 /// # Example
 ///
@@ -154,38 +160,20 @@ impl MediaElement {
         }
     }
 
-    pub fn controller(&self) -> &Controller {
-        &self.controller
+    pub fn start(&self) {
+        self.controller().scheduler().start_at(0.);
     }
 
-    fn load_next(&mut self) -> Option<Result<AudioBuffer, Box<dyn Error + Send + Sync>>> {
-        if !self.buffer_complete {
-            let next = match self.input.try_recv() {
-                Err(_) => return Some(Err(Box::new(BufferDepletedError {}))),
-                Ok(v) => v,
-            };
+    pub fn pause(&self) {
+        self.controller().scheduler().stop_at(0.);
+    }
 
-            match next {
-                Some(Err(e)) => {
-                    // no further streaming
-                    self.buffer_complete = true;
+    pub fn loop_(&self) -> bool {
+        self.controller().loop_()
+    }
 
-                    return Some(Err(e));
-                }
-                Some(Ok(data)) => {
-                    self.buffer.push(data.clone());
-                    self.buffer_index += 1;
-                    self.timestamp += data.duration();
-                    return Some(Ok(data));
-                }
-                None => {
-                    self.buffer_complete = true;
-                    return None;
-                }
-            }
-        }
-
-        None
+    pub fn set_loop(&self, loop_: bool) {
+        self.controller().set_loop(loop_);
     }
 
     /// Seek to a timestamp offset in the media buffer
@@ -230,6 +218,40 @@ impl MediaElement {
             }
         }
     }
+
+    pub(crate) fn controller(&self) -> &Controller {
+        &self.controller
+    }
+
+    fn load_next(&mut self) -> Option<Result<AudioBuffer, Box<dyn Error + Send + Sync>>> {
+        if !self.buffer_complete {
+            let next = match self.input.try_recv() {
+                Err(_) => return Some(Err(Box::new(BufferDepletedError {}))),
+                Ok(v) => v,
+            };
+
+            match next {
+                Some(Err(e)) => {
+                    // no further streaming
+                    self.buffer_complete = true;
+
+                    return Some(Err(e));
+                }
+                Some(Ok(data)) => {
+                    self.buffer.push(data.clone());
+                    self.buffer_index += 1;
+                    self.timestamp += data.duration();
+                    return Some(Ok(data));
+                }
+                None => {
+                    self.buffer_complete = true;
+                    return None;
+                }
+            }
+        }
+
+        None
+    }
 }
 
 impl Iterator for MediaElement {
@@ -237,7 +259,7 @@ impl Iterator for MediaElement {
 
     fn next(&mut self) -> Option<Self::Item> {
         // handle seeking
-        if let Some(seek) = self.controller().should_seek() {
+        if let Some(seek) = self.controller.should_seek() {
             self.seek(seek);
         } else if let Some(seek) = self.seeking.take() {
             self.seek(seek);
@@ -250,6 +272,8 @@ impl Iterator for MediaElement {
         if self.controller.loop_() && self.timestamp > self.controller.loop_end() {
             self.seek(self.controller.loop_start());
         }
+
+        // handle start / pause
 
         // read from cache if available
         if let Some(data) = self.buffer.get(self.buffer_index) {

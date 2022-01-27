@@ -35,10 +35,10 @@ mod analyser;
 pub use analyser::*;
 mod audio_buffer_source;
 pub use audio_buffer_source::*;
-mod media_element;
-pub use media_element::*;
-mod media_stream;
-pub use media_stream::*;
+// mod media_element;
+// pub use media_element::*;
+// mod media_stream;
+// pub use media_stream::*;
 mod waveshaper;
 pub use waveshaper::*;
 mod stereo_panner;
@@ -285,61 +285,48 @@ pub trait AudioNode {
 /// Interface of source nodes, controlling start and stop times.
 /// The node will emit silence before it is started, and after it has ended.
 pub trait AudioScheduledSourceNode {
-    fn scheduler(&self) -> &Scheduler;
-
-    /// Schedule playback start at this timestamp
-    fn start_at(&self, start: f64) {
-        self.scheduler().start_at(start)
-    }
-
-    /// Stop playback at this timestamp
-    fn stop_at(&self, stop: f64) {
-        self.scheduler().stop_at(stop)
-    }
-
     /// Play immediately
-    fn start(&self) {
-        self.start_at(0.);
-    }
-
+    fn start(&self);
+    /// Schedule playback start at given timestamp
+    fn start_at(&self, when: f64);
     /// Stop immediately
-    fn stop(&self) {
-        self.stop_at(0.);
-    }
+    fn stop(&self);
+    /// Schedule playback stop at given timestamp
+    fn stop_at(&self, when: f64);
 }
 
 /// Interface of source nodes, controlling pause/loop/offsets.
-pub trait AudioControllableSourceNode {
-    fn controller(&self) -> &Controller;
+// pub trait AudioControllableSourceNode {
+//     fn controller(&self) -> &Controller;
 
-    fn loop_(&self) -> bool {
-        self.controller().loop_()
-    }
+//     fn loop_(&self) -> bool {
+//         self.controller().loop_()
+//     }
 
-    fn set_loop(&self, loop_: bool) {
-        self.controller().set_loop(loop_)
-    }
+//     fn set_loop(&self, loop_: bool) {
+//         self.controller().set_loop(loop_)
+//     }
 
-    fn loop_start(&self) -> f64 {
-        self.controller().loop_start()
-    }
+//     fn loop_start(&self) -> f64 {
+//         self.controller().loop_start()
+//     }
 
-    fn set_loop_start(&self, loop_start: f64) {
-        self.controller().set_loop_start(loop_start)
-    }
+//     fn set_loop_start(&self, loop_start: f64) {
+//         self.controller().set_loop_start(loop_start)
+//     }
 
-    fn loop_end(&self) -> f64 {
-        self.controller().loop_end()
-    }
+//     fn loop_end(&self) -> f64 {
+//         self.controller().loop_end()
+//     }
 
-    fn set_loop_end(&self, loop_end: f64) {
-        self.controller().set_loop_end(loop_end)
-    }
+//     fn set_loop_end(&self, loop_end: f64) {
+//         self.controller().set_loop_end(loop_end)
+//     }
 
-    fn seek(&self, timestamp: f64) {
-        self.controller().seek(timestamp)
-    }
-}
+//     fn seek(&self, timestamp: f64) {
+//         self.controller().seek(timestamp)
+//     }
+// }
 
 struct MediaStreamRenderer<R> {
     stream: R,
@@ -369,6 +356,7 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
         // single output node
         let output = &mut outputs[0];
 
+        // @todo - remove that
         // todo, sub-quantum start/stop
         match self.scheduler.state(timestamp) {
             ScheduledState::Active => (),

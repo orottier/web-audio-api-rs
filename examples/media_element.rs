@@ -15,10 +15,10 @@ fn main() {
     // register the media element node
     let context = AudioContext::new(None);
     let node = context.create_media_element_source(element);
+    node.connect(&context.destination());
 
     // play media
-    node.connect(&context.destination());
-    node.start();
+    element.start();
 
     // enjoy listening
     std::thread::sleep(std::time::Duration::from_secs(4));

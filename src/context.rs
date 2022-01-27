@@ -236,29 +236,29 @@ pub trait BaseAudioContext {
         node::IIRFilterNode::new(self.base(), options)
     }
 
-    /// Creates a `MediaElementAudioSourceNode` from a `MediaElement`
-    ///
-    /// Note: do not forget to `start()` the node.
-    fn create_media_element_source(
-        &self,
-        media: MediaElement,
-    ) -> node::MediaElementAudioSourceNode {
-        let opts = node::MediaElementAudioSourceOptions {
-            media_element: media,
-        };
-        node::MediaElementAudioSourceNode::new(self.base(), opts)
-    }
+    // /// Creates a `MediaElementAudioSourceNode` from a `MediaElement`
+    // ///
+    // /// Note: do not forget to `start()` the node.
+    // fn create_media_element_source(
+    //     &self,
+    //     media: MediaElement,
+    // ) -> node::MediaElementAudioSourceNode {
+    //     let opts = node::MediaElementAudioSourceOptions {
+    //         media_element: media,
+    //     };
+    //     node::MediaElementAudioSourceNode::new(self.base(), opts)
+    // }
 
-    /// Creates a `MediaStreamAudioSourceNode` from a `MediaElement`
-    fn create_media_stream_source<M: MediaStream>(
-        &self,
-        media: M,
-    ) -> node::MediaStreamAudioSourceNode {
-        let opts = node::MediaStreamAudioSourceOptions {
-            media_stream: media,
-        };
-        node::MediaStreamAudioSourceNode::new(self.base(), opts)
-    }
+    // /// Creates a `MediaStreamAudioSourceNode` from a `MediaElement`
+    // fn create_media_stream_source<M: MediaStream>(
+    //     &self,
+    //     media: M,
+    // ) -> node::MediaStreamAudioSourceNode {
+    //     let opts = node::MediaStreamAudioSourceOptions {
+    //         media_stream: media,
+    //     };
+    //     node::MediaStreamAudioSourceNode::new(self.base(), opts)
+    // }
 
     /// Creates an `OscillatorNode`, a source representing a periodic waveform.
     fn create_oscillator(&self) -> node::OscillatorNode {
