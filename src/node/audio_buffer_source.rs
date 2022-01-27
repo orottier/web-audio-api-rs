@@ -588,7 +588,7 @@ mod tests {
         src.start_at(context.current_time());
         src.stop_at(context.current_time() + 128.);
 
-        let res = context.start_rendering();
+        let res = context.start_rendering_sync();
 
         // check first 128 samples in left and right channels
         assert_float_eq!(
@@ -618,7 +618,7 @@ mod tests {
         src.set_buffer(dirac);
         src.start_at(1. / sample_rate as f64);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
         let mut expected = vec![0.; sample_rate];
@@ -642,7 +642,7 @@ mod tests {
         src.set_buffer(dirac);
         src.start_at(1.5 / sample_rate as f64);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
         let mut expected = vec![0.; sample_rate];
@@ -667,7 +667,7 @@ mod tests {
         // stop at time of dirac, shoud not be played
         src.stop_at(4. / sample_rate as f64);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
         let expected = vec![0.; sample_rate];
 
@@ -690,7 +690,7 @@ mod tests {
         // stop at between two diracs, only first one should be played
         src.stop_at(4.5 / sample_rate as f64);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
         let mut expected = vec![0.; sample_rate];
@@ -713,7 +713,7 @@ mod tests {
         src.set_buffer(dirac);
         src.start_at(-1.);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
         let mut expected = vec![0.; sample_rate];

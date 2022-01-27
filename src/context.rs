@@ -857,9 +857,11 @@ impl OfflineAudioContext {
         }
     }
 
-    /// `OfflineAudioContext` doesn't start rendering automatically
-    /// You need to call this function to start the audio rendering
-    pub fn start_rendering(&mut self) -> AudioBuffer {
+    /// Given the current connections and scheduled changes, starts rendering audio.
+    ///
+    /// This function will block the current thread and returns the rendered `AudioBuffer`
+    /// synchronously. An async version is currently not implemented.
+    pub fn start_rendering_sync(&mut self) -> AudioBuffer {
         // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
         // the desired number of frames.
         let buffer_size =

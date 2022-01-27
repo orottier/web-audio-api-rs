@@ -511,7 +511,7 @@ mod tests {
 
         let shaper = WaveShaperNode::new(&context, options);
 
-        context.start_rendering();
+        context.start_rendering_sync();
 
         assert_eq!(shaper.curve(), Some(&[1.0][..]));
         assert_eq!(shaper.oversample(), OverSampleType::X2);
@@ -535,7 +535,7 @@ mod tests {
         shaper.set_curve(vec![2.0]);
         shaper.set_oversample(OverSampleType::X4);
 
-        context.start_rendering();
+        context.start_rendering_sync();
 
         assert_eq!(shaper.curve(), Some(&[2.0][..]));
         assert_eq!(shaper.oversample(), OverSampleType::X4);
@@ -558,7 +558,7 @@ mod tests {
         shaper.set_curve(vec![2.0]);
         shaper.set_oversample(OverSampleType::X4);
 
-        context.start_rendering();
+        context.start_rendering_sync();
 
         assert_eq!(shaper.curve(), Some(&[2.0][..]));
         assert_eq!(shaper.oversample(), OverSampleType::X4);
@@ -596,7 +596,7 @@ mod tests {
         src.set_buffer(buffer);
         src.start_at(0.);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
@@ -629,7 +629,7 @@ mod tests {
         src.set_buffer(buffer);
         src.start_at(0.);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
