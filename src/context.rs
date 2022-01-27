@@ -103,7 +103,7 @@ pub trait BaseAudioContext {
     /// should not wrap the source in a `BufReader`.
     ///
     /// This function operates synchronously, which may be undesirable on the control thread. The
-    /// example shows how to avoid this.
+    /// example shows how to avoid this. An async version is currently not implemented.
     ///
     /// # Errors
     ///
@@ -119,14 +119,14 @@ pub trait BaseAudioContext {
     /// let input = Cursor::new(vec![0; 32]); // or a File, TcpStream, ...
     ///
     /// let context = OfflineAudioContext::new(2, 44_100, SampleRate(44_100));
-    /// let handle = std::thread::spawn(move || context.decode_audio_data(input));
+    /// let handle = std::thread::spawn(move || context.decode_audio_data_sync(input));
     ///
     /// // do other things
     ///
     /// // await result from the decoder thread
     /// let decode_buffer_result = handle.join();
     /// ```
-    fn decode_audio_data<R: std::io::Read + Send + 'static>(
+    fn decode_audio_data_sync<R: std::io::Read + Send + 'static>(
         &self,
         input: R,
     ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
@@ -483,8 +483,13 @@ impl AudioContext {
         Self { base }
     }
 
-    /// Suspends the progression of time in the audio context, temporarily halting audio hardware
-    /// access and reducing CPU/battery usage in the process.
+    /// Suspends the progression of time in the audio context.
+    ///
+    /// This will temporarily halt audio hardware access and reducing CPU/battery usage in the
+    /// process.
+    ///
+    /// This function operates synchronously and might block the current thread. An async version
+    /// is currently not implemented.
     ///
     /// # Panics
     ///
@@ -494,7 +499,7 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    pub fn suspend(&self) {
+    pub fn suspend_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         if let Some(s) = self.stream.lock().unwrap().as_ref() {
             if let Err(e) = s.pause() {
@@ -506,6 +511,9 @@ impl AudioContext {
     /// Resumes the progression of time in an audio context that has previously been
     /// suspended/paused.
     ///
+    /// This function operates synchronously and might block the current thread. An async version
+    /// is currently not implemented.
+    ///
     /// # Panics
     ///
     /// Will panic if:
@@ -514,7 +522,7 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    pub fn resume(&self) {
+    pub fn resume_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         if let Some(s) = self.stream.lock().unwrap().as_ref() {
             if let Err(e) = s.play() {
@@ -523,16 +531,20 @@ impl AudioContext {
         }
     }
 
-    /// Closes the `AudioContext`, releasing the system resources being used. This will not
-    /// automatically release all `AudioContext`-created objects, but will suspend the progression of
-    /// the currentTime, and stop processing audio data.
+    /// Closes the `AudioContext`, releasing the system resources being used.
+    ///
+    /// This will not automatically release all `AudioContext`-created objects, but will suspend
+    /// the progression of the currentTime, and stop processing audio data.
+    ///
+    /// This function operates synchronously and might block the current thread. An async version
+    /// is currently not implemented.
     ///
     /// # Panics
     ///
     /// Will panic when this function is called multiple times
     // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    pub fn close(&self) {
+    pub fn close_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.lock().unwrap().take(); // will Drop
     }
@@ -909,7 +921,7 @@ mod tests {
     fn test_decode_audio_data() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
         let file = std::fs::File::open("samples/sample.wav").unwrap();
-        let audio_buffer = context.decode_audio_data(file).unwrap();
+        let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
         assert_eq!(audio_buffer.sample_rate_raw(), SampleRate(44100));
         assert_eq!(audio_buffer.length(), 142_187);
@@ -928,7 +940,7 @@ mod tests {
     fn test_decode_audio_data_empty() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
         let file = std::fs::File::open("samples/empty_2c.wav").unwrap();
-        let audio_buffer = context.decode_audio_data(file).unwrap();
+        let audio_buffer = context.decode_audio_data_sync(file).unwrap();
         assert_eq!(audio_buffer.length(), 0);
     }
 
@@ -936,6 +948,6 @@ mod tests {
     fn test_decode_audio_data_decoding_error() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
         let file = std::fs::File::open("samples/corrupt.wav").unwrap();
-        assert!(context.decode_audio_data(file).is_err());
+        assert!(context.decode_audio_data_sync(file).is_err());
     }
 }

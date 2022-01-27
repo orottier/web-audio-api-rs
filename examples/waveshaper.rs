@@ -25,7 +25,7 @@ fn main() {
     let context = AudioContext::new(None);
 
     let file = File::open("samples/sample.wav").unwrap();
-    let buffer = context.decode_audio_data(file).unwrap();
+    let buffer = context.decode_audio_data_sync(file).unwrap();
     let curve = make_distortion_curve(2048);
 
     let post_gain = context.create_gain();

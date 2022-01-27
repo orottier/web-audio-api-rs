@@ -41,7 +41,7 @@ fn main() {
 
     // grab audio buffer
     let file = File::open("samples/sample.wav").unwrap();
-    let audio_buffer = audio_context.decode_audio_data(file).unwrap();
+    let audio_buffer = audio_context.decode_audio_data_sync(file).unwrap();
 
     let period = 0.05;
     let grain_duration = 0.2;

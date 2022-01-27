@@ -49,7 +49,7 @@ impl Default for DelayOptions {
 /// // create an `AudioContext` and load a sound file
 /// let context = AudioContext::new(None);
 /// let file = File::open("samples/sample.wav").unwrap();
-/// let audio_buffer = context.decode_audio_data(file).unwrap();
+/// let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 ///
 /// // create a delay of 0.5s
 /// let delay = context.create_delay(1.);

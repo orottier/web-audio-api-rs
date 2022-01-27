@@ -282,7 +282,7 @@ struct AudioThread {
 
 impl Drop for AudioThread {
     fn drop(&mut self) {
-        self.context.close();
+        self.context.close_sync();
     }
 }
 
