@@ -611,7 +611,7 @@ mod test {
         src.connect(&iir);
         src.start();
 
-        let output = context.start_rendering();
+        let output = context.start_rendering_sync();
 
         // review the following, this should be fixed using an AudioBufferSourceNode
 

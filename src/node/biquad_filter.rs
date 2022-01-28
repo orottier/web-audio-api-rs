@@ -1110,7 +1110,7 @@ mod test {
         let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
-        context.start_rendering();
+        context.start_rendering_sync();
 
         assert_float_eq!(biquad.q().value(), default_q, abs <= 0.);
         assert_float_eq!(biquad.detune().value(), default_detune, abs <= 0.);
@@ -1139,7 +1139,7 @@ mod test {
 
         let biquad = BiquadFilterNode::new(&context, options);
 
-        context.start_rendering();
+        context.start_rendering_sync();
 
         assert_float_eq!(biquad.q().value(), q, abs <= 0.);
         assert_float_eq!(biquad.detune().value(), detune, abs <= 0.);
@@ -1165,7 +1165,7 @@ mod test {
         biquad.frequency().set_value(frequency);
         biquad.set_type(type_);
 
-        context.start_rendering();
+        context.start_rendering_sync();
 
         assert_float_eq!(biquad.q().value(), q, abs <= 0.);
         assert_float_eq!(biquad.detune().value(), detune, abs <= 0.);

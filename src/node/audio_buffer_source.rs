@@ -66,7 +66,7 @@ struct AudioBufferMessage(AudioBuffer);
 /// let context = AudioContext::new(None);
 /// // load and decode a soundfile
 /// let file = File::open("samples/sample.wav").unwrap();
-/// let audio_buffer = context.decode_audio_data(file).unwrap();
+/// let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 /// // play the sound file
 /// let src = context.create_buffer_source();
 /// src.set_buffer(audio_buffer);
@@ -581,7 +581,7 @@ mod tests {
         let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, SampleRate(44_100));
 
         let file = std::fs::File::open("samples/sample.wav").unwrap();
-        let audio_buffer = context.decode_audio_data(file).unwrap();
+        let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
         let src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
@@ -589,7 +589,7 @@ mod tests {
         src.start_at(context.current_time());
         src.stop_at(context.current_time() + 128.);
 
-        let res = context.start_rendering();
+        let res = context.start_rendering_sync();
 
         // check first 128 samples in left and right channels
         assert_float_eq!(
@@ -619,7 +619,7 @@ mod tests {
         src.set_buffer(dirac);
         src.start_at(1. / sample_rate as f64);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
         let mut expected = vec![0.; sample_rate];
@@ -643,7 +643,7 @@ mod tests {
         src.set_buffer(dirac);
         src.start_at(1.5 / sample_rate as f64);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
         let mut expected = vec![0.; sample_rate];
@@ -668,7 +668,7 @@ mod tests {
         // stop at time of dirac, shoud not be played
         src.stop_at(4. / sample_rate as f64);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
         let expected = vec![0.; sample_rate];
 
@@ -691,7 +691,7 @@ mod tests {
         // stop at between two diracs, only first one should be played
         src.stop_at(4.5 / sample_rate as f64);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
         let mut expected = vec![0.; sample_rate];
@@ -714,7 +714,7 @@ mod tests {
         src.set_buffer(dirac);
         src.start_at(-1.);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
         let mut expected = vec![0.; sample_rate];

@@ -3,7 +3,7 @@
 // use web_audio_api::context::BaseAudioContext;
 // use web_audio_api::context::OfflineAudioContext;
 // use web_audio_api::media::MediaElement;
-// use web_audio_api::node::{AudioNode};
+// use web_audio_api::node::{AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode};
 // use web_audio_api::{SampleRate, RENDER_QUANTUM_SIZE};
 
 // use std::sync::atomic::{AtomicBool, Ordering};
@@ -58,12 +58,12 @@
 //         let element = MediaElement::new(media);
 //         let node = context.create_media_element_source(element);
 //         node.connect(&context.destination());
-//         element.set_loop(true); // test if silence is not included in buffer
-//         element.start();
+//         node.set_loop(true); // test if silence is not included in buffer
+//         node.start();
 //     }
 
 //     // should be silent since the media stream did not yield any output
-//     let output = context.start_rendering();
+//     let output = context.start_rendering_sync();
 //     assert_float_eq!(
 //         output.get_channel_data(0),
 //         &[0.; RENDER_QUANTUM_SIZE][..],
@@ -74,7 +74,7 @@
 //     thread::sleep(Duration::from_millis(10)); // let buffer catch up
 
 //     // should contain output
-//     let output = context.start_rendering();
+//     let output = context.start_rendering_sync();
 //     assert_float_eq!(
 //         output.get_channel_data(0),
 //         &[2.; RENDER_QUANTUM_SIZE][..],
@@ -82,7 +82,7 @@
 //     );
 
 //     // should be silent since the media stream did not yield any output
-//     let output = context.start_rendering();
+//     let output = context.start_rendering_sync();
 //     assert_float_eq!(
 //         output.get_channel_data(0),
 //         &[0.; RENDER_QUANTUM_SIZE][..],
@@ -93,7 +93,7 @@
 //     thread::sleep(Duration::from_millis(10)); // let buffer catch up
 
 //     // should contain output
-//     let output = context.start_rendering();
+//     let output = context.start_rendering_sync();
 //     assert_float_eq!(
 //         output.get_channel_data(0),
 //         &[3.; RENDER_QUANTUM_SIZE][..],
@@ -105,19 +105,19 @@
 //     thread::sleep(Duration::from_millis(10)); // let buffer catch up
 
 //     // should contain previous output (looping)
-//     let output = context.start_rendering();
+//     let output = context.start_rendering_sync();
 //     assert_float_eq!(
 //         output.get_channel_data(0),
 //         &[2.; RENDER_QUANTUM_SIZE][..],
 //         abs_all <= 0.
 //     );
-//     let output = context.start_rendering();
+//     let output = context.start_rendering_sync();
 //     assert_float_eq!(
 //         output.get_channel_data(0),
 //         &[3.; RENDER_QUANTUM_SIZE][..],
 //         abs_all <= 0.
 //     );
-//     let output = context.start_rendering();
+//     let output = context.start_rendering_sync();
 //     assert_float_eq!(
 //         output.get_channel_data(0),
 //         &[2.; RENDER_QUANTUM_SIZE][..],
@@ -132,10 +132,6 @@
 
 //     let block = Arc::new(AtomicBool::new(true));
 
-//     // this is why
-//     // create_media_(element/stream)_source now lives on base context but must be online context only. Fine for now?
-//     // that makes no sens...
-
 //     {
 //         let media = SlowMedia {
 //             block: block.clone(),
@@ -147,13 +143,12 @@
 //         let element = MediaElement::new(media);
 //         let node = context.create_media_element_source(element);
 //         node.connect(&context.destination());
-
-//         element.seek(2.); // test seeking in combination with slow buffering
-//         element.start();
+//         node.seek(2.); // test seeking in combination with slow buffering
+//         node.start();
 //     }
 
 //     // should be silent since the media stream did not yield any output
-//     let output = context.start_rendering();
+//     let output = context.start_rendering_sync();
 //     assert_float_eq!(
 //         output.get_channel_data(0),
 //         &[0.; RENDER_QUANTUM_SIZE][..],
@@ -168,10 +163,11 @@
 //     thread::sleep(Duration::from_millis(10)); // let buffer catch up
 
 //     // should contain output, with first 2 values skipped
-//     let output = context.start_rendering();
+//     let output = context.start_rendering_sync();
 //     assert_float_eq!(
 //         output.get_channel_data(0),
 //         &[4.; RENDER_QUANTUM_SIZE][..],
 //         abs_all <= 0.
 //     );
 // }
+

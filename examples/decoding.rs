@@ -23,7 +23,7 @@ fn main() {
         println!("> --------------------------------");
 
         let file = File::open(filepath).unwrap();
-        let res = audio_context.decode_audio_data(file);
+        let res = audio_context.decode_audio_data_sync(file);
 
         match res {
             Ok(buffer) => {

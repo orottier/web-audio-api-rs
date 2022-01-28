@@ -49,7 +49,7 @@ impl Default for DelayOptions {
 /// // create an `AudioContext` and load a sound file
 /// let context = AudioContext::new(None);
 /// let file = File::open("samples/sample.wav").unwrap();
-/// let audio_buffer = context.decode_audio_data(file).unwrap();
+/// let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 ///
 /// // create a delay of 0.5s
 /// let delay = context.create_delay(1.);
@@ -524,7 +524,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 256];
@@ -553,7 +553,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 256];
@@ -580,7 +580,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 256];
@@ -611,7 +611,7 @@ mod tests {
         src.set_buffer(two_chan_dirac);
         src.start_at(0.);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
 
         let channel_left = result.get_channel_data(0);
         let mut expected_left = vec![0.; 256];
@@ -652,7 +652,7 @@ mod tests {
         src2.set_buffer(two_chan_dirac);
         src2.start_at(1.);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
 
         let channel_left = result.get_channel_data(0);
         let mut expected_left = vec![0.; 3 * 128];
@@ -694,7 +694,7 @@ mod tests {
                 src.start_at(3.);
             } // src and delay nodes are dropped
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let mut expected = vec![0.; 5 * 128];
             // source starts after 2 * 128 samples, then is delayed another 128
             expected[4 * 128] = 1.;
@@ -727,7 +727,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 256];
@@ -753,7 +753,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 3 * 128];
@@ -787,7 +787,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 256];

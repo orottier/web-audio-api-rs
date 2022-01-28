@@ -215,7 +215,7 @@ mod tests {
         src.start_at(start_in_samples / 128.);
         src.stop_at(stop_in_samples / 128.);
 
-        let buffer = context.start_rendering();
+        let buffer = context.start_rendering_sync();
         let channel = buffer.get_channel_data(0);
 
         // 1rst block should be silence
@@ -243,7 +243,7 @@ mod tests {
         src.connect(&context.destination());
         src.start_at(-1.);
 
-        let buffer = context.start_rendering();
+        let buffer = context.start_rendering_sync();
         let channel = buffer.get_channel_data(0);
 
         // 1rst block should be silence
