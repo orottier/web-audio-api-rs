@@ -44,7 +44,7 @@ pub use waveshaper::*;
 mod stereo_panner;
 pub use stereo_panner::*;
 
-pub(crate) const TABLE_LENGTH_USIZE: usize = 2048;
+pub(crate) const TABLE_LENGTH_USIZE: usize = 8192;
 pub(crate) const TABLE_LENGTH_BY_4_USIZE: usize = TABLE_LENGTH_USIZE / 4;
 // 2048 casts without loss of precision cause its mantissa is 0b0
 #[allow(clippy::cast_precision_loss)]
