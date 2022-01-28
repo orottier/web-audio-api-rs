@@ -111,7 +111,8 @@ impl PeriodicWave {
             (Some(r), Some(i)) => {
                 if r.len() != i.len() {
                     panic!("IndexSizeError: `real` and `imag` length should be equal");
-                } else if r.len() < 2 { // i and r have same length
+                } else if r.len() < 2 {
+                    // i and r have same length
                     panic!("IndexSizeError: `real` and `imag` length should at least 2");
                 }
 
