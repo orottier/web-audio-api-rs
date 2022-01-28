@@ -4,10 +4,7 @@ use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::media::MediaElement;
 use crate::RENDER_QUANTUM_SIZE;
 
-use super::{
-    AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode, ChannelConfig,
-    ChannelConfigOptions, MediaStreamRenderer,
-};
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer};
 
 /// Options for constructing a [`MediaElementAudioSourceNode`]
 // dictionary MediaElementAudioSourceOptions {

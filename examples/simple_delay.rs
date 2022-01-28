@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::{thread, time};
 use web_audio_api::context::{AudioContext, BaseAudioContext};
-use web_audio_api::node::AudioNode;
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
     // create an `AudioContext` and load a sound file

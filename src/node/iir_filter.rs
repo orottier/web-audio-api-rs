@@ -350,7 +350,6 @@ mod test {
 
     use crate::{
         context::{BaseAudioContext, OfflineAudioContext},
-        media::{MediaDecoder, MediaElement},
         node::{AudioNode, AudioScheduledSourceNode},
         snapshot, SampleRate,
     };
@@ -608,13 +607,14 @@ mod test {
         iir.connect(&context.destination());
 
         let src = context.create_buffer_source();
-        src.buffer = audio_buffer;
+        src.set_buffer(audio_buffer);
         src.connect(&iir);
         src.start();
 
         let output = context.start_rendering();
 
-        println!("REVIEW THAT THIS IS WEIRD");
+        // review the following, this should be fixed using an AudioBufferSourceNode
+
         // retrieve processed data by removing silence chunk
         // These silence slices are inserted inconsistently from an test execution to another
         // Without these processing the test would be brittle

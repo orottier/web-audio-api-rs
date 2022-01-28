@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 use std::fs::File;
 use web_audio_api::context::{AudioContext, BaseAudioContext};
-use web_audio_api::node::{AudioNode, OverSampleType};
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, OverSampleType};
 
 // use part of cosine, between [π, 2π] as shaping cureve
 fn make_distortion_curve(size: usize) -> Vec<f32> {

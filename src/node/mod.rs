@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioNodeId, ConcreteBaseAudioContext};
-use crate::control::{Controller, ScheduledState, Scheduler};
+// use crate::control::{Controller, Scheduler};
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{BufferDepletedError, SampleRate};
@@ -35,10 +35,10 @@ mod analyser;
 pub use analyser::*;
 mod audio_buffer_source;
 pub use audio_buffer_source::*;
-// mod media_element;
-// pub use media_element::*;
-// mod media_stream;
-// pub use media_stream::*;
+mod media_element;
+pub use media_element::*;
+mod media_stream;
+pub use media_stream::*;
 mod waveshaper;
 pub use waveshaper::*;
 mod stereo_panner;
@@ -261,6 +261,7 @@ pub trait AudioNode {
     fn channel_count_mode(&self) -> ChannelCountMode {
         self.channel_config_raw().count_mode()
     }
+
     fn set_channel_count_mode(&self, v: ChannelCountMode) {
         self.channel_config_raw().set_count_mode(v)
     }
@@ -269,6 +270,7 @@ pub trait AudioNode {
     fn channel_interpretation(&self) -> ChannelInterpretation {
         self.channel_config_raw().interpretation()
     }
+
     fn set_channel_interpretation(&self, v: ChannelInterpretation) {
         self.channel_config_raw().set_interpretation(v)
     }
@@ -277,6 +279,7 @@ pub trait AudioNode {
     fn channel_count(&self) -> usize {
         self.channel_config_raw().count()
     }
+
     fn set_channel_count(&self, v: usize) {
         self.channel_config_raw().set_count(v)
     }
@@ -350,26 +353,13 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        timestamp: f64,
+        _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];
 
-        // @todo - remove that
-        // todo, sub-quantum start/stop
-        // match self.scheduler.state(timestamp) {
-        //     ScheduledState::Active => (),
-        //     ScheduledState::NotStarted => {
-        //         output.make_silent();
-        //         return true; // will output in the future
-        //     }
-        //     ScheduledState::Ended => {
-        //         output.make_silent();
-        //         return false; // can clean up
-        //     }
-        // }
-
+        // @note - maybe we need to disciminate between a paused and depleted term
         match self.stream.next() {
             Some(Ok(buffer)) => {
                 let channels = buffer.number_of_channels();

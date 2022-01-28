@@ -2,7 +2,7 @@ use std::fs::File;
 use std::{thread, time};
 use web_audio_api::buffer::AudioBuffer;
 use web_audio_api::context::{AudioContext, BaseAudioContext};
-use web_audio_api::node::AudioNode;
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 // run in release mode
 // cargo run --release --example granular
