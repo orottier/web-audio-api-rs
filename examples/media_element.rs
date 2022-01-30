@@ -15,7 +15,7 @@ fn main() {
     let context = AudioContext::new(None);
 
     let node = MediaElementAudioSourceNode::new(&context, MediaElementAudioSourceOptions {
-        media_element
+        media_element: &media_element
     });
 
     node.connect(&context.destination());

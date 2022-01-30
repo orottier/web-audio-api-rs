@@ -589,7 +589,7 @@ mod test {
         let mut context = OfflineAudioContext::new(1, LENGTH, SampleRate(44_100));
 
         let file = File::open("samples/white.ogg").unwrap();
-        let audio_buffer = context.decode_audio_data(file).unwrap();
+        let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
         let feedforward = vec![
             0.019_618_022_238_052_212,

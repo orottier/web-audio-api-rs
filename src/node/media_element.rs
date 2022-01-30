@@ -10,8 +10,8 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer}
 // dictionary MediaElementAudioSourceOptions {
 //   required HTMLMediaElement mediaElement;
 // };
-pub struct MediaElementAudioSourceOptions {
-    pub media_element: MediaElement,
+pub struct MediaElementAudioSourceOptions<'a> {
+    pub media_element: &'a MediaElement,
 }
 
 /// An audio source from a [`MediaElement`] (e.g. .ogg, .wav, .mp3 files)
@@ -50,6 +50,7 @@ impl MediaElementAudioSourceNode {
             // let controller = options.media_element.controller().clone();
             // let scheduler = controller.scheduler().clone();
             let channel_config = ChannelConfigOptions::default().into();
+            let media_element = options.media_element.clone();
 
             let node = MediaElementAudioSourceNode {
                 registration,
@@ -60,7 +61,7 @@ impl MediaElementAudioSourceNode {
             let resampler = Resampler::new(
                 context.sample_rate_raw(),
                 RENDER_QUANTUM_SIZE,
-                options.media_element,
+                media_element,
             );
 
             let render = MediaStreamRenderer::new(resampler);

@@ -1,10 +1,11 @@
 use crossbeam_channel::{self, Receiver};
 use std::error::Error;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::buffer::AudioBuffer;
 use crate::control::Controller;
-use crate::BufferDepletedError;
+use crate::{BufferDepletedError, AtomicF64};
 
 use super::MediaStream;
 
@@ -55,23 +56,28 @@ use super::MediaStream;
 ///   }
 /// }
 /// ```
-pub struct MediaElement {
+struct MediaElementInner {
     /// input media stream
     input: Receiver<Option<Result<AudioBuffer, Box<dyn Error + Send + Sync>>>>,
     /// media buffer
     buffer: Vec<AudioBuffer>,
     /// true when input stream is finished
-    buffer_complete: bool,
+    buffer_complete: AtomicBool,
     /// current position in buffer when filling/looping
-    buffer_index: usize,
+    buffer_index: AtomicUsize,
     /// user facing controller
     controller: Controller,
     /// current time of this stream
-    current_time: f64,
+    current_time: AtomicF64,
     /// state of the element
     paused: AtomicBool,
     /// indicates if we are currently seeking but the data is not available
-    seeking: Option<f64>,
+    seeking: Option<AtomicF64>,
+}
+
+#[derive(Clone)]
+pub struct MediaElement {
+    inner: Arc<MediaElementInner>,
 }
 
 impl MediaElement {
@@ -92,77 +98,81 @@ impl MediaElement {
         let ping = receiver.recv().expect("buffer channel disconnected");
         assert!(ping.is_none());
 
-        Self {
+        let media_element_inner = MediaElementInner {
             input: receiver,
             buffer: vec![],
-            buffer_complete: false,
-            buffer_index: 0,
+            buffer_complete: AtomicBool::new(false),
+            buffer_index: AtomicUsize::new(0),
             controller: Controller::new(),
-            current_time: 0.,
+            current_time: AtomicF64::new(0.),
             paused: AtomicBool::new(true),
             seeking: None,
+        };
+
+        Self {
+            inner: Arc::new(media_element_inner),
         }
     }
 
     pub fn current_time(&self) -> f64 {
-        self.current_time
+        self.inner.current_time
     }
 
     pub fn paused(&self) -> bool {
-        self.paused.load(Ordering::SeqCst)
+        self.inner.paused.load(Ordering::SeqCst)
     }
 
     pub fn start(&self) {
-        self.paused.store(false, Ordering::SeqCst);
+        self.inner.paused.store(false, Ordering::SeqCst);
     }
 
     pub fn pause(&self) {
-        self.paused.store(true, Ordering::SeqCst);
+        self.inner.paused.store(true, Ordering::SeqCst);
     }
 
     pub fn loop_(&self) -> bool {
-        self.controller.loop_()
+        self.inner.controller.loop_()
     }
 
     pub fn set_loop(&self, loop_: bool) {
-        self.controller.set_loop(loop_);
+        self.inner.controller.set_loop(loop_);
     }
 
     pub fn loop_start(&self) -> f64 {
-        self.controller.loop_start()
+        self.inner.controller.loop_start()
     }
 
     pub fn set_loop_start(&self, start_time: f64) {
-        self.controller.set_loop_start(start_time);
+        self.inner.controller.set_loop_start(start_time);
     }
 
     pub fn loop_end(&self) -> f64 {
-        self.controller.loop_end()
+        self.inner.controller.loop_end()
     }
 
     pub fn set_loop_end(&self, end_time: f64) {
-        self.controller.set_loop_end(end_time);
+        self.inner.controller.set_loop_end(end_time);
     }
 
     pub fn seek(&self, position: f64) {
-        self.controller.seek(position);
+        self.inner.controller.seek(position);
     }
 
     /// Seek to a current_time offset in the media buffer
     fn do_seek(&mut self, ts: f64) {
         if ts == 0. {
-            self.current_time = 0.;
-            self.buffer_index = 0;
+            self.inner.current_time = 0.;
+            self.inner.buffer_index = 0;
             return;
         }
 
-        self.current_time = 0.;
+        self.inner.current_time = 0.;
 
         // seek within currently buffered data
-        for (i, buf) in self.buffer.iter().enumerate() {
-            self.buffer_index = i;
-            self.current_time += buf.duration();
-            if self.current_time > ts {
+        for (i, buf) in self.inner.buffer.iter().enumerate() {
+            self.inner.buffer_index = i;
+            self.inner.current_time += buf.duration();
+            if self.inner.current_time > ts {
                 return; // seeking complete
             }
         }
@@ -171,20 +181,20 @@ impl MediaElement {
         loop {
             match self.load_next() {
                 Some(Ok(buf)) => {
-                    self.current_time += buf.duration();
-                    if self.current_time > ts {
+                    self.inner.current_time += buf.duration();
+                    if self.inner.current_time > ts {
                         return; // seeking complete
                     }
                 }
                 Some(Err(e)) if e.is::<BufferDepletedError>() => {
                     // mark incomplete seeking
-                    self.seeking = Some(ts);
+                    self.inner.seeking = Some(ts);
                     return;
                 }
                 // stop seeking if stream finished or errors occur
                 _ => {
                     // prevent playback of last available frame
-                    self.buffer_index += 1;
+                    self.inner.buffer_index += 1;
                     return;
                 }
             }
@@ -192,8 +202,8 @@ impl MediaElement {
     }
 
     fn load_next(&mut self) -> Option<Result<AudioBuffer, Box<dyn Error + Send + Sync>>> {
-        if !self.buffer_complete {
-            let next = match self.input.try_recv() {
+        if !self.inner.buffer_complete {
+            let next = match self.inner.input.try_recv() {
                 Err(_) => return Some(Err(Box::new(BufferDepletedError {}))),
                 Ok(v) => v,
             };
@@ -201,18 +211,18 @@ impl MediaElement {
             match next {
                 Some(Err(e)) => {
                     // no further streaming
-                    self.buffer_complete = true;
+                    self.inner.buffer_complete = true;
 
                     return Some(Err(e));
                 }
                 Some(Ok(data)) => {
-                    self.buffer.push(data.clone());
-                    self.buffer_index += 1;
-                    self.current_time += data.duration();
+                    self.inner.buffer.push(data.clone());
+                    self.inner.buffer_index += 1;
+                    self.inner.current_time += data.duration();
                     return Some(Ok(data));
                 }
                 None => {
-                    self.buffer_complete = true;
+                    self.inner.buffer_complete = true;
                     return None;
                 }
             }
@@ -231,24 +241,24 @@ impl Iterator for MediaElement {
         }
 
         // handle seeking
-        if let Some(seek) = self.controller.should_seek() {
+        if let Some(seek) = self.inner.controller.should_seek() {
             self.do_seek(seek);
-        } else if let Some(seek) = self.seeking.take() {
+        } else if let Some(seek) = self.inner.seeking.take() {
             self.do_seek(seek);
         }
-        if self.seeking.is_some() {
+        if self.inner.seeking.is_some() {
             return Some(Err(Box::new(BufferDepletedError {})));
         }
 
         // handle looping
-        if self.controller.loop_() && self.current_time > self.controller.loop_end() {
-            self.do_seek(self.controller.loop_start());
+        if self.inner.controller.loop_() && self.inner.current_time > self.inner.controller.loop_end() {
+            self.do_seek(self.inner.controller.loop_start());
         }
 
         // read from cache if available
-        if let Some(data) = self.buffer.get(self.buffer_index) {
-            self.buffer_index += 1;
-            self.current_time += data.duration();
+        if let Some(data) = self.inner.buffer.get(self.inner.buffer_index) {
+            self.inner.buffer_index += 1;
+            self.inner.current_time += data.duration();
             return Some(Ok(data.clone()));
         }
 
@@ -265,12 +275,12 @@ impl Iterator for MediaElement {
         };
 
         // signal depleted if we're not looping
-        if !self.controller.loop_() || self.buffer.is_empty() {
+        if !self.inner.controller.loop_() || self.inner.buffer.is_empty() {
             return None;
         }
 
         // loop and get next
-        self.do_seek(self.controller.loop_start());
+        self.do_seek(self.inner.controller.loop_start());
         self.next()
     }
 }
