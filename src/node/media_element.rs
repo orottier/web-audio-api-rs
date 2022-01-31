@@ -27,7 +27,7 @@ pub struct MediaElementAudioSourceOptions<'a> {
 ///
 /// # Usage
 ///
-/// ```rust
+/// ```no_run
 /// use web_audio_api::context::{AudioContext, BaseAudioContext};
 /// use web_audio_api::media::{MediaDecoder, MediaElement};
 /// use web_audio_api::node::{AudioNode};
