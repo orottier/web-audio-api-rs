@@ -9,7 +9,7 @@ fn main() {
     // setup background music:
     // read from local file
     let file = File::open("samples/major-scale.ogg").unwrap();
-    let buffer = context.decode_audio_data(file).unwrap();
+    let buffer = context.decode_audio_data_sync(file).unwrap();
 
     // create a biquad filter
     let biquad = context.create_biquad_filter();
@@ -23,7 +23,6 @@ fn main() {
     src.set_buffer(buffer);
     src.set_loop(true);
     src.start();
-
 
     let mut frequency_hz = [250., 500.0, 750.0, 1000., 1500.0, 2000.0, 4000.0];
     let mut mag_response = [0.; 7];

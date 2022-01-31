@@ -44,7 +44,7 @@ impl Default for DelayOptions {
 /// ```no_run
 /// use std::fs::File;
 /// use web_audio_api::context::{BaseAudioContext, AudioContext};
-/// use web_audio_api::node::AudioNode;
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// // create an `AudioContext` and load a sound file
 /// let context = AudioContext::new(None);

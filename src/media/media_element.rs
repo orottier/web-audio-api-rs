@@ -1,66 +1,19 @@
 use crossbeam_channel::{self, Receiver};
 use std::error::Error;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::buffer::AudioBuffer;
 use crate::control::Controller;
-use crate::{BufferDepletedError, AtomicF64};
+use crate::{AtomicF64, BufferDepletedError};
 
 use super::MediaStream;
 
-/// Wrapper for [`MediaStream`]s, for buffering and playback controls.
-/// Mimic API of HTMLMediaElement: <https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/>
-///
-/// Warning: this abstraction is not part of the Web Audio API and does not aim at
-/// implementing the full HTMLMediaElement API. It is only provided for convenience
-/// reasons.
-///
-/// Currently, the media element will start a new thread to buffer all available media. (todo
-/// async executor)
-///
-///
-/// # Example
-///
-/// ```rust
-/// use web_audio_api::SampleRate;
-/// use web_audio_api::context::{AudioContext, BaseAudioContext};
-/// use web_audio_api::buffer::AudioBuffer;
-/// use web_audio_api::media::MediaElement;
-/// use web_audio_api::node::AudioControllableSourceNode;
-///
-/// // create a new buffer with a few samples of silence
-/// let samples = vec![vec![0.; 20]];
-/// let silence = AudioBuffer::from(samples, SampleRate(44_100));
-///
-/// // create a sequence of this buffer
-/// let sequence = std::iter::repeat(silence).take(3);
-///
-/// // the sequence should actually yield `Result<AudioBuffer, _>`s
-/// let media = sequence.map(|b| Ok(b));
-///
-/// // media is now a proper `MediaStream`, we can wrap it in a `MediaElement`
-/// let mut element = MediaElement::new(media);
-/// element.set_loop(true);
-///
-/// // the media element provides an infinite iterator now
-/// for buf in element.take(5) {
-///   match buf {
-///       Ok(b) => {
-///           assert_eq!(
-///               b.get_channel_data(0)[..],
-///               vec![0.; 20][..]
-///           )
-///       }
-///       Err(e) => (),
-///   }
-/// }
-/// ```
 struct MediaElementInner {
     /// input media stream
     input: Receiver<Option<Result<AudioBuffer, Box<dyn Error + Send + Sync>>>>,
     /// media buffer
-    buffer: Vec<AudioBuffer>,
+    buffer: Mutex<Vec<AudioBuffer>>,
     /// true when input stream is finished
     buffer_complete: AtomicBool,
     /// current position in buffer when filling/looping
@@ -72,12 +25,60 @@ struct MediaElementInner {
     /// state of the element
     paused: AtomicBool,
     /// indicates if we are currently seeking but the data is not available
-    seeking: Option<AtomicF64>,
+    // treat NaN as niche: no seeking
+    seeking: AtomicF64,
 }
 
-#[derive(Clone)]
+/// Simple Audio Player
+///
+/// Wrapper for [`MediaStream`]s, for buffering and playback controls.
+/// Mimic API of HTMLMediaElement: <https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/>
+///
+/// Currently, the media element will start a new thread to buffer all available media. (todo
+/// async executor)
+///
+/// # Warning
+///
+/// This abstraction is not part of the Web Audio API and does not aim at implementing
+/// the full HTMLMediaElement API. It is only provided for convenience reasons.
+///
+/// # Example
+///
+/// ```rust
+/// use web_audio_api::context::{AudioContext, BaseAudioContext};
+/// use web_audio_api::media::{MediaDecoder, MediaElement};
+/// use web_audio_api::node::{AudioNode};
+///
+/// // build a decoded audio stream the decoder
+/// let file = std::fs::File::open("samples/major-scale.ogg").unwrap();
+/// let stream = MediaDecoder::try_new(file).unwrap();
+/// // wrap in a `MediaElement`
+/// let media_element = MediaElement::new(stream);
+/// // pipe the media element into the web audio graph
+/// let context = AudioContext::new(None);
+/// let node = context.create_media_element_source(&media_element);
+/// node.connect(&context.destination());
+/// // start media playback
+/// media_element.start();
+/// ```
+///
 pub struct MediaElement {
     inner: Arc<MediaElementInner>,
+}
+
+// In current implementation if the media element is passed twice to a
+// `MediaElementAudioSourceNode`, the stream is played at double speed.
+// therefore we panic if MediaElement is cloned more than once.
+impl Clone for MediaElement {
+    fn clone(&self) -> Self {
+        if Arc::strong_count(&self.inner) >= 2 {
+            panic!("Cannot use MediaElement in MediaElementAudioSourceNode more than once");
+        }
+
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 impl MediaElement {
@@ -100,13 +101,13 @@ impl MediaElement {
 
         let media_element_inner = MediaElementInner {
             input: receiver,
-            buffer: vec![],
+            buffer: Mutex::new(vec![]),
             buffer_complete: AtomicBool::new(false),
             buffer_index: AtomicUsize::new(0),
             controller: Controller::new(),
             current_time: AtomicF64::new(0.),
             paused: AtomicBool::new(true),
-            seeking: None,
+            seeking: AtomicF64::new(f64::NAN),
         };
 
         Self {
@@ -115,7 +116,7 @@ impl MediaElement {
     }
 
     pub fn current_time(&self) -> f64 {
-        self.inner.current_time
+        self.inner.current_time.load()
     }
 
     pub fn paused(&self) -> bool {
@@ -138,21 +139,23 @@ impl MediaElement {
         self.inner.controller.set_loop(loop_);
     }
 
-    pub fn loop_start(&self) -> f64 {
-        self.inner.controller.loop_start()
-    }
+    // @note - do not expose, not part of MediaElement spec
+    // will simplify later refactoring / improvements
+    // pub fn loop_start(&self) -> f64 {
+    //     self.inner.controller.loop_start()
+    // }
 
-    pub fn set_loop_start(&self, start_time: f64) {
-        self.inner.controller.set_loop_start(start_time);
-    }
+    // pub fn set_loop_start(&self, start_time: f64) {
+    //     self.inner.controller.set_loop_start(start_time);
+    // }
 
-    pub fn loop_end(&self) -> f64 {
-        self.inner.controller.loop_end()
-    }
+    // pub fn loop_end(&self) -> f64 {
+    //     self.inner.controller.loop_end()
+    // }
 
-    pub fn set_loop_end(&self, end_time: f64) {
-        self.inner.controller.set_loop_end(end_time);
-    }
+    // pub fn set_loop_end(&self, end_time: f64) {
+    //     self.inner.controller.set_loop_end(end_time);
+    // }
 
     pub fn seek(&self, position: f64) {
         self.inner.controller.seek(position);
@@ -161,18 +164,19 @@ impl MediaElement {
     /// Seek to a current_time offset in the media buffer
     fn do_seek(&mut self, ts: f64) {
         if ts == 0. {
-            self.inner.current_time = 0.;
-            self.inner.buffer_index = 0;
+            self.inner.current_time.store(0.);
+            self.inner.buffer_index.store(0, Ordering::SeqCst);
             return;
         }
 
-        self.inner.current_time = 0.;
+        self.inner.current_time.store(0.);
 
         // seek within currently buffered data
-        for (i, buf) in self.inner.buffer.iter().enumerate() {
-            self.inner.buffer_index = i;
-            self.inner.current_time += buf.duration();
-            if self.inner.current_time > ts {
+        for (i, buf) in self.inner.buffer.lock().unwrap().iter().enumerate() {
+            self.inner.buffer_index.store(i, Ordering::SeqCst);
+            self.inner.current_time.fetch_add(buf.duration());
+
+            if self.inner.current_time.load() > ts {
                 return; // seeking complete
             }
         }
@@ -181,20 +185,21 @@ impl MediaElement {
         loop {
             match self.load_next() {
                 Some(Ok(buf)) => {
-                    self.inner.current_time += buf.duration();
-                    if self.inner.current_time > ts {
+                    self.inner.current_time.fetch_add(buf.duration());
+
+                    if self.inner.current_time.load() > ts {
                         return; // seeking complete
                     }
                 }
                 Some(Err(e)) if e.is::<BufferDepletedError>() => {
                     // mark incomplete seeking
-                    self.inner.seeking = Some(ts);
+                    self.inner.seeking.store(ts);
                     return;
                 }
                 // stop seeking if stream finished or errors occur
                 _ => {
                     // prevent playback of last available frame
-                    self.inner.buffer_index += 1;
+                    self.inner.buffer_index.fetch_add(1, Ordering::SeqCst);
                     return;
                 }
             }
@@ -202,7 +207,7 @@ impl MediaElement {
     }
 
     fn load_next(&mut self) -> Option<Result<AudioBuffer, Box<dyn Error + Send + Sync>>> {
-        if !self.inner.buffer_complete {
+        if !self.inner.buffer_complete.load(Ordering::SeqCst) {
             let next = match self.inner.input.try_recv() {
                 Err(_) => return Some(Err(Box::new(BufferDepletedError {}))),
                 Ok(v) => v,
@@ -211,18 +216,18 @@ impl MediaElement {
             match next {
                 Some(Err(e)) => {
                     // no further streaming
-                    self.inner.buffer_complete = true;
+                    self.inner.buffer_complete.store(true, Ordering::SeqCst);
 
                     return Some(Err(e));
                 }
                 Some(Ok(data)) => {
-                    self.inner.buffer.push(data.clone());
-                    self.inner.buffer_index += 1;
-                    self.inner.current_time += data.duration();
+                    self.inner.buffer.lock().unwrap().push(data.clone());
+                    self.inner.buffer_index.fetch_add(1, Ordering::SeqCst);
+                    self.inner.current_time.fetch_add(data.duration());
                     return Some(Ok(data));
                 }
                 None => {
-                    self.inner.buffer_complete = true;
+                    self.inner.buffer_complete.store(true, Ordering::SeqCst);
                     return None;
                 }
             }
@@ -243,22 +248,33 @@ impl Iterator for MediaElement {
         // handle seeking
         if let Some(seek) = self.inner.controller.should_seek() {
             self.do_seek(seek);
-        } else if let Some(seek) = self.inner.seeking.take() {
+        } else if !self.inner.seeking.load().is_nan() {
+            let seek = self.inner.seeking.swap(f64::NAN);
             self.do_seek(seek);
         }
-        if self.inner.seeking.is_some() {
+
+        // didn't manage to load enough data
+        if !self.inner.seeking.load().is_nan() {
             return Some(Err(Box::new(BufferDepletedError {})));
         }
 
         // handle looping
-        if self.inner.controller.loop_() && self.inner.current_time > self.inner.controller.loop_end() {
+        if self.inner.controller.loop_()
+            && self.inner.current_time.load() > self.inner.controller.loop_end()
+        {
             self.do_seek(self.inner.controller.loop_start());
         }
 
         // read from cache if available
-        if let Some(data) = self.inner.buffer.get(self.inner.buffer_index) {
-            self.inner.buffer_index += 1;
-            self.inner.current_time += data.duration();
+        if let Some(data) = self
+            .inner
+            .buffer
+            .lock()
+            .unwrap()
+            .get(self.inner.buffer_index.load(Ordering::SeqCst))
+        {
+            self.inner.buffer_index.fetch_add(1, Ordering::SeqCst);
+            self.inner.current_time.fetch_add(data.duration());
             return Some(Ok(data.clone()));
         }
 
@@ -275,7 +291,7 @@ impl Iterator for MediaElement {
         };
 
         // signal depleted if we're not looping
-        if !self.inner.controller.loop_() || self.inner.buffer.is_empty() {
+        if !self.inner.controller.loop_() || self.inner.buffer.lock().unwrap().is_empty() {
             return None;
         }
 

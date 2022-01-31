@@ -1,4 +1,4 @@
-//! Microphone input and media decoding (OGG, WAV, FLAC, ..)
+//! Convenience abstractions that are not part of the WebAudio API
 
 mod decoding;
 pub use decoding::MediaDecoder;
@@ -63,4 +63,3 @@ impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>> + Sen
     MediaStream for M
 {
 }
-

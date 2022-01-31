@@ -1,5 +1,3 @@
-//! User controls for audio playback (play/pause/loop)
-
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -12,12 +10,6 @@ pub(crate) struct Scheduler {
     stop: Arc<AtomicF64>,
 }
 
-// pub(crate) enum ScheduledState {
-//     NotStarted,
-//     Active,
-//     Ended,
-// }
-
 impl Scheduler {
     /// Create a new Scheduler. Initial playback state will be: inactive.
     pub fn new() -> Self {
@@ -26,16 +18,6 @@ impl Scheduler {
             stop: Arc::new(AtomicF64::new(f64::MAX)),
         }
     }
-
-    /// Check if the stream should be active at this timestamp
-    // pub fn state(&self, ts: f64) -> ScheduledState {
-    //     if ts < self.start.load() {
-    //         return ScheduledState::NotStarted;
-    //     } else if ts >= self.stop.load() {
-    //         return ScheduledState::Ended;
-    //     }
-    //     ScheduledState::Active
-    // }
 
     /// Retrieve playback start value
     pub fn get_start_at(&self) -> f64 {

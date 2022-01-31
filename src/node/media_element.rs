@@ -14,12 +14,40 @@ pub struct MediaElementAudioSourceOptions<'a> {
     pub media_element: &'a MediaElement,
 }
 
-/// An audio source from a [`MediaElement`] (e.g. .ogg, .wav, .mp3 files)
+/// An audio source for piping a [`MediaElement`] (e.g. .ogg, .wav, .mp3 files)
+/// in a WebAudio graph.
 ///
 /// The media element will take care of buffering of the stream so the render thread never blocks.
-/// This also allows for playback controls (pause, looping, playback rate, etc.)
 ///
-/// Note: do not forget to `start()` the node.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/MediaElementAudioSourceNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#MediaElementAudioSourceNode>
+/// - see also: [`BaseAudioContext::create_media_element_source`](crate::context::BaseAudioContext::create_media_element_source)
+///
+///
+/// # Usage
+///
+/// ```rust
+/// use web_audio_api::context::{AudioContext, BaseAudioContext};
+/// use web_audio_api::media::{MediaDecoder, MediaElement};
+/// use web_audio_api::node::{AudioNode};
+///
+/// // build a decoded audio stream the decoder
+/// let file = std::fs::File::open("samples/major-scale.ogg").unwrap();
+/// let stream = MediaDecoder::try_new(file).unwrap();
+/// // wrap in a `MediaElement`
+/// let media_element = MediaElement::new(stream);
+/// // pipe the media element into the web audio graph
+/// let context = AudioContext::new(None);
+/// let node = context.create_media_element_source(&media_element);
+/// node.connect(&context.destination());
+/// // start media playback
+/// media_element.start();
+/// ```
+/// # Examples
+///
+/// - `cargo run --release --example media_element`
+///
 pub struct MediaElementAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
@@ -47,15 +75,12 @@ impl AudioNode for MediaElementAudioSourceNode {
 impl MediaElementAudioSourceNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: MediaElementAudioSourceOptions) -> Self {
         context.base().register(move |registration| {
-            // let controller = options.media_element.controller().clone();
-            // let scheduler = controller.scheduler().clone();
             let channel_config = ChannelConfigOptions::default().into();
             let media_element = options.media_element.clone();
 
             let node = MediaElementAudioSourceNode {
                 registration,
                 channel_config,
-                // controller,
             };
 
             let resampler = Resampler::new(

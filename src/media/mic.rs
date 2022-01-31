@@ -21,6 +21,11 @@ use crossbeam_channel::{Receiver, TryRecvError};
 /// It implements the [`MediaStream`](crate::media::MediaStream) trait so can be used inside a
 /// [`MediaStreamAudioSourceNode`](crate::node::MediaStreamAudioSourceNode)
 ///
+/// # Warning
+///
+/// This abstraction is not part of the Web Audio API and does not aim at implementing
+/// the full MediaDevices API. It is only provided for convenience reasons.
+///
 /// # Example
 ///
 /// ```no_run

@@ -60,7 +60,7 @@ struct AudioBufferMessage(AudioBuffer);
 /// ```no_run
 /// use std::fs::File;
 /// use web_audio_api::context::{BaseAudioContext, AudioContext};
-/// use web_audio_api::node::AudioNode;
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// // create an `AudioContext`
 /// let context = AudioContext::new(None);
@@ -131,7 +131,6 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
         self.controller.scheduler().stop_at(when);
     }
 }
-
 
 impl AudioBufferSourceNode {
     /// Create a new [`AudioBufferSourceNode`] instance
@@ -216,7 +215,7 @@ impl AudioBufferSourceNode {
         })
     }
 
-   /// Start the playback at the given time and with a given offset
+    /// Start the playback at the given time and with a given offset
     pub fn start_at_with_offset(&self, start: f64, offset: f64) {
         self.start_at_with_offset_and_duration(start, offset, f64::MAX);
     }
@@ -254,7 +253,6 @@ impl AudioBufferSourceNode {
             .send(AudioBufferMessage(clone))
             .expect("Sending AudioBufferMessage failed");
     }
-
 
     /// K-rate [`AudioParam`] that defines the speed at which the [`AudioBuffer`]
     /// will be played, e.g.:

@@ -91,7 +91,7 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
     }
 
     fn stop(&self) {
-    let when = self.registration.context().current_time();
+        let when = self.registration.context().current_time();
         self.stop_at(when);
     }
 

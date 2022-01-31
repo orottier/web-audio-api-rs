@@ -61,28 +61,31 @@ impl<R: Read + Send> symphonia::core::io::MediaSource for MediaInput<R> {
 ///
 /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
 ///
-/// # Usage
+/// # Warning
 ///
-/// ```no_run
-/// use web_audio_api::media::{MediaElement, MediaDecoder};
+/// This abstraction is not part of the Web Audio API, it is only provided for
+/// convenience reasons.
+///
+/// # Example
+///
+/// ```rust
 /// use web_audio_api::context::{AudioContext, BaseAudioContext};
-/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+/// use web_audio_api::media::{MediaDecoder, MediaElement};
+/// use web_audio_api::node::{AudioNode};
 ///
-/// // construct the decoder
+/// // build a decoded audio stream the decoder
 /// let file = std::fs::File::open("samples/major-scale.ogg").unwrap();
-/// let media = MediaDecoder::try_new(file).unwrap();
-///
-/// // Wrap in a `MediaElement` so buffering/decoding does not take place on the render thread
-/// let element = MediaElement::new(media);
-///
-/// // register the media element node
+/// let stream = MediaDecoder::try_new(file).unwrap();
+/// // wrap in a `MediaElement`
+/// let media_element = MediaElement::new(stream);
+/// // pipe the media element into the web audio graph
 /// let context = AudioContext::new(None);
-/// let node = context.create_media_element_source(element);
-///
-/// // play media
+/// let node = context.create_media_element_source(&media_element);
 /// node.connect(&context.destination());
-/// node.start();
+/// // start media playback
+/// media_element.start();
 /// ```
+///
 pub struct MediaDecoder {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,

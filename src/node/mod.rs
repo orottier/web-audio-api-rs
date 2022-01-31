@@ -298,47 +298,15 @@ pub trait AudioScheduledSourceNode {
     fn stop_at(&self, when: f64);
 }
 
-/// Interface of source nodes, controlling pause/loop/offsets.
-// pub trait AudioControllableSourceNode {
-//     fn controller(&self) -> &Controller;
-
-//     fn loop_(&self) -> bool {
-//         self.controller().loop_()
-//     }
-
-//     fn set_loop(&self, loop_: bool) {
-//         self.controller().set_loop(loop_)
-//     }
-
-//     fn loop_start(&self) -> f64 {
-//         self.controller().loop_start()
-//     }
-
-//     fn set_loop_start(&self, loop_start: f64) {
-//         self.controller().set_loop_start(loop_start)
-//     }
-
-//     fn loop_end(&self) -> f64 {
-//         self.controller().loop_end()
-//     }
-
-//     fn set_loop_end(&self, loop_end: f64) {
-//         self.controller().set_loop_end(loop_end)
-//     }
-
-//     fn seek(&self, timestamp: f64) {
-//         self.controller().seek(timestamp)
-//     }
-// }
-
+// `MediaStreamRenderer` is internally used by `MediaElementAudioSourceNode` and
+// `MediaStreamAudioSourceNode`.
 struct MediaStreamRenderer<R> {
     stream: R,
-    // scheduler: Scheduler,
     finished: bool,
 }
 
 impl<R> MediaStreamRenderer<R> {
-    fn new(stream: R/*, scheduler: Scheduler*/) -> Self {
+    fn new(stream: R) -> Self {
         Self {
             stream,
             // scheduler,

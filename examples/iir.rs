@@ -6,7 +6,7 @@ fn main() {
     let context = AudioContext::new(None);
 
     let file = File::open("samples/major-scale.ogg").unwrap();
-    let buffer = context.decode_audio_data(file).unwrap();
+    let buffer = context.decode_audio_data_sync(file).unwrap();
 
     let feedforward = vec![
         0.000016636797512844526,
