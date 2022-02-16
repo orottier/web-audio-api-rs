@@ -126,7 +126,7 @@ pub trait BaseAudioContext {
     /// // await result from the decoder thread
     /// let decode_buffer_result = handle.join();
     /// ```
-    fn decode_audio_data_sync<R: std::io::Read + Send + 'static>(
+    fn decode_audio_data_sync<R: std::io::Read + Send + Sync + 'static>(
         &self,
         input: R,
     ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
