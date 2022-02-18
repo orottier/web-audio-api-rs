@@ -571,6 +571,7 @@ impl AudioBufferSourceRenderer {
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
+    use std::convert::TryFrom;
     use std::f32::consts::PI;
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
@@ -732,7 +733,9 @@ mod tests {
 
             // 1Hz sine at different sample rates
             let buf_sr = *sr;
-            let mut buffer = context.create_buffer(1, buf_sr, SampleRate(buf_sr as u32));
+            // safe cast for sample rate, see discussion at #113
+            let sample_rate = SampleRate(u32::try_from(buf_sr).unwrap());
+            let mut buffer = context.create_buffer(1, buf_sr, sample_rate);
             let mut sine = vec![];
 
             for i in 0..buf_sr {

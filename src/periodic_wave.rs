@@ -281,7 +281,7 @@ mod tests {
             expected.push(sample);
         }
 
-        assert_float_eq!(result[..], expected[..], abs_all <= 0.);
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-6);
     }
 
     #[test]
@@ -302,7 +302,7 @@ mod tests {
             expected.push(sample);
         }
 
-        assert_float_eq!(result[..], expected[..], abs_all <= 0.);
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-6);
     }
 
     #[test]
@@ -344,6 +344,6 @@ mod tests {
 
         PeriodicWave::normalize(&mut expected);
 
-        assert_float_eq!(result[..], expected[..], abs_all <= 0.);
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-6);
     }
 }
