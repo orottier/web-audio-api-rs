@@ -374,7 +374,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         }
 
         // If the buffer has not been set wait for it.
-        // @see - `set_buffer` tries to acquire the buffer if the source already started
         let buffer = match &self.buffer {
             None => {
                 output.make_silent();
@@ -735,6 +734,8 @@ mod tests {
             let buf_sr = *sr;
             let mut buffer = context.create_buffer(1, buf_sr, SampleRate(buf_sr as u32));
             let mut sine = vec![];
+
+            println!("{:?}", buffer.sample_rate_raw());
 
             for i in 0..buf_sr {
                 let phase = i as f32 / buf_sr as f32 * 2. * PI;

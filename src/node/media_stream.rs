@@ -1,7 +1,7 @@
-use crate::buffer::Resampler;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::control::Scheduler;
 use crate::media::MediaStream;
+use crate::media::Resampler;
 
 use crate::RENDER_QUANTUM_SIZE;
 

@@ -94,7 +94,6 @@ impl From<u32> for OscillatorType {
 /// # Usage
 ///
 /// ```no_run
-/// use std::fs::File;
 /// use web_audio_api::context::{BaseAudioContext, AudioContext};
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
