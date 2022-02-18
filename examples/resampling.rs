@@ -1,6 +1,6 @@
 use std::fs::File;
 use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext};
-use web_audio_api::node::AudioNode;
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
     let audio_context = AudioContext::new(None);
