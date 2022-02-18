@@ -335,6 +335,7 @@ impl ChannelData {
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
+    use std::convert::TryFrom;
     use std::f32::consts::PI;
 
     use super::*;
@@ -596,7 +597,7 @@ mod tests {
             let right_chan = ChannelData::from(right);
             let mut buffer = AudioBuffer::from_channels(
                 vec![left_chan, right_chan],
-                SampleRate(source_sr as u32),
+                SampleRate(u32::try_from(source_sr).unwrap()),
             );
             buffer.resample(SampleRate(target_sr as u32));
 
