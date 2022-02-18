@@ -735,8 +735,6 @@ mod tests {
             let mut buffer = context.create_buffer(1, buf_sr, SampleRate(buf_sr as u32));
             let mut sine = vec![];
 
-            println!("{:?}", buffer.sample_rate_raw());
-
             for i in 0..buf_sr {
                 let phase = i as f32 / buf_sr as f32 * 2. * PI;
                 let sample = phase.sin();

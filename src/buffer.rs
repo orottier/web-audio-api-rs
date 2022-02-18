@@ -181,12 +181,6 @@ impl AudioBuffer {
         &mut self.channels[index]
     }
 
-    /// Modify every channel in the same way
-    pub(crate) fn modify_channels<F: Fn(&mut ChannelData)>(&mut self, fun: F) {
-        // todo, optimize for Arcs that are equal
-        self.channels.iter_mut().for_each(fun)
-    }
-
     /// Extends an AudioBuffer with the contents of another.
     ///
     /// This function will panic if the sample_rate and channel_count are not equal
@@ -230,9 +224,10 @@ impl AudioBuffer {
         AudioBuffer::from_channels(channels, sample_rate)
     }
 
-    /// Resample to the desired sample rate.
-    ///
-    /// This changes the sample_length of the buffer.
+    /// Resample to the desired sample rate. The method performs a simple linear
+    /// interpolation an keep the first and last sample intacts. The new number
+    /// of samples is always ceiled according the ratio defined by old and new
+    /// sample rates.
     //
     // ```
     // use web_audio_api::SampleRate;
@@ -246,7 +241,7 @@ impl AudioBuffer {
     //
     // assert_eq!(
     //     buffer.get_channel_data(0)[..],
-    //     vec![1., 1., 2., 2., 3., 3., 4., 4., 5., 5.][..]
+    //     vec![1.0, 1.4444444, 1.8888888, 2.3333335, 2.7777777, 3.2222223, 3.6666667, 4.111111, 4.5555553, 5.0][..]
     // );
     //
     // assert_eq!(buffer.sample_rate().0, 96_000);
@@ -256,22 +251,41 @@ impl AudioBuffer {
             return;
         }
 
-        let rate = sample_rate.0 as f32 / self.sample_rate.0 as f32;
-        self.modify_channels(|channel_data| {
-            let mut current = 0;
-            let resampled = channel_data
-                .data
-                .iter()
-                .enumerate()
-                .flat_map(|(i, v)| {
-                    let target = ((i + 1) as f32 * rate) as usize;
-                    let take = target - current.min(target);
-                    current += take;
-                    std::iter::repeat(*v).take(take)
-                })
-                .collect();
-            channel_data.data = Arc::new(resampled);
-        });
+        let source_sr = self.sample_rate.0 as f64;
+        let target_sr = sample_rate.0 as f64;
+        let ratio = target_sr / source_sr;
+        let source_length = self.length();
+        let target_length = (self.length() as f64 * ratio).ceil() as usize;
+
+        let num_channels = self.number_of_channels();
+        let mut resampled = Vec::<Vec<f32>>::with_capacity(num_channels);
+        resampled.resize_with(num_channels, || Vec::<f32>::with_capacity(target_length));
+
+        for i in 0..target_length {
+            let position = i as f64 / (target_length - 1) as f64; // [0., 1.]
+            let playhead = position * (source_length - 1) as f64;
+            let playhead_floored = playhead.floor();
+            let prev_index = playhead_floored as usize;
+            let next_index = (prev_index + 1).min(source_length - 1);
+
+            let k = (playhead - playhead_floored) as f32;
+            let k_inv = 1. - k;
+
+            for (channel, resampled_data) in resampled.iter_mut().enumerate() {
+                let prev_sample = self.channels[channel].data[prev_index];
+                let next_sample = self.channels[channel].data[next_index];
+
+                let value = k_inv * prev_sample + k * next_sample;
+                resampled_data.push(value);
+            }
+        }
+
+        self.channels
+            .iter_mut()
+            .zip(resampled)
+            .for_each(|(channel_data, resampled_data)| {
+                channel_data.data = Arc::new(resampled_data);
+            });
 
         self.sample_rate = sample_rate;
     }
@@ -321,6 +335,7 @@ impl ChannelData {
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
+    use std::f32::consts::PI;
 
     use super::*;
 
@@ -526,28 +541,87 @@ mod tests {
     }
 
     #[test]
-    fn test_resample_upmix() {
+    fn test_upsample() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(100));
         buffer.resample(SampleRate(200));
+
+        let mut expected = [0.; 10];
+        let incr = 4. / 9.; // (5 - 1) / (10 - 1)
+
+        for (i, value) in expected.iter_mut().enumerate() {
+            *value = 1. + incr * i as f32;
+        }
+
         assert_float_eq!(
             buffer.channel_data(0).as_slice(),
-            &[1., 1., 2., 2., 3., 3., 4., 4., 5., 5.,][..],
-            abs_all <= 0.
+            &expected[..],
+            abs_all <= 1e-6
         );
+
         assert_eq!(buffer.sample_rate_raw().0, 200);
     }
 
     #[test]
-    fn test_resample_downmix() {
+    fn test_downsample() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(200));
         buffer.resample(SampleRate(100));
+
         assert_float_eq!(
             buffer.channel_data(0).as_slice(),
-            &[2., 4.][..],
+            &[1., 3., 5.][..],
             abs_all <= 0.
         );
+
         assert_eq!(buffer.sample_rate_raw().0, 100);
+    }
+
+    #[test]
+    fn test_resample_stereo() {
+        [22500, 38000, 48000, 96000].iter().for_each(|sr| {
+            let source_sr = *sr;
+            let target_sr = 44_100;
+
+            let mut left = Vec::<f32>::with_capacity(source_sr);
+            let mut right = Vec::<f32>::with_capacity(source_sr);
+
+            for i in 0..source_sr {
+                let phase = i as f32 / source_sr as f32 * 2. * PI;
+                left.push(phase.sin());
+                right.push(phase.cos());
+            }
+
+            let left_chan = ChannelData::from(left);
+            let right_chan = ChannelData::from(right);
+            let mut buffer = AudioBuffer::from_channels(
+                vec![left_chan, right_chan],
+                SampleRate(source_sr as u32),
+            );
+            buffer.resample(SampleRate(target_sr as u32));
+
+            let mut expected_left = vec![];
+            let mut expected_right = vec![];
+
+            for i in 0..target_sr {
+                let phase = i as f32 / target_sr as f32 * 2. * PI;
+                expected_left.push(phase.sin());
+                expected_right.push(phase.cos());
+            }
+
+            assert_float_eq!(
+                buffer.get_channel_data(0)[..],
+                &expected_left[..],
+                abs_all <= 1e-3
+            );
+
+            assert_float_eq!(
+                buffer.get_channel_data(1)[..],
+                &expected_right[..],
+                abs_all <= 1e-3
+            );
+
+            assert_eq!(buffer.sample_rate_raw().0, target_sr);
+        });
     }
 }
