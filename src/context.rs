@@ -126,7 +126,7 @@ pub trait BaseAudioContext {
     /// // await result from the decoder thread
     /// let decode_buffer_result = handle.join();
     /// ```
-    fn decode_audio_data_sync<R: std::io::Read + Send + 'static>(
+    fn decode_audio_data_sync<R: std::io::Read + Send + Sync + 'static>(
         &self,
         input: R,
     ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
@@ -950,5 +950,19 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
         let file = std::fs::File::open("samples/corrupt.wav").unwrap();
         assert!(context.decode_audio_data_sync(file).is_err());
+    }
+
+    #[test]
+    fn test_create_buffer() {
+        let number_of_channels = 3;
+        let length = 2000;
+        let sample_rate = SampleRate(96_000);
+
+        let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
+        let buffer = context.create_buffer(number_of_channels, length, sample_rate);
+
+        assert_eq!(buffer.number_of_channels(), 3);
+        assert_eq!(buffer.length(), 2000);
+        assert_float_eq!(buffer.sample_rate(), 96000., abs_all <= 0.);
     }
 }

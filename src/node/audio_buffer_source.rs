@@ -340,7 +340,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // single output node
         let output = &mut outputs[0];
 
-        let dt = 1. / sample_rate.0 as f64;
+        let sample_rate = sample_rate.0 as f64;
+        let dt = 1. / sample_rate;
         let num_frames = RENDER_QUANTUM_SIZE;
         let next_block_time = timestamp + dt * num_frames as f64;
 
@@ -350,13 +351,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             self.internal_buffer.resize(buffer.number_of_channels(), 0.);
             self.buffer = Some(buffer);
         }
-
-        // compute compound parameter at k-rate
-        let detune_values = params.get(&self.detune);
-        let playback_rate_values = params.get(&self.playback_rate);
-        let detune = detune_values[0];
-        let playback_rate = playback_rate_values[0];
-        let computed_playback_rate = (playback_rate * (detune / 1200.).exp2()) as f64;
 
         // grab all timing informations
         let mut start_time = self.controller.scheduler().get_start_at();
@@ -387,8 +381,18 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             Some(b) => b,
         };
 
-        // from this point we know that we have a buffer
+        // compute compound parameter at k-rate
+        let detune_values = params.get(&self.detune);
+        let detune = detune_values[0];
+        let playback_rate_values = params.get(&self.playback_rate);
+        let playback_rate = playback_rate_values[0];
+        let computed_playback_rate = (playback_rate * (detune / 1200.).exp2()) as f64;
+
         let buffer_duration = buffer.duration();
+        // multiplier to be applied on `position` to tackle possible difference
+        // between the context and buffer sample rates. As this is an edge case,
+        // we just linearly interpolate, thus favoring performance vs quality
+        let sampling_ratio = buffer.sample_rate() as f64 / sample_rate;
 
         // In addition, if the buffer has more than one channel, then the
         // AudioBufferSourceNode output must change to a single channel of silence
@@ -501,10 +505,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             if self.render_state.buffer_time >= 0.
                 && self.render_state.buffer_time < buffer_duration
             {
-                self.compute_playback_at_position(
-                    self.render_state.buffer_time,
-                    sample_rate.0 as f64,
-                );
+                let position = self.render_state.buffer_time * sampling_ratio;
+                self.compute_playback_at_position(position, sample_rate);
             } else {
                 self.internal_buffer.fill(0.);
             }
@@ -567,12 +569,14 @@ impl AudioBufferSourceRenderer {
 
 #[cfg(test)]
 mod tests {
+    use float_eq::assert_float_eq;
+    use std::convert::TryFrom;
+    use std::f32::consts::PI;
+
     use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
     use super::*;
-
-    use float_eq::assert_float_eq;
 
     #[test]
     fn test_playing_some_file() {
@@ -719,5 +723,47 @@ mod tests {
         expected[0] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_audio_buffer_resampling() {
+        [22500, 38000, 48000, 96000].iter().for_each(|sr| {
+            let base_sr = 44100;
+            let mut context = OfflineAudioContext::new(1, base_sr, SampleRate(base_sr as u32));
+
+            // 1Hz sine at different sample rates
+            let buf_sr = *sr;
+            // safe cast for sample rate, see discussion at #113
+            let sample_rate = SampleRate(u32::try_from(buf_sr).unwrap());
+            let mut buffer = context.create_buffer(1, buf_sr, sample_rate);
+            let mut sine = vec![];
+
+            for i in 0..buf_sr {
+                let phase = i as f32 / buf_sr as f32 * 2. * PI;
+                let sample = phase.sin();
+                sine.push(sample);
+            }
+
+            buffer.copy_to_channel(&sine[..], 0);
+
+            let src = context.create_buffer_source();
+            src.connect(&context.destination());
+            src.set_buffer(buffer);
+            src.start_at(0.);
+
+            let result = context.start_rendering_sync();
+            let channel = result.get_channel_data(0);
+
+            // 1Hz sine at audio context sample rate
+            let mut expected = vec![];
+
+            for i in 0..base_sr {
+                let phase = i as f32 / base_sr as f32 * 2. * PI;
+                let sample = phase.sin();
+                expected.push(sample);
+            }
+
+            assert_float_eq!(channel[..], expected[..], abs_all <= 1e-6);
+        });
     }
 }

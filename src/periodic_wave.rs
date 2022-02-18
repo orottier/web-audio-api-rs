@@ -15,14 +15,16 @@ pub struct PeriodicWaveOptions {
     /// This offset has to be given but will not be taken into account
     /// to build the custom periodic waveform.
     ///
-    /// The following elements (index 1 and more) represent the fundamental and harmonics of the periodic waveform.
+    /// The following elements (index 1 and more) represent the fundamental and
+    /// harmonics of the periodic waveform.
     pub real: Option<Vec<f32>>,
     /// The imag parameter represents an array of sine terms of Fourrier series.
     ///
     /// The first element (index 0) will not be taken into account
     /// to build the custom periodic waveform.
     ///
-    /// The following elements (index 1 and more) represent the fundamental and harmonics of the periodic waveform.
+    /// The following elements (index 1 and more) represent the fundamental and
+    /// harmonics of the periodic waveform.
     pub imag: Option<Vec<f32>>,
     /// By default PeriodicWave is build with normalization enabled (disable_normalization = false).
     /// In this case, a peak normalization is applied to the given custom periodic waveform.
@@ -90,8 +92,14 @@ impl PeriodicWave {
     /// * `real` and `imag` are defined and theirs lengths are not equal
     /// * `PeriodicWave` is more than 8192 components
     //
-    // @todo - review constructor, should check real and imag size consistency
-    // cf. https://webaudio.github.io/web-audio-api/#PeriodicWave-constructors
+    // @notes:
+    // - Current implementation is very naive and could be improved using inverse
+    // FFT or table lookup on SINETABLE. Such performance improvements should be
+    // however tested also against this implementation.
+    // - Built-in types of the `OscillatorNode` should use periodic waves
+    // c.f. https://webaudio.github.io/web-audio-api/#oscillator-coefficients
+    // - The question of bandlimited oscillators should also be handled
+    // e.g. https://www.dafx12.york.ac.uk/papers/dafx12_submission_69.pdf
     pub fn new<C: BaseAudioContext>(_context: &C, options: PeriodicWaveOptions) -> Self {
         let PeriodicWaveOptions {
             real,
@@ -101,68 +109,39 @@ impl PeriodicWave {
 
         let (real, imag) = match (real, imag) {
             (Some(r), Some(i)) => {
-                assert!(
-                    r.len() >= 2,
-                    "RangeError: Real field length should be at least 2"
-                );
-                assert!(
-                    i.len() >= 2,
-                    "RangeError: Imag field length should be at least 2",
-                );
-                assert!(
-                    // the specs gives this number as a lower bound
-                    // it is implemented here as a upper bound to enable required casting
-                    // without loss of precision
-                    // note: this seems to be wrong, the spec here seems to speak
-                    // about the wavetable length:
-                    // A conforming implementation MUST support PeriodicWave up to at least 8192 elements.
-                    r.len() <= 8192,
-                    "NotSupported: periodic wave of more than 8192 components"
-                );
-                assert!(
-                    r.len() == i.len(),
-                    "RangeError: Imag and real field length should be equal"
-                );
+                if r.len() != i.len() {
+                    panic!("IndexSizeError: `real` and `imag` length should be equal");
+                } else if r.len() < 2 {
+                    // i and r have same length
+                    panic!("IndexSizeError: `real` and `imag` length should at least 2");
+                }
+
                 (r, i)
             }
             (Some(r), None) => {
-                assert!(
-                    r.len() >= 2,
-                    "RangeError: Real field length should be at least 2"
-                );
-                assert!(
-                    // the specs gives this number as a lower bound
-                    // it is implemented here as a upper bound to enable required casting
-                    // without loss of precision
-                    // note: this seems to be wrong, the spec here seems to speak
-                    // about the wavetable length:
-                    // A conforming implementation MUST support PeriodicWave up to at least 8192 elements.
-                    r.len() <= 8192,
-                    "NotSupported: periodic wave of more than 8192 components"
-                );
-                let r_len = r.len();
-                (r, vec![0.; r_len])
+                if r.len() < 2 {
+                    panic!("IndexSizeError: `real` and `imag` length should at least 2");
+                }
+
+                let len = r.len();
+                (r, vec![0.; len])
             }
             (None, Some(i)) => {
-                assert!(
-                    i.len() >= 2,
-                    "RangeError: Real field length should be at least 2"
-                );
-                assert!(
-                    i.len() <= 8192,
-                    // the specs gives this number as a lower bound
-                    // it is implemented here as a upper bound to enable required casting
-                    // without loss of precision
-                    "NotSupported: periodic wave of more than 8192 components"
-                );
-                let i_len = i.len();
-                (vec![0.; i_len], i)
+                if i.len() < 2 {
+                    panic!("IndexSizeError: `real` and `imag` length should at least 2");
+                }
+
+                let len = i.len();
+                (vec![0.; len], i)
             }
+            // Defaults to sine wave
+            // [spec] Note: When setting this PeriodicWave on an OscillatorNode,
+            // this is equivalent to using the built-in type "sine".
             _ => (vec![0., 0.], vec![0., 1.]),
         };
 
         let normalize = !disable_normalization;
-
+        // [spec] A conforming implementation MUST support PeriodicWave up to at least 8192 elements.
         let wavetable = Self::generate_wavetable(&real, &imag, normalize, TABLE_LENGTH_USIZE);
 
         Self {
@@ -175,11 +154,6 @@ impl PeriodicWave {
     }
 
     // cf. https://webaudio.github.io/web-audio-api/#waveform-generation
-    // note that sines are in the imaginary components
-    //
-    // @note: Current implementation is naive and could be improved using inverse
-    // FFT or table lookup on SINETABLE. Such performance improvements should be
-    // however tested also against this implementation.
     fn generate_wavetable(reals: &[f32], imags: &[f32], normalize: bool, size: usize) -> Vec<f32> {
         let mut wavetable = Vec::with_capacity(size);
         let pi_2 = 2. * PI;
@@ -240,40 +214,12 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn fails_to_build_when_real_is_too_short() {
-        let context = AudioContext::new(None);
-
-        let options = PeriodicWaveOptions {
-            real: Some(vec![0.]),
-            imag: Some(vec![0., 0., 0.]),
-            disable_normalization: false,
-        };
-
-        let _periodic_wave = PeriodicWave::new(&context, options);
-    }
-
-    #[test]
-    #[should_panic]
     fn fails_to_build_when_only_real_is_defined_and_too_short() {
         let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0.]),
             imag: None,
-            disable_normalization: false,
-        };
-
-        let _periodic_wave = PeriodicWave::new(&context, options);
-    }
-
-    #[test]
-    #[should_panic]
-    fn fails_to_build_when_imag_is_too_short() {
-        let context = AudioContext::new(None);
-
-        let options = PeriodicWaveOptions {
-            real: Some(vec![0., 0., 0.]),
-            imag: Some(vec![0.]),
             disable_normalization: false,
         };
 
@@ -310,40 +256,12 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn fails_to_build_when_imag_and_real_are_more_than_8192_comps() {
+    fn fails_to_build_when_imag_and_real_too_shorts() {
         let context = AudioContext::new(None);
 
         let options = PeriodicWaveOptions {
-            real: Some(vec![0.; 8193]),
-            imag: Some(vec![0.; 8193]),
-            disable_normalization: false,
-        };
-
-        let _periodic_wave = PeriodicWave::new(&context, options);
-    }
-
-    #[test]
-    #[should_panic]
-    fn fails_to_build_when_real_is_more_than_8192_comps() {
-        let context = AudioContext::new(None);
-
-        let options = PeriodicWaveOptions {
-            real: Some(vec![0.; 8193]),
-            imag: None,
-            disable_normalization: false,
-        };
-
-        let _periodic_wave = PeriodicWave::new(&context, options);
-    }
-
-    #[test]
-    #[should_panic]
-    fn fails_to_build_when_imag_is_more_than_8192_comps() {
-        let context = AudioContext::new(None);
-
-        let options = PeriodicWaveOptions {
-            real: None,
-            imag: Some(vec![0.; 8193]),
+            real: Some(vec![0.]),
+            imag: Some(vec![0.]),
             disable_normalization: false,
         };
 
@@ -363,7 +281,7 @@ mod tests {
             expected.push(sample);
         }
 
-        assert_float_eq!(result[..], expected[..], abs_all <= 0.);
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-6);
     }
 
     #[test]
@@ -384,7 +302,7 @@ mod tests {
             expected.push(sample);
         }
 
-        assert_float_eq!(result[..], expected[..], abs_all <= 0.);
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-6);
     }
 
     #[test]
@@ -426,6 +344,6 @@ mod tests {
 
         PeriodicWave::normalize(&mut expected);
 
-        assert_float_eq!(result[..], expected[..], abs_all <= 0.);
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-6);
     }
 }

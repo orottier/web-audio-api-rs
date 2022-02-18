@@ -1,3 +1,13 @@
+# Version 0.15.0 (2021-02-10)
+
+- Allow method chaining on AudioParams
+- Some fallible methods will now panic instead of returning a Result
+- Sub sample scheduling for OscillatorNode
+- Implement AudioContext.close to free resources
+- Rename BaseAudioContext trait and concrete type
+- Fix spec deviations for node methods and constructor options and defaults
+- Rename some functions to `_sync` to denote they do not return a Promise
+
 # Version 0.14.0 (2021-01-13)
 
 - Implemented context.decodeAudioData

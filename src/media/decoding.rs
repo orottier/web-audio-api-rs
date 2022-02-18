@@ -39,7 +39,7 @@ impl<R> Seek for MediaInput<R> {
     }
 }
 
-impl<R: Read + Send> symphonia::core::io::MediaSource for MediaInput<R> {
+impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
     fn is_seekable(&self) -> bool {
         false
     }
@@ -108,7 +108,7 @@ impl MediaDecoder {
     /// let media = MediaDecoder::try_new(input);
     ///
     /// assert!(media.is_err()); // the input was not a valid MIME type
-    pub fn try_new<R: std::io::Read + Send + 'static>(
+    pub fn try_new<R: std::io::Read + Send + Sync + 'static>(
         input: R,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         // Symfonia lib needs a Box<dyn MediaSource> - use our own MediaInput
