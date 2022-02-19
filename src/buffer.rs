@@ -2,7 +2,7 @@
 use std::sync::Arc;
 
 use crate::render::AudioRenderQuantum;
-use crate::SampleRate;
+use crate::{assert_is_valid_number_of_channels, assert_is_valid_sample_rate, SampleRate};
 
 /// Options for constructing an [`AudioBuffer`]
 #[derive(Clone, Debug)]
@@ -33,9 +33,12 @@ impl AudioBuffer {
     ///
     /// # Panics
     ///
-    /// This function will panic if the channel count is zero.
+    /// This function will panic if:
+    /// - the sample rate is outside the range [8000, 96000]
+    /// - the number of channel is outside the range [1, 32]
     pub fn new(options: AudioBufferOptions) -> Self {
-        assert!(options.number_of_channels > 0);
+        assert_is_valid_sample_rate(options.sample_rate);
+        assert_is_valid_number_of_channels(options.number_of_channels);
 
         let silence = ChannelData::new(options.length);
 
@@ -51,15 +54,19 @@ impl AudioBuffer {
     ///
     /// # Panics
     ///
-    /// This function will panic if `samples` is an empty Vec or any of its items have different
-    /// lengths.
+    /// This function will panic if:
+    /// - the given sample rate is outside the range [8000, 96000]
+    /// - `samples` is an empty Vec
+    /// - any of its items have different lengths
     pub fn from(samples: Vec<Vec<f32>>, sample_rate: SampleRate) -> Self {
-        assert!(!samples.is_empty());
+        assert_is_valid_sample_rate(sample_rate);
+        assert_is_valid_number_of_channels(samples.len());
 
         let channels: Vec<_> = samples.into_iter().map(ChannelData::from).collect();
         if !channels.iter().all(|c| c.len() == channels[0].len()) {
             panic!("Trying to create AudioBuffer from channel data with unequal length");
         }
+
         Self {
             channels,
             sample_rate,
@@ -224,30 +231,40 @@ impl AudioBuffer {
         AudioBuffer::from_channels(channels, sample_rate)
     }
 
-    // Resample to the desired sample rate. The method performs a simple linear
-    // interpolation an keep the first and last sample intacts. The new number
-    // of samples is always ceiled according the ratio defined by old and new
-    // sample rates.
-    //
-    // ```
-    // use crate::SampleRate;
-    // use crate::buffer::{ChannelData, AudioBuffer};
-    //
-    // let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-    // let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(48_000));
-    //
-    // // upmix from 48k to 96k Hertz sample rate
-    // buffer.resample(SampleRate(96_000));
-    //
-    // assert_eq!(
-    //     buffer.get_channel_data(0)[..],
-    //     vec![1.0, 1.4444444, 1.8888888, 2.3333335, 2.7777777, 3.2222223, 3.6666667, 4.111111, 4.5555553, 5.0][..]
-    // );
-    //
-    // assert_eq!(buffer.sample_rate().0, 96_000);
-    // ```
+    /// Resample to the desired sample rate. The method performs a simple linear
+    /// interpolation an keep the first and last sample intacts. The new number
+    /// of samples is always ceiled according the ratio defined by old and new
+    /// sample rates.
+    ///
+    /// ```ignore
+    /// use float_eq::assert_float_eq;
+    /// use crate::SampleRate;
+    /// use crate::buffer::{ChannelData, AudioBuffer};
+    ///
+    /// let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
+    /// let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(48_000));
+    ///
+    /// // upmix from 48k to 96k Hertz sample rate
+    /// buffer.resample(SampleRate(96_000));
+    ///
+    /// assert_float_eq!(
+    ///     buffer.get_channel_data(0)[..],
+    ///     [1.0, 1.4444444, 1.8888888, 2.3333335, 2.7777777, 3.2222223, 3.6666667, 4.111111, 4.5555553, 5.0][..],
+    ///     abs_all <= 1e-6
+    /// );
+    ///
+    /// assert_eq!(buffer.sample_rate().0, 96_000);
+    /// ```
     pub(crate) fn resample(&mut self, sample_rate: SampleRate) {
         if self.sample_rate_raw() == sample_rate {
+            return;
+        }
+
+        assert_is_valid_sample_rate(sample_rate);
+
+        // handle zero length case
+        if self.length() == 0 {
+            self.sample_rate = sample_rate;
             return;
         }
 
@@ -375,6 +392,27 @@ mod tests {
     fn test_zero_channels_from() {
         let samples = vec![];
         let sample_rate = SampleRate(1);
+
+        AudioBuffer::from(samples, sample_rate); // should panic
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_sample_rate() {
+        let options = AudioBufferOptions {
+            number_of_channels: 1,
+            length: 10,
+            sample_rate: SampleRate(0),
+        };
+
+        AudioBuffer::new(options); // should panic
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_sample_rate_from() {
+        let samples = vec![vec![0.]];
+        let sample_rate = SampleRate(0);
 
         AudioBuffer::from(samples, sample_rate); // should panic
     }
@@ -542,17 +580,11 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
     fn test_resample_to_zero_hertz() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(100));
         buffer.resample(SampleRate(0));
-    }
-
-    #[test]
-    fn test_resample_from_zero_hertz() {
-        let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-        let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(0));
-        buffer.resample(SampleRate(100));
     }
 
     #[test]
@@ -564,6 +596,9 @@ mod tests {
         };
         let mut buffer = AudioBuffer::new(options);
         buffer.resample(SampleRate(200));
+
+        assert_eq!(buffer.length(), 0);
+        assert_eq!(buffer.sample_rate_raw().0, 200);
     }
 
     #[test]

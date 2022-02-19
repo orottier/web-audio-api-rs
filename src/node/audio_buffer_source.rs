@@ -708,7 +708,9 @@ mod tests {
         let sr = SampleRate(sample_rate as u32);
         let mut context = OfflineAudioContext::new(1, sample_rate, sr);
 
+        println!("create dirac");
         let mut dirac = context.create_buffer(1, 1, sr);
+        println!("created dirac");
         dirac.copy_to_channel(&[1.], 0);
 
         let src = context.create_buffer_source();
@@ -716,7 +718,9 @@ mod tests {
         src.set_buffer(dirac);
         src.start_at(-1.);
 
+        println!("start rendering");
         let result = context.start_rendering_sync();
+        println!("stopped rendering");
         let channel = result.get_channel_data(0);
 
         let mut expected = vec![0.; sample_rate];

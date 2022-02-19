@@ -39,6 +39,7 @@
 //! std::thread::sleep(std::time::Duration::from_secs(4));
 //! ```
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
@@ -137,6 +138,39 @@ impl AtomicF64 {
     }
 }
 
+/// Utility functions for arguments sanity check
+pub(crate) fn assert_is_valid_sample_rate(sample_rate: SampleRate) {
+    let sample_rate = sample_rate.0;
+    // allow arbitrary sample rates in tests
+    if cfg!(test) {
+        if sample_rate == 0 {
+            panic!(
+                "Invalid sample rate: {:?} is negative or zero (test mode)",
+                sample_rate
+            );
+        }
+    } else {
+        // An implementation MUST support sample rates in at least the range 8000 to 96000
+        // @note - `test/media.rs` relies on `RENDER_QUANTUM_SIZE` this should be
+        // cleaned together with the MediaElement, see pull #106
+        if sample_rate < u32::try_from(RENDER_QUANTUM_SIZE).unwrap() || sample_rate > 96000 {
+            panic!(
+                "Invalid sample rate: {:?} is outside range [8000, 96000]",
+                sample_rate
+            );
+        }
+    }
+}
+
+pub(crate) fn assert_is_valid_number_of_channels(number_of_channels: usize) {
+    if number_of_channels == 0 || number_of_channels > MAX_CHANNELS {
+        panic!(
+            "Invalid number of channels: {:?} is outside range [1, 32]",
+            number_of_channels
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
@@ -154,5 +188,36 @@ mod tests {
         let prev = f.swap(4.0);
         assert_float_eq!(prev, 3.0, abs <= 0.);
         assert_float_eq!(f.load(), 4.0, abs <= 0.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_sample_rate() {
+        let sample_rate = SampleRate(0);
+        assert_is_valid_sample_rate(sample_rate);
+    }
+
+    #[test]
+    fn test_valid_sample_rate() {
+        let sample_rate = SampleRate(1);
+        assert_is_valid_sample_rate(sample_rate);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_number_of_channels_min() {
+        assert_is_valid_number_of_channels(0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_number_of_channels_max() {
+        assert_is_valid_number_of_channels(33);
+    }
+
+    #[test]
+    fn test_valid_number_of_channels() {
+        assert_is_valid_number_of_channels(1);
+        assert_is_valid_number_of_channels(32);
     }
 }
