@@ -224,14 +224,14 @@ impl AudioBuffer {
         AudioBuffer::from_channels(channels, sample_rate)
     }
 
-    /// Resample to the desired sample rate. The method performs a simple linear
-    /// interpolation an keep the first and last sample intacts. The new number
-    /// of samples is always ceiled according the ratio defined by old and new
-    /// sample rates.
+    // Resample to the desired sample rate. The method performs a simple linear
+    // interpolation an keep the first and last sample intacts. The new number
+    // of samples is always ceiled according the ratio defined by old and new
+    // sample rates.
     //
     // ```
-    // use web_audio_api::SampleRate;
-    // use web_audio_api::buffer::{ChannelData, AudioBuffer};
+    // use crate::SampleRate;
+    // use crate::buffer::{ChannelData, AudioBuffer};
     //
     // let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
     // let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(48_000));
