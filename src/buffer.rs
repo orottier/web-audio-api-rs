@@ -542,6 +542,31 @@ mod tests {
     }
 
     #[test]
+    fn test_resample_to_zero_hertz() {
+        let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
+        let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(100));
+        buffer.resample(SampleRate(0));
+    }
+
+    #[test]
+    fn test_resample_from_zero_hertz() {
+        let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
+        let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(0));
+        buffer.resample(SampleRate(100));
+    }
+
+    #[test]
+    fn test_resample_from_empty() {
+        let options = AudioBufferOptions {
+            number_of_channels: 1,
+            length: 0,
+            sample_rate: SampleRate(100),
+        };
+        let mut buffer = AudioBuffer::new(options);
+        buffer.resample(SampleRate(200));
+    }
+
+    #[test]
     fn test_upsample() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(100));
