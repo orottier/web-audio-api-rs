@@ -1,8 +1,6 @@
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::control::Scheduler;
-use crate::media::MediaStream;
-use crate::media::Resampler;
-
+use crate::media::{MediaStream, Resampler};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer};

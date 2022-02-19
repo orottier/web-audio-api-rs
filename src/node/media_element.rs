@@ -1,7 +1,6 @@
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::control::{Controller, Scheduler};
-use crate::media::MediaElement;
-use crate::media::Resampler;
+use crate::media::{MediaElement, Resampler};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
