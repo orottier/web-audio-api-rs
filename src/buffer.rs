@@ -30,6 +30,42 @@ pub struct AudioBufferOptions {
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioBuffer>
 /// - specification: <https://webaudio.github.io/web-audio-api/#AudioBuffer>
 /// - see also: [`BaseAudioContext::create_buffer`](crate::context::BaseAudioContext::create_buffer)
+///
+/// # Usage
+///
+/// ```no_run
+/// use std::f32::consts::PI;
+/// use web_audio_api::context::{AudioContext, BaseAudioContext};
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+///
+/// let context = AudioContext::new(None);
+///
+/// let length = context.sample_rate() as usize;
+/// let sample_rate = context.sample_rate_raw();
+/// let mut buffer = context.create_buffer(1, length, sample_rate);
+///
+/// // fill buffer with a sine wave
+/// let mut sine = vec![];
+///
+/// for i in 0..length {
+///     let phase = i as f32 / length as f32 * 2. * PI * 200.;
+///     sine.push(phase.sin());
+/// }
+///
+/// buffer.copy_to_channel(&sine, 0);
+///
+/// // play the buffer in a loop
+/// let src = context.create_buffer_source();
+/// src.set_buffer(buffer.clone());
+/// src.set_loop(true);
+/// src.connect(&context.destination());
+/// src.start();
+/// ```
+///
+/// # Example
+///
+/// - `cargo run --release --example audio_buffer`
+///
 #[derive(Clone, Debug)]
 pub struct AudioBuffer {
     channels: Vec<ChannelData>,
