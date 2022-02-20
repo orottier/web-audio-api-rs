@@ -147,7 +147,7 @@ impl AudioBuffer {
     ///
     /// # Panics
     ///
-    /// This function will panic if `channel_number` is greater or equal to
+    /// This function will panic if `channel_number` is greater or equal than
     /// `AudioBuffer::number_of_channels()`
     pub fn copy_from_channel(&self, destination: &mut [f32], channel_number: usize) {
         assert_is_valid_channel_number(channel_number, self.number_of_channels());
@@ -159,7 +159,7 @@ impl AudioBuffer {
     ///
     /// # Panics
     ///
-    /// This function will panic if `channel_number` is greater or equal to
+    /// This function will panic if `channel_number` is greater or equal than
     /// `AudioBuffer::number_of_channels()`
     pub fn copy_from_channel_with_offset(
         &self,
@@ -184,7 +184,7 @@ impl AudioBuffer {
     ///
     /// # Panics
     ///
-    /// This function will panic if `channel_number` is greater or equal to
+    /// This function will panic if `channel_number` is greater or equal than
     /// `AudioBuffer::number_of_channels()`
     pub fn copy_to_channel(&mut self, source: &[f32], channel_number: usize) {
         assert_is_valid_channel_number(channel_number, self.number_of_channels());
@@ -196,7 +196,7 @@ impl AudioBuffer {
     ///
     /// # Panics
     ///
-    /// This function will panic if `channel_number` is greater or equal to
+    /// This function will panic if `channel_number` is greater or equal than
     /// `AudioBuffer::number_of_channels()`
     pub fn copy_to_channel_with_offset(
         &mut self,
@@ -221,7 +221,7 @@ impl AudioBuffer {
     ///
     /// # Panics
     ///
-    /// This function will panic if `channel_number` is greater or equal to
+    /// This function will panic if `channel_number` is greater or equal than
     /// `AudioBuffer::number_of_channels()`
     pub fn get_channel_data(&self, channel_number: usize) -> &[f32] {
         assert_is_valid_channel_number(channel_number, self.number_of_channels());
