@@ -2,9 +2,17 @@
 use std::sync::Arc;
 
 use crate::render::AudioRenderQuantum;
-use crate::{assert_is_valid_number_of_channels, assert_is_valid_sample_rate, SampleRate};
+use crate::{
+    assert_is_valid_channel_number, assert_is_valid_number_of_channels,
+    assert_is_valid_sample_rate, SampleRate,
+};
 
 /// Options for constructing an [`AudioBuffer`]
+// dictionary AudioBufferOptions {
+//   unsigned long numberOfChannels = 1;
+//   required unsigned long length;
+//   required float sampleRate;
+// };
 #[derive(Clone, Debug)]
 pub struct AudioBufferOptions {
     /// The number of channels for the buffer
@@ -101,6 +109,8 @@ impl AudioBuffer {
 
     /// Copy data from a given channel to the given `Vec`
     pub fn copy_from_channel(&self, destination: &mut [f32], channel_number: usize) {
+        assert_is_valid_channel_number(channel_number, self.number_of_channels());
+
         self.copy_from_channel_with_offset(destination, channel_number, 0);
     }
 
@@ -111,6 +121,7 @@ impl AudioBuffer {
         channel_number: usize,
         offset: usize,
     ) {
+        assert_is_valid_channel_number(channel_number, self.number_of_channels());
         let offset = offset.min(self.length());
         // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
         // of elements in the destination array, and 𝑘 be the value of bufferOffset.
@@ -125,6 +136,8 @@ impl AudioBuffer {
 
     /// Copy data from a given source to the given channel.
     pub fn copy_to_channel(&mut self, source: &[f32], channel_number: usize) {
+        assert_is_valid_channel_number(channel_number, self.number_of_channels());
+
         self.copy_to_channel_with_offset(source, channel_number, 0);
     }
 
@@ -135,6 +148,7 @@ impl AudioBuffer {
         channel_number: usize,
         offset: usize,
     ) {
+        assert_is_valid_channel_number(channel_number, self.number_of_channels());
         let offset = offset.min(self.length());
         // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
         // of elements in the source array, and 𝑘 be the value of bufferOffset. Then
@@ -149,6 +163,7 @@ impl AudioBuffer {
 
     /// Return a read-only copy of the underlying data of the channel
     pub fn get_channel_data(&self, channel_number: usize) -> &[f32] {
+        assert_is_valid_channel_number(channel_number, self.number_of_channels());
         // [spec] According to the rules described in acquire the content either allow writing
         // into or getting a copy of the bytes stored in [[internal data]] in a new Float32Array
         self.channel_data(channel_number).as_slice()
@@ -418,6 +433,22 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn test_invalid_copy_from_channel() {
+        let options = AudioBufferOptions {
+            number_of_channels: 1,
+            length: 10,
+            sample_rate: SampleRate(1),
+        };
+
+        let audio_buffer = AudioBuffer::new(options);
+
+        // same size
+        let mut dest = vec![1.; 10];
+        audio_buffer.copy_from_channel(&mut dest, 1);
+    }
+
+    #[test]
     fn test_copy_from_channel() {
         let options = AudioBufferOptions {
             number_of_channels: 1,
@@ -460,6 +491,22 @@ mod tests {
         audio_buffer.copy_from_channel_with_offset(&mut dest, 0, usize::MAX);
 
         assert_float_eq!(dest[..], vec![1.; 10][..], abs_all <= 0.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_copy_to_channel() {
+        let options = AudioBufferOptions {
+            number_of_channels: 1,
+            length: 10,
+            sample_rate: SampleRate(1),
+        };
+
+        let mut audio_buffer = AudioBuffer::new(options);
+
+        // same size
+        let src = vec![1.; 10];
+        audio_buffer.copy_to_channel(&src, 1);
     }
 
     #[test]
@@ -529,6 +576,20 @@ mod tests {
                 abs_all <= 0.
             );
         }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_get_channel_data() {
+        let options = AudioBufferOptions {
+            number_of_channels: 1,
+            length: 10,
+            sample_rate: SampleRate(1),
+        };
+
+        let audio_buffer = AudioBuffer::new(options);
+
+        audio_buffer.get_channel_data(1);
     }
 
     // internal API

@@ -145,7 +145,7 @@ pub(crate) fn assert_is_valid_sample_rate(sample_rate: SampleRate) {
     if cfg!(test) {
         if sample_rate == 0 {
             panic!(
-                "Invalid sample rate: {:?} is negative or zero (test mode)",
+                "NotSupportedError - Invalid sample rate: {:?} is negative or zero (test mode)",
                 sample_rate
             );
         }
@@ -155,7 +155,7 @@ pub(crate) fn assert_is_valid_sample_rate(sample_rate: SampleRate) {
         // cleaned together with the MediaElement, see pull #106
         if sample_rate < u32::try_from(RENDER_QUANTUM_SIZE).unwrap() || sample_rate > 96000 {
             panic!(
-                "Invalid sample rate: {:?} is outside range [8000, 96000]",
+                "NotSupportedError - Invalid sample rate: {:?} is outside range [8000, 96000]",
                 sample_rate
             );
         }
@@ -165,8 +165,17 @@ pub(crate) fn assert_is_valid_sample_rate(sample_rate: SampleRate) {
 pub(crate) fn assert_is_valid_number_of_channels(number_of_channels: usize) {
     if number_of_channels == 0 || number_of_channels > MAX_CHANNELS {
         panic!(
-            "Invalid number of channels: {:?} is outside range [1, 32]",
+            "NotSupportedError - Invalid number of channels: {:?} is outside range [1, 32]",
             number_of_channels
+        );
+    }
+}
+
+pub(crate) fn assert_is_valid_channel_number(channel_number: usize, number_of_channels: usize) {
+    if channel_number >= number_of_channels {
+        panic!(
+            "IndexSizeError - invalid channel number {:?} (number of channels: {:?})",
+            channel_number, number_of_channels
         );
     }
 }
