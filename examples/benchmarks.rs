@@ -54,6 +54,18 @@ fn main() {
     load_buffer(&mut sources, "samples/think-stereo-48000.wav", 48000);
 
     {
+        let name = "Baseline";
+        let start = Instant::now();
+
+        let mut context = OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+        let buffer = context.start_rendering_sync();
+
+        let duration = start.elapsed();
+        let result = BenchResult { name, duration, buffer };
+        results.push(result);
+    }
+
+    {
         let name = "Simple source test without resampling (Mono)";
         let start = Instant::now();
 
