@@ -6,6 +6,9 @@ pub use decoding::MediaDecoder;
 mod mic;
 pub use mic::Microphone;
 
+mod resampling;
+pub(crate) use resampling::Resampler;
+
 #[cfg(not(test))]
 pub(crate) use mic::MicrophoneRender;
 

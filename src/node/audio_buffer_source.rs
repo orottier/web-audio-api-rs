@@ -374,7 +374,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         }
 
         // If the buffer has not been set wait for it.
-        // @see - `set_buffer` tries to acquire the buffer if the source already started
         let buffer = match &self.buffer {
             None => {
                 output.make_silent();
