@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use crate::render::AudioRenderQuantum;
 use crate::{
-    assert_is_valid_channel_number, assert_is_valid_number_of_channels,
-    assert_is_valid_sample_rate, SampleRate,
+    assert_valid_channel_number, assert_valid_number_of_channels, assert_valid_sample_rate,
+    SampleRate,
 };
 
 /// Options for constructing an [`AudioBuffer`]
@@ -78,11 +78,12 @@ impl AudioBuffer {
     /// # Panics
     ///
     /// This function will panic if:
-    /// - the sample rate is outside the range [8000, 96000]
-    /// - the number of channel is outside the range [1, 32]
+    /// - the given sample rate is zero
+    /// - the given number of channels is outside the [1, 32] range,
+    /// 32 being defined by the MAX_CHANNELS constant.
     pub fn new(options: AudioBufferOptions) -> Self {
-        assert_is_valid_sample_rate(options.sample_rate);
-        assert_is_valid_number_of_channels(options.number_of_channels);
+        assert_valid_sample_rate(options.sample_rate);
+        assert_valid_number_of_channels(options.number_of_channels);
 
         let silence = ChannelData::new(options.length);
 
@@ -99,12 +100,13 @@ impl AudioBuffer {
     /// # Panics
     ///
     /// This function will panic if:
-    /// - the given sample rate is outside the range [8000, 96000]
-    /// - `samples` is an empty Vec
+    /// - the given sample rate is zero
+    /// - the given number of channels defined by `samples.len()`is outside the
+    ///   [1, 32] range, 32 being defined by the MAX_CHANNELS constant.
     /// - any of its items have different lengths
     pub fn from(samples: Vec<Vec<f32>>, sample_rate: SampleRate) -> Self {
-        assert_is_valid_sample_rate(sample_rate);
-        assert_is_valid_number_of_channels(samples.len());
+        assert_valid_sample_rate(sample_rate);
+        assert_valid_number_of_channels(samples.len());
 
         let channels: Vec<_> = samples.into_iter().map(ChannelData::from).collect();
         if !channels.iter().all(|c| c.len() == channels[0].len()) {
@@ -150,7 +152,7 @@ impl AudioBuffer {
     /// This function will panic if `channel_number` is greater or equal than
     /// `AudioBuffer::number_of_channels()`
     pub fn copy_from_channel(&self, destination: &mut [f32], channel_number: usize) {
-        assert_is_valid_channel_number(channel_number, self.number_of_channels());
+        assert_valid_channel_number(channel_number, self.number_of_channels());
 
         self.copy_from_channel_with_offset(destination, channel_number, 0);
     }
@@ -159,15 +161,15 @@ impl AudioBuffer {
     ///
     /// # Panics
     ///
-    /// This function will panic if `channel_number` is greater or equal than
-    /// `AudioBuffer::number_of_channels()`
+    /// This function will panic if:
+    /// - the given channel number is greater than or equal to the given number of channels.
     pub fn copy_from_channel_with_offset(
         &self,
         destination: &mut [f32],
         channel_number: usize,
         offset: usize,
     ) {
-        assert_is_valid_channel_number(channel_number, self.number_of_channels());
+        assert_valid_channel_number(channel_number, self.number_of_channels());
         let offset = offset.min(self.length());
         // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
         // of elements in the destination array, and 𝑘 be the value of bufferOffset.
@@ -184,10 +186,10 @@ impl AudioBuffer {
     ///
     /// # Panics
     ///
-    /// This function will panic if `channel_number` is greater or equal than
-    /// `AudioBuffer::number_of_channels()`
+    /// This function will panic if:
+    /// - the given channel number is greater than or equal to the given number of channels.
     pub fn copy_to_channel(&mut self, source: &[f32], channel_number: usize) {
-        assert_is_valid_channel_number(channel_number, self.number_of_channels());
+        assert_valid_channel_number(channel_number, self.number_of_channels());
 
         self.copy_to_channel_with_offset(source, channel_number, 0);
     }
@@ -196,15 +198,15 @@ impl AudioBuffer {
     ///
     /// # Panics
     ///
-    /// This function will panic if `channel_number` is greater or equal than
-    /// `AudioBuffer::number_of_channels()`
+    /// This function will panic if:
+    /// - the given channel number is greater than or equal to the given number of channels.
     pub fn copy_to_channel_with_offset(
         &mut self,
         source: &[f32],
         channel_number: usize,
         offset: usize,
     ) {
-        assert_is_valid_channel_number(channel_number, self.number_of_channels());
+        assert_valid_channel_number(channel_number, self.number_of_channels());
         let offset = offset.min(self.length());
         // [spec] Let buffer be the AudioBuffer with 𝑁𝑏 frames, let 𝑁𝑓 be the number
         // of elements in the source array, and 𝑘 be the value of bufferOffset. Then
@@ -221,10 +223,10 @@ impl AudioBuffer {
     ///
     /// # Panics
     ///
-    /// This function will panic if `channel_number` is greater or equal than
-    /// `AudioBuffer::number_of_channels()`
+    /// This function will panic if:
+    /// - the given channel number is greater than or equal to the given number of channels.
     pub fn get_channel_data(&self, channel_number: usize) -> &[f32] {
-        assert_is_valid_channel_number(channel_number, self.number_of_channels());
+        assert_valid_channel_number(channel_number, self.number_of_channels());
         // [spec] According to the rules described in acquire the content either allow writing
         // into or getting a copy of the bytes stored in [[internal data]] in a new Float32Array
         self.channel_data(channel_number).as_slice()
@@ -312,6 +314,11 @@ impl AudioBuffer {
     /// of samples is always ceiled according the ratio defined by old and new
     /// sample rates.
     ///
+    /// # Panics
+    ///
+    /// This function will panic if:
+    /// - the given sample rate is zero
+    ///
     /// ```ignore
     /// use float_eq::assert_float_eq;
     /// use crate::SampleRate;
@@ -336,7 +343,7 @@ impl AudioBuffer {
             return;
         }
 
-        assert_is_valid_sample_rate(sample_rate);
+        assert_valid_sample_rate(sample_rate);
 
         // handle zero length case
         if self.length() == 0 {
