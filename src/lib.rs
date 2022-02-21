@@ -140,8 +140,8 @@ impl AtomicF64 {
 /// Assert that the given sample rate is valid.
 ///
 /// Note that in practice sample rates should stand between 8000Hz (lower bound for
-/// voice based applications, i.e. phone bandwidth) and 96000Hz (for very high quality
-/// audio applications and spectrum manipulation).
+/// voice based applications, e.g. see phone bandwidth) and 96000Hz (for very high
+/// quality audio applications and spectrum manipulation).
 /// Most common sample rates for musical applications are 44100 and 48000.
 /// - see <https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createbuffer-samplerate>
 ///
@@ -177,7 +177,7 @@ pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
 }
 
 /// Assert that the given channel number is valid according the number of channel
-/// of an Audio asset (e.g. [`AudioBuffer`])
+/// of an Audio asset (e.g. [`AudioBuffer`](crate::buffer::AudioBuffer))
 ///
 /// # Panics
 ///
