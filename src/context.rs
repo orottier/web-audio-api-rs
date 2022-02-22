@@ -20,7 +20,7 @@ const LISTENER_NODE_ID: u64 = 1;
 const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::media::{MediaDecoder, MediaElement, MediaStream};
+use crate::media::{MediaDecoder, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{self, AudioNode, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamDescriptor, AudioParamEvent};
@@ -234,20 +234,6 @@ pub trait BaseAudioContext {
             feedback,
         };
         node::IIRFilterNode::new(self.base(), options)
-    }
-
-    /// Creates a `MediaElementAudioSourceNode` from a [`MediaElement`]
-    ///
-    /// Warning: in current implementation a given `MediaElement` can be piped
-    /// only once in the web audio graph
-    fn create_media_element_source(
-        &self,
-        media: MediaElement,
-    ) -> node::MediaElementAudioSourceNode {
-        let opts = node::MediaElementAudioSourceOptions {
-            media_element: media,
-        };
-        node::MediaElementAudioSourceNode::new(self.base(), opts)
     }
 
     /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]

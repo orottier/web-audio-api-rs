@@ -18,8 +18,9 @@ pub struct MediaStreamAudioSourceOptions<M> {
 /// An audio source from a [`MediaStream`] (e.g. microphone input)
 ///
 /// IMPORTANT: the media stream is polled on the render thread so you must ensure the media stream
-/// iterator never blocks. Consider wrapping the `MediaStream` in a `MediaElement`, which buffers the
-/// stream on another thread so the render thread never blocks.
+/// iterator never blocks. A later version of the library will allow you to wrap the `MediaStream`
+/// in a `MediaElement`, which buffers the stream on another thread so the render thread never
+/// blocks. <https://github.com/orottier/web-audio-api-rs/issues/120>
 pub struct MediaStreamAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

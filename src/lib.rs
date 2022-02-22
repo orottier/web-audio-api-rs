@@ -122,13 +122,6 @@ impl AtomicF64 {
         self.inner
             .store(u64::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst)
     }
-
-    pub fn swap(&self, v: f64) -> f64 {
-        let prev = self
-            .inner
-            .swap(u64::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst);
-        f64::from_ne_bytes(prev.to_ne_bytes())
-    }
 }
 
 #[cfg(test)]
@@ -144,9 +137,5 @@ mod tests {
 
         f.store(3.0);
         assert_float_eq!(f.load(), 3.0, abs <= 0.);
-
-        let prev = f.swap(4.0);
-        assert_float_eq!(prev, 3.0, abs <= 0.);
-        assert_float_eq!(f.load(), 4.0, abs <= 0.);
     }
 }

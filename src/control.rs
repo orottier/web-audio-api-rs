@@ -50,7 +50,6 @@ impl Default for Scheduler {
 #[derive(Clone, Debug)]
 pub(crate) struct Controller {
     scheduler: Arc<Scheduler>,
-    seek: Arc<AtomicF64>,
     loop_: Arc<AtomicBool>,
     loop_start: Arc<AtomicF64>,
     loop_end: Arc<AtomicF64>,
@@ -63,8 +62,6 @@ impl Controller {
     pub fn new() -> Self {
         Self {
             scheduler: Arc::new(Scheduler::new()),
-            // treat NaN as niche: no seeking
-            seek: Arc::new(AtomicF64::new(f64::NAN)),
             loop_: Arc::new(AtomicBool::new(false)),
             loop_start: Arc::new(AtomicF64::new(0.)),
             loop_end: Arc::new(AtomicF64::new(f64::MAX)),
@@ -116,19 +113,6 @@ impl Controller {
     pub fn set_duration(&self, duration: f64) {
         self.duration.store(duration)
     }
-
-    pub fn seek(&self, timestamp: f64) {
-        self.seek.store(timestamp);
-    }
-
-    pub fn should_seek(&self) -> Option<f64> {
-        let prev = self.seek.swap(f64::NAN);
-        if prev.is_nan() {
-            None
-        } else {
-            Some(prev)
-        }
-    }
 }
 
 impl Default for Controller {
@@ -148,10 +132,5 @@ mod tests {
         assert!(!controller.loop_());
         assert!(controller.loop_start() == 0.);
         assert!(controller.loop_end() == f64::MAX);
-        assert!(controller.should_seek().is_none());
-
-        controller.seek(1.);
-        assert_eq!(controller.should_seek(), Some(1.));
-        assert!(controller.should_seek().is_none());
     }
 }

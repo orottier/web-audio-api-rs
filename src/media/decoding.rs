@@ -57,7 +57,10 @@ impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
 /// precision in an `AudioBufferSourceNode`.
 ///
 /// The MediaDecoder implements the [`MediaStream`](crate::media::MediaStream) trait so can be used
-/// inside a `MediaElementAudioSourceNode`
+/// inside a `MediaStreamAudioSourceNode`. Please note that this means the decoding will take place
+/// on the render thread which is typically not desired. In a later version of this library, we
+/// will add a buffered version which will decode in a separate thread.
+/// <https://github.com/orottier/web-audio-api-rs/issues/120>
 ///
 /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
 ///
@@ -70,17 +73,15 @@ impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
 ///
 /// ```no_run
 /// use web_audio_api::context::{AudioContext, BaseAudioContext};
-/// use web_audio_api::media::{MediaDecoder, MediaElement};
-/// use web_audio_api::node::{AudioNode};
+/// use web_audio_api::media::MediaDecoder;
+/// use web_audio_api::node::AudioNode;
 ///
 /// // build a decoded audio stream the decoder
 /// let file = std::fs::File::open("samples/major-scale.ogg").unwrap();
 /// let stream = MediaDecoder::try_new(file).unwrap();
-/// // wrap in a `MediaElement`
-/// let media_element = MediaElement::new(stream);
-/// // pipe the media element into the web audio graph
+/// // pipe the media stream into the web audio graph
 /// let context = AudioContext::new(None);
-/// let node = context.create_media_element_source(media_element);
+/// let node = context.create_media_stream_source(stream);
 /// node.connect(&context.destination());
 /// ```
 ///

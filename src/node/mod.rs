@@ -35,8 +35,6 @@ mod analyser;
 pub use analyser::*;
 mod audio_buffer_source;
 pub use audio_buffer_source::*;
-mod media_element;
-pub use media_element::*;
 mod media_stream;
 pub use media_stream::*;
 mod waveshaper;

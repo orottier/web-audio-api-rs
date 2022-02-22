@@ -1,11 +1,9 @@
-//! Microphone input and media decoding (OGG, WAV, FLAC, ..)
+//! Convenience abstractions that are not part of the WebAudio API (media decoding, microphone)
 
 mod decoding;
 pub use decoding::MediaDecoder;
 mod mic;
 pub use mic::Microphone;
-mod media_element;
-pub use media_element::MediaElement;
 
 #[cfg(not(test))]
 pub(crate) use mic::MicrophoneRender;
@@ -24,9 +22,9 @@ use crate::buffer::AudioBuffer;
 /// will have catastrophic effects if the iterator blocks or for another reason takes too much time
 /// to yield a new sample frame.
 ///
-/// The solution is to wrap the `MediaStream` inside a [`MediaElement`]. This will take care of
-/// buffering and timely delivery of audio to the render thread. It also allows for media playback
-/// controls (play/pause, offsets, loops, etc.)
+// The solution is to wrap the `MediaStream` inside a [`MediaElement`]. This will take care of
+// buffering and timely delivery of audio to the render thread. It also allows for media playback
+// controls (play/pause, offsets, loops, etc.)
 ///
 /// # Example
 ///
