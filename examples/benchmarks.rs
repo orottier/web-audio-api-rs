@@ -1,15 +1,16 @@
 use std::fs::File;
-use std::io::{Read, Write, stdout, stdin};
+use std::io::{stdin, stdout, Read, Write};
 use std::time::{Duration, Instant};
 
 use termion::cursor;
-use termion::color;
 use termion::raw::IntoRawMode;
 
-use web_audio_api::SampleRate;
 use web_audio_api::buffer::AudioBuffer;
-use web_audio_api::context::{AudioContext, OfflineAudioContext, BaseAudioContext};
-use web_audio_api::node::{AudioNode, AudioBufferSourceNode, AudioScheduledSourceNode, OscillatorType};
+use web_audio_api::context::{AudioContext, BaseAudioContext, OfflineAudioContext};
+use web_audio_api::node::{
+    AudioBufferSourceNode, AudioNode, AudioScheduledSourceNode, OscillatorType,
+};
+use web_audio_api::SampleRate;
 
 // benchmark adapted from https://github.com/padenot/webaudio-benchmark
 //
@@ -31,12 +32,31 @@ fn load_buffer(sources: &mut Vec<AudioBuffer>, pathname: &str, sample_rate: u32)
     sources.push(audio_buffer);
 }
 
-fn get_buffer(sources: &Vec<AudioBuffer>, sample_rate: u32, number_of_channels: usize) -> AudioBuffer {
+fn get_buffer(
+    sources: &Vec<AudioBuffer>,
+    sample_rate: u32,
+    number_of_channels: usize,
+) -> AudioBuffer {
     let buffer = sources.into_iter().find(|&buffer| {
-        buffer.sample_rate_raw().0 == sample_rate && buffer.number_of_channels() == number_of_channels
+        buffer.sample_rate_raw().0 == sample_rate
+            && buffer.number_of_channels() == number_of_channels
     });
 
     buffer.unwrap().clone()
+}
+
+fn benchmark<'a>(name: &'a str, context: &mut OfflineAudioContext, results: &mut Vec<BenchResult<'a>>) {
+    let start = Instant::now();
+    let buffer = context.start_rendering_sync();
+    let duration = start.elapsed();
+
+    let result = BenchResult {
+        name,
+        duration,
+        buffer,
+    };
+
+    results.push(result);
 }
 
 fn main() {
@@ -53,23 +73,24 @@ fn main() {
     load_buffer(&mut sources, "samples/think-stereo-44100.wav", 44100);
     load_buffer(&mut sources, "samples/think-stereo-48000.wav", 48000);
 
+    // -------------------------------------------------------
+    // benchamarks
+    // @todo - factorize
+    // -------------------------------------------------------
     {
         let name = "Baseline";
-        let start = Instant::now();
 
-        let mut context = OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
-        let buffer = context.start_rendering_sync();
+        let mut context =
+            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
 
-        let duration = start.elapsed();
-        let result = BenchResult { name, duration, buffer };
-        results.push(result);
+        benchmark(&name, &mut context, &mut results);
     }
 
     {
         let name = "Simple source test without resampling (Mono)";
-        let start = Instant::now();
 
-        let mut context = OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+        let mut context =
+            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
         let source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate.0, 1);
         source.set_buffer(buf);
@@ -77,17 +98,14 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        let buffer = context.start_rendering_sync();
-        let duration = start.elapsed();
-        let result = BenchResult { name, duration, buffer };
-        results.push(result);
+        benchmark(&name, &mut context, &mut results);
     }
 
     {
         let name = "Simple source test without resampling (Stereo)";
-        let start = Instant::now();
 
-        let mut context = OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+        let mut context =
+            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
         let source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate.0, 2);
         source.set_buffer(buf);
@@ -95,17 +113,14 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        let buffer = context.start_rendering_sync();
-        let duration = start.elapsed();
-        let result = BenchResult { name, duration, buffer };
-        results.push(result);
+        benchmark(&name, &mut context, &mut results);
     }
 
     {
         let name = "Simple source test with resampling (Mono)";
-        let start = Instant::now();
 
-        let mut context = OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+        let mut context =
+            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
         let source = context.create_buffer_source();
         let buf = get_buffer(&sources, 38000, 1);
         source.set_buffer(buf);
@@ -113,17 +128,14 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        let buffer = context.start_rendering_sync();
-        let duration = start.elapsed();
-        let result = BenchResult { name, duration, buffer };
-        results.push(result);
+        benchmark(&name, &mut context, &mut results);
     }
 
     {
         let name = "Simple source test with resampling (Stereo)";
-        let start = Instant::now();
 
-        let mut context = OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+        let mut context =
+            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
         let source = context.create_buffer_source();
         let buf = get_buffer(&sources, 38000, 2);
         source.set_buffer(buf);
@@ -131,18 +143,45 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        let buffer = context.start_rendering_sync();
-        let duration = start.elapsed();
-        let result = BenchResult { name, duration, buffer };
-        results.push(result);
+        benchmark(&name, &mut context, &mut results);
     }
 
     {
-        let name = "Synth";
-        let start = Instant::now();
+        let name = "Upmix without resampling (Mono -> Stereo)";
+
+        let mut context =
+            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+        let source = context.create_buffer_source();
+        let buf = get_buffer(&sources, sample_rate.0, 1);
+        source.set_buffer(buf);
+        source.set_loop(true);
+        source.connect(&context.destination());
+        source.start();
+
+        benchmark(&name, &mut context, &mut results);
+    }
+
+    {
+        let name = "Downmix without resampling (Stereo -> Mono)";
+
+        let mut context =
+            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+        let source = context.create_buffer_source();
+        let buf = get_buffer(&sources, sample_rate.0, 2);
+        source.set_buffer(buf);
+        source.set_loop(true);
+        source.connect(&context.destination());
+        source.start();
+
+        benchmark(&name, &mut context, &mut results);
+    }
+
+    {
+        let name = "Synth (Sawtooth with Envelope)";
 
         let sample_rate = SampleRate(44100);
-        let mut context = OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+        let mut context =
+            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
         let mut offset = 0.;
 
         let duration = DURATION as f64;
@@ -165,13 +204,52 @@ fn main() {
             offset += 140. / 60. / 4.; // 140 bpm (?)
         }
 
-        let buffer = context.start_rendering_sync();
-        let duration = start.elapsed();
-        let result = BenchResult { name, duration, buffer };
-        results.push(result);
+        benchmark(&name, &mut context, &mut results);
     }
 
+    {
+        let name = "Synth (Sawtooth without Envelope)";
 
+        let sample_rate = SampleRate(44100);
+        let mut context =
+            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+        let mut offset = 0.;
+
+        let duration = DURATION as f64;
+
+        while offset < duration {
+            let osc = context.create_oscillator();
+            osc.connect(&context.destination());
+            osc.set_type(OscillatorType::Sawtooth);
+            osc.frequency().set_value(110.);
+            osc.start_at(offset);
+            osc.stop_at(offset + 1.); // why not 0.1 ?
+
+            offset += 140. / 60. / 4.; // 140 bpm (?)
+        }
+
+        benchmark(&name, &mut context, &mut results);
+    }
+
+    {
+        let name = "Sawtooth with automation";
+
+        let mut context =
+            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+
+        let osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.set_type(OscillatorType::Sawtooth);
+        osc.frequency().set_value(2000.);
+        osc.frequency().linear_ramp_to_value_at_time(20., 10.);
+        osc.start_at(0.);
+
+        benchmark(&name, &mut context, &mut results);
+    }
+
+    // -------------------------------------------------------
+    // display results
+    // -------------------------------------------------------
     let stdout = stdout();
     let mut stdout = stdout.lock().into_raw_mode().unwrap();
     let stdin = stdin();
@@ -179,41 +257,57 @@ fn main() {
 
     write!(stdout, "\r\n").unwrap();
 
-    write!(stdout,
-        "{}results:{}\r\n",
+    write!(
+        stdout,
+        "{}> index {}{}| name {}{}| duration (ms) {}{}| Speedup vs. realtime {}\r\n",
         termion::style::Bold,
+        cursor::Left(200),
+        cursor::Right(10),
+        cursor::Left(200),
+        cursor::Right(65),
+        cursor::Left(200),
+        cursor::Right(65 + 16),
         termion::style::Reset,
-    ).unwrap();
-
-    // would be nice to draw a table
-    write!(stdout, "\r\n").unwrap();
-
-    write!(stdout,
-        "> index | name | duration (ms) | Speedup vs. realtime \r\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     for (index, result) in results.iter().enumerate() {
-        write!(stdout,
-            "- {} | {} \t| {} | {} \r\n",
+        write!(
+            stdout,
+            "- {} {}{}| {} {}{}| {} {}{}| {} \r\n",
             index + 1,
+            cursor::Left(200),
+            cursor::Right(10),
             result.name,
+            cursor::Left(200),
+            cursor::Right(65),
             result.duration.as_millis(),
+            cursor::Left(200),
+            cursor::Right(65 + 16),
             (DURATION as u128 * 1000) / result.duration.as_millis(),
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     write!(stdout, "\r\n").unwrap();
-    write!(stdout, "- Press 1, 2, 3, 4, to play output buffer for each test\r\n").unwrap();
+    write!(
+        stdout,
+        "- Press 1, 2, 3, 4, to play output buffer for each test\r\n"
+    )
+    .unwrap();
     write!(stdout, "- Press \"q\" to quit\r\n").unwrap();
     write!(stdout, "- Press \"s\" to stop playback\r\n").unwrap();
     write!(stdout, "\r\n").unwrap();
 
     stdout.flush().unwrap();
 
-    // preview results buffers
+    // -------------------------------------------------------
+    // handle input and preview
+    // -------------------------------------------------------
     let context = AudioContext::new(None);
     let mut current_source: Option<AudioBufferSourceNode> = None;
 
+    // that's really dirty
     let mut bytes = stdin.bytes();
     loop {
         let b = bytes.next().unwrap().unwrap();
@@ -224,24 +318,21 @@ fn main() {
             // stop source
             b's' => {
                 if let Some(source) = current_source {
-                    current_source = None;
                     source.stop();
+                    current_source = None;
                 }
-            },
-            // that's really dirty
+            }
             a => {
                 let num = a - 49;
-                if num >= 0 && num < 10 {
+
+                if num < 10 {
                     if let Some(source) = current_source {
-                        current_source = None;
                         source.stop();
                     }
 
                     let result = &results[num as usize];
 
-                    write!(stdout,
-                        "> play outout from {:?}\r\n", result.name,
-                    ).unwrap();
+                    write!(stdout, "> play outout from {:?}\r\n", result.name,).unwrap();
                     let buffer = result.buffer.clone();
                     let source = context.create_buffer_source();
                     source.set_buffer(buffer);
@@ -250,7 +341,7 @@ fn main() {
 
                     current_source = Some(source);
                 }
-            },
+            }
         }
 
         stdout.flush().unwrap();
