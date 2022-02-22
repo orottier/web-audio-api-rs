@@ -80,10 +80,8 @@ impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
 /// let media_element = MediaElement::new(stream);
 /// // pipe the media element into the web audio graph
 /// let context = AudioContext::new(None);
-/// let node = context.create_media_element_source(&media_element);
+/// let node = context.create_media_element_source(media_element);
 /// node.connect(&context.destination());
-/// // start media playback
-/// media_element.start();
 /// ```
 ///
 pub struct MediaDecoder {

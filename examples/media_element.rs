@@ -12,10 +12,8 @@ fn main() {
     let media_element = MediaElement::new(stream);
     // pipe the media element into the web audio graph
     let context = AudioContext::new(None);
-    let node = context.create_media_element_source(&media_element);
+    let node = context.create_media_element_source(media_element);
     node.connect(&context.destination());
-    // start media playback
-    media_element.start();
     // enjoy listening
     std::thread::sleep(std::time::Duration::from_secs(4));
 }

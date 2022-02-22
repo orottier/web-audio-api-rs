@@ -242,7 +242,7 @@ pub trait BaseAudioContext {
     /// only once in the web audio graph
     fn create_media_element_source(
         &self,
-        media: &MediaElement,
+        media: MediaElement,
     ) -> node::MediaElementAudioSourceNode {
         let opts = node::MediaElementAudioSourceOptions {
             media_element: media,

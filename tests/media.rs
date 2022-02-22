@@ -56,10 +56,9 @@ fn test_media_buffering() {
         };
 
         let element = MediaElement::new(media);
-        let node = context.create_media_element_source(&element);
+        let node = context.create_media_element_source(element);
         node.connect(&context.destination());
-        element.set_loop(true); // test if silence is not included in buffer
-        element.start();
+        node.set_loop(true); // test if silence is not included in buffer
     }
 
     // should be silent since the media stream did not yield any output
@@ -141,10 +140,9 @@ fn test_media_seeking() {
         };
 
         let element = MediaElement::new(media);
-        let node = context.create_media_element_source(&element);
+        let node = context.create_media_element_source(element);
         node.connect(&context.destination());
-        element.seek(2.); // test seeking in combination with slow buffering
-        element.start();
+        node.seek(2.); // test seeking in combination with slow buffering
     }
 
     // should be silent since the media stream did not yield any output

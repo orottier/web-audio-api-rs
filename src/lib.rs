@@ -129,11 +129,6 @@ impl AtomicF64 {
             .swap(u64::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst);
         f64::from_ne_bytes(prev.to_ne_bytes())
     }
-
-    pub fn fetch_add(&self, v: f64) -> f64 {
-        let prev = self.load();
-        self.swap(prev + v)
-    }
 }
 
 #[cfg(test)]

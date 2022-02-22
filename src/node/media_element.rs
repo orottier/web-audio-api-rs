@@ -1,6 +1,6 @@
 use crate::buffer::Resampler;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-// use crate::control::{Controller, Scheduler};
+use crate::control::Controller;
 use crate::media::MediaElement;
 use crate::RENDER_QUANTUM_SIZE;
 
@@ -10,8 +10,8 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer}
 // dictionary MediaElementAudioSourceOptions {
 //   required HTMLMediaElement mediaElement;
 // };
-pub struct MediaElementAudioSourceOptions<'a> {
-    pub media_element: &'a MediaElement,
+pub struct MediaElementAudioSourceOptions {
+    pub media_element: MediaElement,
 }
 
 /// An audio source for piping a [`MediaElement`] (e.g. .ogg, .wav, .mp3 files)
@@ -39,10 +39,8 @@ pub struct MediaElementAudioSourceOptions<'a> {
 /// let media_element = MediaElement::new(stream);
 /// // pipe the media element into the web audio graph
 /// let context = AudioContext::new(None);
-/// let node = context.create_media_element_source(&media_element);
+/// let node = context.create_media_element_source(media_element);
 /// node.connect(&context.destination());
-/// // start media playback
-/// media_element.start();
 /// ```
 /// # Examples
 ///
@@ -51,7 +49,7 @@ pub struct MediaElementAudioSourceOptions<'a> {
 pub struct MediaElementAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
-    // controller: Controller,
+    controller: Controller,
 }
 
 impl AudioNode for MediaElementAudioSourceNode {
@@ -76,9 +74,11 @@ impl MediaElementAudioSourceNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: MediaElementAudioSourceOptions) -> Self {
         context.base().register(move |registration| {
             let channel_config = ChannelConfigOptions::default().into();
-            let media_element = options.media_element.clone();
+            let controller = options.media_element.controller().clone();
+            let media_element = options.media_element;
 
             let node = MediaElementAudioSourceNode {
+                controller,
                 registration,
                 channel_config,
             };
@@ -93,5 +93,33 @@ impl MediaElementAudioSourceNode {
 
             (node, Box::new(render))
         })
+    }
+
+    pub fn seek(&self, when: f64) {
+        self.controller.seek(when);
+    }
+
+    pub fn loop_(&self) -> bool {
+        self.controller.loop_()
+    }
+
+    pub fn set_loop(&self, value: bool) {
+        self.controller.set_loop(value);
+    }
+
+    pub fn loop_start(&self) -> f64 {
+        self.controller.loop_start()
+    }
+
+    pub fn set_loop_start(&self, value: f64) {
+        self.controller.set_loop_start(value);
+    }
+
+    pub fn loop_end(&self) -> f64 {
+        self.controller.loop_end()
+    }
+
+    pub fn set_loop_end(&self, value: f64) {
+        self.controller.set_loop_end(value);
     }
 }

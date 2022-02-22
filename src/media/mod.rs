@@ -1,4 +1,4 @@
-//! Convenience abstractions that are not part of the WebAudio API
+//! Microphone input and media decoding (OGG, WAV, FLAC, ..)
 
 mod decoding;
 pub use decoding::MediaDecoder;
