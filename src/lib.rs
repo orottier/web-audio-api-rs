@@ -124,6 +124,62 @@ impl AtomicF64 {
     }
 }
 
+/// Assert that the given sample rate is valid.
+///
+/// Note that in practice sample rates should stand between 8000Hz (lower bound for
+/// voice based applications, e.g. see phone bandwidth) and 96000Hz (for very high
+/// quality audio applications and spectrum manipulation).
+/// Most common sample rates for musical applications are 44100 and 48000.
+/// - see <https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createbuffer-samplerate>
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - the given sample rate is zero
+///
+pub(crate) fn assert_valid_sample_rate(sample_rate: SampleRate) {
+    if sample_rate.0 == 0 {
+        panic!(
+            "NotSupportedError - Invalid sample rate: {:?}, should be strictly positive",
+            sample_rate.0
+        );
+    }
+}
+
+/// Assert that the given number of channels is valid.
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - the given number of channels is outside the [1, 32] range,
+/// 32 being defined by the MAX_CHANNELS constant.
+///
+pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
+    if number_of_channels == 0 || number_of_channels > MAX_CHANNELS {
+        panic!(
+            "NotSupportedError - Invalid number of channels: {:?} is outside range [1, {:?}]",
+            number_of_channels, MAX_CHANNELS
+        );
+    }
+}
+
+/// Assert that the given channel number is valid according the number of channel
+/// of an Audio asset (e.g. [`AudioBuffer`](crate::buffer::AudioBuffer))
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - the given channel number is greater than or equal to the given number of channels.
+///
+pub(crate) fn assert_valid_channel_number(channel_number: usize, number_of_channels: usize) {
+    if channel_number >= number_of_channels {
+        panic!(
+            "IndexSizeError - Invalid channel number {:?} (number of channels: {:?})",
+            channel_number, number_of_channels
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
@@ -137,5 +193,36 @@ mod tests {
 
         f.store(3.0);
         assert_float_eq!(f.load(), 3.0, abs <= 0.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_sample_rate() {
+        let sample_rate = SampleRate(0);
+        assert_valid_sample_rate(sample_rate);
+    }
+
+    #[test]
+    fn test_valid_sample_rate() {
+        let sample_rate = SampleRate(1);
+        assert_valid_sample_rate(sample_rate);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_number_of_channels_min() {
+        assert_valid_number_of_channels(0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_number_of_channels_max() {
+        assert_valid_number_of_channels(33);
+    }
+
+    #[test]
+    fn test_valid_number_of_channels() {
+        assert_valid_number_of_channels(1);
+        assert_valid_number_of_channels(32);
     }
 }
