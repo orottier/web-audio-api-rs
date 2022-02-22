@@ -32,12 +32,8 @@ fn load_buffer(sources: &mut Vec<AudioBuffer>, pathname: &str, sample_rate: u32)
     sources.push(audio_buffer);
 }
 
-fn get_buffer(
-    sources: &Vec<AudioBuffer>,
-    sample_rate: u32,
-    number_of_channels: usize,
-) -> AudioBuffer {
-    let buffer = sources.into_iter().find(|&buffer| {
+fn get_buffer(sources: &[AudioBuffer], sample_rate: u32, number_of_channels: usize) -> AudioBuffer {
+    let buffer = sources.iter().find(|&buffer| {
         buffer.sample_rate_raw().0 == sample_rate
             && buffer.number_of_channels() == number_of_channels
     });
@@ -45,7 +41,11 @@ fn get_buffer(
     buffer.unwrap().clone()
 }
 
-fn benchmark<'a>(name: &'a str, context: &mut OfflineAudioContext, results: &mut Vec<BenchResult<'a>>) {
+fn benchmark<'a>(
+    name: &'a str,
+    context: &mut OfflineAudioContext,
+    results: &mut Vec<BenchResult<'a>>,
+) {
     let start = Instant::now();
     let buffer = context.start_rendering_sync();
     let duration = start.elapsed();
@@ -83,7 +83,7 @@ fn main() {
         let mut context =
             OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
 
-        benchmark(&name, &mut context, &mut results);
+        benchmark(name, &mut context, &mut results);
     }
 
     {
@@ -98,7 +98,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&name, &mut context, &mut results);
+        benchmark(name, &mut context, &mut results);
     }
 
     {
@@ -113,7 +113,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&name, &mut context, &mut results);
+        benchmark(name, &mut context, &mut results);
     }
 
     {
@@ -128,7 +128,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&name, &mut context, &mut results);
+        benchmark(name, &mut context, &mut results);
     }
 
     {
@@ -143,7 +143,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&name, &mut context, &mut results);
+        benchmark(name, &mut context, &mut results);
     }
 
     {
@@ -158,7 +158,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&name, &mut context, &mut results);
+        benchmark(name, &mut context, &mut results);
     }
 
     {
@@ -173,7 +173,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&name, &mut context, &mut results);
+        benchmark(name, &mut context, &mut results);
     }
 
     {
@@ -204,7 +204,7 @@ fn main() {
             offset += 140. / 60. / 4.; // 140 bpm (?)
         }
 
-        benchmark(&name, &mut context, &mut results);
+        benchmark(name, &mut context, &mut results);
     }
 
     {
@@ -228,7 +228,7 @@ fn main() {
             offset += 140. / 60. / 4.; // 140 bpm (?)
         }
 
-        benchmark(&name, &mut context, &mut results);
+        benchmark(name, &mut context, &mut results);
     }
 
     {
@@ -244,7 +244,7 @@ fn main() {
         osc.frequency().linear_ramp_to_value_at_time(20., 10.);
         osc.start_at(0.);
 
-        benchmark(&name, &mut context, &mut results);
+        benchmark(name, &mut context, &mut results);
     }
 
     // -------------------------------------------------------
