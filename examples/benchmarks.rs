@@ -73,10 +73,14 @@ fn main() {
     load_buffer(&mut sources, "samples/think-stereo-44100.wav", 44100);
     load_buffer(&mut sources, "samples/think-stereo-48000.wav", 48000);
 
+    let stdout = stdout();
+    let mut stdout = stdout.lock().into_raw_mode().unwrap();
+
     // -------------------------------------------------------
     // benchamarks
-    // @todo - factorize
     // -------------------------------------------------------
+    write!(stdout, "\r\n> Running benchmarks ").unwrap();
+
     {
         let name = "Baseline";
 
@@ -84,6 +88,9 @@ fn main() {
             OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
 
         benchmark(name, &mut context, &mut results);
+
+        write!(stdout, ".").unwrap();
+        stdout.flush().unwrap();
     }
 
     {
@@ -99,6 +106,9 @@ fn main() {
         source.start();
 
         benchmark(name, &mut context, &mut results);
+
+        write!(stdout, ".").unwrap();
+        stdout.flush().unwrap();
     }
 
     {
@@ -114,6 +124,9 @@ fn main() {
         source.start();
 
         benchmark(name, &mut context, &mut results);
+
+        write!(stdout, ".").unwrap();
+        stdout.flush().unwrap();
     }
 
     {
@@ -129,6 +142,9 @@ fn main() {
         source.start();
 
         benchmark(name, &mut context, &mut results);
+
+        write!(stdout, ".").unwrap();
+        stdout.flush().unwrap();
     }
 
     {
@@ -144,6 +160,9 @@ fn main() {
         source.start();
 
         benchmark(name, &mut context, &mut results);
+
+        write!(stdout, ".").unwrap();
+        stdout.flush().unwrap();
     }
 
     {
@@ -159,6 +178,9 @@ fn main() {
         source.start();
 
         benchmark(name, &mut context, &mut results);
+
+        write!(stdout, ".").unwrap();
+        stdout.flush().unwrap();
     }
 
     {
@@ -174,6 +196,9 @@ fn main() {
         source.start();
 
         benchmark(name, &mut context, &mut results);
+
+        write!(stdout, ".").unwrap();
+        stdout.flush().unwrap();
     }
 
     {
@@ -205,6 +230,9 @@ fn main() {
         }
 
         benchmark(name, &mut context, &mut results);
+
+        write!(stdout, ".").unwrap();
+        stdout.flush().unwrap();
     }
 
     {
@@ -229,6 +257,9 @@ fn main() {
         }
 
         benchmark(name, &mut context, &mut results);
+
+        write!(stdout, ".").unwrap();
+        stdout.flush().unwrap();
     }
 
     {
@@ -245,21 +276,22 @@ fn main() {
         osc.start_at(0.);
 
         benchmark(name, &mut context, &mut results);
+
+        write!(stdout, ".").unwrap();
+        stdout.flush().unwrap();
     }
 
     // -------------------------------------------------------
     // display results
     // -------------------------------------------------------
-    let stdout = stdout();
-    let mut stdout = stdout.lock().into_raw_mode().unwrap();
     let stdin = stdin();
     let stdin = stdin.lock();
 
-    write!(stdout, "\r\n").unwrap();
+    write!(stdout, "\r\n\r\n").unwrap();
 
     write!(
         stdout,
-        "{}> index {}{}| name {}{}| duration (ms) {}{}| Speedup vs. realtime {}\r\n",
+        "{}+ index {}{}| name {}{}| duration (ms) {}{}| Speedup vs. realtime {}\r\n",
         termion::style::Bold,
         cursor::Left(200),
         cursor::Right(10),
@@ -290,13 +322,14 @@ fn main() {
     }
 
     write!(stdout, "\r\n").unwrap();
+    // @todo - this needs to be reviwed can only play 9 first buffers...
     write!(
         stdout,
-        "- Press 1, 2, 3, 4, to play output buffer for each test\r\n"
+        "+ Press [1-9] to play output buffer for each test\r\n"
     )
     .unwrap();
-    write!(stdout, "- Press \"q\" to quit\r\n").unwrap();
-    write!(stdout, "- Press \"s\" to stop playback\r\n").unwrap();
+    write!(stdout, "+ Press \"s\" to stop playback\r\n").unwrap();
+    write!(stdout, "+ Press \"q\" to quit\r\n").unwrap();
     write!(stdout, "\r\n").unwrap();
 
     stdout.flush().unwrap();
