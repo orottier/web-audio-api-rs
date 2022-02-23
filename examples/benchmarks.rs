@@ -1,8 +1,11 @@
 use std::fs::File;
-use std::io::{stdin, stdout, Read, Write};
+use std::io::{stdin, stdout, Write};
 use std::time::{Duration, Instant};
 
+use termion::event::Key;
+use termion::input::TermRead;
 use termion::cursor;
+use termion::clear;
 use termion::raw::IntoRawMode;
 
 use web_audio_api::buffer::AudioBuffer;
@@ -82,7 +85,7 @@ fn main() {
     write!(stdout, "\r\n> Running benchmarks ").unwrap();
 
     {
-        let name = "Baseline";
+        let name = "Baseline (silence)";
 
         let mut context =
             OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
@@ -291,7 +294,7 @@ fn main() {
 
     write!(
         stdout,
-        "{}+ index {}{}| name {}{}| duration (ms) {}{}| Speedup vs. realtime {}\r\n",
+        "{}+ id {}{}| name {}{}| duration (ms) {}{}| Speedup vs. realtime {}\r\n",
         termion::style::Bold,
         cursor::Left(200),
         cursor::Right(10),
@@ -323,13 +326,14 @@ fn main() {
 
     write!(stdout, "\r\n").unwrap();
     // @todo - this needs to be reviwed can only play 9 first buffers...
+    write!(stdout, "+ Press \"q\" or \"ctrl + c\" to quit\r\n").unwrap();
+    write!(stdout, "\r\n").unwrap();
     write!(
         stdout,
-        "+ Press [1-9] to play output buffer for each test\r\n"
+        "+ Type the id of the result you want to listen and press \"backspace\"\r\n"
     )
     .unwrap();
     write!(stdout, "+ Press \"s\" to stop playback\r\n").unwrap();
-    write!(stdout, "+ Press \"q\" to quit\r\n").unwrap();
     write!(stdout, "\r\n").unwrap();
 
     stdout.flush().unwrap();
@@ -339,33 +343,58 @@ fn main() {
     // -------------------------------------------------------
     let context = AudioContext::new(None);
     let mut current_source: Option<AudioBufferSourceNode> = None;
+    let mut inputs = vec![];
 
-    // that's really dirty
-    let mut bytes = stdin.bytes();
-    loop {
-        let b = bytes.next().unwrap().unwrap();
+    for c in stdin.keys() {
+        match c.unwrap() {
+            Key::Char('q') |
+            Key::Ctrl('c') => {
+                write!(stdout, "\n\r").unwrap();
+                stdout.flush().unwrap();
+                return
+            },
+            Key::Char('s') => {
+                if let Some(source) = current_source {
+                    source.stop();
+                    current_source = None;
 
-        match b {
-            // quit
-            b'q' => return,
-            // stop source
-            b's' => {
+                    write!(
+                        stdout,
+                        "{}{}{}",
+                        cursor::Down(1),
+                        clear::CurrentLine,
+                        cursor::Up(1),
+                    ).unwrap();
+                }
+            },
+            Key::Char(c) => {
+                if c.is_digit(10) {
+                    inputs.push(c);
+                    write!(stdout, "{}", c).unwrap();
+                }
+            },
+            Key::Backspace => {
                 if let Some(source) = current_source {
                     source.stop();
                     current_source = None;
                 }
-            }
-            a => {
-                let num = a - 49;
 
-                if num < 10 {
-                    if let Some(source) = current_source {
-                        source.stop();
-                    }
+                write!(
+                    stdout,
+                    "{}{}",
+                    clear::CurrentLine,
+                    cursor::Left(200),
+                ).unwrap();
 
-                    let result = &results[num as usize];
+                let id_str: String = inputs.clone().into_iter().collect();
+                let id = id_str.parse::<usize>().unwrap();
+                let index = id - 1;
 
-                    write!(stdout, "> play outout from {:?}\r\n", result.name,).unwrap();
+                inputs.clear();
+
+                if id - 1 < results.len() {
+                    let result = &results[index];
+
                     let buffer = result.buffer.clone();
                     let source = context.create_buffer_source();
                     source.set_buffer(buffer);
@@ -373,10 +402,30 @@ fn main() {
                     source.start();
 
                     current_source = Some(source);
-                }
-            }
-        }
 
+                    write!(
+                        stdout,
+                        "{}{}> playing outout from {}{}{}",
+                        cursor::Down(1),
+                        clear::CurrentLine,
+                        result.name,
+                        cursor::Left(200),
+                        cursor::Up(1),
+                    ).unwrap();
+                } else {
+                    write!(
+                        stdout,
+                        "{}{}> undefined id \"{}\"{}{}",
+                        cursor::Down(1),
+                        clear::CurrentLine,
+                        id,
+                        cursor::Left(200),
+                        cursor::Up(1),
+                    ).unwrap();
+                }
+            },
+            _ => {}
+        }
         stdout.flush().unwrap();
     }
 }
