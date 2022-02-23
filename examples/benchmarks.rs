@@ -2,10 +2,10 @@ use std::fs::File;
 use std::io::{stdin, stdout, Write};
 use std::time::{Duration, Instant};
 
+use termion::clear;
+use termion::cursor;
 use termion::event::Key;
 use termion::input::TermRead;
-use termion::cursor;
-use termion::clear;
 use termion::raw::IntoRawMode;
 
 use web_audio_api::buffer::AudioBuffer;
@@ -45,6 +45,7 @@ fn get_buffer(sources: &[AudioBuffer], sample_rate: u32, number_of_channels: usi
 }
 
 fn benchmark<'a>(
+    stdout: &mut termion::raw::RawTerminal<std::io::Stdout>,
     name: &'a str,
     context: &mut OfflineAudioContext,
     results: &mut Vec<BenchResult<'a>>,
@@ -60,6 +61,9 @@ fn benchmark<'a>(
     };
 
     results.push(result);
+
+    write!(stdout, ".").unwrap();
+    stdout.flush().unwrap();
 }
 
 fn main() {
@@ -76,8 +80,7 @@ fn main() {
     load_buffer(&mut sources, "samples/think-stereo-44100.wav", 44100);
     load_buffer(&mut sources, "samples/think-stereo-48000.wav", 48000);
 
-    let stdout = stdout();
-    let mut stdout = stdout.lock().into_raw_mode().unwrap();
+    let mut stdout = stdout().into_raw_mode().unwrap();
 
     // -------------------------------------------------------
     // benchamarks
@@ -90,10 +93,7 @@ fn main() {
         let mut context =
             OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
 
-        benchmark(name, &mut context, &mut results);
-
-        write!(stdout, ".").unwrap();
-        stdout.flush().unwrap();
+        benchmark(&mut stdout, name, &mut context, &mut results);
     }
 
     {
@@ -108,10 +108,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(name, &mut context, &mut results);
-
-        write!(stdout, ".").unwrap();
-        stdout.flush().unwrap();
+        benchmark(&mut stdout, name, &mut context, &mut results);
     }
 
     {
@@ -126,10 +123,33 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(name, &mut context, &mut results);
+        benchmark(&mut stdout, name, &mut context, &mut results);
+    }
 
-        write!(stdout, ".").unwrap();
-        stdout.flush().unwrap();
+    {
+        let name = "Simple source test without resampling (Stereo and positionnal)";
+
+        let mut context =
+            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+
+        let panner = context.create_panner();
+        panner.connect(&context.destination());
+        panner.position_x().set_value(1.);
+        panner.position_y().set_value(2.);
+        panner.position_z().set_value(3.);
+        panner.orientation_x().set_value(1.);
+        panner.orientation_y().set_value(2.);
+        panner.orientation_z().set_value(3.);
+
+        let source = context.create_buffer_source();
+        source.connect(&panner);
+
+        let buf = get_buffer(&sources, sample_rate.0, 2);
+        source.set_buffer(buf);
+        source.set_loop(true);
+        source.start();
+
+        benchmark(&mut stdout, name, &mut context, &mut results);
     }
 
     {
@@ -144,10 +164,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(name, &mut context, &mut results);
-
-        write!(stdout, ".").unwrap();
-        stdout.flush().unwrap();
+        benchmark(&mut stdout, name, &mut context, &mut results);
     }
 
     {
@@ -162,10 +179,33 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(name, &mut context, &mut results);
+        benchmark(&mut stdout, name, &mut context, &mut results);
+    }
 
-        write!(stdout, ".").unwrap();
-        stdout.flush().unwrap();
+    {
+        let name = "Simple source test with resampling (Stereo and positionnal)";
+
+        let mut context =
+            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+
+        let panner = context.create_panner();
+        panner.connect(&context.destination());
+        panner.position_x().set_value(1.);
+        panner.position_y().set_value(2.);
+        panner.position_z().set_value(3.);
+        panner.orientation_x().set_value(1.);
+        panner.orientation_y().set_value(2.);
+        panner.orientation_z().set_value(3.);
+
+        let source = context.create_buffer_source();
+        source.connect(&panner);
+
+        let buf = get_buffer(&sources, 38000, 2);
+        source.set_buffer(buf);
+        source.set_loop(true);
+        source.start();
+
+        benchmark(&mut stdout, name, &mut context, &mut results);
     }
 
     {
@@ -180,10 +220,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(name, &mut context, &mut results);
-
-        write!(stdout, ".").unwrap();
-        stdout.flush().unwrap();
+        benchmark(&mut stdout, name, &mut context, &mut results);
     }
 
     {
@@ -198,10 +235,87 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(name, &mut context, &mut results);
+        benchmark(&mut stdout, name, &mut context, &mut results);
+    }
 
-        write!(stdout, ".").unwrap();
-        stdout.flush().unwrap();
+    {
+        let name = "Simple mixing (100x same buffer) - be careful w/ volume here!";
+
+        let adjusted_duration = DURATION / 4;
+        let mut context =
+            OfflineAudioContext::new(1, adjusted_duration * sample_rate.0 as usize, sample_rate);
+
+        for _ in 0..100 {
+            let source = context.create_buffer_source();
+            let buf = get_buffer(&sources, 38000, 1);
+            source.set_buffer(buf);
+            source.set_loop(true);
+            source.connect(&context.destination());
+            source.start();
+        }
+
+        benchmark(&mut stdout, name, &mut context, &mut results);
+    }
+
+    {
+        let name = "Simple mixing (100 different buffers) - be careful w/ volume here!";
+
+        let adjusted_duration = DURATION / 4;
+        let mut context =
+            OfflineAudioContext::new(1, adjusted_duration * sample_rate.0 as usize, sample_rate);
+        let reference = get_buffer(&sources, 38000, 1);
+        let channel_data = reference.get_channel_data(0);
+
+        for _ in 0..100 {
+            let mut buffer = context.create_buffer(1, reference.length(), SampleRate(38000));
+            buffer.copy_to_channel(channel_data, 0);
+
+            let source = context.create_buffer_source();
+            source.set_buffer(buffer);
+            source.set_loop(true);
+            source.connect(&context.destination());
+            source.start();
+        }
+
+        benchmark(&mut stdout, name, &mut context, &mut results);
+    }
+
+    {
+        let name = "Simple mixing with gains";
+
+        let mut context =
+            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+
+        let gain = context.create_gain();
+        gain.connect(&context.destination());
+        gain.gain().set_value(-1.);
+
+        let mut gains_i = vec![];
+
+        for _ in 0..4 {
+            let gain_i = context.create_gain();
+            gain_i.connect(&gain);
+            gain_i.gain().set_value(0.25);
+            gains_i.push(gain_i);
+        }
+
+        for _ in 0..2 {
+            let buf = get_buffer(&sources, 38000, 1);
+
+            let source = context.create_buffer_source();
+            source.set_buffer(buf);
+            source.set_loop(true);
+            source.start();
+
+            for i in 0..4 {
+                let gain_ij = context.create_gain();
+                gain_ij.gain().set_value(0.5);
+                gain_ij.connect(&gains_i[i]);
+                source.connect(&gain_ij);
+            }
+        }
+
+        benchmark(&mut stdout, name, &mut context, &mut results);
     }
 
     {
@@ -232,10 +346,7 @@ fn main() {
             offset += 140. / 60. / 4.; // 140 bpm (?)
         }
 
-        benchmark(name, &mut context, &mut results);
-
-        write!(stdout, ".").unwrap();
-        stdout.flush().unwrap();
+        benchmark(&mut stdout, name, &mut context, &mut results);
     }
 
     {
@@ -259,10 +370,7 @@ fn main() {
             offset += 140. / 60. / 4.; // 140 bpm (?)
         }
 
-        benchmark(name, &mut context, &mut results);
-
-        write!(stdout, ".").unwrap();
-        stdout.flush().unwrap();
+        benchmark(&mut stdout, name, &mut context, &mut results);
     }
 
     {
@@ -278,10 +386,7 @@ fn main() {
         osc.frequency().linear_ramp_to_value_at_time(20., 10.);
         osc.start_at(0.);
 
-        benchmark(name, &mut context, &mut results);
-
-        write!(stdout, ".").unwrap();
-        stdout.flush().unwrap();
+        benchmark(&mut stdout, name, &mut context, &mut results);
     }
 
     // -------------------------------------------------------
@@ -294,14 +399,16 @@ fn main() {
 
     write!(
         stdout,
-        "{}+ id {}{}| name {}{}| duration (ms) {}{}| Speedup vs. realtime {}\r\n",
+        "{}+ id {}{}| name {}{}| duration (ms) {}{}| Speedup vs. realtime {}{}| buffer.duration (s) {}\r\n",
         termion::style::Bold,
         cursor::Left(200),
         cursor::Right(10),
         cursor::Left(200),
-        cursor::Right(65),
+        cursor::Right(85),
         cursor::Left(200),
-        cursor::Right(65 + 16),
+        cursor::Right(85 + 16),
+        cursor::Left(200),
+        cursor::Right(85 + 40),
         termion::style::Reset,
     )
     .unwrap();
@@ -309,17 +416,20 @@ fn main() {
     for (index, result) in results.iter().enumerate() {
         write!(
             stdout,
-            "- {} {}{}| {} {}{}| {} {}{}| {} \r\n",
+            "- {} {}{}| {} {}{}| {} {}{}| {} {}{}| {}\r\n",
             index + 1,
             cursor::Left(200),
             cursor::Right(10),
             result.name,
             cursor::Left(200),
-            cursor::Right(65),
+            cursor::Right(85),
             result.duration.as_millis(),
             cursor::Left(200),
-            cursor::Right(65 + 16),
+            cursor::Right(85 + 16),
             (DURATION as u128 * 1000) / result.duration.as_millis(),
+            cursor::Left(200),
+            cursor::Right(85 + 40),
+            result.buffer.duration(),
         )
         .unwrap();
     }
@@ -347,12 +457,11 @@ fn main() {
 
     for c in stdin.keys() {
         match c.unwrap() {
-            Key::Char('q') |
-            Key::Ctrl('c') => {
-                write!(stdout, "\n\r").unwrap();
+            Key::Char('q') | Key::Ctrl('c') => {
+                write!(stdout, "\n\r\n\r").unwrap();
                 stdout.flush().unwrap();
-                return
-            },
+                return;
+            }
             Key::Char('s') => {
                 if let Some(source) = current_source {
                     source.stop();
@@ -364,27 +473,23 @@ fn main() {
                         cursor::Down(1),
                         clear::CurrentLine,
                         cursor::Up(1),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 }
-            },
+            }
             Key::Char(c) => {
                 if c.is_digit(10) {
                     inputs.push(c);
                     write!(stdout, "{}", c).unwrap();
                 }
-            },
+            }
             Key::Backspace => {
                 if let Some(source) = current_source {
                     source.stop();
                     current_source = None;
                 }
 
-                write!(
-                    stdout,
-                    "{}{}",
-                    clear::CurrentLine,
-                    cursor::Left(200),
-                ).unwrap();
+                write!(stdout, "{}{}", clear::CurrentLine, cursor::Left(200),).unwrap();
 
                 let id_str: String = inputs.clone().into_iter().collect();
                 let id = id_str.parse::<usize>().unwrap();
@@ -411,7 +516,8 @@ fn main() {
                         result.name,
                         cursor::Left(200),
                         cursor::Up(1),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 } else {
                     write!(
                         stdout,
@@ -421,9 +527,10 @@ fn main() {
                         id,
                         cursor::Left(200),
                         cursor::Up(1),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 }
-            },
+            }
             _ => {}
         }
         stdout.flush().unwrap();
