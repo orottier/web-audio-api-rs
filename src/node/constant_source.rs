@@ -81,8 +81,22 @@ impl AudioNode for ConstantSourceNode {
 }
 
 impl AudioScheduledSourceNode for ConstantSourceNode {
-    fn scheduler(&self) -> &Scheduler {
-        &self.scheduler
+    fn start(&self) {
+        let when = self.registration.context().current_time();
+        self.start_at(when);
+    }
+
+    fn start_at(&self, when: f64) {
+        self.scheduler.start_at(when);
+    }
+
+    fn stop(&self) {
+        let when = self.registration.context().current_time();
+        self.stop_at(when);
+    }
+
+    fn stop_at(&self, when: f64) {
+        self.scheduler.stop_at(when);
     }
 }
 

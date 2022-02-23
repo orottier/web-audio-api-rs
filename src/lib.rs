@@ -4,35 +4,29 @@
 //! ```no_run
 //! use std::fs::File;
 //! use web_audio_api::context::{BaseAudioContext, AudioContext};
-//! use web_audio_api::media::{MediaElement, MediaDecoder};
-//! use web_audio_api::node::{AudioNode, AudioControllableSourceNode, AudioScheduledSourceNode};
+//! use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 //!
 //! let context = AudioContext::new(None);
 //!
-//! // setup background music:
-//! // read from local file
-//! let file = File::open("samples/major-scale.ogg").unwrap();
-//! // decode file to media stream
-//! let stream = MediaDecoder::try_new(file).unwrap();
-//! // wrap stream in MediaElement, so we can control it (loop, play/pause)
-//! let mut media = MediaElement::new(stream);
-//! // register as media element in the audio context
-//! let background = context.create_media_element_source(media);
-//! // use a gain node to control volume
-//! let gain = context.create_gain();
-//! // play at low volume
-//! gain.gain().set_value(0.5);
-//! // connect the media node to the gain node
-//! background.connect(&gain);
-//! // connect the gain node to the destination node (speakers)
-//! gain.connect(&context.destination());
-//! // start playback
-//! background.set_loop(true);
-//! background.start();
+//! // create an audio buffer from a given file
+//! let file = File::open("samples/sample.wav").unwrap();
+//! let buffer = context.decode_audio_data_sync(file).unwrap();
 //!
-//! // mix in an oscillator sound
+//! // play the buffer at given volume
+//! let volume = context.create_gain();
+//! volume.connect(&context.destination());
+//! volume.gain().set_value(0.5);
+//!
+//! let buffer_source = context.create_buffer_source();
+//! buffer_source.connect(&volume);
+//! buffer_source.set_buffer(buffer);
+//!
+//! // create oscillator branch
 //! let osc = context.create_oscillator();
 //! osc.connect(&context.destination());
+//!
+//! // start the sources
+//! buffer_source.start();
 //! osc.start();
 //!
 //! // enjoy listening
@@ -51,13 +45,15 @@ pub const MAX_CHANNELS: usize = 32;
 
 pub mod buffer;
 pub mod context;
-pub mod control;
+pub(crate) mod control;
 pub mod media;
 pub mod node;
 pub mod param;
 pub mod periodic_wave;
 pub mod render;
-pub mod spatial;
+
+mod spatial;
+pub use spatial::AudioListener;
 
 #[cfg(test)]
 mod snapshot;
@@ -127,13 +123,6 @@ impl AtomicF64 {
     pub fn store(&self, v: f64) {
         self.inner
             .store(u64::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst)
-    }
-
-    pub fn swap(&self, v: f64) -> f64 {
-        let prev = self
-            .inner
-            .swap(u64::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst);
-        f64::from_ne_bytes(prev.to_ne_bytes())
     }
 }
 
@@ -206,10 +195,6 @@ mod tests {
 
         f.store(3.0);
         assert_float_eq!(f.load(), 3.0, abs <= 0.);
-
-        let prev = f.swap(4.0);
-        assert_float_eq!(prev, 3.0, abs <= 0.);
-        assert_float_eq!(f.load(), 4.0, abs <= 0.);
     }
 
     #[test]

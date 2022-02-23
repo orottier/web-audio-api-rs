@@ -1,6 +1,7 @@
 //! Spatialization/Panning primitives
 //!
-//! Required for panning algorithm, distance and cone effects of [`crate::node::PannerNode`]s
+//! Required for panning algorithm, distance and cone effects of panner nodes
+
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
@@ -21,7 +22,11 @@ pub(crate) const PARAM_OPTS: AudioParamDescriptor = AudioParamDescriptor {
 
 /// Represents the position and orientation of the person listening to the audio scene
 ///
-/// All PannerNode objects spatialize in relation to the [`crate::context::BaseAudioContext`]'s listener.
+/// All [`PannerNode`](crate::node::PannerNode) objects spatialize in relation to the [BaseAudioContext's](crate::context::BaseAudioContext) listener.
+///
+/// # Usage
+///
+/// For example usage, check the [`PannerNode`](crate::node::PannerNode) docs.
 pub struct AudioListener {
     pub(crate) position_x: AudioParam,
     pub(crate) position_y: AudioParam,
