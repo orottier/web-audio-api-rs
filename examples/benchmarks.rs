@@ -307,10 +307,10 @@ fn main() {
             source.set_loop(true);
             source.start();
 
-            for i in 0..4 {
+            for gain_i in gains_i.iter() {
                 let gain_ij = context.create_gain();
                 gain_ij.gain().set_value(0.5);
-                gain_ij.connect(&gains_i[i]);
+                gain_ij.connect(gain_i);
                 source.connect(&gain_ij);
             }
         }
