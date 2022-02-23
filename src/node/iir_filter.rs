@@ -350,7 +350,6 @@ mod test {
 
     use crate::{
         context::{BaseAudioContext, OfflineAudioContext},
-        media::{MediaDecoder, MediaElement},
         node::{AudioNode, AudioScheduledSourceNode},
         snapshot, SampleRate,
     };
@@ -589,15 +588,8 @@ mod test {
 
         let mut context = OfflineAudioContext::new(1, LENGTH, SampleRate(44_100));
 
-        // setup background music:
-        // read from local file
         let file = File::open("samples/white.ogg").unwrap();
-        // decode file to media stream
-        let stream = MediaDecoder::try_new(file).unwrap();
-        // wrap stream in MediaElement, so we can control it (loop, play/pause)
-        let media = MediaElement::new(stream);
-        // register as media element in the audio context
-        let background = context.create_media_element_source(media);
+        let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
         let feedforward = vec![
             0.019_618_022_238_052_212,
@@ -612,12 +604,16 @@ mod test {
             channel_config: ChannelConfigOptions::default(),
         };
         let iir = IIRFilterNode::new(&context, options);
-
-        background.connect(&iir);
         iir.connect(&context.destination());
 
-        background.start();
+        let src = context.create_buffer_source();
+        src.set_buffer(audio_buffer);
+        src.connect(&iir);
+        src.start();
+
         let output = context.start_rendering_sync();
+
+        // review the following, this should be fixed using an AudioBufferSourceNode
 
         // retrieve processed data by removing silence chunk
         // These silence slices are inserted inconsistently from an test execution to another

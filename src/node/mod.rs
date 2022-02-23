@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioNodeId, ConcreteBaseAudioContext};
-use crate::control::{Controller, ScheduledState, Scheduler};
+// use crate::control::{Controller, Scheduler};
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{BufferDepletedError, SampleRate};
@@ -35,8 +35,6 @@ mod analyser;
 pub use analyser::*;
 mod audio_buffer_source;
 pub use audio_buffer_source::*;
-mod media_element;
-pub use media_element::*;
 mod media_stream;
 pub use media_stream::*;
 mod waveshaper;
@@ -258,6 +256,7 @@ pub trait AudioNode {
     fn channel_count_mode(&self) -> ChannelCountMode {
         self.channel_config_raw().count_mode()
     }
+
     fn set_channel_count_mode(&self, v: ChannelCountMode) {
         self.channel_config_raw().set_count_mode(v)
     }
@@ -266,6 +265,7 @@ pub trait AudioNode {
     fn channel_interpretation(&self) -> ChannelInterpretation {
         self.channel_config_raw().interpretation()
     }
+
     fn set_channel_interpretation(&self, v: ChannelInterpretation) {
         self.channel_config_raw().set_interpretation(v)
     }
@@ -274,6 +274,7 @@ pub trait AudioNode {
     fn channel_count(&self) -> usize {
         self.channel_config_raw().count()
     }
+
     fn set_channel_count(&self, v: usize) {
         self.channel_config_raw().set_count(v)
     }
@@ -282,73 +283,28 @@ pub trait AudioNode {
 /// Interface of source nodes, controlling start and stop times.
 /// The node will emit silence before it is started, and after it has ended.
 pub trait AudioScheduledSourceNode {
-    fn scheduler(&self) -> &Scheduler;
-
-    /// Schedule playback start at this timestamp
-    fn start_at(&self, start: f64) {
-        self.scheduler().start_at(start)
-    }
-
-    /// Stop playback at this timestamp
-    fn stop_at(&self, stop: f64) {
-        self.scheduler().stop_at(stop)
-    }
-
     /// Play immediately
-    fn start(&self) {
-        self.start_at(0.);
-    }
-
+    fn start(&self);
+    /// Schedule playback start at given timestamp
+    fn start_at(&self, when: f64);
     /// Stop immediately
-    fn stop(&self) {
-        self.stop_at(0.);
-    }
+    fn stop(&self);
+    /// Schedule playback stop at given timestamp
+    fn stop_at(&self, when: f64);
 }
 
-/// Interface of source nodes, controlling pause/loop/offsets.
-pub trait AudioControllableSourceNode {
-    fn controller(&self) -> &Controller;
-
-    fn loop_(&self) -> bool {
-        self.controller().loop_()
-    }
-
-    fn set_loop(&self, loop_: bool) {
-        self.controller().set_loop(loop_)
-    }
-
-    fn loop_start(&self) -> f64 {
-        self.controller().loop_start()
-    }
-
-    fn set_loop_start(&self, loop_start: f64) {
-        self.controller().set_loop_start(loop_start)
-    }
-
-    fn loop_end(&self) -> f64 {
-        self.controller().loop_end()
-    }
-
-    fn set_loop_end(&self, loop_end: f64) {
-        self.controller().set_loop_end(loop_end)
-    }
-
-    fn seek(&self, timestamp: f64) {
-        self.controller().seek(timestamp)
-    }
-}
-
+// `MediaStreamRenderer` is internally used by `MediaElementAudioSourceNode` and
+// `MediaStreamAudioSourceNode`.
 struct MediaStreamRenderer<R> {
     stream: R,
-    scheduler: Scheduler,
     finished: bool,
 }
 
 impl<R> MediaStreamRenderer<R> {
-    fn new(stream: R, scheduler: Scheduler) -> Self {
+    fn new(stream: R) -> Self {
         Self {
             stream,
-            scheduler,
+            // scheduler,
             finished: false,
         }
     }
@@ -360,25 +316,13 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        timestamp: f64,
+        _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];
 
-        // todo, sub-quantum start/stop
-        match self.scheduler.state(timestamp) {
-            ScheduledState::Active => (),
-            ScheduledState::NotStarted => {
-                output.make_silent();
-                return true; // will output in the future
-            }
-            ScheduledState::Ended => {
-                output.make_silent();
-                return false; // can clean up
-            }
-        }
-
+        // @note - maybe we need to disciminate between a paused and depleted term
         match self.stream.next() {
             Some(Ok(buffer)) => {
                 let channels = buffer.number_of_channels();

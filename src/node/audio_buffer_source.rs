@@ -9,7 +9,7 @@ use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions};
 
 /// Options for constructing an [`AudioBufferSourceNode`]
 // dictionary AudioBufferSourceOptions {
@@ -60,7 +60,7 @@ struct AudioBufferMessage(AudioBuffer);
 /// ```no_run
 /// use std::fs::File;
 /// use web_audio_api::context::{BaseAudioContext, AudioContext};
-/// use web_audio_api::node::AudioNode;
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// // create an `AudioContext`
 /// let context = AudioContext::new(None);
@@ -105,6 +105,30 @@ impl AudioNode for AudioBufferSourceNode {
 
     fn number_of_outputs(&self) -> u32 {
         1
+    }
+}
+
+impl AudioScheduledSourceNode for AudioBufferSourceNode {
+    fn start(&self) {
+        let start = self.registration.context().current_time();
+        self.start_at_with_offset_and_duration(start, 0., f64::MAX);
+    }
+
+    fn start_at(&self, when: f64) {
+        self.start_at_with_offset_and_duration(when, 0., f64::MAX);
+    }
+
+    fn stop(&self) {
+        let stop = self.registration.context().current_time();
+        self.stop_at(stop);
+    }
+
+    fn stop_at(&self, when: f64) {
+        if !self.source_started.load(Ordering::SeqCst) {
+            panic!("InvalidStateError cannot stop before start");
+        }
+
+        self.controller.scheduler().stop_at(when);
     }
 }
 
@@ -191,6 +215,22 @@ impl AudioBufferSourceNode {
         })
     }
 
+    /// Start the playback at the given time and with a given offset
+    pub fn start_at_with_offset(&self, start: f64, offset: f64) {
+        self.start_at_with_offset_and_duration(start, offset, f64::MAX);
+    }
+
+    /// Start the playback at the given time, with a given offset, for a given duration
+    pub fn start_at_with_offset_and_duration(&self, start: f64, offset: f64, duration: f64) {
+        if self.source_started.swap(true, Ordering::SeqCst) {
+            panic!("InvalidStateError: Cannot call `start` twice");
+        }
+
+        self.controller.set_offset(offset);
+        self.controller.set_duration(duration);
+        self.controller.scheduler().start_at(start);
+    }
+
     /// Current buffer value (nullable)
     pub fn buffer(&self) -> Option<&AudioBuffer> {
         self.buffer.get()
@@ -212,48 +252,6 @@ impl AudioBufferSourceNode {
         self.sender
             .send(AudioBufferMessage(clone))
             .expect("Sending AudioBufferMessage failed");
-    }
-
-    /// Start the playback on next block
-    pub fn start(&self) {
-        let start = self.registration.context().current_time();
-        self.start_at_with_offset_and_duration(start, 0., f64::MAX);
-    }
-
-    /// Start the playback at the given time
-    pub fn start_at(&self, start: f64) {
-        self.start_at_with_offset_and_duration(start, 0., f64::MAX);
-    }
-
-    /// Start the playback at the given time and with a given offset
-    pub fn start_at_with_offset(&self, start: f64, offset: f64) {
-        self.start_at_with_offset_and_duration(start, offset, f64::MAX);
-    }
-
-    /// Start the playback at the given time, with a given offset, for a given duration
-    pub fn start_at_with_offset_and_duration(&self, start: f64, offset: f64, duration: f64) {
-        if self.source_started.swap(true, Ordering::SeqCst) {
-            panic!("InvalidStateError: Cannot call `start` twice");
-        }
-
-        self.controller.set_offset(offset);
-        self.controller.set_duration(duration);
-        self.controller.scheduler().start_at(start);
-    }
-
-    /// Stop the playback on next block
-    pub fn stop(&self) {
-        let stop = self.registration.context().current_time();
-        self.stop_at(stop);
-    }
-
-    /// Stop the playback at given time
-    pub fn stop_at(&self, stop: f64) {
-        if !self.source_started.load(Ordering::SeqCst) {
-            panic!("InvalidStateError cannot stop before start");
-        }
-
-        self.controller.scheduler().stop_at(stop)
     }
 
     /// K-rate [`AudioParam`] that defines the speed at which the [`AudioBuffer`]
@@ -575,8 +573,9 @@ mod tests {
     use std::f32::consts::PI;
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
-    use crate::node::AudioNode;
     use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+
+    use super::*;
 
     #[test]
     fn test_playing_some_file() {

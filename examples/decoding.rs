@@ -1,6 +1,6 @@
 use std::fs::File;
 use web_audio_api::context::{AudioContext, BaseAudioContext};
-use web_audio_api::node::AudioNode;
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
     // env_logger::init();

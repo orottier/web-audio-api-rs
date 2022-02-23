@@ -83,7 +83,7 @@ impl Default for WaveShaperOptions {
 /// ```no_run
 /// use std::fs::File;
 /// use web_audio_api::context::{BaseAudioContext, AudioContext};
-/// use web_audio_api::node::AudioNode;
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// # use std::f32::consts::PI;
 /// # fn make_distortion_curve(size: usize) -> Vec<f32> {
@@ -472,6 +472,7 @@ mod tests {
     use float_eq::assert_float_eq;
 
     use crate::context::OfflineAudioContext;
+    use crate::node::AudioScheduledSourceNode;
     use crate::SampleRate;
 
     use super::*;

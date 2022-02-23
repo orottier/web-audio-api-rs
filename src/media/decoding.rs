@@ -57,32 +57,34 @@ impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
 /// precision in an `AudioBufferSourceNode`.
 ///
 /// The MediaDecoder implements the [`MediaStream`](crate::media::MediaStream) trait so can be used
-/// inside a `MediaElementAudioSourceNode`
+/// inside a `MediaStreamAudioSourceNode`. Please note that this means the decoding will take place
+/// on the render thread which is typically not desired. In a later version of this library, we
+/// will add a buffered version which will decode in a separate thread.
+/// <https://github.com/orottier/web-audio-api-rs/issues/120>
 ///
 /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
 ///
-/// # Usage
+/// # Warning
+///
+/// This abstraction is not part of the Web Audio API, it is only provided for
+/// convenience reasons.
+///
+/// # Example
 ///
 /// ```no_run
-/// use web_audio_api::media::{MediaElement, MediaDecoder};
 /// use web_audio_api::context::{AudioContext, BaseAudioContext};
-/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+/// use web_audio_api::media::MediaDecoder;
+/// use web_audio_api::node::AudioNode;
 ///
-/// // construct the decoder
+/// // build a decoded audio stream the decoder
 /// let file = std::fs::File::open("samples/major-scale.ogg").unwrap();
-/// let media = MediaDecoder::try_new(file).unwrap();
-///
-/// // Wrap in a `MediaElement` so buffering/decoding does not take place on the render thread
-/// let element = MediaElement::new(media);
-///
-/// // register the media element node
+/// let stream = MediaDecoder::try_new(file).unwrap();
+/// // pipe the media stream into the web audio graph
 /// let context = AudioContext::new(None);
-/// let node = context.create_media_element_source(element);
-///
-/// // play media
+/// let node = context.create_media_stream_source(stream);
 /// node.connect(&context.destination());
-/// node.start();
 /// ```
+///
 pub struct MediaDecoder {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
