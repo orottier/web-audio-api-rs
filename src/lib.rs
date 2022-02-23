@@ -51,7 +51,9 @@ pub mod node;
 pub mod param;
 pub mod periodic_wave;
 pub mod render;
-pub mod spatial;
+
+mod spatial;
+pub use spatial::AudioListener;
 
 #[cfg(test)]
 mod snapshot;
