@@ -247,6 +247,18 @@ pub trait BaseAudioContext {
         node::MediaStreamAudioSourceNode::new(self.base(), opts)
     }
 
+    /// Creates a `MediaStreamAudioDestinationNode` from a given callback
+    fn create_media_stream_destination<F: FnMut(AudioBuffer) + Send + 'static>(
+        &self,
+        stream: F,
+    ) -> node::MediaStreamAudioDestinationNode {
+        let opts = node::MediaStreamAudioDestinationOptions {
+            stream,
+            channel_config: ChannelConfigOptions::default(),
+        };
+        node::MediaStreamAudioDestinationNode::new(self.base(), opts)
+    }
+
     /// Creates an `OscillatorNode`, a source representing a periodic waveform.
     fn create_oscillator(&self) -> node::OscillatorNode {
         node::OscillatorNode::new(self.base(), node::OscillatorOptions::default())
