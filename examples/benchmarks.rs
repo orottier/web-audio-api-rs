@@ -402,7 +402,34 @@ fn main() {
     }
 
     {
-        let name = "Synth (Sawtooth without Envelope)";
+        let name = "Synth (Sawtooth with gain - no automation)";
+
+        let sample_rate = SampleRate(44100);
+        let mut context =
+            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+        let mut offset = 0.;
+
+        let duration = DURATION as f64;
+
+        while offset < duration {
+            let env = context.create_gain();
+            env.connect(&context.destination());
+
+            let osc = context.create_oscillator();
+            osc.connect(&env);
+            osc.set_type(OscillatorType::Sawtooth);
+            osc.frequency().set_value(110.);
+            osc.start_at(offset);
+            osc.stop_at(offset + 1.); // why not 0.1 ?
+
+            offset += 140. / 60. / 4.; // 140 bpm (?)
+        }
+
+        benchmark(&mut stdout, name, &mut context, &mut results);
+    }
+
+    {
+        let name = "Synth (Sawtooth without gain)";
 
         let sample_rate = SampleRate(44100);
         let mut context =
