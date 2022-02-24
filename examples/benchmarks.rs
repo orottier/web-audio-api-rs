@@ -1,3 +1,4 @@
+use rand::Rng;
 use std::fs::File;
 use std::io::{stdin, stdout, Write};
 use std::time::{Duration, Instant};
@@ -16,6 +17,7 @@ use web_audio_api::node::{
 use web_audio_api::SampleRate;
 
 // benchmark adapted from https://github.com/padenot/webaudio-benchmark
+// missing the "Convolution Reverb" as we don't have the node implemented yet
 //
 // run in release mode
 // `cargo run --release --example benchmarks`
@@ -50,6 +52,16 @@ fn benchmark<'a>(
     context: &mut OfflineAudioContext,
     results: &mut Vec<BenchResult<'a>>,
 ) {
+    write!(
+        stdout,
+        "{}{}> Running benchmark: {}",
+        clear::CurrentLine,
+        cursor::Left(200),
+        name
+    )
+    .unwrap();
+    stdout.flush().unwrap();
+
     let start = Instant::now();
     let buffer = context.start_rendering_sync();
     let duration = start.elapsed();
@@ -61,9 +73,6 @@ fn benchmark<'a>(
     };
 
     results.push(result);
-
-    write!(stdout, ".").unwrap();
-    stdout.flush().unwrap();
 }
 
 fn main() {
@@ -85,7 +94,7 @@ fn main() {
     // -------------------------------------------------------
     // benchamarks
     // -------------------------------------------------------
-    write!(stdout, "\r\n> Running benchmarks ").unwrap();
+    write!(stdout, "\r\n").unwrap();
 
     {
         let name = "Baseline (silence)";
@@ -319,6 +328,49 @@ fn main() {
     }
 
     {
+        let name = "Granular synthesis";
+
+        let adjusted_duration = DURATION as f64 / 16.;
+        let length = (adjusted_duration * sample_rate.0 as f64) as usize;
+        let mut context = OfflineAudioContext::new(1, length, sample_rate);
+        let buffer = get_buffer(&sources, sample_rate.0, 1);
+        let mut offset = 0.;
+        let mut rng = rand::thread_rng();
+
+        // @todo - make a PR
+        // - problem w/ env.gain().set_value_at_time(0., offset);
+        // - variables are badly named, but just follow the source here
+
+        // this 1500 sources...
+        while offset < adjusted_duration {
+            let env = context.create_gain();
+            env.connect(&context.destination());
+
+            let src = context.create_buffer_source();
+            src.connect(&env);
+            src.set_buffer(buffer.clone());
+
+            let rand_start = rng.gen_range(0..1000) as f64 / 1000. * 0.5;
+            let rand_duration = rng.gen_range(0..1000) as f64 / 1000. * 0.999;
+            let start = offset * rand_start;
+            let end = start + 0.005 * rand_duration;
+            let start_release = (offset + end - start).max(0.);
+
+            env.gain().set_value_at_time(0., offset);
+            env.gain().linear_ramp_to_value_at_time(0.5, offset + 0.005);
+            env.gain().set_value_at_time(0.5, start_release);
+            env.gain()
+                .linear_ramp_to_value_at_time(0., start_release + 0.05);
+
+            src.start_at_with_offset_and_duration(offset, start, end);
+
+            offset += 0.005;
+        }
+
+        benchmark(&mut stdout, name, &mut context, &mut results);
+    }
+
+    {
         let name = "Synth (Sawtooth with Envelope)";
 
         let sample_rate = SampleRate(44100);
@@ -374,6 +426,85 @@ fn main() {
     }
 
     {
+        let name = "Substractive Synth";
+
+        let sample_rate = SampleRate(44100);
+        let mut context =
+            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+        let mut offset = 0.;
+
+        let filter = context.create_biquad_filter();
+        filter.connect(&context.destination());
+        filter.frequency().set_value_at_time(0., 0.);
+        filter.q().set_value_at_time(20., 0.);
+
+        let env = context.create_gain();
+        env.connect(&filter);
+        env.gain().set_value_at_time(0., 0.);
+
+        let osc = context.create_oscillator();
+        osc.connect(&env);
+        osc.set_type(OscillatorType::Sawtooth);
+        osc.frequency().set_value(110.);
+        osc.start();
+
+        let duration = DURATION as f64;
+
+        while offset < duration {
+            env.gain().set_value_at_time(1., offset);
+            env.gain().set_target_at_time(0., offset, 0.1);
+
+            filter.frequency().set_value_at_time(0., offset);
+            filter.frequency().set_target_at_time(3500., offset, 0.03);
+
+            offset += 140. / 60. / 16.; // 140 bpm (?)
+        }
+
+        benchmark(&mut stdout, name, &mut context, &mut results);
+    }
+
+    {
+        let name = "Stereo panning";
+
+        let mut context =
+            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+
+        let panner = context.create_stereo_panner();
+        panner.connect(&context.destination());
+        panner.pan().set_value(0.1);
+
+        let src = context.create_buffer_source();
+        let buffer = get_buffer(&sources, sample_rate.0, 2);
+        src.connect(&panner);
+        src.set_buffer(buffer);
+        src.set_loop(true);
+        src.start();
+
+        benchmark(&mut stdout, name, &mut context, &mut results);
+    }
+
+    {
+        let name = "Stereo panning with automation";
+
+        let mut context =
+            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+
+        let panner = context.create_stereo_panner();
+        panner.connect(&context.destination());
+        panner.pan().set_value_at_time(-1., 0.);
+        panner.pan().set_value_at_time(0.2, 0.5);
+
+        let src = context.create_buffer_source();
+        let buffer = get_buffer(&sources, sample_rate.0, 2);
+        src.connect(&panner);
+        src.set_buffer(buffer);
+        src.set_loop(true);
+        src.start();
+
+        benchmark(&mut stdout, name, &mut context, &mut results);
+    }
+
+    {
         let name = "Sawtooth with automation";
 
         let mut context =
@@ -389,13 +520,20 @@ fn main() {
         benchmark(&mut stdout, name, &mut context, &mut results);
     }
 
+    write!(
+        stdout,
+        "{}{}> All done!\r\n\r\n",
+        clear::CurrentLine,
+        cursor::Left(200),
+    )
+    .unwrap();
+    stdout.flush().unwrap();
+
     // -------------------------------------------------------
     // display results
     // -------------------------------------------------------
     let stdin = stdin();
     let stdin = stdin.lock();
-
-    write!(stdout, "\r\n\r\n").unwrap();
 
     write!(
         stdout,
@@ -416,7 +554,7 @@ fn main() {
     for (index, result) in results.iter().enumerate() {
         write!(
             stdout,
-            "- {} {}{}| {} {}{}| {} {}{}| {} {}{}| {}\r\n",
+            "- {} {}{}| {} {}{}| {} {}{}| {:.1}x {}{}| {}\r\n",
             index + 1,
             cursor::Left(200),
             cursor::Right(10),
@@ -426,7 +564,7 @@ fn main() {
             result.duration.as_millis(),
             cursor::Left(200),
             cursor::Right(85 + 16),
-            (DURATION as u128 * 1000) / result.duration.as_millis(),
+            (result.buffer.duration() * 1000.) / result.duration.as_millis() as f64,
             cursor::Left(200),
             cursor::Right(85 + 40),
             result.buffer.duration(),
@@ -484,51 +622,53 @@ fn main() {
                 }
             }
             Key::Backspace => {
-                if let Some(source) = current_source {
-                    source.stop();
-                    current_source = None;
-                }
+                if !inputs.is_empty() {
+                    if let Some(source) = current_source {
+                        source.stop();
+                        current_source = None;
+                    }
 
-                write!(stdout, "{}{}", clear::CurrentLine, cursor::Left(200),).unwrap();
+                    write!(stdout, "{}{}", clear::CurrentLine, cursor::Left(200)).unwrap();
 
-                let id_str: String = inputs.clone().into_iter().collect();
-                let id = id_str.parse::<usize>().unwrap();
-                let index = id - 1;
+                    let id_str: String = inputs.clone().into_iter().collect();
+                    let id = id_str.parse::<usize>().unwrap();
+                    let index = id - 1;
 
-                inputs.clear();
+                    inputs.clear();
 
-                if id - 1 < results.len() {
-                    let result = &results[index];
+                    if id - 1 < results.len() {
+                        let result = &results[index];
 
-                    let buffer = result.buffer.clone();
-                    let source = context.create_buffer_source();
-                    source.set_buffer(buffer);
-                    source.connect(&context.destination());
-                    source.start();
+                        let buffer = result.buffer.clone();
+                        let source = context.create_buffer_source();
+                        source.set_buffer(buffer);
+                        source.connect(&context.destination());
+                        source.start();
 
-                    current_source = Some(source);
+                        current_source = Some(source);
 
-                    write!(
-                        stdout,
-                        "{}{}> playing outout from {}{}{}",
-                        cursor::Down(1),
-                        clear::CurrentLine,
-                        result.name,
-                        cursor::Left(200),
-                        cursor::Up(1),
-                    )
-                    .unwrap();
-                } else {
-                    write!(
-                        stdout,
-                        "{}{}> undefined id \"{}\"{}{}",
-                        cursor::Down(1),
-                        clear::CurrentLine,
-                        id,
-                        cursor::Left(200),
-                        cursor::Up(1),
-                    )
-                    .unwrap();
+                        write!(
+                            stdout,
+                            "{}{}> playing outout from {}{}{}",
+                            cursor::Down(1),
+                            clear::CurrentLine,
+                            result.name,
+                            cursor::Left(200),
+                            cursor::Up(1),
+                        )
+                        .unwrap();
+                    } else {
+                        write!(
+                            stdout,
+                            "{}{}> undefined id \"{}\"{}{}",
+                            cursor::Down(1),
+                            clear::CurrentLine,
+                            id,
+                            cursor::Left(200),
+                            cursor::Up(1),
+                        )
+                        .unwrap();
+                    }
                 }
             }
             _ => {}
