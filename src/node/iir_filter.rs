@@ -1,16 +1,16 @@
 //! The IIR filter control and renderer parts
-#![warn(
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    clippy::perf,
-    clippy::missing_docs_in_private_items
-)]
+// #![warn(
+//     clippy::all,
+//     clippy::pedantic,
+//     clippy::nursery,
+//     clippy::perf,
+//     clippy::missing_docs_in_private_items
+// )]
 use num_complex::Complex;
 use std::f64::consts::PI;
 
 use crate::{
-    context::{AsBaseAudioContext, AudioContextRegistration},
+    context::{AudioContextRegistration, BaseAudioContext},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
     SampleRate, MAX_CHANNELS,
 };
@@ -20,22 +20,22 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 /// Filter order is limited to 20
 const MAX_IIR_COEFFS_LEN: usize = 20;
 
-/// The `IirFilterOptions` is used to specify the filter coefficients
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
-pub struct IirFilterOptions {
+/// Options for constructing a [`IIRFilterNode`]
+// dictionary IIRFilterOptions : AudioNodeOptions {
+//   required sequence<double> feedforward;
+//   required sequence<double> feedback;
+// };
+pub struct IIRFilterOptions {
     /// audio node options
     pub channel_config: ChannelConfigOptions,
     /// feedforward coefficients
-    pub feedforward: Vec<f64>,
+    pub feedforward: Vec<f64>, // go for Option<Vec<f32>> w/ default to None?
     /// feedback coefficients
-    pub feedback: Vec<f64>,
+    pub feedback: Vec<f64>, // go for Option<Vec<f32>> w/ default to None?
 }
 
 /// An `AudioNode` implementing a general IIR filter
-// the naming comes from the web audio specfication
-#[allow(clippy::module_name_repetitions)]
-pub struct IirFilterNode {
+pub struct IIRFilterNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
     /// Infos about audio node channel configuration
@@ -46,7 +46,7 @@ pub struct IirFilterNode {
     feedback: Vec<f64>,
 }
 
-impl AudioNode for IirFilterNode {
+impl AudioNode for IIRFilterNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -58,12 +58,13 @@ impl AudioNode for IirFilterNode {
     fn number_of_inputs(&self) -> u32 {
         1
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
 }
 
-impl IirFilterNode {
+impl IIRFilterNode {
     /// Creates an `IirFilterNode`
     ///
     /// # Arguments
@@ -78,9 +79,9 @@ impl IirFilterNode {
     /// * `feedforward` or/and `feedback` is an empty vector
     /// * all `feedforward` element or/and all `feedback` element are eqaul to 0.
     /// *
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: IirFilterOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: IIRFilterOptions) -> Self {
         context.base().register(move |registration| {
-            let IirFilterOptions {
+            let IIRFilterOptions {
                 feedforward,
                 feedback,
                 channel_config,
@@ -232,7 +233,7 @@ impl FilterRendererBuilder {
     }
 
     /// Generate normalized filter's coeffs and filter's states
-    /// coeffs are normalized by a[0] coefficient
+    /// coeffs are normalized by `a[0]` coefficient
     fn finish(mut self) -> IirFilterRenderer {
         let a_0 = self.coeffs[0].1;
 
@@ -251,15 +252,15 @@ impl FilterRendererBuilder {
 /// Helper struct which regroups all parameters
 /// required to build `IirFilterRenderer` with the help of `FilterRendererBuilder`
 struct RendererConfig {
-    /// feedforward coeffs -- b[n] -- numerator coeffs
+    /// feedforward coeffs -- `b[n]` -- numerator coeffs
     feedforward: Vec<f64>,
-    /// feedback coeffs -- a[n] -- denominator coeffs
+    /// feedback coeffs -- `a[n]` -- denominator coeffs
     feedback: Vec<f64>,
 }
 
 /// Renderer associated with the `IirFilterNode`
 struct IirFilterRenderer {
-    /// Normalized filter's coeffs -- (b[n],a[n])
+    /// Normalized filter's coeffs -- `(b[n], a[n])`
     norm_coeffs: Vec<(f64, f64)>,
     /// filter's states
     states: Vec<[f64; MAX_CHANNELS]>,
@@ -348,13 +349,12 @@ mod test {
     use std::{cmp::min, fs::File};
 
     use crate::{
-        context::{AsBaseAudioContext, OfflineAudioContext},
-        media::{MediaDecoder, MediaElement},
+        context::{BaseAudioContext, OfflineAudioContext},
         node::{AudioNode, AudioScheduledSourceNode},
         snapshot, SampleRate,
     };
 
-    use super::{ChannelConfigOptions, IirFilterNode, IirFilterOptions};
+    use super::{ChannelConfigOptions, IIRFilterNode, IIRFilterOptions};
 
     const LENGTH: usize = 512;
 
@@ -369,13 +369,13 @@ mod test {
         ];
         let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
-        let options = IirFilterOptions {
+        let options = IIRFilterOptions {
             feedback,
             feedforward,
             channel_config: ChannelConfigOptions::default(),
         };
 
-        let _biquad = IirFilterNode::new(&context, options);
+        let _biquad = IIRFilterNode::new(&context, options);
     }
 
     #[test]
@@ -467,12 +467,12 @@ mod test {
         ];
         let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
-        let options = IirFilterOptions {
+        let options = IIRFilterOptions {
             feedback,
             feedforward,
             channel_config: ChannelConfigOptions::default(),
         };
-        let biquad = IirFilterNode::new(&context, options);
+        let biquad = IIRFilterNode::new(&context, options);
 
         let mut frequency_hz = [0.];
         let mut mag_response = [0., 1.0];
@@ -492,12 +492,12 @@ mod test {
         ];
         let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
-        let options = IirFilterOptions {
+        let options = IIRFilterOptions {
             feedback,
             feedforward,
             channel_config: ChannelConfigOptions::default(),
         };
-        let biquad = IirFilterNode::new(&context, options);
+        let biquad = IIRFilterNode::new(&context, options);
 
         let mut frequency_hz = [0.];
         let mut mag_response = [0.];
@@ -516,12 +516,12 @@ mod test {
         ];
         let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
-        let options = IirFilterOptions {
+        let options = IIRFilterOptions {
             feedback,
             feedforward,
             channel_config: ChannelConfigOptions::default(),
         };
-        let iir = IirFilterNode::new(&context, options);
+        let iir = IIRFilterNode::new(&context, options);
         // It will be fine for the usual fs
         #[allow(clippy::cast_precision_loss)]
         let niquyst = context.sample_rate() / 2.0;
@@ -561,12 +561,12 @@ mod test {
         ];
         let feedback = vec![1., 1.576_436_200_538_313_7, 0.651_680_173_116_867_3];
 
-        let options = IirFilterOptions {
+        let options = IIRFilterOptions {
             feedback,
             feedforward,
             channel_config: ChannelConfigOptions::default(),
         };
-        let iir = IirFilterNode::new(&context, options);
+        let iir = IIRFilterNode::new(&context, options);
 
         let mut frequency_hz = [
             0., 2205., 4410., 6615., 8820., 11025., 13230., 15435., 17640., 19845.,
@@ -588,15 +588,8 @@ mod test {
 
         let mut context = OfflineAudioContext::new(1, LENGTH, SampleRate(44_100));
 
-        // setup background music:
-        // read from local file
         let file = File::open("samples/white.ogg").unwrap();
-        // decode file to media stream
-        let stream = MediaDecoder::try_new(file).unwrap();
-        // wrap stream in MediaElement, so we can control it (loop, play/pause)
-        let media = MediaElement::new(stream);
-        // register as media element in the audio context
-        let background = context.create_media_element_source(media);
+        let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
         let feedforward = vec![
             0.019_618_022_238_052_212,
@@ -605,18 +598,22 @@ mod test {
         ];
         let feedback = vec![1., 1.576_436_200_538_313_7, 0.651_680_173_116_867_3];
 
-        let options = IirFilterOptions {
+        let options = IIRFilterOptions {
             feedback,
             feedforward,
             channel_config: ChannelConfigOptions::default(),
         };
-        let iir = IirFilterNode::new(&context, options);
-
-        background.connect(&iir);
+        let iir = IIRFilterNode::new(&context, options);
         iir.connect(&context.destination());
 
-        background.start();
-        let output = context.start_rendering();
+        let src = context.create_buffer_source();
+        src.set_buffer(audio_buffer);
+        src.connect(&iir);
+        src.start();
+
+        let output = context.start_rendering_sync();
+
+        // review the following, this should be fixed using an AudioBufferSourceNode
 
         // retrieve processed data by removing silence chunk
         // These silence slices are inserted inconsistently from an test execution to another

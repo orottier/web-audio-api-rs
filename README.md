@@ -2,7 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/web-audio-api.svg)](https://crates.io/crates/web-audio-api)
 
-A Rust implementation of the Web Audio API, for use in non-browser contexts
+A pure Rust implementation of the Web Audio API, for use in non-browser contexts
 
 ## About the Web Audio API
 
@@ -27,12 +27,12 @@ much more.
 
 Current deviations
 
-- function names use snake_case
+- snake_case instead of CamelCase
 - getters/setters instead of exposed attributes
-- deprecated functions are not implemented
-- some control-render communication is done with atomics instead of message passing
-- function that should return Promises are now blocking
-- no AudioWorklet functionality, users should implement the relevant traits instead
+- introduced some namespacing
+- functions that should return Promises are now blocking
+- AudioWorklet functionality is provided in a more rust-friendly way
+- inheritance is modelled with traits
 - ...
 
 ## Contributing

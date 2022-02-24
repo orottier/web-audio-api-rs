@@ -1,6 +1,6 @@
 use std::fs::File;
-use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-use web_audio_api::node::AudioNode;
+use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
     let context = AudioContext::new(None);
@@ -8,7 +8,7 @@ fn main() {
 
     // load and decode buffer
     let file = File::open("samples/sample.wav").unwrap();
-    let audio_buffer = context.decode_audio_data(file).unwrap();
+    let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
     // @fixme - if only one node in the graph it is never removed even when returning
     // false, se we put this dummy node in the graph so that other ones are properly

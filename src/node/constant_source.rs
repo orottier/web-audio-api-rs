@@ -1,23 +1,23 @@
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
-use crate::param::{AudioParam, AudioParamOptions, AutomationRate};
+use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions};
 
-/// Options for constructing an ConstantSourceNode
+/// Options for constructing an [`ConstantSourceNode`]
+// dictionary ConstantSourceOptions {
+//   float offset = 1;
+// };
+#[derive(Clone, Debug)]
 pub struct ConstantSourceOptions {
     pub offset: f32,
-    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for ConstantSourceOptions {
     fn default() -> Self {
-        Self {
-            offset: 1.,
-            channel_config: ChannelConfigOptions::default(),
-        }
+        Self { offset: 1. }
     }
 }
 
@@ -26,12 +26,12 @@ impl Default for ConstantSourceOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/ConstantSourceNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#ConstantSourceNode>
-/// - see also: [`AsBaseAudioContext::create_constant_source`](crate::context::AsBaseAudioContext::create_constant_source)
+/// - see also: [`BaseAudioContext::create_constant_source`](crate::context::BaseAudioContext::create_constant_source)
 ///
 /// # Usage
 ///
 /// ```no_run
-/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
 /// use web_audio_api::node::AudioNode;
 ///
 /// let audio_context = AudioContext::new(None);
@@ -74,21 +74,36 @@ impl AudioNode for ConstantSourceNode {
     fn number_of_inputs(&self) -> u32 {
         0
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
 }
 
 impl AudioScheduledSourceNode for ConstantSourceNode {
-    fn scheduler(&self) -> &Scheduler {
-        &self.scheduler
+    fn start(&self) {
+        let when = self.registration.context().current_time();
+        self.start_at(when);
+    }
+
+    fn start_at(&self, when: f64) {
+        self.scheduler.start_at(when);
+    }
+
+    fn stop(&self) {
+        let when = self.registration.context().current_time();
+        self.stop_at(when);
+    }
+
+    fn stop_at(&self, when: f64) {
+        self.scheduler.stop_at(when);
     }
 }
 
 impl ConstantSourceNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
         context.base().register(move |registration| {
-            let param_opts = AudioParamOptions {
+            let param_opts = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,
@@ -106,9 +121,11 @@ impl ConstantSourceNode {
                 scheduler: scheduler.clone(),
             };
 
+            let channel_config = ChannelConfigOptions::default().into();
+
             let node = ConstantSourceNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config,
                 offset: param,
                 scheduler,
             };
@@ -180,7 +197,7 @@ impl AudioProcessor for ConstantSourceRenderer {
 
 #[cfg(test)]
 mod tests {
-    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::node::{AudioNode, AudioScheduledSourceNode};
     use crate::SampleRate;
 
@@ -198,7 +215,7 @@ mod tests {
         src.start_at(start_in_samples / 128.);
         src.stop_at(stop_in_samples / 128.);
 
-        let buffer = context.start_rendering();
+        let buffer = context.start_rendering_sync();
         let channel = buffer.get_channel_data(0);
 
         // 1rst block should be silence
@@ -226,7 +243,7 @@ mod tests {
         src.connect(&context.destination());
         src.start_at(-1.);
 
-        let buffer = context.start_rendering();
+        let buffer = context.start_rendering_sync();
         let channel = buffer.get_channel_data(0);
 
         // 1rst block should be silence

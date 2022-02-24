@@ -20,14 +20,10 @@ const LISTENER_NODE_ID: u64 = 1;
 const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::media::{MediaDecoder, MediaElement, MediaStream};
+use crate::media::{MediaDecoder, MediaStream};
 use crate::message::ControlMessage;
-use crate::node::{
-    self, AnalyserOptions, AudioBufferSourceOptions, AudioNode, ChannelConfigOptions,
-    ChannelCountMode, ChannelInterpretation, ChannelMergerOptions, ChannelSplitterOptions,
-    ConstantSourceOptions, DelayOptions, GainOptions, IirFilterOptions, PannerOptions,
-};
-use crate::param::{AudioParam, AudioParamEvent, AudioParamOptions};
+use crate::node::{self, AudioNode, ChannelConfigOptions};
+use crate::param::{AudioParam, AudioParamDescriptor, AudioParamEvent};
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::render::{AudioProcessor, NodeIndex, RenderThread};
 use crate::spatial::{AudioListener, AudioListenerParams};
@@ -41,25 +37,33 @@ use cpal::{traits::StreamTrait, Stream};
 
 use crossbeam_channel::Sender;
 
-/// The `BaseAudioContext` interface represents an audio-processing graph built from audio modules
-/// linked together, each represented by an `AudioNode`. An audio context controls both the creation
-/// of the nodes it contains and the execution of the audio processing, or decoding.
+/// The struct that corresponds to the Javascript `BaseAudioContext` object.
+///
+/// Please note that in rust, we need to differentiate between the [`BaseAudioContext`] trait and
+/// the [`ConcreteBaseAudioContext`] concrete implementation.
+///
+/// This object is returned from the `base()` method on [`AudioContext`] and
+/// [`OfflineAudioContext`], or the `context()` method on `AudioNode`s.
+///
+/// The `ConcreteBaseAudioContext` allows for cheap cloning (using an `Arc` internally).
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
-pub struct BaseAudioContext {
-    /// inner makes `BaseAudioContextInner` cheap to clone
-    inner: Arc<BaseAudioContextInner>,
+pub struct ConcreteBaseAudioContext {
+    /// inner makes `ConcreteBaseAudioContext` cheap to clone
+    inner: Arc<ConcreteBaseAudioContextInner>,
 }
 
-impl PartialEq for BaseAudioContext {
+impl PartialEq for ConcreteBaseAudioContext {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
-/// Inner representation of the `BaseAudioContext`
-struct BaseAudioContextInner {
+/// Inner representation of the `ConcreteBaseAudioContext`
+///
+/// These fields are wrapped inside an `Arc` in the actual `ConcreteBaseAudioContext`.
+struct ConcreteBaseAudioContextInner {
     /// sample rate in Hertz
     sample_rate: SampleRate,
     /// number of speaker output channels
@@ -76,11 +80,18 @@ struct BaseAudioContextInner {
     listener_params: Option<AudioListenerParams>,
 }
 
-/// Retrieve the `BaseAudioContext` from the concrete `AudioContext`
+/// The interface representing an audio-processing graph built from audio modules linked together,
+/// each represented by an `AudioNode`.
+///
+/// An audio context controls both the creation of the nodes it contains and the execution of the
+/// audio processing, or decoding.
+///
+/// Please note that in rust, we need to differentiate between the [`BaseAudioContext`] trait and
+/// the [`ConcreteBaseAudioContext`] concrete implementation.
 #[allow(clippy::module_name_repetitions)]
-pub trait AsBaseAudioContext {
-    /// retrieves the `BaseAudioContext` associated with the concrete `AudioContext`
-    fn base(&self) -> &BaseAudioContext;
+pub trait BaseAudioContext {
+    /// retrieves the `ConcreteBaseAudioContext` associated with this `AudioContext`
+    fn base(&self) -> &ConcreteBaseAudioContext;
 
     /// Decode an [`AudioBuffer`] from a given input stream.
     ///
@@ -92,7 +103,7 @@ pub trait AsBaseAudioContext {
     /// should not wrap the source in a `BufReader`.
     ///
     /// This function operates synchronously, which may be undesirable on the control thread. The
-    /// example shows how to avoid this.
+    /// example shows how to avoid this. An async version is currently not implemented.
     ///
     /// # Errors
     ///
@@ -103,19 +114,19 @@ pub trait AsBaseAudioContext {
     /// ```no_run
     /// use std::io::Cursor;
     /// use web_audio_api::SampleRate;
-    /// use web_audio_api::context::{AsBaseAudioContext, OfflineAudioContext};
+    /// use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
     ///
     /// let input = Cursor::new(vec![0; 32]); // or a File, TcpStream, ...
     ///
     /// let context = OfflineAudioContext::new(2, 44_100, SampleRate(44_100));
-    /// let handle = std::thread::spawn(move || context.decode_audio_data(input));
+    /// let handle = std::thread::spawn(move || context.decode_audio_data_sync(input));
     ///
     /// // do other things
     ///
     /// // await result from the decoder thread
     /// let decode_buffer_result = handle.join();
     /// ```
-    fn decode_audio_data<R: std::io::Read + Send + 'static>(
+    fn decode_audio_data_sync<R: std::io::Read + Send + Sync + 'static>(
         &self,
         input: R,
     ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
@@ -156,25 +167,56 @@ pub trait AsBaseAudioContext {
         AudioBuffer::new(options)
     }
 
-    /// Creates an `OscillatorNode`, a source representing a periodic waveform. It basically
-    /// generates a tone.
-    fn create_oscillator(&self) -> node::OscillatorNode {
-        node::OscillatorNode::new(self.base(), None)
+    /// Creates a `AnalyserNode`
+    fn create_analyser(&self) -> node::AnalyserNode {
+        node::AnalyserNode::new(self.base(), node::AnalyserOptions::default())
     }
 
-    /// Creates an `StereoPannerNode` to pan a stereo output
-    fn create_stereo_panner(&self) -> node::StereoPannerNode {
-        node::StereoPannerNode::new(self.base(), None)
+    /// Creates an `BiquadFilterNode` which implements a second order filter
+    fn create_biquad_filter(&self) -> node::BiquadFilterNode {
+        node::BiquadFilterNode::new(self.base(), node::BiquadFilterOptions::default())
     }
 
-    /// Creates an `GainNode`, to control audio volume
-    fn create_gain(&self) -> node::GainNode {
-        node::GainNode::new(self.base(), GainOptions::default())
+    /// Creates an `AudioBufferSourceNode`
+    fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
+        node::AudioBufferSourceNode::new(self.base(), node::AudioBufferSourceOptions::default())
     }
 
     /// Creates an `ConstantSourceNode`, a source representing a constant value
     fn create_constant_source(&self) -> node::ConstantSourceNode {
-        node::ConstantSourceNode::new(self.base(), ConstantSourceOptions::default())
+        node::ConstantSourceNode::new(self.base(), node::ConstantSourceOptions::default())
+    }
+
+    /// Creates a `ChannelMergerNode`
+    fn create_channel_merger(&self, number_of_inputs: u32) -> node::ChannelMergerNode {
+        let opts = node::ChannelMergerOptions {
+            number_of_inputs,
+            ..node::ChannelMergerOptions::default()
+        };
+        node::ChannelMergerNode::new(self.base(), opts)
+    }
+
+    /// Creates a `ChannelSplitterNode`
+    fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
+        let opts = node::ChannelSplitterOptions {
+            number_of_outputs,
+            ..node::ChannelSplitterOptions::default()
+        };
+        node::ChannelSplitterNode::new(self.base(), opts)
+    }
+
+    /// Creates a `DelayNode`, delaying the audio signal
+    fn create_delay(&self, max_delay_time: f64) -> node::DelayNode {
+        let opts = node::DelayOptions {
+            max_delay_time,
+            ..node::DelayOptions::default()
+        };
+        node::DelayNode::new(self.base(), opts)
+    }
+
+    /// Creates an `GainNode`, to control audio volume
+    fn create_gain(&self) -> node::GainNode {
+        node::GainNode::new(self.base(), node::GainOptions::default())
     }
 
     /// Creates an `IirFilterNode`
@@ -185,108 +227,49 @@ pub trait AsBaseAudioContext {
     /// The maximum length of this array is 20
     /// * `feedback` - An array of the feedback (denominator) coefficients for the transfer function of the IIR filter.
     /// The maximum length of this array is 20
-    fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IirFilterNode {
-        let options = IirFilterOptions {
+    fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IIRFilterNode {
+        let options = node::IIRFilterOptions {
             channel_config: ChannelConfigOptions::default(),
             feedforward,
             feedback,
         };
-        node::IirFilterNode::new(self.base(), options)
+        node::IIRFilterNode::new(self.base(), options)
     }
 
-    /// Creates a `DelayNode`, delaying the audio signal
-    fn create_delay(&self, max_delay_time: f64) -> node::DelayNode {
-        let opts = node::DelayOptions {
-            max_delay_time,
-            ..DelayOptions::default()
-        };
-        node::DelayNode::new(self.base(), opts)
-    }
-
-    /// Creates an `BiquadFilterNode` which implements a second order filter
-    fn create_biquad_filter(&self) -> node::BiquadFilterNode {
-        node::BiquadFilterNode::new(self.base(), None)
-    }
-
-    /// Creates a `WaveShaperNode`
-    fn create_wave_shaper(&self) -> node::WaveShaperNode {
-        node::WaveShaperNode::new(self.base(), None)
-    }
-
-    /// Creates a `ChannelSplitterNode`
-    fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
-        let opts = node::ChannelSplitterOptions {
-            number_of_outputs,
-            ..ChannelSplitterOptions::default()
-        };
-        node::ChannelSplitterNode::new(self.base(), opts)
-    }
-
-    /// Creates a `ChannelMergerNode`
-    fn create_channel_merger(&self, number_of_inputs: u32) -> node::ChannelMergerNode {
-        let opts = node::ChannelMergerOptions {
-            number_of_inputs,
-            ..ChannelMergerOptions::default()
-        };
-        node::ChannelMergerNode::new(self.base(), opts)
-    }
-
-    /// Creates a `MediaStreamAudioSourceNode` from a `MediaElement`
+    /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]
     fn create_media_stream_source<M: MediaStream>(
         &self,
         media: M,
     ) -> node::MediaStreamAudioSourceNode {
-        let channel_config = ChannelConfigOptions {
-            count: 1,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Speakers,
-        };
-        let opts = node::MediaStreamAudioSourceNodeOptions {
-            media,
-            channel_config,
+        let opts = node::MediaStreamAudioSourceOptions {
+            media_stream: media,
         };
         node::MediaStreamAudioSourceNode::new(self.base(), opts)
     }
 
-    /// Creates a `MediaElementAudioSourceNode` from a `MediaElement`
-    ///
-    /// Note: do not forget to `start()` the node.
-    fn create_media_element_source(
-        &self,
-        media: MediaElement,
-    ) -> node::MediaElementAudioSourceNode {
-        let channel_config = ChannelConfigOptions {
-            count: 1,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Speakers,
-        };
-        let opts = node::MediaElementAudioSourceNodeOptions {
-            media,
-            channel_config,
-        };
-        node::MediaElementAudioSourceNode::new(self.base(), opts)
-    }
-
-    /// Creates an `AudioBufferSourceNode`
-    ///
-    /// Note: do not forget to `start()` the node.
-    fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
-        node::AudioBufferSourceNode::new(self.base(), AudioBufferSourceOptions::default())
+    /// Creates an `OscillatorNode`, a source representing a periodic waveform.
+    fn create_oscillator(&self) -> node::OscillatorNode {
+        node::OscillatorNode::new(self.base(), node::OscillatorOptions::default())
     }
 
     /// Creates a `PannerNode`
     fn create_panner(&self) -> node::PannerNode {
-        node::PannerNode::new(self.base(), PannerOptions::default())
-    }
-
-    /// Creates a `AnalyserNode`
-    fn create_analyser(&self) -> node::AnalyserNode {
-        node::AnalyserNode::new(self.base(), AnalyserOptions::default())
+        node::PannerNode::new(self.base(), node::PannerOptions::default())
     }
 
     /// Creates a periodic wave
-    fn create_periodic_wave(&self, options: Option<PeriodicWaveOptions>) -> PeriodicWave {
+    fn create_periodic_wave(&self, options: PeriodicWaveOptions) -> PeriodicWave {
         PeriodicWave::new(self.base(), options)
+    }
+
+    /// Creates an `StereoPannerNode` to pan a stereo output
+    fn create_stereo_panner(&self) -> node::StereoPannerNode {
+        node::StereoPannerNode::new(self.base(), node::StereoPannerOptions::default())
+    }
+
+    /// Creates a `WaveShaperNode`
+    fn create_wave_shaper(&self) -> node::WaveShaperNode {
+        node::WaveShaperNode::new(self.base(), node::WaveShaperOptions::default())
     }
 
     /// Create an `AudioParam`.
@@ -294,7 +277,7 @@ pub trait AsBaseAudioContext {
     /// Call this inside the `register` closure when setting up your `AudioNode`
     fn create_audio_param(
         &self,
-        opts: AudioParamOptions,
+        opts: AudioParamDescriptor,
         dest: &AudioNodeId,
     ) -> (crate::param::AudioParam, AudioParamId) {
         let param = self.base().register(move |registration| {
@@ -351,7 +334,7 @@ pub trait AsBaseAudioContext {
     }
 
     /// The raw sample rate of the `AudioContext` (which has more precision than the float
-    /// [`sample_rate()`](AsBaseAudioContext::sample_rate) value).
+    /// [`sample_rate()`](BaseAudioContext::sample_rate) value).
     #[must_use]
     fn sample_rate_raw(&self) -> SampleRate {
         self.base().sample_rate_raw()
@@ -372,15 +355,15 @@ pub trait AsBaseAudioContext {
     }
 }
 
-impl AsBaseAudioContext for BaseAudioContext {
-    fn base(&self) -> &BaseAudioContext {
+impl BaseAudioContext for ConcreteBaseAudioContext {
+    fn base(&self) -> &ConcreteBaseAudioContext {
         self
     }
 }
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
-pub enum LatencyHint {
+pub enum AudioContextLatencyCategory {
     /// Balance audio output latency and power consumption.
     Balanced,
     /// Provide the lowest audio output latency possible without glitching. This is the default.
@@ -400,7 +383,7 @@ pub enum LatencyHint {
 pub struct AudioContextOptions {
     /// Identify the type of playback, which affects
     /// tradeoffs between audio output latency and power consumption
-    pub latency_hint: Option<LatencyHint>,
+    pub latency_hint: Option<AudioContextLatencyCategory>,
     /// Sample rate of the audio Context and audio output hardware
     pub sample_rate: Option<u32>,
     /// Number of output channels of destination node and audio output hardware
@@ -413,15 +396,15 @@ pub struct AudioContextOptions {
 #[allow(clippy::module_name_repetitions)]
 pub struct AudioContext {
     /// represents the underlying `BaseAudioContext`
-    base: BaseAudioContext,
+    base: ConcreteBaseAudioContext,
 
     /// cpal stream (play/pause functionality)
     #[cfg(not(test))] // in tests, do not set up a cpal Stream
-    stream: Stream,
+    stream: Mutex<Option<Stream>>,
 }
 
-impl AsBaseAudioContext for AudioContext {
-    fn base(&self) -> &BaseAudioContext {
+impl BaseAudioContext for AudioContext {
+    fn base(&self) -> &ConcreteBaseAudioContext {
         &self.base
     }
 }
@@ -432,15 +415,15 @@ impl AsBaseAudioContext for AudioContext {
 #[allow(clippy::module_name_repetitions)]
 pub struct OfflineAudioContext {
     /// represents the underlying `BaseAudioContext`
-    base: BaseAudioContext,
+    base: ConcreteBaseAudioContext,
     /// the size of the buffer in sample-frames
     length: usize,
     /// the rendering 'thread', fully controlled by the offline context
     renderer: RenderThread,
 }
 
-impl AsBaseAudioContext for OfflineAudioContext {
-    fn base(&self) -> &BaseAudioContext {
+impl BaseAudioContext for OfflineAudioContext {
+    fn base(&self) -> &ConcreteBaseAudioContext {
         &self.base
     }
 }
@@ -461,16 +444,19 @@ impl AudioContext {
         let channels = u32::from(config.channels);
         let sample_rate = SampleRate(config.sample_rate.0);
 
-        let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
-        Self { base, stream }
+        Self {
+            base,
+            stream: Mutex::new(Some(stream)),
+        }
     }
 
     #[cfg(test)] // in tests, do not set up a cpal Stream
     #[allow(clippy::must_use_candidate)]
     pub fn new(options: Option<AudioContextOptions>) -> Self {
         let options = options.unwrap_or(AudioContextOptions {
-            latency_hint: Some(LatencyHint::Interactive),
+            latency_hint: Some(AudioContextLatencyCategory::Interactive),
             sample_rate: Some(44_100),
             channels: Some(2),
         });
@@ -479,13 +465,18 @@ impl AudioContext {
         let channels = u32::from(options.channels.unwrap_or(2));
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
-        let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
         Self { base }
     }
 
-    /// Suspends the progression of time in the audio context, temporarily halting audio hardware
-    /// access and reducing CPU/battery usage in the process.
+    /// Suspends the progression of time in the audio context.
+    ///
+    /// This will temporarily halt audio hardware access and reducing CPU/battery usage in the
+    /// process.
+    ///
+    /// This function operates synchronously and might block the current thread. An async version
+    /// is currently not implemented.
     ///
     /// # Panics
     ///
@@ -495,14 +486,21 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    pub fn suspend(&self) {
+    pub fn suspend_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        self.stream.pause().unwrap();
+        if let Some(s) = self.stream.lock().unwrap().as_ref() {
+            if let Err(e) = s.pause() {
+                panic!("Error suspending cpal stream: {:?}", e);
+            }
+        }
     }
 
     /// Resumes the progression of time in an audio context that has previously been
     /// suspended/paused.
     ///
+    /// This function operates synchronously and might block the current thread. An async version
+    /// is currently not implemented.
+    ///
     /// # Panics
     ///
     /// Will panic if:
@@ -511,9 +509,31 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    pub fn resume(&self) {
+    pub fn resume_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        self.stream.play().expect("Audio device refuse to play");
+        if let Some(s) = self.stream.lock().unwrap().as_ref() {
+            if let Err(e) = s.play() {
+                panic!("Error resuming cpal stream: {:?}", e);
+            }
+        }
+    }
+
+    /// Closes the `AudioContext`, releasing the system resources being used.
+    ///
+    /// This will not automatically release all `AudioContext`-created objects, but will suspend
+    /// the progression of the currentTime, and stop processing audio data.
+    ///
+    /// This function operates synchronously and might block the current thread. An async version
+    /// is currently not implemented.
+    ///
+    /// # Panics
+    ///
+    /// Will panic when this function is called multiple times
+    // false positive due to #[cfg(not(test))]
+    #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
+    pub fn close_sync(&self) {
+        #[cfg(not(test))] // in tests, do not set up a cpal Stream
+        self.stream.lock().unwrap().take(); // will Drop
     }
 }
 
@@ -539,10 +559,10 @@ impl From<&AudioParamId> for NodeIndex {
 ///
 /// This allows for communication with the render thread and lifetime management.
 ///
-/// The only way to construct this object is by calling [`BaseAudioContext::register`]
+/// The only way to construct this object is by calling [`ConcreteBaseAudioContext::register`]
 pub struct AudioContextRegistration {
     /// the audio context in wich nodes and connections lives
-    context: BaseAudioContext,
+    context: ConcreteBaseAudioContext,
     /// identify a specific `AudioNode`
     id: AudioNodeId,
 }
@@ -559,7 +579,7 @@ impl AudioContextRegistration {
     // false positive: AudioContextRegistration is not const
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
-    pub fn context(&self) -> &BaseAudioContext {
+    pub fn context(&self) -> &ConcreteBaseAudioContext {
         &self.context
     }
 }
@@ -573,12 +593,15 @@ impl Drop for AudioContextRegistration {
 
         if !magic {
             let message = ControlMessage::FreeWhenFinished { id: self.id.0 };
-            self.context.inner.render_channel.send(message).unwrap();
+
+            // Sending the message will fail when the render thread has already shut down.
+            // This is fine
+            let _r = self.context.inner.render_channel.send(message);
         }
     }
 }
 
-impl BaseAudioContext {
+impl ConcreteBaseAudioContext {
     /// Creates a `BaseAudioContext` instance
     fn new(
         sample_rate: SampleRate,
@@ -586,7 +609,7 @@ impl BaseAudioContext {
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
     ) -> Self {
-        let base_inner = BaseAudioContextInner {
+        let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             channels,
             render_channel,
@@ -653,7 +676,7 @@ impl BaseAudioContext {
     }
 
     /// The raw sample rate of the `AudioContext` (which has more precision than the float
-    /// [`sample_rate()`](AsBaseAudioContext::sample_rate) value).
+    /// [`sample_rate()`](BaseAudioContext::sample_rate) value).
     #[must_use]
     pub fn sample_rate_raw(&self) -> SampleRate {
         self.inner.sample_rate
@@ -824,7 +847,7 @@ impl OfflineAudioContext {
         );
 
         // first, setup the base audio context
-        let base = BaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
 
         Self {
             base,
@@ -833,9 +856,11 @@ impl OfflineAudioContext {
         }
     }
 
-    /// `OfflineAudioContext` doesn't start rendering automatically
-    /// You need to call this function to start the audio rendering
-    pub fn start_rendering(&mut self) -> AudioBuffer {
+    /// Given the current connections and scheduled changes, starts rendering audio.
+    ///
+    /// This function will block the current thread and returns the rendered `AudioBuffer`
+    /// synchronously. An async version is currently not implemented.
+    pub fn start_rendering_sync(&mut self) -> AudioBuffer {
         // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
         // the desired number of frames.
         let buffer_size =
@@ -883,7 +908,7 @@ mod tests {
     fn test_decode_audio_data() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
         let file = std::fs::File::open("samples/sample.wav").unwrap();
-        let audio_buffer = context.decode_audio_data(file).unwrap();
+        let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
         assert_eq!(audio_buffer.sample_rate_raw(), SampleRate(44100));
         assert_eq!(audio_buffer.length(), 142_187);
@@ -902,7 +927,7 @@ mod tests {
     fn test_decode_audio_data_empty() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
         let file = std::fs::File::open("samples/empty_2c.wav").unwrap();
-        let audio_buffer = context.decode_audio_data(file).unwrap();
+        let audio_buffer = context.decode_audio_data_sync(file).unwrap();
         assert_eq!(audio_buffer.length(), 0);
     }
 
@@ -910,6 +935,20 @@ mod tests {
     fn test_decode_audio_data_decoding_error() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
         let file = std::fs::File::open("samples/corrupt.wav").unwrap();
-        assert!(context.decode_audio_data(file).is_err());
+        assert!(context.decode_audio_data_sync(file).is_err());
+    }
+
+    #[test]
+    fn test_create_buffer() {
+        let number_of_channels = 3;
+        let length = 2000;
+        let sample_rate = SampleRate(96_000);
+
+        let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
+        let buffer = context.create_buffer(number_of_channels, length, sample_rate);
+
+        assert_eq!(buffer.number_of_channels(), 3);
+        assert_eq!(buffer.length(), 2000);
+        assert_float_eq!(buffer.sample_rate(), 96000., abs_all <= 0.);
     }
 }

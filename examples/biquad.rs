@@ -1,7 +1,6 @@
 use std::fs::File;
-use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-use web_audio_api::media::{MediaDecoder, MediaElement};
-use web_audio_api::node::{AudioControllableSourceNode, AudioNode, AudioScheduledSourceNode};
+use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
     env_logger::init();
@@ -10,18 +9,20 @@ fn main() {
     // setup background music:
     // read from local file
     let file = File::open("samples/major-scale.ogg").unwrap();
-    // decode file to media stream
-    let stream = MediaDecoder::try_new(file).unwrap();
-    // wrap stream in MediaElement, so we can control it (loop, play/pause)
-    let media = MediaElement::new(stream);
-    // register as media element in the audio context
-    let background = context.create_media_element_source(media);
+    let buffer = context.decode_audio_data_sync(file).unwrap();
+
     // create a biquad filter
     let biquad = context.create_biquad_filter();
-    // connect the media node to the gain node
-    background.connect(&biquad);
+    biquad.frequency().set_value(125.);
     // connect the biquad node to the destination node (speakers)
     biquad.connect(&context.destination());
+
+    // Play the buffer
+    let src = context.create_buffer_source();
+    src.connect(&biquad);
+    src.set_buffer(buffer);
+    src.set_loop(true);
+    src.start();
 
     let mut frequency_hz = [250., 500.0, 750.0, 1000., 1500.0, 2000.0, 4000.0];
     let mut mag_response = [0.; 7];
@@ -45,11 +46,6 @@ fn main() {
     }
     println!("---------------------------------");
 
-    // start playback
-    background.set_loop(true);
-    background.start();
-
-    biquad.frequency().set_value(125.);
     biquad.frequency().linear_ramp_to_value_at_time(3_000., 4.);
     // enjoy listening
     std::thread::sleep(std::time::Duration::from_secs(4));

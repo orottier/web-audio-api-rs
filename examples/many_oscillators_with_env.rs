@@ -1,7 +1,7 @@
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use std::{thread, time};
-use web_audio_api::context::{AsBaseAudioContext, AudioContext};
+use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 // run in release mode

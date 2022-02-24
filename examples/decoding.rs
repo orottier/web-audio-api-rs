@@ -1,6 +1,6 @@
 use std::fs::File;
-use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-use web_audio_api::node::AudioNode;
+use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
     // env_logger::init();
@@ -23,7 +23,7 @@ fn main() {
         println!("> --------------------------------");
 
         let file = File::open(filepath).unwrap();
-        let res = audio_context.decode_audio_data(file);
+        let res = audio_context.decode_audio_data_sync(file);
 
         match res {
             Ok(buffer) => {

@@ -42,4 +42,6 @@ jobs:
 
     # check for rustdoc warnings
     - name: generate and verify rustdoc
-      run: "! cargo doc --lib 2>&1 | grep -A 10 warning"
+      env:
+        RUSTDOCFLAGS: -D warnings
+      run: cargo doc --no-deps --document-private-items --workspace --all-features

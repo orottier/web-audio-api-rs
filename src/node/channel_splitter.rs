@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::context::{AsBaseAudioContext, AudioContextRegistration};
+use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
@@ -8,7 +8,11 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
-/// Options for constructing a ChannelSplitterNode
+/// Options for constructing a [`ChannelSplitterNode`]
+// dictionary ChannelSplitterOptions : AudioNodeOptions {
+//   unsigned long numberOfOutputs = 6;
+// };
+#[derive(Clone, Debug)]
 pub struct ChannelSplitterOptions {
     pub number_of_outputs: u32,
     pub channel_config: ChannelConfigOptions,
@@ -41,12 +45,15 @@ impl AudioNode for ChannelSplitterNode {
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
     }
+
     fn set_channel_count(&self, _v: usize) {
         panic!("Cannot edit channel count of ChannelSplitterNode")
     }
+
     fn set_channel_count_mode(&self, _v: ChannelCountMode) {
         panic!("Cannot edit channel count mode of ChannelSplitterNode")
     }
+
     fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
         panic!("Cannot edit channel interpretation of ChannelSplitterNode")
     }
@@ -54,13 +61,14 @@ impl AudioNode for ChannelSplitterNode {
     fn number_of_inputs(&self) -> u32 {
         1
     }
+
     fn number_of_outputs(&self) -> u32 {
         self.channel_count() as _
     }
 }
 
 impl ChannelSplitterNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, mut options: ChannelSplitterOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, mut options: ChannelSplitterOptions) -> Self {
         context.base().register(move |registration| {
             options.channel_config.count = options.number_of_outputs as _;
 

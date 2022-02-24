@@ -1,5 +1,5 @@
 use float_eq::assert_float_eq;
-use web_audio_api::context::AsBaseAudioContext;
+use web_audio_api::context::BaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, OscillatorNode, OscillatorOptions, OscillatorType,
@@ -28,7 +28,7 @@ fn test_offline_render() {
         constant2.start();
     }
 
-    let output = context.start_rendering();
+    let output = context.start_rendering_sync();
     assert_eq!(output.number_of_channels(), 2);
     assert_eq!(output.length(), LENGTH);
 
@@ -52,18 +52,18 @@ fn test_start_stop() {
 
     {
         let opts = OscillatorOptions {
-            type_: Some(OscillatorType::Square),
-            frequency: Some(0.), // constant signal
+            type_: OscillatorType::Square,
+            frequency: 0., // constant signal
             ..Default::default()
         };
-        let osc = OscillatorNode::new(&context, Some(opts));
+        let osc = OscillatorNode::new(&context, opts);
         osc.connect(&context.destination());
 
         osc.start_at(1.);
         osc.stop_at(3.);
     }
 
-    let output = context.start_rendering();
+    let output = context.start_rendering_sync();
     assert_eq!(output.number_of_channels(), 1);
     assert_eq!(output.length(), RENDER_QUANTUM_SIZE * 4);
 
@@ -93,7 +93,7 @@ fn test_delayed_constant_source() {
         source.start();
     }
 
-    let output = context.start_rendering();
+    let output = context.start_rendering_sync();
     assert_eq!(output.number_of_channels(), 1);
     assert_eq!(output.length(), RENDER_QUANTUM_SIZE * 4);
 
@@ -135,7 +135,7 @@ fn test_audio_param_graph() {
         param_input2.start();
     }
 
-    let output = context.start_rendering();
+    let output = context.start_rendering_sync();
     assert_eq!(output.number_of_channels(), 1);
     assert_eq!(output.length(), RENDER_QUANTUM_SIZE);
 
@@ -161,7 +161,7 @@ fn test_listener() {
         listener2.position_y().set_value(2.);
     }
 
-    let _ = context.start_rendering();
+    let _ = context.start_rendering_sync();
 
     let listener = context.listener();
     assert_float_eq!(listener.position_y().value(), 2., abs <= 0.);
@@ -194,7 +194,7 @@ fn test_cycle() {
         other.start();
     }
 
-    let output = context.start_rendering();
+    let output = context.start_rendering_sync();
     // cycle should be muted, and other source should be processed
     assert_float_eq!(
         output.get_channel_data(0),
@@ -227,7 +227,7 @@ fn test_cycle_breaker() {
         source.start();
     }
 
-    let output = context.start_rendering();
+    let output = context.start_rendering_sync();
 
     // not muted, and positive feedback cycle
     assert_float_eq!(

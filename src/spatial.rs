@@ -1,18 +1,19 @@
 //! Spatialization/Panning primitives
 //!
-//! Required for panning algorithm, distance and cone effects of [`crate::node::PannerNode`]s
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
+//! Required for panning algorithm, distance and cone effects of panner nodes
+
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
-use crate::param::{AudioParam, AudioParamOptions, AudioParamRaw, AutomationRate};
+use crate::param::{AudioParam, AudioParamDescriptor, AudioParamRaw, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
 use std::f32::consts::PI;
 
 /// AudioParam settings for the carthesian coordinates
-pub(crate) const PARAM_OPTS: AudioParamOptions = AudioParamOptions {
+pub(crate) const PARAM_OPTS: AudioParamDescriptor = AudioParamDescriptor {
     min_value: f32::MIN,
     max_value: f32::MAX,
     default_value: 0.,
@@ -21,7 +22,11 @@ pub(crate) const PARAM_OPTS: AudioParamOptions = AudioParamOptions {
 
 /// Represents the position and orientation of the person listening to the audio scene
 ///
-/// All PannerNode objects spatialize in relation to the [`crate::context::BaseAudioContext`]'s listener.
+/// All [`PannerNode`](crate::node::PannerNode) objects spatialize in relation to the [BaseAudioContext's](crate::context::BaseAudioContext) listener.
+///
+/// # Usage
+///
+/// For example usage, check the [`PannerNode`](crate::node::PannerNode) docs.
 pub struct AudioListener {
     pub(crate) position_x: AudioParam,
     pub(crate) position_y: AudioParam,
@@ -116,16 +121,16 @@ impl AudioNode for AudioListenerNode {
 }
 
 impl AudioListenerNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C) -> Self {
         context.base().register(move |registration| {
             let reg_id = registration.id();
             let base = context.base();
 
-            let forward_z_opts = AudioParamOptions {
+            let forward_z_opts = AudioParamDescriptor {
                 default_value: -1.,
                 ..PARAM_OPTS
             };
-            let up_y_opts = AudioParamOptions {
+            let up_y_opts = AudioParamDescriptor {
                 default_value: 1.,
                 ..PARAM_OPTS
             };

@@ -3,40 +3,34 @@
 //! # Example
 //! ```no_run
 //! use std::fs::File;
-//! use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-//! use web_audio_api::media::{MediaElement, MediaDecoder};
-//! use web_audio_api::node::{AudioNode, AudioControllableSourceNode, AudioScheduledSourceNode};
+//! use web_audio_api::context::{BaseAudioContext, AudioContext};
+//! use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 //!
 //! let context = AudioContext::new(None);
 //!
-//! // setup background music:
-//! // read from local file
-//! let file = File::open("samples/major-scale.ogg").unwrap();
-//! // decode file to media stream
-//! let stream = MediaDecoder::try_new(file).unwrap();
-//! // wrap stream in MediaElement, so we can control it (loop, play/pause)
-//! let mut media = MediaElement::new(stream);
-//! // register as media element in the audio context
-//! let background = context.create_media_element_source(media);
-//! // use a gain node to control volume
-//! let gain = context.create_gain();
-//! // play at low volume
-//! gain.gain().set_value(0.5);
-//! // connect the media node to the gain node
-//! background.connect(&gain);
-//! // connect the gain node to the destination node (speakers)
-//! gain.connect(&context.destination());
-//! // start playback
-//! background.set_loop(true);
-//! background.start();
+//! // create an audio buffer from a given file
+//! let file = File::open("samples/sample.wav").unwrap();
+//! let buffer = context.decode_audio_data_sync(file).unwrap();
 //!
-//! // mix in an oscillator sound
+//! // play the buffer at given volume
+//! let volume = context.create_gain();
+//! volume.connect(&context.destination());
+//! volume.gain().set_value(0.5);
+//!
+//! let buffer_source = context.create_buffer_source();
+//! buffer_source.connect(&volume);
+//! buffer_source.set_buffer(buffer);
+//!
+//! // create oscillator branch
 //! let osc = context.create_oscillator();
 //! osc.connect(&context.destination());
+//!
+//! // start the sources
+//! buffer_source.start();
 //! osc.start();
 //!
 //! // enjoy listening
-//! //std::thread::sleep(std::time::Duration::from_secs(4));
+//! std::thread::sleep(std::time::Duration::from_secs(4));
 //! ```
 
 use std::fmt;
@@ -51,13 +45,15 @@ pub const MAX_CHANNELS: usize = 32;
 
 pub mod buffer;
 pub mod context;
-pub mod control;
+pub(crate) mod control;
 pub mod media;
 pub mod node;
 pub mod param;
 pub mod periodic_wave;
 pub mod render;
-pub mod spatial;
+
+mod spatial;
+pub use spatial::AudioListener;
 
 #[cfg(test)]
 mod snapshot;
@@ -128,12 +124,61 @@ impl AtomicF64 {
         self.inner
             .store(u64::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst)
     }
+}
 
-    pub fn swap(&self, v: f64) -> f64 {
-        let prev = self
-            .inner
-            .swap(u64::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst);
-        f64::from_ne_bytes(prev.to_ne_bytes())
+/// Assert that the given sample rate is valid.
+///
+/// Note that in practice sample rates should stand between 8000Hz (lower bound for
+/// voice based applications, e.g. see phone bandwidth) and 96000Hz (for very high
+/// quality audio applications and spectrum manipulation).
+/// Most common sample rates for musical applications are 44100 and 48000.
+/// - see <https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createbuffer-samplerate>
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - the given sample rate is zero
+///
+pub(crate) fn assert_valid_sample_rate(sample_rate: SampleRate) {
+    if sample_rate.0 == 0 {
+        panic!(
+            "NotSupportedError - Invalid sample rate: {:?}, should be strictly positive",
+            sample_rate.0
+        );
+    }
+}
+
+/// Assert that the given number of channels is valid.
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - the given number of channels is outside the [1, 32] range,
+/// 32 being defined by the MAX_CHANNELS constant.
+///
+pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
+    if number_of_channels == 0 || number_of_channels > MAX_CHANNELS {
+        panic!(
+            "NotSupportedError - Invalid number of channels: {:?} is outside range [1, {:?}]",
+            number_of_channels, MAX_CHANNELS
+        );
+    }
+}
+
+/// Assert that the given channel number is valid according the number of channel
+/// of an Audio asset (e.g. [`AudioBuffer`](crate::buffer::AudioBuffer))
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - the given channel number is greater than or equal to the given number of channels.
+///
+pub(crate) fn assert_valid_channel_number(channel_number: usize, number_of_channels: usize) {
+    if channel_number >= number_of_channels {
+        panic!(
+            "IndexSizeError - Invalid channel number {:?} (number of channels: {:?})",
+            channel_number, number_of_channels
+        );
     }
 }
 
@@ -150,9 +195,36 @@ mod tests {
 
         f.store(3.0);
         assert_float_eq!(f.load(), 3.0, abs <= 0.);
+    }
 
-        let prev = f.swap(4.0);
-        assert_float_eq!(prev, 3.0, abs <= 0.);
-        assert_float_eq!(f.load(), 4.0, abs <= 0.);
+    #[test]
+    #[should_panic]
+    fn test_invalid_sample_rate() {
+        let sample_rate = SampleRate(0);
+        assert_valid_sample_rate(sample_rate);
+    }
+
+    #[test]
+    fn test_valid_sample_rate() {
+        let sample_rate = SampleRate(1);
+        assert_valid_sample_rate(sample_rate);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_number_of_channels_min() {
+        assert_valid_number_of_channels(0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_number_of_channels_max() {
+        assert_valid_number_of_channels(33);
+    }
+
+    #[test]
+    fn test_valid_number_of_channels() {
+        assert_valid_number_of_channels(1);
+        assert_valid_number_of_channels(32);
     }
 }

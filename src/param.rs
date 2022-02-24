@@ -22,7 +22,7 @@ pub enum AutomationRate {
 }
 
 /// Options for constructing an [`AudioParam`]
-pub struct AudioParamOptions {
+pub struct AudioParamDescriptor {
     pub automation_rate: AutomationRate,
     pub default_value: f32,
     pub min_value: f32,
@@ -1296,7 +1296,7 @@ impl AudioParamProcessor {
 }
 
 pub(crate) fn audio_param_pair(
-    opts: AudioParamOptions,
+    opts: AudioParamDescriptor,
     registration: AudioContextRegistration,
 ) -> (AudioParam, AudioParamProcessor) {
     let (sender, receiver) = crossbeam_channel::unbounded();
@@ -1332,7 +1332,7 @@ pub(crate) fn audio_param_pair(
 mod tests {
     use float_eq::assert_float_eq;
 
-    use crate::context::{AsBaseAudioContext, OfflineAudioContext};
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
 
     use super::*;
 
@@ -1340,7 +1340,7 @@ mod tests {
     fn test_default_and_accessors() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -1359,7 +1359,7 @@ mod tests {
     fn test_set_value() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -1381,7 +1381,7 @@ mod tests {
     fn test_set_value_clamped() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -1.,
@@ -1404,7 +1404,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: -10.,
@@ -1429,7 +1429,7 @@ mod tests {
 
         {
             // events spread on several blocks
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: -10.,
@@ -1459,7 +1459,7 @@ mod tests {
     #[test]
     fn test_steps_k_rate() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::K,
             default_value: 0.,
             min_value: -10.,
@@ -1486,7 +1486,7 @@ mod tests {
     fn test_linear_ramp_arate() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -1513,7 +1513,7 @@ mod tests {
     fn test_linear_ramp_arate_end_of_block() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -1538,7 +1538,7 @@ mod tests {
     fn test_linear_ramp_arate_implicit_set_value() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -1569,7 +1569,7 @@ mod tests {
         // regression test for issue #9
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -20.,
@@ -1609,7 +1609,7 @@ mod tests {
         // must be compliant with ex.7 cf. https://www.w3.org/TR/webaudio/#computation-of-value
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -1637,7 +1637,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::K,
                 default_value: 0.,
                 min_value: -20.,
@@ -1663,7 +1663,7 @@ mod tests {
 
         {
             // finish in the middle of a block
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::K,
                 default_value: 0.,
                 min_value: -20.,
@@ -1692,7 +1692,7 @@ mod tests {
     fn test_exponential_ramp_a_rate() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -1727,7 +1727,7 @@ mod tests {
     fn test_exponential_ramp_a_rate_multiple_blocks() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -1767,7 +1767,7 @@ mod tests {
 
         {
             // zero target
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -1790,7 +1790,7 @@ mod tests {
 
         {
             // opposite signs
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: -1.,
@@ -1817,7 +1817,7 @@ mod tests {
     fn test_exponential_ramp_to_zero() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 1.,
             min_value: 0.,
@@ -1831,7 +1831,7 @@ mod tests {
     fn test_exponential_ramp_k_rate_multiple_blocks() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::K,
             default_value: 0.,
             min_value: 0.,
@@ -1873,7 +1873,7 @@ mod tests {
 
         {
             // zero target
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::K,
                 default_value: 0.,
                 min_value: 0.,
@@ -1893,7 +1893,7 @@ mod tests {
 
         {
             // opposite signs
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::K,
                 default_value: -1.,
                 min_value: -1.,
@@ -1917,7 +1917,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -1945,7 +1945,7 @@ mod tests {
 
         {
             // implicit SetValue if SetTarget is first event
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -1972,7 +1972,7 @@ mod tests {
 
         {
             // start later in block with arbitrary values
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2006,7 +2006,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2041,7 +2041,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2079,7 +2079,7 @@ mod tests {
     fn test_set_target_at_time_a_rate_followed_by_ramp() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2133,7 +2133,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::K,
                 default_value: 0.,
                 min_value: 0.,
@@ -2167,7 +2167,7 @@ mod tests {
     fn test_cancel_scheduled_values() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -2193,7 +2193,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2211,7 +2211,7 @@ mod tests {
 
         // ramp already started, go back to previous value
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2238,7 +2238,7 @@ mod tests {
         // and last_event is not defined
         // @see - note in CancelScheduledValues insertion in timeline
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2254,7 +2254,7 @@ mod tests {
         }
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2281,7 +2281,7 @@ mod tests {
     fn test_cancel_and_hold() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2309,7 +2309,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2350,7 +2350,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2371,7 +2371,7 @@ mod tests {
 
         {
             // cancel between two samples
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2396,7 +2396,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2429,7 +2429,7 @@ mod tests {
 
         {
             // cancel between 2 samples
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2466,7 +2466,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
         {
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2488,7 +2488,7 @@ mod tests {
 
         {
             // sub-sample
-            let opts = AudioParamOptions {
+            let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2513,7 +2513,7 @@ mod tests {
     fn test_set_value_curve_at_time_a_rate() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -2540,7 +2540,7 @@ mod tests {
     fn test_set_value_curve_at_time_a_rate_multiple_frames() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -2575,7 +2575,7 @@ mod tests {
     fn test_set_value_curve_at_time_insert_while_another_event() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 1.,
             min_value: 0.,
@@ -2597,7 +2597,7 @@ mod tests {
     fn test_set_value_curve_at_time_insert_another_event_inside() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
-        let opts = AudioParamOptions {
+        let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
             default_value: 1.,
             min_value: 0.,

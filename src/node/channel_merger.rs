@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::context::{AsBaseAudioContext, AudioContextRegistration};
+use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
@@ -8,7 +8,11 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
-/// Options for constructing a ChannelMergerNode
+/// Options for constructing a [`ChannelMergerNode`]
+// dictionary ChannelMergerOptions : AudioNodeOptions {
+//   unsigned long numberOfInputs = 6;
+// };
+#[derive(Clone, Debug)]
 pub struct ChannelMergerOptions {
     pub number_of_inputs: u32,
     pub channel_config: ChannelConfigOptions,
@@ -41,12 +45,15 @@ impl AudioNode for ChannelMergerNode {
     fn channel_config_raw(&self) -> &ChannelConfig {
         &self.channel_config
     }
+
     fn set_channel_count(&self, _v: usize) {
         panic!("Cannot edit channel count of ChannelMergerNode")
     }
+
     fn set_channel_count_mode(&self, _v: ChannelCountMode) {
         panic!("Cannot edit channel count mode of ChannelMergerNode")
     }
+
     fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
         panic!("Cannot edit channel interpretation of ChannelMergerNode")
     }
@@ -54,13 +61,14 @@ impl AudioNode for ChannelMergerNode {
     fn number_of_inputs(&self) -> u32 {
         self.channel_count() as _
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
 }
 
 impl ChannelMergerNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, mut options: ChannelMergerOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, mut options: ChannelMergerOptions) -> Self {
         context.base().register(move |registration| {
             options.channel_config.count = options.number_of_inputs as _;
 

@@ -1,5 +1,5 @@
-use crate::context::{AsBaseAudioContext, AudioContextRegistration, AudioParamId};
-use crate::param::{AudioParam, AudioParamOptions};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
+use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
@@ -8,7 +8,12 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretatio
 use std::cell::{Cell, RefCell, RefMut};
 use std::rc::Rc;
 
-/// Options for constructing a DelayNode
+/// Options for constructing a [`DelayNode`]
+// dictionary DelayOptions : AudioNodeOptions {
+//   double maxDelayTime = 1;
+//   double delayTime = 0;
+// };
+#[derive(Clone, Debug)]
 pub struct DelayOptions {
     pub max_delay_time: f64,
     pub delay_time: f64,
@@ -32,19 +37,19 @@ impl Default for DelayOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/DelayNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#DelayNode>
-/// - see also: [`AsBaseAudioContext::create_delay`](crate::context::AsBaseAudioContext::create_delay)
+/// - see also: [`BaseAudioContext::create_delay`](crate::context::BaseAudioContext::create_delay)
 ///
 /// # Usage
 ///
 /// ```no_run
 /// use std::fs::File;
-/// use web_audio_api::context::{AsBaseAudioContext, AudioContext};
-/// use web_audio_api::node::AudioNode;
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// // create an `AudioContext` and load a sound file
 /// let context = AudioContext::new(None);
 /// let file = File::open("samples/sample.wav").unwrap();
-/// let audio_buffer = context.decode_audio_data(file).unwrap();
+/// let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 ///
 /// // create a delay of 0.5s
 /// let delay = context.create_delay(1.);
@@ -106,6 +111,7 @@ impl AudioNode for DelayNode {
     fn number_of_inputs(&self) -> u32 {
         1
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
@@ -152,7 +158,7 @@ impl AudioNode for DelayNode {
 }
 
 impl DelayNode {
-    pub fn new<C: AsBaseAudioContext>(context: &C, options: DelayOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: DelayOptions) -> Self {
         let sample_rate = context.sample_rate_raw().0 as f64;
 
         // Specifies the maximum delay time in seconds allowed for the delay line.
@@ -191,7 +197,7 @@ impl DelayNode {
 
         context.base().register(move |writer_registration| {
             let node = context.base().register(move |reader_registration| {
-                let param_opts = AudioParamOptions {
+                let param_opts = AudioParamDescriptor {
                     min_value: 0.,
                     max_value: max_delay_time as f32,
                     default_value: 0.,
@@ -495,6 +501,7 @@ mod tests {
     use float_eq::assert_float_eq;
 
     use crate::context::OfflineAudioContext;
+    use crate::node::AudioScheduledSourceNode;
     use crate::SampleRate;
 
     use super::*;
@@ -517,7 +524,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 256];
@@ -546,7 +553,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 256];
@@ -573,7 +580,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 256];
@@ -604,7 +611,7 @@ mod tests {
         src.set_buffer(two_chan_dirac);
         src.start_at(0.);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
 
         let channel_left = result.get_channel_data(0);
         let mut expected_left = vec![0.; 256];
@@ -645,7 +652,7 @@ mod tests {
         src2.set_buffer(two_chan_dirac);
         src2.start_at(1.);
 
-        let result = context.start_rendering();
+        let result = context.start_rendering_sync();
 
         let channel_left = result.get_channel_data(0);
         let mut expected_left = vec![0.; 3 * 128];
@@ -687,7 +694,7 @@ mod tests {
                 src.start_at(3.);
             } // src and delay nodes are dropped
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let mut expected = vec![0.; 5 * 128];
             // source starts after 2 * 128 samples, then is delayed another 128
             expected[4 * 128] = 1.;
@@ -720,7 +727,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 256];
@@ -746,7 +753,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 3 * 128];
@@ -780,7 +787,7 @@ mod tests {
             src.set_buffer(dirac);
             src.start_at(0.);
 
-            let result = context.start_rendering();
+            let result = context.start_rendering_sync();
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; 256];

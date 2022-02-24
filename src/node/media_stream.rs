@@ -1,23 +1,23 @@
-use crate::buffer::Resampler;
-use crate::context::{AsBaseAudioContext, AudioContextRegistration};
-use crate::control::Scheduler;
-use crate::media::MediaStream;
-
+use crate::context::{AudioContextRegistration, BaseAudioContext};
+use crate::media::{MediaStream, Resampler};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer};
 
-/// Options for constructing a MediaStreamAudioSourceNode
-pub struct MediaStreamAudioSourceNodeOptions<M> {
-    pub media: M,
-    pub channel_config: ChannelConfigOptions,
+/// Options for constructing a [`MediaStreamAudioSourceNode`]
+// dictionary MediaStreamAudioSourceOptions {
+//   required MediaStream mediaStream;
+// };
+pub struct MediaStreamAudioSourceOptions<M> {
+    pub media_stream: M,
 }
 
 /// An audio source from a [`MediaStream`] (e.g. microphone input)
 ///
 /// IMPORTANT: the media stream is polled on the render thread so you must ensure the media stream
-/// iterator never blocks. Consider wrapping the `MediaStream` in a `MediaElement`, which buffers the
-/// stream on another thread so the render thread never blocks.
+/// iterator never blocks. A later version of the library will allow you to wrap the `MediaStream`
+/// in a `MediaElement`, which buffers the stream on another thread so the render thread never
+/// blocks. <https://github.com/orottier/web-audio-api-rs/issues/120>
 pub struct MediaStreamAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
@@ -35,33 +35,32 @@ impl AudioNode for MediaStreamAudioSourceNode {
     fn number_of_inputs(&self) -> u32 {
         0
     }
+
     fn number_of_outputs(&self) -> u32 {
         1
     }
 }
 
 impl MediaStreamAudioSourceNode {
-    pub fn new<C: AsBaseAudioContext, M: MediaStream>(
+    pub fn new<C: BaseAudioContext, M: MediaStream>(
         context: &C,
-        options: MediaStreamAudioSourceNodeOptions<M>,
+        options: MediaStreamAudioSourceOptions<M>,
     ) -> Self {
         context.base().register(move |registration| {
+            let channel_config = ChannelConfigOptions::default().into();
+
             let node = MediaStreamAudioSourceNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config,
             };
 
             let resampler = Resampler::new(
                 context.sample_rate_raw(),
                 RENDER_QUANTUM_SIZE,
-                options.media,
+                options.media_stream,
             );
 
-            // setup void scheduler - always on
-            let scheduler = Scheduler::new();
-            scheduler.start_at(0.);
-
-            let render = MediaStreamRenderer::new(resampler, scheduler);
+            let render = MediaStreamRenderer::new(resampler);
 
             (node, Box::new(render))
         })
