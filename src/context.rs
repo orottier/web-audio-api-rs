@@ -247,15 +247,9 @@ pub trait BaseAudioContext {
         node::MediaStreamAudioSourceNode::new(self.base(), opts)
     }
 
-    /// Creates a `MediaStreamAudioDestinationNode` from a given callback
-    fn create_media_stream_destination<F: FnMut(AudioBuffer) + Send + 'static>(
-        &self,
-        stream: F,
-    ) -> node::MediaStreamAudioDestinationNode {
-        let opts = node::MediaStreamAudioDestinationOptions {
-            stream,
-            channel_config: ChannelConfigOptions::default(),
-        };
+    /// Creates a `MediaStreamAudioDestinationNode`
+    fn create_media_stream_destination(&self) -> node::MediaStreamAudioDestinationNode {
+        let opts = ChannelConfigOptions::default();
         node::MediaStreamAudioDestinationNode::new(self.base(), opts)
     }
 

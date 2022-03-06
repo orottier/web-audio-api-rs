@@ -14,23 +14,19 @@ fn main() {
     // Create an oscillator node with sine (default) type
     let osc = context.create_oscillator();
 
-    // Create a media destination node that will ship the samples out of the audio graph
-    let (sender, receiver) = crossbeam_channel::unbounded();
-    let callback = move |buf| {
-        // this will run on the render thread so it should not block
-        sender.send(buf).unwrap();
-    };
-    let dest = context.create_media_stream_destination(callback);
+    // Create a media destination node
+    let dest = context.create_media_stream_destination();
     osc.connect(&dest);
     osc.start();
 
     // Handle recorded buffers
     println!("samples recorded:");
     let mut samples_recorded = 0;
-    for buf in receiver.iter() {
-        // You could write the samples to a file here.
+    for item in dest.stream() {
+        let buffer = item.unwrap();
 
-        samples_recorded += buf.length();
+        // You could write the samples to a file here.
+        samples_recorded += buffer.length();
         print!("{}\r", samples_recorded);
     }
 }

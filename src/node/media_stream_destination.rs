@@ -1,15 +1,13 @@
+use std::error::Error;
+
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStream};
 
-/// Options for constructing a [`MediaStreamAudioDestinationNode`]
-pub struct MediaStreamAudioDestinationOptions<F> {
-    pub stream: F,
-    pub channel_config: ChannelConfigOptions,
-}
+use crossbeam_channel::{self, Receiver, Sender};
 
 /// An audio stream destination (e.g. WebRTC sink)
 ///
@@ -20,9 +18,8 @@ pub struct MediaStreamAudioDestinationOptions<F> {
 /// Since the w3c `MediaStream` interface is not part of this library, we cannot adhere to the
 /// official specification. Instead, you can pass in any callback that handles audio buffers.
 ///
-/// IMPORTANT: the media stream sink will run on the render thread so you must ensure the processor
-/// never blocks. Consider to have the callback send the buffers over a message channel of let it
-/// fill a fixed size ring buffer.
+/// IMPORTANT: you must consume the buffers faster than the render thread produces them, or you
+/// will miss frames. Consider to spin up a dedicated thread to consume the buffers and cache them.
 ///
 /// # Usage
 ///
@@ -36,23 +33,19 @@ pub struct MediaStreamAudioDestinationOptions<F> {
 /// // Create an oscillator node with sine (default) type
 /// let osc = context.create_oscillator();
 ///
-/// // Create a media destination node that will ship the samples out of the audio graph
-/// let (sender, receiver) = crossbeam_channel::unbounded();
-/// let callback = move |buf| {
-///     // this will run on the render thread so it should not block
-///     sender.send(buf).unwrap();
-/// };
-/// let dest = context.create_media_stream_destination(callback);
+/// // Create a media destination node
+/// let dest = context.create_media_stream_destination();
 /// osc.connect(&dest);
 /// osc.start();
 ///
 /// // Handle recorded buffers
 /// println!("samples recorded:");
 /// let mut samples_recorded = 0;
-/// for buf in receiver.iter() {
-///     // You could write the samples to a file here.
+/// for item in dest.stream() {
+///     let buffer = item.unwrap();
 ///
-///     samples_recorded += buf.length();
+///     // You could write the samples to a file here.
+///     samples_recorded += buffer.length();
 ///     print!("{}\r", samples_recorded);
 /// }
 /// ```
@@ -64,6 +57,7 @@ pub struct MediaStreamAudioDestinationOptions<F> {
 pub struct MediaStreamAudioDestinationNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
+    receiver: Receiver<AudioBuffer>,
 }
 
 impl AudioNode for MediaStreamAudioDestinationNode {
@@ -85,30 +79,42 @@ impl AudioNode for MediaStreamAudioDestinationNode {
 }
 
 impl MediaStreamAudioDestinationNode {
-    pub fn new<C: BaseAudioContext, F: FnMut(AudioBuffer) + Send + 'static>(
-        context: &C,
-        options: MediaStreamAudioDestinationOptions<F>,
-    ) -> Self {
+    /// Create a new MediaStreamAudioDestinationNode
+    pub fn new<C: BaseAudioContext>(context: &C, options: ChannelConfigOptions) -> Self {
         context.base().register(move |registration| {
+            let (send, recv) = crossbeam_channel::bounded(1);
+            let recv_control = recv.clone();
+
             let node = MediaStreamAudioDestinationNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config: options.into(),
+                receiver: recv_control,
             };
 
-            let render = DestinationRenderer {
-                stream: options.stream,
-            };
+            let render = DestinationRenderer { send, recv };
 
             (node, Box::new(render))
         })
     }
+
+    /// A [`MediaStream`] iterator producing audio buffers with the same number of channels as the
+    /// node itself
+    ///
+    /// While you could call this function multiple times and poll all iterators concurrently, each
+    /// buffer will only be offered once.
+    pub fn stream(&self) -> impl MediaStream {
+        AudioDestinationNodeStream {
+            receiver: self.receiver.clone(),
+        }
+    }
 }
 
-struct DestinationRenderer<F> {
-    stream: F,
+struct DestinationRenderer {
+    send: Sender<AudioBuffer>,
+    recv: Receiver<AudioBuffer>,
 }
 
-impl<F: FnMut(AudioBuffer) + Send + 'static> AudioProcessor for DestinationRenderer<F> {
+impl AudioProcessor for DestinationRenderer {
     fn process(
         &mut self,
         inputs: &[AudioRenderQuantum],
@@ -128,9 +134,30 @@ impl<F: FnMut(AudioBuffer) + Send + 'static> AudioProcessor for DestinationRende
             .collect();
         let buffer = AudioBuffer::from(samples, sample_rate);
 
-        // run destination callback on buffer
-        (self.stream)(buffer);
+        // clear previous entry if it was not consumed
+        let _ = self.recv.try_recv();
+
+        // ship out AudioBuffer
+        let _ = self.send.send(buffer);
 
         false
+    }
+}
+
+// no need for public documentation because the concrete type is never returned (an impl
+// MediaStream is returned instead)
+#[doc(hidden)]
+pub struct AudioDestinationNodeStream {
+    receiver: Receiver<AudioBuffer>,
+}
+
+impl Iterator for AudioDestinationNodeStream {
+    type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.receiver.recv() {
+            Ok(buf) => Some(Ok(buf)),
+            Err(e) => Some(Err(Box::new(e))),
+        }
     }
 }
