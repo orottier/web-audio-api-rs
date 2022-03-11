@@ -127,6 +127,7 @@ impl AtomicF64 {
 /// This function will panic if:
 /// - the given sample rate is zero
 ///
+#[track_caller]
 pub(crate) fn assert_valid_sample_rate(sample_rate: SampleRate) {
     if sample_rate.0 == 0 {
         panic!(
@@ -144,6 +145,7 @@ pub(crate) fn assert_valid_sample_rate(sample_rate: SampleRate) {
 /// - the given number of channels is outside the [1, 32] range,
 /// 32 being defined by the MAX_CHANNELS constant.
 ///
+#[track_caller]
 pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
     if number_of_channels == 0 || number_of_channels > MAX_CHANNELS {
         panic!(
@@ -161,6 +163,7 @@ pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
 /// This function will panic if:
 /// - the given channel number is greater than or equal to the given number of channels.
 ///
+#[track_caller]
 pub(crate) fn assert_valid_channel_number(channel_number: usize, number_of_channels: usize) {
     if channel_number >= number_of_channels {
         panic!(

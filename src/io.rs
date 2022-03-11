@@ -197,6 +197,7 @@ impl StreamConfigsBuilder {
     fn with_sample_rate(mut self, options: Option<&AudioContextOptions>) -> Self {
         if let Some(opts) = options {
             if let Some(fs) = opts.sample_rate {
+                crate::assert_valid_sample_rate(SampleRate(fs));
                 self.prefered.sample_rate.0 = fs;
             }
         };
@@ -228,6 +229,7 @@ impl StreamConfigsBuilder {
     fn with_channels(mut self, options: Option<&AudioContextOptions>) -> Self {
         if let Some(opts) = options {
             if let Some(chs) = opts.number_of_channels {
+                crate::assert_valid_number_of_channels(chs.into());
                 self.prefered.channels = chs;
             }
         };
