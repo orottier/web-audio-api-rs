@@ -35,6 +35,7 @@
 
 use std::fmt;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// Render quantum size, the audio graph is rendered in blocks of RENDER_QUANTUM_SIZE samples
 /// see. <https://webaudio.github.io/web-audio-api/#render-quantum>
@@ -179,6 +180,25 @@ pub(crate) fn assert_valid_channel_number(channel_number: usize, number_of_chann
             "IndexSizeError - Invalid channel number {:?} (number of channels: {:?})",
             channel_number, number_of_channels
         );
+    }
+}
+
+/// Counter of the active panner nodes in the audio graph
+///
+/// When there are no panners active, we can apply some optimizations
+#[derive(Debug, Clone)]
+pub(crate) struct PannerNodeCounter(Arc<()>);
+
+impl PannerNodeCounter {
+    pub fn new() -> Self {
+        // Arc already contains the necessary atomic counts, no inner value needed
+        Self(Arc::new(()))
+    }
+
+    pub fn have_panners(&self) -> bool {
+        // Both the BaseAudioContext and the RenderThread have a copy, if there are any more, it
+        // means there are PannerRenderers active
+        Arc::strong_count(&self.0) > 2
     }
 }
 

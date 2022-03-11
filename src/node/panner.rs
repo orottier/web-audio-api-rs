@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{AtomicF64, SampleRate};
+use crate::{AtomicF64, PannerNodeCounter, SampleRate};
 
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
@@ -195,6 +195,9 @@ impl PannerNode {
             let cone_outer_angle = Arc::new(AtomicF64::new(options.cone_outer_angle));
             let cone_outer_gain = Arc::new(AtomicF64::new(options.cone_outer_gain));
 
+            // embed the panner node counter in the renderer
+            let panner_node_counter = context.base().panner_node_counter();
+
             let render = PannerRenderer {
                 position_x: render_px,
                 position_y: render_py,
@@ -205,6 +208,7 @@ impl PannerNode {
                 cone_inner_angle: cone_inner_angle.clone(),
                 cone_outer_angle: cone_outer_angle.clone(),
                 cone_outer_gain: cone_outer_gain.clone(),
+                panner_node_counter,
             };
 
             let node = PannerNode {
@@ -294,6 +298,8 @@ struct PannerRenderer {
     cone_inner_angle: Arc<AtomicF64>,
     cone_outer_angle: Arc<AtomicF64>,
     cone_outer_gain: Arc<AtomicF64>,
+    #[allow(dead_code)]
+    panner_node_counter: PannerNodeCounter, // only used to detect `Drop`s
 }
 
 impl AudioProcessor for PannerRenderer {

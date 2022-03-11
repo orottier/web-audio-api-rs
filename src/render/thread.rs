@@ -9,7 +9,7 @@ use crossbeam_channel::Receiver;
 use super::{AudioRenderQuantum, NodeIndex};
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::message::ControlMessage;
-use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+use crate::{PannerNodeCounter, SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::graph::Graph;
 
@@ -37,9 +37,10 @@ impl RenderThread {
         channels: usize,
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
+        panner_node_counter: PannerNodeCounter,
     ) -> Self {
         Self {
-            graph: Graph::new(),
+            graph: Graph::new(panner_node_counter),
             sample_rate,
             channels,
             frames_played,

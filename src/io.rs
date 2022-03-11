@@ -13,7 +13,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use crate::message::ControlMessage;
-use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+use crate::{PannerNodeCounter, SampleRate, RENDER_QUANTUM_SIZE};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -281,6 +281,8 @@ struct OutputStreamer {
     configs: StreamConfigs,
     /// `frames_played` act as a time reference when processing
     frames_played: Arc<AtomicU64>,
+    /// Active panner node counter
+    panner_node_counter: PannerNodeCounter,
     /// communication channel between control and render thread (sender part)
     sender: Option<Sender<ControlMessage>>,
     /// the output stream
@@ -292,7 +294,11 @@ struct OutputStreamer {
 
 impl OutputStreamer {
     /// creates an `OutputStreamer`
-    fn new(configs: StreamConfigs, frames_played: Arc<AtomicU64>) -> Self {
+    fn new(
+        configs: StreamConfigs,
+        frames_played: Arc<AtomicU64>,
+        panner_node_counter: PannerNodeCounter,
+    ) -> Self {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
@@ -302,6 +308,7 @@ impl OutputStreamer {
             device,
             configs,
             frames_played,
+            panner_node_counter,
             sender: None,
             stream: None,
             falled_back: false,
@@ -327,6 +334,7 @@ impl OutputStreamer {
             config.channels as usize,
             receiver,
             self.frames_played.clone(),
+            self.panner_node_counter.clone(),
         );
 
         let spawned =
@@ -401,6 +409,7 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
                     config.channels as usize,
                     receiver,
                     streamer.frames_played.clone(),
+                    streamer.panner_node_counter.clone(),
                 );
 
                 let spawned = spawn_output_stream(
@@ -421,6 +430,7 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
 #[allow(clippy::redundant_pub_crate)]
 pub(crate) fn build_output(
     frames_played: Arc<AtomicU64>,
+    panner_node_counter: PannerNodeCounter,
     options: Option<&AudioContextOptions>,
 ) -> (Stream, StreamConfig, Sender<ControlMessage>) {
     let configs = StreamConfigsBuilder::new()
@@ -429,7 +439,7 @@ pub(crate) fn build_output(
         .with_channels(options)
         .build();
 
-    let streamer = OutputStreamer::new(configs, frames_played)
+    let streamer = OutputStreamer::new(configs, frames_played, panner_node_counter)
         .spawn()
         .or_fallback()
         .play();

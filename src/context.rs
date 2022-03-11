@@ -15,9 +15,9 @@ use std::sync::{Arc, Mutex};
 /// Destination node id is always at index 0
 const DESTINATION_NODE_ID: u64 = 0;
 /// listener node id is always at index 1
-const LISTENER_NODE_ID: u64 = 1;
+pub(crate) const LISTENER_NODE_ID: u64 = 1;
 /// listener audio parameters ids are always at index 2 through 12
-const LISTENER_PARAM_IDS: Range<u64> = 2..12;
+pub(crate) const LISTENER_PARAM_IDS: Range<u64> = 2..12;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::media::{MediaDecoder, MediaStream};
@@ -27,7 +27,7 @@ use crate::param::{AudioParam, AudioParamDescriptor, AudioParamEvent};
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::render::{AudioProcessor, NodeIndex, RenderThread};
 use crate::spatial::{AudioListener, AudioListenerParams};
-use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+use crate::{PannerNodeCounter, SampleRate, RENDER_QUANTUM_SIZE};
 
 #[cfg(not(test))]
 use crate::io;
@@ -78,6 +78,8 @@ struct ConcreteBaseAudioContextInner {
     frames_played: Arc<AtomicU64>,
     /// AudioListener fields
     listener_params: Option<AudioListenerParams>,
+    /// Number of active panner nodes (allows for some optimizations)
+    panner_node_counter: PannerNodeCounter,
 }
 
 /// The interface representing an audio-processing graph built from audio modules linked together,
@@ -440,11 +442,24 @@ impl AudioContext {
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
-        let (stream, config, sender) = io::build_output(frames_played_clone, options.as_ref());
+        // track number of active panners
+        let panner_node_counter = PannerNodeCounter::new();
+
+        let (stream, config, sender) = io::build_output(
+            frames_played_clone,
+            panner_node_counter.clone(),
+            options.as_ref(),
+        );
         let channels = u32::from(config.channels);
         let sample_rate = SampleRate(config.sample_rate.0);
 
-        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base = ConcreteBaseAudioContext::new(
+            sample_rate,
+            channels,
+            frames_played,
+            sender,
+            panner_node_counter,
+        );
 
         Self {
             base,
@@ -464,8 +479,20 @@ impl AudioContext {
         let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100));
         let channels = u32::from(options.channels.unwrap_or(2));
         let (sender, _receiver) = crossbeam_channel::unbounded();
+
+        // track number of frames - synced from render thread to control thread
         let frames_played = Arc::new(AtomicU64::new(0));
-        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
+
+        // track number of active panners - allows for some optimizations
+        let panner_node_counter = PannerNodeCounter::new();
+
+        let base = ConcreteBaseAudioContext::new(
+            sample_rate,
+            channels,
+            frames_played,
+            sender,
+            panner_node_counter,
+        );
 
         Self { base }
     }
@@ -608,6 +635,7 @@ impl ConcreteBaseAudioContext {
         channels: u32,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
+        panner_node_counter: PannerNodeCounter,
     ) -> Self {
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
@@ -617,6 +645,7 @@ impl ConcreteBaseAudioContext {
             node_id_inc: AtomicU64::new(0),
             frames_played,
             listener_params: None,
+            panner_node_counter,
         };
         let base = Self {
             inner: Arc::new(base_inner),
@@ -813,6 +842,11 @@ impl ConcreteBaseAudioContext {
         self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 7, 8);
         self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 8, 9);
     }
+
+    /// Return the `PannerNodeCounter` that must be placed in `PannerRenderer`s
+    pub(crate) fn panner_node_counter(&self) -> PannerNodeCounter {
+        self.inner.panner_node_counter.clone()
+    }
 }
 
 impl Default for AudioContext {
@@ -838,16 +872,26 @@ impl OfflineAudioContext {
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
+        // track number of active panners - allows for some optimizations
+        let panner_node_counter = PannerNodeCounter::new();
+
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
             sample_rate,
             channels as usize,
             receiver,
             frames_played_clone,
+            panner_node_counter.clone(),
         );
 
         // first, setup the base audio context
-        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base = ConcreteBaseAudioContext::new(
+            sample_rate,
+            channels,
+            frames_played,
+            sender,
+            panner_node_counter,
+        );
 
         Self {
             base,
