@@ -3,10 +3,9 @@
 use std::collections::HashMap;
 
 use crate::node::{ChannelConfig, ChannelCountMode};
-use crate::{PannerNodeCounter, SampleRate};
+use crate::SampleRate;
 
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeIndex};
-use crate::context::{LISTENER_NODE_ID, LISTENER_PARAM_IDS};
 
 use smallvec::{smallvec, SmallVec};
 
@@ -95,21 +94,17 @@ pub(crate) struct Graph {
     marked_temp: Vec<NodeIndex>,
     /// Topological sorting helper
     in_cycle: Vec<NodeIndex>,
-
-    /// Active panner node counter
-    panner_node_counter: PannerNodeCounter,
 }
 
 impl Graph {
-    pub fn new(panner_node_counter: PannerNodeCounter) -> Self {
+    pub fn new() -> Self {
         Graph {
             nodes: HashMap::new(),
-            alloc: Alloc::with_capacity(64),
             ordered: vec![],
             marked: vec![],
             marked_temp: vec![],
             in_cycle: vec![],
-            panner_node_counter,
+            alloc: Alloc::with_capacity(64),
         }
     }
 
@@ -257,23 +252,15 @@ impl Graph {
         // We cannot just start from the AudioDestinationNode and visit all nodes connecting to it,
         // since the audio graph could contain legs detached from the destination and those should
         // still be rendered.
-        let have_panners = self.panner_node_counter.have_panners();
-        self.nodes
-            .keys()
-            .filter(|&&node_id| {
-                let panner_related =
-                    LISTENER_PARAM_IDS.contains(&node_id.0) || LISTENER_NODE_ID == node_id.0;
-                have_panners || !panner_related
-            })
-            .for_each(|&node_id| {
-                self.visit(
-                    node_id,
-                    &mut marked,
-                    &mut marked_temp,
-                    &mut ordered,
-                    &mut in_cycle,
-                );
-            });
+        self.nodes.keys().for_each(|&node_id| {
+            self.visit(
+                node_id,
+                &mut marked,
+                &mut marked_temp,
+                &mut ordered,
+                &mut in_cycle,
+            );
+        });
 
         // Remove nodes from the ordering if they are part of a cycle. The spec mandates that their
         // outputs should be silenced, but with our rendering algorithm that is not necessary.
@@ -404,38 +391,38 @@ mod tests {
 
     #[test]
     fn test_add_remove() {
-        let mut graph = Graph::new(PannerNodeCounter::new());
+        let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(20), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(21), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(22), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(23), node, 1, 1, config());
+        graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(3), node, 1, 1, config());
 
-        graph.add_edge((NodeIndex(21), 0), (NodeIndex(20), 0));
-        graph.add_edge((NodeIndex(22), 0), (NodeIndex(21), 0));
-        graph.add_edge((NodeIndex(23), 0), (NodeIndex(20), 0));
+        graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
+        graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
+        graph.add_edge((NodeIndex(3), 0), (NodeIndex(0), 0));
 
         graph.order_nodes();
 
         // sorting is not deterministic, but this should uphold:
         assert_eq!(graph.ordered.len(), 4); // all nodes present
-        assert_eq!(graph.ordered[3], NodeIndex(20)); // root node comes last
+        assert_eq!(graph.ordered[3], NodeIndex(0)); // root node comes last
 
         let pos1 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(21))
+            .position(|&n| n == NodeIndex(1))
             .unwrap();
         let pos2 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(22))
+            .position(|&n| n == NodeIndex(2))
             .unwrap();
         assert!(pos2 < pos1); // node 1 depends on node 2
 
         // Detach node 1 (and thus node 2) from the root node
-        graph.remove_edge(NodeIndex(21), NodeIndex(20));
+        graph.remove_edge(NodeIndex(1), NodeIndex(0));
         graph.order_nodes();
 
         // sorting is not deterministic, but this should uphold:
@@ -443,38 +430,38 @@ mod tests {
         let pos1 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(21))
+            .position(|&n| n == NodeIndex(1))
             .unwrap();
         let pos2 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(22))
+            .position(|&n| n == NodeIndex(2))
             .unwrap();
         assert!(pos2 < pos1); // node 1 depends on node 2
     }
 
     #[test]
     fn test_remove_all() {
-        let mut graph = Graph::new(PannerNodeCounter::new());
+        let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(20), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(21), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(22), node, 1, 1, config());
+        graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(2), node, 1, 1, config());
 
         // link 1->0, 1->2 and 2->0
-        graph.add_edge((NodeIndex(21), 0), (NodeIndex(20), 0));
-        graph.add_edge((NodeIndex(21), 0), (NodeIndex(22), 0));
-        graph.add_edge((NodeIndex(22), 0), (NodeIndex(20), 0));
+        graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
+        graph.add_edge((NodeIndex(1), 0), (NodeIndex(2), 0));
+        graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));
 
         graph.order_nodes();
 
         assert_eq!(
             graph.ordered,
-            vec![NodeIndex(21), NodeIndex(22), NodeIndex(20)]
+            vec![NodeIndex(1), NodeIndex(2), NodeIndex(0)]
         );
 
-        graph.remove_edges_from(NodeIndex(21));
+        graph.remove_edges_from(NodeIndex(1));
         graph.order_nodes();
 
         // sorting is not deterministic, but this should uphold:
@@ -482,41 +469,41 @@ mod tests {
         let pos0 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(20))
+            .position(|&n| n == NodeIndex(0))
             .unwrap();
         let pos2 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(22))
+            .position(|&n| n == NodeIndex(2))
             .unwrap();
         assert!(pos2 < pos0); // node 1 depends on node 0
     }
 
     #[test]
     fn test_cycle() {
-        let mut graph = Graph::new(PannerNodeCounter::new());
+        let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(20), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(21), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(22), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(23), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(24), node, 1, 1, config());
+        graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(3), node.clone(), 1, 1, config());
+        graph.add_node(NodeIndex(4), node, 1, 1, config());
 
         // link 4->2, 2->1, 1->0, 1->2, 3->0
-        graph.add_edge((NodeIndex(24), 0), (NodeIndex(22), 0));
-        graph.add_edge((NodeIndex(22), 0), (NodeIndex(21), 0));
-        graph.add_edge((NodeIndex(21), 0), (NodeIndex(20), 0));
-        graph.add_edge((NodeIndex(21), 0), (NodeIndex(22), 0));
-        graph.add_edge((NodeIndex(23), 0), (NodeIndex(20), 0));
+        graph.add_edge((NodeIndex(4), 0), (NodeIndex(2), 0));
+        graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
+        graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
+        graph.add_edge((NodeIndex(1), 0), (NodeIndex(2), 0));
+        graph.add_edge((NodeIndex(3), 0), (NodeIndex(0), 0));
 
         graph.order_nodes();
 
-        let pos0 = graph.ordered.iter().position(|&n| n == NodeIndex(20));
-        let pos1 = graph.ordered.iter().position(|&n| n == NodeIndex(21));
-        let pos2 = graph.ordered.iter().position(|&n| n == NodeIndex(22));
-        let pos3 = graph.ordered.iter().position(|&n| n == NodeIndex(23));
-        let pos4 = graph.ordered.iter().position(|&n| n == NodeIndex(24));
+        let pos0 = graph.ordered.iter().position(|&n| n == NodeIndex(0));
+        let pos1 = graph.ordered.iter().position(|&n| n == NodeIndex(1));
+        let pos2 = graph.ordered.iter().position(|&n| n == NodeIndex(2));
+        let pos3 = graph.ordered.iter().position(|&n| n == NodeIndex(3));
+        let pos4 = graph.ordered.iter().position(|&n| n == NodeIndex(4));
 
         // cycle 1<>2 should be removed
         assert_eq!(pos1, None);
