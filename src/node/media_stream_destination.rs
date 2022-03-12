@@ -100,8 +100,8 @@ impl MediaStreamAudioDestinationNode {
     /// A [`MediaStream`] iterator producing audio buffers with the same number of channels as the
     /// node itself
     ///
-    /// While you could call this function multiple times and poll all iterators concurrently, each
-    /// buffer will only be offered once.
+    /// Note that while you can call this function multiple times and poll all iterators concurrently,
+    /// this could lead to unexpected behavior as the buffers will only be offered once.
     pub fn stream(&self) -> impl MediaStream {
         AudioDestinationNodeStream {
             receiver: self.receiver.clone(),
