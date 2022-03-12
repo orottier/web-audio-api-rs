@@ -460,8 +460,32 @@ impl AudioRenderQuantum {
 
     /// Modify every channel in the same way
     pub fn modify_channels<F: Fn(&mut AudioRenderQuantumChannel)>(&mut self, fun: F) {
-        // todo, optimize for Rcs that are equal
-        self.channels.iter_mut().for_each(fun)
+        if self.all_channels_identical() {
+            let number_of_channels = self.number_of_channels();
+            self.force_mono();
+            self.channels.iter_mut().for_each(fun);
+            for _ in 1..number_of_channels {
+                self.channels.push(self.channels[0].clone());
+            }
+        } else {
+            self.channels.iter_mut().for_each(fun)
+        }
+    }
+
+    /// Determine if all channels are identical (by pointer)
+    ///
+    /// This is often the case for upmixed buffers. When all channels are identical, modifications
+    /// only need to be applied once.
+    fn all_channels_identical(&self) -> bool {
+        let mut channels = self.channels.iter();
+        let first = channels.next().unwrap();
+        for c in channels {
+            if !Rc::ptr_eq(&first.data, &c.data) {
+                return false;
+            }
+        }
+
+        true
     }
 
     /// Sum two `AudioRenderQuantum`s
