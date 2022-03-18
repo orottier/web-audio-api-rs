@@ -76,6 +76,8 @@ struct ConcreteBaseAudioContextInner {
     queued_messages: Mutex<Vec<ControlMessage>>,
     /// number of frames played
     frames_played: Arc<AtomicU64>,
+    /// control msg to add the AudioListener, to be sent when the first panner is created
+    inactive_audio_listener: Mutex<Option<ControlMessage>>,
     /// AudioListener fields
     listener_params: Option<AudioListenerParams>,
 }
@@ -616,6 +618,7 @@ impl ConcreteBaseAudioContext {
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
             frames_played,
+            inactive_audio_listener: Mutex::new(None),
             listener_params: None,
         };
         let base = Self {
@@ -626,14 +629,8 @@ impl ConcreteBaseAudioContext {
             // Register magical nodes. We should not store the nodes inside our context since that
             // will create a cyclic reference, but we can reconstruct a new instance on the fly
             // when requested
-
-            let dest = node::AudioDestinationNode::new(&base, channels as usize);
+            let _dest = node::AudioDestinationNode::new(&base, channels as usize);
             let listener = crate::spatial::AudioListenerNode::new(&base);
-
-            // hack: Connect the listener to the destination node to force it to render at each
-            // quantum. Abuse the magical u32::MAX port so it acts as an AudioParam and has no side
-            // effects
-            base.connect(listener.id(), dest.id(), 0, u32::MAX);
 
             let listener_params = listener.into_fields();
             let AudioListener {
@@ -729,8 +726,23 @@ impl ConcreteBaseAudioContext {
             outputs: node.number_of_outputs() as usize,
             channel_config: node.channel_config_cloned(),
         };
-        self.inner.render_channel.send(message).unwrap();
 
+        // if this is the AudioListener, do not add it to the graph just yet
+        if id == LISTENER_NODE_ID {
+            let mut inactive_audio_listener = self.inner.inactive_audio_listener.lock().unwrap();
+            debug_assert!(inactive_audio_listener.is_none()); // should not be added multiple times
+            *inactive_audio_listener = Some(message);
+        } else {
+            self.inner.render_channel.send(message).unwrap();
+            self.resolve_queued_control_msgs(id);
+        }
+
+        node
+    }
+
+    /// Release queued control messages to the render thread that were blocking on the availability
+    /// of the Node with the given `id`
+    fn resolve_queued_control_msgs(&self, id: u64) {
         // resolve control messages that depend on this registration
         let mut queued = self.inner.queued_messages.lock().unwrap();
         let mut i = 0; // waiting for Vec::drain_filter to stabilize
@@ -742,8 +754,6 @@ impl ConcreteBaseAudioContext {
                 i += 1;
             }
         }
-
-        node
     }
 
     /// connects the output of the `from` audio node to the input of the `to` audio node
@@ -812,6 +822,27 @@ impl ConcreteBaseAudioContext {
         self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 6, 7);
         self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 7, 8);
         self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 8, 9);
+    }
+
+    /// Add the [`AudioListener`] to the audio graph (if not already)
+    pub(crate) fn release_audio_listener(&self) {
+        let mut inactive_audio_listener = self.inner.inactive_audio_listener.lock().unwrap();
+        if let Some(message) = inactive_audio_listener.take() {
+            // add the AudioListenerRenderer to the graph
+            self.inner.render_channel.send(message).unwrap();
+            // add the AudioParamRenderers for the Listener
+            self.resolve_queued_control_msgs(LISTENER_NODE_ID);
+
+            // hack: Connect the listener to the destination node to force it to render at each
+            // quantum. Abuse the magical u32::MAX port so it acts as an AudioParam and has no side
+            // effects
+            self.connect(
+                &AudioNodeId(LISTENER_NODE_ID),
+                &AudioNodeId(DESTINATION_NODE_ID),
+                0,
+                u32::MAX,
+            );
+        }
     }
 }
 
