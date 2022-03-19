@@ -137,7 +137,7 @@ impl Graph {
     pub fn add_edge(&mut self, source: (NodeIndex, u32), dest: (NodeIndex, u32)) {
         self.nodes
             .get_mut(&source.0)
-            .unwrap()
+            .unwrap_or_else(|| panic!("cannot connect {:?} to {:?}", source, dest))
             .outgoing_edges
             .push(OutgoingEdge {
                 self_index: source.1,
@@ -151,7 +151,7 @@ impl Graph {
     pub fn remove_edge(&mut self, source: NodeIndex, dest: NodeIndex) {
         self.nodes
             .get_mut(&source)
-            .unwrap()
+            .unwrap_or_else(|| panic!("cannot remove the edge from {:?} to {:?}", source, dest))
             .outgoing_edges
             .retain(|edge| edge.other_id != dest);
 
@@ -159,7 +159,10 @@ impl Graph {
     }
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
-        let node = self.nodes.get_mut(&source).unwrap();
+        let node = self
+            .nodes
+            .get_mut(&source)
+            .unwrap_or_else(|| panic!("cannot remove edges from {:?}", source));
         node.outgoing_edges.clear();
 
         self.nodes.values_mut().for_each(|node| {

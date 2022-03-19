@@ -16,8 +16,8 @@ use std::sync::{Arc, Mutex};
 const DESTINATION_NODE_ID: u64 = 0;
 /// listener node id is always at index 1
 const LISTENER_NODE_ID: u64 = 1;
-/// listener audio parameters ids are always at index 2 through 12
-const LISTENER_PARAM_IDS: Range<u64> = 2..12;
+/// listener audio parameters ids are always at index 2 through 10
+const LISTENER_PARAM_IDS: Range<u64> = 2..11;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::media::{MediaDecoder, MediaStream};
@@ -77,7 +77,7 @@ struct ConcreteBaseAudioContextInner {
     /// number of frames played
     frames_played: Arc<AtomicU64>,
     /// control msg to add the AudioListener, to be sent when the first panner is created
-    inactive_audio_listener: Mutex<Option<ControlMessage>>,
+    inactive_audio_listener: Mutex<Vec<ControlMessage>>,
     /// AudioListener fields
     listener_params: Option<AudioListenerParams>,
 }
@@ -618,7 +618,7 @@ impl ConcreteBaseAudioContext {
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
             frames_played,
-            inactive_audio_listener: Mutex::new(None),
+            inactive_audio_listener: Mutex::new(Vec::new()),
             listener_params: None,
         };
         let base = Self {
@@ -661,6 +661,12 @@ impl ConcreteBaseAudioContext {
         let mut base = base;
         let mut inner_mut = Arc::get_mut(&mut base.inner).unwrap();
         inner_mut.listener_params = Some(listener_params);
+
+        // validate if the hardcoded node IDs line up
+        debug_assert_eq!(
+            base.inner.node_id_inc.load(Ordering::Relaxed),
+            LISTENER_PARAM_IDS.end,
+        );
 
         base
     }
@@ -727,11 +733,10 @@ impl ConcreteBaseAudioContext {
             channel_config: node.channel_config_cloned(),
         };
 
-        // if this is the AudioListener, do not add it to the graph just yet
-        if id == LISTENER_NODE_ID {
+        // if this is the AudioListener or its params, do not add it to the graph just yet
+        if id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id) {
             let mut inactive_audio_listener = self.inner.inactive_audio_listener.lock().unwrap();
-            debug_assert!(inactive_audio_listener.is_none()); // should not be added multiple times
-            *inactive_audio_listener = Some(message);
+            inactive_audio_listener.push(message);
         } else {
             self.inner.render_channel.send(message).unwrap();
             self.resolve_queued_control_msgs(id);
@@ -827,10 +832,15 @@ impl ConcreteBaseAudioContext {
     /// Add the [`AudioListener`] to the audio graph (if not already)
     pub(crate) fn release_audio_listener(&self) {
         let mut inactive_audio_listener = self.inner.inactive_audio_listener.lock().unwrap();
-        if let Some(message) = inactive_audio_listener.take() {
+        let mut released = false;
+        while let Some(message) = inactive_audio_listener.pop() {
             // add the AudioListenerRenderer to the graph
             self.inner.render_channel.send(message).unwrap();
-            // add the AudioParamRenderers for the Listener
+            released = true;
+        }
+
+        if released {
+            // connect the AudioParamRenderers to the Listener
             self.resolve_queued_control_msgs(LISTENER_NODE_ID);
 
             // hack: Connect the listener to the destination node to force it to render at each
