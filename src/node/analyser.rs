@@ -136,6 +136,8 @@ impl AnalyserNode {
     }
 
     /// Copies the current time domain data (waveform data) into the provided buffer
+    // we can fix this panic cf issue #101
+    #[allow(clippy::missing_panics_doc)]
     pub fn get_float_time_domain_data(&self, buffer: Vec<f32>) -> Vec<f32> {
         let (sender, receiver) = crossbeam_channel::bounded(0);
         let request = AnalyserRequest::FloatTime { sender, buffer };
@@ -144,6 +146,8 @@ impl AnalyserNode {
     }
 
     /// Copies the current frequency data into the provided buffer
+    // we can fix this panic cf issue #101
+    #[allow(clippy::missing_panics_doc)]
     pub fn get_float_frequency_data(&self, buffer: Vec<f32>) -> Vec<f32> {
         let (sender, receiver) = crossbeam_channel::bounded(0);
         let request = AnalyserRequest::FloatFrequency { sender, buffer };
