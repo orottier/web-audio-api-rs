@@ -5,8 +5,8 @@ use std::rc::Rc;
 
 use crate::node::ChannelInterpretation;
 
-use crate::MAX_CHANNELS;
-use crate::RENDER_QUANTUM_SIZE;
+use crate::assert_valid_number_of_channels;
+use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
 // object pool for `AudioRenderQuantumChannel`s, only allocate if the pool is empty
 pub(crate) struct Alloc {
@@ -175,8 +175,13 @@ impl AudioRenderQuantum {
     ///
     /// Note: if the new number is higher than the previous, the new channels will be filled with
     /// garbage.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the given number of channels is outside the [1, 32] range, 32
+    /// being defined by the MAX_CHANNELS constant.
     pub fn set_number_of_channels(&mut self, n: usize) {
-        assert!(n <= MAX_CHANNELS);
+        assert_valid_number_of_channels(n);
         for _ in self.number_of_channels()..n {
             self.channels.push(self.channels[0].clone());
         }
@@ -185,6 +190,7 @@ impl AudioRenderQuantum {
 
     /// Get the samples from this specific channel.
     ///
+    /// # Panics
     /// Panics if the index is greater than the available number of channels
     pub fn channel_data(&self, index: usize) -> &AudioRenderQuantumChannel {
         &self.channels[index]
@@ -192,6 +198,7 @@ impl AudioRenderQuantum {
 
     /// Get the samples (mutable) from this specific channel.
     ///
+    /// # Panics
     /// Panics if the index is greater than the available number of channels
     pub fn channel_data_mut(&mut self, index: usize) -> &mut AudioRenderQuantumChannel {
         &mut self.channels[index]
@@ -208,12 +215,17 @@ impl AudioRenderQuantum {
     }
 
     /// Up/Down-mix to the desired number of channels
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the given number of channels is outside the [1, 32] range, 32
+    /// being defined by the MAX_CHANNELS constant.
     pub fn mix(
         &mut self,
         computed_number_of_channels: usize,
         interpretation: ChannelInterpretation,
     ) {
-        assert!(computed_number_of_channels < MAX_CHANNELS);
+        assert_valid_number_of_channels(computed_number_of_channels);
 
         if self.number_of_channels() == computed_number_of_channels {
             return;
