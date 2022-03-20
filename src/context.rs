@@ -371,6 +371,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
+#[derive(Clone, Debug)]
 pub enum AudioContextLatencyCategory {
     /// Balance audio output latency and power consumption.
     Balanced,
@@ -388,6 +389,7 @@ pub enum AudioContextLatencyCategory {
 /// Specify the playback configuration
 /// in non web context, it is the only way to specify
 /// the system configuration
+#[derive(Clone, Debug)]
 pub struct AudioContextOptions {
     /// Identify the type of playback, which affects
     /// tradeoffs between audio output latency and power consumption

@@ -10,12 +10,14 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
+/// Spatialization algorithm used to position the audio in 3D space
 #[derive(Copy, Clone, Debug)]
 pub enum PanningModelType {
     EqualPower,
     HRTF,
 }
 
+/// Algorithm to reduce the volume of an audio source as it moves away from the listener
 #[derive(Copy, Clone, Debug)]
 pub enum DistanceModelType {
     Linear,
