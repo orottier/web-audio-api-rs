@@ -33,6 +33,8 @@
 //! std::thread::sleep(std::time::Duration::from_secs(4));
 //! ```
 
+#![warn(clippy::missing_panics_doc)]
+
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// Render quantum size, the audio graph is rendered in blocks of RENDER_QUANTUM_SIZE samples
