@@ -794,8 +794,8 @@ impl ConcreteBaseAudioContext {
         self.inner.queued_messages.lock().unwrap().push(message);
     }
 
-    /// connects the `from` audio node to the `to` audio node
-    pub(crate) fn disconnect(&self, from: &AudioNodeId, to: &AudioNodeId) {
+    /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
+    pub(crate) fn disconnect_from(&self, from: &AudioNodeId, to: &AudioNodeId) {
         let message = ControlMessage::DisconnectNode {
             from: from.0,
             to: to.0,
@@ -803,8 +803,8 @@ impl ConcreteBaseAudioContext {
         self.inner.render_channel.send(message).unwrap();
     }
 
-    /// disconnects all the audio nodes
-    pub(crate) fn disconnect_all(&self, from: &AudioNodeId) {
+    /// Disconnects all outgoing connections from the AudioNode.
+    pub(crate) fn disconnect(&self, from: &AudioNodeId) {
         let message = ControlMessage::DisconnectAll { from: from.0 };
         self.inner.render_channel.send(message).unwrap();
     }

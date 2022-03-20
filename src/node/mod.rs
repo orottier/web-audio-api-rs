@@ -232,19 +232,19 @@ pub trait AudioNode {
     }
 
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
-    fn disconnect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
+    fn disconnect_from<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
         if self.context() != dest.context() {
             panic!("attempting to disconnect nodes from different contexts");
         }
 
-        self.context().disconnect(self.id(), dest.id());
+        self.context().disconnect_from(self.id(), dest.id());
 
         dest
     }
 
     /// Disconnects all outgoing connections from the AudioNode.
-    fn disconnect_all(&self) {
-        self.context().disconnect_all(self.id());
+    fn disconnect(&self) {
+        self.context().disconnect(self.id());
     }
 
     /// The number of inputs feeding into the AudioNode. For source nodes, this will be 0.
