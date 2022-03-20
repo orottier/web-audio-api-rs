@@ -397,7 +397,7 @@ pub struct AudioContextOptions {
     /// Sample rate of the audio Context and audio output hardware
     pub sample_rate: Option<u32>,
     /// Number of output channels of destination node and audio output hardware
-    pub channels: Option<u16>,
+    pub number_of_channels: Option<u16>,
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
@@ -468,11 +468,11 @@ impl AudioContext {
         let options = options.unwrap_or(AudioContextOptions {
             latency_hint: Some(AudioContextLatencyCategory::Interactive),
             sample_rate: Some(44_100),
-            channels: Some(2),
+            number_of_channels: Some(2),
         });
 
         let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100));
-        let channels = u32::from(options.channels.unwrap_or(2));
+        let channels = u32::from(options.number_of_channels.unwrap_or(2));
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
         let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
