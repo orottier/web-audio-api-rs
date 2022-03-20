@@ -1,3 +1,12 @@
+# Version 0.16.0 (2021-03-20)
+
+- AudioBufferSourceNode can now resample
+- Add MediaStreamAudioDestinationNode
+- Performance improvement when no PannerNodes are present
+- More consistent method/argument names
+- Added benchmark program
+- Removed MediaElement and MediaElementSourceNode for now, will reimplement
+
 # Version 0.15.0 (2021-02-10)
 
 - Allow method chaining on AudioParams
