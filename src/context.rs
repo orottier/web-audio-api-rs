@@ -77,7 +77,7 @@ struct ConcreteBaseAudioContextInner {
     /// number of frames played
     frames_played: Arc<AtomicU64>,
     /// control msg to add the AudioListener, to be sent when the first panner is created
-    inactive_audio_listener: Mutex<Vec<ControlMessage>>,
+    queued_audio_listener_msgs: Mutex<Vec<ControlMessage>>,
     /// AudioListener fields
     listener_params: Option<AudioListenerParams>,
 }
@@ -618,7 +618,7 @@ impl ConcreteBaseAudioContext {
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
             frames_played,
-            inactive_audio_listener: Mutex::new(Vec::new()),
+            queued_audio_listener_msgs: Mutex::new(Vec::new()),
             listener_params: None,
         };
         let base = Self {
@@ -735,8 +735,9 @@ impl ConcreteBaseAudioContext {
 
         // if this is the AudioListener or its params, do not add it to the graph just yet
         if id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id) {
-            let mut inactive_audio_listener = self.inner.inactive_audio_listener.lock().unwrap();
-            inactive_audio_listener.push(message);
+            let mut queued_audio_listener_msgs =
+                self.inner.queued_audio_listener_msgs.lock().unwrap();
+            queued_audio_listener_msgs.push(message);
         } else {
             self.inner.render_channel.send(message).unwrap();
             self.resolve_queued_control_msgs(id);
@@ -830,10 +831,10 @@ impl ConcreteBaseAudioContext {
     }
 
     /// Add the [`AudioListener`] to the audio graph (if not already)
-    pub(crate) fn release_audio_listener(&self) {
-        let mut inactive_audio_listener = self.inner.inactive_audio_listener.lock().unwrap();
+    pub(crate) fn ensure_audio_listener_present(&self) {
+        let mut queued_audio_listener_msgs = self.inner.queued_audio_listener_msgs.lock().unwrap();
         let mut released = false;
-        while let Some(message) = inactive_audio_listener.pop() {
+        while let Some(message) = queued_audio_listener_msgs.pop() {
             // add the AudioListenerRenderer to the graph
             self.inner.render_channel.send(message).unwrap();
             released = true;
