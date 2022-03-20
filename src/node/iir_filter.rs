@@ -346,12 +346,16 @@ impl IirFilterRenderer {
 mod test {
     use float_eq::assert_float_eq;
     use realfft::num_traits::Zero;
-    use std::{cmp::min, fs::File};
+    use std::{
+        cmp::min,
+        fs::File,
+        io::{BufRead, BufReader},
+    };
 
     use crate::{
         context::{BaseAudioContext, OfflineAudioContext},
         node::{AudioNode, AudioScheduledSourceNode},
-        snapshot, SampleRate,
+        SampleRate,
     };
 
     use super::{ChannelConfigOptions, IIRFilterNode, IIRFilterOptions};
@@ -583,8 +587,12 @@ mod test {
     fn default_periodic_wave_rendering_should_match_snapshot() {
         // the snapshot data has been verified by fft to make sure that the frequency
         // response correspond to a HP filter with Fc 4000 Hz
-        let ref_filtered =
-            snapshot::read("./snapshots/white_hp.json").expect("Reading snapshot file failed");
+        let file = File::open("./snapshots/white_hp.json").expect("Reading snapshot file failed");
+        let reader = BufReader::new(file);
+        let ref_filtered: Vec<f32> = reader
+            .lines()
+            .map(|l| l.unwrap().parse::<f32>().unwrap())
+            .collect();
 
         let mut context = OfflineAudioContext::new(1, LENGTH, SampleRate(44_100));
 
@@ -626,11 +634,13 @@ mod test {
             .copied()
             .collect();
 
-        let ref_data_ch = ref_filtered.data;
-
-        let min_len = min(data_ch.len(), ref_data_ch.len());
+        let min_len = min(data_ch.len(), ref_filtered.len());
 
         // todo instable test
-        assert_float_eq!(data_ch[0..min_len], ref_data_ch[0..min_len], abs_all <= 1.0);
+        assert_float_eq!(
+            data_ch[0..min_len],
+            ref_filtered[0..min_len],
+            abs_all <= 1.0
+        );
     }
 }
