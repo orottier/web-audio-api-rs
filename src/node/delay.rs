@@ -158,6 +158,11 @@ impl AudioNode for DelayNode {
 }
 
 impl DelayNode {
+    /// Create a new DelayNode
+    ///
+    /// # Panics
+    ///
+    /// Panics when the max delay value is smaller than zero or langer than three minutes.
     pub fn new<C: BaseAudioContext>(context: &C, options: DelayOptions) -> Self {
         let sample_rate = context.sample_rate_raw().0 as f64;
 
