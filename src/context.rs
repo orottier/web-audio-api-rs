@@ -67,7 +67,7 @@ struct ConcreteBaseAudioContextInner {
     /// sample rate in Hertz
     sample_rate: SampleRate,
     /// number of speaker output channels
-    channels: u32,
+    number_of_channels: u32,
     /// incrementing id to assign to audio nodes
     node_id_inc: AtomicU64,
     /// message channel from control to render thread
@@ -615,13 +615,13 @@ impl ConcreteBaseAudioContext {
     /// Creates a `BaseAudioContext` instance
     fn new(
         sample_rate: SampleRate,
-        channels: u32,
+        number_of_channels: u32,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
     ) -> Self {
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
-            channels,
+            number_of_channels,
             render_channel,
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
@@ -637,7 +637,7 @@ impl ConcreteBaseAudioContext {
             // Register magical nodes. We should not store the nodes inside our context since that
             // will create a cyclic reference, but we can reconstruct a new instance on the fly
             // when requested
-            let _dest = node::AudioDestinationNode::new(&base, channels as usize);
+            let _dest = node::AudioDestinationNode::new(&base, number_of_channels as usize);
             let listener = crate::spatial::AudioListenerNode::new(&base);
 
             let listener_params = listener.into_fields();
@@ -707,7 +707,7 @@ impl ConcreteBaseAudioContext {
     /// Number of channels for the audio destination
     #[must_use]
     pub fn channels(&self) -> u32 {
-        self.inner.channels
+        self.inner.number_of_channels
     }
 
     /// Construct a new pair of [`node::AudioNode`] and [`AudioProcessor`]
@@ -880,7 +880,7 @@ impl OfflineAudioContext {
     /// * `length` - length of the rendering audio buffer
     /// * `sample_rate` - output sample rate
     #[must_use]
-    pub fn new(channels: u32, length: usize, sample_rate: SampleRate) -> Self {
+    pub fn new(number_of_channels: u32, length: usize, sample_rate: SampleRate) -> Self {
         // communication channel to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
 
@@ -891,13 +891,14 @@ impl OfflineAudioContext {
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
             sample_rate,
-            channels as usize,
+            number_of_channels as usize,
             receiver,
             frames_played_clone,
         );
 
         // first, setup the base audio context
-        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base =
+            ConcreteBaseAudioContext::new(sample_rate, number_of_channels, frames_played, sender);
 
         Self {
             base,
