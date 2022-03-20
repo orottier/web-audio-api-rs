@@ -78,12 +78,26 @@ impl Microphone {
 
     /// Suspends the input stream, temporarily halting audio hardware access and reducing
     /// CPU/battery usage in the process.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * The input device is not available
+    /// * For a `BackendSpecificError`
     pub fn suspend(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.pause().unwrap()
     }
 
     /// Resumes the input stream that has previously been suspended/paused.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * The input device is not available
+    /// * For a `BackendSpecificError`
     pub fn resume(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.play().unwrap()
