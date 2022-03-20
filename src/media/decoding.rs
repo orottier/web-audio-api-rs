@@ -133,12 +133,12 @@ impl MediaDecoder {
         let format = probed.format;
 
         // Get the default track.
-        let track = format.default_track()
-            .ok_or(SymphoniaError::Unsupported("no default media track available"))?;
+        let track = format.default_track().ok_or(SymphoniaError::Unsupported(
+            "no default media track available",
+        ))?;
 
         // Create a (stateful) decoder for the track.
-        let decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &decoder_opts)?;
+        let decoder = symphonia::default::get_codecs().make(&track.codec_params, &decoder_opts)?;
 
         Ok(Self { format, decoder })
     }
