@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioNodeId, ConcreteBaseAudioContext};
-// use crate::control::{Controller, Scheduler};
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
@@ -286,12 +285,31 @@ pub trait AudioNode {
 /// The node will emit silence before it is started, and after it has ended.
 pub trait AudioScheduledSourceNode {
     /// Play immediately
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source was already started
     fn start(&self);
+
     /// Schedule playback start at given timestamp
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source was already started
     fn start_at(&self, when: f64);
+
     /// Stop immediately
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source was already stopped
     fn stop(&self);
+
     /// Schedule playback stop at given timestamp
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source was already stopped
     fn stop_at(&self, when: f64);
 }
 

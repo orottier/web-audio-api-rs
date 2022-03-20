@@ -216,11 +216,19 @@ impl AudioBufferSourceNode {
     }
 
     /// Start the playback at the given time and with a given offset
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source was already started
     pub fn start_at_with_offset(&self, start: f64, offset: f64) {
         self.start_at_with_offset_and_duration(start, offset, f64::MAX);
     }
 
     /// Start the playback at the given time, with a given offset, for a given duration
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source was already started
     pub fn start_at_with_offset_and_duration(&self, start: f64, offset: f64, duration: f64) {
         if self.source_started.swap(true, Ordering::SeqCst) {
             panic!("InvalidStateError: Cannot call `start` twice");
