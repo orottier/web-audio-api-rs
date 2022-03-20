@@ -401,33 +401,17 @@ impl WaveShaperRenderer {
         let channels_x2 = 1;
         let channels_x4 = 1;
 
-        let upsampler_x2 = FftFixedInOut::<f32>::new(
-            sample_rate as usize,
-            sample_rate as usize * 2,
-            256,
-            channels_x2,
-        );
+        let upsampler_x2 =
+            FftFixedInOut::<f32>::new(sample_rate, sample_rate * 2, 256, channels_x2);
 
-        let downsampler_x2 = FftFixedInOut::<f32>::new(
-            sample_rate as usize * 2,
-            sample_rate as usize,
-            128,
-            channels_x2,
-        );
+        let downsampler_x2 =
+            FftFixedInOut::<f32>::new(sample_rate * 2, sample_rate, 128, channels_x2);
 
-        let upsampler_x4 = FftFixedInOut::<f32>::new(
-            sample_rate as usize,
-            sample_rate as usize * 4,
-            512,
-            channels_x4,
-        );
+        let upsampler_x4 =
+            FftFixedInOut::<f32>::new(sample_rate, sample_rate * 4, 512, channels_x4);
 
-        let downsampler_x4 = FftFixedInOut::<f32>::new(
-            sample_rate as usize * 4,
-            sample_rate as usize,
-            128,
-            channels_x4,
-        );
+        let downsampler_x4 =
+            FftFixedInOut::<f32>::new(sample_rate * 4, sample_rate, 128, channels_x4);
 
         Self {
             sample_rate,

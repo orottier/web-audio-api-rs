@@ -34,6 +34,7 @@
 //! ```
 
 #![warn(clippy::missing_panics_doc)]
+#![deny(trivial_numeric_casts)]
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 

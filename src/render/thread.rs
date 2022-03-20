@@ -153,7 +153,7 @@ impl RenderThread {
 
         // The audio graph is rendered in chunks of RENDER_QUANTUM_SIZE frames.  But some audio backends
         // may not be able to emit chunks of this size.
-        let chunk_size = RENDER_QUANTUM_SIZE * self.channels as usize;
+        let chunk_size = RENDER_QUANTUM_SIZE * self.channels;
 
         for data in buffer.chunks_mut(chunk_size) {
             // handle addition/removal of nodes/edges

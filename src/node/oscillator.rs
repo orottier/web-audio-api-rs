@@ -401,7 +401,7 @@ impl AudioProcessor for OscillatorRenderer {
                 if current_time > start_time {
                     let phase_incr = computed_frequency as f64 / sample_rate;
                     let ratio = (current_time - start_time) / dt;
-                    self.phase = Self::unroll_phase(phase_incr as f64 * ratio);
+                    self.phase = Self::unroll_phase(phase_incr * ratio);
                 }
 
                 self.started = true;

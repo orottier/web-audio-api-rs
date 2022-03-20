@@ -78,7 +78,7 @@ impl ChannelSplitterNode {
             };
 
             let render = ChannelSplitterRenderer {
-                number_of_outputs: node.channel_count() as _,
+                number_of_outputs: node.channel_count(),
             };
 
             (node, Box::new(render))

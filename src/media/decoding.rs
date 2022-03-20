@@ -154,7 +154,7 @@ impl Iterator for MediaDecoder {
         // Get the default track.
         let track = format.default_track().unwrap();
         let number_of_channels = track.codec_params.channels.unwrap().count();
-        let input_sample_rate = SampleRate(track.codec_params.sample_rate.unwrap() as _);
+        let input_sample_rate = SampleRate(track.codec_params.sample_rate.unwrap());
 
         // Store the track identifier, we'll use it to filter packets.
         let track_id = track.id;
