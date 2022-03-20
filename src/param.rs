@@ -22,6 +22,7 @@ pub enum AutomationRate {
 }
 
 /// Options for constructing an [`AudioParam`]
+#[derive(Clone, Debug)]
 pub struct AudioParamDescriptor {
     pub automation_rate: AutomationRate,
     pub default_value: f32,
