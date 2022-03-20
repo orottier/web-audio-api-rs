@@ -246,3 +246,50 @@ fn test_cycle_breaker() {
         abs_all <= 0.
     );
 }
+
+#[test]
+fn test_spatial() {
+    // setup stereo
+    let mut context =
+        OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, SampleRate(RENDER_QUANTUM_SIZE as _));
+
+    // put listener at (10, 0, 0), directed at (1, 0, 0)
+    let listener = context.listener();
+    listener.position_x().set_value(10.);
+    listener.position_y().set_value(0.);
+    listener.position_z().set_value(0.);
+    listener.forward_x().set_value(1.);
+    listener.forward_y().set_value(0.);
+    listener.forward_z().set_value(0.);
+    listener.up_x().set_value(0.);
+    listener.up_y().set_value(0.);
+    listener.up_z().set_value(1.);
+
+    // add constant tone
+    let constant = context.create_constant_source();
+
+    // add panner at (10, 10, 0) - no cone/direction
+    let panner = context.create_panner();
+    panner.position_x().set_value(10.);
+    panner.position_y().set_value(10.);
+    panner.position_z().set_value(0.);
+
+    constant.connect(&panner);
+    constant.start();
+    panner.connect(&context.destination());
+
+    let output = context.start_rendering_sync();
+
+    // left channel should full signal, but distance = 10 so gain 0.1
+    assert_float_eq!(
+        output.get_channel_data(0)[..RENDER_QUANTUM_SIZE],
+        &[0.1; RENDER_QUANTUM_SIZE][..],
+        abs_all <= 0.001
+    );
+    // right channel should silent
+    assert_float_eq!(
+        output.get_channel_data(1)[..RENDER_QUANTUM_SIZE],
+        &[0.; RENDER_QUANTUM_SIZE][..],
+        abs_all <= 0.001
+    );
+}

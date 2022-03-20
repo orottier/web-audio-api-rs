@@ -226,6 +226,9 @@ impl PannerNode {
                 cone_outer_gain,
             };
 
+            // instruct to BaseContext to add the AudioListener if it has not already
+            context.base().ensure_audio_listener_present();
+
             (node, Box::new(render))
         });
 
