@@ -7,7 +7,7 @@ use crate::context::{AudioContextRegistration, AudioNodeId, ConcreteBaseAudioCon
 // use crate::control::{Controller, Scheduler};
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{BufferDepletedError, SampleRate};
+use crate::SampleRate;
 
 use lazy_static::lazy_static;
 
@@ -334,10 +334,6 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
                     .iter_mut()
                     .zip(buffer.channels())
                     .for_each(|(o, i)| o.copy_from_slice(i.as_slice()));
-            }
-            Some(Err(e)) if e.is::<BufferDepletedError>() => {
-                log::debug!("media element buffer depleted");
-                output.make_silent()
             }
             Some(Err(e)) => {
                 log::warn!("Error playing audio stream: {}", e);
