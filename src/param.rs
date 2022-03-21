@@ -11,6 +11,49 @@ use crate::{AtomicF32, SampleRate, RENDER_QUANTUM_SIZE};
 
 use crossbeam_channel::{Receiver, Sender};
 
+// arguments sanity check functions for automation methods
+fn assert_non_negative(value: f64, method_name: &str, arg_name: &str) {
+    if value < 0. {
+        panic!(
+            "RangeError - Failed to execute '{:?}' on 'AudioParam':
+            {:?} ({:?}) should not be negative",
+            method_name, arg_name, value
+        );
+    }
+}
+
+fn assert_strictly_positive(value: f64, method_name: &str, arg_name: &str) {
+    if value <= 0. {
+        panic!(
+            "RangeError - Failed to execute '{:?}' on 'AudioParam':
+            {:?} ({:?}) should be strictly positive",
+            method_name, arg_name, value
+        );
+    }
+}
+
+fn assert_not_zero(value: f32, method_name: &str, arg_name: &str) {
+    if value == 0. {
+        panic!(
+            "RangeError - Failed to execute '{:?}' on 'AudioParam':
+            {:?} ({:?}) should not be equal to zero",
+            method_name, arg_name, value,
+        )
+    }
+}
+
+fn assert_sequence_length(values: &[f32], method_name: &str, arg_name: &str) {
+    if values.len() < 2 {
+        panic!(
+            "RangeError - Failed to execute '{:?}' on 'AudioParam':
+            {:?} length ({:?}) should not be less than 2",
+            method_name,
+            arg_name,
+            values.len()
+        )
+    }
+}
+
 /// Precision of value calculation per render quantum
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum AutomationRate {
@@ -221,7 +264,9 @@ impl AudioParam {
         self.max_value
     }
 
-    // the choice here is to have this coherent with the first sample of
+    /// Retrieve the current value of the `AudioParam`.
+    //
+    // @note: the choice here is to have this coherent with the first sample of
     // the last rendered block, which means `intrisic_value` must be calculated
     // for next_block_time at each tick.
     // @note - maybe check with spec editors that it is correct
@@ -234,16 +279,17 @@ impl AudioParam {
         self.current_value.load()
     }
 
-    // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
-    // Setting this attribute has the effect of assigning the requested value
+    /// Set the value of the `AudioParam`.
+    ///
+    /// Is equivalent to calling the `set_value_at_time` method with the current
+    /// AudioContext's currentTime
+    //
+    // @note: Setting this attribute has the effect of assigning the requested value
     // to the [[current value]] slot, and calling the setValueAtTime() method
     // with the current AudioContext's currentTime and [[current value]].
     // Any exceptions that would be thrown by setValueAtTime() will also be
     // thrown by setting this attribute.
-    /// Set the parameter value directly
-    ///
-    /// Equivalent to calling the setValueAtTime method with the current AudioContext's
-    /// currentTime for the given value.
+    // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
     pub fn set_value(&self, value: f32) -> &Self {
         let clamped = value.clamp(self.min_value, self.max_value);
         self.current_value.store(clamped);
@@ -266,7 +312,13 @@ impl AudioParam {
     }
 
     /// Schedules a parameter value change at the given time.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `start_time` is negative
     pub fn set_value_at_time(&self, value: f32, start_time: f64) -> &Self {
+        assert_non_negative(start_time, "set_value_at_time", "start_time");
+
         let event = AudioParamEvent {
             event_type: AudioParamEventType::SetValueAtTime,
             value,
@@ -282,9 +334,15 @@ impl AudioParam {
         self
     }
 
-    /// Schedules a linear continuous change in parameter value from the previous scheduled
-    /// parameter value to the given value.
+    /// Schedules a linear continuous change in parameter value from the
+    /// previous scheduled parameter value to the given value.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `end_time` is negative
     pub fn linear_ramp_to_value_at_time(&self, value: f32, end_time: f64) -> &Self {
+        assert_non_negative(end_time, "linear_ramp_to_value_at_time", "end_time");
+
         let event = AudioParamEvent {
             event_type: AudioParamEventType::LinearRampToValueAtTime,
             value,
@@ -300,25 +358,17 @@ impl AudioParam {
         self
     }
 
-    /// Schedules an exponential continuous change in parameter value from the previous scheduled
-    /// parameter value to the given value.
+    /// Schedules an exponential continuous change in parameter value from the
+    /// previous scheduled parameter value to the given value.
     ///
     /// # Panics
     ///
-    /// Will panic when the value is zero.
+    /// Will panic if:
+    /// - `value` is zero
+    /// - `end_time` is negative
     pub fn exponential_ramp_to_value_at_time(&self, value: f32, end_time: f64) -> &Self {
-        // @note - this should probably not `panic` as this could crash at runtime.
-        // cf. Error pattern in `iir_filter.rs`
-        // @todo - implement clean Errors
-        if value == 0. {
-            panic!(
-                "RangeError: Failed to execute 'exponentialRampToValueAtTime'
-                on 'AudioParam': The float target value provided (0) should not be
-                in the range ({:+e}, {:+e})",
-                -f32::MIN_POSITIVE,
-                f32::MIN_POSITIVE
-            )
-        }
+        assert_not_zero(value, "exponential_ramp_to_value_at_time", "value");
+        assert_non_negative(end_time, "exponential_ramp_to_value_at_time", "end_time");
 
         let event = AudioParamEvent {
             event_type: AudioParamEventType::ExponentialRampToValueAtTime,
@@ -335,31 +385,39 @@ impl AudioParam {
         self
     }
 
-    /// Start exponentially approaching the target value at the given time with a rate having the
-    /// given time constant.
+    /// Start exponentially approaching the target value at the given time with
+    /// a rate having the given time constant.
     ///
     /// # Panics
     ///
-    /// Will panic when the `time_constant` is smaller than or equal to zero.
+    /// Will panic if:
+    /// - `start_time` is negative
+    /// - `time_constant` is negative
     pub fn set_target_at_time(&self, value: f32, start_time: f64, time_constant: f64) -> &Self {
-        if time_constant <= 0. {
-            panic!(
-                "RangeError: Failed to execute 'setTargetAtTime' on 'AudioParam':
-                 Time constant must be a finite positive number: {:?}",
-                time_constant
-            )
-        }
+        assert_non_negative(start_time, "set_target_at_time", "start_time");
+        assert_non_negative(time_constant, "set_target_at_time", "time_constant");
 
-        // what about time_constant = 0. which leads to a division by zero
-        // both Chrome and Firefox accept that...
-        let event = AudioParamEvent {
-            event_type: AudioParamEventType::SetTargetAtTime,
-            value,
-            time: start_time,
-            time_constant: Some(time_constant),
-            cancel_time: None,
-            duration: None,
-            values: None,
+        // [spec] If timeConstant is zero, the output value jumps immediately to the final value.
+        let event = if time_constant == 0. {
+            AudioParamEvent {
+                event_type: AudioParamEventType::SetValueAtTime,
+                value,
+                time: start_time,
+                time_constant: None,
+                cancel_time: None,
+                duration: None,
+                values: None,
+            }
+        } else {
+            AudioParamEvent {
+                event_type: AudioParamEventType::SetTargetAtTime,
+                value,
+                time: start_time,
+                time_constant: Some(time_constant),
+                cancel_time: None,
+                duration: None,
+                values: None,
+            }
         };
 
         self.send_event(event);
@@ -367,8 +425,15 @@ impl AudioParam {
         self
     }
 
-    /// Cancels all scheduled parameter changes with times greater than or equal to `cancel_time`.
+    /// Cancels all scheduled parameter changes with times greater than or equal
+    /// to `cancel_time`.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `cancel_time` is negative
     pub fn cancel_scheduled_values(&self, cancel_time: f64) -> &Self {
+        assert_non_negative(cancel_time, "cancel_scheduled_values", "cancel_time");
+
         let event = AudioParamEvent {
             event_type: AudioParamEventType::CancelScheduledValues,
             value: 0., // no value
@@ -384,10 +449,16 @@ impl AudioParam {
         self
     }
 
-    /// Cancels all scheduled parameter changes with times greater than or equal to `cancel_time`
-    /// and the automation value that would have happened at that time is then proprogated for all
-    /// future time.
+    /// Cancels all scheduled parameter changes with times greater than or equal
+    /// to `cancel_time` and the automation value that would have happened at
+    /// that time is then proprogated for all future time.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `cancel_time` is negative
     pub fn cancel_and_hold_at_time(&self, cancel_time: f64) -> &Self {
+        assert_non_negative(cancel_time, "cancel_scheduled_values", "cancel_time");
+
         let event = AudioParamEvent {
             event_type: AudioParamEventType::CancelAndHoldAtTime,
             value: 0., // value will be defined by cancel event
@@ -403,11 +474,19 @@ impl AudioParam {
         self
     }
 
-    /// Sets an array of arbitrary parameter values starting at the given time for the given
-    /// duration.
+    /// Sets an array of arbitrary parameter values starting at the given time
+    /// for the given duration.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    /// - `value` length is less than 2
+    /// - `start_time` is negative
+    /// - `duration` is negative or equal to zero
     pub fn set_value_curve_at_time(&self, values: &[f32], start_time: f64, duration: f64) -> &Self {
-        // @todo - An InvalidStateError MUST be thrown if this attribute is a
-        // sequence<float> object that has a length less than 2.
+        assert_sequence_length(values, "set_value_curve_at_time", "values");
+        assert_non_negative(start_time, "set_value_curve_at_time", "start_time");
+        assert_strictly_positive(duration, "set_value_curve_at_time", "duration");
 
         // When this method is called, an internal copy of the curve is
         // created for automation purposes.
@@ -1361,6 +1440,51 @@ mod tests {
     use super::*;
 
     #[test]
+    #[should_panic]
+    fn test_assert_non_negative_fail() {
+        assert_non_negative(-1., "method", "argument");
+    }
+
+    #[test]
+    fn test_assert_non_negative() {
+        assert_non_negative(0., "method", "argument");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_assert_strictly_positive_fail() {
+        assert_strictly_positive(0., "method", "argument");
+    }
+
+    #[test]
+    fn test_assert_strictly_positive() {
+        assert_strictly_positive(0.1, "method", "argument");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_assert_not_zero_fail() {
+        assert_not_zero(0., "method", "argument");
+    }
+
+    #[test]
+    fn test_assert_not_zero() {
+        assert_not_zero(-0.1, "method", "argument");
+        assert_not_zero(0.1, "method", "argument");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_assert_sequence_length_fail() {
+        assert_sequence_length(&[0.; 1], "method", "argument");
+    }
+
+    #[test]
+    fn test_assert_sequence_length() {
+        assert_sequence_length(&[0.; 2], "method", "argument");
+    }
+
+    #[test]
     fn test_default_and_accessors() {
         let context = OfflineAudioContext::new(1, 0, SampleRate(0));
 
@@ -2017,8 +2141,26 @@ mod tests {
                 let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
                 res.push(val);
             }
-            // ramp start at 1 so
+            // start_time is 1.
             res[0] = 0.;
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(vs, &res[..], abs_all <= 0.);
+        }
+
+        {
+            // handle time_constant == 0.
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 100.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            param.set_target_at_time(1., 1., 0.);
+
+            let mut res = [1.; 10];
+            res[0] = 0.; // start_time is 1.
 
             let vs = render.tick(0., 1., 10);
             assert_float_eq!(vs, &res[..], abs_all <= 0.);
