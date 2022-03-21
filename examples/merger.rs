@@ -6,7 +6,7 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 fn main() {
     let options = AudioContextOptions {
         sample_rate: Some(48_000),
-        channels: Some(2),
+        number_of_channels: Some(2),
         latency_hint: Some(AudioContextLatencyCategory::Playback),
     };
 

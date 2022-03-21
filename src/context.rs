@@ -16,8 +16,8 @@ use std::sync::{Arc, Mutex};
 const DESTINATION_NODE_ID: u64 = 0;
 /// listener node id is always at index 1
 const LISTENER_NODE_ID: u64 = 1;
-/// listener audio parameters ids are always at index 2 through 12
-const LISTENER_PARAM_IDS: Range<u64> = 2..12;
+/// listener audio parameters ids are always at index 2 through 10
+const LISTENER_PARAM_IDS: Range<u64> = 2..11;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::media::{MediaDecoder, MediaStream};
@@ -67,7 +67,7 @@ struct ConcreteBaseAudioContextInner {
     /// sample rate in Hertz
     sample_rate: SampleRate,
     /// number of speaker output channels
-    channels: u32,
+    number_of_channels: u32,
     /// incrementing id to assign to audio nodes
     node_id_inc: AtomicU64,
     /// message channel from control to render thread
@@ -76,6 +76,8 @@ struct ConcreteBaseAudioContextInner {
     queued_messages: Mutex<Vec<ControlMessage>>,
     /// number of frames played
     frames_played: Arc<AtomicU64>,
+    /// control msg to add the AudioListener, to be sent when the first panner is created
+    queued_audio_listener_msgs: Mutex<Vec<ControlMessage>>,
     /// AudioListener fields
     listener_params: Option<AudioListenerParams>,
 }
@@ -247,6 +249,12 @@ pub trait BaseAudioContext {
         node::MediaStreamAudioSourceNode::new(self.base(), opts)
     }
 
+    /// Creates a `MediaStreamAudioDestinationNode`
+    fn create_media_stream_destination(&self) -> node::MediaStreamAudioDestinationNode {
+        let opts = ChannelConfigOptions::default();
+        node::MediaStreamAudioDestinationNode::new(self.base(), opts)
+    }
+
     /// Creates an `OscillatorNode`, a source representing a periodic waveform.
     fn create_oscillator(&self) -> node::OscillatorNode {
         node::OscillatorNode::new(self.base(), node::OscillatorOptions::default())
@@ -363,6 +371,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
+#[derive(Clone, Debug)]
 pub enum AudioContextLatencyCategory {
     /// Balance audio output latency and power consumption.
     Balanced,
@@ -380,6 +389,7 @@ pub enum AudioContextLatencyCategory {
 /// Specify the playback configuration
 /// in non web context, it is the only way to specify
 /// the system configuration
+#[derive(Clone, Debug)]
 pub struct AudioContextOptions {
     /// Identify the type of playback, which affects
     /// tradeoffs between audio output latency and power consumption
@@ -387,7 +397,7 @@ pub struct AudioContextOptions {
     /// Sample rate of the audio Context and audio output hardware
     pub sample_rate: Option<u32>,
     /// Number of output channels of destination node and audio output hardware
-    pub channels: Option<u16>,
+    pub number_of_channels: Option<u16>,
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
@@ -458,11 +468,11 @@ impl AudioContext {
         let options = options.unwrap_or(AudioContextOptions {
             latency_hint: Some(AudioContextLatencyCategory::Interactive),
             sample_rate: Some(44_100),
-            channels: Some(2),
+            number_of_channels: Some(2),
         });
 
         let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100));
-        let channels = u32::from(options.channels.unwrap_or(2));
+        let channels = u32::from(options.number_of_channels.unwrap_or(2));
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
         let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
@@ -605,17 +615,18 @@ impl ConcreteBaseAudioContext {
     /// Creates a `BaseAudioContext` instance
     fn new(
         sample_rate: SampleRate,
-        channels: u32,
+        number_of_channels: u32,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
     ) -> Self {
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
-            channels,
+            number_of_channels,
             render_channel,
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
             frames_played,
+            queued_audio_listener_msgs: Mutex::new(Vec::new()),
             listener_params: None,
         };
         let base = Self {
@@ -626,14 +637,8 @@ impl ConcreteBaseAudioContext {
             // Register magical nodes. We should not store the nodes inside our context since that
             // will create a cyclic reference, but we can reconstruct a new instance on the fly
             // when requested
-
-            let dest = node::AudioDestinationNode::new(&base, channels as usize);
+            let _dest = node::AudioDestinationNode::new(&base, number_of_channels as usize);
             let listener = crate::spatial::AudioListenerNode::new(&base);
-
-            // hack: Connect the listener to the destination node to force it to render at each
-            // quantum. Abuse the magical u32::MAX port so it acts as an AudioParam and has no side
-            // effects
-            base.connect(listener.id(), dest.id(), 0, u32::MAX);
 
             let listener_params = listener.into_fields();
             let AudioListener {
@@ -664,6 +669,12 @@ impl ConcreteBaseAudioContext {
         let mut base = base;
         let mut inner_mut = Arc::get_mut(&mut base.inner).unwrap();
         inner_mut.listener_params = Some(listener_params);
+
+        // validate if the hardcoded node IDs line up
+        debug_assert_eq!(
+            base.inner.node_id_inc.load(Ordering::Relaxed),
+            LISTENER_PARAM_IDS.end,
+        );
 
         base
     }
@@ -696,7 +707,7 @@ impl ConcreteBaseAudioContext {
     /// Number of channels for the audio destination
     #[must_use]
     pub fn channels(&self) -> u32 {
-        self.inner.channels
+        self.inner.number_of_channels
     }
 
     /// Construct a new pair of [`node::AudioNode`] and [`AudioProcessor`]
@@ -729,8 +740,23 @@ impl ConcreteBaseAudioContext {
             outputs: node.number_of_outputs() as usize,
             channel_config: node.channel_config_cloned(),
         };
-        self.inner.render_channel.send(message).unwrap();
 
+        // if this is the AudioListener or its params, do not add it to the graph just yet
+        if id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id) {
+            let mut queued_audio_listener_msgs =
+                self.inner.queued_audio_listener_msgs.lock().unwrap();
+            queued_audio_listener_msgs.push(message);
+        } else {
+            self.inner.render_channel.send(message).unwrap();
+            self.resolve_queued_control_msgs(id);
+        }
+
+        node
+    }
+
+    /// Release queued control messages to the render thread that were blocking on the availability
+    /// of the Node with the given `id`
+    fn resolve_queued_control_msgs(&self, id: u64) {
         // resolve control messages that depend on this registration
         let mut queued = self.inner.queued_messages.lock().unwrap();
         let mut i = 0; // waiting for Vec::drain_filter to stabilize
@@ -742,11 +768,9 @@ impl ConcreteBaseAudioContext {
                 i += 1;
             }
         }
-
-        node
     }
 
-    /// connects the output of the `from` audio node to the input of the `to` audio node
+    /// Connects the output of the `from` audio node to the input of the `to` audio node
     pub(crate) fn connect(&self, from: &AudioNodeId, to: &AudioNodeId, output: u32, input: u32) {
         let message = ControlMessage::ConnectNode {
             from: from.0,
@@ -770,8 +794,8 @@ impl ConcreteBaseAudioContext {
         self.inner.queued_messages.lock().unwrap().push(message);
     }
 
-    /// connects the `from` audio node to the `to` audio node
-    pub(crate) fn disconnect(&self, from: &AudioNodeId, to: &AudioNodeId) {
+    /// Disconnects all outputs of the audio node that go to a specific destination node.
+    pub(crate) fn disconnect_from(&self, from: &AudioNodeId, to: &AudioNodeId) {
         let message = ControlMessage::DisconnectNode {
             from: from.0,
             to: to.0,
@@ -779,8 +803,8 @@ impl ConcreteBaseAudioContext {
         self.inner.render_channel.send(message).unwrap();
     }
 
-    /// disconnects all the audio nodes
-    pub(crate) fn disconnect_all(&self, from: &AudioNodeId) {
+    /// Disconnects all outgoing connections from the audio node.
+    pub(crate) fn disconnect(&self, from: &AudioNodeId) {
         let message = ControlMessage::DisconnectAll { from: from.0 };
         self.inner.render_channel.send(message).unwrap();
     }
@@ -813,6 +837,32 @@ impl ConcreteBaseAudioContext {
         self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 7, 8);
         self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 8, 9);
     }
+
+    /// Add the [`AudioListener`] to the audio graph (if not already)
+    pub(crate) fn ensure_audio_listener_present(&self) {
+        let mut queued_audio_listener_msgs = self.inner.queued_audio_listener_msgs.lock().unwrap();
+        let mut released = false;
+        while let Some(message) = queued_audio_listener_msgs.pop() {
+            // add the AudioListenerRenderer to the graph
+            self.inner.render_channel.send(message).unwrap();
+            released = true;
+        }
+
+        if released {
+            // connect the AudioParamRenderers to the Listener
+            self.resolve_queued_control_msgs(LISTENER_NODE_ID);
+
+            // hack: Connect the listener to the destination node to force it to render at each
+            // quantum. Abuse the magical u32::MAX port so it acts as an AudioParam and has no side
+            // effects
+            self.connect(
+                &AudioNodeId(LISTENER_NODE_ID),
+                &AudioNodeId(DESTINATION_NODE_ID),
+                0,
+                u32::MAX,
+            );
+        }
+    }
 }
 
 impl Default for AudioContext {
@@ -830,7 +880,7 @@ impl OfflineAudioContext {
     /// * `length` - length of the rendering audio buffer
     /// * `sample_rate` - output sample rate
     #[must_use]
-    pub fn new(channels: u32, length: usize, sample_rate: SampleRate) -> Self {
+    pub fn new(number_of_channels: u32, length: usize, sample_rate: SampleRate) -> Self {
         // communication channel to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
 
@@ -841,13 +891,14 @@ impl OfflineAudioContext {
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
             sample_rate,
-            channels as usize,
+            number_of_channels as usize,
             receiver,
             frames_played_clone,
         );
 
         // first, setup the base audio context
-        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base =
+            ConcreteBaseAudioContext::new(sample_rate, number_of_channels, frames_played, sender);
 
         Self {
             base,

@@ -4,43 +4,44 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioNodeId, ConcreteBaseAudioContext};
-// use crate::control::{Controller, Scheduler};
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{BufferDepletedError, SampleRate};
+use crate::SampleRate;
 
 use lazy_static::lazy_static;
 
-mod iir_filter;
-pub use iir_filter::*;
-mod biquad_filter;
-pub use biquad_filter::*;
-mod oscillator;
-pub use oscillator::*;
-mod destination;
-pub use destination::*;
-mod gain;
-pub use gain::*;
-mod delay;
-pub use delay::*;
-mod channel_splitter;
-pub use channel_splitter::*;
-mod channel_merger;
-pub use channel_merger::*;
-mod constant_source;
-pub use constant_source::*;
-mod panner;
-pub use panner::*;
 mod analyser;
 pub use analyser::*;
 mod audio_buffer_source;
 pub use audio_buffer_source::*;
-mod media_stream;
-pub use media_stream::*;
-mod waveshaper;
-pub use waveshaper::*;
+mod biquad_filter;
+pub use biquad_filter::*;
+mod channel_merger;
+pub use channel_merger::*;
+mod channel_splitter;
+pub use channel_splitter::*;
+mod constant_source;
+pub use constant_source::*;
+mod delay;
+pub use delay::*;
+mod destination;
+pub use destination::*;
+mod gain;
+pub use gain::*;
+mod iir_filter;
+pub use iir_filter::*;
+mod media_stream_destination;
+pub use media_stream_destination::*;
+mod media_stream_source;
+pub use media_stream_source::*;
+mod oscillator;
+pub use oscillator::*;
+mod panner;
+pub use panner::*;
 mod stereo_panner;
 pub use stereo_panner::*;
+mod waveshaper;
+pub use waveshaper::*;
 
 pub(crate) const TABLE_LENGTH_USIZE: usize = 8192;
 pub(crate) const TABLE_LENGTH_BY_4_USIZE: usize = TABLE_LENGTH_USIZE / 4;
@@ -231,19 +232,19 @@ pub trait AudioNode {
     }
 
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
-    fn disconnect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
+    fn disconnect_from<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
         if self.context() != dest.context() {
             panic!("attempting to disconnect nodes from different contexts");
         }
 
-        self.context().disconnect(self.id(), dest.id());
+        self.context().disconnect_from(self.id(), dest.id());
 
         dest
     }
 
     /// Disconnects all outgoing connections from the AudioNode.
-    fn disconnect_all(&self) {
-        self.context().disconnect_all(self.id());
+    fn disconnect(&self) {
+        self.context().disconnect(self.id());
     }
 
     /// The number of inputs feeding into the AudioNode. For source nodes, this will be 0.
@@ -284,12 +285,31 @@ pub trait AudioNode {
 /// The node will emit silence before it is started, and after it has ended.
 pub trait AudioScheduledSourceNode {
     /// Play immediately
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source was already started
     fn start(&self);
+
     /// Schedule playback start at given timestamp
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source was already started
     fn start_at(&self, when: f64);
+
     /// Stop immediately
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source was already stopped
     fn stop(&self);
+
     /// Schedule playback stop at given timestamp
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source was already stopped
     fn stop_at(&self, when: f64);
 }
 
@@ -332,10 +352,6 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
                     .iter_mut()
                     .zip(buffer.channels())
                     .for_each(|(o, i)| o.copy_from_slice(i.as_slice()));
-            }
-            Some(Err(e)) if e.is::<BufferDepletedError>() => {
-                log::debug!("media element buffer depleted");
-                output.make_silent()
             }
             Some(Err(e)) => {
                 log::warn!("Error playing audio stream: {}", e);

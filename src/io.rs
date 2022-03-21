@@ -227,7 +227,7 @@ impl StreamConfigsBuilder {
     /// * `options` - options contains channels number information
     fn with_channels(mut self, options: Option<&AudioContextOptions>) -> Self {
         if let Some(opts) = options {
-            if let Some(chs) = opts.channels {
+            if let Some(chs) = opts.number_of_channels {
                 self.prefered.channels = chs;
             }
         };

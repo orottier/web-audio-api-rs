@@ -350,7 +350,7 @@ impl AudioThread {
 
     fn playback(&mut self, beep: bool) {
         // stop mic input
-        self.mic_in.disconnect_all();
+        self.mic_in.disconnect();
 
         if beep {
             let osc = self.context.create_oscillator();

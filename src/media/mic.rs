@@ -46,7 +46,7 @@ use crossbeam_channel::{Receiver, TryRecvError};
 /// ```
 pub struct Microphone {
     receiver: Receiver<AudioBuffer>,
-    channels: usize,
+    number_of_channels: usize,
     sample_rate: SampleRate,
 
     #[cfg(not(test))]
@@ -66,11 +66,11 @@ impl Microphone {
         log::debug!("Input {:?}", config);
 
         let sample_rate = SampleRate(config.sample_rate.0);
-        let channels = config.channels as usize;
+        let number_of_channels = config.channels as usize;
 
         Self {
             receiver,
-            channels,
+            number_of_channels,
             sample_rate,
             stream,
         }
@@ -78,12 +78,26 @@ impl Microphone {
 
     /// Suspends the input stream, temporarily halting audio hardware access and reducing
     /// CPU/battery usage in the process.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * The input device is not available
+    /// * For a `BackendSpecificError`
     pub fn suspend(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.pause().unwrap()
     }
 
     /// Resumes the input stream that has previously been suspended/paused.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * The input device is not available
+    /// * For a `BackendSpecificError`
     pub fn resume(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.play().unwrap()
@@ -111,7 +125,7 @@ impl Iterator for Microphone {
                 log::debug!("input frame delayed");
 
                 let options = AudioBufferOptions {
-                    number_of_channels: self.channels,
+                    number_of_channels: self.number_of_channels,
                     length: RENDER_QUANTUM_SIZE,
                     sample_rate: self.sample_rate,
                 };
@@ -130,30 +144,34 @@ impl Iterator for Microphone {
 
 #[cfg(not(test))]
 pub(crate) struct MicrophoneRender {
-    channels: usize,
+    number_of_channels: usize,
     sample_rate: SampleRate,
     sender: Sender<AudioBuffer>,
 }
 
 #[cfg(not(test))]
 impl MicrophoneRender {
-    pub fn new(channels: usize, sample_rate: SampleRate, sender: Sender<AudioBuffer>) -> Self {
+    pub fn new(
+        number_of_channels: usize,
+        sample_rate: SampleRate,
+        sender: Sender<AudioBuffer>,
+    ) -> Self {
         Self {
-            channels,
+            number_of_channels,
             sample_rate,
             sender,
         }
     }
 
     pub fn render<S: Sample>(&self, data: &[S]) {
-        let mut channels = Vec::with_capacity(self.channels);
+        let mut channels = Vec::with_capacity(self.number_of_channels);
 
         // copy rendered audio into output slice
-        for i in 0..self.channels {
+        for i in 0..self.number_of_channels {
             channels.push(ChannelData::from(
                 data.iter()
                     .skip(i)
-                    .step_by(self.channels)
+                    .step_by(self.number_of_channels)
                     .map(|v| v.to_f32())
                     .collect(),
             ));

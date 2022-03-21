@@ -25,7 +25,7 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 /// current coefficients array
 struct CoeffsReq(Sender<[f64; 5]>);
 
-/// enumerates all the biquad filter types
+/// Biquad filter types
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BiquadFilterType {
     /// Allows frequencies below the cutoff frequency to pass through and attenuates frequencies above the cutoff. (12dB/oct rolloff)

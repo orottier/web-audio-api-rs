@@ -33,7 +33,9 @@
 //! std::thread::sleep(std::time::Duration::from_secs(4));
 //! ```
 
-use std::fmt;
+#![warn(clippy::missing_panics_doc)]
+#![deny(trivial_numeric_casts)]
+
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// Render quantum size, the audio graph is rendered in blocks of RENDER_QUANTUM_SIZE samples
@@ -55,9 +57,6 @@ pub mod render;
 mod spatial;
 pub use spatial::AudioListener;
 
-#[cfg(test)]
-mod snapshot;
-
 #[cfg(not(test))]
 mod io;
 
@@ -67,17 +66,6 @@ mod message;
 /// Number of samples processed per second (Hertz) for a single channel of audio
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SampleRate(pub u32);
-
-/// Media stream buffering lags behind
-#[derive(Debug, Clone, Copy)]
-pub struct BufferDepletedError {}
-
-impl fmt::Display for BufferDepletedError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-impl std::error::Error for BufferDepletedError {}
 
 /// Atomic float 32, only `load` and `store` are supported, no arithmetics
 #[derive(Debug)]

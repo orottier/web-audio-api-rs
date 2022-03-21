@@ -22,6 +22,7 @@ pub enum AutomationRate {
 }
 
 /// Options for constructing an [`AudioParam`]
+#[derive(Clone, Debug)]
 pub struct AudioParamDescriptor {
     pub automation_rate: AutomationRate,
     pub default_value: f32,
@@ -239,6 +240,10 @@ impl AudioParam {
     // with the current AudioContext's currentTime and [[current value]].
     // Any exceptions that would be thrown by setValueAtTime() will also be
     // thrown by setting this attribute.
+    /// Set the parameter value directly
+    ///
+    /// Equivalent to calling the setValueAtTime method with the current AudioContext's
+    /// currentTime for the given value.
     pub fn set_value(&self, value: f32) -> &Self {
         let clamped = value.clamp(self.min_value, self.max_value);
         self.current_value.store(clamped);
@@ -260,6 +265,7 @@ impl AudioParam {
         self
     }
 
+    /// Schedules a parameter value change at the given time.
     pub fn set_value_at_time(&self, value: f32, start_time: f64) -> &Self {
         let event = AudioParamEvent {
             event_type: AudioParamEventType::SetValueAtTime,
@@ -276,6 +282,8 @@ impl AudioParam {
         self
     }
 
+    /// Schedules a linear continuous change in parameter value from the previous scheduled
+    /// parameter value to the given value.
     pub fn linear_ramp_to_value_at_time(&self, value: f32, end_time: f64) -> &Self {
         let event = AudioParamEvent {
             event_type: AudioParamEventType::LinearRampToValueAtTime,
@@ -292,6 +300,12 @@ impl AudioParam {
         self
     }
 
+    /// Schedules an exponential continuous change in parameter value from the previous scheduled
+    /// parameter value to the given value.
+    ///
+    /// # Panics
+    ///
+    /// Will panic when the value is zero.
     pub fn exponential_ramp_to_value_at_time(&self, value: f32, end_time: f64) -> &Self {
         // @note - this should probably not `panic` as this could crash at runtime.
         // cf. Error pattern in `iir_filter.rs`
@@ -321,6 +335,12 @@ impl AudioParam {
         self
     }
 
+    /// Start exponentially approaching the target value at the given time with a rate having the
+    /// given time constant.
+    ///
+    /// # Panics
+    ///
+    /// Will panic when the `time_constant` is smaller than or equal to zero.
     pub fn set_target_at_time(&self, value: f32, start_time: f64, time_constant: f64) -> &Self {
         if time_constant <= 0. {
             panic!(
@@ -347,6 +367,7 @@ impl AudioParam {
         self
     }
 
+    /// Cancels all scheduled parameter changes with times greater than or equal to `cancel_time`.
     pub fn cancel_scheduled_values(&self, cancel_time: f64) -> &Self {
         let event = AudioParamEvent {
             event_type: AudioParamEventType::CancelScheduledValues,
@@ -363,6 +384,9 @@ impl AudioParam {
         self
     }
 
+    /// Cancels all scheduled parameter changes with times greater than or equal to `cancel_time`
+    /// and the automation value that would have happened at that time is then proprogated for all
+    /// future time.
     pub fn cancel_and_hold_at_time(&self, cancel_time: f64) -> &Self {
         let event = AudioParamEvent {
             event_type: AudioParamEventType::CancelAndHoldAtTime,
@@ -379,6 +403,8 @@ impl AudioParam {
         self
     }
 
+    /// Sets an array of arbitrary parameter values starting at the given time for the given
+    /// duration.
     pub fn set_value_curve_at_time(&self, values: &[f32], start_time: f64, duration: f64) -> &Self {
         // @todo - An InvalidStateError MUST be thrown if this attribute is a
         // sequence<float> object that has a length less than 2.

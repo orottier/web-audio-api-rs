@@ -26,6 +26,7 @@ impl Scheduler {
 
     /// Schedule playback start at this timestamp
     pub fn start_at(&self, start: f64) {
+        // todo panic on invalid values, or when already called
         self.start.store(start);
     }
 
@@ -36,6 +37,7 @@ impl Scheduler {
 
     /// Stop playback at this timestamp
     pub fn stop_at(&self, stop: f64) {
+        // todo panic on invalid values, or when already called
         self.stop.store(stop);
     }
 }

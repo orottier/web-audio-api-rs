@@ -17,7 +17,7 @@ use super::graph::Graph;
 pub(crate) struct RenderThread {
     graph: Graph,
     sample_rate: SampleRate,
-    channels: usize,
+    number_of_channels: usize,
     frames_played: Arc<AtomicU64>,
     receiver: Receiver<ControlMessage>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
@@ -34,14 +34,14 @@ unsafe impl Send for RenderThread {}
 impl RenderThread {
     pub fn new(
         sample_rate: SampleRate,
-        channels: usize,
+        number_of_channels: usize,
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
     ) -> Self {
         Self {
             graph: Graph::new(),
             sample_rate,
-            channels,
+            number_of_channels,
             frames_played,
             receiver,
             buffer_offset: None,
@@ -94,7 +94,7 @@ impl RenderThread {
         debug_assert_eq!(length % RENDER_QUANTUM_SIZE, 0);
 
         let options = AudioBufferOptions {
-            number_of_channels: self.channels,
+            number_of_channels: self.number_of_channels,
             length: 0,
             sample_rate: self.sample_rate,
         };
@@ -127,13 +127,13 @@ impl RenderThread {
         // There may be audio frames left over from the previous render call,
         // if the cpal buffer size did not align with our internal RENDER_QUANTUM_SIZE
         if let Some((offset, prev_rendered)) = self.buffer_offset.take() {
-            let leftover_len = (RENDER_QUANTUM_SIZE - offset) * self.channels;
+            let leftover_len = (RENDER_QUANTUM_SIZE - offset) * self.number_of_channels;
             // split the leftover frames slice, to fit in `buffer`
             let (first, next) = buffer.split_at_mut(leftover_len.min(buffer.len()));
 
             // copy rendered audio into output slice
-            for i in 0..self.channels {
-                let output = first.iter_mut().skip(i).step_by(self.channels);
+            for i in 0..self.number_of_channels {
+                let output = first.iter_mut().skip(i).step_by(self.number_of_channels);
                 let channel = prev_rendered.channel_data(i)[offset..].iter();
                 for (sample, input) in output.zip(channel) {
                     let value = Sample::from::<f32>(input);
@@ -143,7 +143,10 @@ impl RenderThread {
 
             // exit early if we are done filling the buffer with the previously rendered data
             if next.is_empty() {
-                self.buffer_offset = Some((offset + first.len() / self.channels, prev_rendered));
+                self.buffer_offset = Some((
+                    offset + first.len() / self.number_of_channels,
+                    prev_rendered,
+                ));
                 return;
             }
 
@@ -153,7 +156,7 @@ impl RenderThread {
 
         // The audio graph is rendered in chunks of RENDER_QUANTUM_SIZE frames.  But some audio backends
         // may not be able to emit chunks of this size.
-        let chunk_size = RENDER_QUANTUM_SIZE * self.channels as usize;
+        let chunk_size = RENDER_QUANTUM_SIZE * self.number_of_channels;
 
         for data in buffer.chunks_mut(chunk_size) {
             // handle addition/removal of nodes/edges
@@ -170,8 +173,8 @@ impl RenderThread {
             let rendered = self.graph.render(timestamp, self.sample_rate);
 
             // copy rendered audio into output slice
-            for i in 0..self.channels {
-                let output = data.iter_mut().skip(i).step_by(self.channels);
+            for i in 0..self.number_of_channels {
+                let output = data.iter_mut().skip(i).step_by(self.number_of_channels);
                 let channel = rendered.channel_data(i).iter();
                 for (sample, input) in output.zip(channel) {
                     let value = Sample::from::<f32>(input);
@@ -181,7 +184,7 @@ impl RenderThread {
 
             if data.len() != chunk_size {
                 // this is the last chunk, and it contained less than RENDER_QUANTUM_SIZE samples
-                let channel_offset = data.len() / self.channels;
+                let channel_offset = data.len() / self.number_of_channels;
                 debug_assert!(channel_offset < RENDER_QUANTUM_SIZE);
                 self.buffer_offset = Some((channel_offset, rendered.clone()));
             }

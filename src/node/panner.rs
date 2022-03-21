@@ -10,12 +10,14 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
+/// Spatialization algorithm used to position the audio in 3D space
 #[derive(Copy, Clone, Debug)]
 pub enum PanningModelType {
     EqualPower,
     HRTF,
 }
 
+/// Algorithm to reduce the volume of an audio source as it moves away from the listener
 #[derive(Copy, Clone, Debug)]
 pub enum DistanceModelType {
     Linear,
@@ -225,6 +227,9 @@ impl PannerNode {
                 cone_outer_angle,
                 cone_outer_gain,
             };
+
+            // instruct to BaseContext to add the AudioListener if it has not already
+            context.base().ensure_audio_listener_present();
 
             (node, Box::new(render))
         });

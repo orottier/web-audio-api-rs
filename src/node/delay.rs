@@ -140,24 +140,29 @@ impl AudioNode for DelayNode {
     }
 
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
-    fn disconnect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
+    fn disconnect_from<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
         if self.context() != dest.context() {
             panic!("attempting to disconnect nodes from different contexts");
         }
 
         self.context()
-            .disconnect(self.reader_registration.id(), dest.id());
+            .disconnect_from(self.reader_registration.id(), dest.id());
 
         dest
     }
 
     /// Disconnects all outgoing connections from the AudioNode.
-    fn disconnect_all(&self) {
-        self.context().disconnect_all(self.reader_registration.id());
+    fn disconnect(&self) {
+        self.context().disconnect(self.reader_registration.id());
     }
 }
 
 impl DelayNode {
+    /// Create a new DelayNode
+    ///
+    /// # Panics
+    ///
+    /// Panics when the max delay value is smaller than zero or langer than three minutes.
     pub fn new<C: BaseAudioContext>(context: &C, options: DelayOptions) -> Self {
         let sample_rate = context.sample_rate_raw().0 as f64;
 

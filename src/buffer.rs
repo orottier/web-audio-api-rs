@@ -788,7 +788,7 @@ mod tests {
                 vec![left_chan, right_chan],
                 SampleRate(u32::try_from(source_sr).unwrap()),
             );
-            buffer.resample(SampleRate(target_sr as u32));
+            buffer.resample(SampleRate(target_sr));
 
             let mut expected_left = vec![];
             let mut expected_right = vec![];
