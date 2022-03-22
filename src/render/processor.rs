@@ -61,14 +61,7 @@ impl<'a> AudioParamValues<'a> {
 
     /// Get the computed values for the given [`crate::param::AudioParam`]
     ///
-    /// # Warning
-    ///
-    /// In the current implementation, the slice will always have a length of
-    /// [`RENDER_QUANTUM_SIZE`](crate::RENDER_QUANTUM_SIZE),
-    /// but one should not rely on this. Following the AudioWorklet specification
-    /// (cf. <https://www.w3.org/TR/webaudio/#audioworkletprocess-callback-parameters>),
-    /// a slice of length 1 may be returned in the future if all values in the
-    /// current quantum are identical (e.g. for k-rate processing).
+    /// For both A & K-rate params, it will provide a slice of length [`crate::RENDER_QUANTUM_SIZE`]
     pub fn get(&self, index: &AudioParamId) -> &[f32] {
         &self.get_raw(index).channel_data(0)[..]
     }

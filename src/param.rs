@@ -12,43 +12,41 @@ use crate::{AtomicF32, SampleRate, RENDER_QUANTUM_SIZE};
 use crossbeam_channel::{Receiver, Sender};
 
 // arguments sanity check functions for automation methods
-fn assert_non_negative(value: f64, method_name: &str, arg_name: &str) {
+#[track_caller]
+fn assert_non_negative(value: f64) {
     if value < 0. {
         panic!(
-            "RangeError - Failed to execute '{:?}' on 'AudioParam':
-            {:?} ({:?}) should not be negative",
-            method_name, arg_name, value
+            "RangeError - timing value ({:?}) should not be negative",
+            value
         );
     }
 }
 
-fn assert_strictly_positive(value: f64, method_name: &str, arg_name: &str) {
+#[track_caller]
+fn assert_strictly_positive(value: f64) {
     if value <= 0. {
         panic!(
-            "RangeError - Failed to execute '{:?}' on 'AudioParam':
-            {:?} ({:?}) should be strictly positive",
-            method_name, arg_name, value
+            "RangeError - duration ({:?}) should be strictly positive",
+            value
         );
     }
 }
 
-fn assert_not_zero(value: f32, method_name: &str, arg_name: &str) {
+#[track_caller]
+fn assert_not_zero(value: f32) {
     if value == 0. {
         panic!(
-            "RangeError - Failed to execute '{:?}' on 'AudioParam':
-            {:?} ({:?}) should not be equal to zero",
-            method_name, arg_name, value,
+            "RangeError - value ({:?}) should not be equal to zero",
+            value,
         )
     }
 }
 
-fn assert_sequence_length(values: &[f32], method_name: &str, arg_name: &str) {
+#[track_caller]
+fn assert_sequence_length(values: &[f32]) {
     if values.len() < 2 {
         panic!(
-            "RangeError - Failed to execute '{:?}' on 'AudioParam':
-            {:?} length ({:?}) should not be less than 2",
-            method_name,
-            arg_name,
+            "InvalidStateError - sequence length ({:?}) should not be less than 2",
             values.len()
         )
     }
@@ -317,7 +315,7 @@ impl AudioParam {
     ///
     /// Will panic if `start_time` is negative
     pub fn set_value_at_time(&self, value: f32, start_time: f64) -> &Self {
-        assert_non_negative(start_time, "set_value_at_time", "start_time");
+        assert_non_negative(start_time);
 
         let event = AudioParamEvent {
             event_type: AudioParamEventType::SetValueAtTime,
@@ -341,7 +339,7 @@ impl AudioParam {
     ///
     /// Will panic if `end_time` is negative
     pub fn linear_ramp_to_value_at_time(&self, value: f32, end_time: f64) -> &Self {
-        assert_non_negative(end_time, "linear_ramp_to_value_at_time", "end_time");
+        assert_non_negative(end_time);
 
         let event = AudioParamEvent {
             event_type: AudioParamEventType::LinearRampToValueAtTime,
@@ -367,8 +365,8 @@ impl AudioParam {
     /// - `value` is zero
     /// - `end_time` is negative
     pub fn exponential_ramp_to_value_at_time(&self, value: f32, end_time: f64) -> &Self {
-        assert_not_zero(value, "exponential_ramp_to_value_at_time", "value");
-        assert_non_negative(end_time, "exponential_ramp_to_value_at_time", "end_time");
+        assert_not_zero(value);
+        assert_non_negative(end_time);
 
         let event = AudioParamEvent {
             event_type: AudioParamEventType::ExponentialRampToValueAtTime,
@@ -394,8 +392,8 @@ impl AudioParam {
     /// - `start_time` is negative
     /// - `time_constant` is negative
     pub fn set_target_at_time(&self, value: f32, start_time: f64, time_constant: f64) -> &Self {
-        assert_non_negative(start_time, "set_target_at_time", "start_time");
-        assert_non_negative(time_constant, "set_target_at_time", "time_constant");
+        assert_non_negative(start_time);
+        assert_non_negative(time_constant);
 
         // [spec] If timeConstant is zero, the output value jumps immediately to the final value.
         let event = if time_constant == 0. {
@@ -432,7 +430,7 @@ impl AudioParam {
     ///
     /// Will panic if `cancel_time` is negative
     pub fn cancel_scheduled_values(&self, cancel_time: f64) -> &Self {
-        assert_non_negative(cancel_time, "cancel_scheduled_values", "cancel_time");
+        assert_non_negative(cancel_time);
 
         let event = AudioParamEvent {
             event_type: AudioParamEventType::CancelScheduledValues,
@@ -457,7 +455,7 @@ impl AudioParam {
     ///
     /// Will panic if `cancel_time` is negative
     pub fn cancel_and_hold_at_time(&self, cancel_time: f64) -> &Self {
-        assert_non_negative(cancel_time, "cancel_scheduled_values", "cancel_time");
+        assert_non_negative(cancel_time);
 
         let event = AudioParamEvent {
             event_type: AudioParamEventType::CancelAndHoldAtTime,
@@ -484,9 +482,9 @@ impl AudioParam {
     /// - `start_time` is negative
     /// - `duration` is negative or equal to zero
     pub fn set_value_curve_at_time(&self, values: &[f32], start_time: f64, duration: f64) -> &Self {
-        assert_sequence_length(values, "set_value_curve_at_time", "values");
-        assert_non_negative(start_time, "set_value_curve_at_time", "start_time");
-        assert_strictly_positive(duration, "set_value_curve_at_time", "duration");
+        assert_sequence_length(values);
+        assert_non_negative(start_time);
+        assert_strictly_positive(duration);
 
         // When this method is called, an internal copy of the curve is
         // created for automation purposes.
@@ -1442,46 +1440,46 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_assert_non_negative_fail() {
-        assert_non_negative(-1., "method", "argument");
+        assert_non_negative(-1.);
     }
 
     #[test]
     fn test_assert_non_negative() {
-        assert_non_negative(0., "method", "argument");
+        assert_non_negative(0.);
     }
 
     #[test]
     #[should_panic]
     fn test_assert_strictly_positive_fail() {
-        assert_strictly_positive(0., "method", "argument");
+        assert_strictly_positive(0.);
     }
 
     #[test]
     fn test_assert_strictly_positive() {
-        assert_strictly_positive(0.1, "method", "argument");
+        assert_strictly_positive(0.1);
     }
 
     #[test]
     #[should_panic]
     fn test_assert_not_zero_fail() {
-        assert_not_zero(0., "method", "argument");
+        assert_not_zero(0.);
     }
 
     #[test]
     fn test_assert_not_zero() {
-        assert_not_zero(-0.1, "method", "argument");
-        assert_not_zero(0.1, "method", "argument");
+        assert_not_zero(-0.1);
+        assert_not_zero(0.1);
     }
 
     #[test]
     #[should_panic]
     fn test_assert_sequence_length_fail() {
-        assert_sequence_length(&[0.; 1], "method", "argument");
+        assert_sequence_length(&[0.; 1]);
     }
 
     #[test]
     fn test_assert_sequence_length() {
-        assert_sequence_length(&[0.; 2], "method", "argument");
+        assert_sequence_length(&[0.; 2]);
     }
 
     #[test]
