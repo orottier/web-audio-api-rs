@@ -127,11 +127,29 @@ impl Default for ChannelConfigOptions {
 /// Only when implementing the [`AudioNode`] trait manually, is this struct of any concern. The
 /// methods `set_channel_count`, `set_channel_count_mode` and `set_channel_interpretation` from the
 /// audio node interface will use this struct to sync the required info to the render thread.
+///
+/// The only way to construct an instance is with [`ChannelConfigOptions`]
+///
+/// ```
+/// use web_audio_api::node::{ChannelConfigOptions, ChannelConfig, ChannelInterpretation, ChannelCountMode};
+///
+/// let opts = ChannelConfigOptions {
+///     count: 1,
+///     mode: ChannelCountMode::Explicit,
+///     interpretation: ChannelInterpretation::Discrete,
+/// };
+/// let _: ChannelConfig = opts.into();
 #[derive(Clone, Debug)]
 pub struct ChannelConfig {
     count: Arc<AtomicUsize>,
     mode: Arc<AtomicU32>,
     interpretation: Arc<AtomicU32>,
+}
+
+impl Default for ChannelConfig {
+    fn default() -> Self {
+        ChannelConfigOptions::default().into()
+    }
 }
 
 // All methods on this struct are marked `pub(crate)` because we don't want outside users to be able to change the values directly.

@@ -4,7 +4,7 @@ use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
-use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 
 /// Options for constructing an [`ConstantSourceNode`]
 // dictionary ConstantSourceOptions {
@@ -121,11 +121,9 @@ impl ConstantSourceNode {
                 scheduler: scheduler.clone(),
             };
 
-            let channel_config = ChannelConfigOptions::default().into();
-
             let node = ConstantSourceNode {
                 registration,
-                channel_config,
+                channel_config: ChannelConfig::default(),
                 offset: param,
                 scheduler,
             };

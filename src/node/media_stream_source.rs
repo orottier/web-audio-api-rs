@@ -2,7 +2,7 @@ use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::media::{MediaStream, Resampler};
 use crate::RENDER_QUANTUM_SIZE;
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStreamRenderer};
+use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
 
 /// Options for constructing a [`MediaStreamAudioSourceNode`]
 // dictionary MediaStreamAudioSourceOptions {
@@ -47,11 +47,9 @@ impl MediaStreamAudioSourceNode {
         options: MediaStreamAudioSourceOptions<M>,
     ) -> Self {
         context.base().register(move |registration| {
-            let channel_config = ChannelConfigOptions::default().into();
-
             let node = MediaStreamAudioSourceNode {
                 registration,
-                channel_config,
+                channel_config: ChannelConfig::default(),
             };
 
             let resampler = Resampler::new(
