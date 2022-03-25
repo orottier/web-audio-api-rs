@@ -8,7 +8,7 @@
 )]
 
 use std::ops::Range;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 // magic node values
@@ -22,7 +22,7 @@ const LISTENER_PARAM_IDS: Range<u64> = 2..11;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::media::{MediaDecoder, MediaStream};
 use crate::message::ControlMessage;
-use crate::node::{self, AudioNode, ChannelConfigOptions};
+use crate::node::{self, AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamDescriptor, AudioParamEvent};
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::render::{AudioProcessor, NodeIndex, RenderThread};
@@ -70,6 +70,8 @@ struct ConcreteBaseAudioContextInner {
     number_of_channels: u32,
     /// incrementing id to assign to audio nodes
     node_id_inc: AtomicU64,
+    /// destination node's current channel count
+    destination_channel_count: Arc<AtomicUsize>,
     /// message channel from control to render thread
     render_channel: Sender<ControlMessage>,
     /// control messages that cannot be sent immediately
@@ -80,6 +82,8 @@ struct ConcreteBaseAudioContextInner {
     queued_audio_listener_msgs: Mutex<Vec<ControlMessage>>,
     /// AudioListener fields
     listener_params: Option<AudioListenerParams>,
+    /// Denotes if this AudioContext is offline or not
+    offline: bool,
 }
 
 /// The interface representing an audio-processing graph built from audio modules linked together,
@@ -308,10 +312,9 @@ pub trait BaseAudioContext {
             id: AudioNodeId(DESTINATION_NODE_ID),
             context: self.base().clone(),
         };
-        node::AudioDestinationNode {
-            registration,
-            channel_count: self.base().channels() as usize,
-        }
+        let channel_count = self.base().inner.destination_channel_count.clone();
+        let channel_config = ChannelConfig::for_destination(channel_count);
+        node::AudioDestinationNode::from_raw_parts(registration, channel_config)
     }
 
     /// Returns the `AudioListener` which is used for 3D spatialization
@@ -451,10 +454,16 @@ impl AudioContext {
         let frames_played_clone = frames_played.clone();
 
         let (stream, config, sender) = io::build_output(frames_played_clone, options.as_ref());
-        let channels = u32::from(config.channels);
+        let number_of_channels = u32::from(config.channels);
         let sample_rate = SampleRate(config.sample_rate.0);
 
-        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base = ConcreteBaseAudioContext::new(
+            sample_rate,
+            number_of_channels,
+            frames_played,
+            sender,
+            false,
+        );
 
         Self {
             base,
@@ -472,10 +481,16 @@ impl AudioContext {
         });
 
         let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100));
-        let channels = u32::from(options.number_of_channels.unwrap_or(2));
+        let number_of_channels = u32::from(options.number_of_channels.unwrap_or(2));
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
-        let base = ConcreteBaseAudioContext::new(sample_rate, channels, frames_played, sender);
+        let base = ConcreteBaseAudioContext::new(
+            sample_rate,
+            number_of_channels,
+            frames_played,
+            sender,
+            false,
+        );
 
         Self { base }
     }
@@ -618,16 +633,22 @@ impl ConcreteBaseAudioContext {
         number_of_channels: u32,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
+        offline: bool,
     ) -> Self {
+        // setup destination node with preferred number of channels
+        let destination_channel_count = Arc::new(AtomicUsize::new(number_of_channels as usize));
+
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             number_of_channels,
             render_channel,
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
+            destination_channel_count,
             frames_played,
             queued_audio_listener_msgs: Mutex::new(Vec::new()),
             listener_params: None,
+            offline,
         };
         let base = Self {
             inner: Arc::new(base_inner),
@@ -738,7 +759,7 @@ impl ConcreteBaseAudioContext {
             node: render,
             inputs: node.number_of_inputs() as usize,
             outputs: node.number_of_outputs() as usize,
-            channel_config: node.channel_config_cloned(),
+            channel_config: node.channel_config().clone(),
         };
 
         // if this is the AudioListener or its params, do not add it to the graph just yet
@@ -863,6 +884,11 @@ impl ConcreteBaseAudioContext {
             );
         }
     }
+
+    /// Returns true if this is `OfflineAudioContext` (false when it is an `AudioContext`)
+    pub(crate) fn offline(&self) -> bool {
+        self.inner.offline
+    }
 }
 
 impl Default for AudioContext {
@@ -897,8 +923,13 @@ impl OfflineAudioContext {
         );
 
         // first, setup the base audio context
-        let base =
-            ConcreteBaseAudioContext::new(sample_rate, number_of_channels, frames_played, sender);
+        let base = ConcreteBaseAudioContext::new(
+            sample_rate,
+            number_of_channels,
+            frames_played,
+            sender,
+            true,
+        );
 
         Self {
             base,

@@ -122,7 +122,11 @@ impl Default for ChannelConfigOptions {
     }
 }
 
-/// Config for up/down-mixing of channels for audio nodes
+/// Config for up/down-mixing of input channels for audio nodes
+///
+/// Only when implementing the [`AudioNode`] trait manually, is this struct of any concern. The
+/// methods `set_channel_count`, `set_channel_count_mode` and `set_channel_interpretation` from the
+/// audio node interface will use this struct to sync the required info to the render thread.
 #[derive(Clone, Debug)]
 pub struct ChannelConfig {
     count: Arc<AtomicUsize>,
@@ -130,38 +134,49 @@ pub struct ChannelConfig {
     interpretation: Arc<AtomicU32>,
 }
 
+// All methods on this struct are marked `pub(crate)` because we don't want outside users to be able to change the values directly.
+// These methods are only accessible via the AudioNode interface, so AudioNode's that have channel count/mode constraints
+// should be able to assert those.
 impl ChannelConfig {
     /// Represents an enumerated value describing the way channels must be matched between the
     /// node's inputs and outputs.
-    pub fn count_mode(&self) -> ChannelCountMode {
+    pub(crate) fn count_mode(&self) -> ChannelCountMode {
         self.mode.load(Ordering::SeqCst).into()
     }
-    pub fn set_count_mode(&self, v: ChannelCountMode) {
+    pub(crate) fn set_count_mode(&self, v: ChannelCountMode) {
         self.mode.store(v as u32, Ordering::SeqCst)
     }
 
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
     /// will define how audio up-mixing and down-mixing will happen.
-    pub fn interpretation(&self) -> ChannelInterpretation {
+    pub(crate) fn interpretation(&self) -> ChannelInterpretation {
         self.interpretation.load(Ordering::SeqCst).into()
     }
-    pub fn set_interpretation(&self, v: ChannelInterpretation) {
+    pub(crate) fn set_interpretation(&self, v: ChannelInterpretation) {
         self.interpretation.store(v as u32, Ordering::SeqCst)
     }
 
     /// Represents an integer used to determine how many channels are used when up-mixing and
     /// down-mixing connections to any inputs to the node.
-    pub fn count(&self) -> usize {
+    pub(crate) fn count(&self) -> usize {
         self.count.load(Ordering::SeqCst)
     }
-    pub fn set_count(&self, v: usize) {
+    pub(crate) fn set_count(&self, v: usize) {
         self.count.store(v, Ordering::SeqCst)
+    }
+
+    pub(crate) fn for_destination(count: Arc<AtomicUsize>) -> Self {
+        Self {
+            count,
+            mode: Arc::new(AtomicU32::from(ChannelCountMode::Explicit as u32)),
+            interpretation: Arc::new(AtomicU32::from(ChannelInterpretation::Speakers as u32)),
+        }
     }
 }
 
 impl From<ChannelConfigOptions> for ChannelConfig {
     fn from(opts: ChannelConfigOptions) -> Self {
-        ChannelConfig {
+        Self {
             count: Arc::new(AtomicUsize::from(opts.count)),
             mode: Arc::new(AtomicU32::from(opts.mode as u32)),
             interpretation: Arc::new(AtomicU32::from(opts.interpretation as u32)),
@@ -183,10 +198,7 @@ pub trait AudioNode {
     fn id(&self) -> &AudioNodeId {
         self.registration().id()
     }
-    fn channel_config_raw(&self) -> &ChannelConfig;
-    fn channel_config_cloned(&self) -> ChannelConfig {
-        self.channel_config_raw().clone()
-    }
+    fn channel_config(&self) -> &ChannelConfig;
 
     /// The BaseAudioContext which owns this AudioNode.
     fn context(&self) -> &ConcreteBaseAudioContext {
@@ -255,29 +267,29 @@ pub trait AudioNode {
     /// Represents an enumerated value describing the way channels must be matched between the
     /// node's inputs and outputs.
     fn channel_count_mode(&self) -> ChannelCountMode {
-        self.channel_config_raw().count_mode()
+        self.channel_config().count_mode()
     }
 
     fn set_channel_count_mode(&self, v: ChannelCountMode) {
-        self.channel_config_raw().set_count_mode(v)
+        self.channel_config().set_count_mode(v)
     }
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
     /// will define how audio up-mixing and down-mixing will happen.
     fn channel_interpretation(&self) -> ChannelInterpretation {
-        self.channel_config_raw().interpretation()
+        self.channel_config().interpretation()
     }
 
     fn set_channel_interpretation(&self, v: ChannelInterpretation) {
-        self.channel_config_raw().set_interpretation(v)
+        self.channel_config().set_interpretation(v)
     }
     /// Represents an integer used to determine how many channels are used when up-mixing and
     /// down-mixing connections to any inputs to the node.
     fn channel_count(&self) -> usize {
-        self.channel_config_raw().count()
+        self.channel_config().count()
     }
 
     fn set_channel_count(&self, v: usize) {
-        self.channel_config_raw().set_count(v)
+        self.channel_config().set_count(v)
     }
 }
 

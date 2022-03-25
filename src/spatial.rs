@@ -10,6 +10,7 @@ use crate::param::{AudioParam, AudioParamDescriptor, AudioParamRaw, AutomationRa
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
+use lazy_static::lazy_static;
 use std::f32::consts::PI;
 
 /// AudioParam settings for the carthesian coordinates
@@ -81,22 +82,22 @@ pub(crate) struct AudioListenerNode {
     fields: AudioListener,
 }
 
+lazy_static! {
+    static ref AUDIO_LISTENER_CHANNEL_CONFIG: ChannelConfig = ChannelConfigOptions {
+        count: 1,
+        mode: ChannelCountMode::Explicit,
+        interpretation: ChannelInterpretation::Discrete,
+    }
+    .into();
+}
+
 impl AudioNode for AudioListenerNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
 
-    fn channel_config_raw(&self) -> &ChannelConfig {
-        unreachable!()
-    }
-
-    fn channel_config_cloned(&self) -> ChannelConfig {
-        ChannelConfigOptions {
-            count: 1,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Discrete,
-        }
-        .into()
+    fn channel_config(&self) -> &ChannelConfig {
+        &AUDIO_LISTENER_CHANNEL_CONFIG
     }
 
     fn number_of_inputs(&self) -> u32 {
@@ -107,16 +108,14 @@ impl AudioNode for AudioListenerNode {
         9 // return all audio params as output
     }
 
-    fn channel_count_mode(&self) -> ChannelCountMode {
-        ChannelCountMode::Explicit
+    fn set_channel_count(&self, _v: usize) {
+        panic!("AudioListenerNode has channel count constraints");
     }
-
-    fn channel_interpretation(&self) -> ChannelInterpretation {
-        ChannelInterpretation::Discrete
+    fn set_channel_count_mode(&self, _v: ChannelCountMode) {
+        panic!("AudioListenerNode has channel count mode constraints");
     }
-
-    fn channel_count(&self) -> usize {
-        1
+    fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
+        panic!("AudioListenerNode has channel interpretation constraints");
     }
 }
 

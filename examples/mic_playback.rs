@@ -44,7 +44,7 @@ impl AudioNode for MediaRecorder {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
-    fn channel_config_raw(&self) -> &ChannelConfig {
+    fn channel_config(&self) -> &ChannelConfig {
         &self.channel_config
     }
     fn number_of_inputs(&self) -> u32 {

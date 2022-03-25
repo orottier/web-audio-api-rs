@@ -8,8 +8,8 @@ use super::{
 
 /// Representing the final audio destination and is what the user will ultimately hear.
 pub struct AudioDestinationNode {
-    pub(crate) registration: AudioContextRegistration,
-    pub(crate) channel_count: usize,
+    registration: AudioContextRegistration,
+    channel_config: ChannelConfig,
 }
 
 struct DestinationRenderer {}
@@ -27,7 +27,7 @@ impl AudioProcessor for DestinationRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        // todo, actually fill cpal buffer here
+        // just move input to output
         *output = input.clone();
 
         true
@@ -39,17 +39,8 @@ impl AudioNode for AudioDestinationNode {
         &self.registration
     }
 
-    fn channel_config_raw(&self) -> &ChannelConfig {
-        unreachable!()
-    }
-
-    fn channel_config_cloned(&self) -> ChannelConfig {
-        ChannelConfigOptions {
-            count: self.channel_count,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Speakers,
-        }
-        .into()
+    fn channel_config(&self) -> &ChannelConfig {
+        &self.channel_config
     }
 
     fn number_of_inputs(&self) -> u32 {
@@ -59,25 +50,38 @@ impl AudioNode for AudioDestinationNode {
         1
     }
 
-    fn channel_count_mode(&self) -> ChannelCountMode {
-        ChannelCountMode::Explicit
+    fn set_channel_count(&self, v: usize) {
+        if self.registration.context().offline() && v != self.max_channels_count() as usize {
+            panic!("NotSupportedError: not allowed to change OfflineAudioContext destination channel count");
+        }
+        if v > self.max_channels_count() as usize {
+            panic!(
+                "IndexSizeError: channel count cannot be greater than maxChannelCount ({})",
+                self.max_channels_count()
+            );
+        }
+        AudioNode::set_channel_count(self, v);
     }
-
-    fn channel_interpretation(&self) -> ChannelInterpretation {
-        ChannelInterpretation::Speakers
+    fn set_channel_count_mode(&self, _v: ChannelCountMode) {
+        panic!("AudioDestinationNode has channel count mode constraints");
     }
-
-    fn channel_count(&self) -> usize {
-        self.channel_count
+    fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
+        panic!("AudioDestinationNode has channel interpretation constraints");
     }
 }
 
 impl AudioDestinationNode {
-    pub fn new<C: BaseAudioContext>(context: &C, channel_count: usize) -> Self {
+    pub(crate) fn new<C: BaseAudioContext>(context: &C, channel_count: usize) -> Self {
         context.base().register(move |registration| {
+            let channel_config = ChannelConfigOptions {
+                count: channel_count,
+                mode: ChannelCountMode::Explicit,
+                interpretation: ChannelInterpretation::Speakers,
+            }
+            .into();
             let node = Self {
                 registration,
-                channel_count,
+                channel_config,
             };
             let proc = DestinationRenderer {};
 
@@ -85,6 +89,15 @@ impl AudioDestinationNode {
         })
     }
 
+    pub(crate) fn from_raw_parts(
+        registration: AudioContextRegistration,
+        channel_config: ChannelConfig,
+    ) -> Self {
+        Self {
+            registration,
+            channel_config,
+        }
+    }
     /// The maximum number of channels that the channelCount attribute can be set to
     /// This is the limit number that audio hardware can support.
     pub fn max_channels_count(&self) -> u32 {

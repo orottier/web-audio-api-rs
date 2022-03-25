@@ -42,7 +42,7 @@ impl AudioNode for ChannelSplitterNode {
         &self.registration
     }
 
-    fn channel_config_raw(&self) -> &ChannelConfig {
+    fn channel_config(&self) -> &ChannelConfig {
         &self.channel_config
     }
 
