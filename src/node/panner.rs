@@ -170,6 +170,13 @@ impl AudioNode for PannerNode {
         }
         AudioNode::set_channel_count(self, v);
     }
+
+    fn set_channel_count_mode(&self, v: ChannelCountMode) {
+        if v == ChannelCountMode::Max {
+            panic!("NotSupportedError: PannerNode channel count mode cannot be set to max");
+        }
+        AudioNode::set_channel_count_mode(self, v);
+    }
 }
 
 impl PannerNode {

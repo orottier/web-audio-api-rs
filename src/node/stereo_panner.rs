@@ -78,8 +78,10 @@ impl AudioNode for StereoPannerNode {
     }
 
     fn set_channel_count_mode(&self, v: ChannelCountMode) {
-        assert!(v != ChannelCountMode::Max, "NotSupportedError");
-        self.channel_config.set_count_mode(v);
+        if v == ChannelCountMode::Max {
+            panic!("NotSupportedError: StereoPannerNode channel count mode cannot be set to max");
+        }
+        AudioNode::set_channel_count_mode(self, v);
     }
 
     fn set_channel_count(&self, v: usize) {

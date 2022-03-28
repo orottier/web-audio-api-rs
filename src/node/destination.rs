@@ -63,10 +63,7 @@ impl AudioNode for AudioDestinationNode {
         AudioNode::set_channel_count(self, v);
     }
     fn set_channel_count_mode(&self, _v: ChannelCountMode) {
-        panic!("AudioDestinationNode has channel count mode constraints");
-    }
-    fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
-        panic!("AudioDestinationNode has channel interpretation constraints");
+        panic!("InvalidStateError: AudioDestinationNode has channel count mode constraints");
     }
 }
 

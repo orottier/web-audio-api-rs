@@ -54,10 +54,6 @@ impl AudioNode for ChannelMergerNode {
         panic!("InvalidStateError: Cannot edit channel count mode of ChannelMergerNode")
     }
 
-    fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
-        panic!("InvalidStateError: Cannot edit channel interpretation of ChannelMergerNode")
-    }
-
     fn number_of_inputs(&self) -> u32 {
         self.channel_count() as _
     }
