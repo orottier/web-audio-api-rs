@@ -83,8 +83,10 @@ impl AudioNode for StereoPannerNode {
     }
 
     fn set_channel_count(&self, v: usize) {
-        assert!(v <= 2, "NotSupportedError");
-        self.channel_config.set_count(v);
+        if v > 2 {
+            panic!("NotSupportedError: StereoPannerNode channel count cannot be greater than two");
+        }
+        AudioNode::set_channel_count(self, v);
     }
 }
 

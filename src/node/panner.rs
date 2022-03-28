@@ -163,6 +163,13 @@ impl AudioNode for PannerNode {
     fn number_of_outputs(&self) -> u32 {
         1
     }
+
+    fn set_channel_count(&self, v: usize) {
+        if v > 2 {
+            panic!("NotSupportedError: PannerNode channel count cannot be greater than two");
+        }
+        AudioNode::set_channel_count(self, v);
+    }
 }
 
 impl PannerNode {

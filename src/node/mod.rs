@@ -161,7 +161,7 @@ impl ChannelConfig {
     pub(crate) fn count_mode(&self) -> ChannelCountMode {
         self.mode.load(Ordering::SeqCst).into()
     }
-    pub(crate) fn set_count_mode(&self, v: ChannelCountMode) {
+    fn set_count_mode(&self, v: ChannelCountMode) {
         self.mode.store(v as u32, Ordering::SeqCst)
     }
 
@@ -170,7 +170,7 @@ impl ChannelConfig {
     pub(crate) fn interpretation(&self) -> ChannelInterpretation {
         self.interpretation.load(Ordering::SeqCst).into()
     }
-    pub(crate) fn set_interpretation(&self, v: ChannelInterpretation) {
+    fn set_interpretation(&self, v: ChannelInterpretation) {
         self.interpretation.store(v as u32, Ordering::SeqCst)
     }
 
@@ -179,7 +179,8 @@ impl ChannelConfig {
     pub(crate) fn count(&self) -> usize {
         self.count.load(Ordering::SeqCst)
     }
-    pub(crate) fn set_count(&self, v: usize) {
+    fn set_count(&self, v: usize) {
+        crate::assert_valid_number_of_channels(v);
         self.count.store(v, Ordering::SeqCst)
     }
 
