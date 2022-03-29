@@ -7,7 +7,7 @@ use web_audio_api::media::Microphone;
 use web_audio_api::node::BiquadFilterType;
 use web_audio_api::node::{
     AnalyserNode, AudioBufferSourceNode, AudioNode, AudioScheduledSourceNode, BiquadFilterNode,
-    ChannelConfig, ChannelConfigOptions, GainNode, MediaStreamAudioSourceNode,
+    ChannelConfig, GainNode, MediaStreamAudioSourceNode,
 };
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use web_audio_api::SampleRate;
@@ -44,7 +44,7 @@ impl AudioNode for MediaRecorder {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
-    fn channel_config_raw(&self) -> &ChannelConfig {
+    fn channel_config(&self) -> &ChannelConfig {
         &self.channel_config
     }
     fn number_of_inputs(&self) -> u32 {
@@ -67,7 +67,7 @@ impl MediaRecorder {
             // setup the audio node, this will live in the control thread (user facing)
             let node = MediaRecorder {
                 registration,
-                channel_config: ChannelConfigOptions::default().into(),
+                channel_config: ChannelConfig::default(),
                 receiver,
             };
 

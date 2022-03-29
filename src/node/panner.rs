@@ -152,7 +152,7 @@ impl AudioNode for PannerNode {
         &self.registration
     }
 
-    fn channel_config_raw(&self) -> &ChannelConfig {
+    fn channel_config(&self) -> &ChannelConfig {
         &self.channel_config
     }
 
@@ -162,6 +162,20 @@ impl AudioNode for PannerNode {
 
     fn number_of_outputs(&self) -> u32 {
         1
+    }
+
+    fn set_channel_count(&self, v: usize) {
+        if v > 2 {
+            panic!("NotSupportedError: PannerNode channel count cannot be greater than two");
+        }
+        self.channel_config.set_count(v);
+    }
+
+    fn set_channel_count_mode(&self, v: ChannelCountMode) {
+        if v == ChannelCountMode::Max {
+            panic!("NotSupportedError: PannerNode channel count mode cannot be set to max");
+        }
+        self.channel_config.set_count_mode(v);
     }
 }
 

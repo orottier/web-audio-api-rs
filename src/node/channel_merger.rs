@@ -42,20 +42,16 @@ impl AudioNode for ChannelMergerNode {
         &self.registration
     }
 
-    fn channel_config_raw(&self) -> &ChannelConfig {
+    fn channel_config(&self) -> &ChannelConfig {
         &self.channel_config
     }
 
     fn set_channel_count(&self, _v: usize) {
-        panic!("Cannot edit channel count of ChannelMergerNode")
+        panic!("InvalidStateError: Cannot edit channel count of ChannelMergerNode")
     }
 
     fn set_channel_count_mode(&self, _v: ChannelCountMode) {
-        panic!("Cannot edit channel count mode of ChannelMergerNode")
-    }
-
-    fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
-        panic!("Cannot edit channel interpretation of ChannelMergerNode")
+        panic!("InvalidStateError: Cannot edit channel count mode of ChannelMergerNode")
     }
 
     fn number_of_inputs(&self) -> u32 {

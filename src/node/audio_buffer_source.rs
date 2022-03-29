@@ -9,7 +9,7 @@ use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
-use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 
 /// Options for constructing an [`AudioBufferSourceNode`]
 // dictionary AudioBufferSourceOptions {
@@ -28,7 +28,6 @@ pub struct AudioBufferSourceOptions {
     pub loop_start: f64,
     pub loop_end: f64,
     pub playback_rate: f32,
-    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for AudioBufferSourceOptions {
@@ -40,7 +39,6 @@ impl Default for AudioBufferSourceOptions {
             loop_start: 0.,
             loop_end: 0.,
             playback_rate: 1.,
-            channel_config: ChannelConfigOptions::default(),
         }
     }
 }
@@ -95,7 +93,7 @@ impl AudioNode for AudioBufferSourceNode {
         &self.registration
     }
 
-    fn channel_config_raw(&self) -> &ChannelConfig {
+    fn channel_config(&self) -> &ChannelConfig {
         &self.channel_config
     }
 
@@ -143,7 +141,6 @@ impl AudioBufferSourceNode {
                 loop_start,
                 loop_end,
                 playback_rate,
-                channel_config,
             } = options;
 
             // @todo - these parameters can't be changed to a-rate
@@ -195,7 +192,7 @@ impl AudioBufferSourceNode {
             let node = Self {
                 registration,
                 controller,
-                channel_config: channel_config.into(),
+                channel_config: ChannelConfig::default(),
                 sender,
                 detune: d_param,
                 playback_rate: pr_param,

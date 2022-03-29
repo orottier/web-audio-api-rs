@@ -10,6 +10,7 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::{AtomicF32, SampleRate, RENDER_QUANTUM_SIZE};
 
 use crossbeam_channel::{Receiver, Sender};
+use lazy_static::lazy_static;
 
 // arguments sanity check functions for automation methods
 #[track_caller]
@@ -206,22 +207,22 @@ pub(crate) struct AudioParamRaw {
     sender: Sender<AudioParamEvent>,
 }
 
+lazy_static! {
+    static ref AUDIO_PARAM_CHANNEL_CONFIG: ChannelConfig = ChannelConfigOptions {
+        count: 1,
+        mode: ChannelCountMode::Explicit,
+        interpretation: ChannelInterpretation::Discrete,
+    }
+    .into();
+}
+
 impl AudioNode for AudioParam {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
 
-    fn channel_config_raw(&self) -> &ChannelConfig {
-        unreachable!()
-    }
-
-    fn channel_config_cloned(&self) -> ChannelConfig {
-        ChannelConfigOptions {
-            count: 1,
-            mode: ChannelCountMode::Explicit,
-            interpretation: ChannelInterpretation::Discrete,
-        }
-        .into()
+    fn channel_config(&self) -> &ChannelConfig {
+        &AUDIO_PARAM_CHANNEL_CONFIG
     }
 
     fn number_of_inputs(&self) -> u32 {
@@ -232,16 +233,14 @@ impl AudioNode for AudioParam {
         1
     }
 
-    fn channel_count_mode(&self) -> ChannelCountMode {
-        ChannelCountMode::Explicit
+    fn set_channel_count(&self, _v: usize) {
+        panic!("AudioParam has channel count constraints");
     }
-
-    fn channel_interpretation(&self) -> ChannelInterpretation {
-        ChannelInterpretation::Discrete
+    fn set_channel_count_mode(&self, _v: ChannelCountMode) {
+        panic!("AudioParam has channel count mode constraints");
     }
-
-    fn channel_count(&self) -> usize {
-        1
+    fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
+        panic!("AudioParam has channel interpretation constraints");
     }
 }
 
