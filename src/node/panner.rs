@@ -168,14 +168,14 @@ impl AudioNode for PannerNode {
         if v > 2 {
             panic!("NotSupportedError: PannerNode channel count cannot be greater than two");
         }
-        AudioNode::set_channel_count(self, v);
+        self.channel_config.set_count(v);
     }
 
     fn set_channel_count_mode(&self, v: ChannelCountMode) {
         if v == ChannelCountMode::Max {
             panic!("NotSupportedError: PannerNode channel count mode cannot be set to max");
         }
-        AudioNode::set_channel_count_mode(self, v);
+        self.channel_config.set_count_mode(v);
     }
 }
 

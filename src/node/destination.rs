@@ -60,7 +60,7 @@ impl AudioNode for AudioDestinationNode {
                 self.max_channels_count()
             );
         }
-        AudioNode::set_channel_count(self, v);
+        self.channel_config.set_count(v);
     }
     fn set_channel_count_mode(&self, _v: ChannelCountMode) {
         panic!("InvalidStateError: AudioDestinationNode has channel count mode constraints");
