@@ -191,6 +191,10 @@ impl ChannelConfig {
             interpretation: Arc::new(AtomicU32::from(ChannelInterpretation::Speakers as u32)),
         }
     }
+
+    pub(crate) fn into_count(self) -> Arc<AtomicUsize> {
+        self.count
+    }
 }
 
 impl From<ChannelConfigOptions> for ChannelConfig {

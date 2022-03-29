@@ -635,8 +635,8 @@ impl ConcreteBaseAudioContext {
         render_channel: Sender<ControlMessage>,
         offline: bool,
     ) -> Self {
-        // setup destination node with preferred number of channels
-        let destination_channel_count = Arc::new(AtomicUsize::new(number_of_channels as usize));
+        // placeholder for destination node channel count, will patch later
+        let tmp_dest_channel_count = Arc::default();
 
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
@@ -644,7 +644,7 @@ impl ConcreteBaseAudioContext {
             render_channel,
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
-            destination_channel_count,
+            destination_channel_count: tmp_dest_channel_count,
             frames_played,
             queued_audio_listener_msgs: Mutex::new(Vec::new()),
             listener_params: None,
@@ -654,11 +654,12 @@ impl ConcreteBaseAudioContext {
             inner: Arc::new(base_inner),
         };
 
-        let listener_params = {
+        let (listener_params, dest_channels) = {
             // Register magical nodes. We should not store the nodes inside our context since that
             // will create a cyclic reference, but we can reconstruct a new instance on the fly
             // when requested
-            let _dest = node::AudioDestinationNode::new(&base, number_of_channels as usize);
+            let dest = node::AudioDestinationNode::new(&base, number_of_channels as usize);
+            let dest_channels = dest.into_raw_parts().into_count();
             let listener = crate::spatial::AudioListenerNode::new(&base);
 
             let listener_params = listener.into_fields();
@@ -674,7 +675,7 @@ impl ConcreteBaseAudioContext {
                 up_z,
             } = listener_params;
 
-            AudioListenerParams {
+            let listener_params = AudioListenerParams {
                 position_x: position_x.into_raw_parts(),
                 position_y: position_y.into_raw_parts(),
                 position_z: position_z.into_raw_parts(),
@@ -684,12 +685,15 @@ impl ConcreteBaseAudioContext {
                 up_x: up_x.into_raw_parts(),
                 up_y: up_y.into_raw_parts(),
                 up_z: up_z.into_raw_parts(),
-            }
+            };
+
+            (listener_params, dest_channels)
         }; // nodes will drop now, so base.inner has no copies anymore
 
         let mut base = base;
         let mut inner_mut = Arc::get_mut(&mut base.inner).unwrap();
         inner_mut.listener_params = Some(listener_params);
+        inner_mut.destination_channel_count = dest_channels;
 
         // validate if the hardcoded node IDs line up
         debug_assert_eq!(

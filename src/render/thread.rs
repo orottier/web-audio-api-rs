@@ -9,6 +9,7 @@ use crossbeam_channel::Receiver;
 use super::{AudioRenderQuantum, NodeIndex};
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::message::ControlMessage;
+use crate::node::ChannelInterpretation;
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::graph::Graph;
@@ -170,7 +171,12 @@ impl RenderThread {
                     / self.sample_rate.0 as f64;
 
             // render audio graph
-            let rendered = self.graph.render(timestamp, self.sample_rate);
+            let mut rendered = self.graph.render(timestamp, self.sample_rate).clone();
+
+            // online AudioContext allows channel count to be less than no of hardware channels
+            if rendered.number_of_channels() != self.number_of_channels {
+                rendered.mix(self.number_of_channels, ChannelInterpretation::Discrete);
+            }
 
             // copy rendered audio into output slice
             for i in 0..self.number_of_channels {
@@ -186,7 +192,7 @@ impl RenderThread {
                 // this is the last chunk, and it contained less than RENDER_QUANTUM_SIZE samples
                 let channel_offset = data.len() / self.number_of_channels;
                 debug_assert!(channel_offset < RENDER_QUANTUM_SIZE);
-                self.buffer_offset = Some((channel_offset, rendered.clone()));
+                self.buffer_offset = Some((channel_offset, rendered));
             }
         }
     }
