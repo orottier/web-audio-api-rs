@@ -1,7 +1,11 @@
+//! The `AudioContext` type and constructor options
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
 use crate::SampleRate;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+
+#[cfg(not(test))]
+use std::sync::Mutex;
 
 #[cfg(not(test))]
 use crate::io;

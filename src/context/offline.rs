@@ -1,3 +1,4 @@
+//! The `OfflineAudioContext` type
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
