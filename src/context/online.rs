@@ -63,6 +63,12 @@ impl BaseAudioContext for AudioContext {
     }
 }
 
+impl Default for AudioContext {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
 impl AudioContext {
     /// Creates and returns a new `AudioContext` object.
     /// This will play live audio on the default output

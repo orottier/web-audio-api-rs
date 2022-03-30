@@ -3,11 +3,11 @@
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::context::{
     AudioContextRegistration, AudioNodeId, AudioParamId, ConcreteBaseAudioContext,
-    DESTINATION_NODE_ID, LISTENER_PARAM_IDS,
+    DESTINATION_NODE_ID,
 };
 use crate::media::{MediaDecoder, MediaStream};
-use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
-use crate::param::{AudioParam, AudioParamDescriptor};
+use crate::node::{AudioNode, ChannelConfigOptions};
+use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::{node, AudioListener, SampleRate};
 
@@ -237,30 +237,13 @@ pub trait BaseAudioContext {
             id: AudioNodeId(DESTINATION_NODE_ID),
             context: self.base().clone(),
         };
-        let channel_count = self.base().inner.destination_channel_count.clone();
-        let channel_config = ChannelConfig::for_destination(channel_count);
+        let channel_config = self.base().destination_channel_config();
         node::AudioDestinationNode::from_raw_parts(registration, channel_config)
     }
 
     /// Returns the `AudioListener` which is used for 3D spatialization
     fn listener(&self) -> AudioListener {
-        let mut ids = LISTENER_PARAM_IDS.map(|i| AudioContextRegistration {
-            id: AudioNodeId(i),
-            context: self.base().clone(),
-        });
-        let params = self.base().inner.listener_params.as_ref().unwrap();
-
-        AudioListener {
-            position_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_x.clone()),
-            position_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_y.clone()),
-            position_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.position_z.clone()),
-            forward_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_x.clone()),
-            forward_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_y.clone()),
-            forward_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.forward_z.clone()),
-            up_x: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_x.clone()),
-            up_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_y.clone()),
-            up_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_z.clone()),
-        }
+        self.base().listener()
     }
 
     /// The sample rate (in sample-frames per second) at which the `AudioContext` handles audio.
