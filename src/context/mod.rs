@@ -86,10 +86,11 @@ impl Drop for AudioContextRegistration {
 
 #[cfg(test)]
 mod tests {
-    use crate::SampleRate;
-    use float_eq::assert_float_eq;
-
     use super::*;
+    use crate::node::AudioNode;
+    use crate::SampleRate;
+
+    use float_eq::assert_float_eq;
 
     fn require_send_sync_static<T: Send + Sync + 'static>(_: T) {}
 
@@ -104,10 +105,11 @@ mod tests {
     }
 
     #[test]
-    fn test_sample_rate() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(96000));
+    fn test_sample_rate_length() {
+        let context = OfflineAudioContext::new(1, 48000, SampleRate(96000));
         assert_float_eq!(context.sample_rate(), 96000., abs_all <= 0.);
         assert_eq!(context.sample_rate_raw(), SampleRate(96000));
+        assert_eq!(context.length(), 48000);
     }
 
     #[test]
@@ -156,5 +158,12 @@ mod tests {
         assert_eq!(buffer.number_of_channels(), 3);
         assert_eq!(buffer.length(), 2000);
         assert_float_eq!(buffer.sample_rate(), 96000., abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_registration() {
+        let context = OfflineAudioContext::new(1, 48000, SampleRate(96000));
+        let dest = context.destination();
+        assert!(dest.context() == context.base());
     }
 }
