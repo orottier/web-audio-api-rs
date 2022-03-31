@@ -134,91 +134,55 @@ impl StreamConfigsBuilder {
             .with_max_sample_rate()
     }
 
-    /// returns the stream buffer size
-    ///
-    /// # Argument
-    ///
-    /// * `options` - options contains latency hint information from which buffer size is derived
-    fn get_buffer_size(&self, options: Option<&AudioContextOptions>) -> u32 {
+    /// set preferred sample rate
+    fn with_sample_rate(&mut self, v: u32) {
+        crate::assert_valid_sample_rate(SampleRate(v));
+        self.prefered.sample_rate.0 = v;
+    }
+
+    /// buffer size
+    #[allow(clippy::needless_pass_by_value)]
+    fn with_latency_hint(&mut self, v: Option<AudioContextLatencyCategory>) {
         let buffer_size: u32 = u32::try_from(RENDER_QUANTUM_SIZE).unwrap();
         let default_buffer_size = match self.supported.buffer_size() {
             SupportedBufferSize::Range { min, .. } => buffer_size.max(*min),
             SupportedBufferSize::Unknown => buffer_size,
         };
 
-        match options {
-            Some(opts) => match opts.latency_hint.as_ref() {
-                None => (default_buffer_size + buffer_size - 1) / buffer_size * buffer_size,
-                Some(l) => {
-                    return match l {
-                        AudioContextLatencyCategory::Interactive => default_buffer_size,
-                        AudioContextLatencyCategory::Balanced => match self.supported.buffer_size()
-                        {
-                            SupportedBufferSize::Range { max, .. } => {
-                                let b = (default_buffer_size * 2).min(*max);
-                                (b + buffer_size - 1) / buffer_size * buffer_size
-                            }
-                            SupportedBufferSize::Unknown => {
-                                let b = default_buffer_size * 2;
-                                (b + buffer_size - 1) / buffer_size * buffer_size
-                            }
-                        },
-                        AudioContextLatencyCategory::Playback => match self.supported.buffer_size()
-                        {
-                            SupportedBufferSize::Range { max, .. } => {
-                                let b = (default_buffer_size * 4).min(*max);
-                                (b + buffer_size - 1) / buffer_size * buffer_size
-                            }
-                            SupportedBufferSize::Unknown => {
-                                let b = default_buffer_size * 4;
-                                (b + buffer_size - 1) / buffer_size * buffer_size
-                            }
-                        },
-                        // b is always positive
-                        #[allow(clippy::cast_sign_loss)]
-                        // truncation is the desired behavior
-                        #[allow(clippy::cast_possible_truncation)]
-                        AudioContextLatencyCategory::Specific(t) => {
-                            let b = t * f64::from(self.prefered.sample_rate.0);
-                            (b as u32 + buffer_size - 1) / buffer_size * buffer_size
-                        }
-                    };
+        let calculated = match v {
+            None => (default_buffer_size + buffer_size - 1) / buffer_size * buffer_size,
+            Some(AudioContextLatencyCategory::Interactive) => default_buffer_size,
+            Some(AudioContextLatencyCategory::Balanced) => match self.supported.buffer_size() {
+                SupportedBufferSize::Range { max, .. } => {
+                    let b = (default_buffer_size * 2).min(*max);
+                    (b + buffer_size - 1) / buffer_size * buffer_size
+                }
+                SupportedBufferSize::Unknown => {
+                    let b = default_buffer_size * 2;
+                    (b + buffer_size - 1) / buffer_size * buffer_size
                 }
             },
-            None => (default_buffer_size + buffer_size - 1) / buffer_size * buffer_size,
-        }
-    }
-
-    /// modify the sample rate config, following user options
-    ///
-    /// # Argument
-    ///
-    /// * `options` - options contains sample rate information
-    fn with_sample_rate(mut self, options: Option<&AudioContextOptions>) -> Self {
-        if let Some(opts) = options {
-            if let Some(fs) = opts.sample_rate {
-                crate::assert_valid_sample_rate(SampleRate(fs));
-                self.prefered.sample_rate.0 = fs;
+            Some(AudioContextLatencyCategory::Playback) => match self.supported.buffer_size() {
+                SupportedBufferSize::Range { max, .. } => {
+                    let b = (default_buffer_size * 4).min(*max);
+                    (b + buffer_size - 1) / buffer_size * buffer_size
+                }
+                SupportedBufferSize::Unknown => {
+                    let b = default_buffer_size * 4;
+                    (b + buffer_size - 1) / buffer_size * buffer_size
+                }
+            },
+            // b is always positive
+            #[allow(clippy::cast_sign_loss)]
+            // truncation is the desired behavior
+            #[allow(clippy::cast_possible_truncation)]
+            Some(AudioContextLatencyCategory::Specific(t)) => {
+                let b = t * f64::from(self.prefered.sample_rate.0);
+                (b as u32 + buffer_size - 1) / buffer_size * buffer_size
             }
         };
 
-        self
-    }
-
-    /// modify the buffer size config, following user options
-    ///
-    /// # Argument
-    ///
-    /// * `options` - options contains latency hint information
-    ///
-    /// # Warning
-    ///
-    /// `with_latency_hint` has to be called *after* `with_sample_rate` on whcih it depends on.
-    /// For now, this dependency is not enforce by the type system itself.
-    fn with_latency_hint(mut self, options: Option<&AudioContextOptions>) -> Self {
-        let buffer_size = self.get_buffer_size(options);
-        self.prefered.buffer_size = cpal::BufferSize::Fixed(buffer_size);
-        self
+        self.prefered.buffer_size = cpal::BufferSize::Fixed(calculated);
     }
 
     /// modify the config number of output channels, following user options
@@ -226,15 +190,9 @@ impl StreamConfigsBuilder {
     /// # Argument:
     ///
     /// * `options` - options contains channels number information
-    fn with_channels(mut self, options: Option<&AudioContextOptions>) -> Self {
-        if let Some(opts) = options {
-            if let Some(chs) = opts.number_of_channels {
-                crate::assert_valid_number_of_channels(chs.into());
-                self.prefered.channels = chs;
-            }
-        };
-
-        self
+    fn with_channels(&mut self, v: u16) {
+        crate::assert_valid_number_of_channels(v.into());
+        self.prefered.channels = v;
     }
 
     /// builds `StreamConfigs`
@@ -423,13 +381,24 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
 #[allow(clippy::redundant_pub_crate)]
 pub(crate) fn build_output(
     frames_played: Arc<AtomicU64>,
-    options: Option<&AudioContextOptions>,
+    options: AudioContextOptions,
 ) -> (Stream, StreamConfig, Sender<ControlMessage>) {
-    let configs = StreamConfigsBuilder::new()
-        .with_sample_rate(options)
-        .with_latency_hint(options)
-        .with_channels(options)
-        .build();
+    let mut builder = StreamConfigsBuilder::new();
+
+    // set specific sample rate if requested
+    if let Some(v) = options.sample_rate {
+        builder.with_sample_rate(v);
+    }
+
+    // set specific channel count if requested
+    if let Some(v) = options.number_of_channels {
+        builder.with_channels(v);
+    }
+
+    // always try to set a decent buffer size
+    builder.with_latency_hint(options.latency_hint);
+
+    let configs = builder.build();
 
     let streamer = OutputStreamer::new(configs, frames_played)
         .spawn()

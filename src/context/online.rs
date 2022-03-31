@@ -90,8 +90,7 @@ impl AudioContext {
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
-        let options = Some(options);
-        let (stream, config, sender) = io::build_output(frames_played_clone, options.as_ref());
+        let (stream, config, sender) = io::build_output(frames_played_clone, options);
         let number_of_channels = u32::from(config.channels);
         let sample_rate = SampleRate(config.sample_rate.0);
 
