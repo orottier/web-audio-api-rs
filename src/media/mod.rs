@@ -52,7 +52,7 @@ use crate::buffer::AudioBuffer;
 /// let media = sequence.map(|b| Ok(b));
 ///
 /// // media is now a proper `MediaStream` and can be used in the audio graph
-/// let context = AudioContext::new(None);
+/// let context = AudioContext::default();
 /// let node = context.create_media_stream_source(media);
 /// node.connect(&context.destination());
 /// ```

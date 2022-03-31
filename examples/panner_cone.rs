@@ -4,7 +4,7 @@ use web_audio_api::node::AudioScheduledSourceNode;
 
 fn main() {
     env_logger::init();
-    let context = AudioContext::new(None);
+    let context = AudioContext::default();
 
     // Create a friendly tone
     let tone = context.create_oscillator();

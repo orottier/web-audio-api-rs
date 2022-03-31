@@ -38,7 +38,7 @@ pub struct AudioBufferOptions {
 /// use web_audio_api::context::{AudioContext, BaseAudioContext};
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
-/// let context = AudioContext::new(None);
+/// let context = AudioContext::default();
 ///
 /// let length = context.sample_rate() as usize;
 /// let sample_rate = context.sample_rate_raw();

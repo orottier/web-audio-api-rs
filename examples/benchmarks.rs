@@ -616,7 +616,7 @@ fn main() {
     // -------------------------------------------------------
     // handle input and preview
     // -------------------------------------------------------
-    let context = AudioContext::new(None);
+    let context = AudioContext::default();
     let mut current_source: Option<AudioBufferSourceNode> = None;
     let mut inputs = vec![];
 

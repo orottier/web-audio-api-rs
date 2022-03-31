@@ -28,7 +28,7 @@ fn trigger_sine(audio_context: &AudioContext, delay_input: &dyn AudioNode, rng: 
 }
 
 fn main() {
-    let audio_context = AudioContext::new(None);
+    let audio_context = AudioContext::default();
     let mut rng = rand::thread_rng();
 
     // create feedback delay graph layout

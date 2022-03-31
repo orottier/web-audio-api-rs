@@ -30,10 +30,20 @@ pub enum AudioContextLatencyCategory {
     Specific(f64),
 }
 
-/// Specify the playback configuration
-/// in non web context, it is the only way to specify
-/// the system configuration
-#[derive(Clone, Debug)]
+impl Default for AudioContextLatencyCategory {
+    fn default() -> Self {
+        Self::Interactive
+    }
+}
+
+/// Specify the playback configuration for the [`AudioContext`] constructor.
+///
+/// All fields are optional and will default to the value best suited for interactive playback on
+/// your hardware configuration.
+///
+/// Check the documentation of the [`AudioContext` constructor](AudioContext::new) for usage
+/// instructions.
+#[derive(Clone, Debug, Default)]
 pub struct AudioContextOptions {
     /// Identify the type of playback, which affects
     /// tradeoffs between audio output latency and power consumption
@@ -65,22 +75,22 @@ impl BaseAudioContext for AudioContext {
 
 impl Default for AudioContext {
     fn default() -> Self {
-        Self::new(None)
+        Self::new(AudioContextOptions::default())
     }
 }
 
 impl AudioContext {
     /// Creates and returns a new `AudioContext` object.
     /// This will play live audio on the default output
-    // options is passed by value to be conform to the specification interface
     #[allow(clippy::needless_pass_by_value)]
     #[cfg(not(test))]
     #[must_use]
-    pub fn new(options: Option<AudioContextOptions>) -> Self {
+    pub fn new(options: AudioContextOptions) -> Self {
         // track number of frames - synced from render thread to control thread
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
+        let options = Some(options);
         let (stream, config, sender) = io::build_output(frames_played_clone, options.as_ref());
         let number_of_channels = u32::from(config.channels);
         let sample_rate = SampleRate(config.sample_rate.0);
@@ -101,17 +111,20 @@ impl AudioContext {
 
     #[cfg(test)] // in tests, do not set up a cpal Stream
     #[allow(clippy::must_use_candidate)]
-    pub fn new(options: Option<AudioContextOptions>) -> Self {
-        let options = options.unwrap_or(AudioContextOptions {
-            latency_hint: Some(AudioContextLatencyCategory::Interactive),
-            sample_rate: Some(44_100),
-            number_of_channels: Some(2),
-        });
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn new(options: AudioContextOptions) -> Self {
+        let AudioContextOptions {
+            sample_rate,
+            number_of_channels,
+            ..
+        } = options;
 
-        let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100));
-        let number_of_channels = u32::from(options.number_of_channels.unwrap_or(2));
+        let sample_rate = SampleRate(sample_rate.unwrap_or(44_100));
+        let number_of_channels = u32::from(number_of_channels.unwrap_or(2));
+
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
+
         let base = ConcreteBaseAudioContext::new(
             sample_rate,
             number_of_channels,

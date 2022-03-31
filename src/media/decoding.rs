@@ -80,7 +80,7 @@ impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
 /// let file = std::fs::File::open("samples/major-scale.ogg").unwrap();
 /// let stream = MediaDecoder::try_new(file).unwrap();
 /// // pipe the media stream into the web audio graph
-/// let context = AudioContext::new(None);
+/// let context = AudioContext::default();
 /// let node = context.create_media_stream_source(stream);
 /// node.connect(&context.destination());
 /// ```

@@ -10,7 +10,7 @@ fn main() {
         latency_hint: Some(AudioContextLatencyCategory::Playback),
     };
 
-    let context = AudioContext::new(Some(options));
+    let context = AudioContext::new(options);
 
     println!("Sample rate: {:?}", context.sample_rate());
     println!("Channels: {}", context.destination().max_channels_count());

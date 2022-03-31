@@ -5,7 +5,7 @@ fn main() {
     env_logger::init();
 
     // Create an audio context (default: stereo);
-    let context = AudioContext::new(None);
+    let context = AudioContext::default();
 
     // Create an oscillator node with sine (default) type
     let osc = context.create_oscillator();

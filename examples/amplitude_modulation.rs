@@ -5,7 +5,7 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 fn main() {
     env_logger::init();
 
-    let context = AudioContext::new(None);
+    let context = AudioContext::default();
 
     let modulated = context.create_gain();
     modulated.gain().set_value(0.5);

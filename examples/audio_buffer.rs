@@ -4,7 +4,7 @@ use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
-    let context = AudioContext::new(None);
+    let context = AudioContext::default();
 
     // create a 1 second buffer filled with a sine at 200Hz
     println!("> Play sine at 200Hz created manually in an AudioBuffer");

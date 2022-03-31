@@ -12,7 +12,7 @@ fn trigger_sine(audio_context: &AudioContext) {
 }
 
 fn main() {
-    let audio_context = AudioContext::new(None);
+    let audio_context = AudioContext::default();
 
     // mimic setInterval
     loop {

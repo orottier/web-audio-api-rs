@@ -291,7 +291,7 @@ impl AudioThread {
     const GAIN_STEP: f32 = 1.1_f32; // gain increases by 10% per setting
 
     fn new() -> Self {
-        let context = AudioContext::new(None);
+        let context = AudioContext::default();
 
         let stream = Microphone::new();
         let mic_in = context.create_media_stream_source(stream);

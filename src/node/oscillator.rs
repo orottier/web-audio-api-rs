@@ -97,7 +97,7 @@ impl From<u32> for OscillatorType {
 /// use web_audio_api::context::{BaseAudioContext, AudioContext};
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
-/// let context = AudioContext::new(None);
+/// let context = AudioContext::default();
 ///
 /// let osc = context.create_oscillator();
 /// osc.frequency().set_value(200.);
