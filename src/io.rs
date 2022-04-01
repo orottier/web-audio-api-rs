@@ -185,16 +185,6 @@ impl StreamConfigsBuilder {
         self.prefered.buffer_size = cpal::BufferSize::Fixed(calculated);
     }
 
-    /// modify the config number of output channels, following user options
-    ///
-    /// # Argument:
-    ///
-    /// * `options` - options contains channels number information
-    fn with_channels(&mut self, v: u16) {
-        crate::assert_valid_number_of_channels(v.into());
-        self.prefered.channels = v;
-    }
-
     /// builds `StreamConfigs`
     fn build(self) -> StreamConfigs {
         StreamConfigs::new(self)
@@ -388,11 +378,6 @@ pub(crate) fn build_output(
     // set specific sample rate if requested
     if let Some(v) = options.sample_rate {
         builder.with_sample_rate(v);
-    }
-
-    // set specific channel count if requested
-    if let Some(v) = options.number_of_channels {
-        builder.with_channels(v);
     }
 
     // always try to set a decent buffer size

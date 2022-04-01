@@ -50,8 +50,6 @@ pub struct AudioContextOptions {
     pub latency_hint: Option<AudioContextLatencyCategory>,
     /// Sample rate of the audio Context and audio output hardware
     pub sample_rate: Option<u32>,
-    /// Number of output channels of destination node and audio output hardware
-    pub number_of_channels: Option<u16>,
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
@@ -80,7 +78,7 @@ impl Default for AudioContext {
 }
 
 impl AudioContext {
-    /// Creates and returns a new `AudioContext` object. 
+    /// Creates and returns a new `AudioContext` object.
     ///
     /// This will play live audio on the default output device.
     ///
@@ -91,7 +89,6 @@ impl AudioContext {
     /// let opts = AudioContextOptions {
     ///     sample_rate: Some(44100),
     ///     latency_hint: None,
-    ///     number_of_channels: None,
     /// };
     ///
     /// // Setup the audio context that will emit to your speakers
@@ -130,14 +127,8 @@ impl AudioContext {
     #[allow(clippy::must_use_candidate)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(options: AudioContextOptions) -> Self {
-        let AudioContextOptions {
-            sample_rate,
-            number_of_channels,
-            ..
-        } = options;
-
-        let sample_rate = SampleRate(sample_rate.unwrap_or(44_100));
-        let number_of_channels = u32::from(number_of_channels.unwrap_or(2));
+        let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100));
+        let number_of_channels = 2u32;
 
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
