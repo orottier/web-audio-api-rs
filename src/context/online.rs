@@ -82,7 +82,7 @@ impl AudioContext {
     ///
     /// This will play live audio on the default output device.
     ///
-    /// ```
+    /// ```no_run
     /// use web_audio_api::context::{AudioContext, AudioContextOptions};
     ///
     /// // Request a sample rate of 44.1 kHz and default latency (buffer size 128, if available)
