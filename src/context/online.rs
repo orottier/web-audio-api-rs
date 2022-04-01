@@ -80,8 +80,26 @@ impl Default for AudioContext {
 }
 
 impl AudioContext {
-    /// Creates and returns a new `AudioContext` object.
-    /// This will play live audio on the default output
+    /// Creates and returns a new `AudioContext` object. 
+    ///
+    /// This will play live audio on the default output device.
+    ///
+    /// ```
+    /// use web_audio_api::context::{AudioContext, AudioContextOptions};
+    ///
+    /// // Request a sample rate of 44.1 kHz and default latency (buffer size 128, if available)
+    /// let opts = AudioContextOptions {
+    ///     sample_rate: Some(44100),
+    ///     latency_hint: None,
+    ///     number_of_channels: None,
+    /// };
+    ///
+    /// // Setup the audio context that will emit to your speakers
+    /// let context = AudioContext::new(opts);
+    ///
+    /// // Alternatively, use the default constructor to get the best settings for your hardware
+    /// // let context = AudioContext::default();
+    /// ```
     #[allow(clippy::needless_pass_by_value)]
     #[cfg(not(test))]
     #[must_use]
