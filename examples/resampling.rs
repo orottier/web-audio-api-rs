@@ -1,5 +1,7 @@
 use std::fs::File;
-use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
@@ -63,7 +65,7 @@ fn main() {
 
     let audio_context_38000 = AudioContext::new(AudioContextOptions {
         sample_rate: Some(38000),
-        latency_hint: None,
+        latency_hint: AudioContextLatencyCategory::Interactive,
     });
     let file_38000 = File::open("samples/sample-38000.wav").unwrap();
     let buffer_38000 = audio_context_38000
@@ -72,7 +74,7 @@ fn main() {
 
     let audio_context_44100 = AudioContext::new(AudioContextOptions {
         sample_rate: Some(44100),
-        latency_hint: None,
+        latency_hint: AudioContextLatencyCategory::Interactive,
     });
     let file_44100 = File::open("samples/sample-44100.wav").unwrap();
     let buffer_44100 = audio_context_44100
@@ -81,7 +83,7 @@ fn main() {
 
     let audio_context_48000 = AudioContext::new(AudioContextOptions {
         sample_rate: Some(48000),
-        latency_hint: None,
+        latency_hint: AudioContextLatencyCategory::Interactive,
     });
     let file_48000 = File::open("samples/sample-48000.wav").unwrap();
     let buffer_48000 = audio_context_48000

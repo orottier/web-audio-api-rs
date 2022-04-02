@@ -47,7 +47,7 @@ impl Default for AudioContextLatencyCategory {
 pub struct AudioContextOptions {
     /// Identify the type of playback, which affects
     /// tradeoffs between audio output latency and power consumption
-    pub latency_hint: Option<AudioContextLatencyCategory>,
+    pub latency_hint: AudioContextLatencyCategory,
     /// Sample rate of the audio Context and audio output hardware
     pub sample_rate: Option<u32>,
 }
@@ -83,12 +83,12 @@ impl AudioContext {
     /// This will play live audio on the default output device.
     ///
     /// ```no_run
-    /// use web_audio_api::context::{AudioContext, AudioContextOptions};
+    /// use web_audio_api::context::{AudioContext, AudioContextLatencyCategory, AudioContextOptions};
     ///
     /// // Request a sample rate of 44.1 kHz and default latency (buffer size 128, if available)
     /// let opts = AudioContextOptions {
     ///     sample_rate: Some(44100),
-    ///     latency_hint: None,
+    ///     latency_hint: AudioContextLatencyCategory::Interactive,
     /// };
     ///
     /// // Setup the audio context that will emit to your speakers

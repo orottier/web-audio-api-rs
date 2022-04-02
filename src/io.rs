@@ -142,7 +142,7 @@ impl StreamConfigsBuilder {
 
     /// buffer size
     #[allow(clippy::needless_pass_by_value)]
-    fn with_latency_hint(&mut self, v: Option<AudioContextLatencyCategory>) {
+    fn with_latency_hint(&mut self, v: AudioContextLatencyCategory) {
         let buffer_size: u32 = u32::try_from(RENDER_QUANTUM_SIZE).unwrap();
         let default_buffer_size = match self.supported.buffer_size() {
             SupportedBufferSize::Range { min, .. } => buffer_size.max(*min),
@@ -150,9 +150,8 @@ impl StreamConfigsBuilder {
         };
 
         let calculated = match v {
-            None => (default_buffer_size + buffer_size - 1) / buffer_size * buffer_size,
-            Some(AudioContextLatencyCategory::Interactive) => default_buffer_size,
-            Some(AudioContextLatencyCategory::Balanced) => match self.supported.buffer_size() {
+            AudioContextLatencyCategory::Interactive => default_buffer_size,
+            AudioContextLatencyCategory::Balanced => match self.supported.buffer_size() {
                 SupportedBufferSize::Range { max, .. } => {
                     let b = (default_buffer_size * 2).min(*max);
                     (b + buffer_size - 1) / buffer_size * buffer_size
@@ -162,7 +161,7 @@ impl StreamConfigsBuilder {
                     (b + buffer_size - 1) / buffer_size * buffer_size
                 }
             },
-            Some(AudioContextLatencyCategory::Playback) => match self.supported.buffer_size() {
+            AudioContextLatencyCategory::Playback => match self.supported.buffer_size() {
                 SupportedBufferSize::Range { max, .. } => {
                     let b = (default_buffer_size * 4).min(*max);
                     (b + buffer_size - 1) / buffer_size * buffer_size
@@ -176,7 +175,7 @@ impl StreamConfigsBuilder {
             #[allow(clippy::cast_sign_loss)]
             // truncation is the desired behavior
             #[allow(clippy::cast_possible_truncation)]
-            Some(AudioContextLatencyCategory::Specific(t)) => {
+            AudioContextLatencyCategory::Specific(t) => {
                 let b = t * f64::from(self.prefered.sample_rate.0);
                 (b as u32 + buffer_size - 1) / buffer_size * buffer_size
             }
