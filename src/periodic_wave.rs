@@ -48,7 +48,7 @@ pub struct PeriodicWaveOptions {
 /// use web_audio_api::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
-/// let context = AudioContext::new(None);
+/// let context = AudioContext::default();
 ///
 /// // generate a simple waveform with 2 harmonics
 /// let options = PeriodicWaveOptions {
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_only_real_is_defined_and_too_short() {
-        let context = AudioContext::new(None);
+        let context = AudioContext::default();
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0.]),
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_only_imag_is_defined_and_too_short() {
-        let context = AudioContext::new(None);
+        let context = AudioContext::default();
 
         let options = PeriodicWaveOptions {
             real: None,
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_imag_and_real_not_equal_length() {
-        let context = AudioContext::new(None);
+        let context = AudioContext::default();
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0., 0., 0.]),
@@ -257,7 +257,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn fails_to_build_when_imag_and_real_too_shorts() {
-        let context = AudioContext::new(None);
+        let context = AudioContext::default();
 
         let options = PeriodicWaveOptions {
             real: Some(vec![0.]),

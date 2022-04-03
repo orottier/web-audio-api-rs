@@ -111,7 +111,7 @@ impl AudioProcessor for WhiteNoiseProcessor {
 
 fn main() {
     env_logger::init();
-    let context = AudioContext::new(None);
+    let context = AudioContext::default();
 
     // construct new node in this context
     let noise = WhiteNoiseNode::new(&context);

@@ -96,7 +96,7 @@ impl Default for WaveShaperOptions {
 /// #     }
 /// #     curve
 /// # }
-/// let context = AudioContext::new(None);
+/// let context = AudioContext::default();
 ///
 /// let file = File::open("sample.wav").unwrap();
 /// let buffer = context.decode_audio_data_sync(file).unwrap();

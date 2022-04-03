@@ -101,7 +101,7 @@ impl Default for PannerOptions {
 /// use web_audio_api::node::AudioScheduledSourceNode;
 ///
 /// // Setup a new audio context
-/// let context = AudioContext::new(None);
+/// let context = AudioContext::default();
 ///
 /// // Create a friendly tone
 /// let tone = context.create_oscillator();

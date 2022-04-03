@@ -22,7 +22,7 @@ fn main() {
 
     println!("> gradually increase the amount of distortion applied on the sample");
 
-    let context = AudioContext::new(None);
+    let context = AudioContext::default();
 
     let file = File::open("samples/sample.wav").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();

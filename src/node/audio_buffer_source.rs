@@ -61,7 +61,7 @@ struct AudioBufferMessage(AudioBuffer);
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// // create an `AudioContext`
-/// let context = AudioContext::new(None);
+/// let context = AudioContext::default();
 /// // load and decode a soundfile
 /// let file = File::open("samples/sample.wav").unwrap();
 /// let audio_buffer = context.decode_audio_data_sync(file).unwrap();

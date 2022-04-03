@@ -35,7 +35,7 @@ fn trigger_grain(
 }
 
 fn main() {
-    let audio_context = AudioContext::new(None);
+    let audio_context = AudioContext::default();
 
     println!("++ scrub into file forward and backward at 0.5 speed");
 

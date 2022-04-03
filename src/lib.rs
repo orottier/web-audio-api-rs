@@ -6,7 +6,8 @@
 //! use web_audio_api::context::{BaseAudioContext, AudioContext};
 //! use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 //!
-//! let context = AudioContext::new(None);
+//! // set up AudioContext with optimized settings for your hardware
+//! let context = AudioContext::default();
 //!
 //! // create an audio buffer from a given file
 //! let file = File::open("samples/sample.wav").unwrap();

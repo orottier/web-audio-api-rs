@@ -1,19 +1,17 @@
-use web_audio_api::context::{
-    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
-};
+use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
-    let options = AudioContextOptions {
-        sample_rate: Some(48_000),
-        number_of_channels: Some(2),
-        latency_hint: Some(AudioContextLatencyCategory::Playback),
-    };
-
-    let context = AudioContext::new(Some(options));
+    let context = AudioContext::default();
 
     println!("Sample rate: {:?}", context.sample_rate());
-    println!("Channels: {}", context.destination().max_channels_count());
+    println!(
+        "Available channels: {}",
+        context.destination().max_channels_count()
+    );
+
+    println!("Force output to two channels");
+    context.destination().set_channel_count(2);
 
     // Create an oscillator
     let left = context.create_oscillator();
@@ -37,8 +35,6 @@ fn main() {
     // Start the oscillators
     left.start();
     right.start();
-
-    // connect left osc to splitter
 
     // enjoy listening
     std::thread::sleep(std::time::Duration::from_secs(4));

@@ -34,7 +34,7 @@ impl Default for ConstantSourceOptions {
 /// use web_audio_api::context::{BaseAudioContext, AudioContext};
 /// use web_audio_api::node::AudioNode;
 ///
-/// let audio_context = AudioContext::new(None);
+/// let audio_context = AudioContext::default();
 ///
 /// let gain1 = audio_context.create_gain();
 /// gain1.gain().set_value(0.);

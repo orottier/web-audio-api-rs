@@ -33,7 +33,7 @@ use crossbeam_channel::{Receiver, TryRecvError};
 /// use web_audio_api::media::Microphone;
 /// use web_audio_api::node::AudioNode;
 ///
-/// let context = AudioContext::new(None);
+/// let context = AudioContext::default();
 ///
 /// let stream = Microphone::new();
 /// // register as media element in the audio context

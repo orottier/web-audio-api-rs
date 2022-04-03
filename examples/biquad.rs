@@ -4,7 +4,7 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
     env_logger::init();
-    let context = AudioContext::new(None);
+    let context = AudioContext::default();
 
     // setup background music:
     // read from local file

@@ -3,7 +3,7 @@ use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
-    let context = AudioContext::new(None);
+    let context = AudioContext::default();
     // @note - `context.resume` is not needed for now
 
     // load and decode buffer

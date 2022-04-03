@@ -17,7 +17,7 @@ fn main() {
         "samples/sample.webm", // 48kHz,
     ];
 
-    let audio_context = AudioContext::new(None);
+    let audio_context = AudioContext::default();
 
     for filepath in files.iter() {
         println!("> --------------------------------");

@@ -30,7 +30,7 @@ fn trigger_sine(audio_context: &AudioContext, rng: &mut ThreadRng) {
 }
 
 fn main() {
-    let audio_context = AudioContext::new(None);
+    let audio_context = AudioContext::default();
     let mut rng = rand::thread_rng();
     let period = 50;
 

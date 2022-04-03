@@ -47,7 +47,7 @@ impl Default for DelayOptions {
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// // create an `AudioContext` and load a sound file
-/// let context = AudioContext::new(None);
+/// let context = AudioContext::default();
 /// let file = File::open("samples/sample.wav").unwrap();
 /// let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 ///

@@ -3,7 +3,7 @@ use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
-    let audio_context = AudioContext::new(None);
+    let audio_context = AudioContext::default();
 
     // use merger to pipe oscillators to right and left channels
     let merger = audio_context.create_channel_merger(2);
