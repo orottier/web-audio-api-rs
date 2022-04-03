@@ -1,3 +1,11 @@
+# Version 0.17.0 (2021-04-03)
+
+- Simplify AudioNode's required channel methods
+- Apply all channel count/mode/interpretation constraints
+- AudioContext can now update channel count while playing
+- Improve AudioContext constructor
+- Validate more input values for AudioParam events
+
 # Version 0.16.0 (2021-03-20)
 
 - AudioBufferSourceNode can now resample
