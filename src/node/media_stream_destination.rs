@@ -13,7 +13,7 @@ use crossbeam_channel::{self, Receiver, Sender};
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/MediaStreamAudioDestinationNode>
 /// - specification: <https://www.w3.org/TR/webaudio/#mediastreamaudiodestinationnode>
-/// - see also: [`BaseAudioContext::create_media_stream_destination`](crate::context::BaseAudioContext::create_media_stream_destination)
+/// - see also: [`AudioContext::create_media_stream_destination`](crate::context::AudioContext::create_media_stream_destination)
 ///
 /// Since the w3c `MediaStream` interface is not part of this library, we cannot adhere to the
 /// official specification. Instead, you can pass in any callback that handles audio buffers.

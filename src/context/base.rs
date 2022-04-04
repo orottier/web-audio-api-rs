@@ -5,7 +5,7 @@ use crate::context::{
     AudioContextRegistration, AudioNodeId, AudioParamId, ConcreteBaseAudioContext,
     DESTINATION_NODE_ID,
 };
-use crate::media::{MediaDecoder, MediaStream};
+use crate::media::MediaDecoder;
 use crate::node::{AudioNode, ChannelConfigOptions};
 use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
@@ -83,6 +83,7 @@ pub trait BaseAudioContext {
     ///
     /// Note: In most cases you will want the sample rate to match the current
     /// audio context sample rate.
+    #[must_use]
     fn create_buffer(
         &self,
         number_of_channels: usize,
@@ -99,26 +100,31 @@ pub trait BaseAudioContext {
     }
 
     /// Creates a `AnalyserNode`
+    #[must_use]
     fn create_analyser(&self) -> node::AnalyserNode {
         node::AnalyserNode::new(self.base(), node::AnalyserOptions::default())
     }
 
     /// Creates an `BiquadFilterNode` which implements a second order filter
+    #[must_use]
     fn create_biquad_filter(&self) -> node::BiquadFilterNode {
         node::BiquadFilterNode::new(self.base(), node::BiquadFilterOptions::default())
     }
 
     /// Creates an `AudioBufferSourceNode`
+    #[must_use]
     fn create_buffer_source(&self) -> node::AudioBufferSourceNode {
         node::AudioBufferSourceNode::new(self.base(), node::AudioBufferSourceOptions::default())
     }
 
     /// Creates an `ConstantSourceNode`, a source representing a constant value
+    #[must_use]
     fn create_constant_source(&self) -> node::ConstantSourceNode {
         node::ConstantSourceNode::new(self.base(), node::ConstantSourceOptions::default())
     }
 
     /// Creates a `ChannelMergerNode`
+    #[must_use]
     fn create_channel_merger(&self, number_of_inputs: u32) -> node::ChannelMergerNode {
         let opts = node::ChannelMergerOptions {
             number_of_inputs,
@@ -128,6 +134,7 @@ pub trait BaseAudioContext {
     }
 
     /// Creates a `ChannelSplitterNode`
+    #[must_use]
     fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
         let opts = node::ChannelSplitterOptions {
             number_of_outputs,
@@ -137,6 +144,7 @@ pub trait BaseAudioContext {
     }
 
     /// Creates a `DelayNode`, delaying the audio signal
+    #[must_use]
     fn create_delay(&self, max_delay_time: f64) -> node::DelayNode {
         let opts = node::DelayOptions {
             max_delay_time,
@@ -146,6 +154,7 @@ pub trait BaseAudioContext {
     }
 
     /// Creates an `GainNode`, to control audio volume
+    #[must_use]
     fn create_gain(&self) -> node::GainNode {
         node::GainNode::new(self.base(), node::GainOptions::default())
     }
@@ -158,6 +167,7 @@ pub trait BaseAudioContext {
     /// The maximum length of this array is 20
     /// * `feedback` - An array of the feedback (denominator) coefficients for the transfer function of the IIR filter.
     /// The maximum length of this array is 20
+    #[must_use]
     fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IIRFilterNode {
         let options = node::IIRFilterOptions {
             channel_config: ChannelConfigOptions::default(),
@@ -167,44 +177,35 @@ pub trait BaseAudioContext {
         node::IIRFilterNode::new(self.base(), options)
     }
 
-    /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]
-    fn create_media_stream_source<M: MediaStream>(
-        &self,
-        media: M,
-    ) -> node::MediaStreamAudioSourceNode {
-        let opts = node::MediaStreamAudioSourceOptions {
-            media_stream: media,
-        };
-        node::MediaStreamAudioSourceNode::new(self.base(), opts)
-    }
-
-    /// Creates a `MediaStreamAudioDestinationNode`
-    fn create_media_stream_destination(&self) -> node::MediaStreamAudioDestinationNode {
-        let opts = ChannelConfigOptions::default();
-        node::MediaStreamAudioDestinationNode::new(self.base(), opts)
-    }
-
     /// Creates an `OscillatorNode`, a source representing a periodic waveform.
+    #[must_use]
     fn create_oscillator(&self) -> node::OscillatorNode {
         node::OscillatorNode::new(self.base(), node::OscillatorOptions::default())
     }
 
     /// Creates a `PannerNode`
+    #[must_use]
     fn create_panner(&self) -> node::PannerNode {
         node::PannerNode::new(self.base(), node::PannerOptions::default())
     }
 
     /// Creates a periodic wave
+    ///
+    /// Please note that this constructor deviates slightly from the spec by requiring a single
+    /// argument with the periodic wave options.
+    #[must_use]
     fn create_periodic_wave(&self, options: PeriodicWaveOptions) -> PeriodicWave {
         PeriodicWave::new(self.base(), options)
     }
 
     /// Creates an `StereoPannerNode` to pan a stereo output
+    #[must_use]
     fn create_stereo_panner(&self) -> node::StereoPannerNode {
         node::StereoPannerNode::new(self.base(), node::StereoPannerOptions::default())
     }
 
     /// Creates a `WaveShaperNode`
+    #[must_use]
     fn create_wave_shaper(&self) -> node::WaveShaperNode {
         node::WaveShaperNode::new(self.base(), node::WaveShaperOptions::default())
     }
@@ -212,6 +213,7 @@ pub trait BaseAudioContext {
     /// Create an `AudioParam`.
     ///
     /// Call this inside the `register` closure when setting up your `AudioNode`
+    #[must_use]
     fn create_audio_param(
         &self,
         opts: AudioParamDescriptor,
@@ -232,6 +234,7 @@ pub trait BaseAudioContext {
 
     /// Returns an `AudioDestinationNode` representing the final destination of all audio in the
     /// context. It can be thought of as the audio-rendering device.
+    #[must_use]
     fn destination(&self) -> node::AudioDestinationNode {
         let registration = AudioContextRegistration {
             id: AudioNodeId(DESTINATION_NODE_ID),
@@ -242,6 +245,7 @@ pub trait BaseAudioContext {
     }
 
     /// Returns the `AudioListener` which is used for 3D spatialization
+    #[must_use]
     fn listener(&self) -> AudioListener {
         self.base().listener()
     }
@@ -261,6 +265,7 @@ pub trait BaseAudioContext {
 
     /// This is the time in seconds of the sample frame immediately following the last sample-frame
     /// in the block of audio most recently processed by the context’s rendering graph.
+    #[must_use]
     fn current_time(&self) -> f64 {
         self.base().current_time()
     }
