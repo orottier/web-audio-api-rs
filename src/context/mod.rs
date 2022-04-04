@@ -35,7 +35,7 @@ const LISTENER_PARAM_IDS: Range<u64> = 2..11;
 ///
 /// Used for internal bookkeeping.
 #[derive(Debug)]
-pub struct AudioNodeId(u64);
+pub(crate) struct AudioNodeId(u64);
 
 /// Unique identifier for audio params.
 ///
@@ -66,14 +66,14 @@ impl AudioContextRegistration {
     // false positive: AudioContextRegistration is not const
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
-    pub fn id(&self) -> &AudioNodeId {
+    pub(crate) fn id(&self) -> &AudioNodeId {
         &self.id
     }
     /// get the context of the registration
     // false positive: AudioContextRegistration is not const
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
-    pub fn context(&self) -> &ConcreteBaseAudioContext {
+    pub(crate) fn context(&self) -> &ConcreteBaseAudioContext {
         &self.context
     }
 }

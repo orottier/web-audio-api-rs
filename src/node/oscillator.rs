@@ -197,7 +197,7 @@ impl OscillatorNode {
             };
             let (f_param, f_proc) = context
                 .base()
-                .create_audio_param(freq_param_opts, registration.id());
+                .create_audio_param(freq_param_opts, &registration);
             f_param.set_value(frequency);
 
             // detune audio parameter
@@ -209,7 +209,7 @@ impl OscillatorNode {
             };
             let (det_param, det_proc) = context
                 .base()
-                .create_audio_param(det_param_opts, registration.id());
+                .create_audio_param(det_param_opts, &registration);
             det_param.set_value(detune);
 
             let type_ = Arc::new(AtomicU32::new(type_ as u32));

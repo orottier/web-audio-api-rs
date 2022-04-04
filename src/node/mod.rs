@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::context::{AudioContextRegistration, AudioNodeId, ConcreteBaseAudioContext};
+use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
@@ -218,9 +218,6 @@ impl From<ChannelConfigOptions> for ChannelConfig {
 pub trait AudioNode {
     fn registration(&self) -> &AudioContextRegistration;
 
-    fn id(&self) -> &AudioNodeId {
-        self.registration().id()
-    }
     fn channel_config(&self) -> &ChannelConfig;
 
     /// The BaseAudioContext which owns this AudioNode.
@@ -262,7 +259,12 @@ pub trait AudioNode {
             panic!("IndexSizeError: input port {} is out of bounds", input);
         }
 
-        self.context().connect(self.id(), dest.id(), output, input);
+        self.context().connect(
+            self.registration().id(),
+            dest.registration().id(),
+            output,
+            input,
+        );
         dest
     }
 
@@ -272,14 +274,15 @@ pub trait AudioNode {
             panic!("attempting to disconnect nodes from different contexts");
         }
 
-        self.context().disconnect_from(self.id(), dest.id());
+        self.context()
+            .disconnect_from(self.registration().id(), dest.registration().id());
 
         dest
     }
 
     /// Disconnects all outgoing connections from the AudioNode.
     fn disconnect(&self) {
-        self.context().disconnect(self.id());
+        self.context().disconnect(self.registration().id());
     }
 
     /// The number of inputs feeding into the AudioNode. For source nodes, this will be 0.

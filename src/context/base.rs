@@ -215,7 +215,7 @@ pub trait BaseAudioContext {
     fn create_audio_param(
         &self,
         opts: AudioParamDescriptor,
-        dest: &AudioNodeId,
+        dest: &AudioContextRegistration,
     ) -> (crate::param::AudioParam, AudioParamId) {
         let param = self.base().register(move |registration| {
             let (node, proc) = crate::param::audio_param_pair(opts, registration);
@@ -224,9 +224,9 @@ pub trait BaseAudioContext {
         });
 
         // Connect the param to the node, once the node is registered inside the audio graph.
-        self.base().queue_audio_param_connect(&param, dest);
+        self.base().queue_audio_param_connect(&param, dest.id());
 
-        let proc_id = AudioParamId(param.id().0);
+        let proc_id = AudioParamId(param.registration().id().0);
         (param, proc_id)
     }
 

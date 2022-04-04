@@ -168,7 +168,7 @@ impl BiquadFilterNode {
             };
             let (q_param, q_proc) = context
                 .base()
-                .create_audio_param(q_param_opts, registration.id());
+                .create_audio_param(q_param_opts, &registration);
 
             q_param.set_value(q_value);
 
@@ -180,7 +180,7 @@ impl BiquadFilterNode {
             };
             let (d_param, d_proc) = context
                 .base()
-                .create_audio_param(d_param_opts, registration.id());
+                .create_audio_param(d_param_opts, &registration);
 
             d_param.set_value(d_value);
 
@@ -193,7 +193,7 @@ impl BiquadFilterNode {
             };
             let (f_param, f_proc) = context
                 .base()
-                .create_audio_param(f_param_opts, registration.id());
+                .create_audio_param(f_param_opts, &registration);
 
             f_param.set_value(f_value);
 
@@ -205,7 +205,7 @@ impl BiquadFilterNode {
             };
             let (g_param, g_proc) = context
                 .base()
-                .create_audio_param(g_param_opts, registration.id());
+                .create_audio_param(g_param_opts, &registration);
 
             g_param.set_value(g_value);
 
