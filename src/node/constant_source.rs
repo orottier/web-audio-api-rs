@@ -109,9 +109,7 @@ impl ConstantSourceNode {
                 default_value: 1.,
                 automation_rate: AutomationRate::A,
             };
-            let (param, proc) = context
-                .base()
-                .create_audio_param(param_opts, registration.id());
+            let (param, proc) = context.base().create_audio_param(param_opts, &registration);
             param.set_value(options.offset);
 
             let scheduler = Scheduler::new();

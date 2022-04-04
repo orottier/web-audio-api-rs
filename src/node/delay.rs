@@ -133,8 +133,12 @@ impl AudioNode for DelayNode {
             panic!("IndexSizeError: input port {} is out of bounds", input);
         }
 
-        self.context()
-            .connect(self.reader_registration.id(), dest.id(), output, input);
+        self.context().connect(
+            self.reader_registration.id(),
+            dest.registration().id(),
+            output,
+            input,
+        );
 
         dest
     }
@@ -146,7 +150,7 @@ impl AudioNode for DelayNode {
         }
 
         self.context()
-            .disconnect_from(self.reader_registration.id(), dest.id());
+            .disconnect_from(self.reader_registration.id(), dest.registration().id());
 
         dest
     }
@@ -210,7 +214,7 @@ impl DelayNode {
                 };
                 let (param, proc) = context
                     .base()
-                    .create_audio_param(param_opts, reader_registration.id());
+                    .create_audio_param(param_opts, &reader_registration);
 
                 param.set_value_at_time(options.delay_time as f32, 0.);
 

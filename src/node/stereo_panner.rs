@@ -127,7 +127,7 @@ impl StereoPannerNode {
             };
             let (pan_param, pan_proc) = context
                 .base()
-                .create_audio_param(pan_param_opts, registration.id());
+                .create_audio_param(pan_param_opts, &registration);
 
             pan_param.set_value(pan_value);
 

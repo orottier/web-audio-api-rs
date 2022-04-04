@@ -300,7 +300,7 @@ impl ConcreteBaseAudioContext {
     /// It is not performed immediately as the `AudioNode` is not registered at this point.
     pub(super) fn queue_audio_param_connect(&self, param: &AudioParam, audio_node: &AudioNodeId) {
         let message = ControlMessage::ConnectNode {
-            from: param.id().0,
+            from: param.registration().id().0,
             to: audio_node.0,
             output: 0,
             input: u32::MAX, // audio params connect to the 'hidden' input port

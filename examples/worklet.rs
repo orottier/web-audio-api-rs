@@ -50,9 +50,7 @@ impl WhiteNoiseNode {
                 default_value: 1.,
                 automation_rate: AutomationRate::A,
             };
-            let (param, proc) = context
-                .base()
-                .create_audio_param(param_opts, registration.id());
+            let (param, proc) = context.base().create_audio_param(param_opts, &registration);
 
             // setup the processor, this will run in the render thread
             let render = WhiteNoiseProcessor { amplitude: proc };
