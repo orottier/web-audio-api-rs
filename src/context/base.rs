@@ -5,7 +5,7 @@ use crate::context::{
     AudioContextRegistration, AudioNodeId, AudioParamId, ConcreteBaseAudioContext,
     DESTINATION_NODE_ID,
 };
-use crate::media::{MediaDecoder, MediaStream};
+use crate::media::MediaDecoder;
 use crate::node::{AudioNode, ChannelConfigOptions};
 use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
@@ -165,23 +165,6 @@ pub trait BaseAudioContext {
             feedback,
         };
         node::IIRFilterNode::new(self.base(), options)
-    }
-
-    /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]
-    fn create_media_stream_source<M: MediaStream>(
-        &self,
-        media: M,
-    ) -> node::MediaStreamAudioSourceNode {
-        let opts = node::MediaStreamAudioSourceOptions {
-            media_stream: media,
-        };
-        node::MediaStreamAudioSourceNode::new(self.base(), opts)
-    }
-
-    /// Creates a `MediaStreamAudioDestinationNode`
-    fn create_media_stream_destination(&self) -> node::MediaStreamAudioDestinationNode {
-        let opts = ChannelConfigOptions::default();
-        node::MediaStreamAudioDestinationNode::new(self.base(), opts)
     }
 
     /// Creates an `OscillatorNode`, a source representing a periodic waveform.

@@ -1,6 +1,9 @@
 //! The `AudioContext` type and constructor options
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
+use crate::media::MediaStream;
+use crate::node::{self, ChannelConfigOptions};
 use crate::SampleRate;
+
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
@@ -208,5 +211,22 @@ impl AudioContext {
     pub fn close_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.lock().unwrap().take(); // will Drop
+    }
+
+    /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]
+    pub fn create_media_stream_source<M: MediaStream>(
+        &self,
+        media: M,
+    ) -> node::MediaStreamAudioSourceNode {
+        let opts = node::MediaStreamAudioSourceOptions {
+            media_stream: media,
+        };
+        node::MediaStreamAudioSourceNode::new(self.base(), opts)
+    }
+
+    /// Creates a `MediaStreamAudioDestinationNode`
+    pub fn create_media_stream_destination(&self) -> node::MediaStreamAudioDestinationNode {
+        let opts = ChannelConfigOptions::default();
+        node::MediaStreamAudioDestinationNode::new(self.base(), opts)
     }
 }
