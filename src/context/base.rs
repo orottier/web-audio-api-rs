@@ -178,6 +178,9 @@ pub trait BaseAudioContext {
     }
 
     /// Creates a periodic wave
+    ///
+    /// Please note that this constructor deviates slightly from the spec by requiring a single
+    /// argument with the periodic wave options.
     fn create_periodic_wave(&self, options: PeriodicWaveOptions) -> PeriodicWave {
         PeriodicWave::new(self.base(), options)
     }
