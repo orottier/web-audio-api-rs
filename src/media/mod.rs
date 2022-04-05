@@ -3,7 +3,7 @@
 mod decoding;
 pub use decoding::MediaDecoder;
 mod mic;
-pub use mic::Microphone;
+pub use mic::{Microphone, MicrophoneInitOptions};
 
 mod resampling;
 pub(crate) use resampling::Resampler;

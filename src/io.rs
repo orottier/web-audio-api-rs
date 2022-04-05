@@ -17,12 +17,12 @@ use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    BuildStreamError, Device, SampleFormat, Stream, StreamConfig, SupportedBufferSize,
+    BuildStreamError, Device, SampleFormat, Stream, StreamConfig, SupportedBufferSize, SampleRate as CpalSampleRate
 };
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
-use crate::media::MicrophoneRender;
+use crate::media::{MicrophoneRender, MicrophoneInitOptions};
 use crate::render::RenderThread;
 
 use crossbeam_channel::{Receiver, Sender};
@@ -393,7 +393,7 @@ pub(crate) fn build_output(
 }
 
 /// Builds the input
-pub fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
+pub fn build_input(options: MicrophoneInitOptions) -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
@@ -403,10 +403,17 @@ pub fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let mut supported_configs_range = device
         .supported_input_configs()
         .expect("error while querying configs");
-    let supported_config = supported_configs_range
-        .next()
-        .expect("no supported config?!")
-        .with_max_sample_rate();
+
+    let supported_config = match options.sample_rate {
+        Some(sample_rate)=> supported_configs_range
+            .next()
+            .expect("no supported config?!")
+            .with_sample_rate(CpalSampleRate(sample_rate)),
+        None => supported_configs_range
+            .next()
+            .expect("no supported config?!")
+            .with_max_sample_rate()
+    };
 
     let sample_format = supported_config.sample_format();
 

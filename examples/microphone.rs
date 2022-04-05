@@ -6,7 +6,7 @@ fn main() {
     env_logger::init();
     let context = AudioContext::default();
 
-    let stream = Microphone::new();
+    let stream = Microphone::default();
     // register as media element in the audio context
     let background = context.create_media_stream_source(stream);
     // connect the node to the destination node (speakers)
