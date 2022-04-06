@@ -30,12 +30,12 @@ use crossbeam_channel::{Receiver, TryRecvError};
 ///
 /// ```no_run
 /// use web_audio_api::context::{BaseAudioContext, AudioContext};
-/// use web_audio_api::media::{Microphone, MicrophoneInitOptions};
+/// use web_audio_api::media::{Microphone, AudioInputOptions};
 /// use web_audio_api::node::AudioNode;
 ///
 /// let context = AudioContext::default();
 ///
-/// let stream = Microphone::new(MicrophoneInitOptions {sample_rate: Some(48000)});
+/// let stream = Microphone::new(AudioInputOptions {sample_rate: Some(48000)});
 /// // or you can create Microphone with default options
 /// let stream = Microphone::default();
 /// // register as media element in the audio context
@@ -63,7 +63,7 @@ unsafe impl Send for Microphone {}
 impl Microphone {
     /// Setup the default microphone input stream
     #[cfg(not(test))]
-    pub fn new(options: MicrophoneInitOptions) -> Self {
+    pub fn new(options: AudioInputOptions) -> Self {
         let (stream, config, receiver) = io::build_input(options);
         log::debug!("Input {:?}", config);
 
@@ -109,7 +109,7 @@ impl Microphone {
 #[cfg(not(test))]
 impl Default for Microphone {
     fn default() -> Self {
-        Self::new(MicrophoneInitOptions {sample_rate: None})
+        Self::new(AudioInputOptions::default())
     }
 }
 
@@ -148,7 +148,7 @@ impl Iterator for Microphone {
 ///
 /// Field is optional and will be set to hardcoded value.
 #[derive(Clone, Debug, Default)]
-pub struct MicrophoneInitOptions {
+pub struct AudioInputOptions {
     /// Sample rate of the microphone
     pub sample_rate: Option<u32>,
 }

@@ -17,12 +17,13 @@ use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    BuildStreamError, Device, SampleFormat, Stream, StreamConfig, SupportedBufferSize, SampleRate as CpalSampleRate
+    BuildStreamError, Device, SampleFormat, SampleRate as CpalSampleRate, Stream, StreamConfig,
+    SupportedBufferSize,
 };
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
-use crate::media::{MicrophoneRender, MicrophoneInitOptions};
+use crate::media::{AudioInputOptions, MicrophoneRender};
 use crate::render::RenderThread;
 
 use crossbeam_channel::{Receiver, Sender};
@@ -393,7 +394,7 @@ pub(crate) fn build_output(
 }
 
 /// Builds the input
-pub fn build_input(options: MicrophoneInitOptions) -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
+pub fn build_input(options: AudioInputOptions) -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
@@ -404,16 +405,10 @@ pub fn build_input(options: MicrophoneInitOptions) -> (Stream, StreamConfig, Rec
         .supported_input_configs()
         .expect("error while querying configs");
 
-    let supported_config = match options.sample_rate {
-        Some(sample_rate)=> supported_configs_range
-            .next()
-            .expect("no supported config?!")
-            .with_sample_rate(CpalSampleRate(sample_rate)),
-        None => supported_configs_range
-            .next()
-            .expect("no supported config?!")
-            .with_max_sample_rate()
-    };
+    let supported_config = supported_configs_range
+        .next()
+        .expect("no supported config?!")
+        .with_max_sample_rate();
 
     let sample_format = supported_config.sample_format();
 
@@ -432,6 +427,10 @@ pub fn build_input(options: MicrophoneInitOptions) -> (Stream, StreamConfig, Rec
 
     let mut config: StreamConfig = supported_config.into();
     config.buffer_size = cpal::BufferSize::Fixed(input_buffer_size);
+    if options.sample_rate.is_some() {
+        config.sample_rate = CpalSampleRate(options.sample_rate.unwrap());
+    }
+
     let sample_rate = SampleRate(config.sample_rate.0);
     let channels = config.channels as usize;
 
