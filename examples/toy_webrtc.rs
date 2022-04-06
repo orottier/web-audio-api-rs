@@ -1,9 +1,9 @@
 const DATA_SIZE: usize = 512;
 
-use rand::Rng;
+use std::convert::TryInto;
 use std::error::Error;
+use std::iter::IntoIterator;
 use std::net::UdpSocket;
-use std::time::Duration;
 
 use web_audio_api::buffer::AudioBuffer;
 use web_audio_api::buffer::AudioBufferOptions;
@@ -13,12 +13,24 @@ use web_audio_api::node::AudioNode;
 use web_audio_api::SampleRate;
 use web_audio_api::RENDER_QUANTUM_SIZE;
 
+const MAX_UDP_SIZE: usize = 508;
 const SERVER_ADDR: &str = "0.0.0.0:1234";
 const CLIENT_ADDR: &str = "0.0.0.0:5555";
 
 fn main() -> std::io::Result<()> {
     let mut args = std::env::args();
     args.next(); // program name
+
+    /*
+    let samples: Vec<_> = (0..128).map(|i| i as f32 / 128.).collect();
+    let buf = AudioBuffer::from(vec![samples], SampleRate(48000));
+    let mut bytes = vec![0; 512];
+    let ser = serialize(&buf, &mut bytes);
+    let deser = deserialize(&bytes[..256], SampleRate(48000));
+    dbg!(deser);
+    todo!();
+    */
+
     match args
         .next()
         .expect("Role argument is required: server or client")
@@ -40,29 +52,52 @@ fn run_server() -> std::io::Result<()> {
         let (amt, src) = socket.recv_from(&mut buf)?;
         let buf = &mut buf[..amt];
 
-        let mut rng = rand::thread_rng();
-
         // introduce chaos
+        /*
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
         match rng.gen_range(0..100) {
-            0 => continue,                                      // 1% packet loss
-            1 => std::thread::sleep(Duration::from_millis(50)), // 1% of packets has 50ms delay
+            0 => continue, // 1% packet loss
+            1 => std::thread::sleep(std::time::Duration::from_millis(1)), // 1% of packets has 1ms delay
             _ => (),
         };
+        */
 
         socket.send_to(buf, &src)?;
     }
 }
 
+// cram 128 floats with a bit of overhead into 508 bytes
 fn serialize(audio_buf: &AudioBuffer, byte_buf: &mut [u8]) -> usize {
-    todo!();
+    // convert f32 to i16, get big endian bytes, write to byte_buf[0..256]
+    let n = audio_buf
+        .get_channel_data(0)
+        .iter()
+        .map(|f| (f * i16::MAX as f32) as i16)
+        .map(|i| i.to_be_bytes())
+        .flat_map(IntoIterator::into_iter)
+        .zip(byte_buf.iter_mut())
+        .map(|(i, o)| *o = i)
+        .count();
+
+    assert!(n < MAX_UDP_SIZE);
+
+    n
 }
 
-fn deserialize(byte_buf: &[u8]) -> AudioBuffer {
-    todo!();
+fn deserialize(byte_buf: &[u8], sample_rate: SampleRate) -> AudioBuffer {
+    let samples: Vec<f32> = byte_buf
+        .chunks_exact(2)
+        .take(128)
+        .map(|bs| i16::from_be_bytes(bs.try_into().unwrap()))
+        .map(|i| i as f32 / i16::MAX as f32)
+        .collect();
+    AudioBuffer::from(vec![samples], sample_rate)
 }
 
 struct SocketStream {
     socket: &'static UdpSocket,
+    sample_rate: SampleRate,
     byte_buf: Vec<u8>,
 }
 
@@ -77,13 +112,13 @@ impl Iterator for SocketStream {
                 let options = AudioBufferOptions {
                     number_of_channels: 1,
                     length: RENDER_QUANTUM_SIZE,
-                    sample_rate: SampleRate(48000),
+                    sample_rate: self.sample_rate,
                 };
                 return Some(Ok(AudioBuffer::new(options)));
             }
             Err(e) => panic!("client recv IO error: {}", e),
         };
-        Some(Ok(deserialize(bytes)))
+        Some(Ok(deserialize(bytes, self.sample_rate)))
     }
 }
 
@@ -104,6 +139,7 @@ fn run_client() -> std::io::Result<()> {
     // leg 1: receive server packets and play them
     let stream = SocketStream {
         socket,
+        sample_rate: context.sample_rate_raw(),
         byte_buf: vec![0; 512],
     };
     let stream_in = context.create_media_stream_source(stream);
