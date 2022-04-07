@@ -393,6 +393,7 @@ pub(crate) fn build_output(
     streamer.get_output_stream()
 }
 
+#[allow(clippy::needless_pass_by_value)]
 /// Builds the input
 pub fn build_input(options: AudioInputOptions) -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let host = cpal::default_host();
@@ -427,8 +428,8 @@ pub fn build_input(options: AudioInputOptions) -> (Stream, StreamConfig, Receive
 
     let mut config: StreamConfig = supported_config.into();
     config.buffer_size = cpal::BufferSize::Fixed(input_buffer_size);
-    if options.sample_rate.is_some() {
-        config.sample_rate = CpalSampleRate(options.sample_rate.unwrap());
+    if let Some(sample_rate) = options.sample_rate {
+        config.sample_rate = CpalSampleRate(sample_rate);
     }
 
     let sample_rate = SampleRate(config.sample_rate.0);

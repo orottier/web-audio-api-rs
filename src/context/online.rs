@@ -131,7 +131,7 @@ impl AudioContext {
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(options: AudioContextOptions) -> Self {
         let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100));
-        let number_of_channels = 2u32;
+        let number_of_channels = 2_u32;
 
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
