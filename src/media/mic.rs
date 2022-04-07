@@ -7,7 +7,7 @@ use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 #[cfg(not(test))]
 use crossbeam_channel::Sender;
 #[cfg(not(test))]
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[cfg(not(test))]
 use crate::buffer::ChannelData;
@@ -23,10 +23,10 @@ use crossbeam_channel::{Receiver, TryRecvError};
 mod private {
     use super::*;
 
-    pub struct StreamHolder(Arc<Stream>);
+    pub struct StreamHolder(Arc<Mutex<Option<Stream>>>);
 
     impl StreamHolder {
-        pub fn new(stream: Arc<Stream>) -> Self {
+        pub fn new(stream: Arc<Mutex<Option<Stream>>>) -> Self {
             StreamHolder(stream)
         }
     }
@@ -42,8 +42,12 @@ use private::StreamHolder;
 
 /// Microphone input stream
 ///
-/// It implements the [`MediaStream`](crate::media::MediaStream) trait so can be used inside a
-/// [`MediaStreamAudioSourceNode`](crate::node::MediaStreamAudioSourceNode)
+/// The Microphone can set up a [`MediaStream`](crate::media::MediaStream) value which can be used
+/// inside a [`MediaStreamAudioSourceNode`](crate::node::MediaStreamAudioSourceNode).
+///
+/// It is okay for the Microphone struct to go out of scope, any corresponding stream will still be
+/// kept alive and emit audio buffers. Call the `close()` method if you want to stop the microphone
+/// input and release all system resources.
 ///
 /// # Warning
 ///
@@ -74,7 +78,7 @@ pub struct Microphone {
     sample_rate: SampleRate,
 
     #[cfg(not(test))]
-    stream: Arc<Stream>,
+    stream: Arc<Mutex<Option<Stream>>>,
 }
 
 impl Microphone {
@@ -89,7 +93,7 @@ impl Microphone {
 
         // shared ownership for the stream, because the Microphone is allowed to go out of scope
         // but all corresponding streams should still yield output
-        let stream = Arc::new(stream);
+        let stream = Arc::new(Mutex::new(Some(stream)));
 
         Self {
             receiver,
@@ -110,7 +114,9 @@ impl Microphone {
     /// * For a `BackendSpecificError`
     pub fn suspend(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        self.stream.pause().unwrap()
+        if let Some(stream) = self.stream.lock().unwrap().as_ref() {
+            stream.pause().unwrap()
+        }
     }
 
     /// Resumes the input stream that has previously been suspended/paused.
@@ -123,7 +129,16 @@ impl Microphone {
     /// * For a `BackendSpecificError`
     pub fn resume(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        self.stream.play().unwrap()
+        if let Some(stream) = self.stream.lock().unwrap().as_ref() {
+            stream.play().unwrap()
+        }
+    }
+
+    /// Closes the microphone input stream, releasing the system resources being used.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn close(self) {
+        #[cfg(not(test))] // in tests, do not set up a cpal Stream
+        self.stream.lock().unwrap().take(); // will Drop
     }
 
     /// A [`MediaStream`] iterator producing audio buffers from the microphone input

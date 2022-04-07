@@ -23,8 +23,9 @@ fn main() {
     mic.resume();
     std::thread::sleep(std::time::Duration::from_secs(2));
 
-    // Microphone is allowed to go out of scope, recording should continue
-    println!("Drop mic and resume for 4 seconds");
-    drop(mic);
-    std::thread::sleep(std::time::Duration::from_secs(4));
+    // Closing the mic should halt the media stream source
+    println!("Close mic - halting stream");
+    mic.close();
+
+    std::thread::sleep(std::time::Duration::from_secs(2));
 }
