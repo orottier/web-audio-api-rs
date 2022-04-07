@@ -393,8 +393,9 @@ pub(crate) fn build_output(
     streamer.get_output_stream()
 }
 
-#[allow(clippy::needless_pass_by_value)]
+
 /// Builds the input
+#[allow(clippy::needless_pass_by_value)]
 pub fn build_input(options: AudioInputOptions) -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let host = cpal::default_host();
     let device = host
