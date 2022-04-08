@@ -393,7 +393,6 @@ pub(crate) fn build_output(
     streamer.get_output_stream()
 }
 
-
 /// Builds the input
 #[allow(clippy::needless_pass_by_value)]
 pub fn build_input(options: AudioInputOptions) -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
