@@ -147,7 +147,7 @@ impl AudioParamEventTimeline {
         self.inner[0] = item;
     }
 
-    fn is_empty(&mut self) -> bool {
+    fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
