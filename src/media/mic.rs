@@ -1,10 +1,13 @@
 use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
+use crate::media::MediaStream;
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 #[cfg(not(test))]
 use crossbeam_channel::Sender;
+#[cfg(not(test))]
+use std::sync::{Arc, Mutex};
 
 #[cfg(not(test))]
 use crate::buffer::ChannelData;
@@ -16,10 +19,35 @@ use cpal::{traits::StreamTrait, Sample, Stream};
 
 use crossbeam_channel::{Receiver, TryRecvError};
 
+#[cfg(not(test))]
+mod private {
+    use super::*;
+
+    pub struct StreamHolder(Arc<Mutex<Option<Stream>>>);
+
+    impl StreamHolder {
+        pub fn new(stream: Arc<Mutex<Option<Stream>>>) -> Self {
+            StreamHolder(stream)
+        }
+    }
+
+    // SAFETY: Stream is not Send, but we do want to have shared ownership via an Arc.
+    // The StreamHolder is simply keeping the Stream alive, it does not allow any mutation to it.
+    #[allow(clippy::non_send_fields_in_send_ty)]
+    unsafe impl Send for StreamHolder {}
+}
+
+#[cfg(not(test))]
+use private::StreamHolder;
+
 /// Microphone input stream
 ///
-/// It implements the [`MediaStream`](crate::media::MediaStream) trait so can be used inside a
-/// [`MediaStreamAudioSourceNode`](crate::node::MediaStreamAudioSourceNode)
+/// The Microphone can set up a [`MediaStream`](crate::media::MediaStream) value which can be used
+/// inside a [`MediaStreamAudioSourceNode`](crate::node::MediaStreamAudioSourceNode).
+///
+/// It is okay for the Microphone struct to go out of scope, any corresponding stream will still be
+/// kept alive and emit audio buffers. Call the `close()` method if you want to stop the microphone
+/// input and release all system resources.
 ///
 /// # Warning
 ///
@@ -35,11 +63,12 @@ use crossbeam_channel::{Receiver, TryRecvError};
 ///
 /// let context = AudioContext::default();
 ///
-/// let stream = Microphone::new(AudioInputOptions {sample_rate: Some(48000)});
+/// let mic = Microphone::new(AudioInputOptions { sample_rate: Some(48000) });
 /// // or you can create Microphone with default options
-/// let stream = Microphone::default();
+/// // let stream = Microphone::default();
+///
 /// // register as media element in the audio context
-/// let background = context.create_media_stream_source(stream);
+/// let background = context.create_media_stream_source(mic.stream());
 /// // connect the node directly to the destination node (speakers)
 /// background.connect(&context.destination());
 ///
@@ -52,13 +81,8 @@ pub struct Microphone {
     sample_rate: SampleRate,
 
     #[cfg(not(test))]
-    stream: Stream,
+    stream: Arc<Mutex<Option<Stream>>>,
 }
-
-// Todo, the Microphone struct is shipped to the render thread
-// but it contains a Stream which is not Send.
-#[allow(clippy::non_send_fields_in_send_ty)]
-unsafe impl Send for Microphone {}
 
 impl Microphone {
     /// Setup the default microphone input stream
@@ -69,6 +93,10 @@ impl Microphone {
 
         let sample_rate = SampleRate(config.sample_rate.0);
         let number_of_channels = config.channels as usize;
+
+        // shared ownership for the stream, because the Microphone is allowed to go out of scope
+        // but all corresponding streams should still yield output
+        let stream = Arc::new(Mutex::new(Some(stream)));
 
         Self {
             receiver,
@@ -89,7 +117,9 @@ impl Microphone {
     /// * For a `BackendSpecificError`
     pub fn suspend(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        self.stream.pause().unwrap()
+        if let Some(stream) = self.stream.lock().unwrap().as_ref() {
+            stream.pause().unwrap()
+        }
     }
 
     /// Resumes the input stream that has previously been suspended/paused.
@@ -102,7 +132,31 @@ impl Microphone {
     /// * For a `BackendSpecificError`
     pub fn resume(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        self.stream.play().unwrap()
+        if let Some(stream) = self.stream.lock().unwrap().as_ref() {
+            stream.play().unwrap()
+        }
+    }
+
+    /// Closes the microphone input stream, releasing the system resources being used.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn close(self) {
+        #[cfg(not(test))] // in tests, do not set up a cpal Stream
+        self.stream.lock().unwrap().take(); // will Drop
+    }
+
+    /// A [`MediaStream`] iterator producing audio buffers from the microphone input
+    ///
+    /// Note that while you can call this function multiple times and poll all iterators
+    /// concurrently, this could lead to unexpected behavior as the buffers will only be offered
+    /// once.
+    pub fn stream(&self) -> impl MediaStream {
+        MicrophoneStream {
+            receiver: self.receiver.clone(),
+            number_of_channels: self.number_of_channels,
+            sample_rate: self.sample_rate,
+            #[cfg(not(test))]
+            _stream: StreamHolder::new(self.stream.clone()),
+        }
     }
 }
 
@@ -113,7 +167,19 @@ impl Default for Microphone {
     }
 }
 
-impl Iterator for Microphone {
+// no need for public documentation because the concrete type is never returned (an impl
+// MediaStream is returned instead)
+#[doc(hidden)]
+pub struct MicrophoneStream {
+    receiver: Receiver<AudioBuffer>,
+    number_of_channels: usize,
+    sample_rate: SampleRate,
+
+    #[cfg(not(test))]
+    _stream: StreamHolder,
+}
+
+impl Iterator for MicrophoneStream {
     type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -124,7 +190,7 @@ impl Iterator for Microphone {
             }
             Err(TryRecvError::Empty) => {
                 // frame not received in time, emit silence
-                log::debug!("input frame delayed");
+                // log::debug!("input frame delayed");
 
                 let options = AudioBufferOptions {
                     number_of_channels: self.number_of_channels,
@@ -193,5 +259,12 @@ impl MicrophoneRender {
         if result.is_err() {
             log::debug!("input frame dropped");
         }
+    }
+}
+
+#[cfg(not(test))]
+impl Drop for MicrophoneRender {
+    fn drop(&mut self) {
+        log::debug!("Microphone input has been dropped");
     }
 }
