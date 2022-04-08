@@ -23,7 +23,7 @@ use cpal::{
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
-use crate::media::{AudioInputOptions, MicrophoneRender};
+use crate::media::MicrophoneRender;
 use crate::render::RenderThread;
 
 use crossbeam_channel::{Receiver, Sender};
@@ -395,7 +395,7 @@ pub(crate) fn build_output(
 
 /// Builds the input
 #[allow(clippy::needless_pass_by_value)]
-pub fn build_input(options: AudioInputOptions) -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
+pub fn build_input(options: AudioContextOptions) -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
