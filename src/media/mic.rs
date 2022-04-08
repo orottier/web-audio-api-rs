@@ -5,6 +5,9 @@ use crate::media::MediaStream;
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 #[cfg(not(test))]
+use crate::context::AudioContextOptions;
+
+#[cfg(not(test))]
 use crossbeam_channel::Sender;
 #[cfg(not(test))]
 use std::sync::{Arc, Mutex};
@@ -58,12 +61,21 @@ use private::StreamHolder;
 ///
 /// ```no_run
 /// use web_audio_api::context::{BaseAudioContext, AudioContext};
+/// use web_audio_api::context::{AudioContextLatencyCategory, AudioContextOptions};
 /// use web_audio_api::media::Microphone;
 /// use web_audio_api::node::AudioNode;
 ///
 /// let context = AudioContext::default();
 ///
-/// let mic = Microphone::new();
+/// // Request an input sample rate of 44.1 kHz and default latency (buffer size 128, if available)
+/// let opts = AudioContextOptions {
+///     sample_rate: Some(44100),
+///     latency_hint: AudioContextLatencyCategory::Interactive,
+/// };
+/// let mic = Microphone::new(opts);
+/// // or you can create Microphone with default options
+/// // let stream = Microphone::default();
+///
 /// // register as media element in the audio context
 /// let background = context.create_media_stream_source(mic.stream());
 /// // connect the node directly to the destination node (speakers)
@@ -83,9 +95,12 @@ pub struct Microphone {
 
 impl Microphone {
     /// Setup the default microphone input stream
+    ///
+    /// Note: the specified `latency_hint` is currently ignored, follow our progress at
+    /// <https://github.com/orottier/web-audio-api-rs/issues/51>
     #[cfg(not(test))]
-    pub fn new() -> Self {
-        let (stream, config, receiver) = io::build_input();
+    pub fn new(options: AudioContextOptions) -> Self {
+        let (stream, config, receiver) = io::build_input(options);
         log::debug!("Input {:?}", config);
 
         let sample_rate = SampleRate(config.sample_rate.0);
@@ -160,7 +175,7 @@ impl Microphone {
 #[cfg(not(test))]
 impl Default for Microphone {
     fn default() -> Self {
-        Self::new()
+        Self::new(AudioContextOptions::default())
     }
 }
 

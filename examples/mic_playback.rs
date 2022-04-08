@@ -293,7 +293,7 @@ impl AudioThread {
     fn new() -> Self {
         let context = AudioContext::default();
 
-        let mic = Microphone::new();
+        let mic = Microphone::default();
         let mic_in = context.create_media_stream_source(mic.stream());
 
         let analyser = Arc::new(context.create_analyser());

@@ -17,7 +17,8 @@ use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    BuildStreamError, Device, SampleFormat, Stream, StreamConfig, SupportedBufferSize,
+    BuildStreamError, Device, SampleFormat, SampleRate as CpalSampleRate, Stream, StreamConfig,
+    SupportedBufferSize,
 };
 
 use crate::buffer::AudioBuffer;
@@ -393,7 +394,8 @@ pub(crate) fn build_output(
 }
 
 /// Builds the input
-pub fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
+#[allow(clippy::needless_pass_by_value)]
+pub fn build_input(options: AudioContextOptions) -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
@@ -403,6 +405,7 @@ pub fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
     let mut supported_configs_range = device
         .supported_input_configs()
         .expect("error while querying configs");
+
     let supported_config = supported_configs_range
         .next()
         .expect("no supported config?!")
@@ -425,6 +428,10 @@ pub fn build_input() -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
 
     let mut config: StreamConfig = supported_config.into();
     config.buffer_size = cpal::BufferSize::Fixed(input_buffer_size);
+    if let Some(sample_rate) = options.sample_rate {
+        config.sample_rate = CpalSampleRate(sample_rate);
+    }
+
     let sample_rate = SampleRate(config.sample_rate.0);
     let channels = config.channels as usize;
 
