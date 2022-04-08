@@ -1,5 +1,5 @@
 //! The `AudioContext` type and constructor options
-use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
+use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::media::MediaStream;
 use crate::node::{self, ChannelConfigOptions};
 use crate::SampleRate;
@@ -163,12 +163,13 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    pub fn suspend_sync(&self) {
+    pub fn suspend_sync(&mut self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         if let Some(s) = self.stream.lock().unwrap().as_ref() {
             if let Err(e) = s.pause() {
                 panic!("Error suspending cpal stream: {:?}", e);
             }
+            self.base.set_state(AudioContextState::SUSPENDED);
         }
     }
 
@@ -186,12 +187,13 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    pub fn resume_sync(&self) {
+    pub fn resume_sync(&mut self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         if let Some(s) = self.stream.lock().unwrap().as_ref() {
             if let Err(e) = s.play() {
                 panic!("Error resuming cpal stream: {:?}", e);
             }
+            self.base.set_state(AudioContextState::RUNNING);
         }
     }
 
@@ -208,9 +210,10 @@ impl AudioContext {
     /// Will panic when this function is called multiple times
     // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    pub fn close_sync(&self) {
+    pub fn close_sync(&mut self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.lock().unwrap().take(); // will Drop
+        self.base.set_state(AudioContextState::CLOSED);
     }
 
     /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]
