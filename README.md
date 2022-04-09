@@ -8,52 +8,93 @@ A pure Rust implementation of the Web Audio API, for use in non-browser contexts
 
 [MDN docs](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 
+[W3C Spec](https://www.w3.org/TR/webaudio/)
+
 The Web Audio API provides a powerful and versatile system for controlling
 audio on the Web, allowing developers to choose audio sources, add effects to
 audio, create audio visualizations, apply spatial effects (such as panning) and
 much more.
 
-## Usage
+Our Rust implementation decouples the Web Audio API from the Web. You can now
+use it in desktop apps, command line utilities, headless execution, etc.
 
-[Docs](https://docs.rs/web-audio-api)
+## Example usage
 
-## Planning
+```rust
+use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
-- v0.\*: getting the basics out, stabilize API
-- v1.\*: feature completeness
-- v2.\*: full spec compliance
+// set up the audio context with optimized settings for your hardware
+let context = AudioContext::default();
+
+// for background music, read from local file
+let file = std::fs::File::open("samples/major-scale.ogg").unwrap();
+let buffer = context.decode_audio_data_sync(file).unwrap();
+
+// setup an AudioBufferSourceNode
+let src = context.create_buffer_source();
+src.set_buffer(buffer);
+src.set_loop(true);
+
+// create a biquad filter
+let biquad = context.create_biquad_filter();
+biquad.frequency().set_value(125.);
+
+// connect the audio nodes
+src.connect(&biquad);
+biquad.connect(&context.destination());
+
+// play the buffer
+src.start();
+
+// enjoy listening
+loop { }
+```
+
+Check out the [docs](https://docs.rs/web-audio-api) for more info.
 
 ## Spec compliance
 
-Current deviations
+We have tried to stick to the official W3C spec as close as possible, but some
+deviations could not be avoided:
 
-- snake_case instead of CamelCase
-- getters/setters instead of exposed attributes
+- naming: snake\_case instead of CamelCase
+- getters/setters methods instead of exposed attributes
 - introduced some namespacing
-- functions that should return Promises are now blocking
 - AudioWorklet functionality is provided in a more rust-friendly way
 - inheritance is modelled with traits
 - ...
 
+## Limitations
+
+Our main limitations include:
+
+- no ConvolverNode
+- no DynamicsCompressor
+- some PannerNode features missing
+- no async methods (JS Promises)
+- no event handling
+
+These will be resolved in the future, stay tuned!
+
 ## Contributing
 
-web_audio_api_rs welcomes contribution from everyone in the form of suggestions, bug reports,
+web-audio-api-rs welcomes contribution from everyone in the form of suggestions, bug reports,
 pull requests, and feedback. 💛
 
 If you need ideas for contribution, there are several ways to get started:
 
+- Try out some of our examples (located in the `examples/` directory) and start
+  building your own audio graphs
 - Found a bug or have a feature request?
   [Submit an issue](https://github.com/orottier/web-audio-api-rs/issues/new)!
-- Issues and PRs labeled with
-  [feedback wanted](https://github.com/orottier/web-audio-api-rs/issues?utf8=%E2%9C%93&q=is%3Aopen+sort%3Aupdated-desc+label%3A%22feedback+wanted%22+)
-  need feedback from users and contributors.
 - Issues labeled with
   [good first issue](https://github.com/orottier/web-audio-api-rs/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc+label%3A%22good+first+issue%22)
   are relatively easy starter issues.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in web-audio-api-rs by you, shall be licensed as MIT, without any additional
-terms or conditions.
+for inclusion in web-audio-api-rs by you, shall be licensed as MIT, without any
+additional terms or conditions.
 
 ## License
 
