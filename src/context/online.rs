@@ -7,7 +7,6 @@ use crate::SampleRate;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-#[cfg(not(test))]
 use std::sync::Mutex;
 
 #[cfg(not(test))]
@@ -66,6 +65,9 @@ pub struct AudioContext {
     /// cpal stream (play/pause functionality)
     #[cfg(not(test))] // in tests, do not set up a cpal Stream
     stream: Mutex<Option<Stream>>,
+
+    /// Describes the current state of the `AudioContext`
+    state: Mutex<AudioContextState>,
 }
 
 impl BaseAudioContext for AudioContext {
@@ -123,6 +125,7 @@ impl AudioContext {
         Self {
             base,
             stream: Mutex::new(Some(stream)),
+            state: Mutex::new(AudioContextState::Running),
         }
     }
 
@@ -144,7 +147,10 @@ impl AudioContext {
             false,
         );
 
-        Self { base }
+        Self {
+            base,
+            state: Mutex::new(AudioContextState::Running),
+        }
     }
 
     /// Suspends the progression of time in the audio context.
@@ -169,7 +175,7 @@ impl AudioContext {
             if let Err(e) = s.pause() {
                 panic!("Error suspending cpal stream: {:?}", e);
             }
-            self.base.set_state(AudioContextState::SUSPENDED);
+            *self.state.lock().unwrap() = AudioContextState::Suspended;
         }
     }
 
@@ -193,7 +199,7 @@ impl AudioContext {
             if let Err(e) = s.play() {
                 panic!("Error resuming cpal stream: {:?}", e);
             }
-            self.base.set_state(AudioContextState::RUNNING);
+            *self.state.lock().unwrap() = AudioContextState::Running;
         }
     }
 
@@ -213,7 +219,7 @@ impl AudioContext {
     pub fn close_sync(&mut self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.lock().unwrap().take(); // will Drop
-        self.base.set_state(AudioContextState::CLOSED);
+        *self.state.lock().unwrap() = AudioContextState::Closed;
     }
 
     /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]

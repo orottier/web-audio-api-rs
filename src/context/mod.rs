@@ -49,17 +49,17 @@ impl From<&AudioParamId> for NodeIndex {
     }
 }
 
-/// Describes the current state of the BaseAudioContext
+/// Describes the current state of the `AudioContext`
 #[derive(Debug, Copy, Clone)]
 pub enum AudioContextState {
     /// This context is currently suspended (context time is not proceeding,
     /// audio hardware may be powered down/released).
-    SUSPENDED,
+    Suspended,
     /// Audio is being processed.
-    RUNNING,
+    Running,
     /// This context has been released, and can no longer be used to process audio.
     /// All system audio resources have been released.
-    CLOSED,
+    Closed,
 }
 
 /// Handle of the [`AudioNode`](crate::node::AudioNode) to its associated [`BaseAudioContext`].

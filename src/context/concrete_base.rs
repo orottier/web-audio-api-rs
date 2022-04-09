@@ -1,7 +1,7 @@
 //! The `ConcreteBaseAudioContext` type
 
 use crate::context::{
-    AudioContextRegistration, AudioContextState, AudioNodeId, BaseAudioContext,
+    AudioContextRegistration, AudioNodeId, BaseAudioContext,
     DESTINATION_NODE_ID, LISTENER_NODE_ID, LISTENER_PARAM_IDS,
 };
 use crate::message::ControlMessage;
@@ -65,8 +65,6 @@ struct ConcreteBaseAudioContextInner {
     listener_params: Option<AudioListenerParams>,
     /// Denotes if this AudioContext is offline or not
     offline: bool,
-    /// Describes the current state of the BaseAudioContext
-    state: AudioContextState,
 }
 
 impl BaseAudioContext for ConcreteBaseAudioContext {
@@ -98,7 +96,6 @@ impl ConcreteBaseAudioContext {
             queued_audio_listener_msgs: Mutex::new(Vec::new()),
             listener_params: None,
             offline,
-            state: AudioContextState::SUSPENDED,
         };
         let base = Self {
             inner: Arc::new(base_inner),
@@ -142,7 +139,6 @@ impl ConcreteBaseAudioContext {
 
         let mut base = base;
         let mut inner_mut = Arc::get_mut(&mut base.inner).unwrap();
-        inner_mut.state = AudioContextState::RUNNING;
         inner_mut.listener_params = Some(listener_params);
         inner_mut.destination_channel_count = dest_channels;
 
@@ -226,15 +222,6 @@ impl ConcreteBaseAudioContext {
     #[must_use]
     pub fn channels(&self) -> u32 {
         self.inner.number_of_channels
-    }
-
-    #[must_use]
-    pub fn state(&self) -> AudioContextState {
-        self.inner.state
-    }
-
-    pub(super) fn set_state(&mut self, state: AudioContextState) {
-        self.inner.state = state;
     }
 
     /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]
