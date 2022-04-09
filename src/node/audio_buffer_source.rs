@@ -187,7 +187,7 @@ impl AudioBufferSourceNode {
                 // that the `vec` will always be resized to actual buffer number_of_channels when
                 // received on the render thread.
                 internal_buffer: Vec::<f32>::with_capacity(crate::MAX_CHANNELS),
-                context,
+                context
             };
 
             let node = Self {

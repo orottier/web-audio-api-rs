@@ -79,7 +79,6 @@ impl ChannelSplitterNode {
 
             let render = ChannelSplitterRenderer {
                 number_of_outputs: node.channel_count(),
-                context,
             };
 
             (node, Box::new(render))
@@ -90,7 +89,6 @@ impl ChannelSplitterNode {
 #[derive(Debug)]
 struct ChannelSplitterRenderer {
     pub number_of_outputs: usize,
-    context: dyn BaseAudioContext,
 }
 
 impl AudioProcessor for ChannelSplitterRenderer {
@@ -102,9 +100,6 @@ impl AudioProcessor for ChannelSplitterRenderer {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() {
-            false
-        }
         // single input node
         let input = &inputs[0];
 

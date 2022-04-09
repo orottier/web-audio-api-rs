@@ -190,8 +190,6 @@ struct FilterRendererBuilder {
     /// filter's states
     /// if the states is not used, it stays to 0. and will be never accessed
     states: Vec<[f64; MAX_CHANNELS]>,
-
-    context: dyn BaseAudioContext,
 }
 
 impl FilterRendererBuilder {
@@ -206,7 +204,6 @@ impl FilterRendererBuilder {
         let RendererConfig {
             mut feedforward,
             mut feedback,
-            context,
         } = config;
 
         match (feedforward.len(), feedback.len()) {
@@ -235,7 +232,6 @@ impl FilterRendererBuilder {
         Self {
             coeffs,
             states,
-            context,
         }
     }
 
@@ -252,7 +248,6 @@ impl FilterRendererBuilder {
         IirFilterRenderer {
             norm_coeffs: self.coeffs,
             states: self.states,
-            context: self.context,
         }
     }
 }
@@ -264,7 +259,6 @@ struct RendererConfig {
     feedforward: Vec<f64>,
     /// feedback coeffs -- `a[n]` -- denominator coeffs
     feedback: Vec<f64>,
-    context: dyn BaseAudioContext,
 }
 
 /// Renderer associated with the `IirFilterNode`
@@ -273,7 +267,6 @@ struct IirFilterRenderer {
     norm_coeffs: Vec<(f64, f64)>,
     /// filter's states
     states: Vec<[f64; MAX_CHANNELS]>,
-    context: dyn BaseAudioContext,
 }
 
 impl AudioProcessor for IirFilterRenderer {
@@ -285,9 +278,6 @@ impl AudioProcessor for IirFilterRenderer {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() {
-            false
-        }
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];

@@ -131,7 +131,7 @@ impl StereoPannerNode {
 
             pan_param.set_value(pan_value);
 
-            let renderer = StereoPannerRenderer::new(pan_proc, context);
+            let renderer = StereoPannerRenderer::new(pan_proc );
             let node = Self {
                 registration,
                 channel_config: options.channel_config.into(),
@@ -150,14 +150,13 @@ impl StereoPannerNode {
 }
 
 /// `StereoPannerRenderer` represents the rendering part of `StereoPannerNode`
-struct StereoPannerRenderer<C: BaseAudioContext> {
+struct StereoPannerRenderer {
     /// The position of the input in the output’s stereo image.
     /// -1 represents full left, +1 represents full right.
     pan: AudioParamId,
-    context: C,
 }
 
-impl<C: BaseAudioContext> AudioProcessor for StereoPannerRenderer<C> {
+impl AudioProcessor for StereoPannerRenderer {
     fn process(
         &mut self,
         inputs: &[AudioRenderQuantum],
@@ -166,9 +165,6 @@ impl<C: BaseAudioContext> AudioProcessor for StereoPannerRenderer<C> {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() {
-            false
-        }
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
@@ -210,13 +206,13 @@ impl<C: BaseAudioContext> AudioProcessor for StereoPannerRenderer<C> {
     }
 }
 
-impl<C: BaseAudioContext> StereoPannerRenderer<C> {
+impl StereoPannerRenderer {
     /// returns an `StereoPannerRenderer` instance
     // new cannot be qualified as const, since constant functions cannot evaluate destructors
     // and config param need this evaluation
     #[allow(clippy::missing_const_for_fn)]
-    fn new(pan: AudioParamId, context: C) -> Self {
-        Self { pan, context }
+    fn new(pan: AudioParamId ) -> Self {
+        Self { pan }
     }
 
     /// Generates the output samples for a mono input

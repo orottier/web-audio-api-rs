@@ -93,7 +93,6 @@ impl AnalyserNode {
                 fft_size: fft_size.clone(),
                 smoothing_time_constant: smoothing_time_constant.clone(),
                 receiver,
-                context,
             };
 
             let node = AnalyserNode {
@@ -162,7 +161,6 @@ struct AnalyserRenderer {
     pub fft_size: Arc<AtomicU32>,
     pub smoothing_time_constant: Arc<AtomicU32>,
     pub receiver: Receiver<AnalyserRequest>,
-    context: dyn BaseAudioContext,
 }
 
 // SAFETY:
@@ -179,10 +177,6 @@ impl AudioProcessor for AnalyserRenderer {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() {
-            false
-        }
-
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];

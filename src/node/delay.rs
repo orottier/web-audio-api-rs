@@ -228,7 +228,6 @@ impl DelayNode {
                     // Note that the `vec` will always be resized to actual buffer
                     // number_of_channels when received on the render thread.
                     internal_buffer: Vec::<f32>::with_capacity(crate::MAX_CHANNELS),
-                    context,
                 };
 
                 let node = DelayNode {
@@ -272,7 +271,6 @@ struct DelayReader {
     last_written_index_checked: Option<usize>,
     // internal buffer used to compute output per channel at each frame
     internal_buffer: Vec<f32>,
-    context: dyn BaseAudioContext,
 }
 
 // SAFETY:
