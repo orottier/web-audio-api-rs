@@ -1,8 +1,8 @@
 //! The `ConcreteBaseAudioContext` type
 
 use crate::context::{
-    AudioContextRegistration, AudioNodeId, BaseAudioContext,
-    DESTINATION_NODE_ID, LISTENER_NODE_ID, LISTENER_PARAM_IDS,
+    AudioContextRegistration, AudioNodeId, BaseAudioContext, DESTINATION_NODE_ID, LISTENER_NODE_ID,
+    LISTENER_PARAM_IDS,
 };
 use crate::message::ControlMessage;
 use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig};

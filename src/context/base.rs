@@ -2,8 +2,8 @@
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::context::{
-    AudioContextRegistration, AudioNodeId, AudioParamId,
-    ConcreteBaseAudioContext, DESTINATION_NODE_ID,
+    AudioContextRegistration, AudioNodeId, AudioParamId, ConcreteBaseAudioContext,
+    DESTINATION_NODE_ID,
 };
 use crate::media::MediaDecoder;
 use crate::node::{AudioNode, ChannelConfigOptions};
