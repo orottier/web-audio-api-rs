@@ -1,19 +1,17 @@
 # Rust Web Audio API
 
 [![crates.io](https://img.shields.io/crates/v/web-audio-api.svg)](https://crates.io/crates/web-audio-api)
+[![docs.rs](https://img.shields.io/docsrs/web-audio-api)](https://docs.rs/web-audio-api)
 
 A pure Rust implementation of the Web Audio API, for use in non-browser contexts
 
 ## About the Web Audio API
 
-[MDN docs](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
-
-[W3C Spec](https://www.w3.org/TR/webaudio/)
-
-The Web Audio API provides a powerful and versatile system for controlling
-audio on the Web, allowing developers to choose audio sources, add effects to
-audio, create audio visualizations, apply spatial effects (such as panning) and
-much more.
+The [Web Audio API](https://www.w3.org/TR/webaudio/)
+([MDN docs](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API))
+provides a powerful and versatile system for controlling audio on the Web,
+allowing developers to choose audio sources, add effects to audio, create audio
+visualizations, apply spatial effects (such as panning) and much more.
 
 Our Rust implementation decouples the Web Audio API from the Web. You can now
 use it in desktop apps, command line utilities, headless execution, etc.
