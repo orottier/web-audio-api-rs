@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::buffer::AudioBuffer;
-use crate::context::{AudioContextRegistration, BaseAudioContext};
+use crate::context::{AudioContextRegistration, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
@@ -94,7 +94,7 @@ impl MediaStreamAudioDestinationNode {
             let render = DestinationRenderer {
                 send,
                 recv,
-                context,
+                context: registration.context(),
             };
 
             (node, Box::new(render))
@@ -113,13 +113,13 @@ impl MediaStreamAudioDestinationNode {
     }
 }
 
-struct DestinationRenderer {
+struct DestinationRenderer<'a> {
     send: Sender<AudioBuffer>,
     recv: Receiver<AudioBuffer>,
-    context: dyn BaseAudioContext,
+    context: &'a ConcreteBaseAudioContext,
 }
 
-impl AudioProcessor for DestinationRenderer {
+impl<'a> AudioProcessor for DestinationRenderer<'a> {
     fn process(
         &mut self,
         inputs: &[AudioRenderQuantum],

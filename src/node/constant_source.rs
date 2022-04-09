@@ -1,4 +1,4 @@
-use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
@@ -117,7 +117,7 @@ impl ConstantSourceNode {
             let render = ConstantSourceRenderer {
                 offset: proc,
                 scheduler: scheduler.clone(),
-                context,
+                context: registration.context(),
             };
 
             let node = ConstantSourceNode {
@@ -136,13 +136,13 @@ impl ConstantSourceNode {
     }
 }
 
-struct ConstantSourceRenderer {
+struct ConstantSourceRenderer<'a> {
     offset: AudioParamId,
     scheduler: Scheduler,
-    context: dyn BaseAudioContext,
+    context: &'a ConcreteBaseAudioContext,
 }
 
-impl AudioProcessor for ConstantSourceRenderer {
+impl<'a> AudioProcessor for ConstantSourceRenderer<'a> {
     fn process(
         &mut self,
         _inputs: &[AudioRenderQuantum],

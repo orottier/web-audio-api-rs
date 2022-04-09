@@ -2,7 +2,7 @@
 use std::slice::{Iter, IterMut};
 use std::sync::Arc;
 
-use crate::context::{AudioContextRegistration, BaseAudioContext};
+use crate::context::{AudioContextRegistration, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
@@ -544,7 +544,7 @@ impl AudioParam {
 }
 
 #[derive(Debug)]
-pub(crate) struct AudioParamProcessor {
+pub(crate) struct AudioParamProcessor<'a> {
     intrisic_value: f32,
     current_value: Arc<AtomicF32>,
     receiver: Receiver<AudioParamEvent>,
@@ -555,10 +555,10 @@ pub(crate) struct AudioParamProcessor {
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
     buffer: Vec<f32>,
-    context: dyn BaseAudioContext,
+    context: &'a ConcreteBaseAudioContext,
 }
 
-impl AudioProcessor for AudioParamProcessor {
+impl<'a> AudioProcessor for AudioParamProcessor<'a> {
     fn process(
         &mut self,
         inputs: &[AudioRenderQuantum],
@@ -586,7 +586,7 @@ impl AudioProcessor for AudioParamProcessor {
     }
 }
 
-impl AudioParamProcessor {
+impl<'a> AudioParamProcessor<'a> {
     pub fn intrisic_value(&self) -> f32 {
         if self.intrisic_value.is_nan() {
             self.default_value
@@ -1427,6 +1427,7 @@ pub(crate) fn audio_param_pair(
         event_timeline: AudioParamEventTimeline::new(),
         last_event: None,
         buffer: Vec::with_capacity(RENDER_QUANTUM_SIZE),
+        context: registration.context()
     };
 
     (param, render)

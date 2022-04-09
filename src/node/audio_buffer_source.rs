@@ -3,7 +3,7 @@ use once_cell::sync::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::buffer::AudioBuffer;
-use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::control::Controller;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
@@ -187,7 +187,7 @@ impl AudioBufferSourceNode {
                 // that the `vec` will always be resized to actual buffer number_of_channels when
                 // received on the render thread.
                 internal_buffer: Vec::<f32>::with_capacity(crate::MAX_CHANNELS),
-                context
+                context: registration.context()
             };
 
             let node = Self {
@@ -324,7 +324,7 @@ impl Default for AudioBufferRendererState {
     }
 }
 
-struct AudioBufferSourceRenderer {
+struct AudioBufferSourceRenderer<'a> {
     controller: Controller,
     receiver: Receiver<AudioBufferMessage>,
     buffer: Option<AudioBuffer>,
@@ -332,10 +332,10 @@ struct AudioBufferSourceRenderer {
     playback_rate: AudioParamId,
     render_state: AudioBufferRendererState,
     internal_buffer: Vec<f32>,
-    context: dyn BaseAudioContext,
+    context: &'a ConcreteBaseAudioContext,
 }
 
-impl AudioProcessor for AudioBufferSourceRenderer {
+impl<'a> AudioProcessor for AudioBufferSourceRenderer<'a> {
     fn process(
         &mut self,
         _inputs: &[AudioRenderQuantum], // no input...
@@ -531,7 +531,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
     }
 }
 
-impl AudioBufferSourceRenderer {
+impl<'a> AudioBufferSourceRenderer<'a> {
     // Pick the closest index to the given position
     //
     // @note - this is not used but we keep that around as it could be usefull

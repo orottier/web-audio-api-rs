@@ -47,18 +47,18 @@ impl MediaStreamAudioSourceNode {
         options: MediaStreamAudioSourceOptions<M>,
     ) -> Self {
         context.base().register(move |registration| {
-            let node = MediaStreamAudioSourceNode {
-                registration,
-                channel_config: ChannelConfig::default(),
-            };
-
             let resampler = Resampler::new(
                 context.sample_rate_raw(),
                 RENDER_QUANTUM_SIZE,
                 options.media_stream,
             );
 
-            let render = MediaStreamRenderer::new(resampler, context);
+            let render = MediaStreamRenderer::new(resampler, registration.context());
+
+            let node = MediaStreamAudioSourceNode {
+                registration,
+                channel_config: ChannelConfig::default(),
+            };
 
             (node, Box::new(render))
         })

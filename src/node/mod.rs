@@ -353,14 +353,14 @@ pub trait AudioScheduledSourceNode {
 
 // `MediaStreamRenderer` is internally used by `MediaElementAudioSourceNode` and
 // `MediaStreamAudioSourceNode`.
-struct MediaStreamRenderer<R, C: BaseAudioContext> {
+struct MediaStreamRenderer<'a, R> {
     stream: R,
     finished: bool,
-    context: C,
+    context: &'a ConcreteBaseAudioContext,
 }
 
-impl<R, C: BaseAudioContext> MediaStreamRenderer<R, C> {
-    fn new(stream: R, context: C) -> Self {
+impl<'a, R> MediaStreamRenderer<'a, R> {
+    fn new(stream: R, context: &'a ConcreteBaseAudioContext) -> Self {
         Self {
             stream,
             // scheduler,
@@ -370,7 +370,7 @@ impl<R, C: BaseAudioContext> MediaStreamRenderer<R, C> {
     }
 }
 
-impl<R: MediaStream, C: BaseAudioContext> AudioProcessor for MediaStreamRenderer<R, C> {
+impl<'a, R: MediaStream> AudioProcessor for MediaStreamRenderer<'a, R> {
     fn process(
         &mut self,
         _inputs: &[AudioRenderQuantum],
