@@ -226,6 +226,7 @@ impl OscillatorNode {
                 phase: 0.,
                 started: false,
                 periodic_wave: None,
+                context
             };
 
             let node = Self {
@@ -329,6 +330,8 @@ struct OscillatorRenderer {
     started: bool,
     // wavetable placeholder for custom oscillators
     periodic_wave: Option<PeriodicWave>,
+
+    context: dyn BaseAudioContext
 }
 
 impl AudioProcessor for OscillatorRenderer {
@@ -340,6 +343,7 @@ impl AudioProcessor for OscillatorRenderer {
         timestamp: f64,
         sample_rate: SampleRate,
     ) -> bool {
+        if self.context.is_closed() { false }
         // single output node
         let output = &mut outputs[0];
         // 1 channel output

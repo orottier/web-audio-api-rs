@@ -2,7 +2,7 @@
 use std::slice::{Iter, IterMut};
 use std::sync::Arc;
 
-use crate::context::AudioContextRegistration;
+use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
@@ -555,6 +555,7 @@ pub(crate) struct AudioParamProcessor {
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
     buffer: Vec<f32>,
+    context: dyn BaseAudioContext
 }
 
 impl AudioProcessor for AudioParamProcessor {
@@ -566,6 +567,7 @@ impl AudioProcessor for AudioParamProcessor {
         timestamp: f64,
         sample_rate: SampleRate,
     ) -> bool {
+        if self.context.is_closed() { false }
         let period = 1. / sample_rate.0 as f64;
         let param_intrisic_values = self.tick(timestamp, period, RENDER_QUANTUM_SIZE);
 

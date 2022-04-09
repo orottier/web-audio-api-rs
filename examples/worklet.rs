@@ -85,6 +85,7 @@ impl AudioProcessor for WhiteNoiseProcessor {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
+        if self.context.is_closed() { false }
         // single output node
         let output = &mut outputs[0];
 

@@ -91,7 +91,7 @@ impl MediaStreamAudioDestinationNode {
                 receiver: recv_control,
             };
 
-            let render = DestinationRenderer { send, recv };
+            let render = DestinationRenderer { send, recv, context};
 
             (node, Box::new(render))
         })
@@ -112,6 +112,7 @@ impl MediaStreamAudioDestinationNode {
 struct DestinationRenderer {
     send: Sender<AudioBuffer>,
     recv: Receiver<AudioBuffer>,
+    context: dyn BaseAudioContext
 }
 
 impl AudioProcessor for DestinationRenderer {
@@ -123,6 +124,7 @@ impl AudioProcessor for DestinationRenderer {
         _timestamp: f64,
         sample_rate: SampleRate,
     ) -> bool {
+        if self.context.is_closed() { false }
         // single input, no output
         let input = &inputs[0];
 
