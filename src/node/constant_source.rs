@@ -117,7 +117,6 @@ impl ConstantSourceNode {
             let render = ConstantSourceRenderer {
                 offset: proc,
                 scheduler: scheduler.clone(),
-                context
             };
 
             let node = ConstantSourceNode {
@@ -139,7 +138,6 @@ impl ConstantSourceNode {
 struct ConstantSourceRenderer {
     offset: AudioParamId,
     scheduler: Scheduler,
-    context: dyn BaseAudioContext
 }
 
 impl AudioProcessor for ConstantSourceRenderer {
@@ -151,7 +149,6 @@ impl AudioProcessor for ConstantSourceRenderer {
         timestamp: f64,
         sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() { false }
         // single output node
         let output = &mut outputs[0];
 

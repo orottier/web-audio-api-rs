@@ -187,7 +187,6 @@ impl AudioBufferSourceNode {
                 // that the `vec` will always be resized to actual buffer number_of_channels when
                 // received on the render thread.
                 internal_buffer: Vec::<f32>::with_capacity(crate::MAX_CHANNELS),
-                context
             };
 
             let node = Self {
@@ -332,7 +331,6 @@ struct AudioBufferSourceRenderer {
     playback_rate: AudioParamId,
     render_state: AudioBufferRendererState,
     internal_buffer: Vec<f32>,
-    context: dyn BaseAudioContext
 }
 
 impl AudioProcessor for AudioBufferSourceRenderer {
@@ -344,7 +342,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         timestamp: f64,
         sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() { false }
         // single output node
         let output = &mut outputs[0];
 

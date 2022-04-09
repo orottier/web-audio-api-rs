@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::context::{AudioContextRegistration, BaseAudioContext, ConcreteBaseAudioContext};
+use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
@@ -353,24 +353,22 @@ pub trait AudioScheduledSourceNode {
 
 // `MediaStreamRenderer` is internally used by `MediaElementAudioSourceNode` and
 // `MediaStreamAudioSourceNode`.
-struct MediaStreamRenderer<R, C: BaseAudioContext> {
+struct MediaStreamRenderer<R> {
     stream: R,
     finished: bool,
-    context: C
 }
 
-impl<R, C: BaseAudioContext> MediaStreamRenderer<R, C> {
-    fn new(stream: R, context: C) -> Self {
+impl<R> MediaStreamRenderer<R> {
+    fn new(stream: R) -> Self {
         Self {
             stream,
             // scheduler,
             finished: false,
-            context
         }
     }
 }
 
-impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R, _> {
+impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
     fn process(
         &mut self,
         _inputs: &[AudioRenderQuantum],
@@ -379,7 +377,6 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R, _> {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() { false }
         // single output node
         let output = &mut outputs[0];
 

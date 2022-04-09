@@ -12,9 +12,7 @@ pub struct AudioDestinationNode {
     channel_config: ChannelConfig,
 }
 
-struct DestinationRenderer {
-    context: dyn BaseAudioContext
-}
+struct DestinationRenderer {}
 
 impl AudioProcessor for DestinationRenderer {
     fn process(
@@ -25,7 +23,6 @@ impl AudioProcessor for DestinationRenderer {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() { false }
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
@@ -83,7 +80,7 @@ impl AudioDestinationNode {
                 registration,
                 channel_config,
             };
-            let proc = DestinationRenderer { context };
+            let proc = DestinationRenderer {};
 
             (node, Box::new(proc))
         })

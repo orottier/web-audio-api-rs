@@ -183,7 +183,6 @@ impl WaveShaperNode {
                 sample_rate,
                 oversample: oversample.clone(),
                 receiver,
-                context
             };
 
             let renderer = WaveShaperRenderer::new(config);
@@ -256,8 +255,6 @@ struct RendererConfig {
     oversample: Arc<AtomicU32>,
     /// Channel between node and renderer (receiver part)
     receiver: Receiver<CurveMessage>,
-
-    context: dyn BaseAudioContext
 }
 
 /// `WaveShaperRenderer` represents the rendering part of `WaveShaperNode`
@@ -282,7 +279,6 @@ struct WaveShaperRenderer {
     curve: Option<Vec<f32>>,
     /// Channel between node and renderer (receiver part)
     receiver: Receiver<CurveMessage>,
-    context: dyn BaseAudioContext
 }
 
 impl AudioProcessor for WaveShaperRenderer {
@@ -294,7 +290,6 @@ impl AudioProcessor for WaveShaperRenderer {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() { false }
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
@@ -401,7 +396,6 @@ impl WaveShaperRenderer {
             sample_rate,
             oversample,
             receiver,
-            context
         } = config;
 
         let channels_x2 = 1;
@@ -430,7 +424,6 @@ impl WaveShaperRenderer {
             downsampler_x4,
             curve: None,
             receiver,
-            context
         }
     }
 

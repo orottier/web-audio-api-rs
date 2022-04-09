@@ -62,7 +62,7 @@ impl GainNode {
 
             param.set_value_at_time(options.gain, 0.);
 
-            let render = GainRenderer { gain: proc, context };
+            let render = GainRenderer { gain: proc };
 
             let node = GainNode {
                 registration,
@@ -81,7 +81,6 @@ impl GainNode {
 
 struct GainRenderer {
     gain: AudioParamId,
-    context: dyn BaseAudioContext
 }
 
 impl AudioProcessor for GainRenderer {
@@ -93,7 +92,6 @@ impl AudioProcessor for GainRenderer {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() { false }
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];

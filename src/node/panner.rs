@@ -225,7 +225,6 @@ impl PannerNode {
                 cone_inner_angle: cone_inner_angle.clone(),
                 cone_outer_angle: cone_outer_angle.clone(),
                 cone_outer_gain: cone_outer_gain.clone(),
-                context
             };
 
             let node = PannerNode {
@@ -320,7 +319,6 @@ struct PannerRenderer {
     cone_inner_angle: Arc<AtomicF64>,
     cone_outer_angle: Arc<AtomicF64>,
     cone_outer_gain: Arc<AtomicF64>,
-    context: dyn BaseAudioContext
 }
 
 impl AudioProcessor for PannerRenderer {
@@ -332,7 +330,6 @@ impl AudioProcessor for PannerRenderer {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() { false }
         // Single input node
         // assume mono (todo issue #44)
         let input = inputs[0].channel_data(0);

@@ -99,7 +99,6 @@ impl AudioProcessor for MediaRecorderProcessor {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() { false }
         // single input node
         let input = &inputs[0];
         let data = input.channels().iter().map(|c| c.to_vec()).collect();

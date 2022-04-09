@@ -237,9 +237,6 @@ impl ConcreteBaseAudioContext {
         self.inner.state = state;
     }
 
-    pub(super) fn is_closed(&self) -> bool {
-        self.inner.state == AudioContextState::CLOSED
-    }
     /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]
     ///
     /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.

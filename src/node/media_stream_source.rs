@@ -58,7 +58,7 @@ impl MediaStreamAudioSourceNode {
                 options.media_stream,
             );
 
-            let render = MediaStreamRenderer::new(resampler, context);
+            let render = MediaStreamRenderer::new(resampler);
 
             (node, Box::new(render))
         })
