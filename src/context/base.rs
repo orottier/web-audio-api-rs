@@ -263,7 +263,9 @@ pub trait BaseAudioContext {
     }
 
     #[must_use]
-    fn is_closed(&self) -> bool { self.base().is_closed() }
+    fn is_closed(&self) -> bool {
+        self.base().is_closed()
+    }
 
     /// The raw sample rate of the `AudioContext` (which has more precision than the float
     /// [`sample_rate()`](BaseAudioContext::sample_rate) value).

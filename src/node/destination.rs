@@ -13,7 +13,7 @@ pub struct AudioDestinationNode {
 }
 
 struct DestinationRenderer {
-    context: dyn BaseAudioContext
+    context: dyn BaseAudioContext,
 }
 
 impl AudioProcessor for DestinationRenderer {
@@ -25,7 +25,9 @@ impl AudioProcessor for DestinationRenderer {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() { false }
+        if self.context.is_closed() {
+            false
+        }
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];

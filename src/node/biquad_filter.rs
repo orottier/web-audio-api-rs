@@ -220,7 +220,7 @@ impl BiquadFilterNode {
                 q: q_proc,
                 type_: type_.clone(),
                 receiver,
-                context
+                context,
             };
 
             let renderer = BiquadFilterRenderer::new(config);
@@ -413,7 +413,7 @@ struct RendererConfig {
     /// receiver used to receive message from the control node part
     receiver: Receiver<CoeffsReq>,
 
-    context: dyn BaseAudioContext
+    context: dyn BaseAudioContext,
 }
 
 /// Biquad filter coefficients
@@ -455,8 +455,7 @@ struct BiquadFilterRenderer {
     coeffs: Coefficients,
     /// receiver used to receive message from the control node part
     receiver: Receiver<CoeffsReq>,
-    context: dyn BaseAudioContext
-
+    context: dyn BaseAudioContext,
 }
 
 impl AudioProcessor for BiquadFilterRenderer {
@@ -468,7 +467,9 @@ impl AudioProcessor for BiquadFilterRenderer {
         _timestamp: f64,
         sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() { false }
+        if self.context.is_closed() {
+            false
+        }
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
@@ -505,7 +506,7 @@ impl BiquadFilterRenderer {
             gain,
             type_,
             receiver,
-            context
+            context,
         } = config;
 
         let coeffs = Coefficients {
@@ -529,8 +530,7 @@ impl BiquadFilterRenderer {
             ss2: s2,
             coeffs,
             receiver,
-            context
-
+            context,
         }
     }
 

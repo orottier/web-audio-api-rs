@@ -356,7 +356,7 @@ pub trait AudioScheduledSourceNode {
 struct MediaStreamRenderer<R, C: BaseAudioContext> {
     stream: R,
     finished: bool,
-    context: C
+    context: C,
 }
 
 impl<R, C: BaseAudioContext> MediaStreamRenderer<R, C> {
@@ -365,12 +365,12 @@ impl<R, C: BaseAudioContext> MediaStreamRenderer<R, C> {
             stream,
             // scheduler,
             finished: false,
-            context
+            context,
         }
     }
 }
 
-impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R, _> {
+impl<R: MediaStream, C: BaseAudioContext> AudioProcessor for MediaStreamRenderer<R, C> {
     fn process(
         &mut self,
         _inputs: &[AudioRenderQuantum],
@@ -379,7 +379,9 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R, _> {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() { false }
+        if self.context.is_closed() {
+            false
+        }
         // single output node
         let output = &mut outputs[0];
 
