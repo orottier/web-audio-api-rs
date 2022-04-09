@@ -199,9 +199,7 @@ impl AudioProcessor for ListenerRenderer {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
-        if self.context.is_closed() {
-            false
-        }
+        if self.context.is_closed() { false }
         // for now: persist param values in output, so PannerNodes have access
         outputs[0] = params.get_raw(&self.position_x).clone();
         outputs[1] = params.get_raw(&self.position_y).clone();
