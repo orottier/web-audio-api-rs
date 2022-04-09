@@ -1,4 +1,4 @@
-use crate::context::{AudioContextRegistration, BaseAudioContext, ConcreteBaseAudioContext};
+use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
 use crate::SampleRate;
 
@@ -12,11 +12,11 @@ pub struct AudioDestinationNode {
     channel_config: ChannelConfig,
 }
 
-struct DestinationRenderer<'a> {
-    context: &'a ConcreteBaseAudioContext,
+struct DestinationRenderer {
+    context: dyn BaseAudioContext,
 }
 
-impl<'a> AudioProcessor for DestinationRenderer<'a> {
+impl AudioProcessor for DestinationRenderer {
     fn process(
         &mut self,
         inputs: &[AudioRenderQuantum],
