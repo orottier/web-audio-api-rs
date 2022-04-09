@@ -73,7 +73,7 @@ impl ChannelMergerNode {
                 channel_config: options.channel_config.into(),
             };
 
-            let render = ChannelMergerRenderer { };
+            let render = ChannelMergerRenderer { context };
 
             (node, Box::new(render))
         })
@@ -82,6 +82,7 @@ impl ChannelMergerNode {
 
 #[derive(Debug)]
 struct ChannelMergerRenderer {
+    context: dyn BaseAudioContext,
 }
 
 impl AudioProcessor for ChannelMergerRenderer {
@@ -93,6 +94,9 @@ impl AudioProcessor for ChannelMergerRenderer {
         _timestamp: f64,
         _sample_rate: SampleRate,
     ) -> bool {
+        if self.context.is_closed() {
+            false
+        }
         // single output node
         let output = &mut outputs[0];
         output.set_number_of_channels(inputs.len());
