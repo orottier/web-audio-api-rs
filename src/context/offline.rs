@@ -1,9 +1,9 @@
 //! The `OfflineAudioContext` type
 use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::buffer::AudioBuffer;
-use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
+use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
 use crate::{SampleRate, RENDER_QUANTUM_SIZE};
 
@@ -18,6 +18,8 @@ pub struct OfflineAudioContext {
     length: usize,
     /// the rendering 'thread', fully controlled by the offline context
     renderer: RenderThread,
+    /// Describes the current state of the `OfflineAudioContext`
+    state: Mutex<AudioContextState>,
 }
 
 impl BaseAudioContext for OfflineAudioContext {
@@ -64,6 +66,7 @@ impl OfflineAudioContext {
             base,
             length,
             renderer,
+            state: Mutex::new(AudioContextState::Suspended),
         }
     }
 
@@ -71,6 +74,7 @@ impl OfflineAudioContext {
     ///
     /// This function will block the current thread and returns the rendered `AudioBuffer`
     /// synchronously. An async version is currently not implemented.
+    #[allow(clippy::missing_panics_doc)]
     pub fn start_rendering_sync(&mut self) -> AudioBuffer {
         // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
         // the desired number of frames.
@@ -79,6 +83,9 @@ impl OfflineAudioContext {
 
         let mut buf = self.renderer.render_audiobuffer(buffer_size);
         let _split = buf.split_off(self.length);
+
+        *self.state.lock().unwrap() = AudioContextState::Running;
+
         buf
     }
 
