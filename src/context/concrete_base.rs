@@ -77,7 +77,7 @@ impl ConcreteBaseAudioContext {
     /// Creates a `BaseAudioContext` instance
     pub(super) fn new(
         sample_rate: SampleRate,
-        number_of_channels: u32,
+        max_channel_count: u32,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
         offline: bool,
@@ -87,7 +87,7 @@ impl ConcreteBaseAudioContext {
 
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
-            max_channel_count: number_of_channels,
+            max_channel_count,
             render_channel,
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
@@ -105,7 +105,7 @@ impl ConcreteBaseAudioContext {
             // Register magical nodes. We should not store the nodes inside our context since that
             // will create a cyclic reference, but we can reconstruct a new instance on the fly
             // when requested
-            let dest = AudioDestinationNode::new(&base, number_of_channels as usize);
+            let dest = AudioDestinationNode::new(&base, max_channel_count as usize);
             let dest_channels = dest.into_raw_parts().into_count();
             let listener = crate::spatial::AudioListenerNode::new(&base);
 
