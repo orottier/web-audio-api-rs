@@ -169,7 +169,7 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    pub fn suspend_sync(&mut self) {
+    pub fn suspend_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         if let Some(s) = self.stream.lock().unwrap().as_ref() {
             if let Err(e) = s.pause() {
@@ -193,7 +193,7 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    pub fn resume_sync(&mut self) {
+    pub fn resume_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         if let Some(s) = self.stream.lock().unwrap().as_ref() {
             if let Err(e) = s.play() {
@@ -216,7 +216,7 @@ impl AudioContext {
     /// Will panic when this function is called multiple times
     // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
-    pub fn close_sync(&mut self) {
+    pub fn close_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.lock().unwrap().take(); // will Drop
         *self.state.lock().unwrap() = AudioContextState::Closed;
@@ -239,5 +239,12 @@ impl AudioContext {
     pub fn create_media_stream_destination(&self) -> node::MediaStreamAudioDestinationNode {
         let opts = ChannelConfigOptions::default();
         node::MediaStreamAudioDestinationNode::new(self.base(), opts)
+    }
+
+    /// Returns current state of `AudioContext`
+    #[allow(clippy::missing_panics_doc)]
+    #[must_use]
+    pub fn state(&self) -> AudioContextState {
+        *self.state.lock().unwrap()
     }
 }
