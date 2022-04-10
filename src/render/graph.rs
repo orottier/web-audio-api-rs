@@ -42,14 +42,16 @@ impl Node {
     fn process(
         &mut self,
         params: AudioParamValues,
-        timestamp: f64,
+        current_frame: u64,
+        current_time: f64,
         sample_rate: SampleRate,
     ) -> bool {
         self.processor.process(
             &self.inputs[..],
             &mut self.outputs[..],
             params,
-            timestamp,
+            current_frame,
+            current_time,
             sample_rate,
         )
     }
@@ -281,7 +283,12 @@ impl Graph {
     }
 
     /// Render a single audio quantum by traversing the node list
-    pub fn render(&mut self, timestamp: f64, sample_rate: SampleRate) -> &AudioRenderQuantum {
+    pub fn render(
+        &mut self,
+        current_frame: u64,
+        current_time: f64,
+        sample_rate: SampleRate,
+    ) -> &AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
             self.order_nodes();
@@ -315,7 +322,7 @@ impl Graph {
 
             // let the current node process
             let params = AudioParamValues::from(&*nodes);
-            let tail_time = node.process(params, timestamp, sample_rate);
+            let tail_time = node.process(params, current_frame, current_time, sample_rate);
 
             // iterate all outgoing edges, lookup these nodes and add to their input
             node.outgoing_edges
@@ -375,7 +382,8 @@ mod tests {
             _inputs: &[AudioRenderQuantum],
             _outputs: &mut [AudioRenderQuantum],
             _params: AudioParamValues,
-            _timestamp: f64,
+            _current_frame: u64,
+            _current_time: f64,
             _sample_rate: SampleRate,
         ) -> bool {
             false

@@ -82,7 +82,8 @@ impl AudioProcessor for WhiteNoiseProcessor {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _timestamp: f64,
+        _current_frame: u64,
+        _current_time: f64,
         _sample_rate: SampleRate,
     ) -> bool {
         // single output node

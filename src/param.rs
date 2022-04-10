@@ -563,11 +563,12 @@ impl AudioProcessor for AudioParamProcessor {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        timestamp: f64,
+        _current_frame: u64,
+        current_time: f64,
         sample_rate: SampleRate,
     ) -> bool {
         let period = 1. / sample_rate.0 as f64;
-        let param_intrisic_values = self.tick(timestamp, period, RENDER_QUANTUM_SIZE);
+        let param_intrisic_values = self.tick(current_time, period, RENDER_QUANTUM_SIZE);
 
         let input = &inputs[0]; // single input mode
         let param_computed_values = &mut outputs[0];

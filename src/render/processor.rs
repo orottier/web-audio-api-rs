@@ -38,7 +38,8 @@ pub trait AudioProcessor: Send {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        timestamp: f64,
+        current_frame: u64,
+        current_time: f64,
         sample_rate: SampleRate,
     ) -> bool;
 }

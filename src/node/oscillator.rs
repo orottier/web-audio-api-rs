@@ -337,7 +337,8 @@ impl AudioProcessor for OscillatorRenderer {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        timestamp: f64,
+        _current_frame: u64,
+        current_time: f64,
         sample_rate: SampleRate,
     ) -> bool {
         // single output node
@@ -353,7 +354,7 @@ impl AudioProcessor for OscillatorRenderer {
         let sample_rate = sample_rate.0 as f64;
         let dt = 1. / sample_rate;
         let num_frames = RENDER_QUANTUM_SIZE;
-        let next_block_time = timestamp + dt * num_frames as f64;
+        let next_block_time = current_time + dt * num_frames as f64;
 
         let mut start_time = self.scheduler.get_start_at();
         let stop_time = self.scheduler.get_stop_at();
@@ -361,7 +362,7 @@ impl AudioProcessor for OscillatorRenderer {
         if start_time >= next_block_time {
             output.make_silent();
             return true;
-        } else if stop_time < timestamp {
+        } else if stop_time < current_time {
             output.make_silent();
             return false;
         }
@@ -371,7 +372,7 @@ impl AudioProcessor for OscillatorRenderer {
         let frequency_values = params.get(&self.frequency);
         let detune_values = params.get(&self.detune);
 
-        let mut current_time = timestamp;
+        let mut current_time = current_time;
 
         // Prevent scheduling in the past
         //

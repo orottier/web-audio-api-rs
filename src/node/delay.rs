@@ -326,7 +326,8 @@ impl AudioProcessor for DelayWriter {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _timestamp: f64,
+        _current_frame: u64,
+        _current_time: f64,
         _sample_rate: SampleRate,
     ) -> bool {
         // single input/output node
@@ -391,7 +392,8 @@ impl AudioProcessor for DelayReader {
         _inputs: &[AudioRenderQuantum], // cannot be used
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _timestamp: f64,
+        _current_frame: u64,
+        _current_time: f64,
         sample_rate: SampleRate,
     ) -> bool {
         // single input/output node

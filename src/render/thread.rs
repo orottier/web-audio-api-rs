@@ -110,13 +110,15 @@ impl RenderThread {
             self.handle_control_messages();
 
             // update time
-            let timestamp =
-                self.frames_played
-                    .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst) as f64
-                    / self.sample_rate.0 as f64;
+            let current_frame = self
+                .frames_played
+                .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
+            let current_time = current_frame as f64 / self.sample_rate.0 as f64;
 
             // render audio graph
-            let rendered = self.graph.render(timestamp, self.sample_rate);
+            let rendered = self
+                .graph
+                .render(current_frame, current_time, self.sample_rate);
 
             buf.extend_alloc(rendered);
         }
@@ -176,14 +178,16 @@ impl RenderThread {
             self.handle_control_messages();
 
             // update time
-            // @note - this follows the spec as fetch_add returns the old value
-            let timestamp =
-                self.frames_played
-                    .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst) as f64
-                    / self.sample_rate.0 as f64;
+            let current_frame = self
+                .frames_played
+                .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
+            let current_time = current_frame as f64 / self.sample_rate.0 as f64;
 
             // render audio graph
-            let mut rendered = self.graph.render(timestamp, self.sample_rate).clone();
+            let mut rendered = self
+                .graph
+                .render(current_frame, current_time, self.sample_rate)
+                .clone();
 
             // online AudioContext allows channel count to be less than no of hardware channels
             if rendered.number_of_channels() != self.number_of_channels {

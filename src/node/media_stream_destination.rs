@@ -120,7 +120,8 @@ impl AudioProcessor for DestinationRenderer {
         inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _timestamp: f64,
+        _current_frame: u64,
+        _current_time: f64,
         sample_rate: SampleRate,
     ) -> bool {
         // single input, no output
