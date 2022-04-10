@@ -141,7 +141,9 @@ impl Iterator for SocketStream {
     }
 }
 
-/// The client records their audio, ships it to the server and plays the received samples
+/// The client
+///     1. records the audio and ships it to the server
+///     2. plays back the samples received from the server
 fn run_client() -> std::io::Result<()> {
     let socket = UdpSocket::bind(CLIENT_ADDR)?;
     socket.set_nonblocking(true).unwrap();
