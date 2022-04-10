@@ -47,8 +47,8 @@ impl PartialEq for ConcreteBaseAudioContext {
 struct ConcreteBaseAudioContextInner {
     /// sample rate in Hertz
     sample_rate: SampleRate,
-    /// number of speaker output channels
-    number_of_channels: u32,
+    /// max number of speaker output channels
+    max_channel_count: u32,
     /// incrementing id to assign to audio nodes
     node_id_inc: AtomicU64,
     /// destination node's current channel count
@@ -77,7 +77,7 @@ impl ConcreteBaseAudioContext {
     /// Creates a `BaseAudioContext` instance
     pub(super) fn new(
         sample_rate: SampleRate,
-        number_of_channels: u32,
+        max_channel_count: u32,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
         offline: bool,
@@ -87,7 +87,7 @@ impl ConcreteBaseAudioContext {
 
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
-            number_of_channels,
+            max_channel_count,
             render_channel,
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
@@ -105,7 +105,7 @@ impl ConcreteBaseAudioContext {
             // Register magical nodes. We should not store the nodes inside our context since that
             // will create a cyclic reference, but we can reconstruct a new instance on the fly
             // when requested
-            let dest = AudioDestinationNode::new(&base, number_of_channels as usize);
+            let dest = AudioDestinationNode::new(&base, max_channel_count as usize);
             let dest_channels = dest.into_raw_parts().into_count();
             let listener = crate::spatial::AudioListenerNode::new(&base);
 
@@ -218,10 +218,10 @@ impl ConcreteBaseAudioContext {
         self.inner.frames_played.load(Ordering::SeqCst) as f64 / f64::from(self.inner.sample_rate.0)
     }
 
-    /// Number of channels for the audio destination
+    /// Maximum available channels for the audio destination
     #[must_use]
-    pub fn channels(&self) -> u32 {
-        self.inner.number_of_channels
+    pub(crate) fn max_channel_count(&self) -> u32 {
+        self.inner.max_channel_count
     }
 
     /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]

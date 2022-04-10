@@ -99,9 +99,9 @@ impl AudioDestinationNode {
             channel_config,
         }
     }
-    /// The maximum number of channels that the channelCount attribute can be set to
-    /// This is the limit number that audio hardware can support.
+    /// The maximum number of channels that the channelCount attribute can be set to (the max
+    /// number of channels that the hardware is capable of supporting).
     pub fn max_channels_count(&self) -> u32 {
-        self.registration.context().base().channels()
+        self.registration.context().base().max_channel_count()
     }
 }
