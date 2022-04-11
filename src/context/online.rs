@@ -7,6 +7,7 @@ use crate::SampleRate;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+#[cfg(not(test))]
 use std::sync::Mutex;
 
 #[cfg(not(test))]
@@ -65,9 +66,6 @@ pub struct AudioContext {
     /// cpal stream (play/pause functionality)
     #[cfg(not(test))] // in tests, do not set up a cpal Stream
     stream: Mutex<Option<Stream>>,
-
-    /// Describes the current state of the `AudioContext`
-    state: Mutex<AudioContextState>,
 }
 
 impl BaseAudioContext for AudioContext {
@@ -121,11 +119,11 @@ impl AudioContext {
             sender,
             false,
         );
+        base.set_state(AudioContextState::Running);
 
         Self {
             base,
             stream: Mutex::new(Some(stream)),
-            state: Mutex::new(AudioContextState::Running),
         }
     }
 
@@ -146,11 +144,9 @@ impl AudioContext {
             sender,
             false,
         );
+        base.set_state(AudioContextState::Running);
 
-        Self {
-            base,
-            state: Mutex::new(AudioContextState::Running),
-        }
+        Self { base }
     }
 
     /// Suspends the progression of time in the audio context.
@@ -175,7 +171,7 @@ impl AudioContext {
             if let Err(e) = s.pause() {
                 panic!("Error suspending cpal stream: {:?}", e);
             }
-            *self.state.lock().unwrap() = AudioContextState::Suspended;
+            self.base.set_state(AudioContextState::Suspended);
         }
     }
 
@@ -199,7 +195,7 @@ impl AudioContext {
             if let Err(e) = s.play() {
                 panic!("Error resuming cpal stream: {:?}", e);
             }
-            *self.state.lock().unwrap() = AudioContextState::Running;
+            self.base.set_state(AudioContextState::Running);
         }
     }
 
@@ -219,7 +215,7 @@ impl AudioContext {
     pub fn close_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.lock().unwrap().take(); // will Drop
-        *self.state.lock().unwrap() = AudioContextState::Closed;
+        self.base.set_state(AudioContextState::Closed);
     }
 
     /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]
@@ -245,6 +241,6 @@ impl AudioContext {
     #[allow(clippy::missing_panics_doc)]
     #[must_use]
     pub fn state(&self) -> AudioContextState {
-        *self.state.lock().unwrap()
+        self.base.state()
     }
 }

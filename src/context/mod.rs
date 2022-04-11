@@ -62,6 +62,17 @@ pub enum AudioContextState {
     Closed,
 }
 
+impl From<u8> for AudioContextState {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Suspended,
+            1 => Self::Running,
+            2 => Self::Closed,
+            _ => unreachable!(),
+        }
+    }
+}
+
 /// Handle of the [`AudioNode`](crate::node::AudioNode) to its associated [`BaseAudioContext`].
 ///
 /// This allows for communication with the render thread and lifetime management.
