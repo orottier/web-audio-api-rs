@@ -1,3 +1,11 @@
+# Version 0.18.0 (2021-04-12)
+
+- Implement BaseAudioContext state
+- AudioContext can now change the number of output channels while running
+- Microphone input stream is now configurable
+- Microphone can properly pause, resume and close
+- Consistenly use `usize` for channels, inputs, lengths
+
 # Version 0.17.0 (2021-04-03)
 
 - Simplify AudioNode's required channel methods
