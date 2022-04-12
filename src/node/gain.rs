@@ -40,11 +40,11 @@ impl AudioNode for GainNode {
         &self.channel_config
     }
 
-    fn number_of_inputs(&self) -> u32 {
+    fn number_of_inputs(&self) -> usize {
         1
     }
 
-    fn number_of_outputs(&self) -> u32 {
+    fn number_of_outputs(&self) -> usize {
         1
     }
 }

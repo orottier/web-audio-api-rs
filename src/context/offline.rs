@@ -35,7 +35,7 @@ impl OfflineAudioContext {
     /// * `length` - length of the rendering audio buffer
     /// * `sample_rate` - output sample rate
     #[must_use]
-    pub fn new(number_of_channels: u32, length: usize, sample_rate: SampleRate) -> Self {
+    pub fn new(number_of_channels: usize, length: usize, sample_rate: SampleRate) -> Self {
         // communication channel to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
 
@@ -46,7 +46,7 @@ impl OfflineAudioContext {
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
             sample_rate,
-            number_of_channels as usize,
+            number_of_channels,
             receiver,
             frames_played_clone,
         );

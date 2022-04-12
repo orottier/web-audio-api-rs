@@ -43,18 +43,18 @@ impl AudioNode for AudioDestinationNode {
         &self.channel_config
     }
 
-    fn number_of_inputs(&self) -> u32 {
+    fn number_of_inputs(&self) -> usize {
         1
     }
-    fn number_of_outputs(&self) -> u32 {
+    fn number_of_outputs(&self) -> usize {
         1
     }
 
     fn set_channel_count(&self, v: usize) {
-        if self.registration.context().offline() && v != self.max_channels_count() as usize {
+        if self.registration.context().offline() && v != self.max_channels_count() {
             panic!("NotSupportedError: not allowed to change OfflineAudioContext destination channel count");
         }
-        if v > self.max_channels_count() as usize {
+        if v > self.max_channels_count() {
             panic!(
                 "IndexSizeError: channel count cannot be greater than maxChannelCount ({})",
                 self.max_channels_count()
@@ -101,7 +101,7 @@ impl AudioDestinationNode {
     }
     /// The maximum number of channels that the channelCount attribute can be set to (the max
     /// number of channels that the hardware is capable of supporting).
-    pub fn max_channels_count(&self) -> u32 {
+    pub fn max_channels_count(&self) -> usize {
         self.registration.context().base().max_channel_count()
     }
 }

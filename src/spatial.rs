@@ -100,11 +100,11 @@ impl AudioNode for AudioListenerNode {
         &AUDIO_LISTENER_CHANNEL_CONFIG
     }
 
-    fn number_of_inputs(&self) -> u32 {
+    fn number_of_inputs(&self) -> usize {
         0
     }
 
-    fn number_of_outputs(&self) -> u32 {
+    fn number_of_outputs(&self) -> usize {
         9 // return all audio params as output
     }
 

@@ -12,11 +12,11 @@ use smallvec::{smallvec, SmallVec};
 /// Connection between two audio nodes
 struct OutgoingEdge {
     /// index of the current Nodes output port
-    self_index: u32,
+    self_index: usize,
     /// reference to the other Node
     other_id: NodeIndex,
     /// index of the other Nodes input port
-    other_index: u32,
+    other_index: usize,
 }
 
 /// Renderer Node in the Audio Graph
@@ -134,7 +134,7 @@ impl Graph {
         );
     }
 
-    pub fn add_edge(&mut self, source: (NodeIndex, u32), dest: (NodeIndex, u32)) {
+    pub fn add_edge(&mut self, source: (NodeIndex, usize), dest: (NodeIndex, usize)) {
         self.nodes
             .get_mut(&source.0)
             .unwrap_or_else(|| panic!("cannot connect {:?} to {:?}", source, dest))
@@ -320,14 +320,13 @@ impl Graph {
             // iterate all outgoing edges, lookup these nodes and add to their input
             node.outgoing_edges
                 .iter()
-                // audio params are connected to the 'hidden' u32::MAX output, ignore them here
-                .filter(|edge| edge.other_index != u32::MAX)
+                // audio params are connected to the 'hidden' usize::MAX output, ignore them here
+                .filter(|edge| edge.other_index != usize::MAX)
                 .for_each(|edge| {
                     let output_node = nodes.get_mut(&edge.other_id).unwrap();
                     output_node.has_inputs_connected = true;
-                    let signal = &node.outputs[edge.self_index as usize];
-                    output_node.inputs[edge.other_index as usize]
-                        .add(signal, channel_interpretation);
+                    let signal = &node.outputs[edge.self_index];
+                    output_node.inputs[edge.other_index].add(signal, channel_interpretation);
                 });
 
             // Check if we can decommission this node (end of life)

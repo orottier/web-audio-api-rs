@@ -156,11 +156,11 @@ impl AudioNode for PannerNode {
         &self.channel_config
     }
 
-    fn number_of_inputs(&self) -> u32 {
+    fn number_of_inputs(&self) -> usize {
         1 + 9 // todo, user should not be able to see these ports
     }
 
-    fn number_of_outputs(&self) -> u32 {
+    fn number_of_outputs(&self) -> usize {
         1
     }
 

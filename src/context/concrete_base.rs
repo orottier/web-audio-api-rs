@@ -48,7 +48,7 @@ struct ConcreteBaseAudioContextInner {
     /// sample rate in Hertz
     sample_rate: SampleRate,
     /// max number of speaker output channels
-    max_channel_count: u32,
+    max_channel_count: usize,
     /// incrementing id to assign to audio nodes
     node_id_inc: AtomicU64,
     /// destination node's current channel count
@@ -79,7 +79,7 @@ impl ConcreteBaseAudioContext {
     /// Creates a `BaseAudioContext` instance
     pub(super) fn new(
         sample_rate: SampleRate,
-        max_channel_count: u32,
+        max_channel_count: usize,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
         offline: bool,
@@ -108,7 +108,7 @@ impl ConcreteBaseAudioContext {
             // Register magical nodes. We should not store the nodes inside our context since that
             // will create a cyclic reference, but we can reconstruct a new instance on the fly
             // when requested
-            let dest = AudioDestinationNode::new(&base, max_channel_count as usize);
+            let dest = AudioDestinationNode::new(&base, max_channel_count);
             let dest_channels = dest.into_raw_parts().into_count();
             let listener = crate::spatial::AudioListenerNode::new(&base);
 
@@ -234,7 +234,7 @@ impl ConcreteBaseAudioContext {
 
     /// Maximum available channels for the audio destination
     #[must_use]
-    pub(crate) fn max_channel_count(&self) -> u32 {
+    pub(crate) fn max_channel_count(&self) -> usize {
         self.inner.max_channel_count
     }
 
@@ -264,8 +264,8 @@ impl ConcreteBaseAudioContext {
         let message = ControlMessage::RegisterNode {
             id,
             node: render,
-            inputs: node.number_of_inputs() as usize,
-            outputs: node.number_of_outputs() as usize,
+            inputs: node.number_of_inputs(),
+            outputs: node.number_of_outputs(),
             channel_config: node.channel_config().clone(),
         };
 
@@ -299,7 +299,13 @@ impl ConcreteBaseAudioContext {
     }
 
     /// Connects the output of the `from` audio node to the input of the `to` audio node
-    pub(crate) fn connect(&self, from: &AudioNodeId, to: &AudioNodeId, output: u32, input: u32) {
+    pub(crate) fn connect(
+        &self,
+        from: &AudioNodeId,
+        to: &AudioNodeId,
+        output: usize,
+        input: usize,
+    ) {
         let message = ControlMessage::ConnectNode {
             from: from.0,
             to: to.0,
@@ -317,7 +323,7 @@ impl ConcreteBaseAudioContext {
             from: param.registration().id().0,
             to: audio_node.0,
             output: 0,
-            input: u32::MAX, // audio params connect to the 'hidden' input port
+            input: usize::MAX, // audio params connect to the 'hidden' input port
         };
         self.inner.queued_messages.lock().unwrap().push(message);
     }
@@ -381,13 +387,13 @@ impl ConcreteBaseAudioContext {
             self.resolve_queued_control_msgs(LISTENER_NODE_ID);
 
             // hack: Connect the listener to the destination node to force it to render at each
-            // quantum. Abuse the magical u32::MAX port so it acts as an AudioParam and has no side
+            // quantum. Abuse the magical usize::MAX port so it acts as an AudioParam and has no side
             // effects
             self.connect(
                 &AudioNodeId(LISTENER_NODE_ID),
                 &AudioNodeId(DESTINATION_NODE_ID),
                 0,
-                u32::MAX,
+                usize::MAX,
             );
         }
     }

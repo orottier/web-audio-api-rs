@@ -21,8 +21,8 @@ pub(crate) enum ControlMessage {
     ConnectNode {
         from: u64,
         to: u64,
-        input: u32,
-        output: u32,
+        input: usize,
+        output: usize,
     },
 
     /// Clear the connection between two given nodes in the audio graph

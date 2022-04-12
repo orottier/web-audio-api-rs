@@ -14,7 +14,7 @@ use super::{
 // };
 #[derive(Clone, Debug)]
 pub struct ChannelMergerOptions {
-    pub number_of_inputs: u32,
+    pub number_of_inputs: usize,
     pub channel_config: ChannelConfigOptions,
 }
 
@@ -54,11 +54,11 @@ impl AudioNode for ChannelMergerNode {
         panic!("InvalidStateError: Cannot edit channel count mode of ChannelMergerNode")
     }
 
-    fn number_of_inputs(&self) -> u32 {
-        self.channel_count() as _
+    fn number_of_inputs(&self) -> usize {
+        self.channel_count()
     }
 
-    fn number_of_outputs(&self) -> u32 {
+    fn number_of_outputs(&self) -> usize {
         1
     }
 }
@@ -66,7 +66,7 @@ impl AudioNode for ChannelMergerNode {
 impl ChannelMergerNode {
     pub fn new<C: BaseAudioContext>(context: &C, mut options: ChannelMergerOptions) -> Self {
         context.base().register(move |registration| {
-            options.channel_config.count = options.number_of_inputs as _;
+            options.channel_config.count = options.number_of_inputs;
 
             let node = ChannelMergerNode {
                 registration,

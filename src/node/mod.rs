@@ -246,8 +246,8 @@ pub trait AudioNode {
     fn connect_at<'a>(
         &self,
         dest: &'a dyn AudioNode,
-        output: u32,
-        input: u32,
+        output: usize,
+        input: usize,
     ) -> &'a dyn AudioNode {
         if self.context() != dest.context() {
             panic!("InvalidAccessError: Attempting to connect nodes from different contexts");
@@ -286,9 +286,9 @@ pub trait AudioNode {
     }
 
     /// The number of inputs feeding into the AudioNode. For source nodes, this will be 0.
-    fn number_of_inputs(&self) -> u32;
+    fn number_of_inputs(&self) -> usize;
     /// The number of outputs coming out of the AudioNode.
-    fn number_of_outputs(&self) -> u32;
+    fn number_of_outputs(&self) -> usize;
 
     /// Represents an enumerated value describing the way channels must be matched between the
     /// node's inputs and outputs.
