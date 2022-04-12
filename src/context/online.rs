@@ -236,11 +236,4 @@ impl AudioContext {
         let opts = ChannelConfigOptions::default();
         node::MediaStreamAudioDestinationNode::new(self.base(), opts)
     }
-
-    /// Returns current state of `AudioContext`
-    #[allow(clippy::missing_panics_doc)]
-    #[must_use]
-    pub fn state(&self) -> AudioContextState {
-        self.base.state()
-    }
 }
