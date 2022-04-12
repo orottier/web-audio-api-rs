@@ -108,11 +108,11 @@ impl AudioNode for DelayNode {
         &self.channel_config
     }
 
-    fn number_of_inputs(&self) -> u32 {
+    fn number_of_inputs(&self) -> usize {
         1
     }
 
-    fn number_of_outputs(&self) -> u32 {
+    fn number_of_outputs(&self) -> usize {
         1
     }
 
@@ -120,8 +120,8 @@ impl AudioNode for DelayNode {
     fn connect_at<'a>(
         &self,
         dest: &'a dyn AudioNode,
-        output: u32,
-        input: u32,
+        output: usize,
+        input: usize,
     ) -> &'a dyn AudioNode {
         if self.context() != dest.context() {
             panic!("InvalidAccessError: Attempting to connect nodes from different contexts");

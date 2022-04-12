@@ -109,7 +109,7 @@ impl AudioContext {
         let frames_played_clone = frames_played.clone();
 
         let (stream, config, sender) = io::build_output(frames_played_clone, options);
-        let number_of_channels = u32::from(config.channels);
+        let number_of_channels = usize::from(config.channels);
         let sample_rate = SampleRate(config.sample_rate.0);
 
         let base = ConcreteBaseAudioContext::new(
@@ -132,7 +132,7 @@ impl AudioContext {
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(options: AudioContextOptions) -> Self {
         let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100));
-        let number_of_channels = 2_u32;
+        let number_of_channels = 2;
 
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));

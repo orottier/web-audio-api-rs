@@ -29,12 +29,12 @@ impl AudioNode for WhiteNoiseNode {
     }
 
     // source nodes take no input
-    fn number_of_inputs(&self) -> u32 {
+    fn number_of_inputs(&self) -> usize {
         0
     }
 
     // emit a single output
-    fn number_of_outputs(&self) -> u32 {
+    fn number_of_outputs(&self) -> usize {
         1
     }
 }

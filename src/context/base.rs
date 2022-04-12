@@ -125,7 +125,7 @@ pub trait BaseAudioContext {
 
     /// Creates a `ChannelMergerNode`
     #[must_use]
-    fn create_channel_merger(&self, number_of_inputs: u32) -> node::ChannelMergerNode {
+    fn create_channel_merger(&self, number_of_inputs: usize) -> node::ChannelMergerNode {
         let opts = node::ChannelMergerOptions {
             number_of_inputs,
             ..node::ChannelMergerOptions::default()
@@ -135,7 +135,7 @@ pub trait BaseAudioContext {
 
     /// Creates a `ChannelSplitterNode`
     #[must_use]
-    fn create_channel_splitter(&self, number_of_outputs: u32) -> node::ChannelSplitterNode {
+    fn create_channel_splitter(&self, number_of_outputs: usize) -> node::ChannelSplitterNode {
         let opts = node::ChannelSplitterOptions {
             number_of_outputs,
             ..node::ChannelSplitterOptions::default()

@@ -138,12 +138,12 @@ impl AudioNode for OscillatorNode {
     }
 
     /// `OscillatorNode` is a source node. A source node is by definition with no input
-    fn number_of_inputs(&self) -> u32 {
+    fn number_of_inputs(&self) -> usize {
         0
     }
 
     /// `OscillatorNode` is a mono source node.
-    fn number_of_outputs(&self) -> u32 {
+    fn number_of_outputs(&self) -> usize {
         1
     }
 }

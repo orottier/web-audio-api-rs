@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::analysis::Analyser;
@@ -19,7 +19,7 @@ use crossbeam_channel::{self, Receiver, Sender};
 // };
 #[derive(Clone, Debug)]
 pub struct AnalyserOptions {
-    pub fft_size: u32,
+    pub fft_size: usize,
     #[allow(dead_code)]
     pub max_decibels: f64,
     #[allow(dead_code)]
@@ -55,7 +55,7 @@ enum AnalyserRequest {
 pub struct AnalyserNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
-    fft_size: Arc<AtomicU32>,
+    fft_size: Arc<AtomicUsize>,
     smoothing_time_constant: Arc<AtomicU32>,
     sender: Sender<AnalyserRequest>,
 }
@@ -69,11 +69,11 @@ impl AudioNode for AnalyserNode {
         &self.channel_config
     }
 
-    fn number_of_inputs(&self) -> u32 {
+    fn number_of_inputs(&self) -> usize {
         1
     }
 
-    fn number_of_outputs(&self) -> u32 {
+    fn number_of_outputs(&self) -> usize {
         1
     }
 }
@@ -81,7 +81,7 @@ impl AudioNode for AnalyserNode {
 impl AnalyserNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: AnalyserOptions) -> Self {
         context.base().register(move |registration| {
-            let fft_size = Arc::new(AtomicU32::new(options.fft_size));
+            let fft_size = Arc::new(AtomicUsize::new(options.fft_size));
             let smoothing_time_constant = Arc::new(AtomicU32::new(
                 (options.smoothing_time_constant * 100.) as u32,
             ));
@@ -89,7 +89,7 @@ impl AnalyserNode {
             let (sender, receiver) = crossbeam_channel::bounded(0);
 
             let render = AnalyserRenderer {
-                analyser: Analyser::new(options.fft_size as usize),
+                analyser: Analyser::new(options.fft_size),
                 fft_size: fft_size.clone(),
                 smoothing_time_constant: smoothing_time_constant.clone(),
                 receiver,
@@ -108,17 +108,17 @@ impl AnalyserNode {
     }
 
     /// Half the FFT size
-    pub fn frequency_bin_count(&self) -> u32 {
+    pub fn frequency_bin_count(&self) -> usize {
         self.fft_size.load(Ordering::SeqCst) / 2
     }
 
     /// The size of the FFT used for frequency-domain analysis (in sample-frames)
-    pub fn fft_size(&self) -> u32 {
+    pub fn fft_size(&self) -> usize {
         self.fft_size.load(Ordering::SeqCst)
     }
 
     /// This MUST be a power of two in the range 32 to 32768
-    pub fn set_fft_size(&self, fft_size: u32) {
+    pub fn set_fft_size(&self, fft_size: usize) {
         // todo assert size
         self.fft_size.store(fft_size, Ordering::SeqCst);
     }
@@ -158,7 +158,7 @@ impl AnalyserNode {
 
 struct AnalyserRenderer {
     pub analyser: Analyser,
-    pub fft_size: Arc<AtomicU32>,
+    pub fft_size: Arc<AtomicUsize>,
     pub smoothing_time_constant: Arc<AtomicU32>,
     pub receiver: Receiver<AnalyserRequest>,
 }
@@ -191,7 +191,7 @@ impl AudioProcessor for AnalyserRenderer {
         self.analyser.add_data(mono_data);
 
         // calculate frequency domain every `fft_size` samples
-        let fft_size = self.fft_size.load(Ordering::Relaxed) as usize;
+        let fft_size = self.fft_size.load(Ordering::Relaxed);
         let resized = self.analyser.current_fft_size() != fft_size;
         let complete_cycle = self.analyser.check_complete_cycle(fft_size);
         if resized || complete_cycle {

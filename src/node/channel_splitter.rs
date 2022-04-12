@@ -14,7 +14,7 @@ use super::{
 // };
 #[derive(Clone, Debug)]
 pub struct ChannelSplitterOptions {
-    pub number_of_outputs: u32,
+    pub number_of_outputs: usize,
     pub channel_config: ChannelConfigOptions,
 }
 
@@ -58,19 +58,19 @@ impl AudioNode for ChannelSplitterNode {
         panic!("InvalidStateError: Cannot edit channel interpretation of ChannelSplitterNode")
     }
 
-    fn number_of_inputs(&self) -> u32 {
+    fn number_of_inputs(&self) -> usize {
         1
     }
 
-    fn number_of_outputs(&self) -> u32 {
-        self.channel_count() as _
+    fn number_of_outputs(&self) -> usize {
+        self.channel_count()
     }
 }
 
 impl ChannelSplitterNode {
     pub fn new<C: BaseAudioContext>(context: &C, mut options: ChannelSplitterOptions) -> Self {
         context.base().register(move |registration| {
-            options.channel_config.count = options.number_of_outputs as _;
+            options.channel_config.count = options.number_of_outputs;
 
             let node = ChannelSplitterNode {
                 registration,
