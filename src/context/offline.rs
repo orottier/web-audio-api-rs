@@ -79,6 +79,7 @@ impl OfflineAudioContext {
 
         let mut buf = self.renderer.render_audiobuffer(buffer_size);
         let _split = buf.split_off(self.length);
+
         buf
     }
 

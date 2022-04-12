@@ -1,8 +1,8 @@
 //! The `ConcreteBaseAudioContext` type
 
 use crate::context::{
-    AudioContextRegistration, AudioNodeId, BaseAudioContext, DESTINATION_NODE_ID, LISTENER_NODE_ID,
-    LISTENER_PARAM_IDS,
+    AudioContextRegistration, AudioContextState, AudioNodeId, BaseAudioContext,
+    DESTINATION_NODE_ID, LISTENER_NODE_ID, LISTENER_PARAM_IDS,
 };
 use crate::message::ControlMessage;
 use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig};
@@ -13,7 +13,7 @@ use crate::spatial::AudioListenerParams;
 use crate::{AudioListener, SampleRate};
 
 use crossbeam_channel::Sender;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// The struct that corresponds to the Javascript `BaseAudioContext` object.
@@ -65,6 +65,8 @@ struct ConcreteBaseAudioContextInner {
     listener_params: Option<AudioListenerParams>,
     /// Denotes if this AudioContext is offline or not
     offline: bool,
+    /// Describes the current state of the `ConcreteBaseAudioContext`
+    state: AtomicU8,
 }
 
 impl BaseAudioContext for ConcreteBaseAudioContext {
@@ -96,6 +98,7 @@ impl ConcreteBaseAudioContext {
             queued_audio_listener_msgs: Mutex::new(Vec::new()),
             listener_params: None,
             offline,
+            state: AtomicU8::new(AudioContextState::Suspended as u8),
         };
         let base = Self {
             inner: Arc::new(base_inner),
@@ -191,6 +194,17 @@ impl ConcreteBaseAudioContext {
             up_y: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_y.clone()),
             up_z: AudioParam::from_raw_parts(ids.next().unwrap(), params.up_z.clone()),
         }
+    }
+
+    /// Returns state of current context
+    #[must_use]
+    pub fn state(&self) -> AudioContextState {
+        self.inner.state.load(Ordering::SeqCst).into()
+    }
+
+    /// Updates state of current context
+    pub(super) fn set_state(&self, state: AudioContextState) {
+        self.inner.state.store(state as u8, Ordering::SeqCst);
     }
 
     /// The sample rate (in sample-frames per second) at which the `AudioContext` handles audio.

@@ -49,6 +49,30 @@ impl From<&AudioParamId> for NodeIndex {
     }
 }
 
+/// Describes the current state of the `AudioContext`
+#[derive(Debug, Copy, Clone)]
+pub enum AudioContextState {
+    /// This context is currently suspended (context time is not proceeding,
+    /// audio hardware may be powered down/released).
+    Suspended,
+    /// Audio is being processed.
+    Running,
+    /// This context has been released, and can no longer be used to process audio.
+    /// All system audio resources have been released.
+    Closed,
+}
+
+impl From<u8> for AudioContextState {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Suspended,
+            1 => Self::Running,
+            2 => Self::Closed,
+            _ => unreachable!(),
+        }
+    }
+}
+
 /// Handle of the [`AudioNode`](crate::node::AudioNode) to its associated [`BaseAudioContext`].
 ///
 /// This allows for communication with the render thread and lifetime management.

@@ -2,8 +2,8 @@
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::context::{
-    AudioContextRegistration, AudioNodeId, AudioParamId, ConcreteBaseAudioContext,
-    DESTINATION_NODE_ID,
+    AudioContextRegistration, AudioContextState, AudioNodeId, AudioParamId,
+    ConcreteBaseAudioContext, DESTINATION_NODE_ID,
 };
 use crate::media::MediaDecoder;
 use crate::node::{AudioNode, ChannelConfigOptions};
@@ -254,6 +254,12 @@ pub trait BaseAudioContext {
     #[must_use]
     fn sample_rate(&self) -> f32 {
         self.base().sample_rate()
+    }
+
+    /// Returns state of current context
+    #[must_use]
+    fn state(&self) -> AudioContextState {
+        self.base().state()
     }
 
     /// The raw sample rate of the `AudioContext` (which has more precision than the float

@@ -1,5 +1,5 @@
 //! The `AudioContext` type and constructor options
-use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
+use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::media::MediaStream;
 use crate::node::{self, ChannelConfigOptions};
 use crate::SampleRate;
@@ -119,6 +119,7 @@ impl AudioContext {
             sender,
             false,
         );
+        base.set_state(AudioContextState::Running);
 
         Self {
             base,
@@ -143,6 +144,7 @@ impl AudioContext {
             sender,
             false,
         );
+        base.set_state(AudioContextState::Running);
 
         Self { base }
     }
@@ -169,6 +171,7 @@ impl AudioContext {
             if let Err(e) = s.pause() {
                 panic!("Error suspending cpal stream: {:?}", e);
             }
+            self.base.set_state(AudioContextState::Suspended);
         }
     }
 
@@ -192,6 +195,7 @@ impl AudioContext {
             if let Err(e) = s.play() {
                 panic!("Error resuming cpal stream: {:?}", e);
             }
+            self.base.set_state(AudioContextState::Running);
         }
     }
 
@@ -211,6 +215,7 @@ impl AudioContext {
     pub fn close_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.lock().unwrap().take(); // will Drop
+        self.base.set_state(AudioContextState::Closed);
     }
 
     /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]
