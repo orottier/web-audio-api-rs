@@ -5,8 +5,7 @@ use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
 use crate::media::MediaStream;
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::SampleRate;
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
 
 use lazy_static::lazy_static;
 
@@ -374,9 +373,7 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _current_frame: u64,
-        _current_time: f64,
-        _sample_rate: SampleRate,
+        _scope: GlobalScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

@@ -10,6 +10,7 @@ use super::{AudioRenderQuantum, NodeIndex};
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
+use crate::render::GlobalScope;
 use crate::{AtomicF64, SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::graph::Graph;
@@ -115,10 +116,14 @@ impl RenderThread {
                 .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
             let current_time = current_frame as f64 / self.sample_rate.0 as f64;
 
+            let global_scope = GlobalScope {
+                current_frame,
+                current_time,
+                sample_rate: self.sample_rate,
+            };
+
             // render audio graph
-            let rendered = self
-                .graph
-                .render(current_frame, current_time, self.sample_rate);
+            let rendered = self.graph.render(global_scope);
 
             buf.extend_alloc(rendered);
         }
@@ -183,11 +188,14 @@ impl RenderThread {
                 .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
             let current_time = current_frame as f64 / self.sample_rate.0 as f64;
 
+            let global_scope = GlobalScope {
+                current_frame,
+                current_time,
+                sample_rate: self.sample_rate,
+            };
+
             // render audio graph
-            let mut rendered = self
-                .graph
-                .render(current_frame, current_time, self.sample_rate)
-                .clone();
+            let mut rendered = self.graph.render(global_scope).clone();
 
             // online AudioContext allows channel count to be less than no of hardware channels
             if rendered.number_of_channels() != self.number_of_channels {

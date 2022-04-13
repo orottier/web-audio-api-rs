@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{AtomicF64, SampleRate};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
+use crate::AtomicF64;
 
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
@@ -327,9 +327,7 @@ impl AudioProcessor for PannerRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _current_frame: u64,
-        _current_time: f64,
-        _sample_rate: SampleRate,
+        _scope: GlobalScope,
     ) -> bool {
         // Single input node
         // assume mono (todo issue #44)

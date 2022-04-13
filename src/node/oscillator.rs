@@ -7,8 +7,8 @@ use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::periodic_wave::PeriodicWave;
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
+use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
     AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions, SINETABLE,
@@ -337,9 +337,7 @@ impl AudioProcessor for OscillatorRenderer {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _current_frame: u64,
-        current_time: f64,
-        sample_rate: SampleRate,
+        scope: GlobalScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];
@@ -351,10 +349,10 @@ impl AudioProcessor for OscillatorRenderer {
             self.periodic_wave = Some(periodic_wave);
         }
 
-        let sample_rate = sample_rate.0 as f64;
+        let sample_rate = scope.sample_rate.0 as f64;
         let dt = 1. / sample_rate;
         let num_frames = RENDER_QUANTUM_SIZE;
-        let next_block_time = current_time + dt * num_frames as f64;
+        let next_block_time = scope.current_time + dt * num_frames as f64;
 
         let mut start_time = self.scheduler.get_start_at();
         let stop_time = self.scheduler.get_stop_at();
@@ -362,7 +360,7 @@ impl AudioProcessor for OscillatorRenderer {
         if start_time >= next_block_time {
             output.make_silent();
             return true;
-        } else if stop_time < current_time {
+        } else if stop_time < scope.current_time {
             output.make_silent();
             return false;
         }
@@ -372,7 +370,7 @@ impl AudioProcessor for OscillatorRenderer {
         let frequency_values = params.get(&self.frequency);
         let detune_values = params.get(&self.detune);
 
-        let mut current_time = current_time;
+        let mut current_time = scope.current_time;
 
         // Prevent scheduling in the past
         //

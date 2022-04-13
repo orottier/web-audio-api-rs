@@ -1,7 +1,6 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::SampleRate;
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
@@ -89,9 +88,7 @@ impl AudioProcessor for GainRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _current_frame: u64,
-        _current_time: f64,
-        _sample_rate: SampleRate,
+        _scope: GlobalScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

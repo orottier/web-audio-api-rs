@@ -1,8 +1,8 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
+use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 
@@ -146,15 +146,13 @@ impl AudioProcessor for ConstantSourceRenderer {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _current_frame: u64,
-        current_time: f64,
-        sample_rate: SampleRate,
+        scope: GlobalScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];
 
-        let dt = 1. / sample_rate.0 as f64;
-        let next_block_time = current_time + dt * RENDER_QUANTUM_SIZE as f64;
+        let dt = 1. / scope.sample_rate.0 as f64;
+        let next_block_time = scope.current_time + dt * RENDER_QUANTUM_SIZE as f64;
 
         let start_time = self.scheduler.get_start_at();
         let stop_time = self.scheduler.get_stop_at();
@@ -164,7 +162,7 @@ impl AudioProcessor for ConstantSourceRenderer {
             return true;
         }
 
-        if stop_time < current_time {
+        if stop_time < scope.current_time {
             output.make_silent();
             return false;
         }
@@ -173,7 +171,7 @@ impl AudioProcessor for ConstantSourceRenderer {
 
         let offset_values = params.get(&self.offset);
         let output_channel = output.channel_data_mut(0);
-        let mut current_time = current_time;
+        let mut current_time = scope.current_time;
 
         for (index, sample_value) in offset_values.iter().enumerate() {
             if current_time < start_time || current_time >= stop_time {

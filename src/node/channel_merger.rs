@@ -1,8 +1,7 @@
 use std::fmt::Debug;
 
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::SampleRate;
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
 
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
@@ -89,9 +88,7 @@ impl AudioProcessor for ChannelMergerRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _current_frame: u64,
-        _current_time: f64,
-        _sample_rate: SampleRate,
+        _scope: GlobalScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

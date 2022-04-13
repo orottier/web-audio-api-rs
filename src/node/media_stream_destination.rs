@@ -2,8 +2,7 @@ use std::error::Error;
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::SampleRate;
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStream};
 
@@ -120,9 +119,7 @@ impl AudioProcessor for DestinationRenderer {
         inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _current_frame: u64,
-        _current_time: f64,
-        sample_rate: SampleRate,
+        scope: GlobalScope,
     ) -> bool {
         // single input, no output
         let input = &inputs[0];
@@ -133,7 +130,7 @@ impl AudioProcessor for DestinationRenderer {
             .iter()
             .map(|c| c.as_slice().to_vec())
             .collect();
-        let buffer = AudioBuffer::from(samples, sample_rate);
+        let buffer = AudioBuffer::from(samples, scope.sample_rate);
 
         // clear previous entry if it was not consumed
         let _ = self.recv.try_recv();

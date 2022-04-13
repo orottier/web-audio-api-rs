@@ -6,8 +6,8 @@ use crate::context::AudioContextRegistration;
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{AtomicF32, SampleRate, RENDER_QUANTUM_SIZE};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
+use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
 use crossbeam_channel::{Receiver, Sender};
 use lazy_static::lazy_static;
@@ -563,12 +563,10 @@ impl AudioProcessor for AudioParamProcessor {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _current_frame: u64,
-        current_time: f64,
-        sample_rate: SampleRate,
+        scope: GlobalScope,
     ) -> bool {
-        let period = 1. / sample_rate.0 as f64;
-        let param_intrisic_values = self.tick(current_time, period, RENDER_QUANTUM_SIZE);
+        let period = 1. / scope.sample_rate.0 as f64;
+        let param_intrisic_values = self.tick(scope.current_time, period, RENDER_QUANTUM_SIZE);
 
         let input = &inputs[0]; // single input mode
         let param_computed_values = &mut outputs[0];
@@ -1434,6 +1432,7 @@ mod tests {
     use float_eq::assert_float_eq;
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::SampleRate;
 
     use super::*;
 

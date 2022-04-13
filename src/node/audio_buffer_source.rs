@@ -6,8 +6,8 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Controller;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
+use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 
@@ -339,17 +339,15 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         _inputs: &[AudioRenderQuantum], // no input...
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _current_frame: u64,
-        current_time: f64,
-        sample_rate: SampleRate,
+        scope: GlobalScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];
 
-        let sample_rate = sample_rate.0 as f64;
+        let sample_rate = scope.sample_rate.0 as f64;
         let dt = 1. / sample_rate;
         let num_frames = RENDER_QUANTUM_SIZE;
-        let next_block_time = current_time + dt * num_frames as f64;
+        let next_block_time = scope.current_time + dt * num_frames as f64;
 
         if let Ok(msg) = self.receiver.try_recv() {
             let buffer = msg.0;
@@ -406,7 +404,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         // 1. the stop time has been reached.
         // 2. the duration has been reached.
-        if current_time >= stop_time || self.render_state.buffer_time_elapsed >= duration {
+        if scope.current_time >= stop_time || self.render_state.buffer_time_elapsed >= duration {
             output.make_silent(); // also converts to mono
             return false;
         }
@@ -428,7 +426,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         // go through the algorithm described in the spec
         // @see <https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode>
-        let mut current_time = current_time;
+        let mut current_time = scope.current_time;
 
         // prevent scheduling in the past
         // If 0 is passed in for this value or if the value is less than

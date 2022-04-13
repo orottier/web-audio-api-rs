@@ -2,10 +2,9 @@
 
 use std::collections::HashMap;
 
-use crate::node::{ChannelConfig, ChannelCountMode};
-use crate::SampleRate;
-
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeIndex};
+use crate::node::{ChannelConfig, ChannelCountMode};
+use crate::render::GlobalScope;
 
 use smallvec::{smallvec, SmallVec};
 
@@ -39,20 +38,12 @@ pub struct Node {
 
 impl Node {
     /// Render an audio quantum
-    fn process(
-        &mut self,
-        params: AudioParamValues,
-        current_frame: u64,
-        current_time: f64,
-        sample_rate: SampleRate,
-    ) -> bool {
+    fn process(&mut self, params: AudioParamValues, global_scope: GlobalScope) -> bool {
         self.processor.process(
             &self.inputs[..],
             &mut self.outputs[..],
             params,
-            current_frame,
-            current_time,
-            sample_rate,
+            global_scope,
         )
     }
 
@@ -283,12 +274,7 @@ impl Graph {
     }
 
     /// Render a single audio quantum by traversing the node list
-    pub fn render(
-        &mut self,
-        current_frame: u64,
-        current_time: f64,
-        sample_rate: SampleRate,
-    ) -> &AudioRenderQuantum {
+    pub fn render(&mut self, global_scope: GlobalScope) -> &AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
             self.order_nodes();
@@ -322,7 +308,7 @@ impl Graph {
 
             // let the current node process
             let params = AudioParamValues::from(&*nodes);
-            let tail_time = node.process(params, current_frame, current_time, sample_rate);
+            let tail_time = node.process(params, global_scope);
 
             // iterate all outgoing edges, lookup these nodes and add to their input
             node.outgoing_edges
@@ -382,9 +368,7 @@ mod tests {
             _inputs: &[AudioRenderQuantum],
             _outputs: &mut [AudioRenderQuantum],
             _params: AudioParamValues,
-            _current_frame: u64,
-            _current_time: f64,
-            _sample_rate: SampleRate,
+            _scope: GlobalScope,
         ) -> bool {
             false
         }
