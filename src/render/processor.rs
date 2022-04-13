@@ -14,7 +14,7 @@ use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 /// This struct currently only contains information about the progress of time. In a future
 /// version, it should be possible to add arbitrary data. For example, multiple processors might
 /// share a buffer defining a wavetable or an impulse response.
-pub struct GlobalScope {
+pub struct Scope {
     pub current_frame: u64,
     pub current_time: f64,
     pub sample_rate: SampleRate,
@@ -50,7 +50,7 @@ pub trait AudioProcessor: Send {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        global_scope: GlobalScope,
+        global_scope: Scope,
     ) -> bool;
 }
 

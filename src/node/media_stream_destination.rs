@@ -2,7 +2,7 @@ use std::error::Error;
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Scope};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStream};
 
@@ -119,7 +119,7 @@ impl AudioProcessor for DestinationRenderer {
         inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        scope: GlobalScope,
+        scope: Scope,
     ) -> bool {
         // single input, no output
         let input = &inputs[0];

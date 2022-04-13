@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Scope};
 
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
@@ -96,7 +96,7 @@ impl AudioProcessor for ChannelSplitterRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _scope: GlobalScope,
+        _scope: Scope,
     ) -> bool {
         // single input node
         let input = &inputs[0];

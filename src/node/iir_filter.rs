@@ -11,7 +11,7 @@ use std::f64::consts::PI;
 
 use crate::{
     context::{AudioContextRegistration, BaseAudioContext},
-    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope},
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Scope},
     MAX_CHANNELS,
 };
 
@@ -272,7 +272,7 @@ impl AudioProcessor for IirFilterRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _scope: GlobalScope,
+        _scope: Scope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

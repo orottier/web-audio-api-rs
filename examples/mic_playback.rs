@@ -9,7 +9,7 @@ use web_audio_api::node::{
     AnalyserNode, AudioBufferSourceNode, AudioNode, AudioScheduledSourceNode, BiquadFilterNode,
     ChannelConfig, GainNode, MediaStreamAudioSourceNode,
 };
-use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
+use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Scope};
 use web_audio_api::SampleRate;
 
 use std::io::{stdin, stdout, Write};
@@ -96,7 +96,7 @@ impl AudioProcessor for MediaRecorderProcessor {
         inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _scope: GlobalScope,
+        _scope: Scope,
     ) -> bool {
         // single input node
         let input = &inputs[0];

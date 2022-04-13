@@ -12,7 +12,7 @@ use std::f32::consts::PI;
 use crate::{
     context::{AudioContextRegistration, AudioParamId, BaseAudioContext},
     param::{AudioParam, AudioParamDescriptor},
-    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope},
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Scope},
 };
 
 use super::{
@@ -161,7 +161,7 @@ impl AudioProcessor for StereoPannerRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _scope: GlobalScope,
+        _scope: Scope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

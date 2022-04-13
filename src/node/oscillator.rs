@@ -7,7 +7,7 @@ use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::periodic_wave::PeriodicWave;
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Scope};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
@@ -337,7 +337,7 @@ impl AudioProcessor for OscillatorRenderer {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        scope: GlobalScope,
+        scope: Scope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

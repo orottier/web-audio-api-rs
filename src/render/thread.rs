@@ -10,7 +10,7 @@ use super::{AudioRenderQuantum, NodeIndex};
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
-use crate::render::GlobalScope;
+use crate::render::Scope;
 use crate::{AtomicF64, SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::graph::Graph;
@@ -116,7 +116,7 @@ impl RenderThread {
                 .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
             let current_time = current_frame as f64 / self.sample_rate.0 as f64;
 
-            let global_scope = GlobalScope {
+            let global_scope = Scope {
                 current_frame,
                 current_time,
                 sample_rate: self.sample_rate,
@@ -188,7 +188,7 @@ impl RenderThread {
                 .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
             let current_time = current_frame as f64 / self.sample_rate.0 as f64;
 
-            let global_scope = GlobalScope {
+            let global_scope = Scope {
                 current_frame,
                 current_time,
                 sample_rate: self.sample_rate,

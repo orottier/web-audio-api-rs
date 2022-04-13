@@ -6,7 +6,7 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Controller;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, GlobalScope};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Scope};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
@@ -339,7 +339,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         _inputs: &[AudioRenderQuantum], // no input...
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        scope: GlobalScope,
+        scope: Scope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];
