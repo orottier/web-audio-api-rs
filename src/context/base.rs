@@ -210,28 +210,6 @@ pub trait BaseAudioContext {
         node::WaveShaperNode::new(self.base(), node::WaveShaperOptions::default())
     }
 
-    /// Create an `AudioParam`.
-    ///
-    /// Call this inside the `register` closure when setting up your `AudioNode`
-    #[must_use]
-    fn create_audio_param(
-        &self,
-        opts: AudioParamDescriptor,
-        dest: &AudioContextRegistration,
-    ) -> (crate::param::AudioParam, AudioParamId) {
-        let param = self.base().register(move |registration| {
-            let (node, proc) = crate::param::audio_param_pair(opts, registration);
-
-            (node, Box::new(proc))
-        });
-
-        // Connect the param to the node, once the node is registered inside the audio graph.
-        self.base().queue_audio_param_connect(&param, dest.id());
-
-        let proc_id = AudioParamId(param.registration().id().0);
-        (param, proc_id)
-    }
-
     /// Returns an `AudioDestinationNode` representing the final destination of all audio in the
     /// context. It can be thought of as the audio-rendering device.
     #[must_use]
@@ -274,6 +252,47 @@ pub trait BaseAudioContext {
     #[must_use]
     fn current_time(&self) -> f64 {
         self.base().current_time()
+    }
+
+    /// This represents the number of seconds of processing latency incurred by
+    /// the `AudioContext` passing the audio from the `AudioDestinationNode`
+    /// to the audio subsystem.
+    // We don't do any buffering between rendering the audio and sending
+    // it to the audio subsystem, so this value is zero. (see Gecko)
+    #[must_use]
+    fn base_latency(&self) -> f64 {
+        self.base().base_latency()
+    }
+
+    /// The estimation in seconds of audio output latency, i.e., the interval
+    /// between the time the UA requests the host system to play a buffer and
+    /// the time at which the first sample in the buffer is actually processed
+    /// by the audio output device.
+    #[must_use]
+    fn output_latency(&self) -> f64 {
+        self.base().output_latency()
+    }
+
+    /// Create an `AudioParam`.
+    ///
+    /// Call this inside the `register` closure when setting up your `AudioNode`
+    #[must_use]
+    fn create_audio_param(
+        &self,
+        opts: AudioParamDescriptor,
+        dest: &AudioContextRegistration,
+    ) -> (crate::param::AudioParam, AudioParamId) {
+        let param = self.base().register(move |registration| {
+            let (node, proc) = crate::param::audio_param_pair(opts, registration);
+
+            (node, Box::new(proc))
+        });
+
+        // Connect the param to the node, once the node is registered inside the audio graph.
+        self.base().queue_audio_param_connect(&param, dest.id());
+
+        let proc_id = AudioParamId(param.registration().id().0);
+        (param, proc_id)
     }
 
     #[cfg(test)]

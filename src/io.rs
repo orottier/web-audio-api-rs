@@ -13,12 +13,12 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use crate::message::ControlMessage;
-use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+use crate::{AtomicF64, SampleRate, RENDER_QUANTUM_SIZE};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    BuildStreamError, Device, SampleFormat, SampleRate as CpalSampleRate, Stream, StreamConfig,
-    SupportedBufferSize,
+    BuildStreamError, Device, OutputCallbackInfo, SampleFormat, SampleRate as CpalSampleRate,
+    Stream, StreamConfig, SupportedBufferSize,
 };
 
 use crate::buffer::AudioBuffer;
@@ -46,15 +46,21 @@ fn spawn_output_stream(
     let err_fn = |err| log::error!("an error occurred on the output audio stream: {}", err);
 
     match sample_format {
-        SampleFormat::F32 => {
-            device.build_output_stream(config, move |d: &mut [f32], _c| render.render(d), err_fn)
-        }
-        SampleFormat::U16 => {
-            device.build_output_stream(config, move |d: &mut [u16], _c| render.render(d), err_fn)
-        }
-        SampleFormat::I16 => {
-            device.build_output_stream(config, move |d: &mut [i16], _c| render.render(d), err_fn)
-        }
+        SampleFormat::F32 => device.build_output_stream(
+            config,
+            move |d: &mut [f32], i: &OutputCallbackInfo| render.render(d, i),
+            err_fn,
+        ),
+        SampleFormat::U16 => device.build_output_stream(
+            config,
+            move |d: &mut [u16], i: &OutputCallbackInfo| render.render(d, i),
+            err_fn,
+        ),
+        SampleFormat::I16 => device.build_output_stream(
+            config,
+            move |d: &mut [i16], i: &OutputCallbackInfo| render.render(d, i),
+            err_fn,
+        ),
     }
 }
 
@@ -231,6 +237,8 @@ struct OutputStreamer {
     configs: StreamConfigs,
     /// `frames_played` act as a time reference when processing
     frames_played: Arc<AtomicU64>,
+    /// latency between render and actually audio output
+    output_latency: Arc<AtomicF64>,
     /// communication channel between control and render thread (sender part)
     sender: Option<Sender<ControlMessage>>,
     /// the output stream
@@ -242,7 +250,11 @@ struct OutputStreamer {
 
 impl OutputStreamer {
     /// creates an `OutputStreamer`
-    fn new(configs: StreamConfigs, frames_played: Arc<AtomicU64>) -> Self {
+    fn new(
+        configs: StreamConfigs,
+        frames_played: Arc<AtomicU64>,
+        output_latency: Arc<AtomicF64>,
+    ) -> Self {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
@@ -252,6 +264,7 @@ impl OutputStreamer {
             device,
             configs,
             frames_played,
+            output_latency,
             sender: None,
             stream: None,
             falled_back: false,
@@ -277,6 +290,7 @@ impl OutputStreamer {
             config.channels as usize,
             receiver,
             self.frames_played.clone(),
+            self.output_latency.clone(),
         );
 
         let spawned =
@@ -351,6 +365,7 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
                     config.channels as usize,
                     receiver,
                     streamer.frames_played.clone(),
+                    streamer.output_latency.clone(),
                 );
 
                 let spawned = spawn_output_stream(
@@ -371,6 +386,7 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
 #[allow(clippy::redundant_pub_crate)]
 pub(crate) fn build_output(
     frames_played: Arc<AtomicU64>,
+    output_latency: Arc<AtomicF64>,
     options: AudioContextOptions,
 ) -> (Stream, StreamConfig, Sender<ControlMessage>) {
     let mut builder = StreamConfigsBuilder::new();
@@ -385,7 +401,7 @@ pub(crate) fn build_output(
 
     let configs = builder.build();
 
-    let streamer = OutputStreamer::new(configs, frames_played)
+    let streamer = OutputStreamer::new(configs, frames_played, output_latency)
         .spawn()
         .or_fallback()
         .play();

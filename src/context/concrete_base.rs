@@ -10,7 +10,7 @@ use crate::param::{AudioParam, AudioParamEvent};
 use crate::render::AudioProcessor;
 use crate::spatial::AudioListenerParams;
 
-use crate::{AudioListener, SampleRate};
+use crate::{AtomicF64, AudioListener, SampleRate};
 
 use crossbeam_channel::Sender;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
@@ -49,6 +49,8 @@ struct ConcreteBaseAudioContextInner {
     sample_rate: SampleRate,
     /// max number of speaker output channels
     max_channel_count: usize,
+    /// delay between render and actual system audio output
+    output_latency: Arc<AtomicF64>,
     /// incrementing id to assign to audio nodes
     node_id_inc: AtomicU64,
     /// destination node's current channel count
@@ -81,6 +83,7 @@ impl ConcreteBaseAudioContext {
         sample_rate: SampleRate,
         max_channel_count: usize,
         frames_played: Arc<AtomicU64>,
+        output_latency: Arc<AtomicF64>,
         render_channel: Sender<ControlMessage>,
         offline: bool,
     ) -> Self {
@@ -90,6 +93,7 @@ impl ConcreteBaseAudioContext {
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             max_channel_count,
+            output_latency,
             render_channel,
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
@@ -198,7 +202,7 @@ impl ConcreteBaseAudioContext {
 
     /// Returns state of current context
     #[must_use]
-    pub fn state(&self) -> AudioContextState {
+    pub(super) fn state(&self) -> AudioContextState {
         self.inner.state.load(Ordering::SeqCst).into()
     }
 
@@ -210,15 +214,35 @@ impl ConcreteBaseAudioContext {
     /// The sample rate (in sample-frames per second) at which the `AudioContext` handles audio.
     #[allow(clippy::cast_precision_loss)]
     #[must_use]
-    pub fn sample_rate(&self) -> f32 {
+    pub(super) fn sample_rate(&self) -> f32 {
         self.inner.sample_rate.0 as f32
     }
 
     /// The raw sample rate of the `AudioContext` (which has more precision than the float
     /// [`sample_rate()`](BaseAudioContext::sample_rate) value).
     #[must_use]
-    pub fn sample_rate_raw(&self) -> SampleRate {
+    pub(super) fn sample_rate_raw(&self) -> SampleRate {
         self.inner.sample_rate
+    }
+
+    /// This represents the number of seconds of processing latency incurred by
+    /// the `AudioContext` passing the audio from the `AudioDestinationNode`
+    /// to the audio subsystem.
+    // We don't do any buffering between rendering the audio and sending
+    // it to the audio subsystem, so this value is zero. (see Gecko)
+    #[allow(clippy::unused_self)]
+    #[must_use]
+    pub(super) const fn base_latency(&self) -> f64 {
+        0.
+    }
+
+    /// The estimation in seconds of audio output latency, i.e., the interval
+    /// between the time the UA requests the host system to play a buffer and
+    /// the time at which the first sample in the buffer is actually processed
+    /// by the audio output device.
+    #[must_use]
+    pub(super) fn output_latency(&self) -> f64 {
+        self.inner.output_latency.load()
     }
 
     /// This is the time in seconds of the sample frame immediately following the last sample-frame
@@ -228,7 +252,7 @@ impl ConcreteBaseAudioContext {
     // std::sync::AtomicsF64 is not currently implemented in the standard library
     // Currently, we have no other choice than casting an u64 into f64, with possible loss of precision
     #[allow(clippy::cast_precision_loss)]
-    pub fn current_time(&self) -> f64 {
+    pub(super) fn current_time(&self) -> f64 {
         self.inner.frames_played.load(Ordering::SeqCst) as f64 / f64::from(self.inner.sample_rate.0)
     }
 

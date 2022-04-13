@@ -2,7 +2,7 @@
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::media::MediaStream;
 use crate::node::{self, ChannelConfigOptions};
-use crate::SampleRate;
+use crate::{AtomicF64, SampleRate};
 
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -108,7 +108,12 @@ impl AudioContext {
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
-        let (stream, config, sender) = io::build_output(frames_played_clone, options);
+        let output_latency = Arc::new(AtomicF64::new(0.));
+        let output_latency_clone = output_latency.clone();
+
+        let (stream, config, sender) =
+            io::build_output(frames_played_clone, output_latency_clone, options);
+
         let number_of_channels = usize::from(config.channels);
         let sample_rate = SampleRate(config.sample_rate.0);
 
@@ -116,6 +121,7 @@ impl AudioContext {
             sample_rate,
             number_of_channels,
             frames_played,
+            output_latency,
             sender,
             false,
         );
@@ -136,11 +142,13 @@ impl AudioContext {
 
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
+        let output_latency = Arc::new(AtomicF64::new(0.));
 
         let base = ConcreteBaseAudioContext::new(
             sample_rate,
             number_of_channels,
             frames_played,
+            output_latency,
             sender,
             false,
         );
