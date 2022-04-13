@@ -1,13 +1,4 @@
 //! Audio IO management API
-#![warn(
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    clippy::perf,
-    clippy::missing_docs_in_private_items
-)]
-#![allow(clippy::missing_const_for_fn)]
-
 use std::convert::TryFrom;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -237,7 +228,7 @@ struct OutputStreamer {
     configs: StreamConfigs,
     /// `frames_played` act as a time reference when processing
     frames_played: Arc<AtomicU64>,
-    /// latency between render and actually audio output
+    /// delay between render and actual system audio output
     output_latency: Arc<AtomicF64>,
     /// communication channel between control and render thread (sender part)
     sender: Option<Sender<ControlMessage>>,
