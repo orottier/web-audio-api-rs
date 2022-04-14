@@ -1,4 +1,12 @@
 //! Audio IO management API
+#![warn(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::perf,
+    clippy::missing_docs_in_private_items
+)]
+
 use std::convert::TryFrom;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;

@@ -1,4 +1,12 @@
 //! The `BaseAudioContext` interface and the `AudioContext` and `OfflineAudioContext` types
+#![warn(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::perf,
+    clippy::missing_docs_in_private_items
+)]
+
 use std::ops::Range;
 
 mod base;
