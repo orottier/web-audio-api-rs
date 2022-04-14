@@ -157,6 +157,26 @@ impl AudioContext {
         Self { base }
     }
 
+
+    /// This represents the number of seconds of processing latency incurred by
+    /// the `AudioContext` passing the audio from the `AudioDestinationNode`
+    /// to the audio subsystem.
+    // We don't do any buffering between rendering the audio and sending
+    // it to the audio subsystem, so this value is zero. (see Gecko)
+    #[must_use]
+    fn base_latency(&self) -> f64 {
+        self.base().base_latency()
+    }
+
+    /// The estimation in seconds of audio output latency, i.e., the interval
+    /// between the time the UA requests the host system to play a buffer and
+    /// the time at which the first sample in the buffer is actually processed
+    /// by the audio output device.
+    #[must_use]
+    fn output_latency(&self) -> f64 {
+        self.base().output_latency()
+    }
+
     /// Suspends the progression of time in the audio context.
     ///
     /// This will temporarily halt audio hardware access and reducing CPU/battery usage in the
@@ -179,7 +199,7 @@ impl AudioContext {
             if let Err(e) = s.pause() {
                 panic!("Error suspending cpal stream: {:?}", e);
             }
-            self.base.set_state(AudioContextState::Suspended);
+            self.base().set_state(AudioContextState::Suspended);
         }
     }
 
@@ -203,7 +223,7 @@ impl AudioContext {
             if let Err(e) = s.play() {
                 panic!("Error resuming cpal stream: {:?}", e);
             }
-            self.base.set_state(AudioContextState::Running);
+            self.base().set_state(AudioContextState::Running);
         }
     }
 
@@ -223,7 +243,7 @@ impl AudioContext {
     pub fn close_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.lock().unwrap().take(); // will Drop
-        self.base.set_state(AudioContextState::Closed);
+        self.base().set_state(AudioContextState::Closed);
     }
 
     /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]

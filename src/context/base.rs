@@ -254,25 +254,6 @@ pub trait BaseAudioContext {
         self.base().current_time()
     }
 
-    /// This represents the number of seconds of processing latency incurred by
-    /// the `AudioContext` passing the audio from the `AudioDestinationNode`
-    /// to the audio subsystem.
-    // We don't do any buffering between rendering the audio and sending
-    // it to the audio subsystem, so this value is zero. (see Gecko)
-    #[must_use]
-    fn base_latency(&self) -> f64 {
-        self.base().base_latency()
-    }
-
-    /// The estimation in seconds of audio output latency, i.e., the interval
-    /// between the time the UA requests the host system to play a buffer and
-    /// the time at which the first sample in the buffer is actually processed
-    /// by the audio output device.
-    #[must_use]
-    fn output_latency(&self) -> f64 {
-        self.base().output_latency()
-    }
-
     /// Create an `AudioParam`.
     ///
     /// Call this inside the `register` closure when setting up your `AudioNode`
