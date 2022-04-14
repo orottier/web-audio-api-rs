@@ -55,17 +55,6 @@ pub struct AudioContextOptions {
     pub sample_rate: Option<u32>,
 }
 
-/// Struct returned by `get_output_timestamp` that associate estimated playback
-/// context time (i.e. `current_time - output_latency`) to a monotonic global clock
-/// (i.e. <https://doc.rust-lang.org/std/time/struct.Instant.html>)
-#[derive(Clone, Debug, Default)]
-pub struct AudioTimestamp {
-    /// Represents a point in the time coordinate system of BaseAudioContext’s currentTime.
-    pub context_time: f64,
-    /// Represents a point in the time coordinate system of a Performance interface implementation
-    pub performance_time: f64,
-}
-
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
 /// output device that produces a signal directed at the user.
 // the naming comes from the web audio specfication
