@@ -1,4 +1,8 @@
 //! Optimized audio signal data structures, used in `AudioProcessors`
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::perf)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::missing_const_for_fn)]
+
 use arrayvec::ArrayVec;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -9,7 +13,7 @@ use crate::assert_valid_number_of_channels;
 use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
 // object pool for `AudioRenderQuantumChannel`s, only allocate if the pool is empty
-pub(crate) struct Alloc {
+pub struct Alloc {
     inner: Rc<AllocInner>,
 }
 
@@ -20,6 +24,7 @@ struct AllocInner {
 }
 
 impl Alloc {
+    #[must_use]
     pub fn with_capacity(n: usize) -> Self {
         let pool: Vec<_> = (0..n).map(|_| Rc::new([0.; RENDER_QUANTUM_SIZE])).collect();
         let zeroes = Rc::new([0.; RENDER_QUANTUM_SIZE]);
@@ -35,6 +40,7 @@ impl Alloc {
     }
 
     #[cfg(test)]
+    #[must_use]
     pub fn allocate(&self) -> AudioRenderQuantumChannel {
         AudioRenderQuantumChannel {
             data: self.inner.allocate(),
@@ -42,6 +48,7 @@ impl Alloc {
         }
     }
 
+    #[must_use]
     pub fn silence(&self) -> AudioRenderQuantumChannel {
         AudioRenderQuantumChannel {
             data: Rc::clone(&self.inner.zeroes),
@@ -50,26 +57,24 @@ impl Alloc {
     }
 
     #[cfg(test)]
+    #[must_use]
     pub fn pool_size(&self) -> usize {
         self.inner.pool.borrow().len()
     }
 }
 
 impl AllocInner {
+    #[must_use]
     fn allocate(&self) -> Rc<[f32; RENDER_QUANTUM_SIZE]> {
-        if let Some(rc) = self.pool.borrow_mut().pop() {
-            // re-use from pool
-            rc
-        } else {
-            // allocate
-            Rc::new([0.; RENDER_QUANTUM_SIZE])
-        }
+        // re-use from pool, or allocate new
+        self.pool
+            .borrow_mut()
+            .pop()
+            .unwrap_or_else(|| Rc::new([0.; RENDER_QUANTUM_SIZE]))
     }
 
     fn push(&self, data: Rc<[f32; RENDER_QUANTUM_SIZE]>) {
-        self.pool
-            .borrow_mut() // infallible when single threaded
-            .push(data);
+        self.pool.borrow_mut().push(data);
     }
 }
 
@@ -83,10 +88,11 @@ pub struct AudioRenderQuantumChannel {
 }
 
 impl AudioRenderQuantumChannel {
+    #[must_use]
     fn make_mut(&mut self) -> &mut [f32; RENDER_QUANTUM_SIZE] {
         if Rc::strong_count(&self.data) != 1 {
             let mut new = self.alloc.allocate();
-            Rc::make_mut(&mut new).copy_from_slice(self.data.deref());
+            Rc::make_mut(&mut new).copy_from_slice(&*self.data);
             self.data = new;
         }
 
@@ -96,6 +102,7 @@ impl AudioRenderQuantumChannel {
     /// `O(1)` check if this buffer is equal to the 'silence buffer'
     ///
     /// If this function returns false, it is still possible for all samples to be zero.
+    #[must_use]
     pub fn is_silent(&self) -> bool {
         Rc::ptr_eq(&self.data, &self.alloc.zeroes)
     }
@@ -105,10 +112,11 @@ impl AudioRenderQuantumChannel {
         if self.is_silent() {
             *self = other.clone();
         } else if !other.is_silent() {
-            self.iter_mut().zip(other.iter()).for_each(|(a, b)| *a += b)
+            self.iter_mut().zip(other.iter()).for_each(|(a, b)| *a += b);
         }
     }
 
+    #[must_use]
     pub fn silence(&self) -> Self {
         Self {
             data: self.alloc.zeroes.clone(),
@@ -159,6 +167,7 @@ pub struct AudioRenderQuantum {
 }
 
 impl AudioRenderQuantum {
+    #[must_use]
     pub fn new(channel: AudioRenderQuantumChannel) -> Self {
         let mut channels = ArrayVec::new();
         channels.push(channel);
@@ -166,12 +175,13 @@ impl AudioRenderQuantum {
         Self { channels }
     }
 
-    /// Number of channels in this AudioRenderQuantum
+    /// Number of channels in this `AudioRenderQuantum`
+    #[must_use]
     pub fn number_of_channels(&self) -> usize {
         self.channels.len()
     }
 
-    /// Set number of channels in this AudioRenderQuantum
+    /// Set number of channels in this `AudioRenderQuantum`
     ///
     /// Note: if the new number is higher than the previous, the new channels will be filled with
     /// garbage.
@@ -179,7 +189,7 @@ impl AudioRenderQuantum {
     /// # Panics
     ///
     /// This function will panic if the given number of channels is outside the [1, 32] range, 32
-    /// being defined by the MAX_CHANNELS constant.
+    /// being defined by the `MAX_CHANNELS` constant.
     pub fn set_number_of_channels(&mut self, n: usize) {
         assert_valid_number_of_channels(n);
         for _ in self.number_of_channels()..n {
@@ -192,6 +202,7 @@ impl AudioRenderQuantum {
     ///
     /// # Panics
     /// Panics if the index is greater than the available number of channels
+    #[must_use]
     pub fn channel_data(&self, index: usize) -> &AudioRenderQuantumChannel {
         &self.channels[index]
     }
@@ -200,16 +211,19 @@ impl AudioRenderQuantum {
     ///
     /// # Panics
     /// Panics if the index is greater than the available number of channels
+    #[must_use]
     pub fn channel_data_mut(&mut self, index: usize) -> &mut AudioRenderQuantumChannel {
         &mut self.channels[index]
     }
 
     /// Channel data as slice
+    #[must_use]
     pub fn channels(&self) -> &[AudioRenderQuantumChannel] {
         &self.channels[..]
     }
 
     /// Channel data as slice (mutable)
+    #[must_use]
     pub fn channels_mut(&mut self) -> &mut [AudioRenderQuantumChannel] {
         &mut self.channels[..]
     }
@@ -219,7 +233,8 @@ impl AudioRenderQuantum {
     /// # Panics
     ///
     /// This function will panic if the given number of channels is outside the [1, 32] range, 32
-    /// being defined by the MAX_CHANNELS constant.
+    /// being defined by the `MAX_CHANNELS` constant.
+    #[allow(clippy::too_many_lines)]
     pub fn mix(
         &mut self,
         computed_number_of_channels: usize,
@@ -363,7 +378,7 @@ impl AudioRenderQuantum {
                         .zip(s_left.iter())
                         .zip(s_right.iter())
                         .for_each(|((((l, r), c), sl), sr)| {
-                            *l = sqrt05.mul_add(*l + *r, 0.5f32.mul_add(*sl + *sr, *c))
+                            *l = sqrt05.mul_add(*l + *r, 0.5f32.mul_add(*sl + *sr, *c));
                         });
 
                     self.channels.truncate(1);
@@ -408,7 +423,7 @@ impl AudioRenderQuantum {
                         .zip(s_right.iter())
                         .for_each(|((r, c), sr)| *r += sqrt05 * (*c + *sr));
 
-                    self.channels.truncate(2)
+                    self.channels.truncate(2);
                 }
                 // 5.1 -> 4 : 5.1 to quad
                 //   output.L = L + sqrt(0.5) * input.C
@@ -461,7 +476,7 @@ impl AudioRenderQuantum {
     /// Modify every channel in the same way
     pub fn modify_channels<F: Fn(&mut AudioRenderQuantumChannel)>(&mut self, fun: F) {
         // todo, optimize for Rcs that are equal
-        self.channels.iter_mut().for_each(fun)
+        self.channels.iter_mut().for_each(fun);
     }
 
     /// Sum two `AudioRenderQuantum`s
@@ -486,6 +501,7 @@ impl AudioRenderQuantum {
     }
 
     #[inline(always)]
+    #[allow(clippy::inline_always)]
     pub fn set_channels_values_at(&mut self, sample_index: usize, values: &[f32]) {
         for (channel_index, channel) in self.channels.iter_mut().enumerate() {
             channel[sample_index] = values[channel_index];
@@ -493,6 +509,7 @@ impl AudioRenderQuantum {
     }
 }
 
+#[allow(clippy::pedantic, clippy::nursery)]
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
