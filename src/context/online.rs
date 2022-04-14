@@ -57,12 +57,12 @@ pub struct AudioContextOptions {
 
 /// Struct returned by `get_output_timestamp` that associate estimated playback
 /// context time (i.e. `current_time - output_latency`) to a monotonic global clock
-/// (i.e. https://doc.rust-lang.org/std/time/struct.Instant.html)
+/// (i.e. <https://doc.rust-lang.org/std/time/struct.Instant.html>)
 #[derive(Clone, Debug, Default)]
 pub struct AudioTimestamp {
-    // Represents a point in the time coordinate system of BaseAudioContext’s currentTime.
+    /// Represents a point in the time coordinate system of BaseAudioContext’s currentTime.
     pub context_time: f64,
-    // Represents a point in the time coordinate system of a Performance interface implementation
+    /// Represents a point in the time coordinate system of a Performance interface implementation
     pub performance_time: f64,
 }
 
@@ -168,7 +168,6 @@ impl AudioContext {
         Self { base }
     }
 
-
     /// This represents the number of seconds of processing latency incurred by
     /// the `AudioContext` passing the audio from the `AudioDestinationNode`
     /// to the audio subsystem.
@@ -188,14 +187,14 @@ impl AudioContext {
         self.base().output_latency()
     }
 
-    /// Returns a new AudioTimestamp instance containing two related audio stream
-    /// position values for the context: the contextTime member contains the time of
+    /// Returns a new `AudioTimestamp` instance containing two related audio stream
+    /// position values for the context: the `context_time` member contains the time of
     /// the sample frame which is currently being rendered by the audio output device
     /// (i.e. output audio stream position), in the same units and origin as context’s
-    /// currentTime; the performanceTime member contains the time estimating the
-    /// moment when the sample frame corresponding to the stored contextTime value was
-    /// rendered by the audio output device, in the same units and origin as
-    /// performance.now()
+    /// `current_time`; the `performance_time` member contains the time estimating the
+    /// moment when the sample frame corresponding to the stored `context_time` value was
+    /// rendered by the audio output device, in milliseconds using `TIME_ORIGIN` as
+    /// the origin.
     #[must_use]
     pub fn get_output_timestamp(&self) -> AudioTimestamp {
         // @todo - [spec] If the context’s rendering graph has not yet processed a block
@@ -212,7 +211,10 @@ impl AudioContext {
         // performance time is in ms
         let performance_time = (performance_time_sec * 1000.).max(0.);
 
-        AudioTimestamp { context_time, performance_time }
+        AudioTimestamp {
+            context_time,
+            performance_time,
+        }
     }
 
     /// Suspends the progression of time in the audio context.

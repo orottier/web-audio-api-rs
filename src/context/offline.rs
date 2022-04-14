@@ -53,7 +53,7 @@ impl OfflineAudioContext {
             number_of_channels,
             receiver,
             frames_played_clone,
-            output_latency_clones,
+            output_latency_clone,
         );
 
         // first, setup the base audio context
