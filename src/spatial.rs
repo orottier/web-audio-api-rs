@@ -7,8 +7,7 @@ use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 use crate::param::{AudioParam, AudioParamDescriptor, AudioParamRaw, AutomationRate};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::SampleRate;
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
 use lazy_static::lazy_static;
 use std::f32::consts::PI;
@@ -196,8 +195,7 @@ impl AudioProcessor for ListenerRenderer {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _timestamp: f64,
-        _sample_rate: SampleRate,
+        _scope: &RenderScope,
     ) -> bool {
         // for now: persist param values in output, so PannerNodes have access
         outputs[0] = params.get_raw(&self.position_x).clone();

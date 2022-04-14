@@ -9,8 +9,7 @@ use rubato::{FftFixedInOut, Resampler};
 
 use crate::{
     context::{AudioContextRegistration, BaseAudioContext},
-    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
-    SampleRate,
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope},
 };
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
@@ -287,8 +286,7 @@ impl AudioProcessor for WaveShaperRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _timestamp: f64,
-        _sample_rate: SampleRate,
+        _scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

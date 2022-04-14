@@ -11,8 +11,8 @@ use std::f64::consts::PI;
 
 use crate::{
     context::{AudioContextRegistration, BaseAudioContext},
-    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum},
-    SampleRate, MAX_CHANNELS,
+    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope},
+    MAX_CHANNELS,
 };
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
@@ -272,8 +272,7 @@ impl AudioProcessor for IirFilterRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _timestamp: f64,
-        _sample_rate: SampleRate,
+        _scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

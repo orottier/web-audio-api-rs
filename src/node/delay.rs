@@ -1,7 +1,7 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum};
-use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
 
@@ -326,8 +326,7 @@ impl AudioProcessor for DelayWriter {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _timestamp: f64,
-        _sample_rate: SampleRate,
+        _scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let input = inputs[0].clone();
@@ -391,8 +390,7 @@ impl AudioProcessor for DelayReader {
         _inputs: &[AudioRenderQuantum], // cannot be used
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _timestamp: f64,
-        sample_rate: SampleRate,
+        scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let output = &mut outputs[0];
@@ -412,7 +410,7 @@ impl AudioProcessor for DelayReader {
         output.set_number_of_channels(number_of_channels);
 
         // shadow and cast sample_rate, we don't need the wrapper type here
-        let sample_rate = sample_rate.0 as f64;
+        let sample_rate = scope.sample_rate.0 as f64;
         let dt = 1. / sample_rate;
         let quantum_duration = RENDER_QUANTUM_SIZE as f64 * dt;
 
