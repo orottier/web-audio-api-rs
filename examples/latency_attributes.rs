@@ -12,11 +12,9 @@ fn main() {
     sine.start();
 
     println!("- BaseLatency: {:?}", context.base_latency());
-    println!("+ OutputLatency: {:?}", context.output_latency());
 
-    std::thread::sleep(std::time::Duration::from_secs(1));
-    println!("+ OutputLatency: {:?}", context.output_latency());
-
-    std::thread::sleep(std::time::Duration::from_secs(1));
-    println!("+ OutputLatency: {:?}", context.output_latency());
+    loop {
+        println!("+ OutputLatency: {:?}", context.output_latency());
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
 }
