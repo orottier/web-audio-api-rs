@@ -14,7 +14,11 @@ fn main() {
     println!("- BaseLatency: {:?}", context.base_latency());
 
     loop {
+        println!("-------------------------------------------------");
+        println!("+ currentTime {:?}", context.current_time());
         println!("+ OutputLatency: {:?}", context.output_latency());
+        println!("+ AudioTimestamp {:?}", context.get_output_timestamp());
+
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
 }

@@ -2,7 +2,7 @@
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::media::MediaStream;
 use crate::node::{self, ChannelConfigOptions};
-use crate::{AtomicF64, SampleRate};
+use crate::{AtomicF64, SampleRate, TIME_ORIGIN};
 
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -53,6 +53,17 @@ pub struct AudioContextOptions {
     pub latency_hint: AudioContextLatencyCategory,
     /// Sample rate of the audio Context and audio output hardware
     pub sample_rate: Option<u32>,
+}
+
+/// Struct returned by `get_output_timestamp` that associate estimated playback
+/// context time (i.e. `current_time - output_latency`) to a monotonic global clock
+/// (i.e. https://doc.rust-lang.org/std/time/struct.Instant.html)
+#[derive(Clone, Debug, Default)]
+pub struct AudioTimestamp {
+    // Represents a point in the time coordinate system of BaseAudioContext’s currentTime.
+    pub context_time: f64,
+    // Represents a point in the time coordinate system of a Performance interface implementation
+    pub performance_time: f64,
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
@@ -164,7 +175,7 @@ impl AudioContext {
     // We don't do any buffering between rendering the audio and sending
     // it to the audio subsystem, so this value is zero. (see Gecko)
     #[must_use]
-    fn base_latency(&self) -> f64 {
+    pub fn base_latency(&self) -> f64 {
         self.base().base_latency()
     }
 
@@ -173,8 +184,35 @@ impl AudioContext {
     /// the time at which the first sample in the buffer is actually processed
     /// by the audio output device.
     #[must_use]
-    fn output_latency(&self) -> f64 {
+    pub fn output_latency(&self) -> f64 {
         self.base().output_latency()
+    }
+
+    /// Returns a new AudioTimestamp instance containing two related audio stream
+    /// position values for the context: the contextTime member contains the time of
+    /// the sample frame which is currently being rendered by the audio output device
+    /// (i.e. output audio stream position), in the same units and origin as context’s
+    /// currentTime; the performanceTime member contains the time estimating the
+    /// moment when the sample frame corresponding to the stored contextTime value was
+    /// rendered by the audio output device, in the same units and origin as
+    /// performance.now()
+    #[must_use]
+    pub fn get_output_timestamp(&self) -> AudioTimestamp {
+        // @todo - [spec] If the context’s rendering graph has not yet processed a block
+        // of audio, then getOutputTimestamp call returns an AudioTimestamp instance
+        // with both members containing zero.
+
+        let output_latency = self.output_latency();
+        // estimated current_time (i.e. position) at output
+        let context_time = (self.current_time() - output_latency).max(0.);
+        // estimated performance_time at output
+        let now = TIME_ORIGIN.elapsed();
+        let performance_time_sec =
+            now.as_secs() as f64 + now.subsec_nanos() as f64 * 1e-9 - output_latency;
+        // performance time is in ms
+        let performance_time = (performance_time_sec * 1000.).max(0.);
+
+        AudioTimestamp { context_time, performance_time }
     }
 
     /// Suspends the progression of time in the audio context.
