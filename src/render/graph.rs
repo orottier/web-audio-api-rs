@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeIndex};
 use crate::node::{ChannelConfig, ChannelCountMode};
-use crate::render::Scope;
+use crate::render::RenderScope;
 
 use smallvec::{smallvec, SmallVec};
 
@@ -38,7 +38,7 @@ pub struct Node {
 
 impl Node {
     /// Render an audio quantum
-    fn process(&mut self, params: AudioParamValues, global_scope: Scope) -> bool {
+    fn process(&mut self, params: AudioParamValues, global_scope: RenderScope) -> bool {
         self.processor.process(
             &self.inputs[..],
             &mut self.outputs[..],
@@ -274,7 +274,7 @@ impl Graph {
     }
 
     /// Render a single audio quantum by traversing the node list
-    pub fn render(&mut self, global_scope: Scope) -> &AudioRenderQuantum {
+    pub fn render(&mut self, global_scope: RenderScope) -> &AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
             self.order_nodes();
@@ -368,7 +368,7 @@ mod tests {
             _inputs: &[AudioRenderQuantum],
             _outputs: &mut [AudioRenderQuantum],
             _params: AudioParamValues,
-            _scope: Scope,
+            _scope: RenderScope,
         ) -> bool {
             false
         }

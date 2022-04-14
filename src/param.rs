@@ -6,7 +6,7 @@ use crate::context::AudioContextRegistration;
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Scope};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
 use crossbeam_channel::{Receiver, Sender};
@@ -563,7 +563,7 @@ impl AudioProcessor for AudioParamProcessor {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        scope: Scope,
+        scope: RenderScope,
     ) -> bool {
         let period = 1. / scope.sample_rate.0 as f64;
         let param_intrisic_values = self.tick(scope.current_time, period, RENDER_QUANTUM_SIZE);

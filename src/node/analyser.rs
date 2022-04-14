@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::analysis::Analyser;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Scope};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
 
@@ -173,7 +173,7 @@ impl AudioProcessor for AnalyserRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _scope: Scope,
+        _scope: RenderScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];
