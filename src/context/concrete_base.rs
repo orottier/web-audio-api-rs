@@ -10,7 +10,7 @@ use crate::param::{AudioParam, AudioParamEvent};
 use crate::render::AudioProcessor;
 use crate::spatial::AudioListenerParams;
 
-use crate::{AtomicF64, AudioListener, SampleRate};
+use crate::{AudioListener, SampleRate};
 
 use crossbeam_channel::Sender;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
@@ -49,8 +49,6 @@ struct ConcreteBaseAudioContextInner {
     sample_rate: SampleRate,
     /// max number of speaker output channels
     max_channel_count: usize,
-    /// delay between render and actual system audio output
-    output_latency: Arc<AtomicF64>,
     /// incrementing id to assign to audio nodes
     node_id_inc: AtomicU64,
     /// destination node's current channel count
@@ -83,7 +81,6 @@ impl ConcreteBaseAudioContext {
         sample_rate: SampleRate,
         max_channel_count: usize,
         frames_played: Arc<AtomicU64>,
-        output_latency: Arc<AtomicF64>,
         render_channel: Sender<ControlMessage>,
         offline: bool,
     ) -> Self {
@@ -93,7 +90,6 @@ impl ConcreteBaseAudioContext {
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             max_channel_count,
-            output_latency,
             render_channel,
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
@@ -223,15 +219,6 @@ impl ConcreteBaseAudioContext {
     #[must_use]
     pub(super) fn sample_rate_raw(&self) -> SampleRate {
         self.inner.sample_rate
-    }
-
-    /// The estimation in seconds of audio output latency, i.e., the interval
-    /// between the time the UA requests the host system to play a buffer and
-    /// the time at which the first sample in the buffer is actually processed
-    /// by the audio output device.
-    #[must_use]
-    pub(super) fn output_latency(&self) -> f64 {
-        self.inner.output_latency.load()
     }
 
     /// This is the time in seconds of the sample frame immediately following the last sample-frame

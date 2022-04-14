@@ -73,10 +73,11 @@ pub struct AudioTimestamp {
 pub struct AudioContext {
     /// represents the underlying `BaseAudioContext`
     base: ConcreteBaseAudioContext,
-
     /// cpal stream (play/pause functionality)
     #[cfg(not(test))] // in tests, do not set up a cpal Stream
     stream: Mutex<Option<Stream>>,
+    /// delay between render and actual system audio output
+    output_latency: Arc<AtomicF64>,
 }
 
 impl BaseAudioContext for AudioContext {
@@ -132,7 +133,6 @@ impl AudioContext {
             sample_rate,
             number_of_channels,
             frames_played,
-            output_latency,
             sender,
             false,
         );
@@ -141,6 +141,7 @@ impl AudioContext {
         Self {
             base,
             stream: Mutex::new(Some(stream)),
+            output_latency,
         }
     }
 
@@ -159,13 +160,12 @@ impl AudioContext {
             sample_rate,
             number_of_channels,
             frames_played,
-            output_latency,
             sender,
             false,
         );
         base.set_state(AudioContextState::Running);
 
-        Self { base }
+        Self { base, output_latency }
     }
 
     /// This represents the number of seconds of processing latency incurred by
@@ -185,7 +185,7 @@ impl AudioContext {
     /// by the audio output device.
     #[must_use]
     pub fn output_latency(&self) -> f64 {
-        self.base().output_latency()
+        self.output_latency.load()
     }
 
     /// Suspends the progression of time in the audio context.

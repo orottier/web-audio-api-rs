@@ -43,9 +43,9 @@ impl OfflineAudioContext {
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
-        // this is irrelevant for offline context, so we just put 0.
+        // output_latency is irrelevant for offline context, but it needs to
+        // be passed to the `RenderThread` constructor
         let output_latency = Arc::new(AtomicF64::new(0.));
-        let output_latency_clone = output_latency.clone();
 
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
@@ -53,7 +53,7 @@ impl OfflineAudioContext {
             number_of_channels,
             receiver,
             frames_played_clone,
-            output_latency_clone,
+            output_latency,
         );
 
         // first, setup the base audio context
@@ -61,7 +61,6 @@ impl OfflineAudioContext {
             sample_rate,
             number_of_channels,
             frames_played,
-            output_latency,
             sender,
             true,
         );
