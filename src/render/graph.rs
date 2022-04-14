@@ -38,13 +38,9 @@ pub struct Node {
 
 impl Node {
     /// Render an audio quantum
-    fn process(&mut self, params: AudioParamValues, global_scope: &RenderScope) -> bool {
-        self.processor.process(
-            &self.inputs[..],
-            &mut self.outputs[..],
-            params,
-            global_scope,
-        )
+    fn process(&mut self, params: AudioParamValues, scope: &RenderScope) -> bool {
+        self.processor
+            .process(&self.inputs[..], &mut self.outputs[..], params, scope)
     }
 
     /// Determine if this node is done playing and can be removed from the audio graph
@@ -274,7 +270,7 @@ impl Graph {
     }
 
     /// Render a single audio quantum by traversing the node list
-    pub fn render(&mut self, global_scope: RenderScope) -> &AudioRenderQuantum {
+    pub fn render(&mut self, scope: &RenderScope) -> &AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
             self.order_nodes();
@@ -308,7 +304,7 @@ impl Graph {
 
             // let the current node process
             let params = AudioParamValues::from(&*nodes);
-            let tail_time = node.process(params, &global_scope);
+            let tail_time = node.process(params, scope);
 
             // iterate all outgoing edges, lookup these nodes and add to their input
             node.outgoing_edges
