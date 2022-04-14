@@ -1,4 +1,8 @@
 //! General purpose audio signal data structures
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::perf)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::missing_const_for_fn)]
+
 use std::sync::Arc;
 
 use crate::render::AudioRenderQuantum;
@@ -25,7 +29,7 @@ pub struct AudioBufferOptions {
 
 /// Memory-resident audio asset, basically a matrix of channels * samples
 ///
-/// An AudioBuffer has copy-on-write semantics, so it is cheap to clone.
+/// An `AudioBuffer` has copy-on-write semantics, so it is cheap to clone.
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioBuffer>
 /// - specification: <https://webaudio.github.io/web-audio-api/#AudioBuffer>
@@ -80,7 +84,9 @@ impl AudioBuffer {
     /// This function will panic if:
     /// - the given sample rate is zero
     /// - the given number of channels is outside the [1, 32] range,
-    /// 32 being defined by the MAX_CHANNELS constant.
+    /// 32 being defined by the `MAX_CHANNELS` constant.
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(options: AudioBufferOptions) -> Self {
         assert_valid_sample_rate(options.sample_rate);
         assert_valid_number_of_channels(options.number_of_channels);
@@ -93,7 +99,7 @@ impl AudioBuffer {
         }
     }
 
-    /// Convert raw samples to an AudioBuffer
+    /// Convert raw samples to an `AudioBuffer`
     ///
     /// The outer Vec determine the channels. The inner Vecs should have the same length.
     ///
@@ -102,8 +108,9 @@ impl AudioBuffer {
     /// This function will panic if:
     /// - the given sample rate is zero
     /// - the given number of channels defined by `samples.len()`is outside the
-    ///   [1, 32] range, 32 being defined by the MAX_CHANNELS constant.
+    ///   [1, 32] range, 32 being defined by the `MAX_CHANNELS` constant.
     /// - any of its items have different lengths
+    #[must_use]
     pub fn from(samples: Vec<Vec<f32>>, sample_rate: SampleRate) -> Self {
         assert_valid_sample_rate(sample_rate);
         assert_valid_number_of_channels(samples.len());
@@ -120,29 +127,36 @@ impl AudioBuffer {
     }
 
     /// Number of channels in this `AudioBuffer`
+    #[must_use]
     pub fn number_of_channels(&self) -> usize {
         self.channels.len()
     }
 
     /// Number of samples per channel in this `AudioBuffer`
+    #[must_use]
     pub fn length(&self) -> usize {
-        self.channels.get(0).map(ChannelData::len).unwrap_or(0)
+        self.channels.get(0).map_or(0, ChannelData::len)
     }
 
     /// Sample rate of this `AudioBuffer` in Hertz
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn sample_rate(&self) -> f32 {
         self.sample_rate.0 as f32
     }
 
     /// The raw sample rate of the `AudioBuffer` (which has more precision than the float
     /// [`sample_rate()`](AudioBuffer::sample_rate) value).
+    #[must_use]
     pub fn sample_rate_raw(&self) -> SampleRate {
         self.sample_rate
     }
 
     /// Duration in seconds of the `AudioBuffer`
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn duration(&self) -> f64 {
-        self.length() as f64 / self.sample_rate.0 as f64
+        self.length() as f64 / f64::from(self.sample_rate.0)
     }
 
     /// Copy data from a given channel to the given `Vec`
@@ -225,6 +239,7 @@ impl AudioBuffer {
     ///
     /// This function will panic if:
     /// - the given channel number is greater than or equal to the given number of channels.
+    #[must_use]
     pub fn get_channel_data(&self, channel_number: usize) -> &[f32] {
         assert_valid_channel_number(channel_number, self.number_of_channels());
         // [spec] According to the rules described in acquire the content either allow writing
@@ -234,6 +249,7 @@ impl AudioBuffer {
 
     /// Create a multi-channel audiobuffer directly from `ChannelData`s.
     // @todo - remove in favor of `AudioBuffer::from`
+    #[must_use]
     pub(crate) fn from_channels(channels: Vec<ChannelData>, sample_rate: SampleRate) -> Self {
         Self {
             channels,
@@ -242,11 +258,13 @@ impl AudioBuffer {
     }
 
     /// Channel data as slice
+    #[must_use]
     pub(crate) fn channels(&self) -> &[ChannelData] {
         &self.channels
     }
 
     /// Channel data as slice (mutable)
+    #[must_use]
     pub(crate) fn channels_mut(&mut self) -> &mut [ChannelData] {
         &mut self.channels
     }
@@ -255,6 +273,7 @@ impl AudioBuffer {
     ///
     /// Panics if the index is greater than the available number of channels
     // @note - this one is used in
+    #[must_use]
     pub(crate) fn channel_data(&self, index: usize) -> &ChannelData {
         &self.channels[index]
     }
@@ -262,13 +281,14 @@ impl AudioBuffer {
     /// Get the samples (mutable) from this specific channel.
     ///
     /// Panics if the index is greater than the available number of channels
+    #[must_use]
     pub(crate) fn channel_data_mut(&mut self, index: usize) -> &mut ChannelData {
         &mut self.channels[index]
     }
 
-    /// Extends an AudioBuffer with the contents of another.
+    /// Extends an `AudioBuffer` with the contents of another.
     ///
-    /// This function will panic if the sample_rate and channel_count are not equal
+    /// This function will panic if the `sample_rate` and `channel_count` are not equal
     pub(crate) fn extend(&mut self, other: &Self) {
         assert_eq!(self.sample_rate, other.sample_rate);
         assert_eq!(self.number_of_channels(), other.number_of_channels());
@@ -279,12 +299,12 @@ impl AudioBuffer {
             .for_each(|(channel, other_channel)| {
                 let cur_channel_data = Arc::make_mut(&mut channel.data);
                 cur_channel_data.extend(other_channel.as_slice());
-            })
+            });
     }
 
-    /// Extends an AudioBuffer with an [`AudioRenderQuantum`]
+    /// Extends an `AudioBuffer` with an [`AudioRenderQuantum`]
     ///
-    /// This assumes the sample_rate matches. No up/down-mixing is performed
+    /// This assumes the `sample_rate` matches. No up/down-mixing is performed
     pub(crate) fn extend_alloc(&mut self, other: &AudioRenderQuantum) {
         self.channels_mut()
             .iter_mut()
@@ -292,10 +312,11 @@ impl AudioBuffer {
             .for_each(|(channel, other_channel)| {
                 let cur_channel_data = Arc::make_mut(&mut channel.data);
                 cur_channel_data.extend_from_slice(&other_channel[..]);
-            })
+            });
     }
 
-    /// Split an AudioBuffer in two at the given index.
+    /// Split an `AudioBuffer` in two at the given index.
+    #[must_use]
     pub(crate) fn split_off(&mut self, index: usize) -> Self {
         let sample_rate = self.sample_rate_raw();
 
@@ -306,7 +327,7 @@ impl AudioBuffer {
             .map(ChannelData::from)
             .collect();
 
-        AudioBuffer::from_channels(channels, sample_rate)
+        Self::from_channels(channels, sample_rate)
     }
 
     /// Resample to the desired sample rate. The method performs a simple linear
@@ -338,6 +359,11 @@ impl AudioBuffer {
     ///
     /// assert_eq!(buffer.sample_rate().0, 96_000);
     /// ```
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation
+    )]
     pub(crate) fn resample(&mut self, sample_rate: SampleRate) {
         if self.sample_rate_raw() == sample_rate {
             return;
@@ -351,8 +377,8 @@ impl AudioBuffer {
             return;
         }
 
-        let source_sr = self.sample_rate.0 as f64;
-        let target_sr = sample_rate.0 as f64;
+        let source_sr = f64::from(self.sample_rate.0);
+        let target_sr = f64::from(sample_rate.0);
         let ratio = target_sr / source_sr;
         let source_length = self.length();
         let target_length = (self.length() as f64 * ratio).ceil() as usize;
@@ -375,7 +401,7 @@ impl AudioBuffer {
                 let prev_sample = self.channels[channel].data[prev_index];
                 let next_sample = self.channels[channel].data[next_index];
 
-                let value = k_inv * prev_sample + k * next_sample;
+                let value = k_inv.mul_add(prev_sample, k * next_sample);
                 resampled_data.push(value);
             }
         }
@@ -393,13 +419,14 @@ impl AudioBuffer {
 
 /// Single channel audio samples, basically wraps a `Arc<Vec<f32>>`
 ///
-/// ChannelData has copy-on-write semantics, so it is cheap to clone.
+/// `ChannelData` has copy-on-write semantics, so it is cheap to clone.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ChannelData {
     data: Arc<Vec<f32>>,
 }
 
 impl ChannelData {
+    #[must_use]
     pub fn new(length: usize) -> Self {
         let buffer = vec![0.; length];
         let data = Arc::new(buffer);
@@ -407,26 +434,31 @@ impl ChannelData {
         Self { data }
     }
 
+    #[must_use]
     pub fn from(data: Vec<f32>) -> Self {
         Self {
             data: Arc::new(data),
         }
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
     // clippy wants to keep it, so keep it :)
     #[allow(dead_code)]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
 
+    #[must_use]
     pub fn as_slice(&self) -> &[f32] {
         &self.data[..]
     }
 
+    #[must_use]
     pub fn as_mut_slice(&mut self) -> &mut [f32] {
         &mut Arc::make_mut(&mut self.data)[..]
     }
@@ -467,7 +499,7 @@ mod tests {
             sample_rate: SampleRate(1),
         };
 
-        AudioBuffer::new(options); // should panic
+        let _buf = AudioBuffer::new(options); // should panic
     }
 
     #[test]
@@ -476,7 +508,7 @@ mod tests {
         let samples = vec![];
         let sample_rate = SampleRate(1);
 
-        AudioBuffer::from(samples, sample_rate); // should panic
+        let _buf = AudioBuffer::from(samples, sample_rate); // should panic
     }
 
     #[test]
@@ -488,7 +520,7 @@ mod tests {
             sample_rate: SampleRate(0),
         };
 
-        AudioBuffer::new(options); // should panic
+        let _buf = AudioBuffer::new(options); // should panic
     }
 
     #[test]
@@ -497,7 +529,7 @@ mod tests {
         let samples = vec![vec![0.]];
         let sample_rate = SampleRate(0);
 
-        AudioBuffer::from(samples, sample_rate); // should panic
+        let _buf = AudioBuffer::from(samples, sample_rate); // should panic
     }
 
     #[test]
@@ -657,7 +689,7 @@ mod tests {
 
         let audio_buffer = AudioBuffer::new(options);
 
-        audio_buffer.get_channel_data(1);
+        let _c = audio_buffer.get_channel_data(1);
     }
 
     // internal API
@@ -731,16 +763,17 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_precision_loss)]
     fn test_upsample() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let mut buffer = AudioBuffer::from_channels(vec![channel], SampleRate(100));
         buffer.resample(SampleRate(200));
 
         let mut expected = [0.; 10];
-        let incr = 4. / 9.; // (5 - 1) / (10 - 1)
+        let incr: f32 = 4. / 9.; // (5 - 1) / (10 - 1)
 
         for (i, value) in expected.iter_mut().enumerate() {
-            *value = 1. + incr * i as f32;
+            *value = incr.mul_add(i as f32, 1.);
         }
 
         assert_float_eq!(
@@ -768,8 +801,9 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_precision_loss)]
     fn test_resample_stereo() {
-        [22500, 38000, 48000, 96000].iter().for_each(|sr| {
+        for sr in &[22500, 38000, 48000, 96000] {
             let source_sr = *sr;
             let target_sr = 44_100;
 
@@ -812,6 +846,6 @@ mod tests {
             );
 
             assert_eq!(buffer.sample_rate_raw().0, target_sr);
-        });
+        }
     }
 }
