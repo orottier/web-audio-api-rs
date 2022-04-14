@@ -38,7 +38,7 @@ pub struct Node {
 
 impl Node {
     /// Render an audio quantum
-    fn process(&mut self, params: AudioParamValues, global_scope: RenderScope) -> bool {
+    fn process(&mut self, params: AudioParamValues, global_scope: &RenderScope) -> bool {
         self.processor.process(
             &self.inputs[..],
             &mut self.outputs[..],
@@ -308,7 +308,7 @@ impl Graph {
 
             // let the current node process
             let params = AudioParamValues::from(&*nodes);
-            let tail_time = node.process(params, global_scope);
+            let tail_time = node.process(params, &global_scope);
 
             // iterate all outgoing edges, lookup these nodes and add to their input
             node.outgoing_edges
@@ -368,7 +368,7 @@ mod tests {
             _inputs: &[AudioRenderQuantum],
             _outputs: &mut [AudioRenderQuantum],
             _params: AudioParamValues,
-            _scope: RenderScope,
+            _scope: &RenderScope,
         ) -> bool {
             false
         }

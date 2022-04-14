@@ -195,7 +195,7 @@ impl AudioProcessor for ListenerRenderer {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _global_scope: RenderScope,
+        _global_scope: &RenderScope,
     ) -> bool {
         // for now: persist param values in output, so PannerNodes have access
         outputs[0] = params.get_raw(&self.position_x).clone();

@@ -8,7 +8,6 @@ use crate::SampleRate;
 use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 
 #[non_exhaustive] // we may want to add user-provided blobs to this later
-#[derive(Copy, Clone, Debug)]
 /// The execution context of all AudioProcessors in a given AudioContext
 ///
 /// This struct currently only contains information about the progress of time. In a future
@@ -19,6 +18,7 @@ pub struct RenderScope {
     pub current_time: f64,
     pub sample_rate: SampleRate,
 }
+
 /// Interface for audio processing code that runs on the audio rendering thread.
 ///
 /// Note that the AudioProcessor is typically constructed together with an [`crate::node::AudioNode`]
@@ -50,7 +50,7 @@ pub trait AudioProcessor: Send {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        global_scope: RenderScope,
+        scope: &RenderScope,
     ) -> bool;
 }
 

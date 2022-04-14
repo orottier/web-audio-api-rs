@@ -119,7 +119,7 @@ impl AudioProcessor for DestinationRenderer {
         inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        scope: RenderScope,
+        scope: &RenderScope,
     ) -> bool {
         // single input, no output
         let input = &inputs[0];

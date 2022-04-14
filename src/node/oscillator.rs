@@ -337,7 +337,7 @@ impl AudioProcessor for OscillatorRenderer {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        scope: RenderScope,
+        scope: &RenderScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

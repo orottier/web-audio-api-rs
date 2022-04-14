@@ -326,7 +326,7 @@ impl AudioProcessor for DelayWriter {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _scope: RenderScope,
+        _scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let input = inputs[0].clone();
@@ -390,7 +390,7 @@ impl AudioProcessor for DelayReader {
         _inputs: &[AudioRenderQuantum], // cannot be used
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        scope: RenderScope,
+        scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let output = &mut outputs[0];

@@ -327,7 +327,7 @@ impl AudioProcessor for PannerRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _scope: RenderScope,
+        _scope: &RenderScope,
     ) -> bool {
         // Single input node
         // assume mono (todo issue #44)

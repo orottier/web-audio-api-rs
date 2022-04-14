@@ -81,7 +81,7 @@ impl AudioProcessor for WhiteNoiseProcessor {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _scope: RenderScope,
+        _scope: &RenderScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

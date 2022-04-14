@@ -272,7 +272,7 @@ impl AudioProcessor for IirFilterRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _scope: RenderScope,
+        _scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

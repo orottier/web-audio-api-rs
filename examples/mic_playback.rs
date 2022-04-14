@@ -96,7 +96,7 @@ impl AudioProcessor for MediaRecorderProcessor {
         inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _scope: RenderScope,
+        _scope: &RenderScope,
     ) -> bool {
         // single input node
         let input = &inputs[0];

@@ -460,7 +460,7 @@ impl AudioProcessor for BiquadFilterRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        scope: RenderScope,
+        scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

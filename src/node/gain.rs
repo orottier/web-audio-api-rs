@@ -88,7 +88,7 @@ impl AudioProcessor for GainRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _scope: RenderScope,
+        _scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

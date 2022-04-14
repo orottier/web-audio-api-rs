@@ -339,7 +339,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         _inputs: &[AudioRenderQuantum], // no input...
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        scope: RenderScope,
+        scope: &RenderScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

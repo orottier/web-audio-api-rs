@@ -373,7 +373,7 @@ impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _scope: RenderScope,
+        _scope: &RenderScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];
