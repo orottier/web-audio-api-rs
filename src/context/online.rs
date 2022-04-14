@@ -2,7 +2,7 @@
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::media::MediaStream;
 use crate::node::{self, ChannelConfigOptions};
-use crate::SampleRate;
+use crate::{AtomicF64, SampleRate};
 
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -62,10 +62,11 @@ pub struct AudioContextOptions {
 pub struct AudioContext {
     /// represents the underlying `BaseAudioContext`
     base: ConcreteBaseAudioContext,
-
     /// cpal stream (play/pause functionality)
     #[cfg(not(test))] // in tests, do not set up a cpal Stream
     stream: Mutex<Option<Stream>>,
+    /// delay between render and actual system audio output
+    output_latency: Arc<AtomicF64>,
 }
 
 impl BaseAudioContext for AudioContext {
@@ -108,7 +109,12 @@ impl AudioContext {
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
-        let (stream, config, sender) = io::build_output(frames_played_clone, options);
+        let output_latency = Arc::new(AtomicF64::new(0.));
+        let output_latency_clone = output_latency.clone();
+
+        let (stream, config, sender) =
+            io::build_output(frames_played_clone, output_latency_clone, options);
+
         let number_of_channels = usize::from(config.channels);
         let sample_rate = SampleRate(config.sample_rate.0);
 
@@ -124,6 +130,7 @@ impl AudioContext {
         Self {
             base,
             stream: Mutex::new(Some(stream)),
+            output_latency,
         }
     }
 
@@ -136,6 +143,7 @@ impl AudioContext {
 
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let frames_played = Arc::new(AtomicU64::new(0));
+        let output_latency = Arc::new(AtomicF64::new(0.));
 
         let base = ConcreteBaseAudioContext::new(
             sample_rate,
@@ -146,7 +154,30 @@ impl AudioContext {
         );
         base.set_state(AudioContextState::Running);
 
-        Self { base }
+        Self {
+            base,
+            output_latency,
+        }
+    }
+
+    /// This represents the number of seconds of processing latency incurred by
+    /// the `AudioContext` passing the audio from the `AudioDestinationNode`
+    /// to the audio subsystem.
+    // We don't do any buffering between rendering the audio and sending
+    // it to the audio subsystem, so this value is zero. (see Gecko)
+    #[allow(clippy::unused_self)]
+    #[must_use]
+    pub const fn base_latency(&self) -> f64 {
+        0.
+    }
+
+    /// The estimation in seconds of audio output latency, i.e., the interval
+    /// between the time the UA requests the host system to play a buffer and
+    /// the time at which the first sample in the buffer is actually processed
+    /// by the audio output device.
+    #[must_use]
+    pub fn output_latency(&self) -> f64 {
+        self.output_latency.load()
     }
 
     /// Suspends the progression of time in the audio context.
@@ -171,7 +202,7 @@ impl AudioContext {
             if let Err(e) = s.pause() {
                 panic!("Error suspending cpal stream: {:?}", e);
             }
-            self.base.set_state(AudioContextState::Suspended);
+            self.base().set_state(AudioContextState::Suspended);
         }
     }
 
@@ -195,7 +226,7 @@ impl AudioContext {
             if let Err(e) = s.play() {
                 panic!("Error resuming cpal stream: {:?}", e);
             }
-            self.base.set_state(AudioContextState::Running);
+            self.base().set_state(AudioContextState::Running);
         }
     }
 
@@ -215,7 +246,7 @@ impl AudioContext {
     pub fn close_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
         self.stream.lock().unwrap().take(); // will Drop
-        self.base.set_state(AudioContextState::Closed);
+        self.base().set_state(AudioContextState::Closed);
     }
 
     /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]

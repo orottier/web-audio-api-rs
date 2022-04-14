@@ -210,28 +210,6 @@ pub trait BaseAudioContext {
         node::WaveShaperNode::new(self.base(), node::WaveShaperOptions::default())
     }
 
-    /// Create an `AudioParam`.
-    ///
-    /// Call this inside the `register` closure when setting up your `AudioNode`
-    #[must_use]
-    fn create_audio_param(
-        &self,
-        opts: AudioParamDescriptor,
-        dest: &AudioContextRegistration,
-    ) -> (crate::param::AudioParam, AudioParamId) {
-        let param = self.base().register(move |registration| {
-            let (node, proc) = crate::param::audio_param_pair(opts, registration);
-
-            (node, Box::new(proc))
-        });
-
-        // Connect the param to the node, once the node is registered inside the audio graph.
-        self.base().queue_audio_param_connect(&param, dest.id());
-
-        let proc_id = AudioParamId(param.registration().id().0);
-        (param, proc_id)
-    }
-
     /// Returns an `AudioDestinationNode` representing the final destination of all audio in the
     /// context. It can be thought of as the audio-rendering device.
     #[must_use]
@@ -274,6 +252,28 @@ pub trait BaseAudioContext {
     #[must_use]
     fn current_time(&self) -> f64 {
         self.base().current_time()
+    }
+
+    /// Create an `AudioParam`.
+    ///
+    /// Call this inside the `register` closure when setting up your `AudioNode`
+    #[must_use]
+    fn create_audio_param(
+        &self,
+        opts: AudioParamDescriptor,
+        dest: &AudioContextRegistration,
+    ) -> (crate::param::AudioParam, AudioParamId) {
+        let param = self.base().register(move |registration| {
+            let (node, proc) = crate::param::audio_param_pair(opts, registration);
+
+            (node, Box::new(proc))
+        });
+
+        // Connect the param to the node, once the node is registered inside the audio graph.
+        self.base().queue_audio_param_connect(&param, dest.id());
+
+        let proc_id = AudioParamId(param.registration().id().0);
+        (param, proc_id)
     }
 
     #[cfg(test)]

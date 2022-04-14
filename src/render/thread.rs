@@ -3,14 +3,14 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use cpal::Sample;
+use cpal::{OutputCallbackInfo, Sample};
 use crossbeam_channel::Receiver;
 
 use super::{AudioRenderQuantum, NodeIndex};
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
-use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+use crate::{AtomicF64, SampleRate, RENDER_QUANTUM_SIZE};
 
 use super::graph::Graph;
 
@@ -20,6 +20,7 @@ pub(crate) struct RenderThread {
     sample_rate: SampleRate,
     number_of_channels: usize,
     frames_played: Arc<AtomicU64>,
+    output_latency: Arc<AtomicF64>,
     receiver: Receiver<ControlMessage>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
 }
@@ -38,12 +39,14 @@ impl RenderThread {
         number_of_channels: usize,
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
+        output_latency: Arc<AtomicF64>,
     ) -> Self {
         Self {
             graph: Graph::new(),
             sample_rate,
             number_of_channels,
             frames_played,
+            output_latency,
             receiver,
             buffer_offset: None,
         }
@@ -124,7 +127,16 @@ impl RenderThread {
     // This code is not dead: false positive from clippy
     // due to the use of #[cfg(not(test))]
     #[allow(dead_code)]
-    pub fn render<S: Sample>(&mut self, mut buffer: &mut [S]) {
+    pub fn render<S: Sample>(&mut self, mut buffer: &mut [S], infos: &OutputCallbackInfo) {
+        // update output latency, this value might change while running (e.g. sound card heat)
+        let timestamp = infos.timestamp();
+        let delta = timestamp
+            .playback
+            .duration_since(&timestamp.callback)
+            .unwrap();
+        let output_latency = delta.as_secs() as f64 + delta.subsec_nanos() as f64 * 1e-9;
+        self.output_latency.store(output_latency);
+
         // There may be audio frames left over from the previous render call,
         // if the cpal buffer size did not align with our internal RENDER_QUANTUM_SIZE
         if let Some((offset, prev_rendered)) = self.buffer_offset.take() {
