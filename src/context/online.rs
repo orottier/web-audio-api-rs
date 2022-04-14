@@ -165,7 +165,10 @@ impl AudioContext {
         );
         base.set_state(AudioContextState::Running);
 
-        Self { base, output_latency }
+        Self {
+            base,
+            output_latency,
+        }
     }
 
     /// This represents the number of seconds of processing latency incurred by
