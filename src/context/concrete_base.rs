@@ -225,17 +225,6 @@ impl ConcreteBaseAudioContext {
         self.inner.sample_rate
     }
 
-    /// This represents the number of seconds of processing latency incurred by
-    /// the `AudioContext` passing the audio from the `AudioDestinationNode`
-    /// to the audio subsystem.
-    // We don't do any buffering between rendering the audio and sending
-    // it to the audio subsystem, so this value is zero. (see Gecko)
-    #[allow(clippy::unused_self)]
-    #[must_use]
-    pub(super) const fn base_latency(&self) -> f64 {
-        0.
-    }
-
     /// The estimation in seconds of audio output latency, i.e., the interval
     /// between the time the UA requests the host system to play a buffer and
     /// the time at which the first sample in the buffer is actually processed

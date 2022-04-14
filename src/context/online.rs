@@ -2,7 +2,7 @@
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::media::MediaStream;
 use crate::node::{self, ChannelConfigOptions};
-use crate::{AtomicF64, SampleRate, TIME_ORIGIN};
+use crate::{AtomicF64, SampleRate};
 
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -173,9 +173,10 @@ impl AudioContext {
     /// to the audio subsystem.
     // We don't do any buffering between rendering the audio and sending
     // it to the audio subsystem, so this value is zero. (see Gecko)
+    #[allow(clippy::unused_self)]
     #[must_use]
-    pub fn base_latency(&self) -> f64 {
-        self.base().base_latency()
+    pub const fn base_latency(&self) -> f64 {
+        0.
     }
 
     /// The estimation in seconds of audio output latency, i.e., the interval
@@ -185,36 +186,6 @@ impl AudioContext {
     #[must_use]
     pub fn output_latency(&self) -> f64 {
         self.base().output_latency()
-    }
-
-    /// Returns a new `AudioTimestamp` instance containing two related audio stream
-    /// position values for the context: the `context_time` member contains the time of
-    /// the sample frame which is currently being rendered by the audio output device
-    /// (i.e. output audio stream position), in the same units and origin as context’s
-    /// `current_time`; the `performance_time` member contains the time estimating the
-    /// moment when the sample frame corresponding to the stored `context_time` value was
-    /// rendered by the audio output device, in milliseconds using `TIME_ORIGIN` as
-    /// the origin.
-    #[must_use]
-    pub fn get_output_timestamp(&self) -> AudioTimestamp {
-        // @todo - [spec] If the context’s rendering graph has not yet processed a block
-        // of audio, then getOutputTimestamp call returns an AudioTimestamp instance
-        // with both members containing zero.
-
-        let output_latency = self.output_latency();
-        // estimated current_time (i.e. position) at output
-        let context_time = (self.current_time() - output_latency).max(0.);
-        // estimated performance_time at output
-        let now = TIME_ORIGIN.elapsed();
-        let performance_time_sec =
-            now.as_secs() as f64 + now.subsec_nanos() as f64 * 1e-9 - output_latency;
-        // performance time is in ms
-        let performance_time = (performance_time_sec * 1000.).max(0.);
-
-        AudioTimestamp {
-            context_time,
-            performance_time,
-        }
     }
 
     /// Suspends the progression of time in the audio context.

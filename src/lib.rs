@@ -38,9 +38,6 @@
 #![deny(trivial_numeric_casts)]
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::time::Instant;
-
-use once_cell::sync::Lazy;
 
 /// Render quantum size, the audio graph is rendered in blocks of RENDER_QUANTUM_SIZE samples
 /// see. <https://webaudio.github.io/web-audio-api/#render-quantum>
@@ -48,12 +45,6 @@ pub const RENDER_QUANTUM_SIZE: usize = 128;
 
 /// Maximum number of channels for audio processing
 pub const MAX_CHANNELS: usize = 32;
-
-/// Global `Instant` to create `AudioTimestamp` returned by `AudioContext::getOutputTimestamp`
-/// on a timeline shared by all contexts. This can be usefull to tightly synchronise
-/// audio rendering with other processes (e.g. graphics)
-// @note: naming inspired by https://www.w3.org/TR/hr-time-3/#dfn-time-origin
-pub(crate) static TIME_ORIGIN: Lazy<Instant> = Lazy::new(Instant::now);
 
 pub mod buffer;
 pub mod context;
