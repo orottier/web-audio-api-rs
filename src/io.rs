@@ -18,7 +18,6 @@ use crate::media::MicrophoneRender;
 use crate::render::RenderThread;
 
 use crossbeam_channel::{Receiver, Sender};
-use log::warn;
 
 /// Creates an output stream
 ///
@@ -122,14 +121,9 @@ impl StreamConfigsBuilder {
     ///
     /// * `device` - the audio device on which the stream is broadcast
     fn get_supported_config(device: &cpal::Device) -> cpal::SupportedStreamConfig {
-        let mut supported_configs_range = device
-            .supported_output_configs()
-            .expect("error while querying configs");
-
-        supported_configs_range
-            .next()
-            .expect("no supported config?!")
-            .with_max_sample_rate()
+        device
+            .default_output_config()
+            .expect("error while querying configs")
     }
 
     /// set preferred sample rate
@@ -284,16 +278,18 @@ impl OutputStreamer {
             self.output_latency.clone(),
         );
 
+        log::debug!("Attempt output stream with prefered config: {:?}", &config);
         let spawned =
             spawn_output_stream(&self.device, self.configs.sample_format, config, renderer);
 
         match spawned {
             Ok(stream) => {
+                log::debug!("Output stream set up successfully");
                 self.stream = Some(stream);
                 Ok(self)
             }
             Err(e) => {
-                warn!("Output stream build failed with prefered config: {}", e);
+                log::warn!("Output stream build failed with prefered config: {}", e);
                 Err(self)
             }
         }
