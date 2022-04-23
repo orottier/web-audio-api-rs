@@ -10,7 +10,7 @@ use crate::param::{AudioParam, AudioParamEvent};
 use crate::render::AudioProcessor;
 use crate::spatial::AudioListenerParams;
 
-use crate::{AudioListener, SampleRate};
+use crate::AudioListener;
 
 use crossbeam_channel::Sender;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
@@ -46,7 +46,7 @@ impl PartialEq for ConcreteBaseAudioContext {
 /// These fields are wrapped inside an `Arc` in the actual `ConcreteBaseAudioContext`.
 struct ConcreteBaseAudioContextInner {
     /// sample rate in Hertz
-    sample_rate: SampleRate,
+    sample_rate: f32,
     /// max number of speaker output channels
     max_channel_count: usize,
     /// incrementing id to assign to audio nodes
@@ -78,7 +78,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
 impl ConcreteBaseAudioContext {
     /// Creates a `BaseAudioContext` instance
     pub(super) fn new(
-        sample_rate: SampleRate,
+        sample_rate: f32,
         max_channel_count: usize,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,

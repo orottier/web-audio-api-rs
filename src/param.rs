@@ -1432,7 +1432,6 @@ mod tests {
     use float_eq::assert_float_eq;
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
-    use crate::SampleRate;
 
     use super::*;
 
@@ -1483,7 +1482,7 @@ mod tests {
 
     #[test]
     fn test_default_and_accessors() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -1502,7 +1501,7 @@ mod tests {
 
     #[test]
     fn test_set_value() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -1524,7 +1523,7 @@ mod tests {
 
     #[test]
     fn test_set_value_clamped() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -1546,7 +1545,7 @@ mod tests {
 
     #[test]
     fn test_steps_a_rate() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             let opts = AudioParamDescriptor {
@@ -1603,7 +1602,7 @@ mod tests {
 
     #[test]
     fn test_steps_k_rate() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::K,
             default_value: 0.,
@@ -1629,7 +1628,7 @@ mod tests {
 
     #[test]
     fn test_linear_ramp_arate() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -1656,7 +1655,7 @@ mod tests {
 
     #[test]
     fn test_linear_ramp_arate_end_of_block() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -1681,7 +1680,7 @@ mod tests {
 
     #[test]
     fn test_linear_ramp_arate_implicit_set_value() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -1712,7 +1711,7 @@ mod tests {
     #[test]
     fn test_linear_ramp_arate_multiple_blocks() {
         // regression test for issue #9
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -1752,7 +1751,7 @@ mod tests {
     #[test]
     fn test_linear_ramp_arate_clamp() {
         // must be compliant with ex.7 cf. https://www.w3.org/TR/webaudio/#computation-of-value
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -1779,7 +1778,7 @@ mod tests {
     #[test]
     fn test_linear_ramp_krate_multiple_blocks() {
         // regression test for issue #9
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             let opts = AudioParamDescriptor {
@@ -1835,7 +1834,7 @@ mod tests {
 
     #[test]
     fn test_exponential_ramp_a_rate() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -1870,7 +1869,7 @@ mod tests {
 
     #[test]
     fn test_exponential_ramp_a_rate_multiple_blocks() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -1908,7 +1907,7 @@ mod tests {
 
     #[test]
     fn test_exponential_ramp_a_rate_zero_and_opposite_target() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             // zero target
@@ -1960,7 +1959,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_exponential_ramp_to_zero() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -1974,7 +1973,7 @@ mod tests {
 
     #[test]
     fn test_exponential_ramp_k_rate_multiple_blocks() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::K,
@@ -2014,7 +2013,7 @@ mod tests {
 
     #[test]
     fn test_exponential_ramp_k_rate_zero_and_opposite_target() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             // zero target
@@ -2059,7 +2058,7 @@ mod tests {
 
     #[test]
     fn test_set_target_at_time_a_rate() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             let opts = AudioParamDescriptor {
@@ -2166,7 +2165,7 @@ mod tests {
 
     #[test]
     fn test_set_target_at_time_a_rate_multiple_blocks() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             let opts = AudioParamDescriptor {
@@ -2201,7 +2200,7 @@ mod tests {
 
     #[test]
     fn test_set_target_at_time_a_rate_followed_by_set_value() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             let opts = AudioParamDescriptor {
@@ -2240,7 +2239,7 @@ mod tests {
 
     #[test]
     fn test_set_target_at_time_a_rate_followed_by_ramp() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
         {
             let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
@@ -2293,7 +2292,7 @@ mod tests {
 
     #[test]
     fn test_set_target_at_time_k_rate_multiple_blocks() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             let opts = AudioParamDescriptor {
@@ -2328,7 +2327,7 @@ mod tests {
 
     #[test]
     fn test_cancel_scheduled_values() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -2353,7 +2352,7 @@ mod tests {
 
     #[test]
     fn test_cancel_scheduled_values_ramp() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             let opts = AudioParamDescriptor {
@@ -2442,7 +2441,7 @@ mod tests {
 
     #[test]
     fn test_cancel_and_hold() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
         {
             let opts = AudioParamDescriptor {
                 automation_rate: AutomationRate::A,
@@ -2469,7 +2468,7 @@ mod tests {
 
     #[test]
     fn test_cancel_and_hold_during_set_target() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             let opts = AudioParamDescriptor {
@@ -2510,7 +2509,7 @@ mod tests {
 
     #[test]
     fn test_cancel_and_hold_during_linear_ramp() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             let opts = AudioParamDescriptor {
@@ -2556,7 +2555,7 @@ mod tests {
 
     #[test]
     fn test_cancel_and_hold_during_exponential_ramp() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             let opts = AudioParamDescriptor {
@@ -2626,7 +2625,7 @@ mod tests {
 
     #[test]
     fn test_cancel_and_hold_during_set_value_curve() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         {
             let opts = AudioParamDescriptor {
@@ -2674,7 +2673,7 @@ mod tests {
 
     #[test]
     fn test_set_value_curve_at_time_a_rate() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -2701,7 +2700,7 @@ mod tests {
 
     #[test]
     fn test_set_value_curve_at_time_a_rate_multiple_frames() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -2736,7 +2735,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_set_value_curve_at_time_insert_while_another_event() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
@@ -2758,7 +2757,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_set_value_curve_at_time_insert_another_event_inside() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
