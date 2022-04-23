@@ -341,9 +341,16 @@ impl Graph {
             }
         });
 
-        // If there were any nodes decomissioned, clear current graph order
+        // If there were any nodes decomissioned, remove from graph order
         if nodes_dropped {
-            self.ordered.clear();
+            let mut i = 0;
+            while i < self.ordered.len() {
+                if !nodes.contains_key(&self.ordered[i]) {
+                    self.ordered.remove(i);
+                } else {
+                    i += 1;
+                }
+            }
         }
 
         // Return the output buffer of destination node
