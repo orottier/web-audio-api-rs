@@ -574,7 +574,11 @@ impl AudioProcessor for AudioParamProcessor {
             .channel_data_mut(0)
             .copy_from_slice(param_intrisic_values);
 
+        // add input signal to param computed values
+        // @note - maybe we should clamp after that too? not very clear in spec
+        // but it would appear logical
         let input = &inputs[0]; // single input mode
+
         if !input.is_silent() {
             param_computed_values.add(input, ChannelInterpretation::Discrete);
         }
