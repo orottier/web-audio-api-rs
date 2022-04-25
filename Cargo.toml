@@ -38,8 +38,8 @@ textplots = "0.8"
 
 # Uncomment the following lines to enable debug symbols
 # during CPU profiling
-[profile.release]
-debug = true
+# [profile.release]
+# debug = true
 
 [features]
 default = ["mp3", "ogg", "flac", "wav"]
