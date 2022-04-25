@@ -568,20 +568,24 @@ impl AudioProcessor for AudioParamProcessor {
         let period = 1. / scope.sample_rate.0 as f64;
         let param_intrisic_values = self.tick(scope.current_time, period, RENDER_QUANTUM_SIZE);
 
-        let input = &inputs[0]; // single input mode
         let param_computed_values = &mut outputs[0];
 
         param_computed_values
             .channel_data_mut(0)
             .copy_from_slice(param_intrisic_values);
 
-        param_computed_values.add(input, ChannelInterpretation::Discrete);
+        let input = &inputs[0]; // single input mode
+        if !input.is_silent() {
+            param_computed_values.add(input, ChannelInterpretation::Discrete);
+        }
 
         true // has intrinsic value
     }
 }
 
 impl AudioParamProcessor {
+    // [spec] intrinsic parameter value [is the] the value the AudioParam would
+    // normally have without any audio connections
     pub fn intrisic_value(&self) -> f32 {
         if self.intrisic_value.is_nan() {
             self.default_value

@@ -453,6 +453,11 @@ impl AudioRenderQuantum {
         self.channels.truncate(1);
     }
 
+    #[must_use]
+    pub fn is_silent(&self) -> bool {
+        self.number_of_channels() == 1 && self.channels[0].is_silent()
+    }
+
     /// Convert to a single channel buffer, dropping excess channels
     pub fn force_mono(&mut self) {
         self.channels.truncate(1);
