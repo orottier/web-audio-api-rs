@@ -353,6 +353,8 @@ impl Graph {
 
 #[cfg(test)]
 mod tests {
+    use float_eq::assert_float_eq;
+
     use super::*;
 
     #[derive(Debug, Clone)]
@@ -502,5 +504,116 @@ mod tests {
         assert!(pos4.is_some());
         // a-cyclic part should be present
         assert!(pos3.unwrap() < pos0.unwrap());
+    }
+
+    #[derive(Debug, Clone)]
+    struct SpeakerNode {}
+
+    impl AudioProcessor for SpeakerNode {
+        fn process(
+            &mut self,
+            _inputs: &[AudioRenderQuantum],
+            outputs: &mut [AudioRenderQuantum],
+            _params: AudioParamValues,
+            _scope: &RenderScope,
+        ) -> bool {
+            let output = &mut outputs[0];
+            output.set_number_of_channels(2);
+            output.modify_channels(|channel|
+                channel.iter_mut().for_each(|value| *value = 1.)
+            );
+            true
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct DiscreteNode {}
+
+    impl AudioProcessor for DiscreteNode {
+        fn process(
+            &mut self,
+            _inputs: &[AudioRenderQuantum],
+            outputs: &mut [AudioRenderQuantum],
+            _params: AudioParamValues,
+            _scope: &RenderScope,
+        ) -> bool {
+            let output = &mut outputs[0];
+            output.set_number_of_channels(1);
+            output.modify_channels(|channel|
+                channel.iter_mut().for_each(|value| *value = 1.)
+            );
+            true
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct OutputNode {}
+
+    impl AudioProcessor for OutputNode {
+        fn process(
+            &mut self,
+            inputs: &[AudioRenderQuantum],
+            outputs: &mut [AudioRenderQuantum],
+            _params: AudioParamValues,
+            _scope: &RenderScope,
+        ) -> bool {
+            let input = &inputs[0];
+            let output = &mut outputs[0];
+            *output = input.clone();
+            true
+        }
+    }
+
+    #[test]
+    fn test_connection_mixing() {
+        // run mutliple time as the issue should appear depending of graph ordering
+        // - if discrete is run before speaker we should have two channels of [2.; 128]
+        //   which is expected
+        // - if discrete is run after speaker we should have [2.; 128] and [1.; 128]
+        //   which is wrong
+        for _ in 0..10 {
+            let mut graph = Graph::new();
+
+            let speaker_node = Box::new(SpeakerNode {});
+            graph.add_node(NodeIndex(1), speaker_node, 1, 1, crate::node::ChannelConfigOptions {
+                count: 2,
+                mode: crate::node::ChannelCountMode::Explicit,
+                interpretation: crate::node::ChannelInterpretation::Speakers,
+            }.into());
+
+            // this one should be present in both `output_node` channels, because it
+            // should be mixed in input according to `output_node` channel config, i.e. Speaker
+            let discrete_node = Box::new(DiscreteNode {});
+            graph.add_node(NodeIndex(2), discrete_node, 1, 1, crate::node::ChannelConfigOptions {
+                count: 1,
+                mode: crate::node::ChannelCountMode::Explicit,
+                interpretation: crate::node::ChannelInterpretation::Discrete,
+            }.into());
+
+            let output_node = Box::new(OutputNode {});
+            graph.add_node(NodeIndex(0), output_node, 1, 1, crate::node::ChannelConfigOptions {
+                count: 2,
+                mode: crate::node::ChannelCountMode::Explicit,
+                interpretation: crate::node::ChannelInterpretation::Speakers,
+            }.into());
+
+            // connect both nodes to output
+            graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
+            graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));
+
+            // connect both nodes to output
+            let output = graph.render(&RenderScope {
+                current_frame: 0,
+                current_time: 0.,
+                sample_rate: crate::SampleRate(1),
+            });
+
+            // println!("----------------------------------------------------");
+            // println!("{:?}", &output.channel_data(0)[..]);
+            // println!("{:?}", &output.channel_data(1)[..]);
+
+            assert_float_eq!(&output.channel_data(0)[..], &[2.; 128][..], abs_all <= 0.);
+            assert_float_eq!(&output.channel_data(1)[..], &[2.; 128][..], abs_all <= 0.);
+        }
     }
 }
