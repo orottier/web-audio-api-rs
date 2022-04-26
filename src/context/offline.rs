@@ -96,3 +96,18 @@ impl OfflineAudioContext {
         self.length
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::SampleRate;
+
+    #[test]
+    fn render_empty_graph() {
+        let mut context = OfflineAudioContext::new(2, 555, SampleRate(44_100));
+        let buffer = context.start_rendering_sync();
+
+        assert_eq!(buffer.number_of_channels(), 2);
+        assert_eq!(buffer.length(), 555);
+    }
+}
