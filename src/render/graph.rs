@@ -587,7 +587,7 @@ mod tests {
 
     #[test]
     fn test_connection_mixing() {
-        // run mutliple time as the issue was appearing depending of graph ordering
+        // run mutliple time as the issue was appearing depending of graph ordering:
         // - if discrete was run before speaker we had two channels of [3.; 128]
         //   which is expected
         // - if discrete was run after speaker we had [3.; 128] and [2.; 128]
@@ -610,7 +610,7 @@ mod tests {
             );
 
             // this one should be present in both `output_node` channels, because it
-            // should be mixed in `output_nodeinput` according to `output_node`
+            // should be mixed in `output_node.inputs` according to `output_node`
             // channel config, i.e. Speaker
             let discrete_node = Box::new(DiscreteNode {});
             graph.add_node(
@@ -644,7 +644,6 @@ mod tests {
             graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
             graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));
 
-            // connect both nodes to output
             let output = graph.render(&RenderScope {
                 current_frame: 0,
                 current_time: 0.,

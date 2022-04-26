@@ -470,7 +470,7 @@ impl AudioRenderQuantum {
         self.channels.iter_mut().for_each(fun)
     }
 
-    /// Sum two `AudioRenderQuantum`s, both quantum will be up/down mix according
+    /// Sum two `AudioRenderQuantum`s, both quantums will be up/down mix according
     /// to given number of channels and channel interpretation.
     /// see <https://webaudio.github.io/web-audio-api/#channel-up-mixing-and-down-mixing>
     pub fn add(&mut self, other: &Self, channels: usize, interpretation: ChannelInterpretation) {
