@@ -580,7 +580,7 @@ impl AudioProcessor for AudioParamProcessor {
         let input = &inputs[0]; // single input mode
 
         if !input.is_silent() {
-            param_computed_values.add(input, ChannelInterpretation::Discrete);
+            param_computed_values.add(input, 1, ChannelInterpretation::Discrete);
         }
 
         true // has intrinsic value

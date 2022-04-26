@@ -470,18 +470,10 @@ impl AudioRenderQuantum {
         self.channels.iter_mut().for_each(fun)
     }
 
-    /// Sum two `AudioRenderQuantum`s
-    ///
-    /// If the channel counts differ, the buffer with lower count will be upmixed.
-    pub fn add(&mut self, other: &Self, interpretation: ChannelInterpretation) {
-        if other.is_silent() {
-            return;
-        }
-        // mix buffers to the max channel count
-        let channels_self = self.number_of_channels();
-        let channels_other = other.number_of_channels();
-        let channels = channels_self.max(channels_other);
-
+    /// Sum two `AudioRenderQuantum`s, both quantum will be up/down mix according
+    /// to given number of channels and channel interpretation.
+    /// see <https://webaudio.github.io/web-audio-api/#channel-up-mixing-and-down-mixing>
+    pub fn add(&mut self, other: &Self, channels: usize, interpretation: ChannelInterpretation) {
         self.mix(channels, interpretation);
 
         let mut other_mixed = other.clone();
@@ -1352,7 +1344,7 @@ mod tests {
         signal2.copy_from_slice(&[2.; RENDER_QUANTUM_SIZE]);
         let buffer2 = AudioRenderQuantum::new(signal2);
 
-        buffer.add(&buffer2, ChannelInterpretation::Discrete);
+        buffer.add(&buffer2, 2, ChannelInterpretation::Discrete);
 
         assert_eq!(buffer.number_of_channels(), 2);
         assert_float_eq!(

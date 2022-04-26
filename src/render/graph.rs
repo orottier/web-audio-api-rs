@@ -197,7 +197,8 @@ impl Graph {
         // Add node to the current cycle detection list
         marked_temp.push(node_id);
 
-        // Visit outgoing nodes, and call `visit` on them recursively
+        // Visit outgoing nodes, and call `visit` on them recursively, so child
+        // nodes are added before their parent
         self.nodes
             .get(&node_id)
             .unwrap()
@@ -284,11 +285,16 @@ impl Graph {
         let nodes = &mut self.nodes;
 
         // process every node, in topological sorted order
-        ordered.iter().for_each(|index| {
+        ordered.iter().for_each(|id| {
             // remove node from graph, re-insert later (for borrowck reasons)
-            let mut node = nodes.remove(index).unwrap();
+            let mut node = nodes.remove(id).unwrap();
 
             // up/down-mix the cumulative inputs to the desired channel count
+            //
+            // @note: most of the time, this will be a no-op because the mixing
+            // is already done when inputs are added together through the
+            // `node.outgoing_edges` loop but this prevents a weird edge-case
+            // that occurs when the graph is empty.
             let channel_interpretation = node.channel_config.interpretation();
             let mode = node.channel_config.count_mode();
             let count = node.channel_config.count();
@@ -314,8 +320,27 @@ impl Graph {
                 .for_each(|edge| {
                     let output_node = nodes.get_mut(&edge.other_id).unwrap();
                     output_node.has_inputs_connected = true;
-                    let signal = &node.outputs[edge.self_index];
-                    output_node.inputs[edge.other_index].add(signal, channel_interpretation);
+
+                    let connection = &node.outputs[edge.self_index];
+
+                    if !connection.is_silent() {
+                        // up/down-mix the cumulative inputs to the desired channel count
+                        let channel_interpretation = output_node.channel_config.interpretation();
+                        let mode = output_node.channel_config.count_mode();
+                        let count = output_node.channel_config.count();
+                        let cur_channels = connection.number_of_channels();
+                        let new_channels = match mode {
+                            ChannelCountMode::Max => cur_channels,
+                            ChannelCountMode::Explicit => count,
+                            ChannelCountMode::ClampedMax => cur_channels.min(count),
+                        };
+
+                        output_node.inputs[edge.other_index].add(
+                            connection,
+                            new_channels,
+                            channel_interpretation,
+                        );
+                    }
                 });
 
             // Check if we can decommission this node (end of life)
@@ -325,7 +350,7 @@ impl Graph {
 
                 // Nodes are only dropped when they do not have incoming connections.
                 // But they may have AudioParams feeding into them, these can de dropped too.
-                nodes.retain(|_id, n| !n.outgoing_edges.iter().any(|e| e.other_id == *index));
+                nodes.retain(|_id, n| !n.outgoing_edges.iter().any(|e| e.other_id == *id));
             } else {
                 // Node is not dropped.
                 // Reset input buffers as they will be summed up in the next render quantum.
@@ -337,7 +362,7 @@ impl Graph {
                 node.has_inputs_connected = false;
 
                 // Re-insert node in graph
-                nodes.insert(*index, node);
+                nodes.insert(*id, node);
             }
         });
 
@@ -519,9 +544,7 @@ mod tests {
         ) -> bool {
             let output = &mut outputs[0];
             output.set_number_of_channels(2);
-            output.modify_channels(|channel|
-                channel.iter_mut().for_each(|value| *value = 1.)
-            );
+            output.modify_channels(|channel| channel.iter_mut().for_each(|value| *value = 2.));
             true
         }
     }
@@ -539,9 +562,7 @@ mod tests {
         ) -> bool {
             let output = &mut outputs[0];
             output.set_number_of_channels(1);
-            output.modify_channels(|channel|
-                channel.iter_mut().for_each(|value| *value = 1.)
-            );
+            output.modify_channels(|channel| channel.iter_mut().for_each(|value| *value = 1.));
             true
         }
     }
@@ -575,27 +596,48 @@ mod tests {
             let mut graph = Graph::new();
 
             let speaker_node = Box::new(SpeakerNode {});
-            graph.add_node(NodeIndex(1), speaker_node, 1, 1, crate::node::ChannelConfigOptions {
-                count: 2,
-                mode: crate::node::ChannelCountMode::Explicit,
-                interpretation: crate::node::ChannelInterpretation::Speakers,
-            }.into());
+            graph.add_node(
+                NodeIndex(1),
+                speaker_node,
+                1,
+                1,
+                crate::node::ChannelConfigOptions {
+                    count: 2,
+                    mode: crate::node::ChannelCountMode::Explicit,
+                    interpretation: crate::node::ChannelInterpretation::Speakers,
+                }
+                .into(),
+            );
 
             // this one should be present in both `output_node` channels, because it
             // should be mixed in input according to `output_node` channel config, i.e. Speaker
             let discrete_node = Box::new(DiscreteNode {});
-            graph.add_node(NodeIndex(2), discrete_node, 1, 1, crate::node::ChannelConfigOptions {
-                count: 1,
-                mode: crate::node::ChannelCountMode::Explicit,
-                interpretation: crate::node::ChannelInterpretation::Discrete,
-            }.into());
+            graph.add_node(
+                NodeIndex(2),
+                discrete_node,
+                1,
+                1,
+                crate::node::ChannelConfigOptions {
+                    count: 1,
+                    mode: crate::node::ChannelCountMode::Explicit,
+                    interpretation: crate::node::ChannelInterpretation::Discrete,
+                }
+                .into(),
+            );
 
             let output_node = Box::new(OutputNode {});
-            graph.add_node(NodeIndex(0), output_node, 1, 1, crate::node::ChannelConfigOptions {
-                count: 2,
-                mode: crate::node::ChannelCountMode::Explicit,
-                interpretation: crate::node::ChannelInterpretation::Speakers,
-            }.into());
+            graph.add_node(
+                NodeIndex(0),
+                output_node,
+                1,
+                1,
+                crate::node::ChannelConfigOptions {
+                    count: 2,
+                    mode: crate::node::ChannelCountMode::Explicit,
+                    interpretation: crate::node::ChannelInterpretation::Speakers,
+                }
+                .into(),
+            );
 
             // connect both nodes to output
             graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
@@ -609,11 +651,12 @@ mod tests {
             });
 
             // println!("----------------------------------------------------");
+            // println!("num channels: {:?}", &output.number_of_channels());
             // println!("{:?}", &output.channel_data(0)[..]);
             // println!("{:?}", &output.channel_data(1)[..]);
 
-            assert_float_eq!(&output.channel_data(0)[..], &[2.; 128][..], abs_all <= 0.);
-            assert_float_eq!(&output.channel_data(1)[..], &[2.; 128][..], abs_all <= 0.);
+            assert_float_eq!(&output.channel_data(0)[..], &[3.; 128][..], abs_all <= 0.);
+            assert_float_eq!(&output.channel_data(1)[..], &[3.; 128][..], abs_all <= 0.);
         }
     }
 }
