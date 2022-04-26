@@ -453,6 +453,7 @@ impl AudioRenderQuantum {
         self.channels.truncate(1);
     }
 
+    /// Check if this `RenderQuantum` contains a single channel of silence
     #[must_use]
     pub fn is_silent(&self) -> bool {
         self.number_of_channels() == 1 && self.channels[0].is_silent()
@@ -473,6 +474,9 @@ impl AudioRenderQuantum {
     ///
     /// If the channel counts differ, the buffer with lower count will be upmixed.
     pub fn add(&mut self, other: &Self, interpretation: ChannelInterpretation) {
+        if other.is_silent() {
+            return;
+        }
         // mix buffers to the max channel count
         let channels_self = self.number_of_channels();
         let channels_other = other.number_of_channels();
