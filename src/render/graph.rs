@@ -587,10 +587,10 @@ mod tests {
 
     #[test]
     fn test_connection_mixing() {
-        // run mutliple time as the issue should appear depending of graph ordering
-        // - if discrete is run before speaker we should have two channels of [2.; 128]
+        // run mutliple time as the issue was appearing depending of graph ordering
+        // - if discrete was run before speaker we had two channels of [3.; 128]
         //   which is expected
-        // - if discrete is run after speaker we should have [2.; 128] and [1.; 128]
+        // - if discrete was run after speaker we had [3.; 128] and [2.; 128]
         //   which is wrong
         for _ in 0..10 {
             let mut graph = Graph::new();
@@ -610,7 +610,8 @@ mod tests {
             );
 
             // this one should be present in both `output_node` channels, because it
-            // should be mixed in input according to `output_node` channel config, i.e. Speaker
+            // should be mixed in `output_nodeinput` according to `output_node`
+            // channel config, i.e. Speaker
             let discrete_node = Box::new(DiscreteNode {});
             graph.add_node(
                 NodeIndex(2),
@@ -649,11 +650,6 @@ mod tests {
                 current_time: 0.,
                 sample_rate: crate::SampleRate(1),
             });
-
-            // println!("----------------------------------------------------");
-            // println!("num channels: {:?}", &output.number_of_channels());
-            // println!("{:?}", &output.channel_data(0)[..]);
-            // println!("{:?}", &output.channel_data(1)[..]);
 
             assert_float_eq!(&output.channel_data(0)[..], &[3.; 128][..], abs_all <= 0.);
             assert_float_eq!(&output.channel_data(1)[..], &[3.; 128][..], abs_all <= 0.);

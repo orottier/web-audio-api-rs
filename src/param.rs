@@ -574,12 +574,12 @@ impl AudioProcessor for AudioParamProcessor {
             .channel_data_mut(0)
             .copy_from_slice(param_intrisic_values);
 
-        // add input signal to param computed values
-        // @note - maybe we should clamp after that too? not very clear in spec
-        // but it would appear logical
-        let input = &inputs[0]; // single input mode
+        // add input signal to param computed values if not silent
+        let input = &inputs[0];
 
         if !input.is_silent() {
+            // @note/todo - maybe we should clamp after that too? this is not
+            // very clear in the spec but it would appear quite logical
             param_computed_values.add(input, 1, ChannelInterpretation::Discrete);
         }
 
@@ -588,7 +588,7 @@ impl AudioProcessor for AudioParamProcessor {
 }
 
 impl AudioParamProcessor {
-    // [spec] intrinsic parameter value [is the] the value the AudioParam would
+    // [spec] intrinsic parameter value [is] the value the AudioParam would
     // normally have without any audio connections
     pub fn intrisic_value(&self) -> f32 {
         if self.intrisic_value.is_nan() {
