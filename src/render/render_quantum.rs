@@ -220,16 +220,24 @@ impl AudioRenderQuantum {
     ///
     /// This function will panic if the given number of channels is outside the [1, 32] range, 32
     /// being defined by the MAX_CHANNELS constant.
+    #[inline(always)]
     pub fn mix(
         &mut self,
         computed_number_of_channels: usize,
         interpretation: ChannelInterpretation,
     ) {
-        assert_valid_number_of_channels(computed_number_of_channels);
-
         if self.number_of_channels() == computed_number_of_channels {
             return;
         }
+        self.mix_inner(computed_number_of_channels, interpretation)
+    }
+
+    fn mix_inner(
+        &mut self,
+        computed_number_of_channels: usize,
+        interpretation: ChannelInterpretation,
+    ) {
+        assert_valid_number_of_channels(computed_number_of_channels);
 
         let silence = self.channels[0].silence();
 
