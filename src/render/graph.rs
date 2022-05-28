@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeIndex};
-use crate::node::{ChannelConfig, ChannelCountMode};
+use crate::node::ChannelConfig;
 use crate::render::RenderScope;
 
 use smallvec::{smallvec, SmallVec};
@@ -101,13 +101,16 @@ impl Graph {
         &mut self,
         index: NodeIndex,
         processor: Box<dyn AudioProcessor>,
-        inputs: usize,
-        outputs: usize,
+        number_of_inputs: usize,
+        number_of_outputs: usize,
         channel_config: ChannelConfig,
     ) {
-        // todo, allocate on control thread, make single alloc..?
-        let inputs = vec![AudioRenderQuantum::new(self.alloc.silence()); inputs];
-        let outputs = vec![AudioRenderQuantum::new(self.alloc.silence()); outputs];
+        // todo: pre-allocate the buffers on the control thread
+
+        // set input and output buffers to single channel of silence, will be upmixed when
+        // necessary
+        let inputs = vec![AudioRenderQuantum::new(self.alloc.silence()); number_of_inputs];
+        let outputs = vec![AudioRenderQuantum::new(self.alloc.silence()); number_of_outputs];
 
         self.nodes.insert(
             index,
@@ -288,19 +291,13 @@ impl Graph {
             // remove node from graph, re-insert later (for borrowck reasons)
             let mut node = nodes.remove(index).unwrap();
 
-            // up/down-mix the cumulative inputs to the desired channel count
-            let channel_interpretation = node.channel_config.interpretation();
-            let mode = node.channel_config.count_mode();
+            // make sure all input buffers have the correct number of channels, this might not be
+            // the case if the node has no inputs connected or the channel count has just changed
+            let interpretation = node.channel_config.interpretation();
             let count = node.channel_config.count();
-            node.inputs.iter_mut().for_each(|input_buf| {
-                let cur_channels = input_buf.number_of_channels();
-                let new_channels = match mode {
-                    ChannelCountMode::Max => cur_channels,
-                    ChannelCountMode::Explicit => count,
-                    ChannelCountMode::ClampedMax => cur_channels.min(count),
-                };
-                input_buf.mix(new_channels, channel_interpretation);
-            });
+            node.inputs
+                .iter_mut()
+                .for_each(|i| i.mix(count, interpretation));
 
             // let the current node process
             let params = AudioParamValues::from(&*nodes);
@@ -315,7 +312,9 @@ impl Graph {
                     let output_node = nodes.get_mut(&edge.other_id).unwrap();
                     output_node.has_inputs_connected = true;
                     let signal = &node.outputs[edge.self_index];
-                    output_node.inputs[edge.other_index].add(signal, channel_interpretation);
+                    let channel_config = &output_node.channel_config;
+
+                    output_node.inputs[edge.other_index].add(signal, channel_config);
                 });
 
             // Check if we can decommission this node (end of life)

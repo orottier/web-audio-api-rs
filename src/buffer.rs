@@ -286,6 +286,8 @@ impl AudioBuffer {
     ///
     /// This assumes the sample_rate matches. No up/down-mixing is performed
     pub(crate) fn extend_alloc(&mut self, other: &AudioRenderQuantum) {
+        assert_eq!(self.number_of_channels(), other.number_of_channels());
+
         self.channels_mut()
             .iter_mut()
             .zip(other.channels())
