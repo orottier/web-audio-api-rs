@@ -182,18 +182,6 @@ impl ChannelConfig {
         crate::assert_valid_number_of_channels(v);
         self.count.store(v, Ordering::SeqCst)
     }
-
-    pub(crate) fn for_destination(count: Arc<AtomicUsize>) -> Self {
-        Self {
-            count,
-            mode: Arc::new(AtomicU32::from(ChannelCountMode::Explicit as u32)),
-            interpretation: Arc::new(AtomicU32::from(ChannelInterpretation::Speakers as u32)),
-        }
-    }
-
-    pub(crate) fn into_count(self) -> Arc<AtomicUsize> {
-        self.count
-    }
 }
 
 impl From<ChannelConfigOptions> for ChannelConfig {

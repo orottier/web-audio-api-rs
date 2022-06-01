@@ -3,7 +3,7 @@ use arrayvec::ArrayVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::node::ChannelInterpretation;
+use crate::node::{ChannelConfig, ChannelCountMode, ChannelInterpretation};
 
 use crate::assert_valid_number_of_channels;
 use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
@@ -220,16 +220,24 @@ impl AudioRenderQuantum {
     ///
     /// This function will panic if the given number of channels is outside the [1, 32] range, 32
     /// being defined by the MAX_CHANNELS constant.
+    #[inline(always)]
     pub fn mix(
         &mut self,
         computed_number_of_channels: usize,
         interpretation: ChannelInterpretation,
     ) {
-        assert_valid_number_of_channels(computed_number_of_channels);
-
         if self.number_of_channels() == computed_number_of_channels {
             return;
         }
+        self.mix_inner(computed_number_of_channels, interpretation)
+    }
+
+    fn mix_inner(
+        &mut self,
+        computed_number_of_channels: usize,
+        interpretation: ChannelInterpretation,
+    ) {
+        assert_valid_number_of_channels(computed_number_of_channels);
 
         let silence = self.channels[0].silence();
 
@@ -466,22 +474,32 @@ impl AudioRenderQuantum {
 
     /// Sum two `AudioRenderQuantum`s
     ///
-    /// If the channel counts differ, the buffer with lower count will be upmixed.
-    pub fn add(&mut self, other: &Self, interpretation: ChannelInterpretation) {
-        // mix buffers to the max channel count
+    /// Both buffers will be mixed up front according to the supplied `channel_config`
+    pub fn add(&mut self, other: &Self, channel_config: &ChannelConfig) {
+        // gather initial channel counts
         let channels_self = self.number_of_channels();
         let channels_other = other.number_of_channels();
-        let channels = channels_self.max(channels_other);
+        let max_channels = channels_self.max(channels_other);
 
-        self.mix(channels, interpretation);
+        // up/down-mix the to the desired channel count for the receiving node
+        let interpretation = channel_config.interpretation();
+        let mode = channel_config.count_mode();
+        let count = channel_config.count();
+
+        let new_channels = match mode {
+            ChannelCountMode::Max => max_channels,
+            ChannelCountMode::Explicit => count,
+            ChannelCountMode::ClampedMax => max_channels.min(count),
+        };
+
+        self.mix(new_channels, interpretation);
 
         let mut other_mixed = other.clone();
-        other_mixed.mix(channels, interpretation);
+        other_mixed.mix(new_channels, interpretation);
 
         self.channels
             .iter_mut()
             .zip(other_mixed.channels.iter())
-            .take(channels)
             .for_each(|(s, o)| s.add(o));
     }
 
@@ -1343,7 +1361,14 @@ mod tests {
         signal2.copy_from_slice(&[2.; RENDER_QUANTUM_SIZE]);
         let buffer2 = AudioRenderQuantum::new(signal2);
 
-        buffer.add(&buffer2, ChannelInterpretation::Discrete);
+        let channel_config = crate::node::ChannelConfigOptions {
+            count: 2,
+            mode: ChannelCountMode::Explicit,
+            interpretation: ChannelInterpretation::Discrete,
+        }
+        .into();
+
+        buffer.add(&buffer2, &channel_config);
 
         assert_eq!(buffer.number_of_channels(), 2);
         assert_float_eq!(
