@@ -1,3 +1,11 @@
+# Version 0.19.0 (2021-06-01)
+
+- Added baseLatency and outputLatency attributes
+- Audio processor callback now has access to AudioWorkletGlobalScope-like env
+- Performance optimization for sorting large audio graphs
+- Use default sample rate for output devices instead of highest to prevent insane values
+- Fixed incorrect channel mixing for AudioNode input buffers
+
 # Version 0.18.0 (2021-04-12)
 
 - Implement BaseAudioContext state
