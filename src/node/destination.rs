@@ -84,7 +84,7 @@ impl AudioDestinationNode {
         })
     }
 
-    pub(crate) fn into_raw_parts(self) -> ChannelConfig {
+    pub(crate) fn into_channel_config(self) -> ChannelConfig {
         self.channel_config
     }
 

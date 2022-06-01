@@ -5,7 +5,7 @@ use crate::context::{
     DESTINATION_NODE_ID, LISTENER_NODE_ID, LISTENER_PARAM_IDS,
 };
 use crate::message::ControlMessage;
-use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig};
+use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamEvent};
 use crate::render::AudioProcessor;
 use crate::spatial::AudioListenerParams;
@@ -13,7 +13,7 @@ use crate::spatial::AudioListenerParams;
 use crate::{AudioListener, SampleRate};
 
 use crossbeam_channel::Sender;
-use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// The struct that corresponds to the Javascript `BaseAudioContext` object.
@@ -52,7 +52,7 @@ struct ConcreteBaseAudioContextInner {
     /// incrementing id to assign to audio nodes
     node_id_inc: AtomicU64,
     /// destination node's current channel count
-    destination_channel_count: Arc<AtomicUsize>,
+    destination_channel_config: ChannelConfig,
     /// message channel from control to render thread
     render_channel: Sender<ControlMessage>,
     /// control messages that cannot be sent immediately
@@ -84,16 +84,13 @@ impl ConcreteBaseAudioContext {
         render_channel: Sender<ControlMessage>,
         offline: bool,
     ) -> Self {
-        // placeholder for destination node channel count, will patch later
-        let tmp_dest_channel_count = Arc::default();
-
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             max_channel_count,
             render_channel,
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
-            destination_channel_count: tmp_dest_channel_count,
+            destination_channel_config: ChannelConfigOptions::default().into(),
             frames_played,
             queued_audio_listener_msgs: Mutex::new(Vec::new()),
             listener_params: None,
@@ -104,12 +101,12 @@ impl ConcreteBaseAudioContext {
             inner: Arc::new(base_inner),
         };
 
-        let (listener_params, dest_channels) = {
+        let (listener_params, destination_channel_config) = {
             // Register magical nodes. We should not store the nodes inside our context since that
             // will create a cyclic reference, but we can reconstruct a new instance on the fly
             // when requested
             let dest = AudioDestinationNode::new(&base, max_channel_count);
-            let dest_channels = dest.into_raw_parts().into_count();
+            let destination_channel_config = dest.into_channel_config();
             let listener = crate::spatial::AudioListenerNode::new(&base);
 
             let listener_params = listener.into_fields();
@@ -137,13 +134,13 @@ impl ConcreteBaseAudioContext {
                 up_z: up_z.into_raw_parts(),
             };
 
-            (listener_params, dest_channels)
+            (listener_params, destination_channel_config)
         }; // nodes will drop now, so base.inner has no copies anymore
 
         let mut base = base;
         let mut inner_mut = Arc::get_mut(&mut base.inner).unwrap();
         inner_mut.listener_params = Some(listener_params);
-        inner_mut.destination_channel_count = dest_channels;
+        inner_mut.destination_channel_config = destination_channel_config;
 
         // validate if the hardcoded node IDs line up
         debug_assert_eq!(
@@ -171,8 +168,7 @@ impl ConcreteBaseAudioContext {
 
     /// `ChannelConfig` of the `AudioDestinationNode`
     pub(super) fn destination_channel_config(&self) -> ChannelConfig {
-        let channel_count = self.inner.destination_channel_count.clone();
-        ChannelConfig::for_destination(channel_count)
+        self.inner.destination_channel_config.clone()
     }
 
     /// Returns the `AudioListener` which is used for 3D spatialization
