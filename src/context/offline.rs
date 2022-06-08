@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::buffer::AudioBuffer;
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
-use crate::{AtomicF64, RENDER_QUANTUM_SIZE, assert_valid_sample_rate};
+use crate::{assert_valid_sample_rate, AtomicF64, RENDER_QUANTUM_SIZE};
 
 /// The `OfflineAudioContext` doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an `AudioBuffer`.

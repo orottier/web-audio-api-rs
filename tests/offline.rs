@@ -150,11 +150,7 @@ fn test_audio_param_graph() {
 #[test]
 fn test_listener() {
     let sample_rate = 480000.;
-    let mut context = OfflineAudioContext::new(
-        1,
-        RENDER_QUANTUM_SIZE,
-        sample_rate,
-    );
+    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
     {
         let listener1 = context.listener();
@@ -208,11 +204,7 @@ fn test_cycle() {
 #[test]
 fn test_cycle_breaker() {
     let sample_rate = 480000.;
-    let mut context = OfflineAudioContext::new(
-        1,
-        RENDER_QUANTUM_SIZE * 3,
-        sample_rate,
-    );
+    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 3, sample_rate);
 
     {
         let delay = context.create_delay(1. / sample_rate as f64);

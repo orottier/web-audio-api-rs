@@ -145,10 +145,7 @@ mod tests {
     #[test]
     fn test_resampler_split() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);
-        let input_buf = Ok(AudioBuffer::from_channels(
-            vec![channel],
-            44_100.,
-        ));
+        let input_buf = Ok(AudioBuffer::from_channels(vec![channel], 44_100.));
         let input = vec![input_buf].into_iter();
         let mut resampler = Resampler::new(44_100., 5, input);
 

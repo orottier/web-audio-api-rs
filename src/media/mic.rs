@@ -231,11 +231,7 @@ pub(crate) struct MicrophoneRender {
 
 #[cfg(not(test))]
 impl MicrophoneRender {
-    pub fn new(
-        number_of_channels: usize,
-        sample_rate: f32,
-        sender: Sender<AudioBuffer>,
-    ) -> Self {
+    pub fn new(number_of_channels: usize, sample_rate: f32, sender: Sender<AudioBuffer>) -> Self {
         Self {
             number_of_channels,
             sample_rate,
