@@ -40,7 +40,7 @@ pub struct AudioBufferOptions {
 /// let context = AudioContext::default();
 ///
 /// let length = context.sample_rate() as usize;
-/// let sample_rate = context.sample_rate_raw();
+/// let sample_rate = context.sample_rate();
 /// let mut buffer = context.create_buffer(1, length, sample_rate);
 ///
 /// // fill buffer with a sine wave
@@ -429,7 +429,6 @@ impl ChannelData {
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
-    use std::convert::TryFrom;
     use std::f32::consts::PI;
 
     use super::*;
@@ -438,17 +437,16 @@ mod tests {
     fn test_constructor() {
         let options = AudioBufferOptions {
             number_of_channels: 1,
-            length: 10,
+            length: 96000,
             sample_rate: 48000.,
         };
 
         let audio_buffer = AudioBuffer::new(options);
 
         assert_eq!(audio_buffer.number_of_channels(), 1);
-        assert_eq!(audio_buffer.length(), 10);
-        assert_float_eq!(audio_buffer.sample_rate(), 1., abs <= 0.);
-        assert_eq!(audio_buffer.sample_rate_raw().0, 1);
-        assert_float_eq!(audio_buffer.duration(), 10., abs <= 0.);
+        assert_eq!(audio_buffer.length(), 96000);
+        assert_float_eq!(audio_buffer.sample_rate(), 48000., abs <= 0.);
+        assert_float_eq!(audio_buffer.duration(), 2., abs <= 0.);
     }
 
     #[test]
@@ -684,7 +682,7 @@ mod tests {
 
         assert_eq!(b1.length(), 10);
         assert_eq!(b1.number_of_channels(), 2);
-        assert_float_eq!(b1.sample_rate().0, 44100., abs_all <= 0.);
+        assert_float_eq!(b1.sample_rate(), 44100., abs_all <= 0.);
 
         let channel_data = ChannelData::from(vec![1.; 5]);
         let b3 = AudioBuffer::from_channels(vec![channel_data; 2], 44100.);
@@ -693,7 +691,7 @@ mod tests {
 
         assert_eq!(b1.length(), 15);
         assert_eq!(b1.number_of_channels(), 2);
-        assert_float_eq!(b1.sample_rate().0, 44100., abs_all <= 0.);
+        assert_float_eq!(b1.sample_rate(), 44100., abs_all <= 0.);
         assert_float_eq!(
             b1.channel_data(0).as_slice(),
             &[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
@@ -727,7 +725,7 @@ mod tests {
     fn test_upsample() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
         let mut buffer = AudioBuffer::from_channels(vec![channel], 48000.);
-        buffer.resample(960000.); // double
+        buffer.resample(96000.); // double
 
         let mut expected = [0.; 10];
         let incr = 4. / 9.; // (5 - 1) / (10 - 1)

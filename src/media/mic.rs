@@ -2,7 +2,7 @@ use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::media::MediaStream;
-use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+use crate::RENDER_QUANTUM_SIZE;
 
 #[cfg(not(test))]
 use crate::context::AudioContextOptions;
@@ -87,7 +87,7 @@ use private::StreamHolder;
 pub struct Microphone {
     receiver: Receiver<AudioBuffer>,
     number_of_channels: usize,
-    sample_rate: SampleRate,
+    sample_rate: f32,
 
     #[cfg(not(test))]
     stream: Arc<Mutex<Option<Stream>>>,
@@ -103,7 +103,7 @@ impl Microphone {
         let (stream, config, receiver) = io::build_input(options);
         log::debug!("Input {:?}", config);
 
-        let sample_rate = SampleRate(config.sample_rate.0);
+        let sample_rate = config.sample_rate.0 as f32;
         let number_of_channels = config.channels as usize;
 
         // shared ownership for the stream, because the Microphone is allowed to go out of scope
@@ -185,7 +185,7 @@ impl Default for Microphone {
 pub struct MicrophoneStream {
     receiver: Receiver<AudioBuffer>,
     number_of_channels: usize,
-    sample_rate: SampleRate,
+    sample_rate: f32,
 
     #[cfg(not(test))]
     _stream: StreamHolder,
@@ -225,7 +225,7 @@ impl Iterator for MicrophoneStream {
 #[cfg(not(test))]
 pub(crate) struct MicrophoneRender {
     number_of_channels: usize,
-    sample_rate: SampleRate,
+    sample_rate: f32,
     sender: Sender<AudioBuffer>,
 }
 
@@ -233,7 +233,7 @@ pub(crate) struct MicrophoneRender {
 impl MicrophoneRender {
     pub fn new(
         number_of_channels: usize,
-        sample_rate: SampleRate,
+        sample_rate: f32,
         sender: Sender<AudioBuffer>,
     ) -> Self {
         Self {

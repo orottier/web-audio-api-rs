@@ -15,7 +15,7 @@ use crate::{
     context::{AudioContextRegistration, AudioParamId, BaseAudioContext},
     param::{AudioParam, AudioParamDescriptor},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope},
-    SampleRate, MAX_CHANNELS,
+    MAX_CHANNELS,
 };
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
@@ -307,7 +307,7 @@ impl BiquadFilterNode {
             Ok([b0, b1, b2, a1, a2]) => {
                 for (i, &f) in frequency_hz.iter().enumerate() {
                     let f = f64::from(f);
-                    let sample_rate = f64::from(self.context().sample_rate_raw().0);
+                    let sample_rate = f64::from(self.context().sample_rate());
                     let num = b0
                         + Complex::from_polar(b1, -1.0 * 2.0 * PI * f / sample_rate)
                         + Complex::from_polar(b2, -2.0 * 2.0 * PI * f / sample_rate);
@@ -541,7 +541,7 @@ impl BiquadFilterRenderer {
         det_values: &[f32],
         freq_values: &[f32],
         q_values: &[f32],
-        sample_rate: SampleRate,
+        sample_rate: f32,
     ) {
         for (channel_idx, (i_data, o_data)) in input
             .channels()
@@ -599,7 +599,7 @@ impl BiquadFilterRenderer {
     ///
     /// * `params` - params resolving into biquad coeffs
     #[inline]
-    fn update_coeffs(&mut self, params: &CoeffsConfig, sample_rate: SampleRate) {
+    fn update_coeffs(&mut self, params: &CoeffsConfig, sample_rate: f32) {
         let CoeffsConfig {
             q,
             detune,
@@ -610,7 +610,7 @@ impl BiquadFilterRenderer {
 
         let computed_freq = frequency * 10_f32.powf(detune / 1200.);
 
-        let sample_rate = f64::from(sample_rate.0);
+        let sample_rate = f64::from(sample_rate);
         let computed_freq = f64::from(computed_freq);
         let q = f64::from(*q);
         let gain = f64::from(*gain);
@@ -1077,10 +1077,7 @@ impl BiquadFilterRenderer {
 mod test {
     use float_eq::assert_float_eq;
 
-    use crate::{
-        context::{BaseAudioContext, OfflineAudioContext},
-        SampleRate,
-    };
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
 
     use super::{BiquadFilterNode, BiquadFilterOptions, BiquadFilterType};
 
@@ -1088,13 +1085,13 @@ mod test {
 
     #[test]
     fn build_with_new() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let _biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
     }
 
     #[test]
     fn build_with_factory_func() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let _biquad = context.create_biquad_filter();
     }
 
@@ -1106,7 +1103,7 @@ mod test {
         let default_freq = 350.;
         let default_type = BiquadFilterType::Lowpass;
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
         context.start_rendering_sync();
@@ -1125,7 +1122,7 @@ mod test {
         let gain = 1.;
         let frequency = 3050.;
         let type_ = BiquadFilterType::Highpass;
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
         let options = BiquadFilterOptions {
             q,
@@ -1154,7 +1151,7 @@ mod test {
         let gain = 1.;
         let frequency = 3050.;
         let type_ = BiquadFilterType::Highpass;
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
@@ -1176,7 +1173,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_not_the_same_length() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
         let mut frequency_hz = [0.];
@@ -1189,7 +1186,7 @@ mod test {
     #[test]
     #[should_panic]
     fn panics_when_not_the_same_length_2() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
         let mut frequency_hz = [0.];
@@ -1201,7 +1198,7 @@ mod test {
 
     #[test]
     fn frequencies_are_clamped() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
         let niquyst = context.sample_rate() / 2.0;
 

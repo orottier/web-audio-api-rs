@@ -6,13 +6,12 @@ use web_audio_api::node::{
     ChannelCountMode::{self, *},
     ChannelInterpretation::{self, *},
 };
-use web_audio_api::SampleRate;
 
 fn setup_with_destination_channel_config(
     number_of_channels: usize,
     channel_interpretation: ChannelInterpretation,
 ) -> OfflineAudioContext {
-    let context = OfflineAudioContext::new(number_of_channels, 128, SampleRate(44_100));
+    let context = OfflineAudioContext::new(number_of_channels, 128, 44_100.);
     let dest = context.destination();
     dest.set_channel_interpretation(channel_interpretation);
     context

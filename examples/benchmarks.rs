@@ -14,7 +14,6 @@ use web_audio_api::context::{AudioContext, BaseAudioContext, OfflineAudioContext
 use web_audio_api::node::{
     AudioBufferSourceNode, AudioNode, AudioScheduledSourceNode, OscillatorType,
 };
-use web_audio_api::SampleRate;
 
 // benchmark adapted from https://github.com/padenot/webaudio-benchmark
 // missing the "Convolution Reverb" as we don't have the node implemented yet
@@ -28,8 +27,8 @@ struct BenchResult<'a> {
     buffer: AudioBuffer,
 }
 
-fn load_buffer(sources: &mut Vec<AudioBuffer>, pathname: &str, sample_rate: u32) {
-    let context = OfflineAudioContext::new(1, 1, SampleRate(sample_rate));
+fn load_buffer(sources: &mut Vec<AudioBuffer>, pathname: &str, sample_rate: f32) {
+    let context = OfflineAudioContext::new(1, 1, sample_rate);
 
     let file = File::open(pathname).unwrap();
     let audio_buffer = context.decode_audio_data_sync(file).unwrap();
@@ -37,9 +36,9 @@ fn load_buffer(sources: &mut Vec<AudioBuffer>, pathname: &str, sample_rate: u32)
     sources.push(audio_buffer);
 }
 
-fn get_buffer(sources: &[AudioBuffer], sample_rate: u32, number_of_channels: usize) -> AudioBuffer {
+fn get_buffer(sources: &[AudioBuffer], sample_rate: f32, number_of_channels: usize) -> AudioBuffer {
     let buffer = sources.iter().find(|&buffer| {
-        buffer.sample_rate_raw().0 == sample_rate
+        buffer.sample_rate() == sample_rate
             && buffer.number_of_channels() == number_of_channels
     });
 
@@ -80,14 +79,14 @@ fn main() {
     let mut results = Vec::<BenchResult>::new();
 
     const DURATION: usize = 120;
-    let sample_rate = SampleRate(48000);
+    let sample_rate = 48000.;
 
-    load_buffer(&mut sources, "samples/think-mono-38000.wav", 38000);
-    load_buffer(&mut sources, "samples/think-mono-44100.wav", 44100);
-    load_buffer(&mut sources, "samples/think-mono-48000.wav", 48000);
-    load_buffer(&mut sources, "samples/think-stereo-38000.wav", 38000);
-    load_buffer(&mut sources, "samples/think-stereo-44100.wav", 44100);
-    load_buffer(&mut sources, "samples/think-stereo-48000.wav", 48000);
+    load_buffer(&mut sources, "samples/think-mono-38000.wav", 38000.);
+    load_buffer(&mut sources, "samples/think-mono-44100.wav", 44100.);
+    load_buffer(&mut sources, "samples/think-mono-48000.wav", 48000.);
+    load_buffer(&mut sources, "samples/think-stereo-38000.wav", 38000.);
+    load_buffer(&mut sources, "samples/think-stereo-44100.wav", 44100.);
+    load_buffer(&mut sources, "samples/think-stereo-48000.wav", 48000.);
 
     let mut stdout = stdout().into_raw_mode().unwrap();
 
@@ -100,7 +99,7 @@ fn main() {
         let name = "Baseline (silence)";
 
         let mut context =
-            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
         benchmark(&mut stdout, name, &mut context, &mut results);
     }
@@ -109,9 +108,9 @@ fn main() {
         let name = "Simple source test without resampling (Mono)";
 
         let mut context =
-            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
         let source = context.create_buffer_source();
-        let buf = get_buffer(&sources, sample_rate.0, 1);
+        let buf = get_buffer(&sources, sample_rate, 1);
         source.set_buffer(buf);
         source.set_loop(true);
         source.connect(&context.destination());
@@ -124,9 +123,9 @@ fn main() {
         let name = "Simple source test without resampling (Stereo)";
 
         let mut context =
-            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
         let source = context.create_buffer_source();
-        let buf = get_buffer(&sources, sample_rate.0, 2);
+        let buf = get_buffer(&sources, sample_rate, 2);
         source.set_buffer(buf);
         source.set_loop(true);
         source.connect(&context.destination());
@@ -139,7 +138,7 @@ fn main() {
         let name = "Simple source test without resampling (Stereo and positionnal)";
 
         let mut context =
-            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
         let panner = context.create_panner();
         panner.connect(&context.destination());
@@ -153,7 +152,7 @@ fn main() {
         let source = context.create_buffer_source();
         source.connect(&panner);
 
-        let buf = get_buffer(&sources, sample_rate.0, 2);
+        let buf = get_buffer(&sources, sample_rate, 2);
         source.set_buffer(buf);
         source.set_loop(true);
         source.start();
@@ -165,9 +164,9 @@ fn main() {
         let name = "Simple source test with resampling (Mono)";
 
         let mut context =
-            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
         let source = context.create_buffer_source();
-        let buf = get_buffer(&sources, 38000, 1);
+        let buf = get_buffer(&sources, 38000., 1);
         source.set_buffer(buf);
         source.set_loop(true);
         source.connect(&context.destination());
@@ -180,9 +179,9 @@ fn main() {
         let name = "Simple source test with resampling (Stereo)";
 
         let mut context =
-            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
         let source = context.create_buffer_source();
-        let buf = get_buffer(&sources, 38000, 2);
+        let buf = get_buffer(&sources, 38000., 2);
         source.set_buffer(buf);
         source.set_loop(true);
         source.connect(&context.destination());
@@ -195,7 +194,7 @@ fn main() {
         let name = "Simple source test with resampling (Stereo and positionnal)";
 
         let mut context =
-            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
         let panner = context.create_panner();
         panner.connect(&context.destination());
@@ -209,7 +208,7 @@ fn main() {
         let source = context.create_buffer_source();
         source.connect(&panner);
 
-        let buf = get_buffer(&sources, 38000, 2);
+        let buf = get_buffer(&sources, 38000., 2);
         source.set_buffer(buf);
         source.set_loop(true);
         source.start();
@@ -221,9 +220,9 @@ fn main() {
         let name = "Upmix without resampling (Mono -> Stereo)";
 
         let mut context =
-            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
         let source = context.create_buffer_source();
-        let buf = get_buffer(&sources, sample_rate.0, 1);
+        let buf = get_buffer(&sources, sample_rate, 1);
         source.set_buffer(buf);
         source.set_loop(true);
         source.connect(&context.destination());
@@ -236,9 +235,9 @@ fn main() {
         let name = "Downmix without resampling (Stereo -> Mono)";
 
         let mut context =
-            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
         let source = context.create_buffer_source();
-        let buf = get_buffer(&sources, sample_rate.0, 2);
+        let buf = get_buffer(&sources, sample_rate, 2);
         source.set_buffer(buf);
         source.set_loop(true);
         source.connect(&context.destination());
@@ -252,11 +251,11 @@ fn main() {
 
         let adjusted_duration = DURATION / 4;
         let mut context =
-            OfflineAudioContext::new(1, adjusted_duration * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(1, adjusted_duration * sample_rate as usize, sample_rate);
 
         for _ in 0..100 {
             let source = context.create_buffer_source();
-            let buf = get_buffer(&sources, 38000, 1);
+            let buf = get_buffer(&sources, 38000., 1);
             source.set_buffer(buf);
             source.set_loop(true);
             source.connect(&context.destination());
@@ -271,12 +270,12 @@ fn main() {
 
         let adjusted_duration = DURATION / 4;
         let mut context =
-            OfflineAudioContext::new(1, adjusted_duration * sample_rate.0 as usize, sample_rate);
-        let reference = get_buffer(&sources, 38000, 1);
+            OfflineAudioContext::new(1, adjusted_duration * sample_rate as usize, sample_rate);
+        let reference = get_buffer(&sources, 38000., 1);
         let channel_data = reference.get_channel_data(0);
 
         for _ in 0..100 {
-            let mut buffer = context.create_buffer(1, reference.length(), SampleRate(38000));
+            let mut buffer = context.create_buffer(1, reference.length(), 38000.);
             buffer.copy_to_channel(channel_data, 0);
 
             let source = context.create_buffer_source();
@@ -293,7 +292,7 @@ fn main() {
         let name = "Simple mixing with gains";
 
         let mut context =
-            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
 
         let gain = context.create_gain();
         gain.connect(&context.destination());
@@ -309,7 +308,7 @@ fn main() {
         }
 
         for _ in 0..2 {
-            let buf = get_buffer(&sources, 38000, 1);
+            let buf = get_buffer(&sources, 38000., 1);
 
             let source = context.create_buffer_source();
             source.set_buffer(buf);
@@ -331,9 +330,9 @@ fn main() {
         let name = "Granular synthesis";
 
         let adjusted_duration = DURATION as f64 / 16.;
-        let length = (adjusted_duration * sample_rate.0 as f64) as usize;
+        let length = (adjusted_duration * sample_rate as f64) as usize;
         let mut context = OfflineAudioContext::new(1, length, sample_rate);
-        let buffer = get_buffer(&sources, sample_rate.0, 1);
+        let buffer = get_buffer(&sources, sample_rate, 1);
         let mut offset = 0.;
         let mut rng = rand::thread_rng();
 
@@ -373,9 +372,9 @@ fn main() {
     {
         let name = "Synth (Sawtooth with Envelope)";
 
-        let sample_rate = SampleRate(44100);
+        let sample_rate = 44100.;
         let mut context =
-            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
         let mut offset = 0.;
 
         let duration = DURATION as f64;
@@ -404,9 +403,9 @@ fn main() {
     {
         let name = "Synth (Sawtooth with gain - no automation)";
 
-        let sample_rate = SampleRate(44100);
+        let sample_rate = 44100.;
         let mut context =
-            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
         let mut offset = 0.;
 
         let duration = DURATION as f64;
@@ -431,9 +430,9 @@ fn main() {
     {
         let name = "Synth (Sawtooth without gain)";
 
-        let sample_rate = SampleRate(44100);
+        let sample_rate = 44100.;
         let mut context =
-            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
         let mut offset = 0.;
 
         let duration = DURATION as f64;
@@ -455,9 +454,9 @@ fn main() {
     {
         let name = "Substractive Synth";
 
-        let sample_rate = SampleRate(44100);
+        let sample_rate = 44100.;
         let mut context =
-            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
         let mut offset = 0.;
 
         let filter = context.create_biquad_filter();
@@ -494,14 +493,14 @@ fn main() {
         let name = "Stereo panning";
 
         let mut context =
-            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
         let panner = context.create_stereo_panner();
         panner.connect(&context.destination());
         panner.pan().set_value(0.1);
 
         let src = context.create_buffer_source();
-        let buffer = get_buffer(&sources, sample_rate.0, 2);
+        let buffer = get_buffer(&sources, sample_rate, 2);
         src.connect(&panner);
         src.set_buffer(buffer);
         src.set_loop(true);
@@ -514,7 +513,7 @@ fn main() {
         let name = "Stereo panning with automation";
 
         let mut context =
-            OfflineAudioContext::new(2, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
         let panner = context.create_stereo_panner();
         panner.connect(&context.destination());
@@ -522,7 +521,7 @@ fn main() {
         panner.pan().set_value_at_time(0.2, 0.5);
 
         let src = context.create_buffer_source();
-        let buffer = get_buffer(&sources, sample_rate.0, 2);
+        let buffer = get_buffer(&sources, sample_rate, 2);
         src.connect(&panner);
         src.set_buffer(buffer);
         src.set_loop(true);
@@ -535,7 +534,7 @@ fn main() {
         let name = "Sawtooth with automation";
 
         let mut context =
-            OfflineAudioContext::new(1, DURATION * sample_rate.0 as usize, sample_rate);
+            OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
 
         let osc = context.create_oscillator();
         osc.connect(&context.destination());

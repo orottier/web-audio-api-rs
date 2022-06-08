@@ -10,7 +10,6 @@ use web_audio_api::node::{
     ChannelConfig, GainNode, MediaStreamAudioSourceNode,
 };
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
-use web_audio_api::SampleRate;
 
 use std::io::{stdin, stdout, Write};
 use std::sync::Arc;
@@ -75,7 +74,7 @@ impl MediaRecorder {
         })
     }
 
-    fn get_data(self, sample_rate: SampleRate) -> Option<AudioBuffer> {
+    fn get_data(self, sample_rate: f32) -> Option<AudioBuffer> {
         self.receiver
             .try_iter()
             .reduce(|mut accum, item| {
@@ -365,7 +364,7 @@ impl AudioThread {
         let buf = self
             .recorder
             .take()
-            .and_then(|r| r.get_data(self.context.sample_rate_raw()));
+            .and_then(|r| r.get_data(self.context.sample_rate()));
 
         let buffer_source = self.context.create_buffer_source();
         let playback_rate = Self::PLAYBACK_STEP.powi(self.playback_rate_factor);

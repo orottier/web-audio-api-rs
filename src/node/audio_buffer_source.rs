@@ -344,7 +344,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // single output node
         let output = &mut outputs[0];
 
-        let sample_rate = scope.sample_rate.0 as f64;
+        let sample_rate = scope.sample_rate as f64;
         let dt = 1. / sample_rate;
         let num_frames = RENDER_QUANTUM_SIZE;
         let next_block_time = scope.current_time + dt * num_frames as f64;
@@ -573,17 +573,16 @@ impl AudioBufferSourceRenderer {
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
-    use std::convert::TryFrom;
     use std::f32::consts::PI;
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
-    use crate::{SampleRate, RENDER_QUANTUM_SIZE};
+    use crate::RENDER_QUANTUM_SIZE;
 
     use super::*;
 
     #[test]
     fn test_playing_some_file() {
-        let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, 44_100.);
 
         let file = std::fs::File::open("samples/sample.wav").unwrap();
         let audio_buffer = context.decode_audio_data_sync(file).unwrap();
@@ -613,10 +612,9 @@ mod tests {
     #[test]
     fn test_sub_quantum_start() {
         let sample_rate = 128;
-        let sr = SampleRate(sample_rate as u32);
-        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-        let mut dirac = context.create_buffer(1, 1, sr);
+        let mut dirac = context.create_buffer(1, 1, sample_rate as f32);
         dirac.copy_to_channel(&[1.], 0);
 
         let src = context.create_buffer_source();
@@ -637,10 +635,9 @@ mod tests {
     fn test_sub_sample_start() {
         // sub sample
         let sample_rate = 128;
-        let sr = SampleRate(sample_rate as u32);
-        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-        let mut dirac = context.create_buffer(1, sample_rate, sr);
+        let mut dirac = context.create_buffer(1, sample_rate, sample_rate as f32);
         dirac.copy_to_channel(&[1.], 0);
 
         let src = context.create_buffer_source();
@@ -660,10 +657,9 @@ mod tests {
     #[test]
     fn test_sub_quantum_stop() {
         let sample_rate = 128;
-        let sr = SampleRate(sample_rate as u32);
-        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-        let mut dirac = context.create_buffer(1, sample_rate, sr);
+        let mut dirac = context.create_buffer(1, sample_rate, sample_rate as f32);
         dirac.copy_to_channel(&[0., 0., 0., 0., 1.], 0);
 
         let src = context.create_buffer_source();
@@ -683,10 +679,9 @@ mod tests {
     #[test]
     fn test_sub_sample_stop() {
         let sample_rate = 128;
-        let sr = SampleRate(sample_rate as u32);
-        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-        let mut dirac = context.create_buffer(1, sample_rate, sr);
+        let mut dirac = context.create_buffer(1, sample_rate, sample_rate as f32);
         dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
 
         let src = context.create_buffer_source();
@@ -708,10 +703,9 @@ mod tests {
     #[test]
     fn test_schedule_in_the_past() {
         let sample_rate = 128;
-        let sr = SampleRate(sample_rate as u32);
-        let mut context = OfflineAudioContext::new(1, sample_rate, sr);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-        let mut dirac = context.create_buffer(1, 1, sr);
+        let mut dirac = context.create_buffer(1, 1, sample_rate as f32);
         dirac.copy_to_channel(&[1.], 0);
 
         let src = context.create_buffer_source();
@@ -732,12 +726,12 @@ mod tests {
     fn test_audio_buffer_resampling() {
         [22500, 38000, 48000, 96000].iter().for_each(|sr| {
             let base_sr = 44100;
-            let mut context = OfflineAudioContext::new(1, base_sr, SampleRate(base_sr as u32));
+            let mut context = OfflineAudioContext::new(1, base_sr, base_sr as f32);
 
             // 1Hz sine at different sample rates
             let buf_sr = *sr;
             // safe cast for sample rate, see discussion at #113
-            let sample_rate = SampleRate(u32::try_from(buf_sr).unwrap());
+            let sample_rate = buf_sr as f32;
             let mut buffer = context.create_buffer(1, buf_sr, sample_rate);
             let mut sine = vec![];
 

@@ -2,7 +2,6 @@ use std::error::Error;
 use std::io::{Read, Seek, SeekFrom};
 
 use crate::buffer::{AudioBuffer, ChannelData};
-use crate::SampleRate;
 
 use symphonia::core::audio::AudioBufferRef;
 use symphonia::core::audio::Signal;
@@ -154,7 +153,7 @@ impl Iterator for MediaDecoder {
         // Get the default track.
         let track = format.default_track().unwrap();
         let number_of_channels = track.codec_params.channels.unwrap().count();
-        let input_sample_rate = SampleRate(track.codec_params.sample_rate.unwrap());
+        let input_sample_rate = track.codec_params.sample_rate.unwrap() as f32;
 
         // Store the track identifier, we'll use it to filter packets.
         let track_id = track.id;
@@ -204,7 +203,7 @@ impl Iterator for MediaDecoder {
 fn convert_buf(
     input: AudioBufferRef<'_>,
     number_of_channels: usize,
-    input_sample_rate: SampleRate,
+    input_sample_rate: f32,
 ) -> AudioBuffer {
     let chans = 0..number_of_channels;
 

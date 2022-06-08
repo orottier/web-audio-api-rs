@@ -204,16 +204,8 @@ impl ConcreteBaseAudioContext {
     }
 
     /// The sample rate (in sample-frames per second) at which the `AudioContext` handles audio.
-    #[allow(clippy::cast_precision_loss)]
     #[must_use]
     pub(super) fn sample_rate(&self) -> f32 {
-        self.inner.sample_rate.0 as f32
-    }
-
-    /// The raw sample rate of the `AudioContext` (which has more precision than the float
-    /// [`sample_rate()`](BaseAudioContext::sample_rate) value).
-    #[must_use]
-    pub(super) fn sample_rate_raw(&self) -> SampleRate {
         self.inner.sample_rate
     }
 
@@ -225,7 +217,7 @@ impl ConcreteBaseAudioContext {
     // Currently, we have no other choice than casting an u64 into f64, with possible loss of precision
     #[allow(clippy::cast_precision_loss)]
     pub(super) fn current_time(&self) -> f64 {
-        self.inner.frames_played.load(Ordering::SeqCst) as f64 / f64::from(self.inner.sample_rate.0)
+        self.inner.frames_played.load(Ordering::SeqCst) as f64 / self.inner.sample_rate as f64
     }
 
     /// Maximum available channels for the audio destination

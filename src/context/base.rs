@@ -9,7 +9,7 @@ use crate::media::MediaDecoder;
 use crate::node::{AudioNode, ChannelConfigOptions};
 use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
-use crate::{node, AudioListener, SampleRate};
+use crate::{node, AudioListener};
 
 /// The interface representing an audio-processing graph built from audio modules linked together,
 /// each represented by an `AudioNode`.
@@ -44,12 +44,11 @@ pub trait BaseAudioContext {
     ///
     /// ```no_run
     /// use std::io::Cursor;
-    /// use web_audio_api::SampleRate;
     /// use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
     ///
     /// let input = Cursor::new(vec![0; 32]); // or a File, TcpStream, ...
     ///
-    /// let context = OfflineAudioContext::new(2, 44_100, SampleRate(44_100));
+    /// let context = OfflineAudioContext::new(2, 44_100, 44_100.);
     /// let handle = std::thread::spawn(move || context.decode_audio_data_sync(input));
     ///
     /// // do other things
@@ -70,10 +69,10 @@ pub trait BaseAudioContext {
                 accum
             })
             // if there are no samples decoded, return an empty buffer
-            .unwrap_or_else(|| AudioBuffer::from(vec![vec![]], self.sample_rate_raw()));
+            .unwrap_or_else(|| AudioBuffer::from(vec![vec![]], self.sample_rate()));
 
         // resample to desired rate (no-op if already matching)
-        buffer.resample(self.sample_rate_raw());
+        buffer.resample(self.sample_rate());
 
         Ok(buffer)
     }
@@ -88,7 +87,7 @@ pub trait BaseAudioContext {
         &self,
         number_of_channels: usize,
         length: usize,
-        sample_rate: SampleRate,
+        sample_rate: f32,
     ) -> AudioBuffer {
         let options = AudioBufferOptions {
             number_of_channels,
@@ -238,13 +237,6 @@ pub trait BaseAudioContext {
     #[must_use]
     fn state(&self) -> AudioContextState {
         self.base().state()
-    }
-
-    /// The raw sample rate of the `AudioContext` (which has more precision than the float
-    /// [`sample_rate()`](BaseAudioContext::sample_rate) value).
-    #[must_use]
-    fn sample_rate_raw(&self) -> SampleRate {
-        self.base().sample_rate_raw()
     }
 
     /// This is the time in seconds of the sample frame immediately following the last sample-frame

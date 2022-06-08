@@ -565,7 +565,7 @@ impl AudioProcessor for AudioParamProcessor {
         _params: AudioParamValues,
         scope: &RenderScope,
     ) -> bool {
-        let period = 1. / scope.sample_rate.0 as f64;
+        let period = 1. / scope.sample_rate as f64;
         let param_intrisic_values = self.tick(scope.current_time, period, RENDER_QUANTUM_SIZE);
 
         let input = &inputs[0]; // single input mode

@@ -261,23 +261,20 @@ impl StereoPannerRenderer {
 mod test {
     use float_eq::assert_float_eq;
 
-    use crate::{
-        context::{BaseAudioContext, OfflineAudioContext},
-        SampleRate,
-    };
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
 
     use super::{StereoPannerNode, StereoPannerOptions, StereoPannerRenderer};
     const LENGTH: usize = 555;
 
     #[test]
     fn build_with_new() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let _panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
     }
 
     #[test]
     fn build_with_factory_func() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let _panner = context.create_stereo_panner();
     }
 
@@ -285,7 +282,7 @@ mod test {
     fn assert_stereo_default_build() {
         let default_pan = 0.;
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
         let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
 
@@ -300,7 +297,7 @@ mod test {
         let default_pan = 0.;
         let new_pan = 0.1;
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
         let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
 
@@ -357,7 +354,7 @@ mod test {
         let default_pan = 0.;
         let new_pan = 1.1;
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
         let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
 
@@ -377,7 +374,7 @@ mod test {
         let default_pan = 0.;
         let new_pan = -1.1;
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
         let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
 

@@ -2,7 +2,7 @@
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::media::MediaStream;
 use crate::node::{self, ChannelConfigOptions};
-use crate::{AtomicF64, SampleRate};
+use crate::AtomicF64;
 
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -52,7 +52,7 @@ pub struct AudioContextOptions {
     /// tradeoffs between audio output latency and power consumption
     pub latency_hint: AudioContextLatencyCategory,
     /// Sample rate of the audio Context and audio output hardware
-    pub sample_rate: Option<u32>,
+    pub sample_rate: Option<f32>,
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
@@ -116,7 +116,7 @@ impl AudioContext {
             io::build_output(frames_played_clone, output_latency_clone, options);
 
         let number_of_channels = usize::from(config.channels);
-        let sample_rate = SampleRate(config.sample_rate.0);
+        let sample_rate = config.sample_rate.0 as f32;
 
         let base = ConcreteBaseAudioContext::new(
             sample_rate,
@@ -138,7 +138,7 @@ impl AudioContext {
     #[allow(clippy::must_use_candidate)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(options: AudioContextOptions) -> Self {
-        let sample_rate = SampleRate(options.sample_rate.unwrap_or(44_100));
+        let sample_rate = options.sample_rate.unwrap_or(44100.);
         let number_of_channels = 2;
 
         let (sender, _receiver) = crossbeam_channel::unbounded();

@@ -64,7 +64,7 @@ fn main() {
     println!("--------------------------------------------------------------");
 
     let audio_context_38000 = AudioContext::new(AudioContextOptions {
-        sample_rate: Some(38000),
+        sample_rate: Some(38000.),
         latency_hint: AudioContextLatencyCategory::Interactive,
     });
     let file_38000 = File::open("samples/sample-38000.wav").unwrap();
@@ -73,7 +73,7 @@ fn main() {
         .unwrap();
 
     let audio_context_44100 = AudioContext::new(AudioContextOptions {
-        sample_rate: Some(44100),
+        sample_rate: Some(44100.),
         latency_hint: AudioContextLatencyCategory::Interactive,
     });
     let file_44100 = File::open("samples/sample-44100.wav").unwrap();
@@ -82,7 +82,7 @@ fn main() {
         .unwrap();
 
     let audio_context_48000 = AudioContext::new(AudioContextOptions {
-        sample_rate: Some(48000),
+        sample_rate: Some(48000.),
         latency_hint: AudioContextLatencyCategory::Interactive,
     });
     let file_48000 = File::open("samples/sample-48000.wav").unwrap();

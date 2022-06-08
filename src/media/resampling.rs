@@ -2,7 +2,6 @@ use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::media::MediaStream;
-use crate::SampleRate;
 
 /// Sample rate converter and buffer chunk splitter.
 ///
@@ -10,16 +9,15 @@ use crate::SampleRate;
 /// of the desired sample_rate and length
 ///
 /// ```ignore
-/// use crate::SampleRate;
 /// use crate::buffer::{AudioBuffer, Resampler};
 ///
 /// // construct an input of 3 chunks of 5 samples
 /// let samples = vec![vec![1., 2., 3., 4., 5.]];
-/// let input_buf = AudioBuffer::from(samples, SampleRate(44_100));
+/// let input_buf = AudioBuffer::from(samples, 44_100.);
 /// let input = vec![input_buf; 3].into_iter().map(|b| Ok(b));
 ///
 /// // resample to chunks of 10 samples
-/// let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
+/// let mut resampler = Resampler::new(44_100., 10, input);
 ///
 /// // first chunk contains 10 samples
 /// let next = resampler.next().unwrap().unwrap();
@@ -42,7 +40,7 @@ use crate::SampleRate;
 /// ```
 pub struct Resampler<I> {
     /// desired sample rate
-    sample_rate: SampleRate,
+    sample_rate: f32,
     /// desired sample length
     sample_len: usize,
     /// input stream
@@ -52,7 +50,7 @@ pub struct Resampler<I> {
 }
 
 impl<M: MediaStream> Resampler<M> {
-    pub fn new(sample_rate: SampleRate, sample_len: usize, input: M) -> Self {
+    pub fn new(sample_rate: f32, sample_len: usize, input: M) -> Self {
         Self {
             sample_rate,
             sample_len,
@@ -117,14 +115,13 @@ mod tests {
 
     use super::*;
     use crate::buffer::{AudioBuffer, ChannelData};
-    use crate::SampleRate;
 
     #[test]
     fn test_resampler_concat() {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-        let input_buf = AudioBuffer::from_channels(vec![channel], SampleRate(44_100));
+        let input_buf = AudioBuffer::from_channels(vec![channel], 44_100.);
         let input = vec![input_buf; 3].into_iter().map(Ok);
-        let mut resampler = Resampler::new(SampleRate(44_100), 10, input);
+        let mut resampler = Resampler::new(44_100., 10, input);
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.length(), 10);
@@ -150,10 +147,10 @@ mod tests {
         let channel = ChannelData::from(vec![1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);
         let input_buf = Ok(AudioBuffer::from_channels(
             vec![channel],
-            SampleRate(44_100),
+            44_100.,
         ));
         let input = vec![input_buf].into_iter();
-        let mut resampler = Resampler::new(SampleRate(44_100), 5, input);
+        let mut resampler = Resampler::new(44_100., 5, input);
 
         let next = resampler.next().unwrap().unwrap();
         assert_eq!(next.length(), 5);

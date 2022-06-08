@@ -104,7 +104,6 @@ impl Drop for AudioContextRegistration {
 mod tests {
     use super::*;
     use crate::node::AudioNode;
-    use crate::SampleRate;
 
     use float_eq::assert_float_eq;
 
@@ -112,7 +111,7 @@ mod tests {
 
     #[test]
     fn test_audio_context_registration_traits() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(0));
+        let context = OfflineAudioContext::new(1, 0, 44100.);
         let registration = context.mock_registration();
 
         // we want to be able to ship AudioNodes to another thread, so the Registration should be
@@ -122,19 +121,18 @@ mod tests {
 
     #[test]
     fn test_sample_rate_length() {
-        let context = OfflineAudioContext::new(1, 48000, SampleRate(96000));
+        let context = OfflineAudioContext::new(1, 48000, 96000.);
         assert_float_eq!(context.sample_rate(), 96000., abs_all <= 0.);
-        assert_eq!(context.sample_rate_raw(), SampleRate(96000));
         assert_eq!(context.length(), 48000);
     }
 
     #[test]
     fn test_decode_audio_data() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
+        let context = OfflineAudioContext::new(1, 0, 44100.);
         let file = std::fs::File::open("samples/sample.wav").unwrap();
         let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
-        assert_eq!(audio_buffer.sample_rate_raw(), SampleRate(44100));
+        assert_eq!(audio_buffer.sample_rate(), 44100.);
         assert_eq!(audio_buffer.length(), 142_187);
         assert_eq!(audio_buffer.number_of_channels(), 2);
         assert_float_eq!(audio_buffer.duration(), 3.224, abs_all <= 0.001);
@@ -149,7 +147,7 @@ mod tests {
     // disabled: symphonia cannot handle empty WAV-files
     #[allow(dead_code)]
     fn test_decode_audio_data_empty() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
+        let context = OfflineAudioContext::new(1, 0, 44100.);
         let file = std::fs::File::open("samples/empty_2c.wav").unwrap();
         let audio_buffer = context.decode_audio_data_sync(file).unwrap();
         assert_eq!(audio_buffer.length(), 0);
@@ -157,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_decode_audio_data_decoding_error() {
-        let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
+        let context = OfflineAudioContext::new(1, 0, 44100.);
         let file = std::fs::File::open("samples/corrupt.wav").unwrap();
         assert!(context.decode_audio_data_sync(file).is_err());
     }
@@ -166,9 +164,9 @@ mod tests {
     fn test_create_buffer() {
         let number_of_channels = 3;
         let length = 2000;
-        let sample_rate = SampleRate(96_000);
+        let sample_rate = 96_000.;
 
-        let context = OfflineAudioContext::new(1, 0, SampleRate(44100));
+        let context = OfflineAudioContext::new(1, 0, 44100.);
         let buffer = context.create_buffer(number_of_channels, length, sample_rate);
 
         assert_eq!(buffer.number_of_channels(), 3);
@@ -178,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_registration() {
-        let context = OfflineAudioContext::new(1, 48000, SampleRate(96000));
+        let context = OfflineAudioContext::new(1, 48000, 96000.);
         let dest = context.destination();
         assert!(dest.context() == context.base());
     }

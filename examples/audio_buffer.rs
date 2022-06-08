@@ -10,7 +10,7 @@ fn main() {
     println!("> Play sine at 200Hz created manually in an AudioBuffer");
 
     let length = context.sample_rate() as usize;
-    let sample_rate = context.sample_rate_raw();
+    let sample_rate = context.sample_rate();
     let mut buffer = context.create_buffer(1, length, sample_rate);
     let mut sine = vec![];
 

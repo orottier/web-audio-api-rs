@@ -11,14 +11,14 @@ use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::RenderScope;
-use crate::{AtomicF64, SampleRate, RENDER_QUANTUM_SIZE};
+use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
 
 use super::graph::Graph;
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
     graph: Graph,
-    sample_rate: SampleRate,
+    sample_rate: f32,
     number_of_channels: usize,
     frames_played: Arc<AtomicU64>,
     output_latency: Arc<AtomicF64>,
@@ -36,7 +36,7 @@ unsafe impl Send for RenderThread {}
 
 impl RenderThread {
     pub fn new(
-        sample_rate: SampleRate,
+        sample_rate: f32,
         number_of_channels: usize,
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
@@ -114,7 +114,7 @@ impl RenderThread {
             let current_frame = self
                 .frames_played
                 .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
-            let current_time = current_frame as f64 / self.sample_rate.0 as f64;
+            let current_time = current_frame as f64 / self.sample_rate as f64;
 
             let scope = RenderScope {
                 current_frame,
@@ -186,7 +186,7 @@ impl RenderThread {
             let current_frame = self
                 .frames_played
                 .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
-            let current_time = current_frame as f64 / self.sample_rate.0 as f64;
+            let current_time = current_frame as f64 / self.sample_rate as f64;
 
             let scope = RenderScope {
                 current_frame,
