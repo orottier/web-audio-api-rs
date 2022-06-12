@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::buffer::AudioBuffer;
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
-use crate::{AtomicF64, SampleRate, RENDER_QUANTUM_SIZE};
+use crate::{assert_valid_sample_rate, AtomicF64, RENDER_QUANTUM_SIZE};
 
 /// The `OfflineAudioContext` doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an `AudioBuffer`.
@@ -35,7 +35,9 @@ impl OfflineAudioContext {
     /// * `length` - length of the rendering audio buffer
     /// * `sample_rate` - output sample rate
     #[must_use]
-    pub fn new(number_of_channels: usize, length: usize, sample_rate: SampleRate) -> Self {
+    pub fn new(number_of_channels: usize, length: usize, sample_rate: f32) -> Self {
+        assert_valid_sample_rate(sample_rate);
+
         // communication channel to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
 
@@ -100,12 +102,11 @@ impl OfflineAudioContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SampleRate;
     use float_eq::assert_float_eq;
 
     #[test]
     fn render_empty_graph() {
-        let mut context = OfflineAudioContext::new(2, 555, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, 555, 44_100.);
         let buffer = context.start_rendering_sync();
 
         assert_eq!(buffer.number_of_channels(), 2);

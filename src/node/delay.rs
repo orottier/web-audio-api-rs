@@ -168,7 +168,7 @@ impl DelayNode {
     ///
     /// Panics when the max delay value is smaller than zero or langer than three minutes.
     pub fn new<C: BaseAudioContext>(context: &C, options: DelayOptions) -> Self {
-        let sample_rate = context.sample_rate_raw().0 as f64;
+        let sample_rate = context.sample_rate() as f64;
 
         // Specifies the maximum delay time in seconds allowed for the delay line.
         // If specified, this value MUST be greater than zero and less than three
@@ -410,7 +410,7 @@ impl AudioProcessor for DelayReader {
         output.set_number_of_channels(number_of_channels);
 
         // shadow and cast sample_rate, we don't need the wrapper type here
-        let sample_rate = scope.sample_rate.0 as f64;
+        let sample_rate = scope.sample_rate as f64;
         let dt = 1. / sample_rate;
         let quantum_duration = RENDER_QUANTUM_SIZE as f64 * dt;
 
@@ -509,18 +509,17 @@ mod tests {
 
     use crate::context::OfflineAudioContext;
     use crate::node::AudioScheduledSourceNode;
-    use crate::SampleRate;
 
     use super::*;
 
     #[test]
     fn test_sample_accurate() {
         for delay_in_samples in [128., 131., 197.].iter() {
-            let sample_rate = SampleRate(128);
+            let sample_rate = 48000.;
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(2.);
-            delay.delay_time.set_value(delay_in_samples / 128.);
+            delay.delay_time.set_value(delay_in_samples / sample_rate);
             delay.connect(&context.destination());
 
             let mut dirac = context.create_buffer(1, 1, sample_rate);
@@ -537,7 +536,7 @@ mod tests {
             let mut expected = vec![0.; 256];
             expected[*delay_in_samples as usize] = 1.;
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+            assert_float_eq!(channel[..], expected[..], abs_all <= 0.00001);
         }
     }
 
@@ -545,11 +544,11 @@ mod tests {
     fn test_sub_sample_accurate() {
         {
             let delay_in_samples = 128.5;
-            let sample_rate = SampleRate(128);
+            let sample_rate = 48000.;
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(2.);
-            delay.delay_time.set_value(delay_in_samples / 128.);
+            delay.delay_time.set_value(delay_in_samples / sample_rate);
             delay.connect(&context.destination());
 
             let mut dirac = context.create_buffer(1, 1, sample_rate);
@@ -567,16 +566,16 @@ mod tests {
             expected[128] = 0.5;
             expected[129] = 0.5;
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+            assert_float_eq!(channel[..], expected[..], abs_all <= 0.00001);
         }
 
         {
             let delay_in_samples = 128.8;
-            let sample_rate = SampleRate(128);
+            let sample_rate = 48000.;
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(2.);
-            delay.delay_time.set_value(delay_in_samples / 128.);
+            delay.delay_time.set_value(delay_in_samples / sample_rate);
             delay.connect(&context.destination());
 
             let mut dirac = context.create_buffer(1, 1, sample_rate);
@@ -601,11 +600,11 @@ mod tests {
     #[test]
     fn test_multichannel() {
         let delay_in_samples = 128.;
-        let sample_rate = SampleRate(128);
+        let sample_rate = 48000.;
         let mut context = OfflineAudioContext::new(2, 2 * 128, sample_rate);
 
         let delay = context.create_delay(2.);
-        delay.delay_time.set_value(delay_in_samples / 128.);
+        delay.delay_time.set_value(delay_in_samples / sample_rate);
         delay.connect(&context.destination());
 
         let mut two_chan_dirac = context.create_buffer(2, 256, sample_rate);
@@ -634,11 +633,11 @@ mod tests {
     #[test]
     fn test_input_number_of_channels_change() {
         let delay_in_samples = 128.;
-        let sample_rate = SampleRate(128);
+        let sample_rate = 48000.;
         let mut context = OfflineAudioContext::new(2, 3 * 128, sample_rate);
 
         let delay = context.create_delay(2.);
-        delay.delay_time.set_value(delay_in_samples / 128.);
+        delay.delay_time.set_value(delay_in_samples / sample_rate);
         delay.connect(&context.destination());
 
         let mut one_chan_dirac = context.create_buffer(1, 128, sample_rate);
@@ -657,7 +656,7 @@ mod tests {
         let src2 = context.create_buffer_source();
         src2.connect(&delay);
         src2.set_buffer(two_chan_dirac);
-        src2.start_at(1.);
+        src2.start_at(delay_in_samples as f64 / sample_rate as f64);
 
         let result = context.start_rendering_sync();
 
@@ -678,7 +677,7 @@ mod tests {
     fn test_node_stays_alive_long_enough() {
         // make sure there are no hidden order problem
         for _ in 0..10 {
-            let sample_rate = SampleRate(128);
+            let sample_rate = 48000.;
             let mut context = OfflineAudioContext::new(1, 5 * 128, sample_rate);
 
             // Set up a source that starts only after 5 render quanta.
@@ -687,7 +686,7 @@ mod tests {
             // otherwise the lifecycle rules do not kick in
             {
                 let delay = context.create_delay(1.);
-                delay.delay_time.set_value(1.);
+                delay.delay_time.set_value(128. / sample_rate);
                 delay.connect(&context.destination());
 
                 let mut dirac = context.create_buffer(1, 1, sample_rate);
@@ -698,7 +697,7 @@ mod tests {
                 src.set_buffer(dirac);
                 // 3rd block - play buffer
                 // 4th block - play silence and dropped in render thread
-                src.start_at(3.);
+                src.start_at(128. * 3. / sample_rate as f64);
             } // src and delay nodes are dropped
 
             let result = context.start_rendering_sync();
@@ -719,11 +718,11 @@ mod tests {
         // Writer is called earlier than the Reader. 10 times should do:
         for _ in 0..10 {
             // set delay and max delay time exactly 1 render quantum
-            let sample_rate = SampleRate(128);
+            let sample_rate = 48000.;
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(1.);
-            delay.delay_time.set_value(1.);
+            delay.delay_time.set_value(128. / sample_rate);
             delay.connect(&context.destination());
 
             let mut dirac = context.create_buffer(1, 1, sample_rate);
@@ -745,11 +744,11 @@ mod tests {
 
         for _ in 0..10 {
             // set delay and max delay time exactly 2 render quantum
-            let sample_rate = SampleRate(128);
+            let sample_rate = 48000.;
             let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
 
             let delay = context.create_delay(2.);
-            delay.delay_time.set_value(2.);
+            delay.delay_time.set_value(128. * 2. / sample_rate);
             delay.connect(&context.destination());
 
             let mut dirac = context.create_buffer(1, 1, sample_rate);
@@ -766,7 +765,7 @@ mod tests {
             let mut expected = vec![0.; 3 * 128];
             expected[256] = 1.;
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+            assert_float_eq!(channel[..], expected[..], abs_all <= 0.00001);
         }
     }
 
@@ -779,11 +778,11 @@ mod tests {
         // When allowing sub quantum delay, this will also guarantees that the node
         // gracefully fallback to min
         for _ in 0..10 {
-            let sample_rate = SampleRate(128);
+            let sample_rate = 480000.;
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(0.5); // this will be internally clamped to 1.
-            delay.delay_time.set_value(0.5); // this will be clamped to 1. by the Reader
+            delay.delay_time.set_value(0.5 / sample_rate); // this will be clamped to 1. by the Reader
             delay.connect(&context.destination());
 
             let mut dirac = context.create_buffer(1, 1, sample_rate);

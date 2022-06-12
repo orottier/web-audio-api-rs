@@ -151,7 +151,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         // single output node
         let output = &mut outputs[0];
 
-        let dt = 1. / scope.sample_rate.0 as f64;
+        let dt = 1. / scope.sample_rate as f64;
         let next_block_time = scope.current_time + dt * RENDER_QUANTUM_SIZE as f64;
 
         let start_time = self.scheduler.get_start_at();
@@ -194,21 +194,21 @@ impl AudioProcessor for ConstantSourceRenderer {
 mod tests {
     use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::node::{AudioNode, AudioScheduledSourceNode};
-    use crate::SampleRate;
 
     use float_eq::assert_float_eq;
 
     #[test]
     fn test_start_stop() {
+        let sample_rate = 48000.;
         let start_in_samples = (128 + 1) as f64; // start rendering in 2d block
         let stop_in_samples = (256 + 1) as f64; // stop rendering of 3rd block
-        let mut context = OfflineAudioContext::new(1, 128 * 4, SampleRate(128));
+        let mut context = OfflineAudioContext::new(1, 128 * 4, sample_rate);
 
         let src = context.create_constant_source();
         src.connect(&context.destination());
 
-        src.start_at(start_in_samples / 128.);
-        src.stop_at(stop_in_samples / 128.);
+        src.start_at(start_in_samples / sample_rate as f64);
+        src.stop_at(stop_in_samples / sample_rate as f64);
 
         let buffer = context.start_rendering_sync();
         let channel = buffer.get_channel_data(0);
@@ -232,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_start_in_the_past() {
-        let mut context = OfflineAudioContext::new(1, 128, SampleRate(128));
+        let mut context = OfflineAudioContext::new(1, 128, 48000.);
 
         let src = context.create_constant_source();
         src.connect(&context.destination());

@@ -170,7 +170,7 @@ impl WaveShaperNode {
                 channel_config,
             } = options;
 
-            let sample_rate = context.sample_rate_raw().0 as usize;
+            let sample_rate = context.sample_rate() as usize;
             let channel_config = channel_config.into();
             let oversample = Arc::new(AtomicU32::new(oversample as u32));
 
@@ -455,7 +455,6 @@ mod tests {
 
     use crate::context::OfflineAudioContext;
     use crate::node::AudioScheduledSourceNode;
-    use crate::SampleRate;
 
     use super::*;
 
@@ -463,19 +462,19 @@ mod tests {
 
     #[test]
     fn build_with_new() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let _shaper = WaveShaperNode::new(&context, WaveShaperOptions::default());
     }
 
     #[test]
     fn build_with_factory_func() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let _shaper = context.create_wave_shaper();
     }
 
     #[test]
     fn test_default_options() {
-        let context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let shaper = WaveShaperNode::new(&context, WaveShaperOptions::default());
 
         assert_eq!(shaper.curve(), None);
@@ -484,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_user_defined_options() {
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
         let options = WaveShaperOptions {
             curve: Some(vec![1.0]),
@@ -503,7 +502,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn change_a_curve_for_another_curve_should_panic() {
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
         let options = WaveShaperOptions {
             curve: Some(vec![1.0]),
@@ -526,7 +525,7 @@ mod tests {
 
     #[test]
     fn change_none_for_curve_after_build() {
-        let mut context = OfflineAudioContext::new(2, LENGTH, SampleRate(44_100));
+        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
         let options = WaveShaperOptions {
             curve: None,
@@ -549,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_shape_boundaries() {
-        let sample_rate = SampleRate(128);
+        let sample_rate = 44100.;
         let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
 
         let shaper = context.create_wave_shaper();
@@ -587,7 +586,7 @@ mod tests {
 
     #[test]
     fn test_shape_interpolation() {
-        let sample_rate = SampleRate(128);
+        let sample_rate = 44100.;
         let mut context = OfflineAudioContext::new(1, 128, sample_rate);
 
         let shaper = context.create_wave_shaper();

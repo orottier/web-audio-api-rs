@@ -64,10 +64,6 @@ mod io;
 mod analysis;
 mod message;
 
-/// Number of samples processed per second (Hertz) for a single channel of audio
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SampleRate(pub u32);
-
 /// Atomic float 32, only `load` and `store` are supported, no arithmetics
 #[derive(Debug)]
 pub(crate) struct AtomicF32 {
@@ -130,11 +126,13 @@ impl AtomicF64 {
 ///
 #[track_caller]
 #[inline(always)]
-pub(crate) fn assert_valid_sample_rate(sample_rate: SampleRate) {
-    if sample_rate.0 == 0 {
+pub(crate) fn assert_valid_sample_rate(sample_rate: f32) {
+    // 1000 Hertz is a just a random cutoff, but it helps a if someone accidentally puts a
+    // timestamp in the sample_rate variable
+    if sample_rate <= 1000. {
         panic!(
-            "NotSupportedError - Invalid sample rate: {:?}, should be strictly positive",
-            sample_rate.0
+            "NotSupportedError - Invalid sample rate: {:?}, should be greater than 1000",
+            sample_rate
         );
     }
 }
@@ -194,15 +192,25 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn test_invalid_sample_rate() {
-        let sample_rate = SampleRate(0);
-        assert_valid_sample_rate(sample_rate);
+    fn test_invalid_sample_rate_zero() {
+        assert_valid_sample_rate(0.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_sample_rate_subzero() {
+        assert_valid_sample_rate(-48000.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_sample_rate_too_small() {
+        assert_valid_sample_rate(100.);
     }
 
     #[test]
     fn test_valid_sample_rate() {
-        let sample_rate = SampleRate(1);
-        assert_valid_sample_rate(sample_rate);
+        assert_valid_sample_rate(48000.);
     }
 
     #[test]

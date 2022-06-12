@@ -29,7 +29,6 @@ use web_audio_api::buffer::AudioBufferOptions;
 use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::media::Microphone;
 use web_audio_api::node::AudioNode;
-use web_audio_api::SampleRate;
 use web_audio_api::RENDER_QUANTUM_SIZE;
 
 const MAX_UDP_SIZE: usize = 508;
@@ -104,7 +103,7 @@ fn serialize(audio_buf: &AudioBuffer, byte_buf: &mut [u8]) -> usize {
     n
 }
 
-fn deserialize(byte_buf: &[u8], sample_rate: SampleRate) -> AudioBuffer {
+fn deserialize(byte_buf: &[u8], sample_rate: f32) -> AudioBuffer {
     let samples: Vec<f32> = byte_buf
         .chunks_exact(2)
         .take(128)
@@ -116,7 +115,7 @@ fn deserialize(byte_buf: &[u8], sample_rate: SampleRate) -> AudioBuffer {
 
 struct SocketStream {
     socket: &'static UdpSocket,
-    sample_rate: SampleRate,
+    sample_rate: f32,
     byte_buf: Vec<u8>,
 }
 
@@ -160,7 +159,7 @@ fn run_client() -> std::io::Result<()> {
     // leg 1: receive server packets and play them
     let stream = SocketStream {
         socket,
-        sample_rate: context.sample_rate_raw(),
+        sample_rate: context.sample_rate(),
         byte_buf: vec![0; 512],
     };
     let stream_in = context.create_media_stream_source(stream);

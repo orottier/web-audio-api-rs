@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use crate::message::ControlMessage;
-use crate::{AtomicF64, SampleRate, RENDER_QUANTUM_SIZE};
+use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -127,9 +127,9 @@ impl StreamConfigsBuilder {
     }
 
     /// set preferred sample rate
-    fn with_sample_rate(&mut self, v: u32) {
-        crate::assert_valid_sample_rate(SampleRate(v));
-        self.prefered.sample_rate.0 = v;
+    fn with_sample_rate(&mut self, v: f32) {
+        crate::assert_valid_sample_rate(v);
+        self.prefered.sample_rate.0 = v as u32;
     }
 
     /// buffer size
@@ -262,7 +262,7 @@ impl OutputStreamer {
         let config = &self.configs.prefered;
 
         // Creates the render thread
-        let sample_rate = SampleRate(config.sample_rate.0);
+        let sample_rate = config.sample_rate.0 as f32;
 
         // communication channel to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
@@ -339,7 +339,7 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
                 let config = &streamer.configs.fallback;
 
                 // Creates the renderer thread
-                let sample_rate = SampleRate(config.sample_rate.0);
+                let sample_rate = config.sample_rate.0 as f32;
 
                 // communication channel to the render thread
                 let (sender, receiver) = crossbeam_channel::unbounded();
@@ -432,10 +432,10 @@ pub fn build_input(options: AudioContextOptions) -> (Stream, StreamConfig, Recei
     let mut config: StreamConfig = supported_config.into();
     config.buffer_size = cpal::BufferSize::Fixed(input_buffer_size);
     if let Some(sample_rate) = options.sample_rate {
-        config.sample_rate = CpalSampleRate(sample_rate);
+        config.sample_rate = CpalSampleRate(sample_rate as u32);
     }
 
-    let sample_rate = SampleRate(config.sample_rate.0);
+    let sample_rate = config.sample_rate.0 as f32;
     let channels = config.channels as usize;
 
     let smoothing = 3; // todo, use buffering to smooth frame drops

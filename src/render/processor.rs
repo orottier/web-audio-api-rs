@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 
 use crate::context::AudioParamId;
-use crate::SampleRate;
 
 use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 
@@ -16,7 +15,7 @@ use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 pub struct RenderScope {
     pub current_frame: u64,
     pub current_time: f64,
-    pub sample_rate: SampleRate,
+    pub sample_rate: f32,
 }
 
 /// Interface for audio processing code that runs on the audio rendering thread.

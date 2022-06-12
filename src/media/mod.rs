@@ -32,7 +32,6 @@ use crate::buffer::AudioBuffer;
 /// # Example
 ///
 /// ```no_run
-/// use web_audio_api::SampleRate;
 /// use web_audio_api::context::{AudioContext, BaseAudioContext};
 /// use web_audio_api::buffer::{AudioBuffer, AudioBufferOptions};
 /// use web_audio_api::node::AudioNode;
@@ -41,7 +40,7 @@ use crate::buffer::AudioBuffer;
 /// let options = AudioBufferOptions {
 ///     number_of_channels: 0,
 ///     length: 512,
-///     sample_rate: SampleRate(44_100),
+///     sample_rate: 44_100.,
 /// };
 /// let silence = AudioBuffer::new(options);
 ///
