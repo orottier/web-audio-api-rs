@@ -69,7 +69,7 @@ use private::StreamHolder;
 ///
 /// // Request an input sample rate of 44.1 kHz and default latency (buffer size 128, if available)
 /// let opts = AudioContextOptions {
-///     sample_rate: Some(44100),
+///     sample_rate: Some(44100.),
 ///     latency_hint: AudioContextLatencyCategory::Interactive,
 /// };
 /// let mic = Microphone::new(opts);
