@@ -611,10 +611,10 @@ mod tests {
 
     #[test]
     fn test_sub_quantum_start() {
-        let sample_rate = 128;
-        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let sample_rate = 480000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
-        let mut dirac = context.create_buffer(1, 1, sample_rate as f32);
+        let mut dirac = context.create_buffer(1, 1, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
 
         let src = context.create_buffer_source();
@@ -625,7 +625,7 @@ mod tests {
         let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
-        let mut expected = vec![0.; sample_rate];
+        let mut expected = vec![0.; RENDER_QUANTUM_SIZE];
         expected[1] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
@@ -634,10 +634,10 @@ mod tests {
     #[test]
     fn test_sub_sample_start() {
         // sub sample
-        let sample_rate = 128;
-        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let sample_rate = 480000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
-        let mut dirac = context.create_buffer(1, sample_rate, sample_rate as f32);
+        let mut dirac = context.create_buffer(1, 1, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
 
         let src = context.create_buffer_source();
@@ -648,7 +648,7 @@ mod tests {
         let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
-        let mut expected = vec![0.; sample_rate];
+        let mut expected = vec![0.; RENDER_QUANTUM_SIZE];
         expected[2] = 0.5;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
@@ -656,10 +656,10 @@ mod tests {
 
     #[test]
     fn test_sub_quantum_stop() {
-        let sample_rate = 128;
-        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let sample_rate = 480000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
-        let mut dirac = context.create_buffer(1, sample_rate, sample_rate as f32);
+        let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
         dirac.copy_to_channel(&[0., 0., 0., 0., 1.], 0);
 
         let src = context.create_buffer_source();
@@ -671,17 +671,17 @@ mod tests {
 
         let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
-        let expected = vec![0.; sample_rate];
+        let expected = vec![0.; RENDER_QUANTUM_SIZE];
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
 
     #[test]
     fn test_sub_sample_stop() {
-        let sample_rate = 128;
-        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let sample_rate = 480000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
-        let mut dirac = context.create_buffer(1, sample_rate, sample_rate as f32);
+        let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
         dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
 
         let src = context.create_buffer_source();
@@ -694,7 +694,7 @@ mod tests {
         let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
-        let mut expected = vec![0.; sample_rate];
+        let mut expected = vec![0.; 128];
         expected[4] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
@@ -702,10 +702,10 @@ mod tests {
 
     #[test]
     fn test_schedule_in_the_past() {
-        let sample_rate = 128;
-        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let sample_rate = 48000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
-        let mut dirac = context.create_buffer(1, 1, sample_rate as f32);
+        let mut dirac = context.create_buffer(1, 1, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
 
         let src = context.create_buffer_source();
@@ -716,7 +716,7 @@ mod tests {
         let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
-        let mut expected = vec![0.; sample_rate];
+        let mut expected = vec![0.; RENDER_QUANTUM_SIZE];
         expected[0] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);

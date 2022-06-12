@@ -536,7 +536,7 @@ mod tests {
             let mut expected = vec![0.; 256];
             expected[*delay_in_samples as usize] = 1.;
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+            assert_float_eq!(channel[..], expected[..], abs_all <= 0.00001);
         }
     }
 
@@ -566,7 +566,7 @@ mod tests {
             expected[128] = 0.5;
             expected[129] = 0.5;
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+            assert_float_eq!(channel[..], expected[..], abs_all <= 0.00001);
         }
 
         {
@@ -656,7 +656,7 @@ mod tests {
         let src2 = context.create_buffer_source();
         src2.connect(&delay);
         src2.set_buffer(two_chan_dirac);
-        src2.start_at(1.);
+        src2.start_at(delay_in_samples as f64 / sample_rate as f64);
 
         let result = context.start_rendering_sync();
 
@@ -686,7 +686,7 @@ mod tests {
             // otherwise the lifecycle rules do not kick in
             {
                 let delay = context.create_delay(1.);
-                delay.delay_time.set_value(1. / sample_rate);
+                delay.delay_time.set_value(128. / sample_rate);
                 delay.connect(&context.destination());
 
                 let mut dirac = context.create_buffer(1, 1, sample_rate);
@@ -697,7 +697,7 @@ mod tests {
                 src.set_buffer(dirac);
                 // 3rd block - play buffer
                 // 4th block - play silence and dropped in render thread
-                src.start_at(3. / sample_rate as f64);
+                src.start_at(128. * 3. / sample_rate as f64);
             } // src and delay nodes are dropped
 
             let result = context.start_rendering_sync();
@@ -722,7 +722,7 @@ mod tests {
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(1.);
-            delay.delay_time.set_value(1. / sample_rate);
+            delay.delay_time.set_value(128. / sample_rate);
             delay.connect(&context.destination());
 
             let mut dirac = context.create_buffer(1, 1, sample_rate);
@@ -748,7 +748,7 @@ mod tests {
             let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
 
             let delay = context.create_delay(2.);
-            delay.delay_time.set_value(2. / sample_rate);
+            delay.delay_time.set_value(128. * 2. / sample_rate);
             delay.connect(&context.destination());
 
             let mut dirac = context.create_buffer(1, 1, sample_rate);
@@ -765,7 +765,7 @@ mod tests {
             let mut expected = vec![0.; 3 * 128];
             expected[256] = 1.;
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+            assert_float_eq!(channel[..], expected[..], abs_all <= 0.00001);
         }
     }
 

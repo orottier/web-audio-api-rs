@@ -61,8 +61,8 @@ fn test_start_stop() {
         let osc = OscillatorNode::new(&context, opts);
         osc.connect(&context.destination());
 
-        osc.start_at(1. / sample_rate as f64);
-        osc.stop_at(3. / sample_rate as f64);
+        osc.start_at(128. / sample_rate as f64);
+        osc.stop_at(128. * 3. / sample_rate as f64);
     }
 
     let output = context.start_rendering_sync();
@@ -76,7 +76,7 @@ fn test_start_stop() {
     expected.append(&mut vec![1.; 2 * RENDER_QUANTUM_SIZE]);
     expected.append(&mut vec![0.; RENDER_QUANTUM_SIZE]);
 
-    assert_eq!(channel_data, expected.as_slice());
+    assert_float_eq!(channel_data, expected.as_slice(), abs_all <= 0.);
 }
 
 #[test]
@@ -88,8 +88,8 @@ fn test_delayed_constant_source() {
     assert_eq!(context.length(), len);
 
     {
-        let delay = context.create_delay(10. / sample_rate as f64);
-        delay.delay_time().set_value(2. / sample_rate);
+        let delay = context.create_delay(1.);
+        delay.delay_time().set_value(128. * 2. / sample_rate);
         delay.connect(&context.destination());
 
         let source = context.create_constant_source();
@@ -107,7 +107,7 @@ fn test_delayed_constant_source() {
     let mut expected = vec![0.; 2 * RENDER_QUANTUM_SIZE];
     expected.append(&mut vec![1.; 2 * RENDER_QUANTUM_SIZE]);
 
-    assert_eq!(channel_data, expected.as_slice());
+    assert_float_eq!(channel_data, expected.as_slice(), abs_all <= 0.00001);
 }
 
 #[test]
