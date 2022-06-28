@@ -3,6 +3,8 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
+use crossbeam_channel::{Receiver, Sender};
+
 use realfft::{num_complex::Complex, RealFftPlanner};
 
 /// `ConvolverNode` options
@@ -27,6 +29,10 @@ pub struct ConvolverNode {
     channel_config: ChannelConfig,
     /// Perform equal power normalization on response buffer
     normalize: bool,
+    /// The response buffer, nullable
+    buffer: Option<AudioBuffer>,
+    /// Message bus to the renderer
+    sender: Sender<ConvolverRendererInner>,
 }
 
 impl AudioNode for ConvolverNode {
@@ -63,29 +69,49 @@ impl ConvolverNode {
             } = options;
 
             if disable_normalization {
-                panic!("unimplemented");
+                todo!("unimplemented");
             }
 
-            let buffer = buffer.expect("optional buffer not yet supported");
+            // Channel to send buffer channels references to the renderer.  A capacity of 1
+            // suffices, it will simply block the control thread when used concurrently
+            let (sender, receiver) = crossbeam_channel::bounded(1);
+
+            let renderer = ConvolverRenderer::new(receiver);
+
+            let mut node = Self {
+                registration,
+                channel_config: channel_config.into(),
+                normalize: !disable_normalization,
+                sender,
+                buffer: None,
+            };
+
+            node.set_buffer(buffer);
+
+            (node, Box::new(renderer))
+        })
+    }
+
+    pub fn buffer(&self) -> Option<&AudioBuffer> {
+        self.buffer.as_ref()
+    }
+
+    pub fn set_buffer(&mut self, buffer: Option<AudioBuffer>) {
+        if let Some(buffer) = &buffer {
             let length = buffer.length();
 
             // Pad the response buffer with zeroes so its size is a power of 2
             let padded_length = length.next_power_of_two();
             let sample_rate = buffer.sample_rate();
             let mut samples = vec![0.; padded_length];
-            samples[..length].copy_from_slice(&buffer.get_channel_data(0));
-            let buffer = AudioBuffer::from(vec![samples], sample_rate);
+            samples[..length].copy_from_slice(buffer.get_channel_data(0));
+            let padded_buffer = AudioBuffer::from(vec![samples], sample_rate);
 
-            let renderer = ConvolverRenderer::new(buffer);
+            let convolve = ConvolverRendererInner::new(padded_buffer);
+            let _ = self.sender.send(convolve); // can fail when render thread shut down
+        }
 
-            let node = Self {
-                registration,
-                channel_config: channel_config.into(),
-                normalize: !disable_normalization,
-            };
-
-            (node, Box::new(renderer))
-        })
+        self.buffer = buffer;
     }
 
     pub fn normalize(&self) -> bool {
@@ -99,6 +125,20 @@ impl ConvolverNode {
 }
 
 struct ConvolverRenderer {
+    receiver: Receiver<ConvolverRendererInner>,
+    inner: Option<ConvolverRendererInner>,
+}
+
+impl ConvolverRenderer {
+    fn new(receiver: Receiver<ConvolverRendererInner>) -> Self {
+        Self {
+            receiver,
+            inner: None,
+        }
+    }
+}
+
+struct ConvolverRendererInner {
     length: usize,
     response_fft: Vec<Complex<f32>>,
     sample_buffer: Vec<f32>,
@@ -108,7 +148,7 @@ struct ConvolverRenderer {
     fft_output: Vec<Complex<f32>>,
 }
 
-impl ConvolverRenderer {
+impl ConvolverRendererInner {
     fn new(response: AudioBuffer) -> Self {
         let length = response.length();
         let sample_buffer = vec![0.; length];
@@ -149,44 +189,59 @@ impl AudioProcessor for ConvolverRenderer {
         let output = &mut outputs[0];
         output.force_mono();
 
+        if let Ok(msg) = self.receiver.try_recv() {
+            self.inner = Some(msg);
+        }
+
+        let convolver = match &mut self.inner {
+            None => {
+                // no convolution buffer set, passthrough
+                *output = input.clone();
+                return true;
+            }
+            Some(convolver) => convolver,
+        };
+
         // shift previous samples to the right
-        self.sample_buffer.copy_within(128.., 0);
+        convolver.sample_buffer.copy_within(128.., 0);
 
         // add current input to sample buffer
         let mut mono = input.clone();
         mono.mix(1, ChannelInterpretation::Speakers);
-        self.sample_buffer[self.length - 128..].copy_from_slice(mono.channel_data(0).as_slice());
+        convolver.sample_buffer[convolver.length - 128..]
+            .copy_from_slice(mono.channel_data(0).as_slice());
 
         // FFT the entire sample buffer
-        let fft = self.fft_planner.plan_fft_forward(self.length);
+        let fft = convolver.fft_planner.plan_fft_forward(convolver.length);
         fft.process_with_scratch(
-            &mut self.sample_buffer,
-            &mut self.fft_output,
-            &mut self.fft_scratch,
+            &mut convolver.sample_buffer,
+            &mut convolver.fft_output,
+            &mut convolver.fft_scratch,
         )
         .unwrap();
 
         // Multiply frequency data with the response
-        self.fft_output
+        convolver
+            .fft_output
             .iter_mut()
-            .zip(self.response_fft.iter())
+            .zip(convolver.response_fft.iter())
             .for_each(|(o, r)| *o *= r);
 
         // inverse FFT
-        let fft = self.fft_planner.plan_fft_inverse(self.length);
+        let fft = convolver.fft_planner.plan_fft_inverse(convolver.length);
         let fft_result = fft.process_with_scratch(
-            &mut self.fft_output,
-            &mut self.fft_input,
-            &mut self.fft_scratch,
+            &mut convolver.fft_output,
+            &mut convolver.fft_input,
+            &mut convolver.fft_scratch,
         );
         fft_result.unwrap();
 
         // write samples back to output, take them somewhere from the middle to prevent boundary
         // artefacts - hence, add a delay of 512 samples
-        self.fft_input[self.length - 512..self.length - 512 + 128]
+        convolver.fft_input[convolver.length - 512..convolver.length - 512 + 128]
             .iter()
             .zip(output.channel_data_mut(0).iter_mut())
-            .for_each(|(f, o)| *o = *f / self.length as f32);
+            .for_each(|(f, o)| *o = *f / convolver.length as f32);
 
         true
     }

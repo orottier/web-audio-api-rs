@@ -10,22 +10,30 @@ fn main() {
     let file = File::open("samples/vocals-dry.wav").unwrap();
     let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
-    let impulse_file = File::open("samples/parking-garage-response.wav").unwrap();
-    let impulse_buffer = context.decode_audio_data_sync(impulse_file).unwrap();
+    let impulse_file1 = File::open("samples/small-room-response.wav").unwrap();
+    let impulse_buffer1 = context.decode_audio_data_sync(impulse_file1).unwrap();
+
+    let impulse_file2 = File::open("samples/parking-garage-response.wav").unwrap();
+    let impulse_buffer2 = context.decode_audio_data_sync(impulse_file2).unwrap();
 
     let src = context.create_buffer_source();
     src.set_buffer(audio_buffer);
 
-    let opts = ConvolverOptions {
-        buffer: Some(impulse_buffer),
-        ..ConvolverOptions::default()
-    };
-    let convolve = ConvolverNode::new(&context, opts);
+    let mut convolve = ConvolverNode::new(&context, ConvolverOptions::default());
 
     src.connect(&convolve);
     convolve.connect(&context.destination());
 
     src.start();
 
-    thread::sleep(time::Duration::from_millis(16_000));
+    println!("Dry");
+    thread::sleep(time::Duration::from_millis(4_000));
+
+    println!("Small room");
+    convolve.set_buffer(Some(impulse_buffer1));
+    thread::sleep(time::Duration::from_millis(4_000));
+
+    println!("Parking garage");
+    convolve.set_buffer(Some(impulse_buffer2));
+    thread::sleep(time::Duration::from_millis(9_000));
 }
