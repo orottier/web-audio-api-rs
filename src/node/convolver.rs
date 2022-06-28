@@ -7,6 +7,47 @@ use crossbeam_channel::{Receiver, Sender};
 
 use realfft::{num_complex::Complex, RealFftPlanner};
 
+fn normalize_buffer(buffer: &mut AudioBuffer) {
+    let gain_calibration = 0.00125;
+    let gain_calibration_sample_rate = 44100.;
+    let min_power = 0.000125;
+
+    // Normalize by RMS power.
+    let number_of_channels = buffer.number_of_channels();
+    let length = buffer.length();
+
+    let mut power: f32 = buffer
+        .channels()
+        .iter()
+        .map(|c| c.as_slice().iter().map(|&s| s * s).sum::<f32>())
+        .sum();
+
+    power = (power / (number_of_channels * length) as f32).sqrt();
+
+    // Protect against accidental overload.
+    if !power.is_finite() || power.is_nan() || power < min_power {
+        power = min_power;
+    }
+
+    let mut scale = 1. / power;
+
+    // Calibrate to make perceived volume same as unprocessed.
+    scale *= gain_calibration;
+
+    // Scale depends on sample-rate.
+    scale *= gain_calibration_sample_rate / buffer.sample_rate();
+
+    // True-stereo compensation.
+    if number_of_channels == 4 {
+        scale *= 0.5;
+    }
+
+    buffer
+        .channels_mut()
+        .iter_mut()
+        .for_each(|c| c.as_mut_slice().iter_mut().for_each(|s| *s *= scale))
+}
+
 /// `ConvolverNode` options
 //dictionary ConvolverOptions : AudioNodeOptions {
 //  AudioBuffer? buffer;
@@ -68,10 +109,6 @@ impl ConvolverNode {
                 channel_config,
             } = options;
 
-            if disable_normalization {
-                todo!("unimplemented");
-            }
-
             // Channel to send buffer channels references to the renderer.  A capacity of 1
             // suffices, it will simply block the control thread when used concurrently
             let (sender, receiver) = crossbeam_channel::bounded(1);
@@ -105,7 +142,11 @@ impl ConvolverNode {
             let sample_rate = buffer.sample_rate();
             let mut samples = vec![0.; padded_length];
             samples[..length].copy_from_slice(buffer.get_channel_data(0));
-            let padded_buffer = AudioBuffer::from(vec![samples], sample_rate);
+            let mut padded_buffer = AudioBuffer::from(vec![samples], sample_rate);
+
+            if self.normalize {
+                normalize_buffer(&mut padded_buffer);
+            }
 
             let convolve = ConvolverRendererInner::new(padded_buffer);
             let _ = self.sender.send(convolve); // can fail when render thread shut down
