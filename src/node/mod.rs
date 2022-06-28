@@ -21,6 +21,8 @@ mod channel_splitter;
 pub use channel_splitter::*;
 mod constant_source;
 pub use constant_source::*;
+mod convolver;
+pub use convolver::*;
 mod delay;
 pub use delay::*;
 mod destination;
