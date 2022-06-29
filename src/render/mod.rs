@@ -15,5 +15,5 @@ pub(crate) use thread::*;
 // public mods
 mod processor;
 pub use processor::*;
-mod render_quantum;
-pub use render_quantum::*;
+mod quantum;
+pub use quantum::*;
