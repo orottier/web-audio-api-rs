@@ -286,7 +286,15 @@ impl AudioProcessor for ConvolverRenderer {
         let output = &mut outputs[0];
         output.force_mono();
 
-        if let Ok(msg) = self.receiver.try_recv() {
+        if let Ok(mut msg) = self.receiver.try_recv() {
+            // Copy over previous sample buffer, if any
+            if let Some(inner) = &mut self.inner {
+                let prev_len = inner.sample_buffer.len();
+                let new_len = msg.sample_buffer.len();
+                let shared_size = prev_len.min(new_len);
+                msg.sample_buffer[..shared_size]
+                    .copy_from_slice(&inner.sample_buffer[..shared_size]);
+            }
             self.inner = Some(msg);
         }
 
