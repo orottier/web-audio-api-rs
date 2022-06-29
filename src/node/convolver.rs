@@ -140,6 +140,11 @@ impl ConvolverNode {
     ///
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - convolver options
+    ///
+    /// # Panics
+    ///
+    /// Panics when an AudioBuffer is provided via the `ConvolverOptions` with a sample rate
+    /// different from the audio context sample rate.
     pub fn new<C: BaseAudioContext>(context: &C, options: ConvolverOptions) -> Self {
         context.base().register(move |registration| {
             let ConvolverOptions {
@@ -168,12 +173,22 @@ impl ConvolverNode {
         })
     }
 
+    /// Get the current impulse response buffer
     pub fn buffer(&self) -> Option<&AudioBuffer> {
         self.buffer.as_ref()
     }
 
+    /// Set or update the impulse response buffer
+    ///
+    /// # Panics
+    ///
+    /// Panics when the sample rate of the provided AudioBuffer differs from the audio context
+    /// sample rate.
     pub fn set_buffer(&mut self, buffer: Option<AudioBuffer>) {
         if let Some(buffer) = &buffer {
+            // todo, resample when this happens?
+            assert_eq!(buffer.sample_rate(), self.context().sample_rate());
+
             let length = buffer.length();
 
             // Pad the response buffer with zeroes so its size is a power of 2
@@ -194,10 +209,12 @@ impl ConvolverNode {
         self.buffer = buffer;
     }
 
+    /// Denotes if the response buffer will be scaled with an equal-power normalization
     pub fn normalize(&self) -> bool {
         self.normalize
     }
 
+    /// Update the `normalize` setting. This will only have an effect when `set_buffer` is called.
     pub fn set_normalize(&mut self, value: bool) {
         // TODO, use AtomicBool to prevent &mut self?
         self.normalize = value;
