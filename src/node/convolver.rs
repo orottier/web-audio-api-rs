@@ -7,6 +7,7 @@ use crossbeam_channel::{Receiver, Sender};
 
 use realfft::{num_complex::Complex, RealFftPlanner};
 
+/// Scale buffer by an equal-power normalization
 fn normalize_buffer(buffer: &mut AudioBuffer) {
     let gain_calibration = 0.00125;
     let gain_calibration_sample_rate = 44100.;
@@ -63,6 +64,44 @@ pub struct ConvolverOptions {
     pub channel_config: ChannelConfigOptions,
 }
 
+/// Processing node which applies a linear convolution effect given an impulse response.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/ConvolverNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#ConvolverNode>
+/// - see also:
+/// [`BaseAudioContext::create_convolver`](crate::context::BaseAudioContext::create_convolver)
+///
+/// # Usage
+///
+/// ```no_run
+/// use std::fs::File;
+///
+/// use web_audio_api::context::{AudioContext, BaseAudioContext};
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, ConvolverNode, ConvolverOptions};
+///
+/// let context = AudioContext::default();
+/// let file = File::open("samples/vocals-dry.wav").unwrap();
+/// let audio_buffer = context.decode_audio_data_sync(file).unwrap();
+///
+/// let impulse_file = File::open("samples/small-room-response.wav").unwrap();
+/// let impulse_buffer = context.decode_audio_data_sync(impulse_file).unwrap();
+///
+/// let src = context.create_buffer_source();
+/// src.set_buffer(audio_buffer);
+///
+/// let mut convolve = ConvolverNode::new(&context, ConvolverOptions::default());
+/// convolve.set_buffer(Some(impulse_buffer));
+///
+/// src.connect(&convolve);
+/// convolve.connect(&context.destination());
+/// src.start();
+/// std::thread::sleep(std::time::Duration::from_millis(4_000));
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example convolution`
+///
 pub struct ConvolverNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
