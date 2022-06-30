@@ -9,6 +9,7 @@ use crate::media::MediaDecoder;
 use crate::node::{AudioNode, ChannelConfigOptions};
 use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
+use crate::render::AudioProcessor;
 use crate::{node, AudioListener};
 
 /// The interface representing an audio-processing graph built from audio modules linked together,
@@ -23,6 +24,19 @@ use crate::{node, AudioListener};
 pub trait BaseAudioContext {
     /// retrieves the `ConcreteBaseAudioContext` associated with this `AudioContext`
     fn base(&self) -> &ConcreteBaseAudioContext;
+
+    /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]
+    ///
+    /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.
+    fn register<
+        T: AudioNode,
+        F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
+    >(
+        &self,
+        f: F,
+    ) -> T {
+        self.base().register(f)
+    }
 
     /// Decode an [`AudioBuffer`] from a given input stream.
     ///

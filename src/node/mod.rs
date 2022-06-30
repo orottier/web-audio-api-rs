@@ -201,7 +201,7 @@ impl From<ChannelConfigOptions> for ChannelConfig {
 /// to the audio hardware. Each node can have inputs and/or outputs.
 ///
 /// Note that the AudioNode is typically constructed together with an [`AudioProcessor`]
-/// (the object that lives the render thread). See [`ConcreteBaseAudioContext::register`].
+/// (the object that lives the render thread). See [`BaseAudioContext::register`](crate::context::BaseAudioContext::register).
 pub trait AudioNode {
     fn registration(&self) -> &AudioContextRegistration;
 

@@ -230,7 +230,7 @@ impl ConcreteBaseAudioContext {
     ///
     /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.
     #[allow(clippy::missing_panics_doc)]
-    pub fn register<
+    pub(super) fn register<
         T: AudioNode,
         F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
     >(
