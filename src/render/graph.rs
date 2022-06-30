@@ -109,8 +109,8 @@ impl Graph {
 
         // set input and output buffers to single channel of silence, will be upmixed when
         // necessary
-        let inputs = vec![AudioRenderQuantum::new(self.alloc.silence()); number_of_inputs];
-        let outputs = vec![AudioRenderQuantum::new(self.alloc.silence()); number_of_outputs];
+        let inputs = vec![AudioRenderQuantum::from(self.alloc.silence()); number_of_inputs];
+        let outputs = vec![AudioRenderQuantum::from(self.alloc.silence()); number_of_outputs];
 
         self.nodes.insert(
             index,
