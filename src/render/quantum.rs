@@ -73,9 +73,24 @@ impl AllocInner {
     }
 }
 
-/// Single channel audio samples, basically wraps a `Rc<[f32; RENDER_QUANTUM_SIZE]>`
+/// Render thread channel buffer
 ///
-/// `AudioRenderQuantumChannel` has copy-on-write semantics, so it is cheap to clone.
+/// Basically wraps a `Rc<[f32; RENDER_QUANTUM_SIZE]>`, which means it derefs to a (mutable) slice
+/// of `[f32]` sample values. Plus it has copy-on-write semantics, so it is cheap to clone.
+///
+/// # Usage
+///
+/// Audio buffers are managed with a dedicated allocator per render thread, hence there are no
+/// public constructors available. If you must create a new instance, copy an existing one and
+/// mutate it from there.
+///
+/// ```
+/// use web_audio_api::render::AudioRenderQuantumChannel;
+///
+/// fn apply_gain(channel: &mut AudioRenderQuantumChannel, gain: f32) {
+///     channel.iter_mut().for_each(|s| *s *= gain)
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct AudioRenderQuantumChannel {
     data: Rc<[f32; RENDER_QUANTUM_SIZE]>,
@@ -148,11 +163,29 @@ impl std::ops::Drop for AudioRenderQuantumChannel {
     }
 }
 
+/// Render thread audio buffer, consisting of multiple channel buffers
+///
 /// Internal fixed length audio asset of `RENDER_QUANTUM_SIZE` sample frames for
-/// block rendering, basically a matrix of `channels * [f32; RENDER_QUANTUM_SIZE]`
+/// block rendering, basically a matrix of `channels * AudioRenderQuantumChannel`
 /// cf. <https://webaudio.github.io/web-audio-api/#render-quantum>
 ///
 /// An `AudioRenderQuantum` has copy-on-write semantics, so it is cheap to clone.
+///
+/// # Usage
+///
+/// Audio buffers are managed with a dedicated allocator per render thread, hence there are no
+/// public constructors available. If you must create a new instance, copy an existing one and
+/// mutate it from there.
+///
+/// ```
+/// use web_audio_api::render::AudioRenderQuantum;
+///
+/// fn apply_gain(buffer: &mut AudioRenderQuantum, gain: f32) {
+///     buffer.channels_mut()
+///         .iter_mut()
+///         .for_each(|ch| ch.iter_mut().for_each(|s| *s *= gain))
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct AudioRenderQuantum {
     channels: ArrayVec<AudioRenderQuantumChannel, MAX_CHANNELS>,
