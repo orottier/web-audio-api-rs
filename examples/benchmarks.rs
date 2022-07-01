@@ -9,11 +9,11 @@ use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 
-use web_audio_api::buffer::AudioBuffer;
 use web_audio_api::context::{AudioContext, BaseAudioContext, OfflineAudioContext};
 use web_audio_api::node::{
     AudioBufferSourceNode, AudioNode, AudioScheduledSourceNode, OscillatorType,
 };
+use web_audio_api::AudioBuffer;
 
 // benchmark adapted from https://github.com/padenot/webaudio-benchmark
 // missing the "Convolution Reverb" as we don't have the node implemented yet

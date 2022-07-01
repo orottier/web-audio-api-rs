@@ -1,11 +1,12 @@
 use float_eq::assert_float_eq;
-use web_audio_api::buffer::AudioBuffer;
+
 use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 use web_audio_api::node::{
     ChannelCountMode::{self, *},
     ChannelInterpretation::{self, *},
 };
+use web_audio_api::AudioBuffer;
 
 fn setup_with_destination_channel_config(
     number_of_channels: usize,

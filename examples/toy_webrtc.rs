@@ -24,12 +24,10 @@ use std::error::Error;
 use std::iter::IntoIterator;
 use std::net::UdpSocket;
 
-use web_audio_api::buffer::AudioBuffer;
-use web_audio_api::buffer::AudioBufferOptions;
 use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::media::Microphone;
 use web_audio_api::node::AudioNode;
-use web_audio_api::RENDER_QUANTUM_SIZE;
+use web_audio_api::{AudioBuffer, AudioBufferOptions, RENDER_QUANTUM_SIZE};
 
 const MAX_UDP_SIZE: usize = 508;
 const SERVER_ADDR: &str = "0.0.0.0:1234";

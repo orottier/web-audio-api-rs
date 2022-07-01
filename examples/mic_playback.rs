@@ -1,7 +1,6 @@
 // run in release mode
 // `cargo run --release --example mic_playback`
 
-use web_audio_api::buffer::AudioBuffer;
 use web_audio_api::context::{AudioContext, AudioContextRegistration, BaseAudioContext};
 use web_audio_api::media::Microphone;
 use web_audio_api::node::BiquadFilterType;
@@ -10,6 +9,7 @@ use web_audio_api::node::{
     ChannelConfig, GainNode, MediaStreamAudioSourceNode,
 };
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use web_audio_api::AudioBuffer;
 
 use std::io::{stdin, stdout, Write};
 use std::sync::Arc;
