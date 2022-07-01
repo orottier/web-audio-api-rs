@@ -53,7 +53,7 @@ fn assert_sequence_length(values: &[f32]) {
     }
 }
 
-/// Precision of value calculation per render quantum
+/// Precision of AudioParam value calculation per render quantum
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum AutomationRate {
     /// Audio Rate - sampled for each sample-frame of the block

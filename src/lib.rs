@@ -53,7 +53,10 @@ pub mod context;
 pub(crate) mod control;
 pub mod media;
 pub mod node;
-pub mod param;
+
+mod param;
+pub use param::*;
+
 pub mod periodic_wave;
 pub mod render;
 
