@@ -83,14 +83,15 @@ impl AudioProcessor for WhiteNoiseProcessor {
         params: AudioParamValues,
         _scope: &RenderScope,
     ) -> bool {
-        // single output node
+        // single output node, with a stereo config
         let output = &mut outputs[0];
+        output.set_number_of_channels(2);
 
         // get the audio param values
         let amplitude_values = params.get(&self.amplitude);
 
         // edit the output buffer in place
-        output.modify_channels(|buf| {
+        output.channels_mut().iter_mut().for_each(|buf| {
             let mut rng = rand::thread_rng();
             amplitude_values
                 .iter()
