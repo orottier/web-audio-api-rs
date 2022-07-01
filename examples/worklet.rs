@@ -4,8 +4,8 @@ use web_audio_api::context::{
     AudioContext, AudioContextRegistration, AudioParamId, BaseAudioContext,
 };
 use web_audio_api::node::{AudioNode, ChannelConfig};
-use web_audio_api::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use web_audio_api::{AudioParam, AudioParamDescriptor, AutomationRate};
 
 /// Audio source node emitting white noise (random samples)
 struct WhiteNoiseNode {

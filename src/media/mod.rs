@@ -33,7 +33,7 @@ use crate::buffer::AudioBuffer;
 ///
 /// ```no_run
 /// use web_audio_api::context::{AudioContext, BaseAudioContext};
-/// use web_audio_api::buffer::{AudioBuffer, AudioBufferOptions};
+/// use web_audio_api::{AudioBuffer, AudioBufferOptions};
 /// use web_audio_api::node::AudioNode;
 ///
 /// // create a new buffer: 512 samples of silence

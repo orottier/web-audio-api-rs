@@ -46,13 +46,20 @@ pub const RENDER_QUANTUM_SIZE: usize = 128;
 /// Maximum number of channels for audio processing
 pub const MAX_CHANNELS: usize = 32;
 
-pub mod buffer;
+mod buffer;
+pub use buffer::*;
+
 pub mod context;
 pub(crate) mod control;
 pub mod media;
 pub mod node;
-pub mod param;
-pub mod periodic_wave;
+
+mod param;
+pub use param::*;
+
+mod periodic_wave;
+pub use periodic_wave::*;
+
 pub mod render;
 
 mod spatial;

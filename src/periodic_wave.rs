@@ -45,7 +45,7 @@ pub struct PeriodicWaveOptions {
 ///
 /// ```no_run
 /// use web_audio_api::context::{BaseAudioContext, AudioContext};
-/// use web_audio_api::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
+/// use web_audio_api::{PeriodicWave, PeriodicWaveOptions};
 /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 ///
 /// let context = AudioContext::default();
