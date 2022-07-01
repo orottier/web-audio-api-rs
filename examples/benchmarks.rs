@@ -624,7 +624,7 @@ fn main() {
                 }
             }
             Key::Char(c) => {
-                if c.is_digit(10) {
+                if c.is_ascii_digit() {
                     inputs.push(c);
                     write!(stdout, "{}", c).unwrap();
                 }
