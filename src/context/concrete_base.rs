@@ -18,16 +18,12 @@ use std::sync::{Arc, Mutex};
 
 /// The struct that corresponds to the Javascript `BaseAudioContext` object.
 ///
-/// Please note that in rust, we need to differentiate between the [`BaseAudioContext`] trait and
-/// the [`ConcreteBaseAudioContext`] concrete implementation.
-///
 /// This object is returned from the `base()` method on
 /// [`AudioContext`](crate::context::AudioContext) and
-/// [`OfflineAudioContext`](crate::context::OfflineAudioContext), for the `context()` method on
+/// [`OfflineAudioContext`](crate::context::OfflineAudioContext), and the `context()` method on
 /// `AudioNode`s.
 ///
 /// The `ConcreteBaseAudioContext` allows for cheap cloning (using an `Arc` internally).
-// the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
 #[doc(hidden)]

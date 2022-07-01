@@ -17,9 +17,6 @@ use crate::{node, AudioListener};
 ///
 /// An audio context controls both the creation of the nodes it contains and the execution of the
 /// audio processing, or decoding.
-///
-/// Please note that in rust, we need to differentiate between the [`BaseAudioContext`] trait and
-/// the [`ConcreteBaseAudioContext`] concrete implementation.
 #[allow(clippy::module_name_repetitions)]
 pub trait BaseAudioContext {
     /// Returns the [`BaseAudioContext`] concrete type associated with this `AudioContext`
