@@ -22,7 +22,7 @@ use crate::{node, AudioListener};
 /// the [`ConcreteBaseAudioContext`] concrete implementation.
 #[allow(clippy::module_name_repetitions)]
 pub trait BaseAudioContext {
-    /// retrieves the `ConcreteBaseAudioContext` associated with this `AudioContext`
+    /// Returns the [`BaseAudioContext`] concrete type associated with this `AudioContext`
     fn base(&self) -> &ConcreteBaseAudioContext;
 
     /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]

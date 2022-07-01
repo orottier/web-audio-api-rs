@@ -30,6 +30,7 @@ use std::sync::{Arc, Mutex};
 // the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
+#[doc(hidden)]
 pub struct ConcreteBaseAudioContext {
     /// inner makes `ConcreteBaseAudioContext` cheap to clone
     inner: Arc<ConcreteBaseAudioContextInner>,

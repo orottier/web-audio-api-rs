@@ -207,7 +207,8 @@ pub trait AudioNode {
 
     fn channel_config(&self) -> &ChannelConfig;
 
-    /// The BaseAudioContext which owns this AudioNode.
+    /// The [`BaseAudioContext`](crate::context::BaseAudioContext) concrete type which owns this
+    /// AudioNode.
     fn context(&self) -> &ConcreteBaseAudioContext {
         self.registration().context()
     }

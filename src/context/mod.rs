@@ -78,14 +78,15 @@ pub struct AudioContextRegistration {
 }
 
 impl AudioContextRegistration {
-    /// get the audio node id of the registration
+    /// Get the audio node id of the registration
     // false positive: AudioContextRegistration is not const
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
     pub(crate) fn id(&self) -> &AudioNodeId {
         &self.id
     }
-    /// get the context of the registration
+
+    /// Get the [`BaseAudioContext`] concrete type associated with this `AudioContext`
     // false positive: AudioContextRegistration is not const
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
