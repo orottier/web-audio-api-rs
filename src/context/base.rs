@@ -32,6 +32,8 @@ pub trait BaseAudioContext {
         &self,
         f: F,
     ) -> T {
+        // This appears to be a recursive call, but the ConcreteBaseAudioContext overrides this
+        // default implementation
         self.base().register(f)
     }
 
