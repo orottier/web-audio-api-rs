@@ -57,7 +57,9 @@ pub mod node;
 mod param;
 pub use param::*;
 
-pub mod periodic_wave;
+mod periodic_wave;
+pub use periodic_wave::*;
+
 pub mod render;
 
 mod spatial;
