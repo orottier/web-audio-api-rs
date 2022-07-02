@@ -20,8 +20,9 @@ pub struct RenderScope {
 
 /// Interface for audio processing code that runs on the audio rendering thread.
 ///
-/// Note that the AudioProcessor is typically constructed together with an [`crate::node::AudioNode`]
-/// (the user facing object that lives in the control thread). See [`crate::context::ConcreteBaseAudioContext::register`].
+/// Note that the AudioProcessor is typically constructed together with an
+/// [`AudioNode`](crate::node::AudioNode) (the user facing object that lives in the control
+/// thread). See [`BaseAudioContext::register`](crate::context::BaseAudioContext::register).
 ///
 /// Check the `examples/worklet.rs` file for example usage of this trait.
 pub trait AudioProcessor: Send {

@@ -181,15 +181,12 @@ impl AudioNode for PannerNode {
 
 impl PannerNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: PannerOptions) -> Self {
-        let node = context.base().register(move |registration| {
+        let node = context.register(move |registration| {
             use crate::spatial::PARAM_OPTS;
             // position params
-            let (position_x, render_px) =
-                context.base().create_audio_param(PARAM_OPTS, &registration);
-            let (position_y, render_py) =
-                context.base().create_audio_param(PARAM_OPTS, &registration);
-            let (position_z, render_pz) =
-                context.base().create_audio_param(PARAM_OPTS, &registration);
+            let (position_x, render_px) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (position_y, render_py) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (position_z, render_pz) = context.create_audio_param(PARAM_OPTS, &registration);
             position_x.set_value_at_time(options.position_x, 0.);
             position_y.set_value_at_time(options.position_y, 0.);
             position_z.set_value_at_time(options.position_z, 0.);
@@ -199,13 +196,10 @@ impl PannerNode {
                 default_value: 1.0,
                 ..PARAM_OPTS
             };
-            let (orientation_x, render_ox) = context
-                .base()
-                .create_audio_param(orientation_x_opts, &registration);
-            let (orientation_y, render_oy) =
-                context.base().create_audio_param(PARAM_OPTS, &registration);
-            let (orientation_z, render_oz) =
-                context.base().create_audio_param(PARAM_OPTS, &registration);
+            let (orientation_x, render_ox) =
+                context.create_audio_param(orientation_x_opts, &registration);
+            let (orientation_y, render_oy) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (orientation_z, render_oz) = context.create_audio_param(PARAM_OPTS, &registration);
             orientation_x.set_value_at_time(options.orientation_x, 0.);
             orientation_y.set_value_at_time(options.orientation_y, 0.);
             orientation_z.set_value_at_time(options.orientation_z, 0.);

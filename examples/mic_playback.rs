@@ -57,7 +57,7 @@ impl AudioNode for MediaRecorder {
 impl MediaRecorder {
     /// Construct a new MediaRecorder
     fn new<C: BaseAudioContext>(context: &C) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             let (sender, receiver) = crossbeam_channel::unbounded();
 
             // setup the processor, this will run in the render thread

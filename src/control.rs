@@ -1,3 +1,5 @@
+//! Scheduler and Controller for precise timings
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 

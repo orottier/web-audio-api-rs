@@ -69,7 +69,7 @@ impl From<u8> for AudioContextState {
 ///
 /// This allows for communication with the render thread and lifetime management.
 ///
-/// The only way to construct this object is by calling [`ConcreteBaseAudioContext::register`]
+/// The only way to construct this object is by calling [`BaseAudioContext::register`]
 pub struct AudioContextRegistration {
     /// the audio context in wich nodes and connections lives
     context: ConcreteBaseAudioContext,
@@ -78,14 +78,15 @@ pub struct AudioContextRegistration {
 }
 
 impl AudioContextRegistration {
-    /// get the audio node id of the registration
+    /// Get the audio node id of the registration
     // false positive: AudioContextRegistration is not const
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
     pub(crate) fn id(&self) -> &AudioNodeId {
         &self.id
     }
-    /// get the context of the registration
+
+    /// Get the [`BaseAudioContext`] concrete type associated with this `AudioContext`
     // false positive: AudioContextRegistration is not const
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]

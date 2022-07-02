@@ -18,18 +18,15 @@ use std::sync::{Arc, Mutex};
 
 /// The struct that corresponds to the Javascript `BaseAudioContext` object.
 ///
-/// Please note that in rust, we need to differentiate between the [`BaseAudioContext`] trait and
-/// the [`ConcreteBaseAudioContext`] concrete implementation.
-///
 /// This object is returned from the `base()` method on
 /// [`AudioContext`](crate::context::AudioContext) and
-/// [`OfflineAudioContext`](crate::context::OfflineAudioContext), for the `context()` method on
+/// [`OfflineAudioContext`](crate::context::OfflineAudioContext), and the `context()` method on
 /// `AudioNode`s.
 ///
 /// The `ConcreteBaseAudioContext` allows for cheap cloning (using an `Arc` internally).
-// the naming comes from the web audio specfication
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
+#[doc(hidden)]
 pub struct ConcreteBaseAudioContext {
     /// inner makes `ConcreteBaseAudioContext` cheap to clone
     inner: Arc<ConcreteBaseAudioContextInner>,
@@ -72,6 +69,46 @@ struct ConcreteBaseAudioContextInner {
 impl BaseAudioContext for ConcreteBaseAudioContext {
     fn base(&self) -> &ConcreteBaseAudioContext {
         self
+    }
+
+    fn register<
+        T: AudioNode,
+        F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
+    >(
+        &self,
+        f: F,
+    ) -> T {
+        // create unique identifier for this node
+        let id = self.inner.node_id_inc.fetch_add(1, Ordering::SeqCst);
+        let node_id = AudioNodeId(id);
+        let registration = AudioContextRegistration {
+            id: node_id,
+            context: self.clone(),
+        };
+
+        // create the node and its renderer
+        let (node, render) = (f)(registration);
+
+        // pass the renderer to the audio graph
+        let message = ControlMessage::RegisterNode {
+            id,
+            node: render,
+            inputs: node.number_of_inputs(),
+            outputs: node.number_of_outputs(),
+            channel_config: node.channel_config().clone(),
+        };
+
+        // if this is the AudioListener or its params, do not add it to the graph just yet
+        if id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id) {
+            let mut queued_audio_listener_msgs =
+                self.inner.queued_audio_listener_msgs.lock().unwrap();
+            queued_audio_listener_msgs.push(message);
+        } else {
+            self.inner.render_channel.send(message).unwrap();
+            self.resolve_queued_control_msgs(id);
+        }
+
+        node
     }
 }
 
@@ -224,50 +261,6 @@ impl ConcreteBaseAudioContext {
     #[must_use]
     pub(crate) fn max_channel_count(&self) -> usize {
         self.inner.max_channel_count
-    }
-
-    /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]
-    ///
-    /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.
-    #[allow(clippy::missing_panics_doc)]
-    pub fn register<
-        T: AudioNode,
-        F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
-    >(
-        &self,
-        f: F,
-    ) -> T {
-        // create unique identifier for this node
-        let id = self.inner.node_id_inc.fetch_add(1, Ordering::SeqCst);
-        let node_id = AudioNodeId(id);
-        let registration = AudioContextRegistration {
-            id: node_id,
-            context: self.clone(),
-        };
-
-        // create the node and its renderer
-        let (node, render) = (f)(registration);
-
-        // pass the renderer to the audio graph
-        let message = ControlMessage::RegisterNode {
-            id,
-            node: render,
-            inputs: node.number_of_inputs(),
-            outputs: node.number_of_outputs(),
-            channel_config: node.channel_config().clone(),
-        };
-
-        // if this is the AudioListener or its params, do not add it to the graph just yet
-        if id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id) {
-            let mut queued_audio_listener_msgs =
-                self.inner.queued_audio_listener_msgs.lock().unwrap();
-            queued_audio_listener_msgs.push(message);
-        } else {
-            self.inner.render_channel.send(message).unwrap();
-            self.resolve_queued_control_msgs(id);
-        }
-
-        node
     }
 
     /// Release queued control messages to the render thread that were blocking on the availability

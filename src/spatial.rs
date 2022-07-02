@@ -120,9 +120,7 @@ impl AudioNode for AudioListenerNode {
 
 impl AudioListenerNode {
     pub fn new<C: BaseAudioContext>(context: &C) -> Self {
-        context.base().register(move |registration| {
-            let base = context.base();
-
+        context.register(move |registration| {
             let forward_z_opts = AudioParamDescriptor {
                 default_value: -1.,
                 ..PARAM_OPTS
@@ -132,15 +130,15 @@ impl AudioListenerNode {
                 ..PARAM_OPTS
             };
 
-            let (p1, v1) = base.create_audio_param(PARAM_OPTS, &registration);
-            let (p2, v2) = base.create_audio_param(PARAM_OPTS, &registration);
-            let (p3, v3) = base.create_audio_param(PARAM_OPTS, &registration);
-            let (p4, v4) = base.create_audio_param(PARAM_OPTS, &registration);
-            let (p5, v5) = base.create_audio_param(PARAM_OPTS, &registration);
-            let (p6, v6) = base.create_audio_param(forward_z_opts, &registration);
-            let (p7, v7) = base.create_audio_param(PARAM_OPTS, &registration);
-            let (p8, v8) = base.create_audio_param(up_y_opts, &registration);
-            let (p9, v9) = base.create_audio_param(PARAM_OPTS, &registration);
+            let (p1, v1) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p2, v2) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p3, v3) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p4, v4) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p5, v5) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p6, v6) = context.create_audio_param(forward_z_opts, &registration);
+            let (p7, v7) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p8, v8) = context.create_audio_param(up_y_opts, &registration);
+            let (p9, v9) = context.create_audio_param(PARAM_OPTS, &registration);
 
             let node = Self {
                 registration,

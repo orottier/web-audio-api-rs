@@ -176,7 +176,7 @@ impl OscillatorNode {
     /// * `context` - The `AudioContext`
     /// * `options` - The OscillatorOptions
     pub fn new<C: BaseAudioContext>(context: &C, options: OscillatorOptions) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             let sample_rate = context.sample_rate();
             let nyquist = sample_rate / 2.;
 
@@ -195,9 +195,7 @@ impl OscillatorNode {
                 default_value: 440.,
                 automation_rate: AutomationRate::A,
             };
-            let (f_param, f_proc) = context
-                .base()
-                .create_audio_param(freq_param_opts, &registration);
+            let (f_param, f_proc) = context.create_audio_param(freq_param_opts, &registration);
             f_param.set_value(frequency);
 
             // detune audio parameter
@@ -207,9 +205,7 @@ impl OscillatorNode {
                 default_value: 0.,
                 automation_rate: AutomationRate::A,
             };
-            let (det_param, det_proc) = context
-                .base()
-                .create_audio_param(det_param_opts, &registration);
+            let (det_param, det_proc) = context.create_audio_param(det_param_opts, &registration);
             det_param.set_value(detune);
 
             let type_ = Arc::new(AtomicU32::new(type_ as u32));

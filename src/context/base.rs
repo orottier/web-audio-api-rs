@@ -9,6 +9,7 @@ use crate::media::MediaDecoder;
 use crate::node::{AudioNode, ChannelConfigOptions};
 use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
+use crate::render::AudioProcessor;
 use crate::{node, AudioListener};
 
 /// The interface representing an audio-processing graph built from audio modules linked together,
@@ -16,13 +17,25 @@ use crate::{node, AudioListener};
 ///
 /// An audio context controls both the creation of the nodes it contains and the execution of the
 /// audio processing, or decoding.
-///
-/// Please note that in rust, we need to differentiate between the [`BaseAudioContext`] trait and
-/// the [`ConcreteBaseAudioContext`] concrete implementation.
 #[allow(clippy::module_name_repetitions)]
 pub trait BaseAudioContext {
-    /// retrieves the `ConcreteBaseAudioContext` associated with this `AudioContext`
+    /// Returns the [`BaseAudioContext`] concrete type associated with this `AudioContext`
     fn base(&self) -> &ConcreteBaseAudioContext;
+
+    /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]
+    ///
+    /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.
+    fn register<
+        T: AudioNode,
+        F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
+    >(
+        &self,
+        f: F,
+    ) -> T {
+        // This appears to be a recursive call, but the ConcreteBaseAudioContext overrides this
+        // default implementation
+        self.base().register(f)
+    }
 
     /// Decode an [`AudioBuffer`] from a given input stream.
     ///
@@ -255,7 +268,7 @@ pub trait BaseAudioContext {
         opts: AudioParamDescriptor,
         dest: &AudioContextRegistration,
     ) -> (crate::param::AudioParam, AudioParamId) {
-        let param = self.base().register(move |registration| {
+        let param = self.register(move |registration| {
             let (node, proc) = crate::param::audio_param_pair(opts, registration);
 
             (node, Box::new(proc))

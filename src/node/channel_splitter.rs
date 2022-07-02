@@ -68,7 +68,7 @@ impl AudioNode for ChannelSplitterNode {
 
 impl ChannelSplitterNode {
     pub fn new<C: BaseAudioContext>(context: &C, mut options: ChannelSplitterOptions) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             options.channel_config.count = options.number_of_outputs;
 
             let node = ChannelSplitterNode {

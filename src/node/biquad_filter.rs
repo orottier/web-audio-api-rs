@@ -153,7 +153,7 @@ impl BiquadFilterNode {
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - biquad filter options
     pub fn new<C: BaseAudioContext>(context: &C, options: BiquadFilterOptions) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             let q_value = options.q;
             let d_value = options.detune;
             let f_value = options.frequency;
@@ -166,9 +166,7 @@ impl BiquadFilterNode {
                 default_value: 1.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (q_param, q_proc) = context
-                .base()
-                .create_audio_param(q_param_opts, &registration);
+            let (q_param, q_proc) = context.create_audio_param(q_param_opts, &registration);
 
             q_param.set_value(q_value);
 
@@ -178,9 +176,7 @@ impl BiquadFilterNode {
                 default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (d_param, d_proc) = context
-                .base()
-                .create_audio_param(d_param_opts, &registration);
+            let (d_param, d_proc) = context.create_audio_param(d_param_opts, &registration);
 
             d_param.set_value(d_value);
 
@@ -191,9 +187,7 @@ impl BiquadFilterNode {
                 default_value: 350.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (f_param, f_proc) = context
-                .base()
-                .create_audio_param(f_param_opts, &registration);
+            let (f_param, f_proc) = context.create_audio_param(f_param_opts, &registration);
 
             f_param.set_value(f_value);
 
@@ -203,9 +197,7 @@ impl BiquadFilterNode {
                 default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (g_param, g_proc) = context
-                .base()
-                .create_audio_param(g_param_opts, &registration);
+            let (g_param, g_proc) = context.create_audio_param(g_param_opts, &registration);
 
             g_param.set_value(g_value);
 

@@ -204,17 +204,15 @@ impl DelayNode {
         let last_written_index = Rc::new(Cell::<Option<usize>>::new(None));
         let last_written_index_clone = last_written_index.clone();
 
-        context.base().register(move |writer_registration| {
-            let node = context.base().register(move |reader_registration| {
+        context.register(move |writer_registration| {
+            let node = context.register(move |reader_registration| {
                 let param_opts = AudioParamDescriptor {
                     min_value: 0.,
                     max_value: max_delay_time as f32,
                     default_value: 0.,
                     automation_rate: crate::param::AutomationRate::A,
                 };
-                let (param, proc) = context
-                    .base()
-                    .create_audio_param(param_opts, &reader_registration);
+                let (param, proc) = context.create_audio_param(param_opts, &reader_registration);
 
                 param.set_value_at_time(options.delay_time as f32, 0.);
 

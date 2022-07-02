@@ -80,7 +80,7 @@ impl IIRFilterNode {
     /// * all `feedforward` element or/and all `feedback` element are eqaul to 0.
     /// *
     pub fn new<C: BaseAudioContext>(context: &C, options: IIRFilterOptions) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             let IIRFilterOptions {
                 feedforward,
                 feedback,
