@@ -163,7 +163,7 @@ impl WaveShaperNode {
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - waveshaper options
     pub fn new<C: BaseAudioContext>(context: &C, options: WaveShaperOptions) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             let WaveShaperOptions {
                 curve,
                 oversample,

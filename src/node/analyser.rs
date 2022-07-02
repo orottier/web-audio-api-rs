@@ -79,7 +79,7 @@ impl AudioNode for AnalyserNode {
 
 impl AnalyserNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: AnalyserOptions) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             let fft_size = Arc::new(AtomicUsize::new(options.fft_size));
             let smoothing_time_constant = Arc::new(AtomicU32::new(
                 (options.smoothing_time_constant * 100.) as u32,

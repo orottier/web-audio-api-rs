@@ -67,7 +67,7 @@ impl AudioNode for AudioDestinationNode {
 
 impl AudioDestinationNode {
     pub(crate) fn new<C: BaseAudioContext>(context: &C, channel_count: usize) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             let channel_config = ChannelConfigOptions {
                 count: channel_count,
                 mode: ChannelCountMode::Explicit,

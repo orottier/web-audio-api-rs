@@ -50,14 +50,14 @@ impl AudioNode for GainNode {
 
 impl GainNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: GainOptions) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             let param_opts = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (param, proc) = context.base().create_audio_param(param_opts, &registration);
+            let (param, proc) = context.create_audio_param(param_opts, &registration);
 
             param.set_value_at_time(options.gain, 0.);
 

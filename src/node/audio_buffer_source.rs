@@ -133,7 +133,7 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
 impl AudioBufferSourceNode {
     /// Create a new [`AudioBufferSourceNode`] instance
     pub fn new<C: BaseAudioContext>(context: &C, options: AudioBufferSourceOptions) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             let AudioBufferSourceOptions {
                 buffer,
                 detune,
@@ -152,9 +152,7 @@ impl AudioBufferSourceNode {
                 default_value: 0.,
                 automation_rate: AutomationRate::K,
             };
-            let (d_param, d_proc) = context
-                .base()
-                .create_audio_param(detune_param_options, &registration);
+            let (d_param, d_proc) = context.create_audio_param(detune_param_options, &registration);
 
             d_param.set_value(detune);
 
@@ -164,9 +162,8 @@ impl AudioBufferSourceNode {
                 default_value: 1.,
                 automation_rate: AutomationRate::K,
             };
-            let (pr_param, pr_proc) = context
-                .base()
-                .create_audio_param(playback_rate_param_options, &registration);
+            let (pr_param, pr_proc) =
+                context.create_audio_param(playback_rate_param_options, &registration);
 
             pr_param.set_value(playback_rate);
 

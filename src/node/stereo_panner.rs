@@ -106,7 +106,7 @@ impl StereoPannerNode {
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - stereo panner options
     pub fn new<C: BaseAudioContext>(context: &C, options: StereoPannerOptions) -> Self {
-        context.base().register(move |registration| {
+        context.register(move |registration| {
             assert!(
                 options.channel_config.count <= 2,
                 "NotSupportedError: channel count"
@@ -124,9 +124,7 @@ impl StereoPannerNode {
                 default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (pan_param, pan_proc) = context
-                .base()
-                .create_audio_param(pan_param_opts, &registration);
+            let (pan_param, pan_proc) = context.create_audio_param(pan_param_opts, &registration);
 
             pan_param.set_value(pan_value);
 

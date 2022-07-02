@@ -268,7 +268,7 @@ pub trait BaseAudioContext {
         opts: AudioParamDescriptor,
         dest: &AudioContextRegistration,
     ) -> (crate::param::AudioParam, AudioParamId) {
-        let param = self.base().register(move |registration| {
+        let param = self.register(move |registration| {
             let (node, proc) = crate::param::audio_param_pair(opts, registration);
 
             (node, Box::new(proc))
