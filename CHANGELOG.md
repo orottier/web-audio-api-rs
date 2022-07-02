@@ -1,3 +1,10 @@
+# Version 0.20.0 (2021-07-02)
+
+- Change sample rate type to plain f32
+- Remove namespacing of buffer, audio\_param and periodic\_wave
+- Reduce AudioRenderQuantum public API surface
+- Remove ConcreteBaseAudioContext from public API docs
+
 # Version 0.19.0 (2021-06-01)
 
 - Added baseLatency and outputLatency attributes
