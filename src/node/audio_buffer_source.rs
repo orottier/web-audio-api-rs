@@ -180,10 +180,7 @@ impl AudioBufferSourceNode {
                 detune: d_proc,
                 playback_rate: pr_proc,
                 render_state: AudioBufferRendererState::default(),
-                // `internal_buffer` is used to compute the samples per channel at each frame. Note
-                // that the `vec` will always be resized to actual buffer number_of_channels when
-                // received on the render thread.
-                internal_buffer: Vec::<f32>::with_capacity(crate::MAX_CHANNELS),
+                positions: [-1.; RENDER_QUANTUM_SIZE],
             };
 
             let node = Self {
@@ -327,7 +324,10 @@ struct AudioBufferSourceRenderer {
     detune: AudioParamId,
     playback_rate: AudioParamId,
     render_state: AudioBufferRendererState,
-    internal_buffer: Vec<f32>,
+    /// Internal buffer used to compute the position to be played in the
+    /// source buffer per sample.
+    /// By convention a position of -1. means output should be zero.
+    positions: [f64; RENDER_QUANTUM_SIZE],
 }
 
 impl AudioProcessor for AudioBufferSourceRenderer {
@@ -347,10 +347,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let next_block_time = scope.current_time + dt * num_frames as f64;
 
         if let Ok(msg) = self.receiver.try_recv() {
-            let buffer = msg.0;
-
-            self.internal_buffer.resize(buffer.number_of_channels(), 0.);
-            self.buffer = Some(buffer);
+            self.buffer = Some(msg.0);
         }
 
         // grab all timing informations
@@ -445,13 +442,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             self.render_state.entered_loop = false;
         }
 
+        // compute position for each sample and push into self.positionsq
         for index in 0..num_frames {
             if current_time < start_time
                 || current_time >= stop_time
                 || self.render_state.buffer_time_elapsed >= duration
             {
-                self.internal_buffer.fill(0.);
-                output.set_channels_values_at(index, &self.internal_buffer);
+                self.positions[index] = -1.;
                 current_time += dt;
 
                 continue; // nothing more to do for this sample
@@ -506,64 +503,59 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 && self.render_state.buffer_time < buffer_duration
             {
                 let position = self.render_state.buffer_time * sampling_ratio;
-                self.compute_playback_at_position(position, sample_rate);
+                self.positions[index] = position;
             } else {
-                self.internal_buffer.fill(0.);
+                self.positions[index] = -1.;
             }
 
-            output.set_channels_values_at(index, &self.internal_buffer);
-
-            self.render_state.buffer_time += dt * computed_playback_rate;
-            self.render_state.buffer_time_elapsed += dt * computed_playback_rate;
+            let time_incr = dt * computed_playback_rate;
+            self.render_state.buffer_time += time_incr;
+            self.render_state.buffer_time_elapsed += time_incr;
             current_time += dt;
         }
 
+        // fill output according to computed positions
+        self.buffer
+            .as_ref()
+            .unwrap()
+            .channels()
+            .iter()
+            .zip(output.channels_mut().iter_mut())
+            .for_each(|(buffer_channel, output_channel)| {
+                let buffer_channel = buffer_channel.as_slice();
+
+                self.positions
+                    .iter()
+                    .zip(output_channel.iter_mut())
+                    .for_each(|(position, o)| {
+                        if *position == -1. {
+                            *o = 0.;
+                        } else {
+                            let playhead = position * sample_rate;
+                            let playhead_floored = playhead.floor();
+                            let prev_index = playhead_floored as usize; // can't be < 0.
+                            let next_index = playhead.ceil() as usize; // can be >= length
+
+                            let k = (playhead - playhead_floored) as f32;
+                            let k_inv = 1. - k;
+
+                            let prev_sample = buffer_channel[prev_index];
+                            let next_sample = if next_index >= buffer_channel.len() {
+                                0.
+                            } else {
+                                buffer_channel[next_index]
+                            };
+
+                            // @todo - [spec] If |position| is greater than or equal to |loopEnd|
+                            // and there is no subsequent sample frame in buffer, then interpolation
+                            // should be based on the sequence of subsequent frames beginning at |loopStart|.
+                            let value = k_inv * prev_sample + k * next_sample;
+                            *o = value;
+                        }
+                    });
+            });
+
         true
-    }
-}
-
-impl AudioBufferSourceRenderer {
-    // Pick the closest index to the given position
-    //
-    // @note - this is not used but we keep that around as it could be usefull
-    // for testing and/or to for perf improvement if the playback is aligned on
-    // `sample_rate` and `playback_rate.abs() = 1` and as not been modified
-    #[allow(dead_code)]
-    fn compute_playback_at_position_direct(&mut self, position: f64, sample_rate: f64) {
-        let sample_index = (position * sample_rate).round() as usize;
-
-        let iterator = self.buffer.as_ref().unwrap().channels().iter().enumerate();
-        for (channel_index, channel) in iterator {
-            self.internal_buffer[channel_index] = channel.as_slice()[sample_index];
-        }
-    }
-
-    // Linear interpolate betwen tow frames according to a given position
-    fn compute_playback_at_position(&mut self, position: f64, sample_rate: f64) {
-        let playhead = position * sample_rate;
-        let playhead_floored = playhead.floor();
-        let prev_index = playhead_floored as usize; // can't be < 0.
-        let next_index = playhead.ceil() as usize; // can be >= length
-
-        let k = (playhead - playhead_floored) as f32;
-        let k_inv = 1. - k;
-
-        let iterator = self.buffer.as_ref().unwrap().channels().iter().enumerate();
-        for (channel_index, channel) in iterator {
-            // @todo - [spec] If |position| is greater than or equal to |loopEnd|
-            // and there is no subsequent sample frame in buffer, then interpolation
-            // should be based on the sequence of subsequent frames beginning at |loopStart|.
-            //
-            // for now we just interpolate with zero
-            let prev_sample = channel.as_slice()[prev_index];
-            let next_sample = if next_index >= channel.len() {
-                0.
-            } else {
-                channel.as_slice()[next_index]
-            };
-            let value = k_inv * prev_sample + k * next_sample;
-            self.internal_buffer[channel_index] = value;
-        }
     }
 }
 
