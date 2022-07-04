@@ -543,7 +543,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
                                 (1. - k) * prev_sample + k * next_sample
                             }
-                            None => 0.,
+                            None => 0.
                         };
                     });
             });
