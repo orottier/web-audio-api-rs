@@ -442,7 +442,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             self.render_state.entered_loop = false;
         }
 
-        // compute position for each sample and push into self.positionsq
+        // compute position for each sample and store into `self.positions`
         for index in 0..num_frames {
             if current_time < start_time
                 || current_time >= stop_time
