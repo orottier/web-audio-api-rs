@@ -539,16 +539,17 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                             let k = (playhead - playhead_floored) as f32;
                             let k_inv = 1. - k;
 
-                            let prev_sample = buffer_channel[prev_index];
-                            let next_sample = if next_index >= buffer_channel.len() {
-                                0.
-                            } else {
-                                buffer_channel[next_index]
-                            };
-
                             // @todo - [spec] If |position| is greater than or equal to |loopEnd|
                             // and there is no subsequent sample frame in buffer, then interpolation
                             // should be based on the sequence of subsequent frames beginning at |loopStart|.
+
+                            // `prev_index` cannot be out of bounds
+                            let prev_sample = buffer_channel[prev_index];
+                            let next_sample = match buffer_channel.get(next_index) {
+                                Some(val) => *val,
+                                None => 0.,
+                            };
+
                             let value = k_inv * prev_sample + k * next_sample;
                             *o = value;
                         }
