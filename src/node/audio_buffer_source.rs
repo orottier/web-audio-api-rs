@@ -541,10 +541,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                     None => 0.,
                                 };
 
-                                let value = (1. - k) * prev_sample + k * next_sample;
-                                value
+                                (1. - k) * prev_sample + k * next_sample
                             }
-                            None => 0.
+                            None => 0.,
                         };
                     });
             });
