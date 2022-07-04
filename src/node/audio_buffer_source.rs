@@ -180,7 +180,7 @@ impl AudioBufferSourceNode {
                 detune: d_proc,
                 playback_rate: pr_proc,
                 render_state: AudioBufferRendererState::default(),
-                positions: [-1.; RENDER_QUANTUM_SIZE],
+                playback_infos: [None; RENDER_QUANTUM_SIZE],
             };
 
             let node = Self {
@@ -324,10 +324,9 @@ struct AudioBufferSourceRenderer {
     detune: AudioParamId,
     playback_rate: AudioParamId,
     render_state: AudioBufferRendererState,
-    /// Internal buffer used to compute the position to be played in the
-    /// source buffer per sample.
-    /// By convention a position of -1. means output should be zero.
-    positions: [f64; RENDER_QUANTUM_SIZE],
+    /// Internal buffer used to store playback infos to compute the samples
+    /// according to the source buffer. (prev_sample_index, k)
+    playback_infos: [Option<(usize, f32)>; RENDER_QUANTUM_SIZE],
 }
 
 impl AudioProcessor for AudioBufferSourceRenderer {
@@ -448,7 +447,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 || current_time >= stop_time
                 || self.render_state.buffer_time_elapsed >= duration
             {
-                self.positions[index] = -1.;
+                self.playback_infos[index] = None;
                 current_time += dt;
 
                 continue; // nothing more to do for this sample
@@ -503,9 +502,14 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 && self.render_state.buffer_time < buffer_duration
             {
                 let position = self.render_state.buffer_time * sampling_ratio;
-                self.positions[index] = position;
+                let playhead = position * sample_rate;
+                let playhead_floored = playhead.floor();
+                let prev_index = playhead_floored as usize; // can't be < 0.
+                let k = (playhead - playhead_floored) as f32;
+
+                self.playback_infos[index] = Some((prev_index, k));
             } else {
-                self.positions[index] = -1.;
+                self.playback_infos[index] = None;
             }
 
             let time_incr = dt * computed_playback_rate;
@@ -524,35 +528,24 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             .for_each(|(buffer_channel, output_channel)| {
                 let buffer_channel = buffer_channel.as_slice();
 
-                self.positions
+                self.playback_infos
                     .iter()
                     .zip(output_channel.iter_mut())
-                    .for_each(|(position, o)| {
-                        if *position == -1. {
-                            *o = 0.;
-                        } else {
-                            let playhead = position * sample_rate;
-                            let playhead_floored = playhead.floor();
-                            let prev_index = playhead_floored as usize; // can't be < 0.
-                            let next_index = playhead.ceil() as usize; // can be >= length
+                    .for_each(|(playhead, o)| {
+                        *o = match playhead {
+                            Some((prev_index, k)) => {
+                                // `prev_index` cannot be out of bounds
+                                let prev_sample = buffer_channel[*prev_index];
+                                let next_sample = match buffer_channel.get(prev_index + 1) {
+                                    Some(val) => *val,
+                                    None => 0.,
+                                };
 
-                            let k = (playhead - playhead_floored) as f32;
-                            let k_inv = 1. - k;
-
-                            // @todo - [spec] If |position| is greater than or equal to |loopEnd|
-                            // and there is no subsequent sample frame in buffer, then interpolation
-                            // should be based on the sequence of subsequent frames beginning at |loopStart|.
-
-                            // `prev_index` cannot be out of bounds
-                            let prev_sample = buffer_channel[prev_index];
-                            let next_sample = match buffer_channel.get(next_index) {
-                                Some(val) => *val,
-                                None => 0.,
-                            };
-
-                            let value = k_inv * prev_sample + k * next_sample;
-                            *o = value;
-                        }
+                                let value = (1. - k) * prev_sample + k * next_sample;
+                                value
+                            }
+                            None => 0.
+                        };
                     });
             });
 
