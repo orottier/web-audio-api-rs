@@ -7,9 +7,14 @@ fn main() {
     let mut media = MediaElement::new("samples/large-file.ogg");
 
     let src = context.create_media_element_source(&mut media);
+    println!("Start playing");
     src.connect(&context.destination());
 
+    std::thread::sleep(std::time::Duration::from_millis(3000));
+    println!("Seek to frame 100_000");
+    media.seek(100_000);
+
     loop {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(3000));
     }
 }

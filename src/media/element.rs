@@ -2,13 +2,24 @@ use std::error::Error;
 use std::path::PathBuf;
 
 use creek::{ReadDiskStream, SeekMode, SymphoniaDecoder};
+use crossbeam_channel::{Receiver, Sender};
 
 use crate::{AudioBuffer, RENDER_QUANTUM_SIZE};
 
-pub(crate) struct RTSStream(ReadDiskStream<SymphoniaDecoder>);
+pub(crate) struct RTSStream {
+    stream: ReadDiskStream<SymphoniaDecoder>,
+    receiver: Receiver<MediaElementAction>,
+}
+
+pub(crate) enum MediaElementAction {
+    Seek(usize),
+    // Pause,
+    // Loop,
+}
 
 pub struct MediaElement {
     stream: Option<RTSStream>,
+    sender: Sender<MediaElementAction>,
 }
 
 impl MediaElement {
@@ -34,13 +45,26 @@ impl MediaElement {
         // NOTE: Do ***not*** use this method in a real-time thread.
         read_disk_stream.block_until_ready().unwrap();
 
+        // Setup control/render thream message bus
+        let (sender, receiver) = crossbeam_channel::unbounded();
+
+        let rts_stream = RTSStream {
+            stream: read_disk_stream,
+            receiver,
+        };
+
         Self {
-            stream: Some(RTSStream(read_disk_stream)),
+            stream: Some(rts_stream),
+            sender,
         }
     }
 
     pub(crate) fn take_stream(&mut self) -> Option<RTSStream> {
         self.stream.take()
+    }
+
+    pub fn seek(&self, frame: usize) {
+        let _ = self.sender.send(MediaElementAction::Seek(frame));
     }
 }
 
@@ -48,10 +72,18 @@ impl Iterator for RTSStream {
     type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let sample_rate = self.0.info().sample_rate.unwrap() as f32;
+        if let Ok(msg) = self.receiver.try_recv() {
+            match msg {
+                MediaElementAction::Seek(frame) => {
+                    self.stream.seek(frame, SeekMode::default()).unwrap()
+                }
+            };
+        }
+
+        let sample_rate = self.stream.info().sample_rate.unwrap() as f32;
 
         let next = self
-            .0
+            .stream
             .read(RENDER_QUANTUM_SIZE)
             .map(|data| AudioBuffer::from(vec![data.read_channel(0).to_vec()], sample_rate))
             .map_err(|e| Box::new(e) as _);
