@@ -15,17 +15,21 @@ fn main() {
     media.play();
 
     std::thread::sleep(std::time::Duration::from_millis(3000));
-    println!("Seek to frame 100_000");
-    media.seek(100_000);
+    println!("Current time is now {}", media.current_time());
+    println!("Seek to 1 second");
+    media.set_current_time(1.);
 
     std::thread::sleep(std::time::Duration::from_millis(3000));
+    println!("Current time is now {}", media.current_time());
     println!("Pause");
     media.pause();
     std::thread::sleep(std::time::Duration::from_millis(1000));
     println!("Play");
     media.play();
+    println!("Current time is now {}", media.current_time());
 
     loop {
         std::thread::sleep(std::time::Duration::from_millis(3000));
+        println!("Current time is now {}", media.current_time());
     }
 }

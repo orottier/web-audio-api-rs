@@ -1,20 +1,22 @@
 use std::error::Error;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use creek::{ReadDiskStream, SeekMode, SymphoniaDecoder};
 use crossbeam_channel::{Receiver, Sender};
 
-use crate::{AudioBuffer, RENDER_QUANTUM_SIZE};
+use crate::{AtomicF64, AudioBuffer, RENDER_QUANTUM_SIZE};
 
 pub(crate) struct RTSStream {
     stream: ReadDiskStream<SymphoniaDecoder>,
+    current_time: Arc<AtomicF64>,
     receiver: Receiver<MediaElementAction>,
     paused: bool,
     loop_: bool,
 }
 
 pub(crate) enum MediaElementAction {
-    Seek(usize),
+    Seek(f64),
     SetLoop(bool),
     Play,
     Pause,
@@ -22,6 +24,7 @@ pub(crate) enum MediaElementAction {
 
 pub struct MediaElement {
     stream: Option<RTSStream>,
+    current_time: Arc<AtomicF64>,
     sender: Sender<MediaElementAction>,
     loop_: bool,
 }
@@ -51,9 +54,12 @@ impl MediaElement {
 
         // Setup control/render thream message bus
         let (sender, receiver) = crossbeam_channel::unbounded();
+        // Setup currentTime shared value
+        let current_time = Arc::new(AtomicF64::new(0.));
 
         let rts_stream = RTSStream {
             stream: read_disk_stream,
+            current_time: current_time.clone(),
             receiver,
             loop_: false,
             paused: true,
@@ -61,6 +67,7 @@ impl MediaElement {
 
         Self {
             stream: Some(rts_stream),
+            current_time,
             sender,
             loop_: false,
         }
@@ -70,8 +77,12 @@ impl MediaElement {
         self.stream.take()
     }
 
-    pub fn seek(&self, frame: usize) {
-        let _ = self.sender.send(MediaElementAction::Seek(frame));
+    pub fn current_time(&self) -> f64 {
+        self.current_time.load()
+    }
+
+    pub fn set_current_time(&self, value: f64) {
+        let _ = self.sender.send(MediaElementAction::Seek(value));
     }
 
     pub fn loop_(&self) -> bool {
@@ -96,9 +107,13 @@ impl Iterator for RTSStream {
     type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let sample_rate = self.stream.info().sample_rate.unwrap() as f32;
+
         if let Ok(msg) = self.receiver.try_recv() {
             match msg {
-                MediaElementAction::Seek(frame) => {
+                MediaElementAction::Seek(value) => {
+                    self.current_time.store(value);
+                    let frame = (value * sample_rate as f64) as usize;
                     self.stream.seek(frame, SeekMode::default()).unwrap();
                 }
                 MediaElementAction::SetLoop(value) => {
@@ -108,8 +123,6 @@ impl Iterator for RTSStream {
                 MediaElementAction::Pause => self.paused = true,
             };
         }
-
-        let sample_rate = self.stream.info().sample_rate.unwrap() as f32;
 
         if self.paused {
             let silence = AudioBuffer::from(vec![vec![0.; RENDER_QUANTUM_SIZE]], sample_rate);
@@ -125,6 +138,11 @@ impl Iterator for RTSStream {
 
                 if self.loop_ && data.reached_end_of_file() {
                     self.stream.seek(0, SeekMode::default()).unwrap();
+                    self.current_time.store(0.);
+                } else {
+                    let current_time = self.current_time.load();
+                    self.current_time
+                        .store(current_time + (RENDER_QUANTUM_SIZE as f64 / sample_rate as f64));
                 }
 
                 Ok(buf)
