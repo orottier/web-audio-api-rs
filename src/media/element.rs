@@ -82,11 +82,16 @@ impl Iterator for RTSStream {
 
         let sample_rate = self.stream.info().sample_rate.unwrap() as f32;
 
-        let next = self
-            .stream
-            .read(RENDER_QUANTUM_SIZE)
-            .map(|data| AudioBuffer::from(vec![data.read_channel(0).to_vec()], sample_rate))
-            .map_err(|e| Box::new(e) as _);
+        let next = match self.stream.read(RENDER_QUANTUM_SIZE) {
+            Ok(data) => {
+                let channels: Vec<_> = (0..data.num_channels())
+                    .map(|i| data.read_channel(i).to_vec())
+                    .collect();
+                let buf = AudioBuffer::from(channels, sample_rate);
+                Ok(buf)
+            },
+            Err(e) => Err(Box::new(e) as _),
+        };
 
         Some(next)
     }
