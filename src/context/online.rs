@@ -1,6 +1,6 @@
 //! The `AudioContext` type and constructor options
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::media::MediaStream;
+use crate::media::{MediaElement, MediaStream};
 use crate::node::{self, ChannelConfigOptions};
 use crate::AtomicF64;
 
@@ -266,5 +266,15 @@ impl AudioContext {
     pub fn create_media_stream_destination(&self) -> node::MediaStreamAudioDestinationNode {
         let opts = ChannelConfigOptions::default();
         node::MediaStreamAudioDestinationNode::new(self, opts)
+    }
+
+    /// Creates a `MediaElementAudioSourceNode` from a [`MediaElement`]
+    #[must_use]
+    pub fn create_media_element_source(
+        &self,
+        media_element: &mut MediaElement,
+    ) -> node::MediaElementAudioSourceNode {
+        let opts = node::MediaElementAudioSourceOptions { media_element };
+        node::MediaElementAudioSourceNode::new(self, opts)
     }
 }

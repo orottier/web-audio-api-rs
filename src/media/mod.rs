@@ -2,6 +2,10 @@
 
 mod decoding;
 pub use decoding::MediaDecoder;
+
+mod element;
+pub use element::MediaElement;
+
 mod mic;
 pub use mic::Microphone;
 
