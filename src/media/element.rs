@@ -9,13 +9,15 @@ use crate::{AudioBuffer, RENDER_QUANTUM_SIZE};
 pub(crate) struct RTSStream {
     stream: ReadDiskStream<SymphoniaDecoder>,
     receiver: Receiver<MediaElementAction>,
+    paused: bool,
     loop_: bool,
 }
 
 pub(crate) enum MediaElementAction {
     Seek(usize),
     SetLoop(bool),
-    // Pause,
+    Play,
+    Pause,
 }
 
 pub struct MediaElement {
@@ -54,6 +56,7 @@ impl MediaElement {
             stream: read_disk_stream,
             receiver,
             loop_: false,
+            paused: true,
         };
 
         Self {
@@ -79,6 +82,14 @@ impl MediaElement {
         self.loop_ = value;
         let _ = self.sender.send(MediaElementAction::SetLoop(value));
     }
+
+    pub fn play(&self) {
+        let _ = self.sender.send(MediaElementAction::Play);
+    }
+
+    pub fn pause(&self) {
+        let _ = self.sender.send(MediaElementAction::Pause);
+    }
 }
 
 impl Iterator for RTSStream {
@@ -93,10 +104,17 @@ impl Iterator for RTSStream {
                 MediaElementAction::SetLoop(value) => {
                     self.loop_ = value;
                 }
+                MediaElementAction::Play => self.paused = false,
+                MediaElementAction::Pause => self.paused = true,
             };
         }
 
         let sample_rate = self.stream.info().sample_rate.unwrap() as f32;
+
+        if self.paused {
+            let silence = AudioBuffer::from(vec![vec![0.; RENDER_QUANTUM_SIZE]], sample_rate);
+            return Some(Ok(silence));
+        }
 
         let next = match self.stream.read(RENDER_QUANTUM_SIZE) {
             Ok(data) => {
