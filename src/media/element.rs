@@ -9,17 +9,19 @@ use crate::{AudioBuffer, RENDER_QUANTUM_SIZE};
 pub(crate) struct RTSStream {
     stream: ReadDiskStream<SymphoniaDecoder>,
     receiver: Receiver<MediaElementAction>,
+    loop_: bool,
 }
 
 pub(crate) enum MediaElementAction {
     Seek(usize),
+    SetLoop(bool),
     // Pause,
-    // Loop,
 }
 
 pub struct MediaElement {
     stream: Option<RTSStream>,
     sender: Sender<MediaElementAction>,
+    loop_: bool,
 }
 
 impl MediaElement {
@@ -51,11 +53,13 @@ impl MediaElement {
         let rts_stream = RTSStream {
             stream: read_disk_stream,
             receiver,
+            loop_: false,
         };
 
         Self {
             stream: Some(rts_stream),
             sender,
+            loop_: false,
         }
     }
 
@@ -66,6 +70,15 @@ impl MediaElement {
     pub fn seek(&self, frame: usize) {
         let _ = self.sender.send(MediaElementAction::Seek(frame));
     }
+
+    pub fn loop_(&self) -> bool {
+        self.loop_
+    }
+
+    pub fn set_loop(&mut self, value: bool) {
+        self.loop_ = value;
+        let _ = self.sender.send(MediaElementAction::SetLoop(value));
+    }
 }
 
 impl Iterator for RTSStream {
@@ -75,7 +88,10 @@ impl Iterator for RTSStream {
         if let Ok(msg) = self.receiver.try_recv() {
             match msg {
                 MediaElementAction::Seek(frame) => {
-                    self.stream.seek(frame, SeekMode::default()).unwrap()
+                    self.stream.seek(frame, SeekMode::default()).unwrap();
+                }
+                MediaElementAction::SetLoop(value) => {
+                    self.loop_ = value;
                 }
             };
         }
@@ -88,8 +104,13 @@ impl Iterator for RTSStream {
                     .map(|i| data.read_channel(i).to_vec())
                     .collect();
                 let buf = AudioBuffer::from(channels, sample_rate);
+
+                if self.loop_ && data.reached_end_of_file() {
+                    self.stream.seek(0, SeekMode::default()).unwrap();
+                }
+
                 Ok(buf)
-            },
+            }
             Err(e) => Err(Box::new(e) as _),
         };
 

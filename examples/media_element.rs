@@ -4,7 +4,8 @@ use web_audio_api::node::AudioNode;
 
 fn main() {
     let context = AudioContext::default();
-    let mut media = MediaElement::new("samples/large-file.ogg");
+    let mut media = MediaElement::new("samples/major-scale.ogg");
+    media.set_loop(true);
 
     let src = context.create_media_element_source(&mut media);
     println!("Start playing");
