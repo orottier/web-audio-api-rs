@@ -24,12 +24,17 @@ fn main() {
     println!("Pause");
     media.pause();
     std::thread::sleep(std::time::Duration::from_millis(1000));
+
+    assert!(media.paused());
+    assert!(media.loop_());
+
     println!("Play");
     media.play();
     println!("Current time is now {}", media.current_time());
 
     loop {
         std::thread::sleep(std::time::Duration::from_millis(3000));
+        assert!(!media.paused());
         println!("Current time is now {}", media.current_time());
     }
 }

@@ -64,6 +64,12 @@ impl AudioNode for MediaElementAudioSourceNode {
 }
 
 impl MediaElementAudioSourceNode {
+    /// Create a new `MediaElementAudioSourceNode`
+    ///
+    /// # Panics
+    ///
+    /// This method will panic when there already exists a source node for the given
+    /// `MediaElement`. You can only set up a single source node per element!
     pub fn new<C: BaseAudioContext>(
         context: &C,
         options: MediaElementAudioSourceOptions<'_>,

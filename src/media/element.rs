@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use creek::{ReadDiskStream, SeekMode, SymphoniaDecoder};
@@ -12,8 +13,8 @@ pub(crate) struct RTSStream {
     stream: ReadDiskStream<SymphoniaDecoder>,
     current_time: Arc<AtomicF64>,
     receiver: Receiver<MediaElementAction>,
-    paused: bool,
-    loop_: bool,
+    loop_: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
 }
 
 /// Controller actions for a media element
@@ -36,7 +37,8 @@ pub struct MediaElement {
     stream: Option<RTSStream>,
     current_time: Arc<AtomicF64>,
     sender: Sender<MediaElementAction>,
-    loop_: bool,
+    loop_: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
 }
 
 impl MediaElement {
@@ -64,19 +66,23 @@ impl MediaElement {
         // Setup currentTime shared value
         let current_time = Arc::new(AtomicF64::new(0.));
 
+        let loop_ = Arc::new(AtomicBool::new(false));
+        let paused = Arc::new(AtomicBool::new(true));
+
         let rts_stream = RTSStream {
             stream: read_disk_stream,
             current_time: current_time.clone(),
             receiver,
-            loop_: false,
-            paused: true,
+            loop_: loop_.clone(),
+            paused: paused.clone(),
         };
 
         Ok(Self {
             stream: Some(rts_stream),
             current_time,
             sender,
-            loop_: false,
+            loop_,
+            paused,
         })
     }
 
@@ -93,11 +99,10 @@ impl MediaElement {
     }
 
     pub fn loop_(&self) -> bool {
-        self.loop_
+        self.loop_.load(Ordering::SeqCst)
     }
 
-    pub fn set_loop(&mut self, value: bool) {
-        self.loop_ = value;
+    pub fn set_loop(&self, value: bool) {
         let _ = self.sender.send(MediaElementAction::SetLoop(value));
     }
 
@@ -107,6 +112,10 @@ impl MediaElement {
 
     pub fn pause(&self) {
         let _ = self.sender.send(MediaElementAction::Pause);
+    }
+
+    pub fn paused(&self) -> bool {
+        self.paused.load(Ordering::SeqCst)
     }
 }
 
@@ -124,14 +133,14 @@ impl Iterator for RTSStream {
                     self.stream.seek(frame, SeekMode::default()).unwrap();
                 }
                 MediaElementAction::SetLoop(value) => {
-                    self.loop_ = value;
+                    self.loop_.store(value, Ordering::SeqCst);
                 }
-                MediaElementAction::Play => self.paused = false,
-                MediaElementAction::Pause => self.paused = true,
+                MediaElementAction::Play => self.paused.store(false, Ordering::SeqCst),
+                MediaElementAction::Pause => self.paused.store(true, Ordering::SeqCst),
             };
         }
 
-        if self.paused {
+        if self.paused.load(Ordering::SeqCst) {
             let silence = AudioBuffer::from(vec![vec![0.; RENDER_QUANTUM_SIZE]], sample_rate);
             return Some(Ok(silence));
         }
@@ -143,7 +152,7 @@ impl Iterator for RTSStream {
                     .collect();
                 let buf = AudioBuffer::from(channels, sample_rate);
 
-                if self.loop_ && data.reached_end_of_file() {
+                if self.loop_.load(Ordering::SeqCst) && data.reached_end_of_file() {
                     self.stream.seek(0, SeekMode::default()).unwrap();
                     self.current_time.store(0.);
                 } else {
