@@ -15,6 +15,7 @@ pub(crate) struct RTSStream {
     receiver: Receiver<MediaElementAction>,
     loop_: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
+    playback_rate: Arc<AtomicF64>,
 }
 
 /// Controller actions for a media element
@@ -27,6 +28,8 @@ pub(crate) enum MediaElementAction {
     Play,
     /// Pause the stream
     Pause,
+    /// Update the playback rate
+    SetPlaybackRate(f64),
 }
 
 /// Shim of the `<audio>` element which allows you to efficiently play and seek audio from disk
@@ -39,6 +42,7 @@ pub struct MediaElement {
     sender: Sender<MediaElementAction>,
     loop_: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
+    playback_rate: Arc<AtomicF64>,
 }
 
 impl MediaElement {
@@ -68,6 +72,7 @@ impl MediaElement {
 
         let loop_ = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(true));
+        let playback_rate = Arc::new(AtomicF64::new(1.));
 
         let rts_stream = RTSStream {
             stream: read_disk_stream,
@@ -75,6 +80,7 @@ impl MediaElement {
             receiver,
             loop_: loop_.clone(),
             paused: paused.clone(),
+            playback_rate: playback_rate.clone(),
         };
 
         Ok(Self {
@@ -83,6 +89,7 @@ impl MediaElement {
             sender,
             loop_,
             paused,
+            playback_rate,
         })
     }
 
@@ -117,6 +124,14 @@ impl MediaElement {
     pub fn paused(&self) -> bool {
         self.paused.load(Ordering::SeqCst)
     }
+
+    pub fn playback_rate(&self) -> f64 {
+        self.playback_rate.load()
+    }
+
+    pub fn set_playback_rate(&self, value: f64) {
+        let _ = self.sender.send(MediaElementAction::SetPlaybackRate(value));
+    }
 }
 
 impl Iterator for RTSStream {
@@ -126,17 +141,19 @@ impl Iterator for RTSStream {
         let sample_rate = self.stream.info().sample_rate.unwrap() as f32;
 
         if let Ok(msg) = self.receiver.try_recv() {
+            use MediaElementAction::*;
             match msg {
-                MediaElementAction::Seek(value) => {
+                Seek(value) => {
                     self.current_time.store(value);
                     let frame = (value * sample_rate as f64) as usize;
                     self.stream.seek(frame, SeekMode::default()).unwrap();
                 }
-                MediaElementAction::SetLoop(value) => {
+                SetLoop(value) => {
                     self.loop_.store(value, Ordering::SeqCst);
                 }
-                MediaElementAction::Play => self.paused.store(false, Ordering::SeqCst),
-                MediaElementAction::Pause => self.paused.store(true, Ordering::SeqCst),
+                Play => self.paused.store(false, Ordering::SeqCst),
+                Pause => self.paused.store(true, Ordering::SeqCst),
+                SetPlaybackRate(value) => self.playback_rate.store(value),
             };
         }
 
@@ -145,12 +162,16 @@ impl Iterator for RTSStream {
             return Some(Ok(silence));
         }
 
-        let next = match self.stream.read(RENDER_QUANTUM_SIZE) {
+        let playback_rate = self.playback_rate.load().abs();
+        let _reverse = playback_rate < 0.; // TODO
+        let samples = (RENDER_QUANTUM_SIZE as f64 * playback_rate) as usize;
+
+        let next = match self.stream.read(samples) {
             Ok(data) => {
                 let channels: Vec<_> = (0..data.num_channels())
                     .map(|i| data.read_channel(i).to_vec())
                     .collect();
-                let buf = AudioBuffer::from(channels, sample_rate);
+                let buf = AudioBuffer::from(channels, sample_rate * playback_rate as f32);
 
                 if self.loop_.load(Ordering::SeqCst) && data.reached_end_of_file() {
                     self.stream.seek(0, SeekMode::default()).unwrap();

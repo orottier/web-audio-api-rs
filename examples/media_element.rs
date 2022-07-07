@@ -19,6 +19,9 @@ fn main() {
     println!("Seek to 1 second");
     media.set_current_time(1.);
 
+    println!("Playback rate 1.25");
+    media.set_playback_rate(1.25);
+
     std::thread::sleep(std::time::Duration::from_millis(3000));
     println!("Current time is now {}", media.current_time());
     println!("Pause");
