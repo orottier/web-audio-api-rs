@@ -7,6 +7,7 @@ use crossbeam_channel::{Receiver, Sender};
 
 use crate::{AtomicF64, AudioBuffer, RENDER_QUANTUM_SIZE};
 
+/// Real time safe audio stream
 pub(crate) struct RTSStream {
     stream: ReadDiskStream<SymphoniaDecoder>,
     current_time: Arc<AtomicF64>,
@@ -15,13 +16,22 @@ pub(crate) struct RTSStream {
     loop_: bool,
 }
 
+/// Controller actions for a media element
 pub(crate) enum MediaElementAction {
+    /// Seek to the given timestamp
     Seek(f64),
+    /// Enable/disable looping
     SetLoop(bool),
+    /// Start or restart the stream
     Play,
+    /// Pause the stream
     Pause,
 }
 
+/// Shim of the `<audio>` element which allows you to efficiently play and seek audio from disk
+///
+/// The documentation for [`MediaElementAudioSourceNode`](crate::node::MediaElementAudioSourceNode)
+/// contains usage instructions.
 pub struct MediaElement {
     stream: Option<RTSStream>,
     current_time: Arc<AtomicF64>,
@@ -30,27 +40,24 @@ pub struct MediaElement {
 }
 
 impl MediaElement {
-    #[allow(clippy::missing_panics_doc)]
-    pub fn new<P: Into<PathBuf>>(file: P) -> Self {
+    /// Create a new instance for a given file path
+    pub fn new<P: Into<PathBuf>>(file: P) -> Result<Self, Box<dyn Error>> {
         // Open a read stream.
         let mut read_disk_stream = ReadDiskStream::<SymphoniaDecoder>::new(
             file,               // Path to file.
             0,                  // The frame in the file to start reading from.
             Default::default(), // Use default read stream options.
-        )
-        .unwrap();
+        )?;
 
         // Cache the start of the file into cache with index `0`.
         let _ = read_disk_stream.cache(0, 0);
 
         // Tell the stream to seek to the beginning of file. This will also alert the stream to the existence
         // of the cache with index `0`.
-        read_disk_stream.seek(0, SeekMode::default()).unwrap();
+        read_disk_stream.seek(0, SeekMode::default())?;
 
         // Wait until the buffer is filled before sending it to the process thread.
-        //
-        // NOTE: Do ***not*** use this method in a real-time thread.
-        read_disk_stream.block_until_ready().unwrap();
+        read_disk_stream.block_until_ready()?;
 
         // Setup control/render thream message bus
         let (sender, receiver) = crossbeam_channel::unbounded();
@@ -65,12 +72,12 @@ impl MediaElement {
             paused: true,
         };
 
-        Self {
+        Ok(Self {
             stream: Some(rts_stream),
             current_time,
             sender,
             loop_: false,
-        }
+        })
     }
 
     pub(crate) fn take_stream(&mut self) -> Option<RTSStream> {

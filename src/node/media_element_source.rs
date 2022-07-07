@@ -9,6 +9,37 @@ pub struct MediaElementAudioSourceOptions<'a> {
     pub media_element: &'a mut MediaElement,
 }
 
+/// An audio source from an `<audio>` element
+///
+/// - MDN documentation:
+/// <https://developer.mozilla.org/en-US/docs/Web/API/MediaElementAudioSourceNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#MediaElementAudioSourceNode>
+/// - see also:
+/// [`AudioContext::create_media_element_source`](crate::context::AudioContext::create_media_element_source)
+///
+/// # Usage
+///
+/// ```no_run
+/// use web_audio_api::context::{AudioContext, BaseAudioContext};
+/// use web_audio_api::media::MediaElement;
+/// use web_audio_api::node::AudioNode;
+///
+/// let context = AudioContext::default();
+/// let mut media = MediaElement::new("samples/major-scale.ogg").unwrap();
+///
+/// let src = context.create_media_element_source(&mut media);
+/// src.connect(&context.destination());
+///
+/// media.set_loop(true); // continuously loop
+/// media.set_current_time(1.0); // seek to offset
+/// media.play(); // start playing
+///
+/// loop {}
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example media_element`
 pub struct MediaElementAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

@@ -249,7 +249,8 @@ impl AudioContext {
         self.base().set_state(AudioContextState::Closed);
     }
 
-    /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]
+    /// Creates a [`MediaStreamAudioSourceNode`](node::MediaStreamAudioSourceNode) from a
+    /// [`MediaStream`]
     #[must_use]
     pub fn create_media_stream_source<M: MediaStream>(
         &self,
@@ -261,14 +262,15 @@ impl AudioContext {
         node::MediaStreamAudioSourceNode::new(self, opts)
     }
 
-    /// Creates a `MediaStreamAudioDestinationNode`
+    /// Creates a [`MediaStreamAudioDestinationNode`](node::MediaStreamAudioDestinationNode)
     #[must_use]
     pub fn create_media_stream_destination(&self) -> node::MediaStreamAudioDestinationNode {
         let opts = ChannelConfigOptions::default();
         node::MediaStreamAudioDestinationNode::new(self, opts)
     }
 
-    /// Creates a `MediaElementAudioSourceNode` from a [`MediaElement`]
+    /// Creates a [`MediaElementAudioSourceNode`](node::MediaElementAudioSourceNode) from a
+    /// [`MediaElement`]
     #[must_use]
     pub fn create_media_element_source(
         &self,
