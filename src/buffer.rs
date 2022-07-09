@@ -2,6 +2,7 @@
 use std::sync::Arc;
 
 use crate::render::AudioRenderQuantum;
+use crate::media::MediaDecoder;
 use crate::{
     assert_valid_channel_number, assert_valid_number_of_channels, assert_valid_sample_rate,
 };
@@ -116,6 +117,58 @@ impl AudioBuffer {
             channels,
             sample_rate,
         }
+    }
+
+    /// Decode an [`AudioBuffer`] from a given input stream.
+    ///
+    /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
+    ///
+    /// In addition to the official spec, the input parameter can be any byte stream (not just an
+    /// array). This means you can decode audio data from a file, network stream, or in memory
+    /// buffer, and any other [`std::io::Read`] implementor. The data if buffered internally so you
+    /// should not wrap the source in a `BufReader`.
+    ///
+    /// This function operates synchronously, which may be undesirable on the control thread. The
+    /// example shows how to avoid this. An async version is currently not implemented.
+    ///
+    /// # Errors
+    ///
+    /// This method returns an Error in various cases (IO, mime sniffing, decoding).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use std::io::Cursor;
+    /// use web_audio_api::AudioBuffer;
+    ///
+    /// let input = Cursor::new(vec![0; 32]); // or a File, TcpStream, ...
+    ///
+    /// let handle = std::thread::spawn(move || AudioBuffer::from_encoded(input, 44_100.));
+    ///
+    /// // do other things
+    ///
+    /// // await result from the decoder thread
+    /// let decode_buffer_result = handle.join();
+    /// ```
+    pub fn from_encoded<R: std::io::Read + Send + Sync + 'static>(
+        input: R,
+        sample_rate: f32,
+    ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
+        // Set up a media decoder, consume the stream in full and construct a single buffer out of it
+        let mut buffer = MediaDecoder::try_new(input)?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .reduce(|mut accum, item| {
+                accum.extend(&item);
+                accum
+            })
+            // if there are no samples decoded, return an empty buffer
+            .unwrap_or_else(|| AudioBuffer::from(vec![vec![]], sample_rate));
+
+        // resample to desired rate (no-op if already matching)
+        buffer.resample(sample_rate);
+
+        Ok(buffer)
     }
 
     /// Number of channels in this `AudioBuffer`
@@ -447,6 +500,51 @@ mod tests {
         assert_eq!(audio_buffer.length(), 96000);
         assert_float_eq!(audio_buffer.sample_rate(), 48000., abs <= 0.);
         assert_float_eq!(audio_buffer.duration(), 2., abs <= 0.);
+    }
+
+    #[test]
+    fn test_from_encoded() {
+        let file = std::fs::File::open("samples/sample.wav").unwrap();
+        let audio_buffer = AudioBuffer::from_encoded(file, 44100.).unwrap();
+
+        assert_eq!(audio_buffer.sample_rate(), 44100.);
+        assert_eq!(audio_buffer.length(), 142_187);
+        assert_eq!(audio_buffer.number_of_channels(), 2);
+        assert_float_eq!(audio_buffer.duration(), 3.224, abs_all <= 0.001);
+
+        let left_start = &audio_buffer.get_channel_data(0)[0..100];
+        let right_start = &audio_buffer.get_channel_data(1)[0..100];
+        // assert distinct two channel data
+        assert!(left_start != right_start);
+    }
+
+    #[test]
+    fn test_from_encoded_concurrent() {
+        let handles = (0..5).into_iter()
+            .map(|_| {
+                std::thread::spawn(move || {
+                    let file = std::fs::File::open("samples/sample.wav").unwrap();
+                    let audio_buffer = AudioBuffer::from_encoded(file, 44100.).unwrap();
+                    audio_buffer
+                })
+            })
+            .collect::<Vec<_>>();
+        
+        handles
+            .into_iter()
+            .for_each(|handle| {
+                let audio_buffer = handle.join().unwrap();
+
+                assert_eq!(audio_buffer.sample_rate(), 44100.);
+                assert_eq!(audio_buffer.length(), 142_187);
+                assert_eq!(audio_buffer.number_of_channels(), 2);
+                assert_float_eq!(audio_buffer.duration(), 3.224, abs_all <= 0.001);
+
+                let left_start = &audio_buffer.get_channel_data(0)[0..100];
+                let right_start = &audio_buffer.get_channel_data(1)[0..100];
+                // assert distinct two channel data
+                assert!(left_start != right_start);
+            });
     }
 
     #[test]
