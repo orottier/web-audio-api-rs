@@ -152,8 +152,9 @@ impl AudioBufferSourceNode {
                 default_value: 0.,
                 automation_rate: AutomationRate::K,
             };
-            let (d_param, d_proc) = context.create_audio_param(detune_param_options, &registration);
-
+            let (mut d_param, d_proc) =
+                context.create_audio_param(detune_param_options, &registration);
+            d_param.set_automation_rate_constrained(true);
             d_param.set_value(detune);
 
             let playback_rate_param_options = AudioParamDescriptor {
@@ -162,9 +163,9 @@ impl AudioBufferSourceNode {
                 default_value: 1.,
                 automation_rate: AutomationRate::K,
             };
-            let (pr_param, pr_proc) =
+            let (mut pr_param, pr_proc) =
                 context.create_audio_param(playback_rate_param_options, &registration);
-
+            pr_param.set_automation_rate_constrained(true);
             pr_param.set_value(playback_rate);
 
             // Channel to send buffer channels references to the renderer.

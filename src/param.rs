@@ -190,6 +190,7 @@ impl AudioParamEventTimeline {
 pub struct AudioParam {
     registration: AudioContextRegistration,
     is_a_rate: Arc<AtomicBool>,
+    automation_rate_constrained: bool,
     default_value: f32, // readonly
     min_value: f32,     // readonly
     max_value: f32,     // readonly
@@ -201,6 +202,7 @@ pub struct AudioParam {
 #[derive(Clone)]
 pub(crate) struct AudioParamRaw {
     is_a_rate: Arc<AtomicBool>,
+    automation_rate_constrained: bool,
     default_value: f32,
     min_value: f32,
     max_value: f32,
@@ -261,8 +263,16 @@ impl AudioParam {
     ///
     /// Some nodes have automation rate constraints and may panic when updating the value
     pub fn set_automation_rate(&self, value: AutomationRate) {
+        if self.automation_rate_constrained && value != self.automation_rate() {
+            panic!("InvalidStateError: automation rate cannot be changed for this param");
+        }
+
         let is_a_rate = value == AutomationRate::A;
         self.is_a_rate.store(is_a_rate, Ordering::SeqCst);
+    }
+
+    pub(crate) fn set_automation_rate_constrained(&mut self, value: bool) {
+        self.automation_rate_constrained = value;
     }
 
     pub fn default_value(&self) -> f32 {
@@ -525,6 +535,7 @@ impl AudioParam {
     pub(crate) fn into_raw_parts(self) -> AudioParamRaw {
         AudioParamRaw {
             is_a_rate: self.is_a_rate,
+            automation_rate_constrained: self.automation_rate_constrained,
             default_value: self.default_value,
             min_value: self.min_value,
             max_value: self.max_value,
@@ -541,6 +552,7 @@ impl AudioParam {
         Self {
             registration,
             is_a_rate: parts.is_a_rate,
+            automation_rate_constrained: parts.automation_rate_constrained,
             default_value: parts.default_value,
             min_value: parts.min_value,
             max_value: parts.max_value,
@@ -1422,6 +1434,7 @@ pub(crate) fn audio_param_pair(
     let param = AudioParam {
         registration,
         is_a_rate: is_a_rate.clone(),
+        automation_rate_constrained: false,
         default_value: opts.default_value,
         min_value: opts.min_value,
         max_value: opts.max_value,
