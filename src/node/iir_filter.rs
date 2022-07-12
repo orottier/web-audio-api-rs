@@ -592,7 +592,7 @@ mod test {
             .map(|l| l.unwrap().parse::<f32>().unwrap())
             .collect();
 
-        let mut context = OfflineAudioContext::new(1, LENGTH, 44_100.);
+        let context = OfflineAudioContext::new(1, LENGTH, 44_100.);
 
         let file = File::open("samples/white.ogg").unwrap();
         let audio_buffer = context.decode_audio_data_sync(file).unwrap();
