@@ -121,6 +121,12 @@ mod tests {
     }
 
     #[test]
+    fn test_offline_audio_context_send_sync() {
+        let context = OfflineAudioContext::new(1, 0, 44100.);
+        require_send_sync_static(context);
+    }
+
+    #[test]
     fn test_sample_rate_length() {
         let context = OfflineAudioContext::new(1, 48000, 96000.);
         assert_float_eq!(context.sample_rate(), 96000., abs_all <= 0.);

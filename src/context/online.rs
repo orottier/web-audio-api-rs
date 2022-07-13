@@ -64,7 +64,7 @@ pub struct AudioContext {
     base: ConcreteBaseAudioContext,
     /// cpal stream (play/pause functionality)
     #[cfg(not(test))] // in tests, do not set up a cpal Stream
-    stream: Mutex<Option<Stream>>,
+    stream: Arc<Mutex<Option<Stream>>>,
     /// delay between render and actual system audio output
     output_latency: Arc<AtomicF64>,
 }
@@ -129,7 +129,7 @@ impl AudioContext {
 
         Self {
             base,
-            stream: Mutex::new(Some(stream)),
+            stream: Arc::new(Mutex::new(Some(stream))),
             output_latency,
         }
     }

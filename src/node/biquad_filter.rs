@@ -1095,7 +1095,7 @@ mod test {
         let default_freq = 350.;
         let default_type = BiquadFilterType::Lowpass;
 
-        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
         context.start_rendering_sync();
@@ -1114,7 +1114,7 @@ mod test {
         let gain = 1.;
         let frequency = 3050.;
         let type_ = BiquadFilterType::Highpass;
-        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
         let options = BiquadFilterOptions {
             q,
@@ -1143,7 +1143,7 @@ mod test {
         let gain = 1.;
         let frequency = 3050.;
         let type_ = BiquadFilterType::Highpass;
-        let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 

@@ -514,7 +514,7 @@ mod tests {
     fn test_sample_accurate() {
         for delay_in_samples in [128., 131., 197.].iter() {
             let sample_rate = 48000.;
-            let mut context = OfflineAudioContext::new(1, 256, sample_rate);
+            let context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(2.);
             delay.delay_time.set_value(delay_in_samples / sample_rate);
@@ -543,7 +543,7 @@ mod tests {
         {
             let delay_in_samples = 128.5;
             let sample_rate = 48000.;
-            let mut context = OfflineAudioContext::new(1, 256, sample_rate);
+            let context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(2.);
             delay.delay_time.set_value(delay_in_samples / sample_rate);
@@ -570,7 +570,7 @@ mod tests {
         {
             let delay_in_samples = 128.8;
             let sample_rate = 48000.;
-            let mut context = OfflineAudioContext::new(1, 256, sample_rate);
+            let context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(2.);
             delay.delay_time.set_value(delay_in_samples / sample_rate);
@@ -599,7 +599,7 @@ mod tests {
     fn test_multichannel() {
         let delay_in_samples = 128.;
         let sample_rate = 48000.;
-        let mut context = OfflineAudioContext::new(2, 2 * 128, sample_rate);
+        let context = OfflineAudioContext::new(2, 2 * 128, sample_rate);
 
         let delay = context.create_delay(2.);
         delay.delay_time.set_value(delay_in_samples / sample_rate);
@@ -632,7 +632,7 @@ mod tests {
     fn test_input_number_of_channels_change() {
         let delay_in_samples = 128.;
         let sample_rate = 48000.;
-        let mut context = OfflineAudioContext::new(2, 3 * 128, sample_rate);
+        let context = OfflineAudioContext::new(2, 3 * 128, sample_rate);
 
         let delay = context.create_delay(2.);
         delay.delay_time.set_value(delay_in_samples / sample_rate);
@@ -676,7 +676,7 @@ mod tests {
         // make sure there are no hidden order problem
         for _ in 0..10 {
             let sample_rate = 48000.;
-            let mut context = OfflineAudioContext::new(1, 5 * 128, sample_rate);
+            let context = OfflineAudioContext::new(1, 5 * 128, sample_rate);
 
             // Set up a source that starts only after 5 render quanta.
             // The delay writer and reader should stay alive in this period of silence.
@@ -717,7 +717,7 @@ mod tests {
         for _ in 0..10 {
             // set delay and max delay time exactly 1 render quantum
             let sample_rate = 48000.;
-            let mut context = OfflineAudioContext::new(1, 256, sample_rate);
+            let context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(1.);
             delay.delay_time.set_value(128. / sample_rate);
@@ -743,7 +743,7 @@ mod tests {
         for _ in 0..10 {
             // set delay and max delay time exactly 2 render quantum
             let sample_rate = 48000.;
-            let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
+            let context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
 
             let delay = context.create_delay(2.);
             delay.delay_time.set_value(128. * 2. / sample_rate);
@@ -777,7 +777,7 @@ mod tests {
         // gracefully fallback to min
         for _ in 0..10 {
             let sample_rate = 480000.;
-            let mut context = OfflineAudioContext::new(1, 256, sample_rate);
+            let context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(0.5); // this will be internally clamped to 1.
             delay.delay_time.set_value(0.5 / sample_rate); // this will be clamped to 1. by the Reader

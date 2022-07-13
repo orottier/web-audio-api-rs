@@ -53,7 +53,7 @@ pub trait BaseAudioContext {
     ///
     /// This method returns an Error in various cases (IO, mime sniffing, decoding).
     ///
-    /// # Example
+    /// # Usage
     ///
     /// ```no_run
     /// use std::io::Cursor;
@@ -69,6 +69,12 @@ pub trait BaseAudioContext {
     /// // await result from the decoder thread
     /// let decode_buffer_result = handle.join();
     /// ```
+    ///
+    /// # Examples
+    ///
+    /// The following example shows how to use a thread pool for audio buffer decoding:
+    ///
+    /// `cargo run --release --example decode_multithreaded`
     fn decode_audio_data_sync<R: std::io::Read + Send + Sync + 'static>(
         &self,
         input: R,

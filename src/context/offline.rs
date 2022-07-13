@@ -17,8 +17,32 @@ pub struct OfflineAudioContext {
     /// the size of the buffer in sample-frames
     length: usize,
     /// the rendering 'thread', fully controlled by the offline context
-    renderer: RenderThread,
+    renderer: SingleUseRenderThread,
 }
+
+mod private {
+    use super::*;
+
+    pub(crate) struct SingleUseRenderThread(RenderThread);
+
+    impl SingleUseRenderThread {
+        pub fn new(rt: RenderThread) -> Self {
+            Self(rt)
+        }
+
+        pub fn render_audiobuffer(self, buffer_size: usize) -> AudioBuffer {
+            self.0.render_audiobuffer(buffer_size)
+        }
+    }
+
+    // SAFETY:
+    // The RenderThread is not Sync since it contains `AudioRenderQuantum`s (which use Rc) and `dyn
+    // AudioProcessor` which may not allow sharing between threads. However we mark the
+    // SingleUseRenderThread as Sync because it can only run once (and thus on a single thread)
+    // NB: the render thread should never hand out the contained `Rc` and `AudioProcessor`s
+    unsafe impl Sync for SingleUseRenderThread {}
+}
+use private::SingleUseRenderThread;
 
 impl BaseAudioContext for OfflineAudioContext {
     fn base(&self) -> &ConcreteBaseAudioContext {
@@ -70,7 +94,7 @@ impl OfflineAudioContext {
         Self {
             base,
             length,
-            renderer,
+            renderer: SingleUseRenderThread::new(renderer),
         }
     }
 
@@ -78,7 +102,7 @@ impl OfflineAudioContext {
     ///
     /// This function will block the current thread and returns the rendered `AudioBuffer`
     /// synchronously. An async version is currently not implemented.
-    pub fn start_rendering_sync(&mut self) -> AudioBuffer {
+    pub fn start_rendering_sync(self) -> AudioBuffer {
         // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
         // the desired number of frames.
         let buffer_size =
@@ -106,7 +130,7 @@ mod tests {
 
     #[test]
     fn render_empty_graph() {
-        let mut context = OfflineAudioContext::new(2, 555, 44_100.);
+        let context = OfflineAudioContext::new(2, 555, 44_100.);
         let buffer = context.start_rendering_sync();
 
         assert_eq!(buffer.number_of_channels(), 2);

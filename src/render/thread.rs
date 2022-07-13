@@ -94,7 +94,7 @@ impl RenderThread {
     }
 
     // render method of the OfflineAudioContext
-    pub fn render_audiobuffer(&mut self, length: usize) -> AudioBuffer {
+    pub fn render_audiobuffer(mut self, length: usize) -> AudioBuffer {
         // assert input was properly sized
         debug_assert_eq!(length % RENDER_QUANTUM_SIZE, 0);
 
