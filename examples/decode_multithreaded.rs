@@ -1,34 +1,54 @@
-use float_eq::assert_float_eq;
-use std::sync::Arc;
 use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
 
+// Use a pool of 2 threads for decoding
+const THREAD_POOL_SIZE: usize = 2;
+
 pub fn main() {
-    // Setup an OfflineAudioContext for decoding, the actual length and channel count do not matter
-    let context = OfflineAudioContext::new(2, 100, 44100.);
+    // Set up the message channels for job submission and result callback
+    let (job_sender, job_receiver) = crossbeam_channel::unbounded();
+    let (result_sender, result_receiver) = crossbeam_channel::unbounded();
 
-    // We need shared ownership of the context because the Rust compiler cannot infer that our
-    // threads will not outlive the main thread.
-    //
-    // TODO update after Rust 1.63 to use scoped threads
-    let context = Arc::new(context);
+    // Spawn decoder threads for the thread pool
+    for _ in 0..THREAD_POOL_SIZE {
+        let job_receiver = job_receiver.clone();
+        let result_sender = result_sender.clone();
 
-    // Setup five threads and let them decode audio buffers concurrently
-    let handles = (0..5).into_iter().map(|_| {
-        let context = context.clone();
         std::thread::spawn(move || {
-            let file = std::fs::File::open("samples/sample.wav").unwrap();
-            let audio_buffer = context.decode_audio_data_sync(file).unwrap();
-            audio_buffer
-        })
-    });
+            // Setup an OfflineAudioContext, the actual length and channel count do not matter
+            let context = OfflineAudioContext::new(2, 100, 44100.);
 
-    // Await the concurrent threads and validate their results
-    handles.for_each(|handle| {
-        let audio_buffer = handle.join().unwrap();
+            for path in job_receiver.iter() {
+                let file = std::fs::File::open(&path).unwrap();
+                let audio_buffer = context.decode_audio_data_sync(file);
 
-        assert_eq!(audio_buffer.sample_rate(), context.sample_rate());
-        assert_eq!(audio_buffer.length(), 142_187);
-        assert_eq!(audio_buffer.number_of_channels(), 2);
-        assert_float_eq!(audio_buffer.duration(), 3.224, abs_all <= 0.001);
-    });
+                // We send back a tuple of the input path and the decoder result
+                let result = (path, audio_buffer);
+                let _ = result_sender.send(result);
+            }
+        });
+    }
+
+    // Submit decode job for all files in the samples directory
+    let job_count = std::fs::read_dir("./samples")
+        .unwrap()
+        .map(|p| job_sender.send(p.unwrap().path()).unwrap())
+        .count();
+
+    // Await the decoded data and print their results
+    let mut result_count = 0;
+    for result in result_receiver.iter() {
+        result_count += 1;
+        let path = result.0.display();
+        let info = result
+            .1
+            .map(|buffer| format!("Succes - decoded {} samples", buffer.length()))
+            .unwrap_or_else(|e| format!("Error - {:?}", e));
+
+        println!("{} - {}", path, info);
+
+        // We are done when all jobs are handled
+        if job_count == result_count {
+            break;
+        }
+    }
 }
