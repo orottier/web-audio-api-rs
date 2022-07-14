@@ -29,6 +29,8 @@ mod gain;
 pub use gain::*;
 mod iir_filter;
 pub use iir_filter::*;
+mod media_element_source;
+pub use media_element_source::*;
 mod media_stream_destination;
 pub use media_stream_destination::*;
 mod media_stream_source;

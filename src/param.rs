@@ -1,5 +1,6 @@
 //! AudioParam interface
 use std::slice::{Iter, IterMut};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::context::AudioContextRegistration;
@@ -188,10 +189,11 @@ impl AudioParamEventTimeline {
 /// AudioParam controls an individual aspect of an AudioNode's functionality, such as volume.
 pub struct AudioParam {
     registration: AudioContextRegistration,
-    automation_rate: AutomationRate, // treat as readonly for now
-    default_value: f32,              // readonly
-    min_value: f32,                  // readonly
-    max_value: f32,                  // readonly
+    is_a_rate: Arc<AtomicBool>,
+    automation_rate_constrained: bool,
+    default_value: f32, // readonly
+    min_value: f32,     // readonly
+    max_value: f32,     // readonly
     current_value: Arc<AtomicF32>,
     sender: Sender<AudioParamEvent>,
 }
@@ -199,7 +201,8 @@ pub struct AudioParam {
 // helper struct to attach / detach to context (for borrow reasons)
 #[derive(Clone)]
 pub(crate) struct AudioParamRaw {
-    automation_rate: AutomationRate,
+    is_a_rate: Arc<AtomicBool>,
+    automation_rate_constrained: bool,
     default_value: f32,
     min_value: f32,
     max_value: f32,
@@ -245,8 +248,31 @@ impl AudioNode for AudioParam {
 }
 
 impl AudioParam {
+    /// Current value of the automation rate of the AudioParam
     pub fn automation_rate(&self) -> AutomationRate {
-        self.automation_rate
+        if self.is_a_rate.load(Ordering::SeqCst) {
+            AutomationRate::A
+        } else {
+            AutomationRate::K
+        }
+    }
+
+    /// Update the current value of the automation rate of the AudioParam
+    ///
+    /// # Panics
+    ///
+    /// Some nodes have automation rate constraints and may panic when updating the value
+    pub fn set_automation_rate(&self, value: AutomationRate) {
+        if self.automation_rate_constrained && value != self.automation_rate() {
+            panic!("InvalidStateError: automation rate cannot be changed for this param");
+        }
+
+        let is_a_rate = value == AutomationRate::A;
+        self.is_a_rate.store(is_a_rate, Ordering::SeqCst);
+    }
+
+    pub(crate) fn set_automation_rate_constrained(&mut self, value: bool) {
+        self.automation_rate_constrained = value;
     }
 
     pub fn default_value(&self) -> f32 {
@@ -508,7 +534,8 @@ impl AudioParam {
     // helper function to detach from context (for borrow reasons)
     pub(crate) fn into_raw_parts(self) -> AudioParamRaw {
         AudioParamRaw {
-            automation_rate: self.automation_rate,
+            is_a_rate: self.is_a_rate,
+            automation_rate_constrained: self.automation_rate_constrained,
             default_value: self.default_value,
             min_value: self.min_value,
             max_value: self.max_value,
@@ -524,7 +551,8 @@ impl AudioParam {
     ) -> Self {
         Self {
             registration,
-            automation_rate: parts.automation_rate,
+            is_a_rate: parts.is_a_rate,
+            automation_rate_constrained: parts.automation_rate_constrained,
             default_value: parts.default_value,
             min_value: parts.min_value,
             max_value: parts.max_value,
@@ -548,7 +576,7 @@ pub(crate) struct AudioParamProcessor {
     intrisic_value: f32,
     current_value: Arc<AtomicF32>,
     receiver: Receiver<AudioParamEvent>,
-    automation_rate: AutomationRate,
+    is_a_rate: Arc<AtomicBool>,
     default_value: f32,
     min_value: f32,
     max_value: f32,
@@ -919,7 +947,7 @@ impl AudioParamProcessor {
         self.buffer.clear();
 
         let next_block_time = block_time + dt * count as f64;
-        let is_a_rate = self.automation_rate == AutomationRate::A;
+        let is_a_rate = self.is_a_rate.load(Ordering::SeqCst);
         let is_k_rate = !is_a_rate;
 
         if is_k_rate {
@@ -1401,9 +1429,12 @@ pub(crate) fn audio_param_pair(
     let (sender, receiver) = crossbeam_channel::unbounded();
     let current_value = Arc::new(AtomicF32::new(opts.default_value));
 
+    let is_a_rate = Arc::new(AtomicBool::new(opts.automation_rate == AutomationRate::A));
+
     let param = AudioParam {
         registration,
-        automation_rate: opts.automation_rate,
+        is_a_rate: is_a_rate.clone(),
+        automation_rate_constrained: false,
         default_value: opts.default_value,
         min_value: opts.min_value,
         max_value: opts.max_value,
@@ -1415,7 +1446,7 @@ pub(crate) fn audio_param_pair(
         intrisic_value: opts.default_value,
         current_value,
         receiver,
-        automation_rate: opts.automation_rate,
+        is_a_rate,
         default_value: opts.default_value,
         min_value: opts.min_value,
         max_value: opts.max_value,
@@ -2773,5 +2804,43 @@ mod tests {
         // this is necessary as the panic is triggered in the audio thread
         // @note - argues in favor of maintaining the queue in control thread
         let _vs = render.tick(0., 1., 10);
+    }
+
+    #[test]
+    fn test_update_automation_rate_to_k() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -10.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(2., 0.000001);
+        param.set_automation_rate(AutomationRate::K);
+
+        let vs = render.tick(0., 1., 10);
+        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_update_automation_rate_to_a() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::K,
+            default_value: 0.,
+            min_value: -10.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(2., 0.000001);
+        param.set_automation_rate(AutomationRate::A);
+
+        let vs = render.tick(0., 1., 10);
+        assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
     }
 }

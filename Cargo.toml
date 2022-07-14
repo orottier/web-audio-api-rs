@@ -25,6 +25,7 @@ float_eq = "0.7"
 smallvec = "1.8"
 once_cell = "1.10"
 symphonia = { version = "0.5", default-features = false }
+creek = "0.2.1"
 
 [dev-dependencies]
 rand = "0.8"
@@ -43,7 +44,7 @@ textplots = "0.8"
 
 [features]
 default = ["mp3", "ogg", "flac", "wav"]
-mp3 = ["symphonia/mp3"]
-ogg = ["symphonia/ogg", "symphonia/vorbis"]
-flac = ["symphonia/flac"]
-wav = ["symphonia/wav", "symphonia/pcm"]
+mp3 = ["symphonia/mp3", "creek/decode-mp3"]
+ogg = ["symphonia/ogg", "symphonia/vorbis", "creek/decode-ogg", "creek/decode-vorbis"]
+flac = ["symphonia/flac", "creek/decode-flac"]
+wav = ["symphonia/wav", "symphonia/pcm", "creek/decode-wav", "creek/decode-pcm"]

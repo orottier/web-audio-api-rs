@@ -644,7 +644,7 @@ mod tests {
             let freq = 10_f32.powf(i as f32);
             let sample_rate = 44_100;
 
-            let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+            let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
             let osc = context.create_oscillator();
             osc.connect(&context.destination());
@@ -680,7 +680,7 @@ mod tests {
             let freq = 10_f32.powf(i as f32);
             let sample_rate = 44_100;
 
-            let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+            let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
             let osc = context.create_oscillator();
             osc.connect(&context.destination());
@@ -709,7 +709,7 @@ mod tests {
             let freq = 10_f32.powf(i as f32);
             let sample_rate = 44100;
 
-            let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+            let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
             let osc = context.create_oscillator();
             osc.connect(&context.destination());
@@ -747,7 +747,7 @@ mod tests {
             let freq = 10_f32.powf(i as f32);
             let sample_rate = 44_100;
 
-            let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+            let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
             let osc = context.create_oscillator();
             osc.connect(&context.destination());
@@ -794,7 +794,7 @@ mod tests {
             let freq = 10_f32.powf(i as f32);
             let sample_rate = 44_100;
 
-            let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+            let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
             let osc = context.create_oscillator();
             osc.connect(&context.destination());
@@ -839,7 +839,7 @@ mod tests {
             let freq = 10_f32.powf(i as f32);
             let sample_rate = 44_100;
 
-            let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+            let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
             let options = PeriodicWaveOptions {
                 real: Some(vec![0., 0.]),
@@ -885,7 +885,7 @@ mod tests {
             let freq = 10_f32.powf(i as f32);
             let sample_rate = 44_100;
 
-            let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+            let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
             let options = PeriodicWaveOptions {
                 real: Some(vec![0., 0., 0.]),
@@ -972,7 +972,7 @@ mod tests {
         let freq = 1.25;
         let sample_rate = 44_100;
 
-        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
         let osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
@@ -1004,7 +1004,7 @@ mod tests {
         let freq = 1.;
         let sample_rate = 96000;
 
-        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
         let osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
@@ -1036,7 +1036,7 @@ mod tests {
         let freq = 2345.6;
         let sample_rate = 44_100;
 
-        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
         let osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
@@ -1068,7 +1068,7 @@ mod tests {
         let freq = 8910.1;
         let sample_rate = 44_100;
 
-        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
         let osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
@@ -1100,7 +1100,7 @@ mod tests {
         let freq = 8910.1;
         let sample_rate = 44_100;
 
-        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
         let osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);

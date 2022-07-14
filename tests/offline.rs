@@ -12,7 +12,7 @@ fn test_offline_render() {
 
     assert_ne!(LENGTH % RENDER_QUANTUM_SIZE, 0);
 
-    let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+    let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
     assert_eq!(context.length(), LENGTH);
 
     {
@@ -49,7 +49,7 @@ fn test_start_stop() {
     let len = RENDER_QUANTUM_SIZE * 4;
     let sample_rate = 480000.;
 
-    let mut context = OfflineAudioContext::new(1, len, sample_rate);
+    let context = OfflineAudioContext::new(1, len, sample_rate);
     assert_eq!(context.length(), len);
 
     {
@@ -84,7 +84,7 @@ fn test_delayed_constant_source() {
     let len = RENDER_QUANTUM_SIZE * 4;
     let sample_rate = 480000.;
 
-    let mut context = OfflineAudioContext::new(1, len, sample_rate);
+    let context = OfflineAudioContext::new(1, len, sample_rate);
     assert_eq!(context.length(), len);
 
     {
@@ -113,7 +113,7 @@ fn test_delayed_constant_source() {
 #[test]
 fn test_audio_param_graph() {
     let sample_rate = 480000.;
-    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
     {
         let gain = context.create_gain();
         gain.gain().set_value(0.5); // intrinsic value
@@ -150,7 +150,7 @@ fn test_audio_param_graph() {
 #[test]
 fn test_listener() {
     let sample_rate = 480000.;
-    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
     {
         let listener1 = context.listener();
@@ -159,16 +159,16 @@ fn test_listener() {
         listener2.position_y().set_value(2.);
     }
 
+    let listener = context.listener();
     let _ = context.start_rendering_sync();
 
-    let listener = context.listener();
     assert_float_eq!(listener.position_y().value(), 2., abs <= 0.);
     assert_float_eq!(listener.position_x().value(), 1., abs <= 0.);
 }
 
 #[test]
 fn test_cycle() {
-    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, 48000.);
+    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, 48000.);
 
     {
         let cycle1 = context.create_gain();
@@ -204,7 +204,7 @@ fn test_cycle() {
 #[test]
 fn test_cycle_breaker() {
     let sample_rate = 480000.;
-    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 3, sample_rate);
+    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 3, sample_rate);
 
     {
         let delay = context.create_delay(1. / sample_rate as f64);
@@ -245,7 +245,7 @@ fn test_cycle_breaker() {
 #[test]
 fn test_spatial() {
     // setup stereo
-    let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, 480000.);
+    let context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, 480000.);
 
     // put listener at (10, 0, 0), directed at (1, 0, 0)
     let listener = context.listener();

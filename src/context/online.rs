@@ -1,6 +1,6 @@
 //! The `AudioContext` type and constructor options
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::media::MediaStream;
+use crate::media::{MediaElement, MediaStream};
 use crate::node::{self, ChannelConfigOptions};
 use crate::AtomicF64;
 
@@ -64,7 +64,7 @@ pub struct AudioContext {
     base: ConcreteBaseAudioContext,
     /// cpal stream (play/pause functionality)
     #[cfg(not(test))] // in tests, do not set up a cpal Stream
-    stream: Mutex<Option<Stream>>,
+    stream: Arc<Mutex<Option<Stream>>>,
     /// delay between render and actual system audio output
     output_latency: Arc<AtomicF64>,
 }
@@ -129,7 +129,7 @@ impl AudioContext {
 
         Self {
             base,
-            stream: Mutex::new(Some(stream)),
+            stream: Arc::new(Mutex::new(Some(stream))),
             output_latency,
         }
     }
@@ -249,7 +249,8 @@ impl AudioContext {
         self.base().set_state(AudioContextState::Closed);
     }
 
-    /// Creates a `MediaStreamAudioSourceNode` from a [`MediaStream`]
+    /// Creates a [`MediaStreamAudioSourceNode`](node::MediaStreamAudioSourceNode) from a
+    /// [`MediaStream`]
     #[must_use]
     pub fn create_media_stream_source<M: MediaStream>(
         &self,
@@ -261,10 +262,21 @@ impl AudioContext {
         node::MediaStreamAudioSourceNode::new(self, opts)
     }
 
-    /// Creates a `MediaStreamAudioDestinationNode`
+    /// Creates a [`MediaStreamAudioDestinationNode`](node::MediaStreamAudioDestinationNode)
     #[must_use]
     pub fn create_media_stream_destination(&self) -> node::MediaStreamAudioDestinationNode {
         let opts = ChannelConfigOptions::default();
         node::MediaStreamAudioDestinationNode::new(self, opts)
+    }
+
+    /// Creates a [`MediaElementAudioSourceNode`](node::MediaElementAudioSourceNode) from a
+    /// [`MediaElement`]
+    #[must_use]
+    pub fn create_media_element_source(
+        &self,
+        media_element: &mut MediaElement,
+    ) -> node::MediaElementAudioSourceNode {
+        let opts = node::MediaElementAudioSourceOptions { media_element };
+        node::MediaElementAudioSourceNode::new(self, opts)
     }
 }
