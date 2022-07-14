@@ -1,3 +1,5 @@
+use rand::rngs::ThreadRng;
+use rand::Rng;
 use std::fs::File;
 use std::{thread, time};
 
@@ -6,60 +8,139 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 use web_audio_api::AudioBuffer;
 
 // run in release mode
-// cargo run --release --example granular
+// `cargo run --release --example granular
 
-fn trigger_grain(
-    audio_context: &AudioContext,
-    audio_buffer: &AudioBuffer,
+// nonte: the is a naive lookhead scheduler implementation, a proper implementation should:
+// - generalize to handle several engines and type of engines
+// see https://web.dev/audio-scheduling/ for some explanations
+// - run the loop in a dedicated thread
+// - use a priority queue
+struct Scheduler {
+    period: f64,
+    lookahead: f64,
+    queue: Vec<f64>,
+    audio_context: AudioContext,
+    engine: Option<ScrubEngine>,
+}
+
+impl Scheduler {
+    fn new(audio_context: AudioContext) -> Self {
+        Self {
+            period: 0.05,
+            lookahead: 0.1,
+            queue: Vec::new(),
+            audio_context,
+            engine: None,
+        }
+    }
+
+    fn add(&mut self, engine: Option<ScrubEngine>, start_time: f64) {
+        self.engine = engine;
+        self.queue.push(start_time);
+
+        loop {
+            self.tick();
+            thread::sleep(time::Duration::from_millis((self.period * 1000.) as u64));
+        }
+    }
+
+    fn tick(&mut self) {
+        let now = self.audio_context.current_time();
+        // sort queue to have smaller values at the end of the vector
+        self.queue.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        let mut head = self.queue.last().cloned();
+
+        while head.is_some() && head.unwrap() < now + self.lookahead {
+            self.queue.pop();
+
+            let trigger_time = head.unwrap();
+            let next_time = self
+                .engine
+                .as_mut()
+                .unwrap()
+                .trigger_grain(&self.audio_context, trigger_time);
+
+            if next_time.is_some() {
+                self.queue.push(next_time.unwrap());
+                self.queue.sort_by(|a, b| b.partial_cmp(a).unwrap());
+            }
+
+            head = self.queue.last().cloned();
+        }
+    }
+}
+
+struct ScrubEngine {
+    audio_buffer: AudioBuffer,
+    grain_period: f64,
+    grain_duration: f64,
     position: f64,
-    duration: f64,
-) {
-    let start_time = audio_context.current_time();
+    incr_position: f64,
+    rng: ThreadRng,
+}
 
-    let env = audio_context.create_gain();
-    env.gain().set_value(0.);
-    env.connect(&audio_context.destination());
+impl ScrubEngine {
+    fn new(audio_buffer: AudioBuffer) -> Self {
+        let grain_period = 0.01;
+        let grain_duration = 0.2;
+        let speed = 1. / 2.;
 
-    let src = audio_context.create_buffer_source();
-    src.set_buffer(audio_buffer.clone());
-    src.connect(&env);
+        Self {
+            audio_buffer,
+            grain_period,
+            grain_duration,
+            position: 0.,
+            incr_position: grain_period * speed, // half grain period to scrub half speed
+            rng: rand::thread_rng(),
+        }
+    }
 
-    // ramp
-    env.gain().set_value_at_time(0., start_time);
-    env.gain()
-        .linear_ramp_to_value_at_time(1., start_time + duration / 2.);
-    env.gain()
-        .linear_ramp_to_value_at_time(0., start_time + duration);
+    fn trigger_grain(&mut self, audio_context: &AudioContext, trigger_time: f64) -> Option<f64> {
+        // add some jitter to avoid some weird phase stuff
+        let start_time = trigger_time + self.rng.gen::<f64>() * 0.003;
 
-    src.start_at_with_offset(start_time, position);
-    src.stop_at(start_time + duration);
+        let env = audio_context.create_gain();
+        env.gain().set_value(0.);
+        env.connect(&audio_context.destination());
+
+        let src = audio_context.create_buffer_source();
+        src.set_buffer(self.audio_buffer.clone());
+        src.connect(&env);
+
+        env.gain()
+            .set_value_at_time(0., start_time)
+            .linear_ramp_to_value_at_time(1., start_time + self.grain_duration / 2.)
+            .linear_ramp_to_value_at_time(0., start_time + self.grain_duration);
+
+        src.start_at_with_offset(start_time, self.position);
+        src.stop_at(start_time + self.grain_duration);
+
+        // check if we should reverse playback
+        if self.position + self.incr_position
+            > self.audio_buffer.duration() - (self.grain_duration + 0.2)
+            || self.position + self.incr_position < 0.
+        {
+            self.incr_position *= -1.;
+        }
+        // define position for next call
+        self.position += self.incr_position;
+
+        // return the next time at which we want to trigger a grain
+        Some(trigger_time + self.grain_period)
+    }
 }
 
 fn main() {
+    env_logger::init();
+
     let audio_context = AudioContext::default();
 
-    println!("++ scrub into file forward and backward at 0.5 speed");
-
-    // grab audio buffer
     let file = File::open("samples/sample.wav").unwrap();
     let audio_buffer = audio_context.decode_audio_data_sync(file).unwrap();
 
-    let period = 0.05;
-    let grain_duration = 0.2;
-    let mut position = 0.;
-    let mut incr_position = period / 2.;
-
-    loop {
-        trigger_grain(&audio_context, &audio_buffer, position, grain_duration);
-
-        if position + incr_position > audio_buffer.duration() - (grain_duration * 2.)
-            || position + incr_position < 0.
-        {
-            incr_position *= -1.;
-        }
-
-        position += incr_position;
-
-        thread::sleep(time::Duration::from_millis((period * 1000.) as u64));
-    }
+    let scrub_engine = ScrubEngine::new(audio_buffer);
+    let start_time = audio_context.current_time();
+    // println!("++ scrub into file forward and backward at 0.5 speed");
+    let mut scheduler = Scheduler::new(audio_context);
+    scheduler.add(Some(scrub_engine), start_time);
 }
