@@ -222,10 +222,6 @@ impl DelayNode {
                     index: 0,
                     last_written_index: last_written_index_clone,
                     last_written_index_checked: None,
-                    // `internal_buffer` is used to compute the samples per channel at each frame.
-                    // Note that the `vec` will always be resized to actual buffer
-                    // number_of_channels when received on the render thread.
-                    internal_buffer: Vec::<f32>::with_capacity(crate::MAX_CHANNELS),
                     playback_infos: [(0, 0, 0, 0, 0.); RENDER_QUANTUM_SIZE],
                 };
 
@@ -268,9 +264,7 @@ struct DelayReader {
     last_written_index: Rc<Cell<Option<usize>>>,
     // local copy of shared `last_written_index` so as to avoid render ordering issues
     last_written_index_checked: Option<usize>,
-    // internal buffer used to compute output per channel at each frame
-    internal_buffer: Vec<f32>,
-    //
+    // internal buffer used to compute output delay infos for each sample
     playback_infos: [(usize, usize, usize, usize, f32); RENDER_QUANTUM_SIZE],
 }
 
@@ -403,10 +397,6 @@ impl AudioProcessor for DelayReader {
 
         // we need to rely on ring buffer to know the actual number of output channels
         let number_of_channels = ring_buffer[0].number_of_channels();
-        // resize internal buffer if needed
-        if self.internal_buffer.len() != number_of_channels {
-            self.internal_buffer.resize(number_of_channels, 0.);
-        }
 
         output.set_number_of_channels(number_of_channels);
 
