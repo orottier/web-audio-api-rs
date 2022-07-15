@@ -94,27 +94,27 @@ fn main() {
     // -------------------------------------------------------
     write!(stdout, "\r\n").unwrap();
 
-    {
-        let name = "Baseline (silence)";
+    // {
+    //     let name = "Baseline (silence)";
 
-        let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
+    //     let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
-        benchmark(&mut stdout, name, context, &mut results);
-    }
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
 
-    {
-        let name = "Simple source test without resampling (Mono)";
+    // {
+    //     let name = "Simple source test without resampling (Mono)";
 
-        let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let source = context.create_buffer_source();
-        let buf = get_buffer(&sources, sample_rate, 1);
-        source.set_buffer(buf);
-        source.set_loop(true);
-        source.connect(&context.destination());
-        source.start();
+    //     let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
+    //     let source = context.create_buffer_source();
+    //     let buf = get_buffer(&sources, sample_rate, 1);
+    //     source.set_buffer(buf);
+    //     source.set_loop(true);
+    //     source.connect(&context.destination());
+    //     source.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
-    }
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
 
     {
         let name = "Simple source test without resampling (Stereo)";
@@ -130,400 +130,420 @@ fn main() {
         benchmark(&mut stdout, name, context, &mut results);
     }
 
+    // {
+    //     let name = "Simple source test without resampling (Stereo and positionnal)";
+
+    //     let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
+
+    //     let panner = context.create_panner();
+    //     panner.connect(&context.destination());
+    //     panner.position_x().set_value(1.);
+    //     panner.position_y().set_value(2.);
+    //     panner.position_z().set_value(3.);
+    //     panner.orientation_x().set_value(1.);
+    //     panner.orientation_y().set_value(2.);
+    //     panner.orientation_z().set_value(3.);
+
+    //     let source = context.create_buffer_source();
+    //     source.connect(&panner);
+
+    //     let buf = get_buffer(&sources, sample_rate, 2);
+    //     source.set_buffer(buf);
+    //     source.set_loop(true);
+    //     source.start();
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Simple source test with resampling (Mono)";
+
+    //     let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
+    //     let source = context.create_buffer_source();
+    //     let buf = get_buffer(&sources, 38000., 1);
+    //     source.set_buffer(buf);
+    //     source.set_loop(true);
+    //     source.connect(&context.destination());
+    //     source.start();
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Simple source test with resampling (Stereo)";
+
+    //     let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
+    //     let source = context.create_buffer_source();
+    //     let buf = get_buffer(&sources, 38000., 2);
+    //     source.set_buffer(buf);
+    //     source.set_loop(true);
+    //     source.connect(&context.destination());
+    //     source.start();
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Simple source test with resampling (Stereo and positionnal)";
+
+    //     let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
+
+    //     let panner = context.create_panner();
+    //     panner.connect(&context.destination());
+    //     panner.position_x().set_value(1.);
+    //     panner.position_y().set_value(2.);
+    //     panner.position_z().set_value(3.);
+    //     panner.orientation_x().set_value(1.);
+    //     panner.orientation_y().set_value(2.);
+    //     panner.orientation_z().set_value(3.);
+
+    //     let source = context.create_buffer_source();
+    //     source.connect(&panner);
+
+    //     let buf = get_buffer(&sources, 38000., 2);
+    //     source.set_buffer(buf);
+    //     source.set_loop(true);
+    //     source.start();
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Upmix without resampling (Mono -> Stereo)";
+
+    //     let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
+    //     let source = context.create_buffer_source();
+    //     let buf = get_buffer(&sources, sample_rate, 1);
+    //     source.set_buffer(buf);
+    //     source.set_loop(true);
+    //     source.connect(&context.destination());
+    //     source.start();
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Downmix without resampling (Stereo -> Mono)";
+
+    //     let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
+    //     let source = context.create_buffer_source();
+    //     let buf = get_buffer(&sources, sample_rate, 2);
+    //     source.set_buffer(buf);
+    //     source.set_loop(true);
+    //     source.connect(&context.destination());
+    //     source.start();
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Simple mixing (100x same buffer) - be careful w/ volume here!";
+
+    //     let adjusted_duration = DURATION / 4;
+    //     let context =
+    //         OfflineAudioContext::new(1, adjusted_duration * sample_rate as usize, sample_rate);
+
+    //     for _ in 0..100 {
+    //         let source = context.create_buffer_source();
+    //         let buf = get_buffer(&sources, 38000., 1);
+    //         source.set_buffer(buf);
+    //         source.set_loop(true);
+    //         source.connect(&context.destination());
+    //         source.start();
+    //     }
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Simple mixing (100 different buffers) - be careful w/ volume here!";
+
+    //     let adjusted_duration = DURATION / 4;
+    //     let context =
+    //         OfflineAudioContext::new(1, adjusted_duration * sample_rate as usize, sample_rate);
+    //     let reference = get_buffer(&sources, 38000., 1);
+    //     let channel_data = reference.get_channel_data(0);
+
+    //     for _ in 0..100 {
+    //         let mut buffer = context.create_buffer(1, reference.length(), 38000.);
+    //         buffer.copy_to_channel(channel_data, 0);
+
+    //         let source = context.create_buffer_source();
+    //         source.set_buffer(buffer);
+    //         source.set_loop(true);
+    //         source.connect(&context.destination());
+    //         source.start();
+    //     }
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Simple mixing with gains";
+
+    //     let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
+
+    //     let gain = context.create_gain();
+    //     gain.connect(&context.destination());
+    //     gain.gain().set_value(-1.);
+
+    //     let mut gains_i = vec![];
+
+    //     for _ in 0..4 {
+    //         let gain_i = context.create_gain();
+    //         gain_i.connect(&gain);
+    //         gain_i.gain().set_value(0.25);
+    //         gains_i.push(gain_i);
+    //     }
+
+    //     for _ in 0..2 {
+    //         let buf = get_buffer(&sources, 38000., 1);
+
+    //         let source = context.create_buffer_source();
+    //         source.set_buffer(buf);
+    //         source.set_loop(true);
+    //         source.start();
+
+    //         for gain_i in gains_i.iter() {
+    //             let gain_ij = context.create_gain();
+    //             gain_ij.gain().set_value(0.5);
+    //             gain_ij.connect(gain_i);
+    //             source.connect(&gain_ij);
+    //         }
+    //     }
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Granular synthesis";
+
+    //     let adjusted_duration = DURATION as f64 / 16.;
+    //     let length = (adjusted_duration * sample_rate as f64) as usize;
+    //     let context = OfflineAudioContext::new(1, length, sample_rate);
+    //     let buffer = get_buffer(&sources, sample_rate, 1);
+    //     let mut offset = 0.;
+    //     let mut rng = rand::thread_rng();
+
+    //     // @todo - make a PR
+    //     // - problem w/ env.gain().set_value_at_time(0., offset);
+    //     // - variables are badly named, but just follow the source here
+
+    //     // this 1500 sources...
+    //     while offset < adjusted_duration {
+    //         let env = context.create_gain();
+    //         env.connect(&context.destination());
+
+    //         let src = context.create_buffer_source();
+    //         src.connect(&env);
+    //         src.set_buffer(buffer.clone());
+
+    //         let rand_start = rng.gen_range(0..1000) as f64 / 1000. * 0.5;
+    //         let rand_duration = rng.gen_range(0..1000) as f64 / 1000. * 0.999;
+    //         let start = offset * rand_start;
+    //         let end = start + 0.005 * rand_duration;
+    //         let start_release = (offset + end - start).max(0.);
+
+    //         env.gain().set_value_at_time(0., offset);
+    //         env.gain().linear_ramp_to_value_at_time(0.5, offset + 0.005);
+    //         env.gain().set_value_at_time(0.5, start_release);
+    //         env.gain()
+    //             .linear_ramp_to_value_at_time(0., start_release + 0.05);
+
+    //         src.start_at_with_offset_and_duration(offset, start, end);
+
+    //         offset += 0.005;
+    //     }
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Synth (Sawtooth with Envelope)";
+
+    //     let sample_rate = 44100.;
+    //     let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
+    //     let mut offset = 0.;
+
+    //     let duration = DURATION as f64;
+
+    //     while offset < duration {
+    //         let env = context.create_gain();
+    //         env.connect(&context.destination());
+
+    //         let osc = context.create_oscillator();
+    //         osc.connect(&env);
+    //         osc.set_type(OscillatorType::Sawtooth);
+    //         osc.frequency().set_value(110.);
+
+    //         env.gain().set_value_at_time(0., 0.);
+    //         env.gain().set_value_at_time(0.5, offset);
+    //         env.gain().set_target_at_time(0., offset + 0.01, 0.1);
+    //         osc.start_at(offset);
+    //         osc.stop_at(offset + 1.); // why not 0.1 ?
+
+    //         offset += 140. / 60. / 4.; // 140 bpm (?)
+    //     }
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Synth (Sawtooth with gain - no automation)";
+
+    //     let sample_rate = 44100.;
+    //     let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
+    //     let mut offset = 0.;
+
+    //     let duration = DURATION as f64;
+
+    //     while offset < duration {
+    //         let env = context.create_gain();
+    //         env.connect(&context.destination());
+
+    //         let osc = context.create_oscillator();
+    //         osc.connect(&env);
+    //         osc.set_type(OscillatorType::Sawtooth);
+    //         osc.frequency().set_value(110.);
+    //         osc.start_at(offset);
+    //         osc.stop_at(offset + 1.); // why not 0.1 ?
+
+    //         offset += 140. / 60. / 4.; // 140 bpm (?)
+    //     }
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Synth (Sawtooth without gain)";
+
+    //     let sample_rate = 44100.;
+    //     let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
+    //     let mut offset = 0.;
+
+    //     let duration = DURATION as f64;
+
+    //     while offset < duration {
+    //         let osc = context.create_oscillator();
+    //         osc.connect(&context.destination());
+    //         osc.set_type(OscillatorType::Sawtooth);
+    //         osc.frequency().set_value(110.);
+    //         osc.start_at(offset);
+    //         osc.stop_at(offset + 1.); // why not 0.1 ?
+
+    //         offset += 140. / 60. / 4.; // 140 bpm (?)
+    //     }
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Substractive Synth";
+
+    //     let sample_rate = 44100.;
+    //     let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
+    //     let mut offset = 0.;
+
+    //     let filter = context.create_biquad_filter();
+    //     filter.connect(&context.destination());
+    //     filter.frequency().set_value_at_time(0., 0.);
+    //     filter.q().set_value_at_time(20., 0.);
+
+    //     let env = context.create_gain();
+    //     env.connect(&filter);
+    //     env.gain().set_value_at_time(0., 0.);
+
+    //     let osc = context.create_oscillator();
+    //     osc.connect(&env);
+    //     osc.set_type(OscillatorType::Sawtooth);
+    //     osc.frequency().set_value(110.);
+    //     osc.start();
+
+    //     let duration = DURATION as f64;
+
+    //     while offset < duration {
+    //         env.gain().set_value_at_time(1., offset);
+    //         env.gain().set_target_at_time(0., offset, 0.1);
+
+    //         filter.frequency().set_value_at_time(0., offset);
+    //         filter.frequency().set_target_at_time(3500., offset, 0.03);
+
+    //         offset += 140. / 60. / 16.; // 140 bpm (?)
+    //     }
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Stereo panning";
+
+    //     let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
+
+    //     let panner = context.create_stereo_panner();
+    //     panner.connect(&context.destination());
+    //     panner.pan().set_value(0.1);
+
+    //     let src = context.create_buffer_source();
+    //     let buffer = get_buffer(&sources, sample_rate, 2);
+    //     src.connect(&panner);
+    //     src.set_buffer(buffer);
+    //     src.set_loop(true);
+    //     src.start();
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Stereo panning with automation";
+
+    //     let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
+
+    //     let panner = context.create_stereo_panner();
+    //     panner.connect(&context.destination());
+    //     panner.pan().set_value_at_time(-1., 0.);
+    //     panner.pan().set_value_at_time(0.2, 0.5);
+
+    //     let src = context.create_buffer_source();
+    //     let buffer = get_buffer(&sources, sample_rate, 2);
+    //     src.connect(&panner);
+    //     src.set_buffer(buffer);
+    //     src.set_loop(true);
+    //     src.start();
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
+    // {
+    //     let name = "Sawtooth with automation";
+
+    //     let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
+
+    //     let osc = context.create_oscillator();
+    //     osc.connect(&context.destination());
+    //     osc.set_type(OscillatorType::Sawtooth);
+    //     osc.frequency().set_value(2000.);
+    //     osc.frequency().linear_ramp_to_value_at_time(20., 10.);
+    //     osc.start_at(0.);
+
+    //     benchmark(&mut stdout, name, context, &mut results);
+    // }
+
     {
-        let name = "Simple source test without resampling (Stereo and positionnal)";
+        // derived from "Simple source test without resampling (Stereo)""
+        let name = "Stereo source with delay";
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
-        let panner = context.create_panner();
-        panner.connect(&context.destination());
-        panner.position_x().set_value(1.);
-        panner.position_y().set_value(2.);
-        panner.position_z().set_value(3.);
-        panner.orientation_x().set_value(1.);
-        panner.orientation_y().set_value(2.);
-        panner.orientation_z().set_value(3.);
+        let delay = context.create_delay(1.);
+        delay.delay_time().set_value(1.);
+        delay.connect(&context.destination());
 
         let source = context.create_buffer_source();
-        source.connect(&panner);
-
         let buf = get_buffer(&sources, sample_rate, 2);
         source.set_buffer(buf);
         source.set_loop(true);
+        source.connect(&delay);
         source.start();
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Simple source test with resampling (Mono)";
-
-        let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let source = context.create_buffer_source();
-        let buf = get_buffer(&sources, 38000., 1);
-        source.set_buffer(buf);
-        source.set_loop(true);
-        source.connect(&context.destination());
-        source.start();
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Simple source test with resampling (Stereo)";
-
-        let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
-        let source = context.create_buffer_source();
-        let buf = get_buffer(&sources, 38000., 2);
-        source.set_buffer(buf);
-        source.set_loop(true);
-        source.connect(&context.destination());
-        source.start();
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Simple source test with resampling (Stereo and positionnal)";
-
-        let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
-
-        let panner = context.create_panner();
-        panner.connect(&context.destination());
-        panner.position_x().set_value(1.);
-        panner.position_y().set_value(2.);
-        panner.position_z().set_value(3.);
-        panner.orientation_x().set_value(1.);
-        panner.orientation_y().set_value(2.);
-        panner.orientation_z().set_value(3.);
-
-        let source = context.create_buffer_source();
-        source.connect(&panner);
-
-        let buf = get_buffer(&sources, 38000., 2);
-        source.set_buffer(buf);
-        source.set_loop(true);
-        source.start();
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Upmix without resampling (Mono -> Stereo)";
-
-        let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
-        let source = context.create_buffer_source();
-        let buf = get_buffer(&sources, sample_rate, 1);
-        source.set_buffer(buf);
-        source.set_loop(true);
-        source.connect(&context.destination());
-        source.start();
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Downmix without resampling (Stereo -> Mono)";
-
-        let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let source = context.create_buffer_source();
-        let buf = get_buffer(&sources, sample_rate, 2);
-        source.set_buffer(buf);
-        source.set_loop(true);
-        source.connect(&context.destination());
-        source.start();
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Simple mixing (100x same buffer) - be careful w/ volume here!";
-
-        let adjusted_duration = DURATION / 4;
-        let context =
-            OfflineAudioContext::new(1, adjusted_duration * sample_rate as usize, sample_rate);
-
-        for _ in 0..100 {
-            let source = context.create_buffer_source();
-            let buf = get_buffer(&sources, 38000., 1);
-            source.set_buffer(buf);
-            source.set_loop(true);
-            source.connect(&context.destination());
-            source.start();
-        }
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Simple mixing (100 different buffers) - be careful w/ volume here!";
-
-        let adjusted_duration = DURATION / 4;
-        let context =
-            OfflineAudioContext::new(1, adjusted_duration * sample_rate as usize, sample_rate);
-        let reference = get_buffer(&sources, 38000., 1);
-        let channel_data = reference.get_channel_data(0);
-
-        for _ in 0..100 {
-            let mut buffer = context.create_buffer(1, reference.length(), 38000.);
-            buffer.copy_to_channel(channel_data, 0);
-
-            let source = context.create_buffer_source();
-            source.set_buffer(buffer);
-            source.set_loop(true);
-            source.connect(&context.destination());
-            source.start();
-        }
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Simple mixing with gains";
-
-        let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-
-        let gain = context.create_gain();
-        gain.connect(&context.destination());
-        gain.gain().set_value(-1.);
-
-        let mut gains_i = vec![];
-
-        for _ in 0..4 {
-            let gain_i = context.create_gain();
-            gain_i.connect(&gain);
-            gain_i.gain().set_value(0.25);
-            gains_i.push(gain_i);
-        }
-
-        for _ in 0..2 {
-            let buf = get_buffer(&sources, 38000., 1);
-
-            let source = context.create_buffer_source();
-            source.set_buffer(buf);
-            source.set_loop(true);
-            source.start();
-
-            for gain_i in gains_i.iter() {
-                let gain_ij = context.create_gain();
-                gain_ij.gain().set_value(0.5);
-                gain_ij.connect(gain_i);
-                source.connect(&gain_ij);
-            }
-        }
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Granular synthesis";
-
-        let adjusted_duration = DURATION as f64 / 16.;
-        let length = (adjusted_duration * sample_rate as f64) as usize;
-        let context = OfflineAudioContext::new(1, length, sample_rate);
-        let buffer = get_buffer(&sources, sample_rate, 1);
-        let mut offset = 0.;
-        let mut rng = rand::thread_rng();
-
-        // @todo - make a PR
-        // - problem w/ env.gain().set_value_at_time(0., offset);
-        // - variables are badly named, but just follow the source here
-
-        // this 1500 sources...
-        while offset < adjusted_duration {
-            let env = context.create_gain();
-            env.connect(&context.destination());
-
-            let src = context.create_buffer_source();
-            src.connect(&env);
-            src.set_buffer(buffer.clone());
-
-            let rand_start = rng.gen_range(0..1000) as f64 / 1000. * 0.5;
-            let rand_duration = rng.gen_range(0..1000) as f64 / 1000. * 0.999;
-            let start = offset * rand_start;
-            let end = start + 0.005 * rand_duration;
-            let start_release = (offset + end - start).max(0.);
-
-            env.gain().set_value_at_time(0., offset);
-            env.gain().linear_ramp_to_value_at_time(0.5, offset + 0.005);
-            env.gain().set_value_at_time(0.5, start_release);
-            env.gain()
-                .linear_ramp_to_value_at_time(0., start_release + 0.05);
-
-            src.start_at_with_offset_and_duration(offset, start, end);
-
-            offset += 0.005;
-        }
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Synth (Sawtooth with Envelope)";
-
-        let sample_rate = 44100.;
-        let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let mut offset = 0.;
-
-        let duration = DURATION as f64;
-
-        while offset < duration {
-            let env = context.create_gain();
-            env.connect(&context.destination());
-
-            let osc = context.create_oscillator();
-            osc.connect(&env);
-            osc.set_type(OscillatorType::Sawtooth);
-            osc.frequency().set_value(110.);
-
-            env.gain().set_value_at_time(0., 0.);
-            env.gain().set_value_at_time(0.5, offset);
-            env.gain().set_target_at_time(0., offset + 0.01, 0.1);
-            osc.start_at(offset);
-            osc.stop_at(offset + 1.); // why not 0.1 ?
-
-            offset += 140. / 60. / 4.; // 140 bpm (?)
-        }
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Synth (Sawtooth with gain - no automation)";
-
-        let sample_rate = 44100.;
-        let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let mut offset = 0.;
-
-        let duration = DURATION as f64;
-
-        while offset < duration {
-            let env = context.create_gain();
-            env.connect(&context.destination());
-
-            let osc = context.create_oscillator();
-            osc.connect(&env);
-            osc.set_type(OscillatorType::Sawtooth);
-            osc.frequency().set_value(110.);
-            osc.start_at(offset);
-            osc.stop_at(offset + 1.); // why not 0.1 ?
-
-            offset += 140. / 60. / 4.; // 140 bpm (?)
-        }
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Synth (Sawtooth without gain)";
-
-        let sample_rate = 44100.;
-        let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let mut offset = 0.;
-
-        let duration = DURATION as f64;
-
-        while offset < duration {
-            let osc = context.create_oscillator();
-            osc.connect(&context.destination());
-            osc.set_type(OscillatorType::Sawtooth);
-            osc.frequency().set_value(110.);
-            osc.start_at(offset);
-            osc.stop_at(offset + 1.); // why not 0.1 ?
-
-            offset += 140. / 60. / 4.; // 140 bpm (?)
-        }
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Substractive Synth";
-
-        let sample_rate = 44100.;
-        let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let mut offset = 0.;
-
-        let filter = context.create_biquad_filter();
-        filter.connect(&context.destination());
-        filter.frequency().set_value_at_time(0., 0.);
-        filter.q().set_value_at_time(20., 0.);
-
-        let env = context.create_gain();
-        env.connect(&filter);
-        env.gain().set_value_at_time(0., 0.);
-
-        let osc = context.create_oscillator();
-        osc.connect(&env);
-        osc.set_type(OscillatorType::Sawtooth);
-        osc.frequency().set_value(110.);
-        osc.start();
-
-        let duration = DURATION as f64;
-
-        while offset < duration {
-            env.gain().set_value_at_time(1., offset);
-            env.gain().set_target_at_time(0., offset, 0.1);
-
-            filter.frequency().set_value_at_time(0., offset);
-            filter.frequency().set_target_at_time(3500., offset, 0.03);
-
-            offset += 140. / 60. / 16.; // 140 bpm (?)
-        }
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Stereo panning";
-
-        let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
-
-        let panner = context.create_stereo_panner();
-        panner.connect(&context.destination());
-        panner.pan().set_value(0.1);
-
-        let src = context.create_buffer_source();
-        let buffer = get_buffer(&sources, sample_rate, 2);
-        src.connect(&panner);
-        src.set_buffer(buffer);
-        src.set_loop(true);
-        src.start();
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Stereo panning with automation";
-
-        let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
-
-        let panner = context.create_stereo_panner();
-        panner.connect(&context.destination());
-        panner.pan().set_value_at_time(-1., 0.);
-        panner.pan().set_value_at_time(0.2, 0.5);
-
-        let src = context.create_buffer_source();
-        let buffer = get_buffer(&sources, sample_rate, 2);
-        src.connect(&panner);
-        src.set_buffer(buffer);
-        src.set_loop(true);
-        src.start();
-
-        benchmark(&mut stdout, name, context, &mut results);
-    }
-
-    {
-        let name = "Sawtooth with automation";
-
-        let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-
-        let osc = context.create_oscillator();
-        osc.connect(&context.destination());
-        osc.set_type(OscillatorType::Sawtooth);
-        osc.frequency().set_value(2000.);
-        osc.frequency().linear_ramp_to_value_at_time(20., 10.);
-        osc.start_at(0.);
 
         benchmark(&mut stdout, name, context, &mut results);
     }
