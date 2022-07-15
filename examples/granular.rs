@@ -12,9 +12,9 @@ use web_audio_api::AudioBuffer;
 
 // nonte: the is a naive lookhead scheduler implementation, a proper implementation should:
 // - generalize to handle several engines and type of engines
-// see https://web.dev/audio-scheduling/ for some explanations
 // - run the loop in a dedicated thread
-// - use a priority queue
+// - eventually use a proper priority queue
+// see https://web.dev/audio-scheduling/ for some explanations
 struct Scheduler {
     period: f64,
     lookahead: f64,
@@ -60,8 +60,8 @@ impl Scheduler {
                 .unwrap()
                 .trigger_grain(&self.audio_context, trigger_time);
 
-            if next_time.is_some() {
-                self.queue.push(next_time.unwrap());
+            if let Some(time) = next_time {
+                self.queue.push(time);
                 self.queue.sort_by(|a, b| b.partial_cmp(a).unwrap());
             }
 
