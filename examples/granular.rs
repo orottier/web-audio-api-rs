@@ -8,9 +8,9 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 use web_audio_api::AudioBuffer;
 
 // run in release mode
-// `cargo run --release --example granular
+// `cargo run --release --example granular`
 
-// nonte: the is a naive lookhead scheduler implementation, a proper implementation should:
+// note: naive lookhead scheduler implementation, a proper implementation should:
 // - generalize to handle several engines and type of engines
 // - run the loop in a dedicated thread
 // - eventually use a proper priority queue

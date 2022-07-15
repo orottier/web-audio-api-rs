@@ -137,10 +137,10 @@ impl StreamConfigsBuilder {
     fn with_latency_hint(&mut self, latency_hint: AudioContextLatencyCategory) {
         let render_quantum_size = u32::try_from(RENDER_QUANTUM_SIZE).unwrap();
 
-        // at 44100Hz sample rate (this could be even more relaxed:
-        // render_quantum_size is 2,9ms
-        // render_quantum_size * 4 (512) is 11,6ms
-        // render_quantum_size * 8 (1024) is 23,2ms
+        // at 44100Hz sample rate (this could be even more relaxed):
+        // Interactive: 128 samples is 2,9ms
+        // Balanced:    512 samples is 11,6ms
+        // Playback:    1024 samples is 23,2ms
         let buffer_size = match latency_hint {
             AudioContextLatencyCategory::Interactive => render_quantum_size,
             AudioContextLatencyCategory::Balanced => render_quantum_size * 4,
