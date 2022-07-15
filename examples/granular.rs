@@ -132,6 +132,7 @@ impl ScrubEngine {
 
 fn main() {
     env_logger::init();
+    println!("++ scrub into file forward and backward at 0.5 speed");
 
     let audio_context = AudioContext::default();
 
@@ -140,7 +141,6 @@ fn main() {
 
     let scrub_engine = ScrubEngine::new(audio_buffer);
     let start_time = audio_context.current_time();
-    // println!("++ scrub into file forward and backward at 0.5 speed");
     let mut scheduler = Scheduler::new(audio_context);
     scheduler.add(Some(scrub_engine), start_time);
 }
