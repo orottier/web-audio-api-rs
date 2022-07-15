@@ -64,10 +64,59 @@ pub struct AudioContext {
     base: ConcreteBaseAudioContext,
     /// cpal stream (play/pause functionality)
     #[cfg(not(test))] // in tests, do not set up a cpal Stream
-    stream: Arc<Mutex<Option<Stream>>>,
+    stream: ThreadSafeClosableStream,
     /// delay between render and actual system audio output
     output_latency: Arc<AtomicF64>,
 }
+
+#[cfg(not(test))]
+mod private {
+    use super::*;
+
+    pub struct ThreadSafeClosableStream(Arc<Mutex<Option<Stream>>>);
+
+    impl ThreadSafeClosableStream {
+        pub fn new(stream: Stream) -> Self {
+            Self(Arc::new(Mutex::new(Some(stream))))
+        }
+
+        pub fn close(&self) {
+            self.0.lock().unwrap().take(); // will Drop
+        }
+
+        pub fn resume(&self) -> bool {
+            if let Some(s) = self.0.lock().unwrap().as_ref() {
+                if let Err(e) = s.play() {
+                    panic!("Error resuming cpal stream: {:?}", e);
+                }
+                return true;
+            }
+
+            false
+        }
+
+        pub fn suspend(&self) -> bool {
+            if let Some(s) = self.0.lock().unwrap().as_ref() {
+                if let Err(e) = s.pause() {
+                    panic!("Error suspending cpal stream: {:?}", e);
+                }
+                return true;
+            }
+
+            false
+        }
+    }
+
+    // SAFETY:
+    // The cpal `Stream` is marked !Sync and !Send because some platforms are not thread-safe
+    // https://github.com/RustAudio/cpal/commit/33ddf749548d87bf54ce18eb342f954cec1465b2
+    // Since we wrap the Stream in a Mutex, we should be fine
+    unsafe impl Sync for ThreadSafeClosableStream {}
+    unsafe impl Send for ThreadSafeClosableStream {}
+}
+
+#[cfg(not(test))]
+use private::ThreadSafeClosableStream;
 
 impl BaseAudioContext for AudioContext {
     fn base(&self) -> &ConcreteBaseAudioContext {
@@ -129,7 +178,7 @@ impl AudioContext {
 
         Self {
             base,
-            stream: Arc::new(Mutex::new(Some(stream))),
+            stream: ThreadSafeClosableStream::new(stream),
             output_latency,
         }
     }
@@ -198,10 +247,7 @@ impl AudioContext {
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn suspend_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        if let Some(s) = self.stream.lock().unwrap().as_ref() {
-            if let Err(e) = s.pause() {
-                panic!("Error suspending cpal stream: {:?}", e);
-            }
+        if self.stream.suspend() {
             self.base().set_state(AudioContextState::Suspended);
         }
     }
@@ -222,10 +268,7 @@ impl AudioContext {
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn resume_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        if let Some(s) = self.stream.lock().unwrap().as_ref() {
-            if let Err(e) = s.play() {
-                panic!("Error resuming cpal stream: {:?}", e);
-            }
+        if self.stream.resume() {
             self.base().set_state(AudioContextState::Running);
         }
     }
@@ -245,7 +288,8 @@ impl AudioContext {
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn close_sync(&self) {
         #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        self.stream.lock().unwrap().take(); // will Drop
+        self.stream.close();
+
         self.base().set_state(AudioContextState::Closed);
     }
 
