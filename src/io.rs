@@ -127,53 +127,70 @@ impl StreamConfigsBuilder {
     }
 
     /// set preferred sample rate
-    fn with_sample_rate(&mut self, v: f32) {
-        crate::assert_valid_sample_rate(v);
-        self.prefered.sample_rate.0 = v as u32;
+    fn with_sample_rate(&mut self, sample_rate: f32) {
+        crate::assert_valid_sample_rate(sample_rate);
+        self.prefered.sample_rate.0 = sample_rate as u32;
     }
 
-    /// buffer size
+    /// define requested hardware buffer size
     #[allow(clippy::needless_pass_by_value)]
-    fn with_latency_hint(&mut self, v: AudioContextLatencyCategory) {
-        let buffer_size: u32 = u32::try_from(RENDER_QUANTUM_SIZE).unwrap();
-        let default_buffer_size = match self.supported.buffer_size() {
-            SupportedBufferSize::Range { min, .. } => buffer_size.max(*min),
-            SupportedBufferSize::Unknown => buffer_size,
-        };
+    fn with_latency_hint(&mut self, latency_hint: AudioContextLatencyCategory) {
+        let render_quantum_size = u32::try_from(RENDER_QUANTUM_SIZE).unwrap();
 
-        let calculated = match v {
-            AudioContextLatencyCategory::Interactive => default_buffer_size,
-            AudioContextLatencyCategory::Balanced => match self.supported.buffer_size() {
-                SupportedBufferSize::Range { max, .. } => {
-                    let b = (default_buffer_size * 2).min(*max);
-                    (b + buffer_size - 1) / buffer_size * buffer_size
-                }
-                SupportedBufferSize::Unknown => {
-                    let b = default_buffer_size * 2;
-                    (b + buffer_size - 1) / buffer_size * buffer_size
-                }
-            },
-            AudioContextLatencyCategory::Playback => match self.supported.buffer_size() {
-                SupportedBufferSize::Range { max, .. } => {
-                    let b = (default_buffer_size * 4).min(*max);
-                    (b + buffer_size - 1) / buffer_size * buffer_size
-                }
-                SupportedBufferSize::Unknown => {
-                    let b = default_buffer_size * 4;
-                    (b + buffer_size - 1) / buffer_size * buffer_size
-                }
-            },
-            // b is always positive
+        // at 44100Hz sample rate (this could be even more relaxed):
+        // Interactive: 128 samples is 2,9ms
+        // Balanced:    512 samples is 11,6ms
+        // Playback:    1024 samples is 23,2ms
+        let buffer_size = match latency_hint {
+            AudioContextLatencyCategory::Interactive => render_quantum_size,
+            AudioContextLatencyCategory::Balanced => render_quantum_size * 4,
+            AudioContextLatencyCategory::Playback => render_quantum_size * 8,
+            // buffer_size is always positive and truncation is the desired behavior
             #[allow(clippy::cast_sign_loss)]
-            // truncation is the desired behavior
             #[allow(clippy::cast_possible_truncation)]
-            AudioContextLatencyCategory::Specific(t) => {
-                let b = t * f64::from(self.prefered.sample_rate.0);
-                (b as u32 + buffer_size - 1) / buffer_size * buffer_size
+            AudioContextLatencyCategory::Custom(latency) => {
+                if latency <= 0. {
+                    panic!(
+                        "RangeError - Invalid custom latency: {:?}, should be strictly positive",
+                        latency
+                    );
+                }
+
+                let buffer_size = latency as u32 * self.prefered.sample_rate.0;
+                buffer_size.next_power_of_two()
             }
         };
 
-        self.prefered.buffer_size = cpal::BufferSize::Fixed(calculated);
+        let clamped_buffer_size: u32 = match self.supported.buffer_size() {
+            SupportedBufferSize::Unknown => buffer_size,
+            // try to find the best power of two candidate in given range
+            SupportedBufferSize::Range { min, max } => {
+                let min = *min;
+                let max = *max;
+
+                if buffer_size < min {
+                    let next_power_of_two = min.next_power_of_two();
+
+                    if next_power_of_two <= max {
+                        next_power_of_two
+                    } else {
+                        min
+                    }
+                } else if buffer_size > max {
+                    let prev_power_of_two = max.next_power_of_two() / 2;
+
+                    if prev_power_of_two >= min {
+                        prev_power_of_two
+                    } else {
+                        max
+                    }
+                } else {
+                    buffer_size
+                }
+            }
+        };
+
+        self.prefered.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
     }
 
     /// builds `StreamConfigs`
@@ -379,8 +396,8 @@ pub(crate) fn build_output(
     let mut builder = StreamConfigsBuilder::new();
 
     // set specific sample rate if requested
-    if let Some(v) = options.sample_rate {
-        builder.with_sample_rate(v);
+    if let Some(sample_rate) = options.sample_rate {
+        builder.with_sample_rate(sample_rate);
     }
 
     // always try to set a decent buffer size
