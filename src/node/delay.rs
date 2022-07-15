@@ -414,6 +414,9 @@ impl AudioProcessor for DelayReader {
 
         let delay_param = params.get(&self.delay_time);
 
+        let ring_size = ring_buffer.len() as i32;
+        let ring_index = self.index as i32;
+
         for (index, delay) in delay_param.iter().enumerate() {
             // param is already clamped to max_delay_time internally, so it is
             // safe to only check lower boundary
@@ -425,12 +428,12 @@ impl AudioProcessor for DelayReader {
             // find address of the frame in the ring buffer just before `position`
             let prev_position = position.floor();
             let (prev_block_index, prev_frame_index) =
-                self.find_frame_adress_at_position(prev_position);
+                DelayReader::find_frame_adress_at_position(prev_position, ring_size, ring_index);
 
             // find address of the frame in the ring buffer just after `position`
             let next_position = position.ceil();
             let (next_block_index, next_frame_index) =
-                self.find_frame_adress_at_position(next_position);
+                DelayReader::find_frame_adress_at_position(next_position, ring_size, ring_index);
 
             // as position is negative k will be what we expect
             let k = (position - position.floor()) as f32;
@@ -474,19 +477,21 @@ impl AudioProcessor for DelayReader {
 impl DelayReader {
     #[inline(always)]
     // note that `position` is negative as we look into the past
-    fn find_frame_adress_at_position(&self, position: f64) -> (usize, usize) {
+    fn find_frame_adress_at_position(
+        position: f64,
+        ring_size: i32,
+        ring_index: i32,
+    ) -> (usize, usize) {
         let num_frames = RENDER_QUANTUM_SIZE as i32;
-        let buffer_len = self.ring_buffer.borrow().len() as i32;
-        let current_index = self.index as i32;
 
         // offset of the block in which the target sample is recorded
         // we need to be `float` here so that `floor()` behaves as expected
         let block_offset = (position / num_frames as f64).floor();
         // offset of the block in which the target sample is recorded
-        let mut block_index = current_index + block_offset as i32;
+        let mut block_index = ring_index + block_offset as i32;
         // unroll ring buffer is needed
         if block_index < 0 {
-            block_index += buffer_len;
+            block_index += ring_size;
         }
 
         // find frame index in the target block
