@@ -226,6 +226,7 @@ impl DelayNode {
                     // Note that the `vec` will always be resized to actual buffer
                     // number_of_channels when received on the render thread.
                     internal_buffer: Vec::<f32>::with_capacity(crate::MAX_CHANNELS),
+                    playback_infos: [(0, 0, 0, 0, 0.); RENDER_QUANTUM_SIZE],
                 };
 
                 let node = DelayNode {
@@ -269,6 +270,8 @@ struct DelayReader {
     last_written_index_checked: Option<usize>,
     // internal buffer used to compute output per channel at each frame
     internal_buffer: Vec<f32>,
+    //
+    playback_infos: [(usize, usize, usize, usize, f32); RENDER_QUANTUM_SIZE],
 }
 
 // SAFETY:
@@ -417,6 +420,7 @@ impl AudioProcessor for DelayReader {
         let ring_size = ring_buffer.len() as i32;
         let ring_index = self.index as i32;
 
+        // compute all infos for rendering
         for (index, delay) in delay_param.iter().enumerate() {
             // param is already clamped to max_delay_time internally, so it is
             // safe to only check lower boundary
@@ -437,22 +441,37 @@ impl AudioProcessor for DelayReader {
 
             // as position is negative k will be what we expect
             let k = (position - position.floor()) as f32;
-            let k_inv = 1. - k;
 
-            // compute linear interpolation between prev and next for each channel
-            for channel_number in 0..number_of_channels {
-                let prev_sample =
-                    ring_buffer[prev_block_index].channel_data(channel_number)[prev_frame_index];
-                let next_sample =
-                    ring_buffer[next_block_index].channel_data(channel_number)[next_frame_index];
+            self.playback_infos[index] = (
+                prev_block_index,
+                prev_frame_index,
+                next_block_index,
+                next_frame_index,
+                k,
+            );
+        }
 
-                let value = k_inv * prev_sample + k * next_sample;
+        // render channels aligned
+        for (channel_number, channel) in output.channels_mut().iter_mut().enumerate() {
+            channel
+                .iter_mut()
+                .zip(self.playback_infos.iter())
+                .for_each(|(o, infos)| {
+                    let (
+                        prev_block_index,
+                        prev_frame_index,
+                        next_block_index,
+                        next_frame_index,
+                        k,
+                    ) = *infos;
 
-                self.internal_buffer[channel_number] = value;
-            }
+                    let prev_sample =
+                        ring_buffer[prev_block_index].channel_data(channel_number)[prev_frame_index];
+                    let next_sample =
+                        ring_buffer[next_block_index].channel_data(channel_number)[next_frame_index];
 
-            // populate output at index w/ internal_buffer
-            output.set_channels_values_at(index, &self.internal_buffer);
+                    *o = (1. - k) * prev_sample + k * next_sample;
+                });
         }
 
         if matches!(self.last_written_index_checked, Some(index) if index == self.index) {
