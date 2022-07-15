@@ -30,7 +30,7 @@ pub enum AudioContextLatencyCategory {
     /// Specify the number of seconds of latency
     /// this latency is not guaranted to be applied,
     /// it depends on the audio hardware capabilities
-    Specific(f64),
+    Custom(f64),
 }
 
 impl Default for AudioContextLatencyCategory {
