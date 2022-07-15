@@ -12,12 +12,15 @@ use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::render::AudioProcessor;
 use crate::{node, AudioListener};
 
+use async_trait::async_trait;
+
 /// The interface representing an audio-processing graph built from audio modules linked together,
 /// each represented by an `AudioNode`.
 ///
 /// An audio context controls both the creation of the nodes it contains and the execution of the
 /// audio processing, or decoding.
 #[allow(clippy::module_name_repetitions)]
+#[async_trait]
 pub trait BaseAudioContext {
     /// Returns the [`BaseAudioContext`] concrete type associated with this `AudioContext`
     fn base(&self) -> &ConcreteBaseAudioContext;
@@ -46,6 +49,55 @@ pub trait BaseAudioContext {
     /// buffer, and any other [`std::io::Read`] implementor. The data if buffered internally so you
     /// should not wrap the source in a `BufReader`.
     ///
+    /// # Errors
+    ///
+    /// This method returns an Error in various cases (IO, mime sniffing, decoding).
+    ///
+    /// # Usage
+    ///
+    /// ```
+    /// # futures::executor::block_on(async {
+    /// use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
+    /// use futures::join;
+    /// use std::fs::File;
+    ///
+    /// let context = OfflineAudioContext::new(2, 44_100, 44_100.);
+    /// let d1 = context.decode_audio_data(File::open("samples/sample.wav").unwrap());
+    /// let d2 = context.decode_audio_data(File::open("samples/sample.mp3").unwrap());
+    ///
+    /// let (b1, b2) = join!(d1, d2); // run concurrently
+    /// # });
+    /// ```
+    async fn decode_audio_data<R: std::io::Read + Send + Sync + 'static>(
+        &self,
+        input: R,
+    ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
+        let (send, recv) = futures_channel::oneshot::channel();
+
+        // We need a 'static reference to this audio context because the decoding work may outlive
+        // the main thread. Fortunately the ConcreteBaseAudioContext is just an `Arc` wrapper so it
+        // can be cheaply cloned and will live as long as required.
+        let static_base = self.base().clone();
+
+        // This is not truly async, a thread per job is undesirable if you decode many small files,
+        // todo introduce a global threadpool. And later - use a true async (non blocking) decoder
+        // lib
+        std::thread::spawn(move || {
+            let _ = send.send(static_base.decode_audio_data_sync(input));
+        });
+
+        recv.await.unwrap()
+    }
+
+    /// Decode an [`AudioBuffer`] from a given input stream.
+    ///
+    /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
+    ///
+    /// In addition to the official spec, the input parameter can be any byte stream (not just an
+    /// array). This means you can decode audio data from a file, network stream, or in memory
+    /// buffer, and any other [`std::io::Read`] implementor. The data if buffered internally so you
+    /// should not wrap the source in a `BufReader`.
+    ///
     /// This function operates synchronously, which may be undesirable on the control thread. The
     /// example shows how to avoid this. An async version is currently not implemented.
     ///
@@ -55,7 +107,7 @@ pub trait BaseAudioContext {
     ///
     /// # Usage
     ///
-    /// ```no_run
+    /// ```
     /// use std::io::Cursor;
     /// use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
     ///

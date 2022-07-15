@@ -26,11 +26,14 @@ smallvec = "1.8"
 once_cell = "1.10"
 symphonia = { version = "0.5", default-features = false }
 creek = "0.2.1"
+futures-channel = "0.3.21"
+async-trait = "0.1.56"
 
 [dev-dependencies]
 rand = "0.8"
 alloc_counter = "0.0.4"
 env_logger = "0.9"
+futures = "0.3.21"
 
 # used in examples/mic_playback.rs:
 simplelog = "0.11"
