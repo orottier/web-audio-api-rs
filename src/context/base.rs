@@ -49,6 +49,16 @@ pub trait BaseAudioContext {
     /// buffer, and any other [`std::io::Read`] implementor. The data if buffered internally so you
     /// should not wrap the source in a `BufReader`.
     ///
+    /// A synchronous version of this method is provided by
+    /// [`BaseAudioContext::decode_audio_data_sync`].
+    ///
+    /// # Async caveats
+    ///
+    /// The current implementation is not truly async because the underlying decoder still uses
+    /// blocking IO. This will be fixed in a later version. For now, a thread pool is used
+    /// internally which allows you to spawn the returned future on your default executor without
+    /// blocking progress of other tasks.
+    ///
     /// # Errors
     ///
     /// This method returns an Error in various cases (IO, mime sniffing, decoding).
@@ -99,7 +109,8 @@ pub trait BaseAudioContext {
     /// should not wrap the source in a `BufReader`.
     ///
     /// This function operates synchronously, which may be undesirable on the control thread. The
-    /// example shows how to avoid this. An async version is currently not implemented.
+    /// example shows how to avoid this. An asynchronous version of this method is provided by
+    /// [`BaseAudioContext::decode_audio_data`].
     ///
     /// # Errors
     ///

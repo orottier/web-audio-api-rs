@@ -100,8 +100,42 @@ impl OfflineAudioContext {
 
     /// Given the current connections and scheduled changes, starts rendering audio.
     ///
+    /// Rendering an OfflineAudioContext is CPU-bound (involves no IO, and no `.await` points) so
+    /// for large renderings you will probably want to run this future on a 'blocking thread', e.g.
+    /// <https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html>
+    ///
+    /// A synchronous version of this method is provided by
+    /// [`OfflineAudioContext::start_rendering_sync`].
+    ///
+    /// # Usage
+    ///
+    /// ```
+    /// # futures::executor::block_on(async {
+    /// use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
+    /// use futures::join;
+    ///
+    /// let c1 = OfflineAudioContext::new(2, 44_100, 44_100.);
+    /// // add nodes, etc
+    ///
+    /// let c2 = OfflineAudioContext::new(2, 44_100, 44_100.);
+    /// // add nodes, etc
+    ///
+    /// let d1 = c1.start_rendering();
+    /// let d2 = c2.start_rendering();
+    ///
+    /// let (b1, b2) = join!(d1, d2); // run concurrently
+    /// # });
+    /// ```
+    pub async fn start_rendering(self) -> AudioBuffer {
+        async move { self.start_rendering_sync() }.await
+    }
+
+    /// Given the current connections and scheduled changes, starts rendering audio.
+    ///
     /// This function will block the current thread and returns the rendered `AudioBuffer`
-    /// synchronously. An async version is currently not implemented.
+    /// synchronously, which may be undesirable on the control thread. An asynchronous version of
+    /// this method is provided by
+    /// [`OfflineAudioContext::start_rendering`]
     pub fn start_rendering_sync(self) -> AudioBuffer {
         // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
         // the desired number of frames.
