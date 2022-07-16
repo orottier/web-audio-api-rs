@@ -73,6 +73,7 @@ pub struct AudioContext {
 mod private {
     use super::*;
 
+    #[derive(Clone)]
     pub struct ThreadSafeClosableStream(Arc<Mutex<Option<Stream>>>);
 
     impl ThreadSafeClosableStream {
@@ -234,8 +235,7 @@ impl AudioContext {
     /// This will temporarily halt audio hardware access and reducing CPU/battery usage in the
     /// process.
     ///
-    /// This function operates synchronously and might block the current thread. An async version
-    /// is currently not implemented.
+    /// This function operates synchronously and might block the current thread.
     ///
     /// # Panics
     ///
@@ -252,11 +252,38 @@ impl AudioContext {
         }
     }
 
+    /// Suspends the progression of time in the audio context.
+    ///
+    /// This will temporarily halt audio hardware access and reducing CPU/battery usage in the
+    /// process.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * The audio device is not available
+    /// * For a `BackendSpecificError`
+    #[cfg(not(test))]
+    pub async fn suspend(&self) {
+        // The cpal backend does not provide callback info after suspending, so just async run the
+        // sync version. When we add other backends this might change.
+
+        // make 'static vars for ease of use
+        let stream = self.stream.clone();
+        let base = self.base().clone();
+
+        async move {
+            if stream.suspend() {
+                base.set_state(AudioContextState::Suspended);
+            }
+        }
+        .await
+    }
+
     /// Resumes the progression of time in an audio context that has previously been
     /// suspended/paused.
     ///
-    /// This function operates synchronously and might block the current thread. An async version
-    /// is currently not implemented.
+    /// This function operates synchronously and might block the current thread.
     ///
     /// # Panics
     ///
@@ -273,13 +300,38 @@ impl AudioContext {
         }
     }
 
+    /// Resumes the progression of time in an audio context that has previously been
+    /// suspended/paused.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * The audio device is not available
+    /// * For a `BackendSpecificError`
+    #[cfg(not(test))]
+    pub async fn resume(&self) {
+        // The cpal backend does not provide callback info after resuming, so just async run the
+        // sync version. When we add other backends this might change.
+
+        // make 'static vars for ease of use
+        let stream = self.stream.clone();
+        let base = self.base().clone();
+
+        async move {
+            if stream.resume() {
+                base.set_state(AudioContextState::Running);
+            }
+        }
+        .await
+    }
+
     /// Closes the `AudioContext`, releasing the system resources being used.
     ///
     /// This will not automatically release all `AudioContext`-created objects, but will suspend
     /// the progression of the currentTime, and stop processing audio data.
     ///
-    /// This function operates synchronously and might block the current thread. An async version
-    /// is currently not implemented.
+    /// This function operates synchronously and might block the current thread.
     ///
     /// # Panics
     ///
@@ -291,6 +343,30 @@ impl AudioContext {
         self.stream.close();
 
         self.base().set_state(AudioContextState::Closed);
+    }
+
+    /// Closes the `AudioContext`, releasing the system resources being used.
+    ///
+    /// This will not automatically release all `AudioContext`-created objects, but will suspend
+    /// the progression of the currentTime, and stop processing audio data.
+    ///
+    /// # Panics
+    ///
+    /// Will panic when this function is called multiple times
+    #[cfg(not(test))]
+    pub async fn close(&self) {
+        // The cpal backend does not provide callback info after resuming, so just async run the
+        // sync version. When we add other backends this might change.
+
+        // make 'static vars for ease of use
+        let stream = self.stream.clone();
+        let base = self.base().clone();
+
+        async move {
+            stream.close();
+            base.set_state(AudioContextState::Closed);
+        }
+        .await
     }
 
     /// Creates a [`MediaStreamAudioSourceNode`](node::MediaStreamAudioSourceNode) from a
