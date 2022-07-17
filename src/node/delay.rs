@@ -425,43 +425,44 @@ impl AudioProcessor for DelayReader {
         let ring_size = ring_buffer.len() as i32;
         let ring_index = self.index as i32;
 
-        // compute all infos for rendering
-        for (index, delay) in delay_param.iter().enumerate() {
-            // param is already clamped to max_delay_time internally, so it is
-            // safe to only check lower boundary
-            let clamped_delay = (*delay as f64).max(quantum_duration);
-            let num_samples = clamped_delay * sample_rate;
-            // negative position of the playhead relative to this block start
-            let position = index as f64 - num_samples;
-
-            // find address of the frame in the ring buffer just before `position`
-            let prev_position = position.floor();
-            let (prev_block_index, prev_frame_index) =
-                DelayReader::find_frame_adress_at_position(prev_position, ring_size, ring_index);
-
-            // find address of the frame in the ring buffer just after `position`
-            let next_position = position.ceil();
-            let (next_block_index, next_frame_index) =
-                DelayReader::find_frame_adress_at_position(next_position, ring_size, ring_index);
-
-            // as position is negative k will be what we expect
-            let k = (position - position.floor()) as f32;
-
-            self.playback_infos[index] = PlaybackInfo {
-                prev_block_index,
-                prev_frame_index,
-                next_block_index,
-                next_frame_index,
-                k,
-            };
-        }
-
         // render channels aligned
         for (channel_number, channel) in output.channels_mut().iter_mut().enumerate() {
             channel
                 .iter_mut()
-                .zip(self.playback_infos.iter())
-                .for_each(|(o, infos)| {
+                .enumerate()
+                .zip(delay_param.iter())
+                .zip(self.playback_infos.iter_mut())
+                .for_each(|(((index, o), delay), infos)| {
+                    if channel_number == 0 {
+                        // param is already clamped to max_delay_time internally, so it is
+                        // safe to only check lower boundary
+                        let clamped_delay = (*delay as f64).max(quantum_duration);
+                        let num_samples = clamped_delay * sample_rate;
+                        // negative position of the playhead relative to this block start
+                        let position = index as f64 - num_samples;
+
+                        // find address of the frame in the ring buffer just before `position`
+                        let prev_position = position.floor();
+                        let (prev_block_index, prev_frame_index) =
+                            DelayReader::find_frame_adress_at_position(prev_position, ring_size, ring_index);
+
+                        // find address of the frame in the ring buffer just after `position`
+                        let next_position = position.ceil();
+                        let (next_block_index, next_frame_index) =
+                            DelayReader::find_frame_adress_at_position(next_position, ring_size, ring_index);
+
+                        // as position is negative k will be what we expect
+                        let k = (position - position.floor()) as f32;
+
+                        *infos = PlaybackInfo {
+                            prev_block_index,
+                            prev_frame_index,
+                            next_block_index,
+                            next_frame_index,
+                            k,
+                        };
+                    }
+
                     let PlaybackInfo {
                         prev_block_index,
                         prev_frame_index,
