@@ -470,10 +470,10 @@ impl AudioProcessor for DelayReader {
                         k,
                     } = *infos;
 
-                    let prev_sample =
-                        ring_buffer[prev_block_index].channel_data(channel_number)[prev_frame_index];
-                    let next_sample =
-                        ring_buffer[next_block_index].channel_data(channel_number)[next_frame_index];
+                    let prev_sample = ring_buffer[prev_block_index].channel_data(channel_number)
+                        [prev_frame_index];
+                    let next_sample = ring_buffer[next_block_index].channel_data(channel_number)
+                        [next_frame_index];
 
                     *o = (1. - k) * prev_sample + k * next_sample;
                 });

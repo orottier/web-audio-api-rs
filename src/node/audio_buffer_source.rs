@@ -516,7 +516,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
                 self.playback_infos[index] = Some(PlaybackInfo {
                     prev_frame_index,
-                    k
+                    k,
                 });
             } else {
                 self.playback_infos[index] = None;
@@ -545,7 +545,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                         *o = match playhead {
                             Some(PlaybackInfo {
                                 prev_frame_index,
-                                k
+                                k,
                             }) => {
                                 // `prev_frame_index` cannot be out of bounds
                                 let prev_sample = buffer_channel[*prev_frame_index];
