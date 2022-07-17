@@ -30,6 +30,15 @@ impl Default for DelayOptions {
     }
 }
 
+#[derive(Copy, Clone)]
+struct DelayPlaybackInfo {
+    prev_block_index: usize,
+    prev_frame_index: usize,
+    next_block_index: usize,
+    next_frame_index: usize,
+    k: f32,
+}
+
 /// Node that delays the incoming audio signal by a certain amount
 ///
 /// The current implementation does not allow for zero delay. The minimum delay is one render
@@ -222,7 +231,13 @@ impl DelayNode {
                     index: 0,
                     last_written_index: last_written_index_clone,
                     last_written_index_checked: None,
-                    playback_infos: [(0, 0, 0, 0, 0.); RENDER_QUANTUM_SIZE],
+                    playback_infos: [DelayPlaybackInfo {
+                        prev_block_index: 0,
+                        prev_frame_index: 0,
+                        next_block_index: 0,
+                        next_frame_index: 0,
+                        k: 0.,
+                    }; RENDER_QUANTUM_SIZE],
                 };
 
                 let node = DelayNode {
@@ -265,7 +280,7 @@ struct DelayReader {
     // local copy of shared `last_written_index` so as to avoid render ordering issues
     last_written_index_checked: Option<usize>,
     // internal buffer used to compute output delay infos for each sample
-    playback_infos: [(usize, usize, usize, usize, f32); RENDER_QUANTUM_SIZE],
+    playback_infos: [DelayPlaybackInfo; RENDER_QUANTUM_SIZE],
 }
 
 // SAFETY:
@@ -432,13 +447,13 @@ impl AudioProcessor for DelayReader {
             // as position is negative k will be what we expect
             let k = (position - position.floor()) as f32;
 
-            self.playback_infos[index] = (
+            self.playback_infos[index] = DelayPlaybackInfo {
                 prev_block_index,
                 prev_frame_index,
                 next_block_index,
                 next_frame_index,
                 k,
-            );
+            };
         }
 
         // render channels aligned
@@ -447,13 +462,13 @@ impl AudioProcessor for DelayReader {
                 .iter_mut()
                 .zip(self.playback_infos.iter())
                 .for_each(|(o, infos)| {
-                    let (
+                    let DelayPlaybackInfo {
                         prev_block_index,
                         prev_frame_index,
                         next_block_index,
                         next_frame_index,
                         k,
-                    ) = *infos;
+                    } = *infos;
 
                     let prev_sample =
                         ring_buffer[prev_block_index].channel_data(channel_number)[prev_frame_index];
