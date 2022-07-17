@@ -444,12 +444,20 @@ impl AudioProcessor for DelayReader {
                         // find address of the frame in the ring buffer just before `position`
                         let prev_position = position.floor();
                         let (prev_block_index, prev_frame_index) =
-                            DelayReader::find_frame_adress_at_position(prev_position, ring_size, ring_index);
+                            DelayReader::find_frame_adress_at_position(
+                                prev_position,
+                                ring_size,
+                                ring_index,
+                            );
 
                         // find address of the frame in the ring buffer just after `position`
                         let next_position = position.ceil();
                         let (next_block_index, next_frame_index) =
-                            DelayReader::find_frame_adress_at_position(next_position, ring_size, ring_index);
+                            DelayReader::find_frame_adress_at_position(
+                                next_position,
+                                ring_size,
+                                ring_index,
+                            );
 
                         // as position is negative k will be what we expect
                         let k = (position - position.floor()) as f32;
