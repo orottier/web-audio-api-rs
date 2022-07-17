@@ -31,7 +31,7 @@ impl Default for DelayOptions {
 }
 
 #[derive(Copy, Clone)]
-struct DelayPlaybackInfo {
+struct PlaybackInfo {
     prev_block_index: usize,
     prev_frame_index: usize,
     next_block_index: usize,
@@ -231,7 +231,7 @@ impl DelayNode {
                     index: 0,
                     last_written_index: last_written_index_clone,
                     last_written_index_checked: None,
-                    playback_infos: [DelayPlaybackInfo {
+                    playback_infos: [PlaybackInfo {
                         prev_block_index: 0,
                         prev_frame_index: 0,
                         next_block_index: 0,
@@ -280,7 +280,7 @@ struct DelayReader {
     // local copy of shared `last_written_index` so as to avoid render ordering issues
     last_written_index_checked: Option<usize>,
     // internal buffer used to compute output delay infos for each sample
-    playback_infos: [DelayPlaybackInfo; RENDER_QUANTUM_SIZE],
+    playback_infos: [PlaybackInfo; RENDER_QUANTUM_SIZE],
 }
 
 // SAFETY:
@@ -447,7 +447,7 @@ impl AudioProcessor for DelayReader {
             // as position is negative k will be what we expect
             let k = (position - position.floor()) as f32;
 
-            self.playback_infos[index] = DelayPlaybackInfo {
+            self.playback_infos[index] = PlaybackInfo {
                 prev_block_index,
                 prev_frame_index,
                 next_block_index,
@@ -462,7 +462,7 @@ impl AudioProcessor for DelayReader {
                 .iter_mut()
                 .zip(self.playback_infos.iter())
                 .for_each(|(o, infos)| {
-                    let DelayPlaybackInfo {
+                    let PlaybackInfo {
                         prev_block_index,
                         prev_frame_index,
                         next_block_index,

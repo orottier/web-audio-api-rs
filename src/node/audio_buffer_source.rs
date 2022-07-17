@@ -45,6 +45,12 @@ impl Default for AudioBufferSourceOptions {
 
 struct AudioBufferMessage(AudioBuffer);
 
+#[derive(Copy, Clone)]
+struct PlaybackInfo {
+    prev_frame_index: usize,
+    k: f32,
+}
+
 /// `AudioBufferSourceNode` represents an audio source that consists of an
 /// in-memory audio source (i.e. an audio file completely loaded in memory),
 /// stored in an [`AudioBuffer`].
@@ -327,7 +333,7 @@ struct AudioBufferSourceRenderer {
     render_state: AudioBufferRendererState,
     /// Internal buffer used to store playback infos to compute the samples
     /// according to the source buffer. (prev_sample_index, k)
-    playback_infos: [Option<(usize, f32)>; RENDER_QUANTUM_SIZE],
+    playback_infos: [Option<PlaybackInfo>; RENDER_QUANTUM_SIZE],
 }
 
 impl AudioProcessor for AudioBufferSourceRenderer {
@@ -505,10 +511,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 let position = self.render_state.buffer_time * sampling_ratio;
                 let playhead = position * sample_rate;
                 let playhead_floored = playhead.floor();
-                let prev_index = playhead_floored as usize; // can't be < 0.
+                let prev_frame_index = playhead_floored as usize; // can't be < 0.
                 let k = (playhead - playhead_floored) as f32;
 
-                self.playback_infos[index] = Some((prev_index, k));
+                self.playback_infos[index] = Some(PlaybackInfo {
+                    prev_frame_index,
+                    k
+                });
             } else {
                 self.playback_infos[index] = None;
             }
@@ -534,10 +543,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     .zip(output_channel.iter_mut())
                     .for_each(|(playhead, o)| {
                         *o = match playhead {
-                            Some((prev_index, k)) => {
-                                // `prev_index` cannot be out of bounds
-                                let prev_sample = buffer_channel[*prev_index];
-                                let next_sample = match buffer_channel.get(prev_index + 1) {
+                            Some(PlaybackInfo {
+                                prev_frame_index,
+                                k
+                            }) => {
+                                // `prev_frame_index` cannot be out of bounds
+                                let prev_sample = buffer_channel[*prev_frame_index];
+                                let next_sample = match buffer_channel.get(prev_frame_index + 1) {
                                     Some(val) => *val,
                                     None => 0.,
                                 };
