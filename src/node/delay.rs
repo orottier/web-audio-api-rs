@@ -418,6 +418,11 @@ impl AudioProcessor for DelayReader {
 
         let mut playback_infos = [PlaybackInfo::default(); RENDER_QUANTUM_SIZE];
 
+        // A DelayNode in a cycle is actively processing only when the absolute
+        // value of any output sample for the current render quantum is greater
+        // than or equal to 2−126.
+        let mut is_actively_processing = false;
+
         // render channels aligned
         for (channel_number, channel) in output.channels_mut().iter_mut().enumerate() {
             channel
@@ -477,8 +482,18 @@ impl AudioProcessor for DelayReader {
                     let next_sample = ring_buffer[next_block_index].channel_data(channel_number)
                         [next_frame_index];
 
+                    let value = (1. - k) * prev_sample + k * next_sample;
+
+                    if value.abs() >= 2e-126 {
+                        is_actively_processing = true;
+                    }
+
                     *o = (1. - k) * prev_sample + k * next_sample;
                 });
+        }
+
+        if !is_actively_processing {
+            output.make_silent();
         }
 
         if matches!(self.last_written_index_checked, Some(index) if index == self.index) {

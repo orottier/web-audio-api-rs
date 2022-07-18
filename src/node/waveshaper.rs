@@ -292,6 +292,11 @@ impl AudioProcessor for WaveShaperRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
+        if input.is_silent() {
+            output.make_silent();
+            return false;
+        }
+
         // Check if a curve have been set at k-rate
         if let Ok(msg) = self.receiver.try_recv() {
             self.curve = Some(msg.0);

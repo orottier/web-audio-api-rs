@@ -248,6 +248,10 @@ impl AudioRenderQuantum {
         &mut self.channels[..]
     }
 
+    pub fn is_silent(&self) -> bool {
+        !self.channels.iter().any(|channel| !channel.is_silent())
+    }
+
     /// Up/Down-mix to the desired number of channels
     ///
     /// # Panics
@@ -1408,5 +1412,51 @@ mod tests {
             &[1.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
+    }
+
+    #[test]
+    fn test_is_silent_quantum() {
+        let alloc = Alloc::with_capacity(1);
+
+        // create 2 channel silent buffer
+        let signal = alloc.silence();
+        let mut buffer = AudioRenderQuantum::from(signal);
+        buffer.mix(2, ChannelInterpretation::Speakers);
+
+        assert_float_eq!(
+            &buffer.channel_data(0)[..],
+            &[0.; RENDER_QUANTUM_SIZE][..],
+            abs_all <= 0.
+        );
+        assert_float_eq!(
+            &buffer.channel_data(1)[..],
+            &[0.; RENDER_QUANTUM_SIZE][..],
+            abs_all <= 0.
+        );
+
+        assert!(buffer.is_silent());
+    }
+
+    #[test]
+    fn test_is_not_silent_quantum() {
+        let alloc = Alloc::with_capacity(1);
+
+        // create 2 channel silent buffer
+        let mut signal = alloc.silence();
+        signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
+        let mut buffer = AudioRenderQuantum::from(signal);
+        buffer.mix(2, ChannelInterpretation::Discrete);
+
+        assert_float_eq!(
+            &buffer.channel_data(0)[..],
+            &[1.; RENDER_QUANTUM_SIZE][..],
+            abs_all <= 0.
+        );
+        assert_float_eq!(
+            &buffer.channel_data(1)[..],
+            &[0.; RENDER_QUANTUM_SIZE][..],
+            abs_all <= 0.
+        );
+        assert!(!buffer.is_silent());
     }
 }

@@ -94,8 +94,12 @@ impl AudioProcessor for GainRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        let gain_values = params.get(&self.gain);
+        if input.is_silent() {
+            output.make_silent();
+            return false;
+        }
 
+        let gain_values = params.get(&self.gain);
         *output = input.clone();
 
         output.modify_channels(|channel| {
