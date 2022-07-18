@@ -1036,7 +1036,7 @@ impl AudioParamProcessor {
 
                                 // compute "real" value according to `t` then clamp it
                                 // cf. Example 7 https://www.w3.org/TR/webaudio/#computation-of-value
-                                if end_index_clipped > self.buffer.len() {
+                                if end_index_clipped > start_index {
                                     let mut time = block_time + start_index as f64 * dt;
 
                                     for _ in start_index..end_index_clipped {
@@ -1141,7 +1141,7 @@ impl AudioParamProcessor {
                                         ((end_time - block_time).max(0.) / dt).ceil() as usize;
                                     let end_index_clipped = end_index.min(count);
 
-                                    if end_index_clipped > self.buffer.len() {
+                                    if end_index_clipped > start_index {
                                         let mut time = block_time + start_index as f64 * dt;
 
                                         for _ in start_index..end_index_clipped {
@@ -1272,7 +1272,7 @@ impl AudioParamProcessor {
                                     ((end_time - block_time).max(0.) / dt).ceil() as usize;
                                 let end_index_clipped = end_index.min(count);
 
-                                if end_index_clipped > self.buffer.len() {
+                                if end_index_clipped > start_index {
                                     let mut time = block_time + start_index as f64 * dt;
 
                                     for _ in start_index..end_index_clipped {
@@ -1347,7 +1347,7 @@ impl AudioParamProcessor {
                                     ((end_time - block_time).max(0.) / dt).ceil() as usize;
                                 let end_index_clipped = end_index.min(count);
 
-                                if end_index_clipped > self.buffer.len() {
+                                if end_index_clipped > start_index {
                                     let mut time = block_time + start_index as f64 * dt;
 
                                     for _ in start_index..end_index_clipped {
