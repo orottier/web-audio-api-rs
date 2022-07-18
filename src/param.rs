@@ -629,7 +629,7 @@ impl AudioParamProcessor {
         time: f64,
     ) -> f32 {
         let phase = (time - start_time) / duration;
-        let value = start_value + diff * phase as f32;
+        let value = diff.mul_add(phase as f32, start_value);
         value.clamp(self.min_value, self.max_value)
     }
 
@@ -659,7 +659,7 @@ impl AudioParamProcessor {
         time: f64,
     ) -> f32 {
         let exponent = -1. * ((time - start_time) / time_constant);
-        let value = end_value + diff * exponent.exp() as f32;
+        let value = diff.mul_add(exponent.exp() as f32, end_value);
         value.clamp(self.min_value, self.max_value)
     }
 
@@ -680,7 +680,7 @@ impl AudioParamProcessor {
             let position = (values.len() - 1) as f64 * (time - start_time) / duration;
             let k = position as usize;
             let phase = (position - position.floor()) as f32;
-            let value = (values[k + 1] - values[k]) * phase + values[k];
+            let value = (values[k + 1] - values[k]).mul_add(phase, values[k]);
             value.clamp(self.min_value, self.max_value)
         }
     }
@@ -946,7 +946,7 @@ impl AudioParamProcessor {
         self.current_value.store(self.intrisic_value());
         self.buffer.clear();
 
-        let next_block_time = block_time + dt * count as f64;
+        let next_block_time = dt.mul_add(count as f64, block_time);
         let is_a_rate = self.is_a_rate.load(Ordering::SeqCst);
         let is_k_rate = !is_a_rate;
 
@@ -1037,7 +1037,7 @@ impl AudioParamProcessor {
                                 // compute "real" value according to `t` then clamp it
                                 // cf. Example 7 https://www.w3.org/TR/webaudio/#computation-of-value
                                 if end_index_clipped > start_index {
-                                    let mut time = block_time + start_index as f64 * dt;
+                                    let mut time = (start_index as f64).mul_add(dt, block_time);
 
                                     for _ in start_index..end_index_clipped {
                                         let value = self.compute_linear_ramp_sample(
@@ -1142,7 +1142,7 @@ impl AudioParamProcessor {
                                     let end_index_clipped = end_index.min(count);
 
                                     if end_index_clipped > start_index {
-                                        let mut time = block_time + start_index as f64 * dt;
+                                        let mut time = (start_index as f64).mul_add(dt, block_time);
 
                                         for _ in start_index..end_index_clipped {
                                             let value = self.compute_exponential_ramp_sample(
@@ -1273,7 +1273,7 @@ impl AudioParamProcessor {
                                 let end_index_clipped = end_index.min(count);
 
                                 if end_index_clipped > start_index {
-                                    let mut time = block_time + start_index as f64 * dt;
+                                    let mut time = (start_index as f64).mul_add(dt, block_time);
 
                                     for _ in start_index..end_index_clipped {
                                         let value = self.compute_set_target_sample(
@@ -1348,7 +1348,7 @@ impl AudioParamProcessor {
                                 let end_index_clipped = end_index.min(count);
 
                                 if end_index_clipped > start_index {
-                                    let mut time = block_time + start_index as f64 * dt;
+                                    let mut time = (start_index as f64).mul_add(dt, block_time);
 
                                     for _ in start_index..end_index_clipped {
                                         let value = self.compute_set_value_curve_sample(
@@ -1799,11 +1799,11 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 3., 3., 3., 3., 2., 1.][..],
-            abs_all <= 0.
+            abs_all <= 1e-6
         );
 
         let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 1e-6);
     }
 
     #[test]
