@@ -595,6 +595,7 @@ impl AudioProcessor for AudioParamProcessor {
         scope: &RenderScope,
     ) -> bool {
         let period = 1. / scope.sample_rate as f64;
+
         let param_intrisic_values_clamped =
             self.tick(scope.current_time, period, RENDER_QUANTUM_SIZE);
 
@@ -612,6 +613,19 @@ impl AudioProcessor for AudioParamProcessor {
 }
 
 impl AudioParamProcessor {
+    // warning: tick in called directly in the unit tests so everything important
+    // for the tests should be done here
+    fn tick(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
+        self.handle_incoming_events();
+        self.compute_buffer(block_time, dt, count);
+
+        let min = self.min_value;
+        let max = self.max_value;
+        self.buffer.iter_mut().for_each(|s| *s = s.clamp(min, max));
+
+        self.buffer.as_slice()
+    }
+
     pub fn intrisic_value(&self) -> f32 {
         if self.intrisic_value.is_nan() {
             self.default_value
@@ -682,9 +696,7 @@ impl AudioParamProcessor {
         }
     }
 
-    fn tick(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
-        // handle incoming automation events in sorted queue
-        //
+    fn handle_incoming_events(&mut self) {
         // cf. https://www.w3.org/TR/webaudio/#computation-of-value
         // 1. paramIntrinsicValue will be calculated at each time, which is either the
         // value set directly to the value attribute, or, if there are any automation
@@ -697,17 +709,6 @@ impl AudioParamProcessor {
 
         for event in self.receiver.try_iter() {
             events_received = true;
-
-            // @note - the following could live in its own method just for clarity
-            // but can't get rid of this error:
-            //    for event in self.receiver.try_iter() {
-            //                 ------------------------
-            //                 |
-            //                 immutable borrow occurs here
-            //                 immutable borrow later used here
-            //
-            //        self.insert_event(event);
-            //            ^^^^^^^^^^^^^^^^^^^^^^^^ mutable borrow occurs here
 
             // handle CancelScheduledValues events
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-cancelscheduledvalues
@@ -937,11 +938,15 @@ impl AudioParamProcessor {
         if events_received {
             self.event_timeline.sort();
         }
+    }
 
-        // 2. Set [[current value]] to the value of paramIntrinsicValue at the
+    fn compute_buffer(&mut self, block_time: f64, dt: f64, count: usize) {
+        // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
-        self.current_value
-            .store(self.intrisic_value().clamp(self.min_value, self.max_value));
+        let clamped = self.intrisic_value().clamp(self.min_value, self.max_value);
+        self.current_value.store(clamped);
+
+        // populate the buffer for this block
         self.buffer.clear();
 
         let next_block_time = dt.mul_add(count as f64, block_time);
@@ -1412,12 +1417,6 @@ impl AudioParamProcessor {
         if cfg!(test) {
             assert_eq!(self.buffer.len(), count);
         }
-
-        let min = self.min_value;
-        let max = self.max_value;
-        self.buffer.iter_mut().for_each(|s| *s = s.clamp(min, max));
-
-        self.buffer.as_slice()
     }
 }
 
