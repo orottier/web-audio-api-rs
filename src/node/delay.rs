@@ -39,6 +39,18 @@ struct PlaybackInfo {
     k: f32,
 }
 
+impl Default for PlaybackInfo {
+    fn default() -> Self {
+        Self {
+            prev_block_index: 0,
+            prev_frame_index: 0,
+            next_block_index: 0,
+            next_frame_index: 0,
+            k: 0.,
+        }
+    }
+}
+
 /// Node that delays the incoming audio signal by a certain amount
 ///
 /// The current implementation does not allow for zero delay. The minimum delay is one render
@@ -231,13 +243,6 @@ impl DelayNode {
                     index: 0,
                     last_written_index: last_written_index_clone,
                     last_written_index_checked: None,
-                    playback_infos: [PlaybackInfo {
-                        prev_block_index: 0,
-                        prev_frame_index: 0,
-                        next_block_index: 0,
-                        next_frame_index: 0,
-                        k: 0.,
-                    }; RENDER_QUANTUM_SIZE],
                 };
 
                 let node = DelayNode {
@@ -279,8 +284,6 @@ struct DelayReader {
     last_written_index: Rc<Cell<Option<usize>>>,
     // local copy of shared `last_written_index` so as to avoid render ordering issues
     last_written_index_checked: Option<usize>,
-    // internal buffer used to compute output delay infos for each sample
-    playback_infos: [PlaybackInfo; RENDER_QUANTUM_SIZE],
 }
 
 // SAFETY:
@@ -425,13 +428,15 @@ impl AudioProcessor for DelayReader {
         let ring_size = ring_buffer.len() as i32;
         let ring_index = self.index as i32;
 
+        let mut playback_infos = [PlaybackInfo::default(); RENDER_QUANTUM_SIZE];
+
         // render channels aligned
         for (channel_number, channel) in output.channels_mut().iter_mut().enumerate() {
             channel
                 .iter_mut()
                 .enumerate()
                 .zip(delay_param.iter())
-                .zip(self.playback_infos.iter_mut())
+                .zip(playback_infos.iter_mut())
                 .for_each(|(((index, o), delay), infos)| {
                     if channel_number == 0 {
                         // param is already clamped to max_delay_time internally, so it is
@@ -520,7 +525,7 @@ impl DelayReader {
         // offset of the block in which the target sample is recorded
         // we need to be `float` here so that `floor()` behaves as expected
         let block_offset = (position / num_frames as f64).floor();
-        // offset of the block in which the target sample is recorded
+        // index of the block in which the target sample is recorded
         let mut block_index = ring_index + block_offset as i32;
         // unroll ring buffer is needed
         if block_index < 0 {

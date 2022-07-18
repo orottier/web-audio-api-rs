@@ -187,7 +187,6 @@ impl AudioBufferSourceNode {
                 detune: d_proc,
                 playback_rate: pr_proc,
                 render_state: AudioBufferRendererState::default(),
-                playback_infos: [None; RENDER_QUANTUM_SIZE],
             };
 
             let node = Self {
@@ -331,9 +330,6 @@ struct AudioBufferSourceRenderer {
     detune: AudioParamId,
     playback_rate: AudioParamId,
     render_state: AudioBufferRendererState,
-    /// Internal buffer used to store playback infos to compute the samples
-    /// according to the source buffer. (prev_sample_index, k)
-    playback_infos: [Option<PlaybackInfo>; RENDER_QUANTUM_SIZE],
 }
 
 impl AudioProcessor for AudioBufferSourceRenderer {
@@ -424,6 +420,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         output.set_number_of_channels(buffer.number_of_channels());
 
+        // internal buffer used to store playback infos to compute the samples
+        // according to the source buffer. (prev_sample_index, k)
+        let mut playback_infos = [None; RENDER_QUANTUM_SIZE];
+
         // go through the algorithm described in the spec
         // @see <https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode>
         let mut current_time = scope.current_time;
@@ -449,12 +449,12 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         }
 
         // compute position for each sample and store into `self.positions`
-        for index in 0..num_frames {
+        for playback_info in playback_infos.iter_mut() {
             if current_time < start_time
                 || current_time >= stop_time
                 || self.render_state.buffer_time_elapsed >= duration
             {
-                self.playback_infos[index] = None;
+                *playback_info = None;
                 current_time += dt;
 
                 continue; // nothing more to do for this sample
@@ -514,12 +514,12 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 let prev_frame_index = playhead_floored as usize; // can't be < 0.
                 let k = (playhead - playhead_floored) as f32;
 
-                self.playback_infos[index] = Some(PlaybackInfo {
+                *playback_info = Some(PlaybackInfo {
                     prev_frame_index,
                     k,
                 });
             } else {
-                self.playback_infos[index] = None;
+                *playback_info = None;
             }
 
             let time_incr = dt * computed_playback_rate;
@@ -538,7 +538,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             .for_each(|(buffer_channel, output_channel)| {
                 let buffer_channel = buffer_channel.as_slice();
 
-                self.playback_infos
+                playback_infos
                     .iter()
                     .zip(output_channel.iter_mut())
                     .for_each(|(playhead, o)| {
