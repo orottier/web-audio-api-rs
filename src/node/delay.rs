@@ -30,25 +30,13 @@ impl Default for DelayOptions {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 struct PlaybackInfo {
     prev_block_index: usize,
     prev_frame_index: usize,
     next_block_index: usize,
     next_frame_index: usize,
     k: f32,
-}
-
-impl Default for PlaybackInfo {
-    fn default() -> Self {
-        Self {
-            prev_block_index: 0,
-            prev_frame_index: 0,
-            next_block_index: 0,
-            next_frame_index: 0,
-            k: 0.,
-        }
-    }
 }
 
 /// Node that delays the incoming audio signal by a certain amount
