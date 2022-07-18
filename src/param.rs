@@ -1807,6 +1807,25 @@ mod tests {
     }
 
     #[test]
+    fn test_set_value_and_linear_ramp_arate_clamp() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 5.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(10., 0.);
+        param.linear_ramp_to_value_at_time(0., 10.);
+
+        let vs = render.tick(0., 1., 10);
+        assert_float_eq!(vs, &[5., 5., 5., 5., 5., 5., 4., 3., 2., 1.][..], abs_all <= 1e-6);
+    }
+
+    #[test]
     fn test_linear_ramp_krate_multiple_blocks() {
         // regression test for issue #9
         let context = OfflineAudioContext::new(1, 0, 48000.);
