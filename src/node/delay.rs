@@ -30,6 +30,27 @@ impl Default for DelayOptions {
     }
 }
 
+#[derive(Copy, Clone)]
+struct PlaybackInfo {
+    prev_block_index: usize,
+    prev_frame_index: usize,
+    next_block_index: usize,
+    next_frame_index: usize,
+    k: f32,
+}
+
+impl Default for PlaybackInfo {
+    fn default() -> Self {
+        Self {
+            prev_block_index: 0,
+            prev_frame_index: 0,
+            next_block_index: 0,
+            next_frame_index: 0,
+            k: 0.,
+        }
+    }
+}
+
 /// Node that delays the incoming audio signal by a certain amount
 ///
 /// The current implementation does not allow for zero delay. The minimum delay is one render
@@ -222,10 +243,6 @@ impl DelayNode {
                     index: 0,
                     last_written_index: last_written_index_clone,
                     last_written_index_checked: None,
-                    // `internal_buffer` is used to compute the samples per channel at each frame.
-                    // Note that the `vec` will always be resized to actual buffer
-                    // number_of_channels when received on the render thread.
-                    internal_buffer: Vec::<f32>::with_capacity(crate::MAX_CHANNELS),
                 };
 
                 let node = DelayNode {
@@ -267,8 +284,6 @@ struct DelayReader {
     last_written_index: Rc<Cell<Option<usize>>>,
     // local copy of shared `last_written_index` so as to avoid render ordering issues
     last_written_index_checked: Option<usize>,
-    // internal buffer used to compute output per channel at each frame
-    internal_buffer: Vec<f32>,
 }
 
 // SAFETY:
@@ -400,10 +415,6 @@ impl AudioProcessor for DelayReader {
 
         // we need to rely on ring buffer to know the actual number of output channels
         let number_of_channels = ring_buffer[0].number_of_channels();
-        // resize internal buffer if needed
-        if self.internal_buffer.len() != number_of_channels {
-            self.internal_buffer.resize(number_of_channels, 0.);
-        }
 
         output.set_number_of_channels(number_of_channels);
 
@@ -414,42 +425,72 @@ impl AudioProcessor for DelayReader {
 
         let delay_param = params.get(&self.delay_time);
 
-        for (index, delay) in delay_param.iter().enumerate() {
-            // param is already clamped to max_delay_time internally, so it is
-            // safe to only check lower boundary
-            let clamped_delay = (*delay as f64).max(quantum_duration);
-            let num_samples = clamped_delay * sample_rate;
-            // negative position of the playhead relative to this block start
-            let position = index as f64 - num_samples;
+        let ring_size = ring_buffer.len() as i32;
+        let ring_index = self.index as i32;
 
-            // find address of the frame in the ring buffer just before `position`
-            let prev_position = position.floor();
-            let (prev_block_index, prev_frame_index) =
-                self.find_frame_adress_at_position(prev_position);
+        let mut playback_infos = [PlaybackInfo::default(); RENDER_QUANTUM_SIZE];
 
-            // find address of the frame in the ring buffer just after `position`
-            let next_position = position.ceil();
-            let (next_block_index, next_frame_index) =
-                self.find_frame_adress_at_position(next_position);
+        // render channels aligned
+        for (channel_number, channel) in output.channels_mut().iter_mut().enumerate() {
+            channel
+                .iter_mut()
+                .enumerate()
+                .zip(delay_param.iter())
+                .zip(playback_infos.iter_mut())
+                .for_each(|(((index, o), delay), infos)| {
+                    if channel_number == 0 {
+                        // param is already clamped to max_delay_time internally, so it is
+                        // safe to only check lower boundary
+                        let clamped_delay = (*delay as f64).max(quantum_duration);
+                        let num_samples = clamped_delay * sample_rate;
+                        // negative position of the playhead relative to this block start
+                        let position = index as f64 - num_samples;
 
-            // as position is negative k will be what we expect
-            let k = (position - position.floor()) as f32;
-            let k_inv = 1. - k;
+                        // find address of the frame in the ring buffer just before `position`
+                        let prev_position = position.floor();
+                        let (prev_block_index, prev_frame_index) =
+                            DelayReader::find_frame_adress_at_position(
+                                prev_position,
+                                ring_size,
+                                ring_index,
+                            );
 
-            // compute linear interpolation between prev and next for each channel
-            for channel_number in 0..number_of_channels {
-                let prev_sample =
-                    ring_buffer[prev_block_index].channel_data(channel_number)[prev_frame_index];
-                let next_sample =
-                    ring_buffer[next_block_index].channel_data(channel_number)[next_frame_index];
+                        // find address of the frame in the ring buffer just after `position`
+                        let next_position = position.ceil();
+                        let (next_block_index, next_frame_index) =
+                            DelayReader::find_frame_adress_at_position(
+                                next_position,
+                                ring_size,
+                                ring_index,
+                            );
 
-                let value = k_inv * prev_sample + k * next_sample;
+                        // as position is negative k will be what we expect
+                        let k = (position - position.floor()) as f32;
 
-                self.internal_buffer[channel_number] = value;
-            }
+                        *infos = PlaybackInfo {
+                            prev_block_index,
+                            prev_frame_index,
+                            next_block_index,
+                            next_frame_index,
+                            k,
+                        };
+                    }
 
-            // populate output at index w/ internal_buffer
-            output.set_channels_values_at(index, &self.internal_buffer);
+                    let PlaybackInfo {
+                        prev_block_index,
+                        prev_frame_index,
+                        next_block_index,
+                        next_frame_index,
+                        k,
+                    } = *infos;
+
+                    let prev_sample = ring_buffer[prev_block_index].channel_data(channel_number)
+                        [prev_frame_index];
+                    let next_sample = ring_buffer[next_block_index].channel_data(channel_number)
+                        [next_frame_index];
+
+                    *o = (1. - k) * prev_sample + k * next_sample;
+                });
         }
 
         if matches!(self.last_written_index_checked, Some(index) if index == self.index) {
@@ -474,19 +515,21 @@ impl AudioProcessor for DelayReader {
 impl DelayReader {
     #[inline(always)]
     // note that `position` is negative as we look into the past
-    fn find_frame_adress_at_position(&self, position: f64) -> (usize, usize) {
+    fn find_frame_adress_at_position(
+        position: f64,
+        ring_size: i32,
+        ring_index: i32,
+    ) -> (usize, usize) {
         let num_frames = RENDER_QUANTUM_SIZE as i32;
-        let buffer_len = self.ring_buffer.borrow().len() as i32;
-        let current_index = self.index as i32;
 
         // offset of the block in which the target sample is recorded
         // we need to be `float` here so that `floor()` behaves as expected
         let block_offset = (position / num_frames as f64).floor();
-        // offset of the block in which the target sample is recorded
-        let mut block_index = current_index + block_offset as i32;
+        // index of the block in which the target sample is recorded
+        let mut block_index = ring_index + block_offset as i32;
         // unroll ring buffer is needed
         if block_index < 0 {
-            block_index += buffer_len;
+            block_index += ring_size;
         }
 
         // find frame index in the target block

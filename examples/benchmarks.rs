@@ -528,6 +528,26 @@ fn main() {
         benchmark(&mut stdout, name, context, &mut results);
     }
 
+    {
+        // derived from "Simple source test without resampling (Stereo)""
+        let name = "Stereo source with delay";
+
+        let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
+
+        let delay = context.create_delay(1.);
+        delay.delay_time().set_value(1.);
+        delay.connect(&context.destination());
+
+        let source = context.create_buffer_source();
+        let buf = get_buffer(&sources, sample_rate, 2);
+        source.set_buffer(buf);
+        source.set_loop(true);
+        source.connect(&delay);
+        source.start();
+
+        benchmark(&mut stdout, name, context, &mut results);
+    }
+
     write!(
         stdout,
         "{}{}> All done!\r\n\r\n",

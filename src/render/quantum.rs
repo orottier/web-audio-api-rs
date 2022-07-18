@@ -536,13 +536,6 @@ impl AudioRenderQuantum {
             .zip(other_mixed.channels.iter())
             .for_each(|(s, o)| s.add(o));
     }
-
-    #[inline(always)]
-    pub(crate) fn set_channels_values_at(&mut self, sample_index: usize, values: &[f32]) {
-        for (channel_index, channel) in self.channels.iter_mut().enumerate() {
-            channel[sample_index] = values[channel_index];
-        }
-    }
 }
 
 #[cfg(test)]
