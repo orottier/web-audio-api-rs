@@ -472,7 +472,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 } else {
                     buffer.length()
                 };
-                // in case of a loop point in the middle of the block, these value
+                // in case of a loop point in the middle of the block, this value
                 // will be used to recompute `self.render_state.buffer_time` according
                 // to the actual loop point.
                 let mut loop_point_index: Option<usize> = None;
