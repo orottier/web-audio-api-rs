@@ -596,17 +596,15 @@ impl AudioProcessor for AudioParamProcessor {
     ) -> bool {
         let period = 1. / scope.sample_rate as f64;
 
-        let param_intrisic_values_clamped =
-            self.tick(scope.current_time, period, RENDER_QUANTUM_SIZE);
-
         let input = &inputs[0]; // single input mode
-        let param_computed_values = &mut outputs[0];
+        let output = &mut outputs[0];
+        let min = self.min_value;
+        let max = self.max_value;
 
-        param_computed_values
-            .channel_data_mut(0)
-            .copy_from_slice(param_intrisic_values_clamped);
+        let intrisic_values =
+            self.compute_intrisic_values(scope.current_time, period, RENDER_QUANTUM_SIZE);
 
-        param_computed_values.add(input, &AUDIO_PARAM_CHANNEL_CONFIG);
+        AudioParamProcessor::compute_computed_values(intrisic_values, input, output, min, max);
 
         true // has intrinsic value
     }
@@ -615,15 +613,28 @@ impl AudioProcessor for AudioParamProcessor {
 impl AudioParamProcessor {
     // warning: tick in called directly in the unit tests so everything important
     // for the tests should be done here
-    fn tick(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
+    fn compute_intrisic_values(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
         self.handle_incoming_events();
         self.compute_buffer(block_time, dt, count);
 
-        let min = self.min_value;
-        let max = self.max_value;
-        self.buffer.iter_mut().for_each(|s| *s = s.clamp(min, max));
-
         self.buffer.as_slice()
+    }
+
+    fn compute_computed_values(
+        intrisic_values: &[f32],
+        input: &AudioRenderQuantum,
+        output: &mut AudioRenderQuantum,
+        min: f32,
+        max: f32,
+    ) {
+        output.channel_data_mut(0).copy_from_slice(intrisic_values);
+
+        output.add(input, &AUDIO_PARAM_CHANNEL_CONFIG);
+
+        output
+            .channel_data_mut(0)
+            .iter_mut()
+            .for_each(|s| *s = s.clamp(min, max));
     }
 
     pub fn intrisic_value(&self) -> f32 {
@@ -1461,6 +1472,7 @@ mod tests {
     use float_eq::assert_float_eq;
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::render::Alloc;
 
     use super::*;
 
@@ -1543,33 +1555,11 @@ mod tests {
         param.set_value(2.);
         assert_float_eq!(param.value(), 2., abs_all <= 0.);
 
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
 
         // current_value should not be overriden by intrisic value
         assert_float_eq!(param.value(), 2., abs_all <= 0.);
         assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
-    }
-
-    #[test]
-    fn test_set_value_clamped() {
-        let context = OfflineAudioContext::new(1, 0, 48000.);
-
-        let opts = AudioParamDescriptor {
-            automation_rate: AutomationRate::A,
-            default_value: 0.,
-            min_value: -1.,
-            max_value: 1.,
-        };
-        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-
-        param.set_value(2.);
-        assert_float_eq!(param.value(), 1., abs_all <= 0.);
-
-        let vs = render.tick(0., 1., 10);
-
-        // current_value should not be overriden by intrisic value
-        assert_float_eq!(param.value(), 1., abs_all <= 0.);
-        assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
     }
 
     #[test]
@@ -1589,14 +1579,14 @@ mod tests {
             param.set_value_at_time(12., 8.0); // should clamp
             param.set_value_at_time(8., 10.0); // should not occur 1st run
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
-                &[0., 0., 5., 5., 5., 5., 5., 5., 10., 10.][..],
+                &[0., 0., 5., 5., 5., 5., 5., 5., 12., 12.][..],
                 abs_all <= 0.
             );
 
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &[8.; 10][..], abs_all <= 0.);
         }
 
@@ -1613,14 +1603,14 @@ mod tests {
             param.set_value_at_time(5., 2.0);
             param.set_value_at_time(8., 12.0);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 0., 5., 5., 5., 5., 5., 5., 5., 5.][..],
                 abs_all <= 0.
             );
 
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(
                 vs,
                 &[5., 5., 8., 8., 8., 8., 8., 8., 8., 8.][..],
@@ -1645,13 +1635,13 @@ mod tests {
         param.set_value_at_time(8., 10.0); // should not occur 1st run
         param.set_value_at_time(3., 14.0); // should appear in 3rd run
 
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
 
-        let vs = render.tick(10., 1., 10);
+        let vs = render.compute_intrisic_values(10., 1., 10);
         assert_float_eq!(vs, &[8.; 10][..], abs_all <= 0.);
 
-        let vs = render.tick(20., 1., 10);
+        let vs = render.compute_intrisic_values(20., 1., 10);
         assert_float_eq!(vs, &[3.; 10][..], abs_all <= 0.);
     }
 
@@ -1674,7 +1664,7 @@ mod tests {
         // ramp to 0 from t = 5 to t = 13
         param.linear_ramp_to_value_at_time(0., 13.0);
 
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 0., 5., 6., 7., 8., 7., 6., 5., 4.][..],
@@ -1699,7 +1689,7 @@ mod tests {
         // ramp to 9 from t = 0 to t = 9
         param.linear_ramp_to_value_at_time(9.0, 9.0);
 
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
@@ -1721,19 +1711,19 @@ mod tests {
 
         // mimic a ramp inserted after start
         // i.e. setTimeout(() => param.linearRampToValueAtTime(10, now + 10)), 10 * 1000);
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
 
         param.linear_ramp_to_value_at_time(10.0, 20.0);
 
-        let vs = render.tick(10., 1., 10);
+        let vs = render.compute_intrisic_values(10., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
             abs_all <= 0.
         );
 
-        let vs = render.tick(20., 1., 10);
+        let vs = render.compute_intrisic_values(20., 1., 10);
         assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
     }
 
@@ -1754,7 +1744,7 @@ mod tests {
         param.linear_ramp_to_value_at_time(20.0, 20.0);
 
         // first quantum t = 0..10
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
@@ -1763,7 +1753,7 @@ mod tests {
         assert_float_eq!(param.value(), 0., abs <= 0.);
 
         // next quantum t = 10..20
-        let vs = render.tick(10., 1., 10);
+        let vs = render.compute_intrisic_values(10., 1., 10);
         assert_float_eq!(
             vs,
             &[10., 11., 12., 13., 14., 15., 16., 17., 18., 19.][..],
@@ -1772,83 +1762,9 @@ mod tests {
         assert_float_eq!(param.value(), 10., abs <= 0.);
 
         // ramp finished t = 20..30
-        let vs = render.tick(20., 1., 10);
+        let vs = render.compute_intrisic_values(20., 1., 10);
         assert_float_eq!(vs, &[20.0; 10][..], abs_all <= 0.);
         assert_float_eq!(param.value(), 20., abs <= 0.);
-    }
-
-    #[test]
-    fn test_linear_ramp_arate_clamp() {
-        // must be compliant with ex.7 cf. https://www.w3.org/TR/webaudio/#computation-of-value
-        let context = OfflineAudioContext::new(1, 0, 48000.);
-
-        let opts = AudioParamDescriptor {
-            automation_rate: AutomationRate::A,
-            default_value: 0.,
-            min_value: 0.,
-            max_value: 3.,
-        };
-        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-
-        param.linear_ramp_to_value_at_time(5.0, 5.0);
-        param.linear_ramp_to_value_at_time(0., 10.0);
-
-        let vs = render.tick(0., 1., 10);
-        assert_float_eq!(
-            vs,
-            &[0., 1., 2., 3., 3., 3., 3., 3., 2., 1.][..],
-            abs_all <= 1e-6
-        );
-
-        let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 1e-6);
-    }
-
-    #[test]
-    fn test_set_value_and_linear_ramp_arate_clamp() {
-        {
-            let context = OfflineAudioContext::new(1, 0, 48000.);
-
-            let opts = AudioParamDescriptor {
-                automation_rate: AutomationRate::A,
-                default_value: 0.,
-                min_value: 0.,
-                max_value: 5.,
-            };
-            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-
-            param.set_value(10.);
-            param.linear_ramp_to_value_at_time(0., 10.);
-
-            let vs = render.tick(0., 1., 10);
-            assert_float_eq!(
-                vs,
-                &[5., 5., 5., 5., 5., 5., 4., 3., 2., 1.][..],
-                abs_all <= 1e-6
-            );
-        }
-
-        {
-            let context = OfflineAudioContext::new(1, 0, 48000.);
-
-            let opts = AudioParamDescriptor {
-                automation_rate: AutomationRate::A,
-                default_value: 0.,
-                min_value: 0.,
-                max_value: 5.,
-            };
-            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-
-            param.set_value_at_time(10., 0.);
-            param.linear_ramp_to_value_at_time(0., 10.);
-
-            let vs = render.tick(0., 1., 10);
-            assert_float_eq!(
-                vs,
-                &[5., 5., 5., 5., 5., 5., 4., 3., 2., 1.][..],
-                abs_all <= 1e-6
-            );
-        }
     }
 
     #[test]
@@ -1868,15 +1784,15 @@ mod tests {
             // ramp to 20 from t = 0 to t = 20
             param.linear_ramp_to_value_at_time(20.0, 20.0);
             // first quantum t = 0..10
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 0., abs <= 0.);
             // next quantum t = 10..20
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 10., abs <= 0.);
             // ramp finished t = 20..30
-            let vs = render.tick(20., 1., 10);
+            let vs = render.compute_intrisic_values(20., 1., 10);
             assert_float_eq!(vs, &[20.0; 10][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 20., abs <= 0.);
         }
@@ -1894,15 +1810,15 @@ mod tests {
             // ramp to 20 from t = 0 to t = 20
             param.linear_ramp_to_value_at_time(15.0, 15.0);
             // first quantum t = 0..10
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 0., abs <= 0.);
             // next quantum t = 10..20
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 10., abs <= 0.);
             // ramp finished t = 20..30
-            let vs = render.tick(20., 1., 10);
+            let vs = render.compute_intrisic_values(20., 1., 10);
             assert_float_eq!(vs, &[15.0; 10][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 15., abs <= 0.);
         }
@@ -1936,10 +1852,10 @@ mod tests {
             res.push(value);
         }
 
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(vs, &res[..], abs_all <= 0.);
 
-        let vs = render.tick(10., 1., 10);
+        let vs = render.compute_intrisic_values(10., 1., 10);
         assert_float_eq!(vs, &[1.0; 10][..], abs_all <= 0.);
     }
 
@@ -1972,11 +1888,11 @@ mod tests {
         // fill remaining with target value
         res.append(&mut vec![1.; 7]);
 
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
         assert_float_eq!(param.value(), res[0], abs <= 0.);
 
-        let vs = render.tick(10., 1., 10);
+        let vs = render.compute_intrisic_values(10., 1., 10);
         assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
         assert_float_eq!(param.value(), res[10], abs <= 0.);
     }
@@ -2000,7 +1916,7 @@ mod tests {
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
@@ -2023,7 +1939,7 @@ mod tests {
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[-1., -1., -1., -1., -1., 1., 1., 1., 1., 1.][..],
@@ -2077,13 +1993,13 @@ mod tests {
         res.append(&mut vec![1.; 7]);
 
         // recreate k-rate blocks from computed values
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(vs, &[res[0]; 10][..], abs_all <= 0.);
 
-        let vs = render.tick(10., 1., 10);
+        let vs = render.compute_intrisic_values(10., 1., 10);
         assert_float_eq!(vs, &[res[10]; 10][..], abs_all <= 0.);
 
-        let vs = render.tick(20., 1., 10);
+        let vs = render.compute_intrisic_values(20., 1., 10);
         assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
     }
 
@@ -2104,10 +2020,10 @@ mod tests {
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
 
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
         }
 
@@ -2124,10 +2040,10 @@ mod tests {
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &[-1.; 10][..], abs_all <= 0.);
 
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
         }
     }
@@ -2152,7 +2068,7 @@ mod tests {
 
             param.set_value_at_time(v0, t0);
             param.set_target_at_time(v1, t0, time_constant);
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
 
             let mut res = Vec::<f32>::with_capacity(10);
             for t in 0..10 {
@@ -2179,7 +2095,7 @@ mod tests {
             let time_constant: f64 = 1.;
 
             param.set_target_at_time(v1, t0, time_constant);
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
 
             let mut res = Vec::<f32>::with_capacity(10);
             for t in 0..10 {
@@ -2216,7 +2132,7 @@ mod tests {
             // start_time is 1.
             res[0] = 0.;
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &res[..], abs_all <= 0.);
         }
 
@@ -2234,7 +2150,7 @@ mod tests {
             let mut res = [1.; 10];
             res[0] = 0.; // start_time is 1.
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &res[..], abs_all <= 0.);
         }
     }
@@ -2266,10 +2182,10 @@ mod tests {
                 res.push(val);
             }
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
 
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
         }
     }
@@ -2305,10 +2221,10 @@ mod tests {
 
             res.resize(20, 0.5);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
 
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
         }
     }
@@ -2341,7 +2257,7 @@ mod tests {
                 res.push(val);
             }
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
 
             // ramp
@@ -2358,10 +2274,10 @@ mod tests {
                 res.push(value);
             }
 
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &res[10..20], abs_all <= 1.0e-6);
             // ramp ended
-            let vs = render.tick(20., 1., 10);
+            let vs = render.compute_intrisic_values(20., 1., 10);
             assert_float_eq!(vs, &[v1; 10][..], abs_all <= 0.);
         }
     }
@@ -2393,10 +2309,10 @@ mod tests {
                 res.push(val);
             }
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &[res[0]; 10][..], abs_all <= 0.);
 
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &[res[10]; 10][..], abs_all <= 0.);
         }
     }
@@ -2418,7 +2334,7 @@ mod tests {
 
         param.cancel_scheduled_values(5.);
 
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 4., 4., 4., 4., 4.][..],
@@ -2443,7 +2359,7 @@ mod tests {
             param.linear_ramp_to_value_at_time(10., 10.);
             param.cancel_scheduled_values(10.); // cancels everything
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
         }
 
@@ -2460,7 +2376,7 @@ mod tests {
             param.set_value_at_time(0., 0.);
             param.linear_ramp_to_value_at_time(20., 20.);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
@@ -2468,7 +2384,7 @@ mod tests {
             );
 
             param.cancel_scheduled_values(10.);
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
         }
 
@@ -2487,7 +2403,7 @@ mod tests {
             param.linear_ramp_to_value_at_time(10., 10.);
             param.cancel_scheduled_values(10.); // cancels the ramp
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
         }
 
@@ -2502,7 +2418,7 @@ mod tests {
 
             param.linear_ramp_to_value_at_time(20., 20.);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
@@ -2510,7 +2426,7 @@ mod tests {
             );
 
             param.cancel_scheduled_values(10.);
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
         }
     }
@@ -2533,7 +2449,7 @@ mod tests {
             param.set_value_at_time(4., 4.);
             param.cancel_and_hold_at_time(2.5);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 1., 2., 2., 2., 2., 2., 2., 2., 2.][0..10],
@@ -2575,10 +2491,10 @@ mod tests {
             let hold_value = res.pop().unwrap();
             res.resize(20, hold_value);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
 
-            let vs = render.tick(10., 1., 10);
+            let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
         }
     }
@@ -2599,7 +2515,7 @@ mod tests {
             param.linear_ramp_to_value_at_time(10., 10.);
             param.cancel_and_hold_at_time(5.);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 1., 2., 3., 4., 5., 5., 5., 5., 5.][0..10],
@@ -2620,7 +2536,7 @@ mod tests {
             param.linear_ramp_to_value_at_time(10., 10.);
             param.cancel_and_hold_at_time(4.5);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 1., 2., 3., 4., 4.5, 4.5, 4.5, 4.5, 4.5][0..10],
@@ -2661,7 +2577,7 @@ mod tests {
             let hold_value = res.pop().unwrap();
             res.resize(10, hold_value);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &res[..], abs_all <= 0.);
         }
 
@@ -2694,7 +2610,7 @@ mod tests {
             let hold_value = start * (end / start).powf(4.5 / 10.);
             res.resize(10, hold_value);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &res[..], abs_all <= 0.);
         }
     }
@@ -2716,7 +2632,7 @@ mod tests {
             param.set_value_curve_at_time(&curve[..], 0., 10.);
             param.cancel_and_hold_at_time(5.);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 0.2, 0.4, 0.6, 0.8, 1., 1., 1., 1., 1.][..],
@@ -2738,7 +2654,7 @@ mod tests {
             param.set_value_curve_at_time(&curve[..], 0., 10.);
             param.cancel_and_hold_at_time(4.5);
 
-            let vs = render.tick(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 0.2, 0.4, 0.6, 0.8, 0.9, 0.9, 0.9, 0.9, 0.9][..],
@@ -2763,14 +2679,14 @@ mod tests {
         let curve = [0., 0.5, 1., 0.5, 0.];
         param.set_value_curve_at_time(&curve[..], 0., 10.);
 
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 0.2, 0.4, 0.6, 0.8, 1., 0.8, 0.6, 0.4, 0.2][..],
             abs_all <= 1e-7
         );
 
-        let vs = render.tick(10., 1., 10);
+        let vs = render.compute_intrisic_values(10., 1., 10);
         assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
     }
 
@@ -2790,21 +2706,21 @@ mod tests {
         let curve = [0., 0.5, 1., 0.5, 0.];
         param.set_value_curve_at_time(&curve[..], 0., 20.);
 
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9][..],
             abs_all <= 1e-7
         );
 
-        let vs = render.tick(10., 1., 10);
+        let vs = render.compute_intrisic_values(10., 1., 10);
         assert_float_eq!(
             vs,
             &[1., 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1][..],
             abs_all <= 1e-7
         );
 
-        let vs = render.tick(20., 1., 10);
+        let vs = render.compute_intrisic_values(20., 1., 10);
         assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
     }
 
@@ -2827,7 +2743,7 @@ mod tests {
         param.set_value_curve_at_time(&curve[..], 0., 10.);
         // this is necessary as the panic is triggered in the audio thread
         // @note - argues in favor of maintaining the queue in control thread
-        let _vs = render.tick(0., 1., 10);
+        let _vs = render.compute_intrisic_values(0., 1., 10);
     }
 
     #[test]
@@ -2848,7 +2764,7 @@ mod tests {
         param.set_value_at_time(0.0, 5.);
         // this is necessary as the panic is triggered in the audio thread
         // @note - argues in favor of maintaining the queue in control thread
-        let _vs = render.tick(0., 1., 10);
+        let _vs = render.compute_intrisic_values(0., 1., 10);
     }
 
     #[test]
@@ -2866,7 +2782,7 @@ mod tests {
         param.set_value_at_time(2., 0.000001);
         param.set_automation_rate(AutomationRate::K);
 
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
     }
 
@@ -2885,7 +2801,227 @@ mod tests {
         param.set_value_at_time(2., 0.000001);
         param.set_automation_rate(AutomationRate::A);
 
-        let vs = render.tick(0., 1., 10);
+        let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_computed_values_clamped() {
+        let alloc = Alloc::with_capacity(1);
+
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let min = -1.;
+            let max = 1.;
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: min,
+                max_value: max,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.set_value(2.);
+            assert_float_eq!(param.value(), 1., abs_all <= 0.);
+
+            let intrisic_values = render.compute_intrisic_values(0., 1., 128);
+            // current_value should not be overriden by intrisic value
+            assert_float_eq!(param.value(), 1., abs_all <= 0.);
+            assert_float_eq!(intrisic_values, &[2.; 128][..], abs_all <= 0.);
+
+            let signal = alloc.silence();
+            let input = AudioRenderQuantum::from(signal);
+            let signal = alloc.silence();
+            let mut output = AudioRenderQuantum::from(signal);
+
+            AudioParamProcessor::compute_computed_values(
+                intrisic_values,
+                &input,
+                &mut output,
+                min,
+                max,
+            );
+
+            assert_float_eq!(output.channel_data(0)[..], &[1.; 128][..], abs_all <= 0.);
+        }
+
+        {
+            // must be compliant with ex.7 cf. https://www.w3.org/TR/webaudio/#computation-of-value
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let min = 0.;
+            let max = 37.;
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: min,
+                max_value: max,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.linear_ramp_to_value_at_time(64., 64.);
+            param.linear_ramp_to_value_at_time(0., 128.0);
+
+            let intrisic_values = render.compute_intrisic_values(0., 1., 128);
+            let mut expected = [0.; 128];
+            for (i, v) in expected.iter_mut().enumerate() {
+                *v = if i <= 64 { i as f32 } else { 128. - i as f32 }
+            }
+
+            assert_float_eq!(intrisic_values, &expected[..], abs_all <= 0.);
+
+            let signal = alloc.silence();
+            let input = AudioRenderQuantum::from(signal);
+            let signal = alloc.silence();
+            let mut output = AudioRenderQuantum::from(signal);
+
+            AudioParamProcessor::compute_computed_values(
+                intrisic_values,
+                &input,
+                &mut output,
+                min,
+                max,
+            );
+            // clamp expected
+            expected.iter_mut().for_each(|v| *v = v.clamp(min, max));
+
+            assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
+        }
+
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let min = 2.;
+            let max = 42.;
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 2.,
+                min_value: min,
+                max_value: max,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.set_value(128.);
+            param.linear_ramp_to_value_at_time(0., 128.);
+
+            let intrisic_values = render.compute_intrisic_values(0., 1., 128);
+            let mut expected = [0.; 128];
+            for (i, v) in expected.iter_mut().enumerate() {
+                *v = 128. - i as f32;
+            }
+            assert_float_eq!(intrisic_values, &expected[..], abs_all <= 0.);
+
+            let signal = alloc.silence();
+            let input = AudioRenderQuantum::from(signal);
+            let signal = alloc.silence();
+            let mut output = AudioRenderQuantum::from(signal);
+
+            AudioParamProcessor::compute_computed_values(
+                intrisic_values,
+                &input,
+                &mut output,
+                min,
+                max,
+            );
+            // clamp expected
+            expected.iter_mut().for_each(|v| *v = v.clamp(min, max));
+
+            assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
+        }
+
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let min = 2.;
+            let max = 42.;
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 2.,
+                min_value: min,
+                max_value: max,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.set_value_at_time(128., 0.);
+            param.linear_ramp_to_value_at_time(0., 128.);
+
+            let intrisic_values = render.compute_intrisic_values(0., 1., 128);
+            let mut expected = [0.; 128];
+            for (i, v) in expected.iter_mut().enumerate() {
+                *v = 128. - i as f32;
+            }
+            assert_float_eq!(intrisic_values, &expected[..], abs_all <= 0.);
+
+            let signal = alloc.silence();
+            let input = AudioRenderQuantum::from(signal);
+            let signal = alloc.silence();
+            let mut output = AudioRenderQuantum::from(signal);
+
+            AudioParamProcessor::compute_computed_values(
+                intrisic_values,
+                &input,
+                &mut output,
+                min,
+                max,
+            );
+            // clamp expected
+            expected.iter_mut().for_each(|v| *v = v.clamp(min, max));
+
+            assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
+        }
+    }
+
+    #[test]
+    fn test_computed_values_add_input_and_clamp() {
+        let alloc = Alloc::with_capacity(1);
+
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let min = 2.;
+        let max = 42.;
+
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::A,
+            default_value: 2.,
+            min_value: min,
+            max_value: max,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(128., 0.);
+        param.linear_ramp_to_value_at_time(0., 128.);
+
+        let intrisic_values = render.compute_intrisic_values(0., 1., 128);
+        let mut expected = [0.; 128];
+        for (i, v) in expected.iter_mut().enumerate() {
+            *v = 128. - i as f32;
+        }
+
+        assert_float_eq!(intrisic_values, &expected[..], abs_all <= 0.);
+
+        let mut signal = alloc.silence();
+        signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
+        let input = AudioRenderQuantum::from(signal);
+        let signal = alloc.silence();
+        let mut output = AudioRenderQuantum::from(signal);
+
+        AudioParamProcessor::compute_computed_values(
+            intrisic_values,
+            &input,
+            &mut output,
+            min,
+            max,
+        );
+        // add 1 (input) and clamp
+        expected
+            .iter_mut()
+            .for_each(|v| *v = (*v + 1.).clamp(min, max));
+
+        assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
     }
 }
