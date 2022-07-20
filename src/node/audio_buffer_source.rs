@@ -682,8 +682,6 @@ mod tests {
 
     use super::*;
 
-    // fast track
-    // @todo: slow track
     #[test]
     fn test_playing_some_file() {
         let context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, 44_100.);
@@ -784,8 +782,6 @@ mod tests {
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
 
-    // fast track
-    // @todo: slow track
     #[test]
     fn test_sub_quantum_stop() {
         // fast track
@@ -833,8 +829,6 @@ mod tests {
         }
     }
 
-    // fast track
-    // @todo: slow track
     #[test]
     fn test_sub_sample_stop() {
         // fast track
@@ -1090,7 +1084,7 @@ mod tests {
     }
 
     #[test]
-    // just more readable for populating expected values
+    // just to make things more readable when populating expected values
     #[allow(clippy::erasing_op)]
     #[allow(clippy::identity_op)]
     fn test_fast_track_loop() {
