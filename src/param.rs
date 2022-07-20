@@ -314,14 +314,15 @@ impl AudioParam {
     // thrown by setting this attribute.
     // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
     pub fn set_value(&self, value: f32) -> &Self {
-        let clamped = value.clamp(self.min_value, self.max_value);
-        self.current_value.store(clamped);
+        // current_value should always be clamped
+        self.current_value
+            .store(value.clamp(self.min_value, self.max_value));
 
         // this event is meant to update param intrisic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
         let event = AudioParamEvent {
             event_type: AudioParamEventType::SetValue,
-            value: clamped,
+            value,
             time: 0.,
             time_constant: None,
             cancel_time: None,
@@ -594,14 +595,16 @@ impl AudioProcessor for AudioParamProcessor {
         scope: &RenderScope,
     ) -> bool {
         let period = 1. / scope.sample_rate as f64;
-        let param_intrisic_values = self.tick(scope.current_time, period, RENDER_QUANTUM_SIZE);
+
+        let param_intrisic_values_clamped =
+            self.tick(scope.current_time, period, RENDER_QUANTUM_SIZE);
 
         let input = &inputs[0]; // single input mode
         let param_computed_values = &mut outputs[0];
 
         param_computed_values
             .channel_data_mut(0)
-            .copy_from_slice(param_intrisic_values);
+            .copy_from_slice(param_intrisic_values_clamped);
 
         param_computed_values.add(input, &AUDIO_PARAM_CHANNEL_CONFIG);
 
@@ -610,11 +613,24 @@ impl AudioProcessor for AudioParamProcessor {
 }
 
 impl AudioParamProcessor {
+    // warning: tick in called directly in the unit tests so everything important
+    // for the tests should be done here
+    fn tick(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
+        self.handle_incoming_events();
+        self.compute_buffer(block_time, dt, count);
+
+        let min = self.min_value;
+        let max = self.max_value;
+        self.buffer.iter_mut().for_each(|s| *s = s.clamp(min, max));
+
+        self.buffer.as_slice()
+    }
+
     pub fn intrisic_value(&self) -> f32 {
         if self.intrisic_value.is_nan() {
             self.default_value
         } else {
-            self.intrisic_value.clamp(self.min_value, self.max_value)
+            self.intrisic_value
         }
     }
 
@@ -629,8 +645,7 @@ impl AudioParamProcessor {
         time: f64,
     ) -> f32 {
         let phase = (time - start_time) / duration;
-        let value = start_value + diff * phase as f32;
-        value.clamp(self.min_value, self.max_value)
+        diff.mul_add(phase as f32, start_value)
     }
 
     // v(t) = v1 * (v2/v1)^((t-t1) / (t2-t1))
@@ -644,8 +659,7 @@ impl AudioParamProcessor {
         time: f64,
     ) -> f32 {
         let phase = (time - start_time) / duration;
-        let value = start_value * ratio.powf(phase as f32);
-        value.clamp(self.min_value, self.max_value)
+        start_value * ratio.powf(phase as f32)
     }
 
     // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
@@ -659,8 +673,7 @@ impl AudioParamProcessor {
         time: f64,
     ) -> f32 {
         let exponent = -1. * ((time - start_time) / time_constant);
-        let value = end_value + diff * exponent.exp() as f32;
-        value.clamp(self.min_value, self.max_value)
+        diff.mul_add(exponent.exp() as f32, end_value)
     }
 
     // 𝑘=⌊𝑁−1 / 𝑇𝐷 * (𝑡−𝑇0)⌋
@@ -674,20 +687,16 @@ impl AudioParamProcessor {
         time: f64,
     ) -> f32 {
         if time - start_time >= duration {
-            let value = values[values.len() - 1];
-            value.clamp(self.min_value, self.max_value)
+            values[values.len() - 1]
         } else {
             let position = (values.len() - 1) as f64 * (time - start_time) / duration;
             let k = position as usize;
             let phase = (position - position.floor()) as f32;
-            let value = (values[k + 1] - values[k]) * phase + values[k];
-            value.clamp(self.min_value, self.max_value)
+            (values[k + 1] - values[k]).mul_add(phase, values[k])
         }
     }
 
-    fn tick(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
-        // handle incoming automation events in sorted queue
-        //
+    fn handle_incoming_events(&mut self) {
         // cf. https://www.w3.org/TR/webaudio/#computation-of-value
         // 1. paramIntrinsicValue will be calculated at each time, which is either the
         // value set directly to the value attribute, or, if there are any automation
@@ -700,17 +709,6 @@ impl AudioParamProcessor {
 
         for event in self.receiver.try_iter() {
             events_received = true;
-
-            // @note - the following could live in its own method just for clarity
-            // but can't get rid of this error:
-            //    for event in self.receiver.try_iter() {
-            //                 ------------------------
-            //                 |
-            //                 immutable borrow occurs here
-            //                 immutable borrow later used here
-            //
-            //        self.insert_event(event);
-            //            ^^^^^^^^^^^^^^^^^^^^^^^^ mutable borrow occurs here
 
             // handle CancelScheduledValues events
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-cancelscheduledvalues
@@ -940,13 +938,18 @@ impl AudioParamProcessor {
         if events_received {
             self.event_timeline.sort();
         }
+    }
 
-        // 2. Set [[current value]] to the value of paramIntrinsicValue at the
+    fn compute_buffer(&mut self, block_time: f64, dt: f64, count: usize) {
+        // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
-        self.current_value.store(self.intrisic_value());
+        let clamped = self.intrisic_value().clamp(self.min_value, self.max_value);
+        self.current_value.store(clamped);
+
+        // populate the buffer for this block
         self.buffer.clear();
 
-        let next_block_time = block_time + dt * count as f64;
+        let next_block_time = dt.mul_add(count as f64, block_time);
         let is_a_rate = self.is_a_rate.load(Ordering::SeqCst);
         let is_k_rate = !is_a_rate;
 
@@ -1036,8 +1039,8 @@ impl AudioParamProcessor {
 
                                 // compute "real" value according to `t` then clamp it
                                 // cf. Example 7 https://www.w3.org/TR/webaudio/#computation-of-value
-                                if end_index_clipped > self.buffer.len() {
-                                    let mut time = block_time + start_index as f64 * dt;
+                                if end_index_clipped > start_index {
+                                    let mut time = (start_index as f64).mul_add(dt, block_time);
 
                                     for _ in start_index..end_index_clipped {
                                         let value = self.compute_linear_ramp_sample(
@@ -1089,8 +1092,7 @@ impl AudioParamProcessor {
 
                             // Event ended during this block
                             } else {
-                                self.intrisic_value =
-                                    end_value.clamp(self.min_value, self.max_value);
+                                self.intrisic_value = end_value;
                                 self.last_event = self.event_timeline.pop();
                             }
                         }
@@ -1141,8 +1143,8 @@ impl AudioParamProcessor {
                                         ((end_time - block_time).max(0.) / dt).ceil() as usize;
                                     let end_index_clipped = end_index.min(count);
 
-                                    if end_index_clipped > self.buffer.len() {
-                                        let mut time = block_time + start_index as f64 * dt;
+                                    if end_index_clipped > start_index {
+                                        let mut time = (start_index as f64).mul_add(dt, block_time);
 
                                         for _ in start_index..end_index_clipped {
                                             let value = self.compute_exponential_ramp_sample(
@@ -1195,8 +1197,7 @@ impl AudioParamProcessor {
 
                                 // Event ended during this block
                                 } else {
-                                    self.intrisic_value =
-                                        end_value.clamp(self.min_value, self.max_value);
+                                    self.intrisic_value = end_value;
                                     self.last_event = self.event_timeline.pop();
                                 }
                             }
@@ -1272,8 +1273,8 @@ impl AudioParamProcessor {
                                     ((end_time - block_time).max(0.) / dt).ceil() as usize;
                                 let end_index_clipped = end_index.min(count);
 
-                                if end_index_clipped > self.buffer.len() {
-                                    let mut time = block_time + start_index as f64 * dt;
+                                if end_index_clipped > start_index {
+                                    let mut time = (start_index as f64).mul_add(dt, block_time);
 
                                     for _ in start_index..end_index_clipped {
                                         let value = self.compute_set_target_sample(
@@ -1347,8 +1348,8 @@ impl AudioParamProcessor {
                                     ((end_time - block_time).max(0.) / dt).ceil() as usize;
                                 let end_index_clipped = end_index.min(count);
 
-                                if end_index_clipped > self.buffer.len() {
-                                    let mut time = block_time + start_index as f64 * dt;
+                                if end_index_clipped > start_index {
+                                    let mut time = (start_index as f64).mul_add(dt, block_time);
 
                                     for _ in start_index..end_index_clipped {
                                         let value = self.compute_set_value_curve_sample(
@@ -1394,13 +1395,12 @@ impl AudioParamProcessor {
                                 // event has ended
                                 } else {
                                     let value = values[values.len() - 1];
-                                    let value_clamped = value.clamp(self.min_value, self.max_value);
 
                                     let mut last_event = self.event_timeline.pop().unwrap();
                                     last_event.time = end_time;
-                                    last_event.value = value_clamped;
+                                    last_event.value = value;
 
-                                    self.intrisic_value = value_clamped;
+                                    self.intrisic_value = value;
                                     self.last_event = Some(last_event);
                                 }
                             }
@@ -1417,8 +1417,6 @@ impl AudioParamProcessor {
         if cfg!(test) {
             assert_eq!(self.buffer.len(), count);
         }
-
-        self.buffer.as_slice()
     }
 }
 
@@ -1799,11 +1797,58 @@ mod tests {
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 3., 3., 3., 3., 2., 1.][..],
-            abs_all <= 0.
+            abs_all <= 1e-6
         );
 
         let vs = render.tick(10., 1., 10);
-        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 1e-6);
+    }
+
+    #[test]
+    fn test_set_value_and_linear_ramp_arate_clamp() {
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 5.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.set_value(10.);
+            param.linear_ramp_to_value_at_time(0., 10.);
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(
+                vs,
+                &[5., 5., 5., 5., 5., 5., 4., 3., 2., 1.][..],
+                abs_all <= 1e-6
+            );
+        }
+
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 5.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.set_value_at_time(10., 0.);
+            param.linear_ramp_to_value_at_time(0., 10.);
+
+            let vs = render.tick(0., 1., 10);
+            assert_float_eq!(
+                vs,
+                &[5., 5., 5., 5., 5., 5., 4., 3., 2., 1.][..],
+                abs_all <= 1e-6
+            );
+        }
     }
 
     #[test]
