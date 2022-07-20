@@ -387,7 +387,6 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
 }
 
 /// Builds the output
-#[allow(clippy::redundant_pub_crate)]
 pub(crate) fn build_output(
     frames_played: Arc<AtomicU64>,
     output_latency: Arc<AtomicF64>,
