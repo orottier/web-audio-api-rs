@@ -636,9 +636,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         }
 
         // fill output according to computed positions
-        self.buffer
-            .as_ref()
-            .unwrap()
+        buffer
             .channels()
             .iter()
             .zip(output.channels_mut().iter_mut())
@@ -661,7 +659,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                     None => 0.,
                                 };
 
-                                (1. - k) * prev_sample + k * next_sample
+                                (1. - k).mul_add(prev_sample, k * next_sample)
                             }
                             None => 0.,
                         };
