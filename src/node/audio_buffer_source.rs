@@ -310,6 +310,7 @@ struct AudioBufferRendererState {
     started: bool,
     entered_loop: bool,
     buffer_time_elapsed: f64,
+    is_aligned: bool,
 }
 
 impl Default for AudioBufferRendererState {
@@ -319,6 +320,7 @@ impl Default for AudioBufferRendererState {
             started: false,
             entered_loop: false,
             buffer_time_elapsed: 0.,
+            is_aligned: false,
         }
     }
 }
@@ -345,8 +347,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         let sample_rate = scope.sample_rate as f64;
         let dt = 1. / sample_rate;
-        let num_frames = RENDER_QUANTUM_SIZE;
-        let next_block_time = scope.current_time + dt * num_frames as f64;
+        let block_duration = dt * RENDER_QUANTUM_SIZE as f64;
+        let next_block_time = scope.current_time + block_duration;
 
         if let Ok(msg) = self.receiver.try_recv() {
             self.buffer = Some(msg.0);
@@ -381,10 +383,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         };
 
         // compute compound parameter at k-rate
-        let detune_values = params.get(&self.detune);
-        let detune = detune_values[0];
-        let playback_rate_values = params.get(&self.playback_rate);
-        let playback_rate = playback_rate_values[0];
+        let detune = params.get(&self.detune)[0];
+        let playback_rate = params.get(&self.playback_rate)[0];
         let computed_playback_rate = (playback_rate * (detune / 1200.).exp2()) as f64;
 
         let buffer_duration = buffer.duration();
@@ -420,10 +420,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         output.set_number_of_channels(buffer.number_of_channels());
 
-        // internal buffer used to store playback infos to compute the samples
-        // according to the source buffer. (prev_sample_index, k)
-        let mut playback_infos = [None; RENDER_QUANTUM_SIZE];
-
         // go through the algorithm described in the spec
         // @see <https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode>
         let mut current_time = scope.current_time;
@@ -436,6 +432,85 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             start_time = current_time;
         }
 
+        // Define if we can avoid the resampling interpolation in some common cases,
+        // basically when:
+        // - `src.start()` is called with `audio_context.current_time`,
+        //   i.e. start time is aligned with a render quantum block
+        // - the AudioBuffer was decoded w/ the right sample rate
+        // - no detune or playback_rate changes are made
+        // - no loop, could be later mitigated when
+        //   loop_start == 0 && loop_end == buffer_duration
+        if start_time == current_time && offset == 0. {
+            self.render_state.is_aligned = true;
+        }
+
+        if sampling_ratio != 1. || loop_ == true {
+            self.render_state.is_aligned = false;
+        }
+
+        // ---------------------------------------------------------------
+        // Fast track
+        // ---------------------------------------------------------------
+        if self.render_state.is_aligned {
+            if start_time == current_time {
+                self.render_state.started = true;
+            }
+
+            let start_index = (self.render_state.buffer_time * sample_rate).round() as usize;
+
+            // check if buffer ends within this block
+            if self.render_state.buffer_time + block_duration > buffer_duration
+                || current_time + block_duration > stop_time
+            {
+                let end_index = if current_time + block_duration > stop_time {
+                    let dt = stop_time - current_time;
+                    let end_buffer_time = self.render_state.buffer_time + dt;
+                    (end_buffer_time * sample_rate).round() as usize
+                } else {
+                    buffer.length()
+                };
+
+                buffer
+                    .channels()
+                    .iter()
+                    .zip(output.channels_mut().iter_mut())
+                    .for_each(|(buffer_channel, output_channel)| {
+                        let buffer_channel = buffer_channel.as_slice();
+
+                        for (index, o) in output_channel.iter_mut().enumerate() {
+                            let buffer_index = start_index + index;
+
+                            *o = if buffer_index < end_index {
+                                buffer_channel[buffer_index]
+                            } else {
+                                0.
+                            };
+                        }
+
+                    });
+            } else {
+                let end_index = start_index + RENDER_QUANTUM_SIZE;
+                // we can do memcopy
+                buffer
+                    .channels()
+                    .iter()
+                    .zip(output.channels_mut().iter_mut())
+                    .for_each(|(buffer_channel, output_channel)| {
+                        let buffer_channel = buffer_channel.as_slice();
+                        output_channel.copy_from_slice(&buffer_channel[start_index..end_index]);
+                    });
+            }
+
+            // update render state
+            self.render_state.buffer_time += block_duration;
+            self.render_state.buffer_time_elapsed += block_duration;
+
+            return true;
+        }
+
+        // ---------------------------------------------------------------
+        // Slow track
+        // ---------------------------------------------------------------
         if loop_ {
             if loop_start >= 0. && loop_end > 0. && loop_start < loop_end {
                 actual_loop_start = loop_start;
@@ -447,6 +522,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         } else {
             self.render_state.entered_loop = false;
         }
+
+        // internal buffer used to store playback infos to compute the samples
+        // according to the source buffer. (prev_sample_index, k)
+        let mut playback_infos = [None; RENDER_QUANTUM_SIZE];
 
         // compute position for each sample and store into `self.positions`
         for playback_info in playback_infos.iter_mut() {
@@ -575,6 +654,8 @@ mod tests {
 
     use super::*;
 
+    // fast track
+    // @todo: slow track
     #[test]
     fn test_playing_some_file() {
         let context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, 44_100.);
@@ -604,6 +685,7 @@ mod tests {
         );
     }
 
+    // slow track
     #[test]
     fn test_sub_quantum_start() {
         let sample_rate = 480000.;
@@ -649,6 +731,8 @@ mod tests {
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
 
+    // fast track
+    // @todo: slow track
     #[test]
     fn test_sub_quantum_stop() {
         let sample_rate = 480000.;
@@ -671,6 +755,8 @@ mod tests {
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
 
+    // fast track
+    // @todo: slow track
     #[test]
     fn test_sub_sample_stop() {
         let sample_rate = 480000.;
@@ -684,6 +770,7 @@ mod tests {
         src.set_buffer(dirac);
         src.start_at(0. / sample_rate as f64);
         // stop at between two diracs, only first one should be played
+        println!("stop_at {:?}", 4.5 / sample_rate as f64);
         src.stop_at(4.5 / sample_rate as f64);
 
         let result = context.start_rendering_sync();
