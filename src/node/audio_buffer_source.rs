@@ -438,13 +438,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         //   i.e. start time is aligned with a render quantum block
         // - the AudioBuffer was decoded w/ the right sample rate
         // - no detune or playback_rate changes are made
-        // - no loop, could be later mitigated when
-        //   loop_start == 0 && loop_end == buffer_duration
+        // - loop boundaries have not been changed
         if start_time == current_time && offset == 0. {
             self.render_state.is_aligned = true;
         }
 
-        if loop_ || sampling_ratio != 1. {
+        // by default loop_end is 0., see AudioBufferSourceOptions
+        if loop_start != 0. || loop_end != 0. || sampling_ratio != 1. {
             self.render_state.is_aligned = false;
         }
 
@@ -456,43 +456,66 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 self.render_state.started = true;
             }
 
-            let start_index = (self.render_state.buffer_time * sample_rate).round() as usize;
-
-            // println!("{}")
             // check if buffer ends within this block
             if self.render_state.buffer_time + block_duration > buffer_duration
                 || self.render_state.buffer_time + block_duration > duration
                 || current_time + block_duration > stop_time
             {
-                let end_index = if current_time + block_duration > stop_time
-                    || self.render_state.buffer_time + block_duration > duration
-                {
-                    let dt =
-                        (stop_time - current_time).min(duration - self.render_state.buffer_time);
-                    let end_buffer_time = self.render_state.buffer_time + dt;
-                    (end_buffer_time * sample_rate).round() as usize
-                } else {
-                    buffer.length()
-                };
+                let buffer_time = self.render_state.buffer_time;
+                let mut apply_offset = 0;
 
                 buffer
                     .channels()
                     .iter()
                     .zip(output.channels_mut().iter_mut())
                     .for_each(|(buffer_channel, output_channel)| {
+                        // we need to recompute that for each channel
                         let buffer_channel = buffer_channel.as_slice();
+                        let mut start_index = (buffer_time * sample_rate).round() as usize;
+                        let end_index = if current_time + block_duration > stop_time
+                            || self.render_state.buffer_time + block_duration > duration
+                        {
+                            let dt = (stop_time - current_time)
+                                .min(duration - self.render_state.buffer_time);
+                            let end_buffer_time = self.render_state.buffer_time + dt;
+                            (end_buffer_time * sample_rate).round() as usize
+                        } else {
+                            buffer.length()
+                        };
+                        let mut offset = 0;
 
                         for (index, o) in output_channel.iter_mut().enumerate() {
-                            let buffer_index = start_index + index;
+                            let mut buffer_index = start_index + index - offset;
 
                             *o = if buffer_index < end_index {
                                 buffer_channel[buffer_index]
                             } else {
-                                0.
+                                if loop_ && buffer_index == end_index {
+                                    start_index = 0;
+                                    offset = index;
+                                    buffer_index = 0;
+                                    // extract value to compute buffer_time
+                                    apply_offset = offset;
+                                }
+
+                                if loop_ {
+                                    buffer_channel[buffer_index]
+                                } else {
+                                    0.
+                                }
                             };
                         }
                     });
+
+                if apply_offset != 0 {
+                    self.render_state.buffer_time = ((RENDER_QUANTUM_SIZE - apply_offset) as f64
+                        / sample_rate)
+                        % buffer_duration;
+                } else {
+                    self.render_state.buffer_time += block_duration;
+                }
             } else {
+                let start_index = (self.render_state.buffer_time * sample_rate).round() as usize;
                 let end_index = start_index + RENDER_QUANTUM_SIZE;
                 // we can do memcopy
                 buffer
@@ -503,10 +526,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                         let buffer_channel = buffer_channel.as_slice();
                         output_channel.copy_from_slice(&buffer_channel[start_index..end_index]);
                     });
+
+                self.render_state.buffer_time += block_duration;
             }
 
             // update render state
-            self.render_state.buffer_time += block_duration;
             self.render_state.buffer_time_elapsed += block_duration;
 
             return true;
@@ -1063,5 +1087,106 @@ mod tests {
         expected[3] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    // just more readable for populating expected values
+    #[allow(clippy::erasing_op)]
+    #[allow(clippy::identity_op)]
+    fn test_fast_track_loop() {
+        // buffer smaller than block
+        {
+            let sample_rate = 480000.;
+            let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 2, sample_rate);
+
+            let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE / 2, sample_rate);
+            dirac.copy_to_channel(&[1.], 0);
+
+            let src = context.create_buffer_source();
+            src.connect(&context.destination());
+            src.set_loop(true);
+            src.set_buffer(dirac);
+            src.start();
+
+            let result = context.start_rendering_sync();
+            let channel = result.get_channel_data(0);
+
+            let mut expected = vec![0.; 256];
+            expected[64 * 0] = 1.;
+            expected[64 * 1] = 1.;
+            expected[64 * 2] = 1.;
+            expected[64 * 3] = 1.;
+
+            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+        }
+
+        // buffer larger than block
+        {
+            let sample_rate = 480000.;
+            let len = RENDER_QUANTUM_SIZE * 4;
+            let context = OfflineAudioContext::new(1, len, sample_rate);
+
+            let mut dirac = context.create_buffer(1, 129, sample_rate);
+            dirac.copy_to_channel(&[1.], 0);
+
+            let src = context.create_buffer_source();
+            src.connect(&context.destination());
+            src.set_loop(true);
+            src.set_buffer(dirac);
+            src.start();
+
+            let result = context.start_rendering_sync();
+            let channel = result.get_channel_data(0);
+
+            let mut expected = vec![0.; len];
+            expected[129 * 0] = 1.;
+            expected[129 * 1] = 1.;
+            expected[129 * 2] = 1.;
+            expected[129 * 3] = 1.;
+
+            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+        }
+
+        // stereo
+        {
+            let sample_rate = 480000.;
+            let len = RENDER_QUANTUM_SIZE * 4;
+            let context = OfflineAudioContext::new(2, len, sample_rate);
+
+            let mut dirac = context.create_buffer(2, 129, sample_rate);
+            dirac.copy_to_channel(&[1.], 0);
+            dirac.copy_to_channel(&[0., 1.], 1);
+
+            let src = context.create_buffer_source();
+            src.connect(&context.destination());
+            src.set_loop(true);
+            src.set_buffer(dirac);
+            src.start();
+
+            let result = context.start_rendering_sync();
+
+            let mut expected_left = vec![0.; len];
+            expected_left[129 * 0] = 1.;
+            expected_left[129 * 1] = 1.;
+            expected_left[129 * 2] = 1.;
+            expected_left[129 * 3] = 1.;
+
+            let mut expected_right = vec![0.; len];
+            expected_right[129 * 0 + 1] = 1.;
+            expected_right[129 * 1 + 1] = 1.;
+            expected_right[129 * 2 + 1] = 1.;
+            expected_right[129 * 3 + 1] = 1.;
+
+            assert_float_eq!(
+                result.get_channel_data(0)[..],
+                expected_left[..],
+                abs_all <= 0.
+            );
+            assert_float_eq!(
+                result.get_channel_data(1)[..],
+                expected_right[..],
+                abs_all <= 0.
+            );
+        }
     }
 }
