@@ -472,7 +472,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 } else {
                     buffer.length()
                 };
-                let mut apply_offset = 0;
+                // in case of a loop point in the middle of the block, these value
+                // will be used to recompute `self.render_state.buffer_time` according
+                // to the actual loop point.
+                let mut loop_point_index: Option<usize> = None;
 
                 buffer
                     .channels()
@@ -491,11 +494,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                 buffer_channel[buffer_index]
                             } else {
                                 if loop_ && buffer_index == end_index {
+                                    loop_point_index = Some(index);
+                                    // reset values for the rest of the block
                                     start_index = 0;
                                     offset = index;
                                     buffer_index = 0;
-                                    // extract value to compute buffer_time
-                                    apply_offset = offset;
                                 }
 
                                 if loop_ {
@@ -507,10 +510,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                         }
                     });
 
-                if apply_offset != 0 {
-                    self.render_state.buffer_time = ((RENDER_QUANTUM_SIZE - apply_offset) as f64
-                        / sample_rate)
-                        % buffer_duration;
+                if let Some(loop_point_index) = loop_point_index {
+                    self.render_state.buffer_time =
+                        ((RENDER_QUANTUM_SIZE - loop_point_index) as f64 / sample_rate)
+                            % buffer_duration;
                 } else {
                     self.render_state.buffer_time += block_duration;
                 }
