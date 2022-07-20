@@ -8,12 +8,10 @@ pub use element::MediaElement;
 
 mod mic;
 pub use mic::Microphone;
+pub(crate) use mic::MicrophoneRender;
 
 mod resampling;
 pub(crate) use resampling::Resampler;
-
-#[cfg(not(test))]
-pub(crate) use mic::MicrophoneRender;
 
 use std::error::Error;
 

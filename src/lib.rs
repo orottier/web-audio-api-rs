@@ -65,7 +65,6 @@ pub mod render;
 mod spatial;
 pub use spatial::AudioListener;
 
-#[cfg(not(test))]
 mod io;
 
 mod analysis;

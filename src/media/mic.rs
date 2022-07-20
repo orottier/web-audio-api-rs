@@ -4,44 +4,14 @@ use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::media::MediaStream;
 use crate::RENDER_QUANTUM_SIZE;
 
-#[cfg(not(test))]
 use crate::context::AudioContextOptions;
 
-#[cfg(not(test))]
 use crossbeam_channel::Sender;
-#[cfg(not(test))]
-use std::sync::{Arc, Mutex};
 
-#[cfg(not(test))]
 use crate::buffer::ChannelData;
-#[cfg(not(test))]
-use crate::io;
-
-#[cfg(not(test))]
-use cpal::{traits::StreamTrait, Sample, Stream};
+use crate::io::{AudioBackend, CpalBackend};
 
 use crossbeam_channel::{Receiver, TryRecvError};
-
-#[cfg(not(test))]
-mod private {
-    use super::*;
-
-    pub struct StreamHolder(Arc<Mutex<Option<Stream>>>);
-
-    impl StreamHolder {
-        pub fn new(stream: Arc<Mutex<Option<Stream>>>) -> Self {
-            StreamHolder(stream)
-        }
-    }
-
-    // SAFETY: Stream is not Send, but we do want to have shared ownership via an Arc.
-    // The StreamHolder is simply keeping the Stream alive, it does not allow any mutation to it.
-    #[allow(clippy::non_send_fields_in_send_ty)]
-    unsafe impl Send for StreamHolder {}
-}
-
-#[cfg(not(test))]
-use private::StreamHolder;
 
 /// Microphone input stream
 ///
@@ -88,9 +58,7 @@ pub struct Microphone {
     receiver: Receiver<AudioBuffer>,
     number_of_channels: usize,
     sample_rate: f32,
-
-    #[cfg(not(test))]
-    stream: Arc<Mutex<Option<Stream>>>,
+    backend: Box<dyn AudioBackend>,
 }
 
 impl Microphone {
@@ -98,23 +66,14 @@ impl Microphone {
     ///
     /// Note: the specified `latency_hint` is currently ignored, follow our progress at
     /// <https://github.com/orottier/web-audio-api-rs/issues/51>
-    #[cfg(not(test))]
     pub fn new(options: AudioContextOptions) -> Self {
-        let (stream, config, receiver) = io::build_input(options);
-        log::debug!("Input {:?}", config);
-
-        let sample_rate = config.sample_rate.0 as f32;
-        let number_of_channels = config.channels as usize;
-
-        // shared ownership for the stream, because the Microphone is allowed to go out of scope
-        // but all corresponding streams should still yield output
-        let stream = Arc::new(Mutex::new(Some(stream)));
+        let (backend, receiver) = CpalBackend::build_input(options);
 
         Self {
             receiver,
-            number_of_channels,
-            sample_rate,
-            stream,
+            number_of_channels: backend.number_of_channels(),
+            sample_rate: backend.sample_rate(),
+            backend: Box::new(backend),
         }
     }
 
@@ -128,10 +87,7 @@ impl Microphone {
     /// * The input device is not available
     /// * For a `BackendSpecificError`
     pub fn suspend(&self) {
-        #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        if let Some(stream) = self.stream.lock().unwrap().as_ref() {
-            stream.pause().unwrap()
-        }
+        self.backend.suspend();
     }
 
     /// Resumes the input stream that has previously been suspended/paused.
@@ -143,17 +99,13 @@ impl Microphone {
     /// * The input device is not available
     /// * For a `BackendSpecificError`
     pub fn resume(&self) {
-        #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        if let Some(stream) = self.stream.lock().unwrap().as_ref() {
-            stream.play().unwrap()
-        }
+        self.backend.resume();
     }
 
     /// Closes the microphone input stream, releasing the system resources being used.
     #[allow(clippy::missing_panics_doc)]
     pub fn close(self) {
-        #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        self.stream.lock().unwrap().take(); // will Drop
+        self.backend.close()
     }
 
     /// A [`MediaStream`] iterator producing audio buffers from the microphone input
@@ -166,13 +118,11 @@ impl Microphone {
             receiver: self.receiver.clone(),
             number_of_channels: self.number_of_channels,
             sample_rate: self.sample_rate,
-            #[cfg(not(test))]
-            _stream: StreamHolder::new(self.stream.clone()),
+            _stream: self.backend.boxed_clone(),
         }
     }
 }
 
-#[cfg(not(test))]
 impl Default for Microphone {
     fn default() -> Self {
         Self::new(AudioContextOptions::default())
@@ -187,8 +137,7 @@ pub struct MicrophoneStream {
     number_of_channels: usize,
     sample_rate: f32,
 
-    #[cfg(not(test))]
-    _stream: StreamHolder,
+    _stream: Box<dyn AudioBackend>,
 }
 
 impl Iterator for MicrophoneStream {
@@ -222,14 +171,12 @@ impl Iterator for MicrophoneStream {
     }
 }
 
-#[cfg(not(test))]
 pub(crate) struct MicrophoneRender {
     number_of_channels: usize,
     sample_rate: f32,
     sender: Sender<AudioBuffer>,
 }
 
-#[cfg(not(test))]
 impl MicrophoneRender {
     pub fn new(number_of_channels: usize, sample_rate: f32, sender: Sender<AudioBuffer>) -> Self {
         Self {
@@ -239,7 +186,7 @@ impl MicrophoneRender {
         }
     }
 
-    pub fn render<S: Sample>(&self, data: &[S]) {
+    pub fn render<S: cpal::Sample>(&self, data: &[S]) {
         let mut channels = Vec::with_capacity(self.number_of_channels);
 
         // copy rendered audio into output slice
@@ -261,7 +208,6 @@ impl MicrophoneRender {
     }
 }
 
-#[cfg(not(test))]
 impl Drop for MicrophoneRender {
     fn drop(&mut self) {
         log::debug!("Microphone input has been dropped");

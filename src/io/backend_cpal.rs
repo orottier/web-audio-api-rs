@@ -2,6 +2,7 @@
 use std::convert::TryFrom;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use crate::message::ControlMessage;
 use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
@@ -12,12 +13,111 @@ use cpal::{
     Stream, StreamConfig, SupportedBufferSize,
 };
 
+use super::AudioBackend;
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::media::MicrophoneRender;
 use crate::render::RenderThread;
 
 use crossbeam_channel::{Receiver, Sender};
+
+mod private {
+    use super::*;
+
+    #[derive(Clone)]
+    pub struct ThreadSafeClosableStream(Arc<Mutex<Option<Stream>>>);
+
+    impl ThreadSafeClosableStream {
+        pub fn new(stream: Stream) -> Self {
+            Self(Arc::new(Mutex::new(Some(stream))))
+        }
+
+        pub fn close(&self) {
+            self.0.lock().unwrap().take(); // will Drop
+        }
+
+        pub fn resume(&self) -> bool {
+            if let Some(s) = self.0.lock().unwrap().as_ref() {
+                if let Err(e) = s.play() {
+                    panic!("Error resuming cpal stream: {:?}", e);
+                }
+                return true;
+            }
+
+            false
+        }
+
+        pub fn suspend(&self) -> bool {
+            if let Some(s) = self.0.lock().unwrap().as_ref() {
+                if let Err(e) = s.pause() {
+                    panic!("Error suspending cpal stream: {:?}", e);
+                }
+                return true;
+            }
+
+            false
+        }
+    }
+
+    // SAFETY:
+    // The cpal `Stream` is marked !Sync and !Send because some platforms are not thread-safe
+    // https://github.com/RustAudio/cpal/commit/33ddf749548d87bf54ce18eb342f954cec1465b2
+    // Since we wrap the Stream in a Mutex, we should be fine
+    unsafe impl Sync for ThreadSafeClosableStream {}
+    unsafe impl Send for ThreadSafeClosableStream {}
+}
+use private::ThreadSafeClosableStream;
+
+#[derive(Clone)]
+pub struct CpalBackend {
+    stream: ThreadSafeClosableStream,
+    sample_rate: f32,
+    number_of_channels: usize,
+}
+
+impl AudioBackend for CpalBackend {
+    fn build_output(
+        frames_played: Arc<AtomicU64>,
+        output_latency: Arc<AtomicF64>,
+        options: AudioContextOptions,
+    ) -> (Self, Sender<ControlMessage>)
+    where
+        Self: Sized,
+    {
+        build_output(frames_played, output_latency, options)
+    }
+
+    fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
+    where
+        Self: Sized,
+    {
+        build_input(options)
+    }
+
+    fn resume(&self) -> bool {
+        self.stream.resume()
+    }
+
+    fn suspend(&self) -> bool {
+        self.stream.suspend()
+    }
+
+    fn close(&self) {
+        self.stream.close()
+    }
+
+    fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
+    fn number_of_channels(&self) -> usize {
+        self.number_of_channels
+    }
+
+    fn boxed_clone(&self) -> Box<dyn AudioBackend> {
+        Box::new(self.clone())
+    }
+}
 
 /// Creates an output stream
 ///
@@ -391,7 +491,7 @@ pub(crate) fn build_output(
     frames_played: Arc<AtomicU64>,
     output_latency: Arc<AtomicF64>,
     options: AudioContextOptions,
-) -> (Stream, StreamConfig, Sender<ControlMessage>) {
+) -> (CpalBackend, Sender<ControlMessage>) {
     let mut builder = StreamConfigsBuilder::new();
 
     // set specific sample rate if requested
@@ -409,12 +509,22 @@ pub(crate) fn build_output(
         .or_fallback()
         .play();
 
-    streamer.get_output_stream()
+    let (stream, config, sender) = streamer.get_output_stream();
+    let number_of_channels = usize::from(config.channels);
+    let sample_rate = config.sample_rate.0 as f32;
+
+    let backend = CpalBackend {
+        stream: ThreadSafeClosableStream::new(stream),
+        sample_rate,
+        number_of_channels,
+    };
+
+    (backend, sender)
 }
 
 /// Builds the input
 #[allow(clippy::needless_pass_by_value)]
-pub fn build_input(options: AudioContextOptions) -> (Stream, StreamConfig, Receiver<AudioBuffer>) {
+pub(crate) fn build_input(options: AudioContextOptions) -> (CpalBackend, Receiver<AudioBuffer>) {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
@@ -482,5 +592,14 @@ pub fn build_input(options: AudioContextOptions) -> (Stream, StreamConfig, Recei
     // Required because some hosts don't play the stream automatically
     stream.play().expect("Input stream refused to play");
 
-    (stream, config, receiver)
+    let number_of_channels = usize::from(config.channels);
+    let sample_rate = config.sample_rate.0 as f32;
+
+    let backend = CpalBackend {
+        stream: ThreadSafeClosableStream::new(stream),
+        sample_rate,
+        number_of_channels,
+    };
+
+    (backend, receiver)
 }
