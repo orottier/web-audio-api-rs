@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use cpal::{OutputCallbackInfo, Sample};
+use cpal::Sample;
 use crossbeam_channel::Receiver;
 
 use super::{AudioRenderQuantum, NodeIndex};
@@ -134,14 +134,8 @@ impl RenderThread {
     // This code is not dead: false positive from clippy
     // due to the use of #[cfg(not(test))]
     #[allow(dead_code)]
-    pub fn render<S: Sample>(&mut self, mut buffer: &mut [S], infos: &OutputCallbackInfo) {
+    pub fn render<S: Sample>(&mut self, mut buffer: &mut [S], output_latency: f64) {
         // update output latency, this value might change while running (e.g. sound card heat)
-        let timestamp = infos.timestamp();
-        let delta = timestamp
-            .playback
-            .duration_since(&timestamp.callback)
-            .unwrap();
-        let output_latency = delta.as_secs() as f64 + delta.subsec_nanos() as f64 * 1e-9;
         self.output_latency.store(output_latency);
 
         // There may be audio frames left over from the previous render call,

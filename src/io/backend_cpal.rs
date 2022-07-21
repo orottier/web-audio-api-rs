@@ -119,6 +119,15 @@ impl AudioBackend for CpalBackend {
     }
 }
 
+fn output_latency(infos: &OutputCallbackInfo) -> f64 {
+    let timestamp = infos.timestamp();
+    let delta = timestamp
+        .playback
+        .duration_since(&timestamp.callback)
+        .unwrap();
+    delta.as_secs() as f64 + delta.subsec_nanos() as f64 * 1e-9
+}
+
 /// Creates an output stream
 ///
 /// # Arguments:
@@ -138,17 +147,17 @@ fn spawn_output_stream(
     match sample_format {
         SampleFormat::F32 => device.build_output_stream(
             config,
-            move |d: &mut [f32], i: &OutputCallbackInfo| render.render(d, i),
+            move |d: &mut [f32], i: &OutputCallbackInfo| render.render(d, output_latency(i)),
             err_fn,
         ),
         SampleFormat::U16 => device.build_output_stream(
             config,
-            move |d: &mut [u16], i: &OutputCallbackInfo| render.render(d, i),
+            move |d: &mut [u16], i: &OutputCallbackInfo| render.render(d, output_latency(i)),
             err_fn,
         ),
         SampleFormat::I16 => device.build_output_stream(
             config,
-            move |d: &mut [i16], i: &OutputCallbackInfo| render.render(d, i),
+            move |d: &mut [i16], i: &OutputCallbackInfo| render.render(d, output_latency(i)),
             err_fn,
         ),
     }
