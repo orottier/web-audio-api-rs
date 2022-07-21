@@ -7,7 +7,7 @@ use crate::AtomicF64;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use crate::io::{AudioBackend, CpalBackend};
+use crate::io::{AudioBackend, CpalBackend, CubebBackend};
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
@@ -103,8 +103,15 @@ impl AudioContext {
         let output_latency = Arc::new(AtomicF64::new(0.));
         let output_latency_clone = output_latency.clone();
 
-        let (backend, sender) =
-            CpalBackend::build_output(frames_played_clone, output_latency_clone, options);
+        let (backend, sender) = if false {
+            let (backend, sender) =
+                CpalBackend::build_output(frames_played_clone, output_latency_clone, options);
+            (Box::new(backend) as Box<dyn AudioBackend>, sender)
+        } else {
+            let (backend, sender) =
+                CubebBackend::build_output(frames_played_clone, output_latency_clone, options);
+            (Box::new(backend) as Box<dyn AudioBackend>, sender)
+        };
 
         let base = ConcreteBaseAudioContext::new(
             backend.sample_rate(),
@@ -117,7 +124,7 @@ impl AudioContext {
 
         Self {
             base,
-            backend: Box::new(backend),
+            backend,
             output_latency,
         }
     }

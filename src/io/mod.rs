@@ -11,6 +11,9 @@ use crate::AtomicF64;
 mod backend_cpal;
 pub(crate) use backend_cpal::CpalBackend;
 
+mod backend_cubeb;
+pub(crate) use backend_cubeb::CubebBackend;
+
 pub(crate) trait AudioBackend: Send + Sync + 'static {
     fn build_output(
         frames_played: Arc<AtomicU64>,
