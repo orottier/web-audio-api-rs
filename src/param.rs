@@ -598,13 +598,21 @@ impl AudioProcessor for AudioParamProcessor {
 
         let input = &inputs[0]; // single input mode
         let output = &mut outputs[0];
+        let default_value = self.default_value;
         let min = self.min_value;
         let max = self.max_value;
 
         let intrisic_values =
             self.compute_intrisic_values(scope.current_time, period, RENDER_QUANTUM_SIZE);
 
-        AudioParamProcessor::compute_computed_values(intrisic_values, input, output, min, max);
+        AudioParamProcessor::compute_computed_values(
+            intrisic_values,
+            input,
+            output,
+            default_value,
+            min,
+            max,
+        );
 
         true // has intrinsic value
     }
@@ -624,6 +632,7 @@ impl AudioParamProcessor {
         intrisic_values: &[f32],
         input: &AudioRenderQuantum,
         output: &mut AudioRenderQuantum,
+        default_value: f32,
         min: f32,
         max: f32,
     ) {
@@ -631,18 +640,13 @@ impl AudioParamProcessor {
 
         output.add(input, &AUDIO_PARAM_CHANNEL_CONFIG);
 
-        output
-            .channel_data_mut(0)
-            .iter_mut()
-            .for_each(|s| *s = s.clamp(min, max));
-    }
+        output.channel_data_mut(0).iter_mut().for_each(|s| {
+            if s.is_nan() {
+                *s = default_value;
+            }
 
-    pub fn intrisic_value(&self) -> f32 {
-        if self.intrisic_value.is_nan() {
-            self.default_value
-        } else {
-            self.intrisic_value
-        }
+            *s = s.clamp(min, max)
+        });
     }
 
     // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
@@ -954,7 +958,7 @@ impl AudioParamProcessor {
     fn compute_buffer(&mut self, block_time: f64, dt: f64, count: usize) {
         // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
-        let clamped = self.intrisic_value().clamp(self.min_value, self.max_value);
+        let clamped = self.intrisic_value.clamp(self.min_value, self.max_value);
         self.current_value.store(clamped);
 
         // populate the buffer for this block
@@ -965,7 +969,7 @@ impl AudioParamProcessor {
         let is_k_rate = !is_a_rate;
 
         if is_k_rate {
-            self.buffer.resize(count, self.intrisic_value());
+            self.buffer.resize(count, self.intrisic_value);
         }
 
         loop {
@@ -974,7 +978,7 @@ impl AudioParamProcessor {
             match some_event {
                 None => {
                     if is_a_rate {
-                        self.buffer.resize(count, self.intrisic_value());
+                        self.buffer.resize(count, self.intrisic_value);
                     }
                     break;
                 }
@@ -1001,7 +1005,7 @@ impl AudioParamProcessor {
                                 let end_index_clipped = end_index.min(count);
 
                                 for _ in self.buffer.len()..end_index_clipped {
-                                    self.buffer.push(self.intrisic_value());
+                                    self.buffer.push(self.intrisic_value);
                                 }
                             }
 
@@ -1542,24 +1546,47 @@ mod tests {
 
     #[test]
     fn test_set_value() {
-        let context = OfflineAudioContext::new(1, 0, 48000.);
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
 
-        let opts = AudioParamDescriptor {
-            automation_rate: AutomationRate::A,
-            default_value: 0.,
-            min_value: -10.,
-            max_value: 10.,
-        };
-        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: -10.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value(2.);
-        assert_float_eq!(param.value(), 2., abs_all <= 0.);
+            param.set_value(2.);
+            assert_float_eq!(param.value(), 2., abs_all <= 0.);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrisic_values(0., 1., 10);
 
-        // current_value should not be overriden by intrisic value
-        assert_float_eq!(param.value(), 2., abs_all <= 0.);
-        assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
+            assert_float_eq!(param.value(), 2., abs_all <= 0.);
+            assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
+        }
+
+        // make sure param.value() is properly clamped
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 1.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.set_value(2.);
+            assert_float_eq!(param.value(), 1., abs_all <= 0.);
+
+            let vs = render.compute_intrisic_values(0., 1., 10);
+
+            // value should clamped while intrisic value should not
+            assert_float_eq!(param.value(), 1., abs_all <= 0.);
+            assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
+        }
     }
 
     #[test]
@@ -2809,191 +2836,105 @@ mod tests {
     fn test_computed_values_clamped() {
         let alloc = Alloc::with_capacity(1);
 
-        {
-            let context = OfflineAudioContext::new(1, 0, 48000.);
-
-            let min = -1.;
-            let max = 1.;
-
-            let opts = AudioParamDescriptor {
-                automation_rate: AutomationRate::A,
-                default_value: 0.,
-                min_value: min,
-                max_value: max,
-            };
-            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-
-            param.set_value(2.);
-            assert_float_eq!(param.value(), 1., abs_all <= 0.);
-
-            let intrisic_values = render.compute_intrisic_values(0., 1., 128);
-            // current_value should not be overriden by intrisic value
-            assert_float_eq!(param.value(), 1., abs_all <= 0.);
-            assert_float_eq!(intrisic_values, &[2.; 128][..], abs_all <= 0.);
-
-            let signal = alloc.silence();
-            let input = AudioRenderQuantum::from(signal);
-            let signal = alloc.silence();
-            let mut output = AudioRenderQuantum::from(signal);
-
-            AudioParamProcessor::compute_computed_values(
-                intrisic_values,
-                &input,
-                &mut output,
-                min,
-                max,
-            );
-
-            assert_float_eq!(output.channel_data(0)[..], &[1.; 128][..], abs_all <= 0.);
+        let min = 10.;
+        let max = 42.;
+        let default = 37.;
+        // emulate a ramp from 0..64..0 in one buffer
+        let mut intrisic_values = [0.; 128];
+        for (i, v) in intrisic_values.iter_mut().enumerate() {
+            *v = if i <= 64 { i as f32 } else { 128. - i as f32 }
         }
+        intrisic_values[127] = f32::NAN;
 
-        {
-            // must be compliant with ex.7 cf. https://www.w3.org/TR/webaudio/#computation-of-value
-            let context = OfflineAudioContext::new(1, 0, 48000.);
+        let signal = alloc.silence();
+        let input = AudioRenderQuantum::from(signal);
+        let signal = alloc.silence();
+        let mut output = AudioRenderQuantum::from(signal);
 
-            let min = 0.;
-            let max = 37.;
+        AudioParamProcessor::compute_computed_values(
+            &intrisic_values,
+            &input,
+            &mut output,
+            default,
+            min,
+            max,
+        );
 
-            let opts = AudioParamDescriptor {
-                automation_rate: AutomationRate::A,
-                default_value: 0.,
-                min_value: min,
-                max_value: max,
-            };
-            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-
-            param.linear_ramp_to_value_at_time(64., 64.);
-            param.linear_ramp_to_value_at_time(0., 128.0);
-
-            let intrisic_values = render.compute_intrisic_values(0., 1., 128);
-            let mut expected = [0.; 128];
-            for (i, v) in expected.iter_mut().enumerate() {
-                *v = if i <= 64 { i as f32 } else { 128. - i as f32 }
-            }
-
-            assert_float_eq!(intrisic_values, &expected[..], abs_all <= 0.);
-
-            let signal = alloc.silence();
-            let input = AudioRenderQuantum::from(signal);
-            let signal = alloc.silence();
-            let mut output = AudioRenderQuantum::from(signal);
-
-            AudioParamProcessor::compute_computed_values(
-                intrisic_values,
-                &input,
-                &mut output,
-                min,
-                max,
-            );
-            // clamp expected
-            expected.iter_mut().for_each(|v| *v = v.clamp(min, max));
-
-            assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
-        }
-
-        {
-            let context = OfflineAudioContext::new(1, 0, 48000.);
-
-            let min = 2.;
-            let max = 42.;
-
-            let opts = AudioParamDescriptor {
-                automation_rate: AutomationRate::A,
-                default_value: 2.,
-                min_value: min,
-                max_value: max,
-            };
-            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-
-            param.set_value(128.);
-            param.linear_ramp_to_value_at_time(0., 128.);
-
-            let intrisic_values = render.compute_intrisic_values(0., 1., 128);
-            let mut expected = [0.; 128];
-            for (i, v) in expected.iter_mut().enumerate() {
-                *v = 128. - i as f32;
-            }
-            assert_float_eq!(intrisic_values, &expected[..], abs_all <= 0.);
-
-            let signal = alloc.silence();
-            let input = AudioRenderQuantum::from(signal);
-            let signal = alloc.silence();
-            let mut output = AudioRenderQuantum::from(signal);
-
-            AudioParamProcessor::compute_computed_values(
-                intrisic_values,
-                &input,
-                &mut output,
-                min,
-                max,
-            );
-            // clamp expected
-            expected.iter_mut().for_each(|v| *v = v.clamp(min, max));
-
-            assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
-        }
-
-        {
-            let context = OfflineAudioContext::new(1, 0, 48000.);
-
-            let min = 2.;
-            let max = 42.;
-
-            let opts = AudioParamDescriptor {
-                automation_rate: AutomationRate::A,
-                default_value: 2.,
-                min_value: min,
-                max_value: max,
-            };
-            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-
-            param.set_value_at_time(128., 0.);
-            param.linear_ramp_to_value_at_time(0., 128.);
-
-            let intrisic_values = render.compute_intrisic_values(0., 1., 128);
-            let mut expected = [0.; 128];
-            for (i, v) in expected.iter_mut().enumerate() {
-                *v = 128. - i as f32;
-            }
-            assert_float_eq!(intrisic_values, &expected[..], abs_all <= 0.);
-
-            let signal = alloc.silence();
-            let input = AudioRenderQuantum::from(signal);
-            let signal = alloc.silence();
-            let mut output = AudioRenderQuantum::from(signal);
-
-            AudioParamProcessor::compute_computed_values(
-                intrisic_values,
-                &input,
-                &mut output,
-                min,
-                max,
-            );
-            // clamp expected
-            expected.iter_mut().for_each(|v| *v = v.clamp(min, max));
-
-            assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
-        }
+        // ensure NAN are replace w/ default value
+        intrisic_values
+            .iter_mut()
+            .for_each(|v| *v = v.clamp(min, max));
+        assert_float_eq!(output.channel_data(0)[127], default, abs_all <= 0.);
+        // ensure values are clamped
+        intrisic_values[127] = default;
+        assert_float_eq!(
+            output.channel_data(0)[..],
+            &intrisic_values[..],
+            abs_all <= 0.
+        );
     }
 
     #[test]
-    fn test_computed_values_add_input_and_clamp() {
+    fn test_computed_values_add_input_then_clamp() {
         let alloc = Alloc::with_capacity(1);
 
+        let min = 2.;
+        let max = 42.;
+        let default = 2.;
+
+        // ramp from 128 to 0 in one buffer
+        let mut intrisic_values = [0.; 128];
+        for (i, v) in intrisic_values.iter_mut().enumerate() {
+            *v = 128. - i as f32;
+        }
+
+        // input will a 1. to intrisic values
+        let mut signal = alloc.silence();
+        signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
+        let input = AudioRenderQuantum::from(signal);
+
+        let signal = alloc.silence();
+        let mut output = AudioRenderQuantum::from(signal);
+
+        AudioParamProcessor::compute_computed_values(
+            &intrisic_values,
+            &input,
+            &mut output,
+            default,
+            min,
+            max,
+        );
+        // add 1 (input) and clamp
+        intrisic_values
+            .iter_mut()
+            .for_each(|v| *v = (*v + 1.).clamp(min, max));
+
+        assert_float_eq!(
+            output.channel_data(0)[..],
+            &intrisic_values[..],
+            abs_all <= 0.
+        );
+    }
+
+    #[test]
+    fn test_full_render_chain() {
+        let alloc = Alloc::with_capacity(1);
+        // prevent regression between the different processing stage
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let min = 2.;
         let max = 42.;
+        let default = 2.;
 
         let opts = AudioParamDescriptor {
             automation_rate: AutomationRate::A,
-            default_value: 2.,
+            default_value: default,
             min_value: min,
             max_value: max,
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(128., 0.);
+        param.set_value(128.);
         param.linear_ramp_to_value_at_time(0., 128.);
 
         let intrisic_values = render.compute_intrisic_values(0., 1., 128);
@@ -3001,11 +2942,9 @@ mod tests {
         for (i, v) in expected.iter_mut().enumerate() {
             *v = 128. - i as f32;
         }
-
         assert_float_eq!(intrisic_values, &expected[..], abs_all <= 0.);
 
-        let mut signal = alloc.silence();
-        signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
+        let signal = alloc.silence();
         let input = AudioRenderQuantum::from(signal);
         let signal = alloc.silence();
         let mut output = AudioRenderQuantum::from(signal);
@@ -3014,13 +2953,12 @@ mod tests {
             intrisic_values,
             &input,
             &mut output,
+            default,
             min,
             max,
         );
-        // add 1 (input) and clamp
-        expected
-            .iter_mut()
-            .for_each(|v| *v = (*v + 1.).clamp(min, max));
+        // clamp expected
+        expected.iter_mut().for_each(|v| *v = v.clamp(min, max));
 
         assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
     }
