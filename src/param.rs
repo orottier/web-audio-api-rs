@@ -729,8 +729,6 @@ impl AudioParamProcessor {
         // then the paramIntrinsicValue value will remain unchanged and stay at its
         // previous value until either the value attribute is directly set, or
         // automation events are added for the time range.
-        // let mut events_received = false;
-
         for event in self.receiver.try_iter() {
             // handle CancelScheduledValues events
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-cancelscheduledvalues
