@@ -584,6 +584,7 @@ pub(crate) struct AudioParamProcessor {
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
     buffer: Vec<f32>,
+    is_buffer_clean: bool,
 }
 
 impl AudioProcessor for AudioParamProcessor {
@@ -622,7 +623,10 @@ impl AudioParamProcessor {
     // warning: tick in called directly in the unit tests so everything important
     // for the tests should be done here
     fn compute_intrisic_values(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
-        self.handle_incoming_events();
+        if !self.receiver.is_empty() {
+            self.handle_incoming_events();
+        }
+
         self.compute_buffer(block_time, dt, count);
 
         self.buffer.as_slice()
@@ -636,17 +640,22 @@ impl AudioParamProcessor {
         min: f32,
         max: f32,
     ) {
-        output.channel_data_mut(0).copy_from_slice(intrisic_values);
+        let output = output.channel_data_mut(0);
 
-        output.add(input, &AUDIO_PARAM_CHANNEL_CONFIG);
+        output.copy_from_slice(intrisic_values);
 
-        output.channel_data_mut(0).iter_mut().for_each(|s| {
-            if s.is_nan() {
-                *s = default_value;
-            }
+        output
+            .iter_mut()
+            .zip(input.channel_data(0).iter())
+            .for_each(|(o, i)| {
+                *o += i;
 
-            *s = s.clamp(min, max)
-        });
+                if o.is_nan() {
+                    *o = default_value;
+                }
+
+                *o = o.clamp(min, max)
+            });
     }
 
     // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
@@ -720,11 +729,9 @@ impl AudioParamProcessor {
         // then the paramIntrinsicValue value will remain unchanged and stay at its
         // previous value until either the value attribute is directly set, or
         // automation events are added for the time range.
-        let mut events_received = false;
+        // let mut events_received = false;
 
         for event in self.receiver.try_iter() {
-            events_received = true;
-
             // handle CancelScheduledValues events
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-cancelscheduledvalues
             if event.event_type == AudioParamEventType::CancelScheduledValues {
@@ -950,9 +957,7 @@ impl AudioParamProcessor {
             self.event_timeline.push(event);
         }
 
-        if events_received {
-            self.event_timeline.sort();
-        }
+        self.event_timeline.sort();
     }
 
     fn compute_buffer(&mut self, block_time: f64, dt: f64, count: usize) {
@@ -960,6 +965,15 @@ impl AudioParamProcessor {
         // beginning of this render quantum.
         let clamped = self.intrisic_value.clamp(self.min_value, self.max_value);
         self.current_value.store(clamped);
+
+        // no even in timeline and buffer is clean, we can just reuse current buffer,
+        // instead of clearing to just refill with same values
+        if self.event_timeline.is_empty() && self.is_buffer_clean {
+            return;
+        }
+
+        // define if intrisic buffer can be considered be clean in next call
+        self.is_buffer_clean = self.event_timeline.is_empty() { true } else { false };
 
         // populate the buffer for this block
         self.buffer.clear();
@@ -1441,7 +1455,6 @@ pub(crate) fn audio_param_pair(
 ) -> (AudioParam, AudioParamProcessor) {
     let (sender, receiver) = crossbeam_channel::unbounded();
     let current_value = Arc::new(AtomicF32::new(opts.default_value));
-
     let is_a_rate = Arc::new(AtomicBool::new(opts.automation_rate == AutomationRate::A));
 
     let param = AudioParam {
@@ -1466,6 +1479,7 @@ pub(crate) fn audio_param_pair(
         event_timeline: AudioParamEventTimeline::new(),
         last_event: None,
         buffer: Vec::with_capacity(RENDER_QUANTUM_SIZE),
+        is_buffer_clean: false,
     };
 
     (param, render)
