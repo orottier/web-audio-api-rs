@@ -1,12 +1,11 @@
 //! The audio graph topology and render algorithm
 
-use std::collections::HashMap;
-
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeIndex};
 use crate::node::ChannelConfig;
 use crate::render::RenderScope;
 
 use smallvec::{smallvec, SmallVec};
+use rustc_hash::FxHashMap;
 
 /// Connection between two audio nodes
 struct OutgoingEdge {
@@ -71,7 +70,7 @@ impl Node {
 /// The audio graph
 pub(crate) struct Graph {
     /// Processing Nodes
-    nodes: HashMap<NodeIndex, Node>,
+    nodes: FxHashMap<NodeIndex, Node>,
     /// Allocator for audio buffers
     alloc: Alloc,
 
@@ -88,7 +87,7 @@ pub(crate) struct Graph {
 impl Graph {
     pub fn new() -> Self {
         Graph {
-            nodes: HashMap::new(),
+            nodes: FxHashMap::default(),
             ordered: vec![],
             marked: vec![],
             marked_temp: vec![],
