@@ -6,7 +6,6 @@ pub use decoding::MediaDecoder;
 mod element;
 pub use element::MediaElement;
 
-
 #[cfg(any(feature = "cubeb", feature = "cpal"))]
 mod mic;
 #[cfg(any(feature = "cubeb", feature = "cpal"))]
