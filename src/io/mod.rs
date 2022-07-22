@@ -8,11 +8,55 @@ use crate::context::AudioContextOptions;
 use crate::message::ControlMessage;
 use crate::AtomicF64;
 
+#[cfg(feature = "cpal")]
 mod backend_cpal;
-pub(crate) use backend_cpal::CpalBackend;
 
+#[cfg(feature = "cubeb")]
 mod backend_cubeb;
-pub(crate) use backend_cubeb::CubebBackend;
+
+#[allow(unused_variables)]
+pub(crate) fn build_output(
+    frames_played: Arc<AtomicU64>,
+    output_latency: Arc<AtomicF64>,
+    options: AudioContextOptions,
+) -> (Box<dyn AudioBackend>, Sender<ControlMessage>) {
+    #[cfg(feature = "cubeb")]
+    {
+        let (b, s) =
+            backend_cubeb::CubebBackend::build_output(frames_played, output_latency, options);
+        (Box::new(b), s)
+    }
+    #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
+    {
+        let (b, s) =
+            backend_cpal::CpalBackend::build_output(frames_played, output_latency, options);
+        (Box::new(b), s)
+    }
+    #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
+    {
+        panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
+    }
+}
+
+#[cfg(any(feature = "cubeb", feature = "cpal"))]
+pub(crate) fn build_input(
+    options: AudioContextOptions,
+) -> (Box<dyn AudioBackend>, Receiver<AudioBuffer>) {
+    #[cfg(feature = "cubeb")]
+    {
+        let (b, r) = backend_cubeb::CubebBackend::build_input(options);
+        (Box::new(b), r)
+    }
+    #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
+    {
+        let (b, r) = backend_cpal::CpalBackend::build_input(options);
+        (Box::new(b), r)
+    }
+    #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
+    {
+        panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
+    }
+}
 
 pub(crate) trait AudioBackend: Send + Sync + 'static {
     fn build_output(

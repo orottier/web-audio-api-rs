@@ -9,7 +9,7 @@ use crate::context::AudioContextOptions;
 use crossbeam_channel::Sender;
 
 use crate::buffer::ChannelData;
-use crate::io::{AudioBackend, CpalBackend};
+use crate::io::{self, AudioBackend};
 
 use crossbeam_channel::{Receiver, TryRecvError};
 
@@ -67,13 +67,14 @@ impl Microphone {
     /// Note: the specified `latency_hint` is currently ignored, follow our progress at
     /// <https://github.com/orottier/web-audio-api-rs/issues/51>
     pub fn new(options: AudioContextOptions) -> Self {
-        let (backend, receiver) = CpalBackend::build_input(options);
+        // select backend based on cargo features
+        let (backend, receiver) = io::build_input(options);
 
         Self {
             receiver,
             number_of_channels: backend.number_of_channels(),
             sample_rate: backend.sample_rate(),
-            backend: Box::new(backend),
+            backend,
         }
     }
 

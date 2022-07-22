@@ -35,7 +35,7 @@ mod private {
         pub fn resume(&self) -> bool {
             if let Some(s) = self.0.lock().unwrap().as_ref() {
                 if let Err(e) = s.start() {
-                    panic!("Error resuming cpal stream: {:?}", e);
+                    panic!("Error resuming cubeb stream: {:?}", e);
                 }
                 return true;
             }
@@ -46,7 +46,7 @@ mod private {
         pub fn suspend(&self) -> bool {
             if let Some(s) = self.0.lock().unwrap().as_ref() {
                 if let Err(e) = s.stop() {
-                    panic!("Error suspending cpal stream: {:?}", e);
+                    panic!("Error suspending cubeb stream: {:?}", e);
                 }
                 return true;
             }
@@ -56,8 +56,7 @@ mod private {
     }
 
     // SAFETY:
-    // The cpal `Stream` is marked !Sync and !Send because some platforms are not thread-safe
-    // https://github.com/RustAudio/cpal/commit/33ddf749548d87bf54ce18eb342f954cec1465b2
+    // The cubeb `Stream` is marked !Sync and !Send because some platforms are not thread-safe
     // Since we wrap the Stream in a Mutex, we should be fine
     unsafe impl Sync for ThreadSafeClosableStream {}
     unsafe impl Send for ThreadSafeClosableStream {}
