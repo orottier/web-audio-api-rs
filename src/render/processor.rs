@@ -1,10 +1,10 @@
 //! Audio processing code that runs on the audio rendering thread
 
-use std::collections::HashMap;
-
 use crate::context::AudioParamId;
 
 use super::{graph::Node, AudioRenderQuantum, NodeIndex};
+
+use rustc_hash::FxHashMap;
 
 #[non_exhaustive] // we may want to add user-provided blobs to this later
 /// The execution context of all AudioProcessors in a given AudioContext
@@ -58,11 +58,11 @@ pub trait AudioProcessor: Send {
 ///
 /// Provided to implementations of [`AudioProcessor`] in the render thread
 pub struct AudioParamValues<'a> {
-    nodes: &'a HashMap<NodeIndex, Node>,
+    nodes: &'a FxHashMap<NodeIndex, Node>,
 }
 
 impl<'a> AudioParamValues<'a> {
-    pub(crate) fn from(nodes: &'a HashMap<NodeIndex, Node>) -> Self {
+    pub(crate) fn from(nodes: &'a FxHashMap<NodeIndex, Node>) -> Self {
         Self { nodes }
     }
 
