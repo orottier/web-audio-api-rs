@@ -420,7 +420,7 @@ impl AudioProcessor for DelayReader {
 
         // A DelayNode in a cycle is actively processing only when the absolute
         // value of any output sample for the current render quantum is greater
-        // than or equal to 2−126.
+        // than or equal to 2^−126 (smallest f32 value).
         let mut is_actively_processing = false;
 
         // render channels aligned
@@ -484,7 +484,7 @@ impl AudioProcessor for DelayReader {
 
                     let value = (1. - k).mul_add(prev_sample, k * next_sample);
 
-                    if value.abs() >= 2e-126 {
+                    if value.is_normal() {
                         is_actively_processing = true;
                     }
 
