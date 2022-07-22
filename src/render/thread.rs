@@ -3,7 +3,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use cpal::Sample;
 use crossbeam_channel::Receiver;
 
 use super::{AudioRenderQuantum, NodeIndex};
@@ -135,7 +134,7 @@ impl RenderThread {
     // This code is not dead: false positive from clippy
     // due to the use of #[cfg(not(test))]
     #[allow(dead_code)]
-    pub fn render<S: Sample>(&mut self, mut buffer: &mut [S], output_latency: f64) {
+    pub fn render<S: crate::Sample>(&mut self, mut buffer: &mut [S], output_latency: f64) {
         // update output latency, this value might change while running (e.g. sound card heat)
         self.output_latency.store(output_latency);
 
@@ -151,7 +150,7 @@ impl RenderThread {
                 let output = first.iter_mut().skip(i).step_by(self.number_of_channels);
                 let channel = prev_rendered.channel_data(i)[offset..].iter();
                 for (sample, input) in output.zip(channel) {
-                    let value = Sample::from::<f32>(input);
+                    let value = crate::Sample::from::<f32>(input);
                     *sample = value;
                 }
             }
@@ -202,7 +201,7 @@ impl RenderThread {
                 let output = data.iter_mut().skip(i).step_by(self.number_of_channels);
                 let channel = rendered.channel_data(i).iter();
                 for (sample, input) in output.zip(channel) {
-                    let value = Sample::from::<f32>(input);
+                    let value = crate::Sample::from::<f32>(input);
                     *sample = value;
                 }
             }

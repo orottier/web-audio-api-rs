@@ -186,7 +186,7 @@ impl MicrophoneRender {
         }
     }
 
-    pub fn render<S: cpal::Sample>(&self, data: &[S]) {
+    pub fn render<S: crate::Sample>(&self, data: &[S]) {
         let mut channels = Vec::with_capacity(self.number_of_channels);
 
         // copy rendered audio into output slice
