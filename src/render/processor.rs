@@ -6,7 +6,6 @@ use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 
 use rustc_hash::FxHashMap;
 
-
 #[non_exhaustive] // we may want to add user-provided blobs to this later
 /// The execution context of all AudioProcessors in a given AudioContext
 ///

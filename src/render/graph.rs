@@ -4,8 +4,8 @@ use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeInd
 use crate::node::ChannelConfig;
 use crate::render::RenderScope;
 
-use smallvec::{smallvec, SmallVec};
 use rustc_hash::FxHashMap;
+use smallvec::{smallvec, SmallVec};
 
 /// Connection between two audio nodes
 struct OutgoingEdge {
