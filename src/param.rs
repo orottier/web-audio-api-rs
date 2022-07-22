@@ -972,8 +972,10 @@ impl AudioParamProcessor {
             return;
         }
 
-        // define if intrisic buffer can be considered be clean in next call
-        self.is_buffer_clean = self.event_timeline.is_empty() { true } else { false };
+        // Define if intrisic buffer can be considered be clean in next call.
+        // If the timeline is empty, we know the buffer will be filled with a
+        // constant value. @note: there could other valid cases
+        self.is_buffer_clean = self.event_timeline.is_empty();
 
         // populate the buffer for this block
         self.buffer.clear();
