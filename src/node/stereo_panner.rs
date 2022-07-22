@@ -164,6 +164,12 @@ impl AudioProcessor for StereoPannerRenderer {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
+
+        if input.is_silent() {
+            output.make_silent();
+            return false;
+        }
+
         output.set_number_of_channels(2);
 
         let pan_values = params.get(&self.pan);

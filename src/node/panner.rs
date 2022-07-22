@@ -326,9 +326,13 @@ impl AudioProcessor for PannerRenderer {
         // Single input node
         // assume mono (todo issue #44)
         let input = inputs[0].channel_data(0);
-
         // Single output node
         let output = &mut outputs[0];
+
+        if input.is_silent() {
+            output.make_silent();
+            return false;
+        }
 
         // K-rate processing for now (todo issue #44)
 

@@ -105,7 +105,8 @@ impl AudioProcessor for ChannelSplitterRenderer {
         assert_eq!(self.number_of_outputs, outputs.len());
 
         for (i, output) in outputs.iter_mut().enumerate() {
-            output.force_mono();
+            output.set_number_of_channels(1);
+
             if i < input.number_of_channels() {
                 *output.channel_data_mut(0) = input.channel_data(i).clone();
             } else {

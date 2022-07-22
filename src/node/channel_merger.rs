@@ -92,11 +92,20 @@ impl AudioProcessor for ChannelMergerRenderer {
     ) -> bool {
         // single output node
         let output = &mut outputs[0];
-        output.set_number_of_channels(inputs.len());
 
-        inputs.iter().enumerate().for_each(|(i, input)| {
-            *output.channel_data_mut(i) = input.channel_data(0).clone();
-        });
+        // [spec] There is a single output whose audio stream has a number of
+        // channels equal to the number of inputs when any of the inputs is actively
+        // processing. If none of the inputs are actively processing, then output
+        // is a single channel of silence.
+        if inputs.iter().any(|input| !input.is_silent()) {
+            output.set_number_of_channels(inputs.len());
+
+            inputs.iter().enumerate().for_each(|(i, input)| {
+                *output.channel_data_mut(i) = input.channel_data(0).clone();
+            });
+        } else {
+            output.make_silent();
+        }
 
         false
     }
