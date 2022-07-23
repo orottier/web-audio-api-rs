@@ -1,3 +1,13 @@
+# Version 0.21.0 (2021-07-23)
+
+- Implemented MediaElement and MediaElementSourceNode
+- Improved performance of AudioBufferSourceNode and DelayNode
+- Make AudioContext and OfflineAudioContext `Send` and `Sync`
+- Relaxed the 'balanced' and 'playback' latency - to run smoothly on RPi
+- Fixes on clamping and value calculations of AudioParams
+- Can now change automation rate of an AudioParam on the fly
+- Implemented the concept of 'actively processing' for AudioNodes
+
 # Version 0.20.0 (2021-07-02)
 
 - Change sample rate type to plain f32
