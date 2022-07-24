@@ -7,7 +7,7 @@ use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::message::ControlMessage;
 use crate::render::RenderThread;
-use crate::AtomicF64;
+use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
 
 use cubeb::{Context, StereoFrame, Stream};
 
@@ -79,12 +79,17 @@ impl AudioBackend for CubebBackend {
     where
         Self: Sized,
     {
+        // Set up cubeb context
+        let ctx = Context::init(None, None).unwrap();
+
+        // Use user requested sample rate, or else the device preferred one
+        let device_sample_rate = ctx.preferred_sample_rate().map(|v| v as f32).ok();
+        let sample_rate = options.sample_rate.or(device_sample_rate).unwrap_or(48000.);
+
         // TODO support all channel configs
+        let _max_channel_count = ctx.max_channel_count().map(|v| v as usize).ok();
         let number_of_channels = 2;
         let layout = cubeb::ChannelLayout::STEREO;
-
-        // TODO get preferred sample rate from Device
-        let sample_rate = options.sample_rate.unwrap_or(48_000.);
 
         // Set up render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
@@ -96,8 +101,6 @@ impl AudioBackend for CubebBackend {
             output_latency,
         );
 
-        // Set up cubeb
-        let ctx = Context::init(None, None).unwrap();
         let params = cubeb::StreamParamsBuilder::new()
             .format(cubeb::SampleFormat::Float32LE) // TODO may not be available for device
             .rate(sample_rate as u32)
@@ -105,12 +108,22 @@ impl AudioBackend for CubebBackend {
             .layout(layout)
             .take();
 
+        // Calculate ideal latency
+        let buffer_size_req =
+            super::buffer_size_for_latency_category(options.latency_hint, sample_rate) as u32;
+        let min_latency = ctx
+            .min_latency(&params)
+            .ok()
+            .unwrap_or(RENDER_QUANTUM_SIZE as u32);
+        let buffer_size = buffer_size_req.max(min_latency);
+
         let mut builder = cubeb::StreamBuilder::<Frame>::new();
         builder
             .name("Cubeb web_audio_api (mono)")
             .default_output(&params)
-            .latency(128)
-            .data_callback(move |_, output| {
+            .default_input(&params)
+            .latency(buffer_size)
+            .data_callback(move |_input, output| {
                 // TODO can we avoid the temp buffer?
                 let mut tmp = [0.; 128 * 2];
                 renderer.render(&mut tmp, 0.);

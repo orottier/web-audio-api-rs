@@ -4,9 +4,9 @@ use std::sync::Arc;
 use crossbeam_channel::{Receiver, Sender};
 
 use crate::buffer::AudioBuffer;
-use crate::context::AudioContextOptions;
+use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::message::ControlMessage;
-use crate::AtomicF64;
+use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
 
 #[cfg(feature = "cpal")]
 mod backend_cpal;
@@ -77,4 +77,33 @@ pub(crate) trait AudioBackend: Send + Sync + 'static {
     fn sample_rate(&self) -> f32;
     fn number_of_channels(&self) -> usize;
     fn boxed_clone(&self) -> Box<dyn AudioBackend>;
+}
+
+fn buffer_size_for_latency_category(
+    latency_cat: AudioContextLatencyCategory,
+    sample_rate: f32,
+) -> usize {
+    // at 44100Hz sample rate (this could be even more relaxed):
+    // Interactive: 128 samples is 2,9ms
+    // Balanced:    512 samples is 11,6ms
+    // Playback:    1024 samples is 23,2ms
+    match latency_cat {
+        AudioContextLatencyCategory::Interactive => RENDER_QUANTUM_SIZE,
+        AudioContextLatencyCategory::Balanced => RENDER_QUANTUM_SIZE * 4,
+        AudioContextLatencyCategory::Playback => RENDER_QUANTUM_SIZE * 8,
+        // buffer_size is always positive and truncation is the desired behavior
+        #[allow(clippy::cast_sign_loss)]
+        #[allow(clippy::cast_possible_truncation)]
+        AudioContextLatencyCategory::Custom(latency) => {
+            if latency <= 0. {
+                panic!(
+                    "RangeError - Invalid custom latency: {:?}, should be strictly positive",
+                    latency
+                );
+            }
+
+            let buffer_size = (latency * sample_rate as f64) as usize;
+            buffer_size.next_power_of_two()
+        }
+    }
 }

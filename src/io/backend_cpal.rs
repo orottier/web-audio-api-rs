@@ -244,59 +244,14 @@ impl StreamConfigsBuilder {
     /// define requested hardware buffer size
     #[allow(clippy::needless_pass_by_value)]
     fn with_latency_hint(&mut self, latency_hint: AudioContextLatencyCategory) {
-        let render_quantum_size = u32::try_from(RENDER_QUANTUM_SIZE).unwrap();
-
-        // at 44100Hz sample rate (this could be even more relaxed):
-        // Interactive: 128 samples is 2,9ms
-        // Balanced:    512 samples is 11,6ms
-        // Playback:    1024 samples is 23,2ms
-        let buffer_size = match latency_hint {
-            AudioContextLatencyCategory::Interactive => render_quantum_size,
-            AudioContextLatencyCategory::Balanced => render_quantum_size * 4,
-            AudioContextLatencyCategory::Playback => render_quantum_size * 8,
-            // buffer_size is always positive and truncation is the desired behavior
-            #[allow(clippy::cast_sign_loss)]
-            #[allow(clippy::cast_possible_truncation)]
-            AudioContextLatencyCategory::Custom(latency) => {
-                if latency <= 0. {
-                    panic!(
-                        "RangeError - Invalid custom latency: {:?}, should be strictly positive",
-                        latency
-                    );
-                }
-
-                let buffer_size = latency as u32 * self.prefered.sample_rate.0;
-                buffer_size.next_power_of_two()
-            }
-        };
+        let buffer_size = super::buffer_size_for_latency_category(
+            latency_hint,
+            self.prefered.sample_rate.0 as f32,
+        ) as u32;
 
         let clamped_buffer_size: u32 = match self.supported.buffer_size() {
             SupportedBufferSize::Unknown => buffer_size,
-            // try to find the best power of two candidate in given range
-            SupportedBufferSize::Range { min, max } => {
-                let min = *min;
-                let max = *max;
-
-                if buffer_size < min {
-                    let next_power_of_two = min.next_power_of_two();
-
-                    if next_power_of_two <= max {
-                        next_power_of_two
-                    } else {
-                        min
-                    }
-                } else if buffer_size > max {
-                    let prev_power_of_two = max.next_power_of_two() / 2;
-
-                    if prev_power_of_two >= min {
-                        prev_power_of_two
-                    } else {
-                        max
-                    }
-                } else {
-                    buffer_size
-                }
-            }
+            SupportedBufferSize::Range { min, max } => buffer_size.clamp(*min, *max),
         };
 
         self.prefered.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
