@@ -9,12 +9,11 @@ use crate::message::ControlMessage;
 use crate::render::RenderThread;
 use crate::AtomicF64;
 
-use cubeb::{Context, MonoFrame, Stream};
+use cubeb::{Context, StereoFrame, Stream};
 
 use crossbeam_channel::{Receiver, Sender};
 
-// TODO I can't get Stereo to work properly for now..
-type Frame = MonoFrame<f32>;
+type Frame = StereoFrame<f32>;
 
 mod private {
     use super::*;
@@ -29,7 +28,8 @@ mod private {
         }
 
         pub fn close(&self) {
-            self.0.lock().unwrap().take(); // will Drop
+            self.suspend();
+            self.0.lock().unwrap().take();
         }
 
         pub fn resume(&self) -> bool {
@@ -80,7 +80,8 @@ impl AudioBackend for CubebBackend {
         Self: Sized,
     {
         // TODO support all channel configs
-        let number_of_channels = 1;
+        let number_of_channels = 2;
+        let layout = cubeb::ChannelLayout::STEREO;
 
         // TODO get preferred sample rate from Device
         let sample_rate = options.sample_rate.unwrap_or(48_000.);
@@ -101,7 +102,7 @@ impl AudioBackend for CubebBackend {
             .format(cubeb::SampleFormat::Float32LE) // TODO may not be available for device
             .rate(sample_rate as u32)
             .channels(number_of_channels as u32)
-            .layout(cubeb::ChannelLayout::MONO)
+            .layout(layout)
             .take();
 
         let mut builder = cubeb::StreamBuilder::<Frame>::new();
@@ -111,10 +112,11 @@ impl AudioBackend for CubebBackend {
             .latency(128)
             .data_callback(move |_, output| {
                 // TODO can we avoid the temp buffer?
-                let mut tmp = [0.; 128];
+                let mut tmp = [0.; 128 * 2];
                 renderer.render(&mut tmp, 0.);
-                for (f, t) in output.iter_mut().zip(tmp) {
-                    f.m = t;
+                for (f, t) in output.iter_mut().zip(tmp.chunks(2)) {
+                    f.l = t[0];
+                    f.r = t[1];
                 }
                 output.len() as isize
             })
