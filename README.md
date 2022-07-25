@@ -90,7 +90,7 @@ and track our spec compliance improvements over time.
 By default, the [`cpal`](https://github.com/rustaudio/cpal) library is used for
 cross platform audio I/O. We offer experimental support for the
 [`cubeb`](https://github.com/mozilla/cubeb-rs) backend via the `cubeb` feature
-flag.
+flag. Please not that `cmake` must be installed locally in order to run `cubeb`.
 
 | Feature flag   | Backend        | Notes |
 | -------------- | -------------- | ----- |

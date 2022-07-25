@@ -18,17 +18,17 @@ jobs:
     # checkout repo, install dependencies
     - uses: actions/checkout@v2
     - name: install alsa (sound driver)
-      run: sudo apt-get update && sudo apt-get install libasound2-dev
+      run: sudo apt-get update && sudo apt-get install libasound2-dev cmake
     - name: update rustc
       run: rustup update
 
     # check it builds
     - name: Build
-      run: cargo build --verbose --all-targets
+      run: cargo build --verbose --all-targets --all-features
 
     # run tests
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --verbose --all-features
 
     # make sure all code has been formatted with rustfmt
     - run: rustup component add rustfmt
@@ -38,7 +38,7 @@ jobs:
     # run clippy to verify we have no warnings
     - run: rustup component add clippy
     - name: cargo clippy
-      run: cargo clippy --all-targets -- -D warnings
+      run: cargo clippy --all-targets --all-features -- -D warnings
 
     # check for rustdoc warnings
     - name: generate and verify rustdoc
