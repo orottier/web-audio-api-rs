@@ -10,7 +10,7 @@ use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::RenderScope;
-use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
+use crate::RENDER_QUANTUM_SIZE;
 
 use super::graph::Graph;
 
@@ -20,7 +20,6 @@ pub(crate) struct RenderThread {
     sample_rate: f32,
     number_of_channels: usize,
     frames_played: Arc<AtomicU64>,
-    output_latency: Arc<AtomicF64>,
     receiver: Receiver<ControlMessage>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
 }
@@ -40,14 +39,12 @@ impl RenderThread {
         number_of_channels: usize,
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
-        output_latency: Arc<AtomicF64>,
     ) -> Self {
         Self {
             graph: Graph::new(),
             sample_rate,
             number_of_channels,
             frames_played,
-            output_latency,
             receiver,
             buffer_offset: None,
         }
@@ -134,10 +131,7 @@ impl RenderThread {
     // This code is not dead: false positive from clippy
     // due to the use of #[cfg(not(test))]
     #[allow(dead_code)]
-    pub fn render<S: crate::Sample>(&mut self, mut buffer: &mut [S], output_latency: f64) {
-        // update output latency, this value might change while running (e.g. sound card heat)
-        self.output_latency.store(output_latency);
-
+    pub fn render<S: crate::Sample>(&mut self, mut buffer: &mut [S]) {
         // There may be audio frames left over from the previous render call,
         // if the cpal buffer size did not align with our internal RENDER_QUANTUM_SIZE
         if let Some((offset, prev_rendered)) = self.buffer_offset.take() {

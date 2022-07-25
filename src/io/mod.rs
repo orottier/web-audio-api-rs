@@ -6,7 +6,7 @@ use crossbeam_channel::{Receiver, Sender};
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::message::ControlMessage;
-use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
+use crate::RENDER_QUANTUM_SIZE;
 
 #[cfg(feature = "cpal")]
 mod backend_cpal;
@@ -16,20 +16,17 @@ mod backend_cubeb;
 
 #[allow(unused_variables)]
 pub(crate) fn build_output(
-    frames_played: Arc<AtomicU64>,
-    output_latency: Arc<AtomicF64>,
     options: AudioContextOptions,
+    frames_played: Arc<AtomicU64>,
 ) -> (Box<dyn AudioBackend>, Sender<ControlMessage>) {
     #[cfg(feature = "cubeb")]
     {
-        let (b, s) =
-            backend_cubeb::CubebBackend::build_output(frames_played, output_latency, options);
+        let (b, s) = backend_cubeb::CubebBackend::build_output(options, frames_played);
         (Box::new(b), s)
     }
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        let (b, s) =
-            backend_cpal::CpalBackend::build_output(frames_played, output_latency, options);
+        let (b, s) = backend_cpal::CpalBackend::build_output(options, frames_played);
         (Box::new(b), s)
     }
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
@@ -59,23 +56,41 @@ pub(crate) fn build_input(
 }
 
 pub(crate) trait AudioBackend: Send + Sync + 'static {
+    /// Setup a new output stream (speakers)
     fn build_output(
-        frames_played: Arc<AtomicU64>,
-        output_latency: Arc<AtomicF64>,
         options: AudioContextOptions,
+        frames_played: Arc<AtomicU64>,
     ) -> (Self, Sender<ControlMessage>)
     where
         Self: Sized;
 
+    /// Setup a new input stream (microphone capture)
     fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
     where
         Self: Sized;
+
+    /// Resume or start the stream
     fn resume(&self) -> bool;
+
+    /// Suspend the stream
     fn suspend(&self) -> bool;
+
+    /// Close the stream, freeing all resources. It cannot be started again after closing.
     fn close(&self);
 
+    /// Sample rate of the stream
     fn sample_rate(&self) -> f32;
+
+    /// Number of channels of the stream
     fn number_of_channels(&self) -> usize;
+
+    /// Output latency of the stream in seconds
+    ///
+    /// This is the difference between the time the backend acquires the data in the callback and
+    /// the listener can hear the sound.
+    fn output_latency(&self) -> f64;
+
+    /// Clone the stream reference
     fn boxed_clone(&self) -> Box<dyn AudioBackend>;
 }
 

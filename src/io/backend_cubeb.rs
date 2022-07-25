@@ -8,7 +8,7 @@ use crate::context::AudioContextOptions;
 use crate::media::MicrophoneRender;
 use crate::message::ControlMessage;
 use crate::render::RenderThread;
-use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
+use crate::RENDER_QUANTUM_SIZE;
 
 use cubeb::{Context, StereoFrame, Stream};
 
@@ -54,6 +54,17 @@ mod private {
 
             false
         }
+
+        pub fn output_latency(&self, sample_rate: f32) -> f64 {
+            if let Some(s) = self.0.lock().unwrap().as_ref() {
+                match s.latency() {
+                    Err(e) => panic!("Error getting cubeb latency: {:?}", e),
+                    Ok(frames) => return frames as f64 / sample_rate as f64,
+                }
+            }
+
+            0.
+        }
     }
 
     // SAFETY:
@@ -73,9 +84,8 @@ pub struct CubebBackend {
 
 impl AudioBackend for CubebBackend {
     fn build_output(
-        frames_played: Arc<AtomicU64>,
-        output_latency: Arc<AtomicF64>,
         options: AudioContextOptions,
+        frames_played: Arc<AtomicU64>,
     ) -> (Self, Sender<ControlMessage>)
     where
         Self: Sized,
@@ -94,13 +104,8 @@ impl AudioBackend for CubebBackend {
 
         // Set up render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
-        let mut renderer = RenderThread::new(
-            sample_rate,
-            number_of_channels,
-            receiver,
-            frames_played,
-            output_latency,
-        );
+        let mut renderer =
+            RenderThread::new(sample_rate, number_of_channels, receiver, frames_played);
 
         let params = cubeb::StreamParamsBuilder::new()
             .format(cubeb::SampleFormat::Float32LE) // TODO may not be available for device
@@ -127,7 +132,7 @@ impl AudioBackend for CubebBackend {
             .data_callback(move |_input, output| {
                 // TODO can we avoid the temp buffer?
                 let mut tmp = [0.; 128 * 2];
-                renderer.render(&mut tmp, 0.);
+                renderer.render(&mut tmp);
                 for (f, t) in output.iter_mut().zip(tmp.chunks(number_of_channels)) {
                     f.l = t[0];
                     f.r = t[1];
@@ -247,6 +252,10 @@ impl AudioBackend for CubebBackend {
 
     fn number_of_channels(&self) -> usize {
         self.number_of_channels
+    }
+
+    fn output_latency(&self) -> f64 {
+        self.stream.output_latency(self.sample_rate)
     }
 
     fn boxed_clone(&self) -> Box<dyn AudioBackend> {

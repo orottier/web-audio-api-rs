@@ -71,27 +71,133 @@ use private::ThreadSafeClosableStream;
 #[derive(Clone)]
 pub struct CpalBackend {
     stream: ThreadSafeClosableStream,
+    output_latency: Arc<AtomicF64>,
     sample_rate: f32,
     number_of_channels: usize,
 }
 
 impl AudioBackend for CpalBackend {
     fn build_output(
-        frames_played: Arc<AtomicU64>,
-        output_latency: Arc<AtomicF64>,
         options: AudioContextOptions,
+        frames_played: Arc<AtomicU64>,
     ) -> (Self, Sender<ControlMessage>)
     where
         Self: Sized,
     {
-        build_output(frames_played, output_latency, options)
+        let mut builder = StreamConfigsBuilder::new();
+
+        // set specific sample rate if requested
+        if let Some(sample_rate) = options.sample_rate {
+            builder.with_sample_rate(sample_rate);
+        }
+
+        // always try to set a decent buffer size
+        builder.with_latency_hint(options.latency_hint);
+
+        let configs = builder.build();
+
+        let output_latency = Arc::new(AtomicF64::new(0.));
+        let streamer = OutputStreamer::new(configs, frames_played, output_latency.clone())
+            .spawn()
+            .or_fallback()
+            .play();
+
+        let (stream, config, sender) = streamer.get_output_stream();
+        let number_of_channels = usize::from(config.channels);
+        let sample_rate = config.sample_rate.0 as f32;
+
+        let backend = CpalBackend {
+            stream: ThreadSafeClosableStream::new(stream),
+            output_latency,
+            sample_rate,
+            number_of_channels,
+        };
+
+        (backend, sender)
     }
 
     fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
     where
         Self: Sized,
     {
-        build_input(options)
+        let host = cpal::default_host();
+        let device = host
+            .default_input_device()
+            .expect("no input device available");
+        log::info!("Input device: {:?}", device.name());
+
+        let mut supported_configs_range = device
+            .supported_input_configs()
+            .expect("error while querying configs");
+
+        let supported_config = supported_configs_range
+            .next()
+            .expect("no supported config?!")
+            .with_max_sample_rate();
+
+        let sample_format = supported_config.sample_format();
+
+        // clone the config, we may need to fall back on it later
+        let default_config: StreamConfig = supported_config.clone().into();
+
+        // determine best buffer size. Spec requires RENDER_QUANTUM_SIZE, but that might not be available
+        let buffer_size: u32 = u32::try_from(RENDER_QUANTUM_SIZE).unwrap();
+        let mut input_buffer_size = match supported_config.buffer_size() {
+            SupportedBufferSize::Range { min, .. } => buffer_size.max(*min),
+            SupportedBufferSize::Unknown => buffer_size,
+        };
+        // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
+        // the desired number of frames.
+        input_buffer_size = (input_buffer_size + buffer_size - 1) / buffer_size * buffer_size;
+
+        let mut config: StreamConfig = supported_config.into();
+        config.buffer_size = cpal::BufferSize::Fixed(input_buffer_size);
+        if let Some(sample_rate) = options.sample_rate {
+            config.sample_rate = CpalSampleRate(sample_rate as u32);
+        }
+
+        let sample_rate = config.sample_rate.0 as f32;
+        let channels = config.channels as usize;
+
+        let smoothing = 3; // todo, use buffering to smooth frame drops
+        let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
+        let renderer = MicrophoneRender::new(channels, sample_rate, sender);
+
+        let maybe_stream = spawn_input_stream(&device, sample_format, &config, renderer);
+        // our RENDER_QUANTUM_SIZEd config may not be supported, in that case, use the default config
+        let stream = match maybe_stream {
+            Ok(stream) => stream,
+            Err(e) => {
+                log::warn!(
+                    "Output stream failed to build: {:?}, retry with default config {:?}",
+                    e,
+                    default_config
+                );
+
+                // setup a new comms channel
+                let (sender, receiver2) = crossbeam_channel::bounded(smoothing);
+                receiver = receiver2; // overwrite earlier
+
+                let renderer = MicrophoneRender::new(channels, sample_rate, sender);
+                spawn_input_stream(&device, sample_format, &default_config, renderer)
+                    .expect("Unable to spawn input stream with default config")
+            }
+        };
+
+        // Required because some hosts don't play the stream automatically
+        stream.play().expect("Input stream refused to play");
+
+        let number_of_channels = usize::from(config.channels);
+        let sample_rate = config.sample_rate.0 as f32;
+
+        let backend = CpalBackend {
+            stream: ThreadSafeClosableStream::new(stream),
+            output_latency: Arc::new(AtomicF64::new(0.)),
+            sample_rate,
+            number_of_channels,
+        };
+
+        (backend, receiver)
     }
 
     fn resume(&self) -> bool {
@@ -114,12 +220,16 @@ impl AudioBackend for CpalBackend {
         self.number_of_channels
     }
 
+    fn output_latency(&self) -> f64 {
+        self.output_latency.load()
+    }
+
     fn boxed_clone(&self) -> Box<dyn AudioBackend> {
         Box::new(self.clone())
     }
 }
 
-fn output_latency(infos: &OutputCallbackInfo) -> f64 {
+fn latency_in_seconds(infos: &OutputCallbackInfo) -> f64 {
     let timestamp = infos.timestamp();
     let delta = timestamp
         .playback
@@ -141,23 +251,33 @@ fn spawn_output_stream(
     sample_format: SampleFormat,
     config: &StreamConfig,
     mut render: RenderThread,
+    output_latency: Arc<AtomicF64>,
 ) -> Result<Stream, BuildStreamError> {
     let err_fn = |err| log::error!("an error occurred on the output audio stream: {}", err);
 
     match sample_format {
         SampleFormat::F32 => device.build_output_stream(
             config,
-            move |d: &mut [f32], i: &OutputCallbackInfo| render.render(d, output_latency(i)),
+            move |d: &mut [f32], i: &OutputCallbackInfo| {
+                render.render(d);
+                output_latency.store(latency_in_seconds(i));
+            },
             err_fn,
         ),
         SampleFormat::U16 => device.build_output_stream(
             config,
-            move |d: &mut [u16], i: &OutputCallbackInfo| render.render(d, output_latency(i)),
+            move |d: &mut [u16], i: &OutputCallbackInfo| {
+                render.render(d);
+                output_latency.store(latency_in_seconds(i));
+            },
             err_fn,
         ),
         SampleFormat::I16 => device.build_output_stream(
             config,
-            move |d: &mut [i16], i: &OutputCallbackInfo| render.render(d, output_latency(i)),
+            move |d: &mut [i16], i: &OutputCallbackInfo| {
+                render.render(d);
+                output_latency.store(latency_in_seconds(i));
+            },
             err_fn,
         ),
     }
@@ -356,12 +476,16 @@ impl OutputStreamer {
             config.channels as usize,
             receiver,
             self.frames_played.clone(),
-            self.output_latency.clone(),
         );
 
         log::debug!("Attempt output stream with prefered config: {:?}", &config);
-        let spawned =
-            spawn_output_stream(&self.device, self.configs.sample_format, config, renderer);
+        let spawned = spawn_output_stream(
+            &self.device,
+            self.configs.sample_format,
+            config,
+            renderer,
+            self.output_latency.clone(),
+        );
 
         match spawned {
             Ok(stream) => {
@@ -433,7 +557,6 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
                     config.channels as usize,
                     receiver,
                     streamer.frames_played.clone(),
-                    streamer.output_latency.clone(),
                 );
 
                 let spawned = spawn_output_stream(
@@ -441,6 +564,7 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
                     streamer.configs.sample_format,
                     config,
                     renderer,
+                    streamer.output_latency.clone(),
                 );
                 let stream = spawned.expect("OutputStream build failed with default config");
                 streamer.stream = Some(stream);
@@ -448,122 +572,4 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
             }
         }
     }
-}
-
-/// Builds the output
-pub(crate) fn build_output(
-    frames_played: Arc<AtomicU64>,
-    output_latency: Arc<AtomicF64>,
-    options: AudioContextOptions,
-) -> (CpalBackend, Sender<ControlMessage>) {
-    let mut builder = StreamConfigsBuilder::new();
-
-    // set specific sample rate if requested
-    if let Some(sample_rate) = options.sample_rate {
-        builder.with_sample_rate(sample_rate);
-    }
-
-    // always try to set a decent buffer size
-    builder.with_latency_hint(options.latency_hint);
-
-    let configs = builder.build();
-
-    let streamer = OutputStreamer::new(configs, frames_played, output_latency)
-        .spawn()
-        .or_fallback()
-        .play();
-
-    let (stream, config, sender) = streamer.get_output_stream();
-    let number_of_channels = usize::from(config.channels);
-    let sample_rate = config.sample_rate.0 as f32;
-
-    let backend = CpalBackend {
-        stream: ThreadSafeClosableStream::new(stream),
-        sample_rate,
-        number_of_channels,
-    };
-
-    (backend, sender)
-}
-
-/// Builds the input
-#[allow(clippy::needless_pass_by_value)]
-pub(crate) fn build_input(options: AudioContextOptions) -> (CpalBackend, Receiver<AudioBuffer>) {
-    let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .expect("no input device available");
-    log::info!("Input device: {:?}", device.name());
-
-    let mut supported_configs_range = device
-        .supported_input_configs()
-        .expect("error while querying configs");
-
-    let supported_config = supported_configs_range
-        .next()
-        .expect("no supported config?!")
-        .with_max_sample_rate();
-
-    let sample_format = supported_config.sample_format();
-
-    // clone the config, we may need to fall back on it later
-    let default_config: StreamConfig = supported_config.clone().into();
-
-    // determine best buffer size. Spec requires RENDER_QUANTUM_SIZE, but that might not be available
-    let buffer_size: u32 = u32::try_from(RENDER_QUANTUM_SIZE).unwrap();
-    let mut input_buffer_size = match supported_config.buffer_size() {
-        SupportedBufferSize::Range { min, .. } => buffer_size.max(*min),
-        SupportedBufferSize::Unknown => buffer_size,
-    };
-    // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
-    // the desired number of frames.
-    input_buffer_size = (input_buffer_size + buffer_size - 1) / buffer_size * buffer_size;
-
-    let mut config: StreamConfig = supported_config.into();
-    config.buffer_size = cpal::BufferSize::Fixed(input_buffer_size);
-    if let Some(sample_rate) = options.sample_rate {
-        config.sample_rate = CpalSampleRate(sample_rate as u32);
-    }
-
-    let sample_rate = config.sample_rate.0 as f32;
-    let channels = config.channels as usize;
-
-    let smoothing = 3; // todo, use buffering to smooth frame drops
-    let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
-    let renderer = MicrophoneRender::new(channels, sample_rate, sender);
-
-    let maybe_stream = spawn_input_stream(&device, sample_format, &config, renderer);
-    // our RENDER_QUANTUM_SIZEd config may not be supported, in that case, use the default config
-    let stream = match maybe_stream {
-        Ok(stream) => stream,
-        Err(e) => {
-            log::warn!(
-                "Output stream failed to build: {:?}, retry with default config {:?}",
-                e,
-                default_config
-            );
-
-            // setup a new comms channel
-            let (sender, receiver2) = crossbeam_channel::bounded(smoothing);
-            receiver = receiver2; // overwrite earlier
-
-            let renderer = MicrophoneRender::new(channels, sample_rate, sender);
-            spawn_input_stream(&device, sample_format, &default_config, renderer)
-                .expect("Unable to spawn input stream with default config")
-        }
-    };
-
-    // Required because some hosts don't play the stream automatically
-    stream.play().expect("Input stream refused to play");
-
-    let number_of_channels = usize::from(config.channels);
-    let sample_rate = config.sample_rate.0 as f32;
-
-    let backend = CpalBackend {
-        stream: ThreadSafeClosableStream::new(stream),
-        sample_rate,
-        number_of_channels,
-    };
-
-    (backend, receiver)
 }

@@ -2,7 +2,6 @@
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::media::{MediaElement, MediaStream};
 use crate::node::{self, ChannelConfigOptions};
-use crate::AtomicF64;
 
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -57,8 +56,6 @@ pub struct AudioContext {
     base: ConcreteBaseAudioContext,
     /// audio backend (play/pause functionality)
     backend: Box<dyn AudioBackend>,
-    /// delay between render and actual system audio output
-    output_latency: Arc<AtomicF64>,
 }
 
 impl BaseAudioContext for AudioContext {
@@ -100,12 +97,8 @@ impl AudioContext {
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
-        let output_latency = Arc::new(AtomicF64::new(0.));
-        let output_latency_clone = output_latency.clone();
-
         // select backend based on cargo features
-        let (backend, sender) =
-            io::build_output(frames_played_clone, output_latency_clone, options);
+        let (backend, sender) = io::build_output(options, frames_played_clone);
 
         let base = ConcreteBaseAudioContext::new(
             backend.sample_rate(),
@@ -116,11 +109,7 @@ impl AudioContext {
         );
         base.set_state(AudioContextState::Running);
 
-        Self {
-            base,
-            backend,
-            output_latency,
-        }
+        Self { base, backend }
     }
 
     /// This represents the number of seconds of processing latency incurred by
@@ -140,7 +129,7 @@ impl AudioContext {
     /// by the audio output device.
     #[must_use]
     pub fn output_latency(&self) -> f64 {
-        self.output_latency.load()
+        self.backend.output_latency()
     }
 
     /// Suspends the progression of time in the audio context.
