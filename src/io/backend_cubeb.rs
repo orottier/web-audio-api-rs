@@ -75,6 +75,7 @@ mod private {
 }
 use private::ThreadSafeClosableStream;
 
+/// Audio backend using the `cubeb` library
 #[derive(Clone)]
 pub struct CubebBackend {
     stream: ThreadSafeClosableStream,

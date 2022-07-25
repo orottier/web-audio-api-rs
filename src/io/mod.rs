@@ -1,3 +1,5 @@
+//! Audio input/output interfaces
+
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
@@ -14,7 +16,7 @@ mod backend_cpal;
 #[cfg(feature = "cubeb")]
 mod backend_cubeb;
 
-#[allow(unused_variables)]
+/// Set up an output stream (speakers) bases on the selected features (cubeb/cpal/none)
 pub(crate) fn build_output(
     options: AudioContextOptions,
     frames_played: Arc<AtomicU64>,
@@ -35,6 +37,7 @@ pub(crate) fn build_output(
     }
 }
 
+/// Set up an input stream (microphone) bases on the selected features (cubeb/cpal/none)
 #[cfg(any(feature = "cubeb", feature = "cpal"))]
 pub(crate) fn build_input(
     options: AudioContextOptions,
@@ -55,6 +58,7 @@ pub(crate) fn build_input(
     }
 }
 
+/// Interface for audio backends
 pub(crate) trait AudioBackend: Send + Sync + 'static {
     /// Setup a new output stream (speakers)
     fn build_output(
@@ -94,6 +98,7 @@ pub(crate) trait AudioBackend: Send + Sync + 'static {
     fn boxed_clone(&self) -> Box<dyn AudioBackend>;
 }
 
+/// Calculate buffer size in frames for a given latency category
 fn buffer_size_for_latency_category(
     latency_cat: AudioContextLatencyCategory,
     sample_rate: f32,

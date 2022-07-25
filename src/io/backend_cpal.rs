@@ -68,6 +68,7 @@ mod private {
 }
 use private::ThreadSafeClosableStream;
 
+/// Audio backend using the `cpal` library
 #[derive(Clone)]
 pub struct CpalBackend {
     stream: ThreadSafeClosableStream,
