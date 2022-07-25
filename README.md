@@ -88,7 +88,10 @@ and track our spec compliance improvements over time.
 ## Audio backends
 
 By default, the [`cpal`](https://github.com/rustaudio/cpal) library is used for
-cross platform audio I/O. We offer experimental support for the
+cross platform audio I/O.
+
+We offer [experimental
+support](https://github.com/orottier/web-audio-api-rs/issues/187) for the
 [`cubeb`](https://github.com/mozilla/cubeb-rs) backend via the `cubeb` feature
 flag. Please note that `cmake` must be installed locally in order to run
 `cubeb`.
