@@ -124,7 +124,7 @@ fn init_output_backend<const N: usize>(
             println!("stream state changed: {:?}", state);
         });
 
-    let stream = builder.init(&ctx).expect("Failed to create cubeb stream");
+    let stream = builder.init(ctx).expect("Failed to create cubeb stream");
     ThreadSafeClosableStream::new(stream)
 }
 
