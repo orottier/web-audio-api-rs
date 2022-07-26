@@ -2,19 +2,11 @@
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::media::{MediaElement, MediaStream};
 use crate::node::{self, ChannelConfigOptions};
-use crate::AtomicF64;
 
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-#[cfg(not(test))]
-use std::sync::Mutex;
-
-#[cfg(not(test))]
-use crate::io;
-
-#[cfg(not(test))]
-use cpal::{traits::StreamTrait, Stream};
+use crate::io::{self, AudioBackend};
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
@@ -62,61 +54,9 @@ pub struct AudioContextOptions {
 pub struct AudioContext {
     /// represents the underlying `BaseAudioContext`
     base: ConcreteBaseAudioContext,
-    /// cpal stream (play/pause functionality)
-    #[cfg(not(test))] // in tests, do not set up a cpal Stream
-    stream: ThreadSafeClosableStream,
-    /// delay between render and actual system audio output
-    output_latency: Arc<AtomicF64>,
+    /// audio backend (play/pause functionality)
+    backend: Box<dyn AudioBackend>,
 }
-
-#[cfg(not(test))]
-mod private {
-    use super::*;
-
-    pub struct ThreadSafeClosableStream(Arc<Mutex<Option<Stream>>>);
-
-    impl ThreadSafeClosableStream {
-        pub fn new(stream: Stream) -> Self {
-            Self(Arc::new(Mutex::new(Some(stream))))
-        }
-
-        pub fn close(&self) {
-            self.0.lock().unwrap().take(); // will Drop
-        }
-
-        pub fn resume(&self) -> bool {
-            if let Some(s) = self.0.lock().unwrap().as_ref() {
-                if let Err(e) = s.play() {
-                    panic!("Error resuming cpal stream: {:?}", e);
-                }
-                return true;
-            }
-
-            false
-        }
-
-        pub fn suspend(&self) -> bool {
-            if let Some(s) = self.0.lock().unwrap().as_ref() {
-                if let Err(e) = s.pause() {
-                    panic!("Error suspending cpal stream: {:?}", e);
-                }
-                return true;
-            }
-
-            false
-        }
-    }
-
-    // SAFETY:
-    // The cpal `Stream` is marked !Sync and !Send because some platforms are not thread-safe
-    // https://github.com/RustAudio/cpal/commit/33ddf749548d87bf54ce18eb342f954cec1465b2
-    // Since we wrap the Stream in a Mutex, we should be fine
-    unsafe impl Sync for ThreadSafeClosableStream {}
-    unsafe impl Send for ThreadSafeClosableStream {}
-}
-
-#[cfg(not(test))]
-use private::ThreadSafeClosableStream;
 
 impl BaseAudioContext for AudioContext {
     fn base(&self) -> &ConcreteBaseAudioContext {
@@ -151,62 +91,25 @@ impl AudioContext {
     /// // let context = AudioContext::default();
     /// ```
     #[allow(clippy::needless_pass_by_value)]
-    #[cfg(not(test))]
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
         // track number of frames - synced from render thread to control thread
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
-        let output_latency = Arc::new(AtomicF64::new(0.));
-        let output_latency_clone = output_latency.clone();
-
-        let (stream, config, sender) =
-            io::build_output(frames_played_clone, output_latency_clone, options);
-
-        let number_of_channels = usize::from(config.channels);
-        let sample_rate = config.sample_rate.0 as f32;
+        // select backend based on cargo features
+        let (backend, sender) = io::build_output(options, frames_played_clone);
 
         let base = ConcreteBaseAudioContext::new(
-            sample_rate,
-            number_of_channels,
+            backend.sample_rate(),
+            backend.number_of_channels(),
             frames_played,
             sender,
             false,
         );
         base.set_state(AudioContextState::Running);
 
-        Self {
-            base,
-            stream: ThreadSafeClosableStream::new(stream),
-            output_latency,
-        }
-    }
-
-    #[cfg(test)] // in tests, do not set up a cpal Stream
-    #[allow(clippy::must_use_candidate)]
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn new(options: AudioContextOptions) -> Self {
-        let sample_rate = options.sample_rate.unwrap_or(44100.);
-        let number_of_channels = 2;
-
-        let (sender, _receiver) = crossbeam_channel::unbounded();
-        let frames_played = Arc::new(AtomicU64::new(0));
-        let output_latency = Arc::new(AtomicF64::new(0.));
-
-        let base = ConcreteBaseAudioContext::new(
-            sample_rate,
-            number_of_channels,
-            frames_played,
-            sender,
-            false,
-        );
-        base.set_state(AudioContextState::Running);
-
-        Self {
-            base,
-            output_latency,
-        }
+        Self { base, backend }
     }
 
     /// This represents the number of seconds of processing latency incurred by
@@ -226,7 +129,7 @@ impl AudioContext {
     /// by the audio output device.
     #[must_use]
     pub fn output_latency(&self) -> f64 {
-        self.output_latency.load()
+        self.backend.output_latency()
     }
 
     /// Suspends the progression of time in the audio context.
@@ -243,11 +146,9 @@ impl AudioContext {
     ///
     /// * The audio device is not available
     /// * For a `BackendSpecificError`
-    // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn suspend_sync(&self) {
-        #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        if self.stream.suspend() {
+        if self.backend.suspend() {
             self.base().set_state(AudioContextState::Suspended);
         }
     }
@@ -264,11 +165,9 @@ impl AudioContext {
     ///
     /// * The audio device is not available
     /// * For a `BackendSpecificError`
-    // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn resume_sync(&self) {
-        #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        if self.stream.resume() {
+        if self.backend.resume() {
             self.base().set_state(AudioContextState::Running);
         }
     }
@@ -284,11 +183,9 @@ impl AudioContext {
     /// # Panics
     ///
     /// Will panic when this function is called multiple times
-    // false positive due to #[cfg(not(test))]
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn close_sync(&self) {
-        #[cfg(not(test))] // in tests, do not set up a cpal Stream
-        self.stream.close();
+        self.backend.close();
 
         self.base().set_state(AudioContextState::Closed);
     }

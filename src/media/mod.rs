@@ -6,14 +6,15 @@ pub use decoding::MediaDecoder;
 mod element;
 pub use element::MediaElement;
 
+#[cfg(any(feature = "cubeb", feature = "cpal"))]
 mod mic;
+#[cfg(any(feature = "cubeb", feature = "cpal"))]
 pub use mic::Microphone;
+#[cfg(any(feature = "cubeb", feature = "cpal"))]
+pub(crate) use mic::MicrophoneRender;
 
 mod resampling;
 pub(crate) use resampling::Resampler;
-
-#[cfg(not(test))]
-pub(crate) use mic::MicrophoneRender;
 
 use std::error::Error;
 
