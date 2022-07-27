@@ -25,6 +25,8 @@ mod delay;
 pub use delay::*;
 mod destination;
 pub use destination::*;
+mod dynamics_compressor;
+pub use dynamics_compressor::*;
 mod gain;
 pub use gain::*;
 mod iir_filter;
