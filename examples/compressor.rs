@@ -5,7 +5,6 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, DynamicsCompresso
 fn main() {
     env_logger::init();
 
-
     let context = AudioContext::default();
 
     let file = File::open("samples/sample.wav").unwrap();
