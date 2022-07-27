@@ -170,7 +170,7 @@ impl AudioBackend for CubebBackend {
         let renderer = RenderThread::new(sample_rate, number_of_channels, receiver, frames_played);
 
         let params = cubeb::StreamParamsBuilder::new()
-            .format(cubeb::SampleFormat::Float32LE) // TODO may not be available for device
+            .format(cubeb::SampleFormat::Float32NE) // use float (native endian)
             .rate(sample_rate as u32)
             .channels(number_of_channels as u32)
             .layout(layout)
@@ -257,7 +257,7 @@ impl AudioBackend for CubebBackend {
         let layout = cubeb::ChannelLayout::STEREO;
 
         let params = cubeb::StreamParamsBuilder::new()
-            .format(cubeb::SampleFormat::Float32LE) // TODO may not be available for device
+            .format(cubeb::SampleFormat::Float32NE) // use float (native endian)
             .rate(sample_rate as u32)
             .channels(number_of_channels as u32)
             .layout(layout)
