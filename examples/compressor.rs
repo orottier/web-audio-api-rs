@@ -7,7 +7,7 @@ fn main() {
 
     let context = AudioContext::default();
 
-    let file = File::open("samples/sample.wav").unwrap();
+    let file = File::open("samples/think-stereo-48000.wav").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();
 
     println!("> no compression");
@@ -17,7 +17,7 @@ fn main() {
     src.start();
 
     // enjoy listening
-    std::thread::sleep(std::time::Duration::from_secs(4));
+    std::thread::sleep(std::time::Duration::from_secs(3));
 
     println!("> compression (hard knee)");
     println!("+ attack: {:?}ms", 30);
@@ -40,6 +40,6 @@ fn main() {
         src.start();
 
         // enjoy listening
-        std::thread::sleep(std::time::Duration::from_secs(4));
+        std::thread::sleep(std::time::Duration::from_secs(3));
     }
 }
