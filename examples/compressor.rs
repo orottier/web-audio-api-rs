@@ -1,6 +1,6 @@
 use std::fs::File;
 use web_audio_api::context::{AudioContext, BaseAudioContext};
-use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, DynamicsCompressorNode};
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
     env_logger::init();
@@ -16,7 +16,6 @@ fn main() {
     src.set_buffer(buffer.clone());
     src.start();
 
-    // enjoy listening
     std::thread::sleep(std::time::Duration::from_secs(3));
 
     println!("> compression (hard knee)");
@@ -27,19 +26,19 @@ fn main() {
 
     for i in 0..6 {
         println!("+ threshold at {:?}", -10. * i as f32);
-        let compressor = DynamicsCompressorNode::new(&context, Default::default());
+
+        let compressor = context.create_dynamics_compressor();
         compressor.connect(&context.destination());
         compressor.threshold().set_value(-10. * i as f32);
         compressor.knee().set_value(0.); // hard knee
-        compressor.attack().set_value(0.03); // hard knee
-        compressor.release().set_value(0.1); // hard knee
+        compressor.attack().set_value(0.03);
+        compressor.release().set_value(0.1);
 
         let src = context.create_buffer_source();
         src.connect(&compressor);
         src.set_buffer(buffer.clone());
         src.start();
 
-        // enjoy listening
         std::thread::sleep(std::time::Duration::from_secs(3));
     }
 }
