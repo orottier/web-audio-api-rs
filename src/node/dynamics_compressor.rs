@@ -357,15 +357,12 @@ impl AudioProcessor for DynamicsCompressorRenderer {
 
         *output = delayed.clone();
 
-        output
-            .channels_mut()
-            .iter_mut()
-            .for_each(|channel| {
-                channel
-                    .iter_mut()
-                    .zip(reduction_gains.iter())
-                    .for_each(|(o, g)| *o = *o * *g);
-            });
+        output.channels_mut().iter_mut().for_each(|channel| {
+            channel
+                .iter_mut()
+                .zip(reduction_gains.iter())
+                .for_each(|(o, g)| *o *= g);
+        });
 
         self.ring_index = read_index;
 
