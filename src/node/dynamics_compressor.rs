@@ -299,7 +299,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
             let mut max = f32::MIN;
 
             for channel in input.channels().iter() {
-                let sample = channel.as_slice()[i];
+                let sample = channel.as_slice()[i].abs();
                 if sample > max {
                     max = sample;
                 }
@@ -307,8 +307,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
 
             // pick absolute value and convert to dB domain
             // var xG in paper
-            let abs = max.abs();
-            let sample_db = lin_to_db(abs);
+            let sample_db = lin_to_db(max);
 
             // Gain Computer stage
             // ------------------------------------------------
@@ -356,17 +355,16 @@ impl AudioProcessor for DynamicsCompressorRenderer {
         let read_index = (self.ring_index + 1) % ring_size;
         let delayed = &self.ring_buffer[read_index];
 
-        output.set_number_of_channels(delayed.number_of_channels());
+        *output = delayed.clone();
+
         output
             .channels_mut()
             .iter_mut()
-            .zip(delayed.channels().iter())
-            .for_each(|(output_channel, delayed_channel)| {
-                output_channel
+            .for_each(|channel| {
+                channel
                     .iter_mut()
-                    .zip(delayed_channel.iter())
                     .zip(reduction_gains.iter())
-                    .for_each(|((o, d), g)| *o = *d * *g);
+                    .for_each(|(o, g)| *o = *o * *g);
             });
 
         self.ring_index = read_index;
