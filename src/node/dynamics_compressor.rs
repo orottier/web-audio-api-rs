@@ -55,7 +55,45 @@ impl Default for DynamicsCompressorOptions {
     }
 }
 
-/// AudioNode for volume control
+/// `DynamicsCompressorNode` provides a compression effect. It lowers the volume
+/// of the loudest parts of the signal and raises the volume of the softest parts.
+/// Overall, a louder, richer, and fuller sound can be achieved. It is especially
+/// important in games and musical applications where large numbers of individual
+/// sounds are played simultaneous to control the overall signal level and help
+/// avoid clipping (distorting) the audio output to the speakers.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/DynamicsCompressorNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#DynamicsCompressorNode>
+/// - see also: [`BaseAudioContext::create_buffer_source`](crate::context::BaseAudioContext::create_buffer_source)
+///
+/// # Usage
+///
+/// ```no_run
+/// use std::fs::File;
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+///
+/// // create an `AudioContext`
+/// let context = AudioContext::default();
+/// // load and decode a soundfile into an audio buffer
+/// let file = File::open("samples/sample.wav").unwrap();
+/// let buffer = context.decode_audio_data_sync(file).unwrap();
+///
+/// // create compressor and connect to destination
+/// let compressor = context.create_dynamics_compressor();
+/// compressor.connect(&context.destination());
+///
+/// // pipe the audio source in the compressor
+/// let src = context.create_buffer_source();
+/// src.connect(&compressor);
+/// src.set_buffer(buffer.clone());
+/// src.start();
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example compressor`
+///
 pub struct DynamicsCompressorNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
