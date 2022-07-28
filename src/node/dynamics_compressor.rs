@@ -64,7 +64,7 @@ impl Default for DynamicsCompressorOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/DynamicsCompressorNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#DynamicsCompressorNode>
-/// - see also: [`BaseAudioContext::create_buffer_source`](crate::context::BaseAudioContext::create_buffer_source)
+/// - see also: [`BaseAudioContext::create_dynamics_compressor`](crate::context::BaseAudioContext::create_dynamics_compressor)
 ///
 /// # Usage
 ///
