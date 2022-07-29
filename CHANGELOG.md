@@ -1,3 +1,8 @@
+# Version 0.22.0 (2021-07-29)
+
+- Added DynamicsCompressorNode
+- Added `cubeb` as an alternative audio backend
+
 # Version 0.21.0 (2021-07-23)
 
 - Implemented MediaElement and MediaElementSourceNode
