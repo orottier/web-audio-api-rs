@@ -1457,10 +1457,6 @@ impl AudioParamProcessor {
 
         if cfg!(test) {
             assert_eq!(self.buffer.len(), count);
-
-            // for v in self.buffer.iter() {
-            //     assert!(!v.is_subnormal());
-            // }
         }
     }
 }
