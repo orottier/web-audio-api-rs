@@ -1320,7 +1320,7 @@ impl AudioParamProcessor {
                                 let diff = end_value - value;
 
                                 // abort event if diff is subnormal
-                                if diff.is_subnormal() {
+                                if diff.is_subnormal() || diff == 0. {
                                     // check that buffer does not contain subnormal values
                                     for v in self.buffer.iter_mut() {
                                         let diff = end_value - *v;
