@@ -11,6 +11,10 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Render
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
+fn get_computed_freq(freq: f32, detune: f32) -> f32 {
+    freq * (detune / 1200.).exp2()
+}
+
 /// Biquad filter coefficients
 #[derive(Clone, Copy, Debug, Default)]
 struct Coefficients {
@@ -23,10 +27,6 @@ struct Coefficients {
 }
 
 // allow non snake to better the variable names in the spec
-fn computed_freq(freq: f32, detune: f32) -> f32 {
-    freq * (detune / 1200.).exp2()
-}
-
 #[allow(non_snake_case)]
 fn calculate_coefs(
     filter_type: BiquadFilterType,
@@ -134,22 +134,29 @@ fn calculate_coefs(
 /// Biquad filter types
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BiquadFilterType {
-    /// Allows frequencies below the cutoff frequency to pass through and attenuates frequencies above the cutoff. (12dB/oct rolloff)
+    /// Allows frequencies below the cutoff frequency to pass through and
+    /// attenuates frequencies above the cutoff. (12dB/oct rolloff)
     Lowpass,
-    /// Frequencies above the cutoff frequency are passed through, but frequencies below the cutoff are attenuated. (12dB/oct rolloff)
+    /// Frequencies above the cutoff frequency are passed through, but
+    /// frequencies below the cutoff are attenuated. (12dB/oct rolloff)
     Highpass,
-    /// Allows a range of frequencies to pass through and attenuates the frequencies below and above this frequency range.
+    /// Allows a range of frequencies to pass through and attenuates the
+    /// frequencies below and above this frequency range.
     Bandpass,
-    /// Allows all frequencies through, but adds a boost (or attenuation) to the lower frequencies.
-    Lowshelf,
-    /// Allows all frequencies through, but adds a boost to the higher frequencies.
-    Highshelf,
-    /// Allows all frequencies through, but adds a boost (or attenuation) to a range of frequencies.
-    Peaking,
     /// Allows all frequencies through, except for a set of frequencies.
     Notch,
-    /// Allows all frequencies through, but changes the phase relationship between the various frequencies.
+    /// Allows all frequencies through, but changes the phase relationship
+    /// between the various frequencies.
     Allpass,
+    /// Allows all frequencies through, but adds a boost (or attenuation) to
+    /// a range of frequencies.
+    Peaking,
+    /// Allows all frequencies through, but adds a boost (or attenuation) to
+    /// the lower frequencies.
+    Lowshelf,
+    /// Allows all frequencies through, but adds a boost (or attenuation) to
+    /// the higher frequencies.
+    Highshelf,
 }
 
 impl Default for BiquadFilterType {
@@ -304,12 +311,11 @@ impl BiquadFilterNode {
                 frequency: f_proc,
                 q: q_proc,
                 type_: type_.clone(),
-                coefs: Coefficients::default(),
+                // coefs: Coefficients::default(),
                 x1: Vec::new(),
                 x2: Vec::new(),
                 y1: Vec::new(),
                 y2: Vec::new(),
-                is_silent_input: false,
                 // current_frequency: options.frequency,
                 // current_detune: options.detune,
                 // current_q: options.q,
@@ -409,7 +415,7 @@ impl BiquadFilterNode {
         // let q = self.q().value();
 
         // // get coefs
-        // let computed_freq = computed_freq(frequency, detune);
+        // let computed_freq = get_computed_freq(frequency, detune);
         // let Coefficients {
         //     a0,
         //     a1,
@@ -456,7 +462,7 @@ struct BiquadFilterRenderer {
     /// `BiquadFilterType` repesented as u32
     type_: Arc<AtomicU32>,
     /// Biquad filter coefficients computed from freq, q, gain,...
-    coefs: Coefficients,
+    // coefs: Coefficients,
     // keep filter state for each channel
     x1: Vec<f32>,
     x2: Vec<f32>,
@@ -467,7 +473,6 @@ struct BiquadFilterRenderer {
     // current_detune: f32,
     // current_q: f32,
     // current_gain: f32,
-    is_silent_input: bool,
 }
 
 impl AudioProcessor for BiquadFilterRenderer {
@@ -483,16 +488,14 @@ impl AudioProcessor for BiquadFilterRenderer {
         let output = &mut outputs[0];
         let sample_rate = scope.sample_rate;
 
-        if input.is_silent() && self.is_silent_input {
-            output.make_silent();
-            return false;
-        }
-
-        if !input.is_silent() {
-            self.is_silent_input = false;
-        }
+        // handle tail time
+        // for each channel
+        //   if x1, x2, y1, y2 are 0 and input is slient
+        //      output.make_silent();
+        //      return false;
 
         // resize state according to input number of channels
+        // @todo - handle channel change cleanly, could cause discontinuities
         let num_channels = input.number_of_channels();
         self.x1.resize(num_channels, 0.);
         self.x2.resize(num_channels, 0.);
@@ -524,7 +527,7 @@ impl AudioProcessor for BiquadFilterRenderer {
                 .zip(q.iter())
                 .zip(gain.iter())
                 .for_each(|(((((i, o), f), d), q), g)| {
-                    let computed_freq = computed_freq(*f, *d);
+                    let computed_freq = get_computed_freq(*f, *d);
                     let Coefficients {
                         a0,
                         a1,
@@ -536,6 +539,11 @@ impl AudioProcessor for BiquadFilterRenderer {
                     // 𝑎0𝑦(𝑛)+𝑎1𝑦(𝑛−1)+𝑎2𝑦(𝑛−2)=𝑏0𝑥(𝑛)+𝑏1𝑥(𝑛−1)+𝑏2𝑥(𝑛−2), then:
                     // 𝑦(𝑛) = [𝑏0𝑥(𝑛)+𝑏1𝑥(𝑛−1)+𝑏2𝑥(𝑛−2) - 𝑎1𝑦(𝑛−1)+𝑎2𝑦(𝑛−2)] / 𝑎0
                     *o = (b0 * *i + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0;
+
+                    // fush subnormal to zero
+                    if o.is_subnormal() {
+                        *o = 0.;
+                    }
                     // update state
                     x2 = x1;
                     x1 = *i;
@@ -550,12 +558,8 @@ impl AudioProcessor for BiquadFilterRenderer {
             self.y2[index] = y2;
         }
 
-        // tail time is 2 samples so if input is silence we can safely
-        // return false on the next block rendering
-        if input.is_silent() {
-            self.is_silent_input = true;
-        }
-
+        // @todo - tail time
+        //
         true
     }
 }
