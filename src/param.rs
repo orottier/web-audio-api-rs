@@ -1316,7 +1316,36 @@ impl AudioParamProcessor {
                                     diff,
                                     next_block_time,
                                 );
-                                self.intrisic_value = value;
+
+                                let diff = end_value - value;
+
+                                // abort event if diff is subnormal
+                                if diff.is_subnormal() {
+                                    // check that buffer does not contain subnormal values
+                                    for v in self.buffer.iter_mut() {
+                                        let diff = end_value - *v;
+
+                                        if diff.is_subnormal() {
+                                            *v = end_value;
+                                        }
+                                    }
+
+                                    self.intrisic_value = end_value;
+
+                                    let event = AudioParamEvent {
+                                        event_type: AudioParamEventType::SetValueAtTime,
+                                        time: next_block_time,
+                                        value: end_value,
+                                        time_constant: None,
+                                        cancel_time: None,
+                                        duration: None,
+                                        values: None,
+                                    };
+
+                                    self.event_timeline.replace_peek(event);
+                                } else {
+                                    self.intrisic_value = value;
+                                }
                                 break;
                             } else {
                                 // setTarget has no "real" end value, compute according
@@ -1428,6 +1457,10 @@ impl AudioParamProcessor {
 
         if cfg!(test) {
             assert_eq!(self.buffer.len(), count);
+
+            // for v in self.buffer.iter() {
+            //     assert!(!v.is_subnormal());
+            // }
         }
     }
 }
@@ -2250,6 +2283,47 @@ mod tests {
 
             let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
+        }
+    }
+
+    #[test]
+    fn test_set_target_at_time_ends_at_subnormal() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        {
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 2.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.set_value_at_time(1., 0.);
+            param.set_target_at_time(0., 1., 0.2);
+
+            let vs = render.compute_intrisic_values(0., 1., 10);
+            for v in vs.iter() {
+                assert!(!v.is_subnormal());
+            }
+
+            // subnormal values come in this buffer
+            let vs = render.compute_intrisic_values(10., 1., 10);
+            for v in vs.iter() {
+                assert!(!v.is_subnormal());
+            }
+
+            // check peek() has been replaced with set_value event
+            let peek = render.event_timeline.peek();
+            assert_eq!(
+                peek.unwrap().event_type,
+                AudioParamEventType::SetValueAtTime
+            );
+
+            let vs = render.compute_intrisic_values(20., 1., 10);
+            for v in vs.iter() {
+                assert!(!v.is_subnormal());
+            }
         }
     }
 
