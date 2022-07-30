@@ -323,16 +323,23 @@ impl AudioProcessor for PannerRenderer {
         params: AudioParamValues,
         _scope: &RenderScope,
     ) -> bool {
-        // Single input node
-        // assume mono (todo issue #44)
-        let input = inputs[0].channel_data(0);
-        // Single output node
+        // single input/output node
+        let input = &inputs[0];
         let output = &mut outputs[0];
 
+        // pass through input
+        *output = input.clone();
+
+        // only handle mono for now (todo issue #44)
+        output.mix(1, ChannelInterpretation::Speakers);
+
+        // early exit for silence
         if input.is_silent() {
-            output.make_silent();
             return false;
         }
+
+        // convert mono to identical stereo
+        output.mix(2, ChannelInterpretation::Speakers);
 
         // K-rate processing for now (todo issue #44)
 
@@ -385,10 +392,8 @@ impl AudioProcessor for PannerRenderer {
             azimuth = 180. - azimuth;
         }
 
-        // determine left/right ear gain
+        // x is the horizontal plane orientation of the sound
         let x = (azimuth + 90.) / 180.;
-        let gain_l = (x * PI / 2.).cos();
-        let gain_r = (x * PI / 2.).sin();
 
         // determine distance gain
         let distance = crate::spatial::distance(source_position, listener_position);
@@ -416,21 +421,19 @@ impl AudioProcessor for PannerRenderer {
             }
         };
 
-        // multiply signal with gain per ear
-        let left = input.iter().map(|&v| v * gain_l * dist_gain * cone_gain);
-        let right = input.iter().map(|&v| v * gain_r * dist_gain * cone_gain);
+        // determine left/right ear gain
+        let gain_l = (x * PI / 2.).cos();
+        let gain_r = (x * PI / 2.).sin();
 
-        output.set_number_of_channels(2);
+        // multiply signal with gain per ear
         output
             .channel_data_mut(0)
             .iter_mut()
-            .zip(left)
-            .for_each(|(o, i)| *o = i);
+            .for_each(|v| *v *= gain_l * dist_gain * cone_gain);
         output
             .channel_data_mut(1)
             .iter_mut()
-            .zip(right)
-            .for_each(|(o, i)| *o = i);
+            .for_each(|v| *v *= gain_r * dist_gain * cone_gain);
 
         false // only true for panning model HRTF
     }
