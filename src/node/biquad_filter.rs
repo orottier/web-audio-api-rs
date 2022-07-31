@@ -5,6 +5,7 @@ use std::sync::Arc;
 // use std::time::Duration;
 // use num_complex::Complex;
 
+use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
@@ -311,15 +312,10 @@ impl BiquadFilterNode {
                 frequency: f_proc,
                 q: q_proc,
                 type_: type_.clone(),
-                // coefs: Coefficients::default(),
-                x1: Vec::new(),
-                x2: Vec::new(),
-                y1: Vec::new(),
-                y2: Vec::new(),
-                // current_frequency: options.frequency,
-                // current_detune: options.detune,
-                // current_q: options.q,
-                // current_gain: options.gain,
+                x1: Vec::with_capacity(MAX_CHANNELS),
+                x2: Vec::with_capacity(MAX_CHANNELS),
+                y1: Vec::with_capacity(MAX_CHANNELS),
+                y2: Vec::with_capacity(MAX_CHANNELS),
             };
 
             let node = Self {
@@ -461,18 +457,11 @@ struct BiquadFilterRenderer {
     gain: AudioParamId,
     /// `BiquadFilterType` repesented as u32
     type_: Arc<AtomicU32>,
-    /// Biquad filter coefficients computed from freq, q, gain,...
-    // coefs: Coefficients,
     // keep filter state for each channel
     x1: Vec<f32>,
     x2: Vec<f32>,
     y1: Vec<f32>,
     y2: Vec<f32>,
-    // avoid computing coeffs at each sample is param didn't change
-    // current_frequency: f32,
-    // current_detune: f32,
-    // current_q: f32,
-    // current_gain: f32,
 }
 
 impl AudioProcessor for BiquadFilterRenderer {
@@ -489,56 +478,103 @@ impl AudioProcessor for BiquadFilterRenderer {
         let sample_rate = scope.sample_rate;
 
         // handle tail time
-        // for each channel
-        //   if x1, x2, y1, y2 are 0 and input is slient
-        //      output.make_silent();
-        //      return false;
+        if input.is_silent() {
+            let mut ended = true;
 
-        // resize state according to input number of channels
-        // @todo - handle channel change cleanly, could cause discontinuities
-        let num_channels = input.number_of_channels();
-        self.x1.resize(num_channels, 0.);
-        self.x2.resize(num_channels, 0.);
-        self.y1.resize(num_channels, 0.);
-        self.y2.resize(num_channels, 0.);
+            self.x1.iter()
+                .zip(self.x2.iter())
+                .zip(self.y1.iter())
+                .zip(self.y2.iter())
+                .for_each(|(((x1, x2), y1), y2)| {
+                    if *x1 != 0. || *x2 != 0. || *y1 != 0. || *y2 != 0. {
+                        ended = false;
+                    }
+                });
+
+            // input is silent and filter history is clean
+            if ended {
+                output.make_silent();
+                return false;
+            }
+        }
+
+        // eventually resize state according to input number of channels
+        // if in tail time, we should continue with previous number of channels
+        if !input.is_silent() {
+            // @todo - handle channel change cleanly, could cause discontinuities
+            // see https://github.com/WebAudio/web-audio-api/issues/1719
+            // see https://webaudio.github.io/web-audio-api/#channels-tail-time
+            let num_channels = input.number_of_channels();
+
+            if num_channels != self.x1.len() {
+                self.x1.resize(num_channels, 0.);
+                self.x2.resize(num_channels, 0.);
+                self.y1.resize(num_channels, 0.);
+                self.y2.resize(num_channels, 0.);
+            }
+
+            output.set_number_of_channels(num_channels);
+        } else {
+            let num_channels = self.x1.len();
+            output.set_number_of_channels(num_channels);
+        }
 
         // get a-rate parameters
-        let gain = params.get(&self.gain);
-        let detune = params.get(&self.detune);
-        let frequency = params.get(&self.frequency);
-        let q = params.get(&self.q);
         let type_: BiquadFilterType = self.type_.load(Ordering::SeqCst).into();
+        let frequency = params.get(&self.frequency);
+        let detune = params.get(&self.detune);
+        let q = params.get(&self.q);
+        let gain = params.get(&self.gain);
 
-        // let go for a naive version where we recompute the coefs on each sample
-        // for each channel
-        for (index, output_channel) in output.channels_mut().iter_mut().enumerate() {
-            let input_channel = input.channel_data(index);
+        let mut coefs_list = [Coefficients::default(); RENDER_QUANTUM_SIZE];
+        let mut current_frequency = frequency[0];
+        let mut current_detune = detune[0];
+        let mut current_q = q[0];
+        let mut current_gain = gain[0];
+        let mut current_coefs = Coefficients::default();
+
+        coefs_list.iter_mut()
+            .zip(frequency.iter())
+            .zip(detune.iter())
+            .zip(q.iter())
+            .zip(gain.iter())
+            .enumerate()
+            .for_each(|(index, ((((coefs, f), d), q), g))| {
+                // recompute coefs only if param change, done at least once per block
+                if index == 0
+                    || current_frequency != *f
+                    || current_detune != *d
+                    || current_q != *q
+                    || current_gain != *g
+                {
+                    let computed_freq = get_computed_freq(*f, *d);
+                    current_coefs = calculate_coefs(type_, sample_rate, computed_freq, *g, *q);
+
+                    current_frequency = *f;
+                    current_detune = *d;
+                    current_q = *q;
+                    current_gain = *g;
+                }
+
+                *coefs = current_coefs;
+            });
+
+        for (channel_number, output_channel) in output.channels_mut().iter_mut().enumerate() {
+            let input_channel = input.channel_data(channel_number);
             // retrieve state from previous block
-            let mut x1 = self.x1[index];
-            let mut x2 = self.x2[index];
-            let mut y1 = self.y1[index];
-            let mut y2 = self.y2[index];
+            let mut x1 = self.x1[channel_number];
+            let mut x2 = self.x2[channel_number];
+            let mut y1 = self.y1[channel_number];
+            let mut y2 = self.y2[channel_number];
 
             input_channel
                 .iter()
                 .zip(output_channel.iter_mut())
-                .zip(frequency.iter())
-                .zip(detune.iter())
-                .zip(q.iter())
-                .zip(gain.iter())
-                .for_each(|(((((i, o), f), d), q), g)| {
-                    let computed_freq = get_computed_freq(*f, *d);
-                    let Coefficients {
-                        a0,
-                        a1,
-                        a2,
-                        b0,
-                        b1,
-                        b2,
-                    } = calculate_coefs(type_, sample_rate, computed_freq, *g, *q);
+                .zip(coefs_list.iter())
+                .for_each(|((i, o), c)| {
                     // 𝑎0𝑦(𝑛)+𝑎1𝑦(𝑛−1)+𝑎2𝑦(𝑛−2)=𝑏0𝑥(𝑛)+𝑏1𝑥(𝑛−1)+𝑏2𝑥(𝑛−2), then:
                     // 𝑦(𝑛) = [𝑏0𝑥(𝑛)+𝑏1𝑥(𝑛−1)+𝑏2𝑥(𝑛−2) - 𝑎1𝑦(𝑛−1)+𝑎2𝑦(𝑛−2)] / 𝑎0
-                    *o = (b0 * *i + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0;
+                    *o = (c.b0 * *i + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2) / c.a0;
 
                     // fush subnormal to zero
                     if o.is_subnormal() {
@@ -551,15 +587,13 @@ impl AudioProcessor for BiquadFilterRenderer {
                     y1 = *o;
                 });
 
-            // store state for next block
-            self.x1[index] = x1;
-            self.x2[index] = x2;
-            self.y1[index] = y1;
-            self.y2[index] = y2;
+            // store channel state for next block
+            self.x1[channel_number] = x1;
+            self.x2[channel_number] = x2;
+            self.y1[channel_number] = y1;
+            self.y2[channel_number] = y2;
         }
 
-        // @todo - tail time
-        //
         true
     }
 }
@@ -570,82 +604,75 @@ mod tests {
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
 
-    use super::{BiquadFilterNode, BiquadFilterOptions, BiquadFilterType};
-
-    const LENGTH: usize = 555;
+    use super::*;
 
     #[test]
-    fn build_with_new() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let _biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
+    fn test_computed_freq() {
+        let g_sharp = 415.3;
+        let a = 440.;
+        let b_flat = 466.16;
+
+        // 100 cents is 1 semi tone up
+        let res = get_computed_freq(a, 100.);
+        assert_float_eq!(res, b_flat, abs <= 0.01);
+        // -100 cents is 1 semi tone below
+        let res = get_computed_freq(a, -100.);
+        assert_float_eq!(res, g_sharp, abs <= 0.01);
     }
 
     #[test]
-    fn build_with_factory_func() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let _biquad = context.create_biquad_filter();
+    fn test_constructor() {
+        {
+            let default_q = 1.0;
+            let default_detune = 0.;
+            let default_gain = 0.;
+            let default_freq = 350.;
+            let default_type = BiquadFilterType::Lowpass;
+
+            let context = OfflineAudioContext::new(2, 1, 44_100.);
+            let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
+
+            assert_float_eq!(biquad.q().value(), default_q, abs <= 0.);
+            assert_float_eq!(biquad.detune().value(), default_detune, abs <= 0.);
+            assert_float_eq!(biquad.gain().value(), default_gain, abs <= 0.);
+            assert_float_eq!(biquad.frequency().value(), default_freq, abs <= 0.);
+            assert_eq!(biquad.type_(), default_type);
+        }
+
+        {
+            let options = BiquadFilterOptions {
+                q: 2.0,
+                detune: 100.,
+                gain: 1.,
+                frequency: 3050.,
+                type_: BiquadFilterType::Highpass,
+                ..BiquadFilterOptions::default()
+            };
+            let clone = options.clone();
+
+            let context = OfflineAudioContext::new(2, 1, 44_100.);
+            let biquad = BiquadFilterNode::new(&context, options);
+
+            assert_float_eq!(biquad.q().value(), clone.q, abs <= 0.);
+            assert_float_eq!(biquad.detune().value(), clone.detune, abs <= 0.);
+            assert_float_eq!(biquad.gain().value(), clone.gain, abs <= 0.);
+            assert_float_eq!(biquad.frequency().value(), clone.frequency, abs <= 0.);
+            assert_eq!(biquad.type_(), clone.type_);
+        }
     }
 
     #[test]
-    fn test_default_audio_params() {
-        let default_q = 1.0;
-        let default_detune = 0.;
-        let default_gain = 0.;
-        let default_freq = 350.;
-        let default_type = BiquadFilterType::Lowpass;
-
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
-
-        context.start_rendering_sync();
-
-        assert_float_eq!(biquad.q().value(), default_q, abs <= 0.);
-        assert_float_eq!(biquad.detune().value(), default_detune, abs <= 0.);
-        assert_float_eq!(biquad.gain().value(), default_gain, abs <= 0.);
-        assert_float_eq!(biquad.frequency().value(), default_freq, abs <= 0.);
-        assert_eq!(biquad.type_(), default_type);
-    }
-
-    #[test]
-    fn options_sets_audio_params() {
+    fn test_dummy() {
         let q = 2.0;
         let detune = 100.;
         let gain = 1.;
         let frequency = 3050.;
         let type_ = BiquadFilterType::Highpass;
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-
-        let options = BiquadFilterOptions {
-            q,
-            detune,
-            gain,
-            frequency,
-            type_,
-            ..BiquadFilterOptions::default()
-        };
-
-        let biquad = BiquadFilterNode::new(&context, options);
-
-        context.start_rendering_sync();
-
-        assert_float_eq!(biquad.q().value(), q, abs <= 0.);
-        assert_float_eq!(biquad.detune().value(), detune, abs <= 0.);
-        assert_float_eq!(biquad.gain().value(), gain, abs <= 0.);
-        assert_float_eq!(biquad.frequency().value(), frequency, abs <= 0.);
-        assert_eq!(biquad.type_(), type_);
-    }
-
-    #[test]
-    fn change_audio_params_after_build() {
-        let q = 2.0;
-        let detune = 100.;
-        let gain = 1.;
-        let frequency = 3050.;
-        let type_ = BiquadFilterType::Highpass;
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
 
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
+        biquad.connect(&context.destination());
         biquad.q().set_value(q);
         biquad.detune().set_value(detune);
         biquad.gain().set_value(gain);
@@ -653,12 +680,6 @@ mod tests {
         biquad.set_type(type_);
 
         context.start_rendering_sync();
-
-        assert_float_eq!(biquad.q().value(), q, abs <= 0.);
-        assert_float_eq!(biquad.detune().value(), detune, abs <= 0.);
-        assert_float_eq!(biquad.gain().value(), gain, abs <= 0.);
-        assert_float_eq!(biquad.frequency().value(), frequency, abs <= 0.);
-        assert_eq!(biquad.type_(), type_);
     }
 
     // #[test]
