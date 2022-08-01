@@ -277,13 +277,13 @@ impl BiquadFilterNode {
             let (q_param, q_proc) = context.create_audio_param(q_options, &registration);
             q_param.set_value(options.q);
 
-            let detune = AudioParamDescriptor {
+            let detune_options = AudioParamDescriptor {
                 min_value: -153_600.,
                 max_value: 153_600.,
                 default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (d_param, d_proc) = context.create_audio_param(detune, &registration);
+            let (d_param, d_proc) = context.create_audio_param(detune_options, &registration);
             d_param.set_value(options.detune);
 
             let freq_options = AudioParamDescriptor {
@@ -438,6 +438,51 @@ impl BiquadFilterNode {
         //     mag_response[i] = h_f.norm() as f32;
         //     phase_response[i] = h_f.arg() as f32;
         // }
+
+          // Evaluate the Z-transform of the filter at given normalized
+          // frequency from 0 to 1.  (1 corresponds to the Nyquist
+          // frequency.)
+          //
+          // The z-transform of the filter is
+          //
+          // H(z) = (b0 + b1*z^(-1) + b2*z^(-2))/(1 + a1*z^(-1) + a2*z^(-2))
+          //
+          // Evaluate as
+          //
+          // b0 + (b1 + b2*z1)*z1
+          // --------------------
+          // 1 + (a1 + a2*z1)*z1
+          //
+          // with z1 = 1/z and z = exp(j*pi*frequency). Hence z1 = exp(-j*pi*frequency)
+
+          // Make local copies of the coefficients as a micro-optimization.
+          // double b0 = m_b0;
+          // double b1 = m_b1;
+          // double b2 = m_b2;
+          // double a1 = m_a1;
+          // double a2 = m_a2;
+
+          // for (int k = 0; k < nFrequencies; ++k) {
+          //   double omega = -M_PI * frequency[k];
+          //   Complex z = Complex(cos(omega), sin(omega));
+          //   Complex numerator = b0 + (b1 + b2 * z) * z;
+          //   Complex denominator = Complex(1, 0) + (a1 + a2 * z) * z;
+          //   // Strangely enough, using complex division:
+          //   // e.g. Complex response = numerator / denominator;
+          //   // fails on our test machines, yielding infinities and NaNs, so we do
+          //   // things the long way here.
+          //   double n = norm(denominator);
+          //   double r = (real(numerator) * real(denominator) +
+          //               imag(numerator) * imag(denominator)) /
+          //              n;
+          //   double i = (imag(numerator) * real(denominator) -
+          //               real(numerator) * imag(denominator)) /
+          //              n;
+          //   std::complex<double> response = std::complex<double>(r, i);
+
+          //   magResponse[k] = static_cast<float>(abs(response));
+          //   phaseResponse[k] =
+          //       static_cast<float>(atan2(imag(response), real(response)));
     }
 }
 
