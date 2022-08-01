@@ -29,7 +29,48 @@ fn main() {
     src.set_loop(true);
     src.start();
 
-    std::thread::sleep(std::time::Duration::from_secs(10));
+    let frequency_hz = [250., 500.0, 750.0, 1000., 1500.0, 2000.0, 4000.0];
+    let mut mag_response = [0.; 7];
+    let mut phase_response = [0.; 7];
+
+
+    biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
+    println!("=================================");
+    println!("Biquad filter frequency response:");
+    println!("=================================");
+    println!("Cutoff freq -- {} Hz", biquad.frequency().value());
+    println!("Gain -- {}", biquad.gain().value());
+    println!("Q factor -- {}", biquad.q().value());
+    println!("---------------------------------");
+    for i in 0..frequency_hz.len() {
+        println!(
+            "{} Hz --> {} dB",
+            frequency_hz[i],
+            20.0 * mag_response[i].log10()
+        );
+    }
+    println!("---------------------------------");
+
+    std::thread::sleep(std::time::Duration::from_secs(5));
+
+    biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
+    println!("=================================");
+    println!("Biquad filter frequency response:");
+    println!("=================================");
+    println!("Cutoff freq -- {} Hz", biquad.frequency().value());
+    println!("Gain -- {}", biquad.gain().value());
+    println!("Q factor -- {}", biquad.q().value());
+    println!("---------------------------------");
+    for i in 0..frequency_hz.len() {
+        println!(
+            "{} Hz --> {} dB",
+            frequency_hz[i],
+            20.0 * mag_response[i].log10()
+        );
+    }
+    println!("---------------------------------");
+
+    std::thread::sleep(std::time::Duration::from_secs(5));
 
     println!("> smoothly close low-pass filter for 10 sec");
 
@@ -38,48 +79,58 @@ fn main() {
         .frequency()
         .exponential_ramp_to_value_at_time(10., now + 10.);
 
-    std::thread::sleep(std::time::Duration::from_secs(10));
+    biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
+    println!("=================================");
+    println!("Biquad filter frequency response:");
+    println!("=================================");
+    println!("Cutoff freq -- {} Hz", biquad.frequency().value());
+    println!("Gain -- {}", biquad.gain().value());
+    println!("Q factor -- {}", biquad.q().value());
+    println!("---------------------------------");
+    for i in 0..frequency_hz.len() {
+        println!(
+            "{} Hz --> {} dB",
+            frequency_hz[i],
+            20.0 * mag_response[i].log10()
+        );
+    }
+    println!("---------------------------------");
 
-    // let mut frequency_hz = [250., 500.0, 750.0, 1000., 1500.0, 2000.0, 4000.0];
-    // let mut mag_response = [0.; 7];
-    // let mut phase_response = [0.; 7];
+    std::thread::sleep(std::time::Duration::from_secs(5));
 
-    // biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+    biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
+    println!("=================================");
+    println!("Biquad filter frequency response:");
+    println!("=================================");
+    println!("Cutoff freq -- {} Hz", biquad.frequency().value());
+    println!("Gain -- {}", biquad.gain().value());
+    println!("Q factor -- {}", biquad.q().value());
+    println!("---------------------------------");
+    for i in 0..frequency_hz.len() {
+        println!(
+            "{} Hz --> {} dB",
+            frequency_hz[i],
+            20.0 * mag_response[i].log10()
+        );
+    }
+    println!("---------------------------------");
 
-    // println!("=================================");
-    // println!("Biquad filter frequency response:");
-    // println!("=================================");
-    // println!("Cutoff freq -- {} Hz", biquad.frequency().value());
-    // println!("Gain -- {}", biquad.gain().value());
-    // println!("Q factor -- {}", biquad.q().value());
-    // println!("---------------------------------");
-    // for i in 0..frequency_hz.len() {
-    //     println!(
-    //         "{} Hz --> {} dB",
-    //         frequency_hz[i],
-    //         20.0 * mag_response[i].log10()
-    //     );
-    // }
-    // println!("---------------------------------");
+    std::thread::sleep(std::time::Duration::from_secs(5));
 
-    // biquad.frequency().linear_ramp_to_value_at_time(3_000., 4.);
-    // // enjoy listening
-    // std::thread::sleep(std::time::Duration::from_secs(4));
-
-    // biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
-    // println!("=================================");
-    // println!("Biquad filter frequency response:");
-    // println!("=================================");
-    // println!("Cutoff freq -- {} Hz", biquad.frequency().value());
-    // println!("Gain -- {}", biquad.gain().value());
-    // println!("Q factor -- {}", biquad.q().value());
-    // println!("---------------------------------");
-    // for i in 0..frequency_hz.len() {
-    //     println!(
-    //         "{} Hz --> {} dB",
-    //         frequency_hz[i],
-    //         20.0 * mag_response[i].log10()
-    //     );
-    // }
-    // println!("---------------------------------");
+    biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
+    println!("=================================");
+    println!("Biquad filter frequency response:");
+    println!("=================================");
+    println!("Cutoff freq -- {} Hz", biquad.frequency().value());
+    println!("Gain -- {}", biquad.gain().value());
+    println!("Q factor -- {}", biquad.q().value());
+    println!("---------------------------------");
+    for i in 0..frequency_hz.len() {
+        println!(
+            "{} Hz --> {} dB",
+            frequency_hz[i],
+            20.0 * mag_response[i].log10()
+        );
+    }
+    println!("---------------------------------");
 }

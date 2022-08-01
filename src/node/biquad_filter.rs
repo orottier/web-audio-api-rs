@@ -366,9 +366,6 @@ impl BiquadFilterNode {
     ///
     /// * `type_` - the biquad filter type (lowpass, highpass,...)
     pub fn set_type(&self, type_: BiquadFilterType) {
-        println!("set type {:?}", type_);
-        // let num: u32 = BiquadFilterType.from(type_);
-        println!("set type {:?}", type_ as u32);
         self.type_.store(type_ as u32, Ordering::SeqCst);
     }
 
@@ -385,16 +382,11 @@ impl BiquadFilterNode {
         mag_response: &mut [f32],
         phase_response: &mut [f32],
     ) {
-        assert_eq!(
-            frequency_hz.len(),
-            mag_response.len(),
-            " InvalidAccessError: All parameters should be the same length"
-        );
-        assert_eq!(
-            mag_response.len(),
-            phase_response.len(),
-            " InvalidAccessError: All parameters should be the same length"
-        );
+        if frequency_hz.len() != mag_response.len()
+            || mag_response.len() != phase_response.len()
+        {
+            panic!("InvalidAccessError - Parameter lengths must match");
+        }
 
         let sample_rate = self.context().sample_rate();
 
@@ -411,8 +403,6 @@ impl BiquadFilterNode {
         let detune = self.detune().value();
         let gain = self.gain().value();
         let q = self.q().value();
-
-        println!("type: {:?}", type_);
 
         // get coefs
         let computed_freq = get_computed_freq(frequency, detune);
