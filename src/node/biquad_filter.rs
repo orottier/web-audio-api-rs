@@ -1,14 +1,13 @@
 //! The biquad filter control and renderer parts
-use std::f32::consts::{PI, SQRT_2};
+use num_complex::Complex;
+use std::f64::consts::{PI, SQRT_2};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-// use std::time::Duration;
-// use num_complex::Complex;
 
-use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
@@ -16,39 +15,38 @@ fn get_computed_freq(freq: f32, detune: f32) -> f32 {
     freq * (detune / 1200.).exp2()
 }
 
-/// Biquad filter coefficients
+/// Biquad filter coefficients normalized against a0
 #[derive(Clone, Copy, Debug, Default)]
 struct Coefficients {
-    a0: f32,
-    a1: f32,
-    a2: f32,
-    b0: f32,
-    b1: f32,
-    b2: f32,
+    b0: f64,
+    b1: f64,
+    b2: f64,
+    a1: f64,
+    a2: f64,
 }
 
 // allow non snake to better the variable names in the spec
 #[allow(non_snake_case)]
 fn calculate_coefs(
     filter_type: BiquadFilterType,
-    sample_rate: f32,
-    f0: f32,
-    gain: f32,
-    q: f32,
+    sample_rate: f64,
+    f0: f64,
+    gain: f64,
+    q: f64,
 ) -> Coefficients {
-    let b0: f32;
-    let b1: f32;
-    let b2: f32;
-    let a0: f32;
-    let a1: f32;
-    let a2: f32;
+    let b0: f64;
+    let b1: f64;
+    let b2: f64;
+    let a0: f64;
+    let a1: f64;
+    let a2: f64;
 
-    let A = 10_f32.powf(gain / 40.);
+    let A = 10_f64.powf(gain / 40.);
     let w0 = 2. * PI * f0 / sample_rate;
     let sin_w0 = w0.sin();
     let cos_w0 = w0.cos();
     let alpha_q = sin_w0 / (2. * q);
-    let alpha_q_db = sin_w0 / (2. * 10_f32.powf(q / 20.));
+    let alpha_q_db = sin_w0 / (2. * 10_f64.powf(q / 20.));
     let alpha_s = sin_w0 / 2. * SQRT_2; // formula simplified as S is 0
 
     match filter_type {
@@ -107,7 +105,7 @@ fn calculate_coefs(
             b1 = 2. * A * ((A - 1.) - (A + 1.) * cos_w0);
             b2 = A * ((A + 1.) - (A - 1.) * cos_w0 - two_alpha_s_A_squared);
             a0 = (A + 1.) + (A - 1.) * cos_w0 + two_alpha_s_A_squared;
-            a1 = -2. * A * ((A - 1.) + (A + 1.) * cos_w0);
+            a1 = -2. * ((A - 1.) + (A + 1.) * cos_w0);
             a2 = (A + 1.) + (A - 1.) * cos_w0 - two_alpha_s_A_squared;
         }
         BiquadFilterType::Highshelf => {
@@ -117,18 +115,17 @@ fn calculate_coefs(
             b1 = -2. * A * ((A - 1.) + (A + 1.) * cos_w0);
             b2 = A * ((A + 1.) + (A - 1.) * cos_w0 - two_alpha_s_A_squared);
             a0 = (A + 1.) - (A - 1.) * cos_w0 + two_alpha_s_A_squared;
-            a1 = -2. * A * ((A - 1.) - (A + 1.) * cos_w0);
+            a1 = 2. * ((A - 1.) - (A + 1.) * cos_w0);
             a2 = (A + 1.) - (A - 1.) * cos_w0 - two_alpha_s_A_squared;
         }
     }
 
     Coefficients {
-        a0,
-        a1,
-        a2,
-        b0,
-        b1,
-        b2,
+        b0: b0 / a0,
+        b1: b1 / a0,
+        b2: b2 / a0,
+        a1: a1 / a0,
+        a2: a2 / a0,
     }
 }
 
@@ -172,15 +169,16 @@ impl From<u32> for BiquadFilterType {
             Allpass, Bandpass, Highpass, Highshelf, Lowpass, Lowshelf, Notch, Peaking,
         };
 
+        // @note - must be in same order as the struct declaration
         match i {
             0 => Lowpass,
             1 => Highpass,
             2 => Bandpass,
-            3 => Lowshelf,
-            4 => Highshelf,
+            3 => Notch,
+            4 => Allpass,
             5 => Peaking,
-            6 => Notch,
-            7 => Allpass,
+            6 => Lowshelf,
+            7 => Highshelf,
             _ => unreachable!(),
         }
     }
@@ -229,13 +227,13 @@ pub struct BiquadFilterNode {
     /// A detune value, in cents, for the frequency.
     /// It forms a compound parameter with frequency to form the computedFrequency.
     detune: AudioParam,
-    /// frequency where the filter is applied - its impact on the frequency response of the filter
-    /// depends on the `BiquadFilterType`
+    /// frequency where the filter is applied - its impact on the frequency
+    /// response of the filter, depends on the `BiquadFilterType`
     frequency: AudioParam,
-    /// boost/attenuation (dB) - its impact on the frequency response of the filter
-    /// depends on the `BiquadFilterType`
+    /// boost/attenuation (dB) - its impact on the frequency response of the
+    /// filter, depends on the `BiquadFilterType`
     gain: AudioParam,
-    /// `BiquadFilterType` repesented as u32
+    /// `BiquadFilterType` represented as u32
     type_: Arc<AtomicU32>,
 }
 
@@ -368,6 +366,9 @@ impl BiquadFilterNode {
     ///
     /// * `type_` - the biquad filter type (lowpass, highpass,...)
     pub fn set_type(&self, type_: BiquadFilterType) {
+        println!("set type {:?}", type_);
+        // let num: u32 = BiquadFilterType.from(type_);
+        println!("set type {:?}", type_ as u32);
         self.type_.store(type_ as u32, Ordering::SeqCst);
     }
 
@@ -380,7 +381,7 @@ impl BiquadFilterNode {
     /// * `phase_response` - phase of the frequency response of the filter
     pub fn get_frequency_response(
         &self,
-        frequency_hz: &mut [f32],
+        frequency_hz: &[f32],
         mag_response: &mut [f32],
         phase_response: &mut [f32],
     ) {
@@ -398,91 +399,58 @@ impl BiquadFilterNode {
         let sample_rate = self.context().sample_rate();
 
         // Ensures that given frequencies are in the correct range
-        let min = 0.;
-        let max = sample_rate / 2.;
-        for f in frequency_hz.iter_mut() {
-            *f = f.clamp(min, max);
+        let mut freqs = frequency_hz.to_owned();
+        let n_quist = sample_rate / 2.;
+
+        for f in freqs.iter_mut() {
+            *f = f.clamp(0., n_quist) / n_quist;
         }
 
-        // let type_ = self.type_();
-        // let frequency = self.frequency().value();
-        // let detune = self.detune().value();
-        // let gain = self.gain().value();
-        // let q = self.q().value();
+        let type_ = self.type_();
+        let frequency = self.frequency().value();
+        let detune = self.detune().value();
+        let gain = self.gain().value();
+        let q = self.q().value();
 
-        // // get coefs
-        // let computed_freq = get_computed_freq(frequency, detune);
-        // let Coefficients {
-        //     a0,
-        //     a1,
-        //     a2,
-        //     b0,
-        //     b1,
-        //     b2,
-        // } = calculate_coefs(type_, sample_rate, computed_freq, gain, q);
+        println!("type: {:?}", type_);
 
-        // @todo - confirm this is correct, this does not use a0
-        // for (i, &f) in frequency_hz.iter().enumerate() {
-        //     let f = f64::from(f);
-        //     let sample_rate = f64::from(self.context().sample_rate());
-        //     let num = b0
-        //         + Complex::from_polar(b1, -1.0 * 2.0 * PI * f / sample_rate)
-        //         + Complex::from_polar(b2, -2.0 * 2.0 * PI * f / sample_rate);
-        //     let denom = 1.0
-        //         + Complex::from_polar(a1, -1.0 * 2.0 * PI * f / sample_rate)
-        //         + Complex::from_polar(a2, -2.0 * 2.0 * PI * f / sample_rate);
-        //     let h_f = num / denom;
+        // get coefs
+        let computed_freq = get_computed_freq(frequency, detune);
+        let Coefficients { b0, b1, b2, a1, a2 } = calculate_coefs(
+            type_,
+            sample_rate as f64,
+            computed_freq as f64,
+            gain as f64,
+            q as f64,
+        );
 
-        //     // Possible truncation is fine. f32 precision should be sufficients
-        //     // And it is required by the specs
-        //     mag_response[i] = h_f.norm() as f32;
-        //     phase_response[i] = h_f.arg() as f32;
-        // }
+        // @note - comment from Firefox source code, blink/Biquad.cpp
+        // Evaluate the Z-transform of the filter at given normalized
+        // frequency from 0 to 1.  (1 corresponds to the Nyquist
+        // frequency.)
+        //
+        // The z-transform of the filter is
+        //
+        // H(z) = (b0 + b1*z^(-1) + b2*z^(-2))/(1 + a1*z^(-1) + a2*z^(-2))
+        //
+        // Evaluate as
+        //
+        // b0 + (b1 + b2*z1)*z1
+        // --------------------
+        // 1 + (a1 + a2*z1)*z1
+        //
+        // with z1 = 1/z and z = exp(j*pi*frequency). Hence z1 = exp(-j*pi*frequency)
+        for (i, &f) in freqs.iter().enumerate() {
+            let omega = -1. * PI * f64::from(f);
+            let z = Complex::new(omega.cos(), omega.sin());
+            let numerator = b0 + (b1 + b2 * z) * z;
+            let denominator = Complex::new(1., 0.) + (a1 + a2 * z) * z;
+            let response = numerator / denominator;
 
-          // Evaluate the Z-transform of the filter at given normalized
-          // frequency from 0 to 1.  (1 corresponds to the Nyquist
-          // frequency.)
-          //
-          // The z-transform of the filter is
-          //
-          // H(z) = (b0 + b1*z^(-1) + b2*z^(-2))/(1 + a1*z^(-1) + a2*z^(-2))
-          //
-          // Evaluate as
-          //
-          // b0 + (b1 + b2*z1)*z1
-          // --------------------
-          // 1 + (a1 + a2*z1)*z1
-          //
-          // with z1 = 1/z and z = exp(j*pi*frequency). Hence z1 = exp(-j*pi*frequency)
-
-          // Make local copies of the coefficients as a micro-optimization.
-          // double b0 = m_b0;
-          // double b1 = m_b1;
-          // double b2 = m_b2;
-          // double a1 = m_a1;
-          // double a2 = m_a2;
-
-          // for (int k = 0; k < nFrequencies; ++k) {
-          //   double omega = -M_PI * frequency[k];
-          //   Complex z = Complex(cos(omega), sin(omega));
-          //   Complex numerator = b0 + (b1 + b2 * z) * z;
-          //   Complex denominator = Complex(1, 0) + (a1 + a2 * z) * z;
-          //   // Strangely enough, using complex division:
-          //   // e.g. Complex response = numerator / denominator;
-          //   // fails on our test machines, yielding infinities and NaNs, so we do
-          //   // things the long way here.
-          //   double n = norm(denominator);
-          //   double r = (real(numerator) * real(denominator) +
-          //               imag(numerator) * imag(denominator)) /
-          //              n;
-          //   double i = (imag(numerator) * real(denominator) -
-          //               real(numerator) * imag(denominator)) /
-          //              n;
-          //   std::complex<double> response = std::complex<double>(r, i);
-
-          //   magResponse[k] = static_cast<float>(abs(response));
-          //   phaseResponse[k] =
-          //       static_cast<float>(atan2(imag(response), real(response)));
+            let (mag, phase) = response.to_polar();
+            mag_response[i] = mag as f32;
+            phase_response[i] = phase as f32;
+        }
     }
 }
 
@@ -503,10 +471,10 @@ struct BiquadFilterRenderer {
     /// `BiquadFilterType` repesented as u32
     type_: Arc<AtomicU32>,
     // keep filter state for each channel
-    x1: Vec<f32>,
-    x2: Vec<f32>,
-    y1: Vec<f32>,
-    y2: Vec<f32>,
+    x1: Vec<f64>,
+    x2: Vec<f64>,
+    y1: Vec<f64>,
+    y2: Vec<f64>,
 }
 
 impl AudioProcessor for BiquadFilterRenderer {
@@ -526,7 +494,8 @@ impl AudioProcessor for BiquadFilterRenderer {
         if input.is_silent() {
             let mut ended = true;
 
-            self.x1.iter()
+            self.x1
+                .iter()
                 .zip(self.x2.iter())
                 .zip(self.y1.iter())
                 .zip(self.y2.iter())
@@ -578,7 +547,8 @@ impl AudioProcessor for BiquadFilterRenderer {
         let mut current_gain = gain[0];
         let mut current_coefs = Coefficients::default();
 
-        coefs_list.iter_mut()
+        coefs_list
+            .iter_mut()
             .zip(frequency.iter())
             .zip(detune.iter())
             .zip(q.iter())
@@ -593,7 +563,13 @@ impl AudioProcessor for BiquadFilterRenderer {
                     || current_gain != *g
                 {
                     let computed_freq = get_computed_freq(*f, *d);
-                    current_coefs = calculate_coefs(type_, sample_rate, computed_freq, *g, *q);
+                    current_coefs = calculate_coefs(
+                        type_,
+                        sample_rate as f64,
+                        computed_freq as f64,
+                        *g as f64,
+                        *q as f64,
+                    );
 
                     current_frequency = *f;
                     current_detune = *d;
@@ -619,17 +595,19 @@ impl AudioProcessor for BiquadFilterRenderer {
                 .for_each(|((i, o), c)| {
                     // 𝑎0𝑦(𝑛)+𝑎1𝑦(𝑛−1)+𝑎2𝑦(𝑛−2)=𝑏0𝑥(𝑛)+𝑏1𝑥(𝑛−1)+𝑏2𝑥(𝑛−2), then:
                     // 𝑦(𝑛) = [𝑏0𝑥(𝑛)+𝑏1𝑥(𝑛−1)+𝑏2𝑥(𝑛−2) - 𝑎1𝑦(𝑛−1)+𝑎2𝑦(𝑛−2)] / 𝑎0
-                    *o = (c.b0 * *i + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2) / c.a0;
-
+                    let mut value =
+                        c.b0 * f64::from(*i) + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
                     // fush subnormal to zero
-                    if o.is_subnormal() {
-                        *o = 0.;
+                    if value.is_subnormal() {
+                        value = 0.;
                     }
                     // update state
                     x2 = x1;
-                    x1 = *i;
+                    x1 = f64::from(*i);
                     y2 = y1;
-                    y1 = *o;
+                    y1 = value;
+                    // cast value as f32
+                    *o = value as f32;
                 });
 
             // store channel state for next block
@@ -707,69 +685,366 @@ mod tests {
     }
 
     #[test]
-    fn test_dummy() {
-        let q = 2.0;
-        let detune = 100.;
-        let gain = 1.;
-        let frequency = 3050.;
-        let type_ = BiquadFilterType::Highpass;
-        let context = OfflineAudioContext::new(1, 128, 44_100.);
-
+    #[should_panic]
+    fn test_frequency_response_arguments() {
+        let context = OfflineAudioContext::new(2, 555, 44_100.);
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
-        biquad.connect(&context.destination());
-        biquad.q().set_value(q);
-        biquad.detune().set_value(detune);
-        biquad.gain().set_value(gain);
-        biquad.frequency().set_value(frequency);
-        biquad.set_type(type_);
+        let mut frequency_hz = [0.];
+        let mut mag_response = [0., 1.0];
+        let mut phase_response = [0.];
 
-        context.start_rendering_sync();
+        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
     }
 
-    // #[test]
-    // #[should_panic]
-    // fn panics_when_not_the_same_length() {
-    //     let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-    //     let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
+    #[test]
+    #[should_panic]
+    fn test_frequency_response_arguments_2() {
+        let context = OfflineAudioContext::new(2, 555, 44_100.);
+        let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
-    //     let mut frequency_hz = [0.];
-    //     let mut mag_response = [0., 1.0];
-    //     let mut phase_response = [0.];
+        let mut frequency_hz = [0.];
+        let mut mag_response = [0.];
+        let mut phase_response = [0., 1.0];
 
-    //     biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
-    // }
+        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+    }
 
-    // #[test]
-    // #[should_panic]
-    // fn panics_when_not_the_same_length_2() {
-    //     let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-    //     let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
+    // @note: expected values retrieved from chrome and firefox, both being coherent
+    #[test]
+    fn test_frequency_responses() {
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
 
-    //     let mut frequency_hz = [0.];
-    //     let mut mag_response = [0.];
-    //     let mut phase_response = [0., 1.0];
+        let frequency = 2000.;
+        let q = 1.;
+        let gain = 3.;
+        let freqs = [
+            400., 800., 1200., 1600., 2000., 2400., 2800., 3200., 3600., 4000.,
+        ];
 
-    //     biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
-    // }
+        {
+            let type_ = BiquadFilterType::Lowpass;
+            let expected_mags = [
+                1.023848056793213,
+                1.0948060750961304,
+                1.19772469997406,
+                1.2522060871124268,
+                1.1220184564590454,
+                0.8600019216537476,
+                0.6262584328651428,
+                0.46187180280685425,
+                0.3505324125289917,
+                0.27358654141426086,
+            ];
+            let expected_phases = [
+                -0.18232205510139465,
+                -0.3985414505004883,
+                -0.691506564617157,
+                -1.0987391471862793,
+                -1.5707963705062866,
+                -1.9669616222381592,
+                -2.236342191696167,
+                -2.4131083488464355,
+                -2.533737897872925,
+                -2.6204006671905518,
+            ];
 
-    // #[test]
-    // fn frequencies_are_clamped() {
-    //     let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-    //     let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
-    //     let niquyst = context.sample_rate() / 2.0;
+            let filter = context.create_biquad_filter();
+            filter.set_type(type_);
+            filter.frequency.set_value(frequency);
+            filter.q.set_value(q);
+            filter.gain.set_value(gain);
 
-    //     let mut frequency_hz = [-100., 1_000_000.];
-    //     let mut mag_response = [0., 0.];
-    //     let mut phase_response = [0., 0.];
+            let mut mags = [0.; 10];
+            let mut phases = [0.; 10];
 
-    //     biquad.get_frequency_response_mock(
-    //         &mut frequency_hz,
-    //         &mut mag_response,
-    //         &mut phase_response,
-    //     );
+            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
 
-    //     let ref_arr = [0., niquyst];
-    //     assert_float_eq!(frequency_hz, ref_arr, abs_all <= 0.);
-    // }
+            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+        }
+
+        {
+            let type_ = BiquadFilterType::Highpass;
+            let expected_mags = [
+                0.0404227040708065,
+                0.17317812144756317,
+                0.42743849754333496,
+                0.7974866628646851,
+                1.1220184564590454,
+                1.2458853721618652,
+                1.2437469959259033,
+                1.208056092262268,
+                1.1714074611663818,
+                1.1408127546310425,
+            ];
+            let expected_phases = [
+                2.959270715713501,
+                2.743051290512085,
+                2.4500861167907715,
+                2.042853593826294,
+                1.570796251296997,
+                1.1746309995651245,
+                0.9052504897117615,
+                0.7284843325614929,
+                0.6078547239303589,
+                0.5211920142173767,
+            ];
+
+            let filter = context.create_biquad_filter();
+            filter.set_type(type_);
+            filter.frequency.set_value(frequency);
+            filter.q.set_value(q);
+            filter.gain.set_value(gain);
+
+            let mut mags = [0.; 10];
+            let mut phases = [0.; 10];
+
+            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+
+            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+        }
+
+        {
+            let type_ = BiquadFilterType::Bandpass;
+            let expected_mags = [
+                0.2025768756866455,
+                0.4271776080131531,
+                0.6805755496025085,
+                0.9101988673210144,
+                1.,
+                0.9370073676109314,
+                0.8193633556365967,
+                0.7074796557426453,
+                0.6153367757797241,
+                0.5415573716163635,
+            ];
+            let expected_phases = [
+                1.3668076992034912,
+                1.129427433013916,
+                0.8222484588623047,
+                0.42703235149383545,
+                -6.948182118549084e-8,
+                -0.3568341135978699,
+                -0.6104966998100281,
+                -0.7848706841468811,
+                -0.9079831838607788,
+                -0.9985077977180481,
+            ];
+
+            let filter = context.create_biquad_filter();
+            filter.set_type(type_);
+            filter.frequency.set_value(frequency);
+            filter.q.set_value(q);
+            filter.gain.set_value(gain);
+
+            let mut mags = [0.; 10];
+            let mut phases = [0.; 10];
+
+            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+
+            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+        }
+
+        {
+            let type_ = BiquadFilterType::Notch;
+            let expected_mags = [
+                0.979266345500946,
+                0.9041677117347717,
+                0.7326779365539551,
+                0.4141714870929718,
+                6.948182118549084e-8,
+                0.3493095338344574,
+                0.573274552822113,
+                0.7067337036132812,
+                0.7882643342018127,
+                0.8406637907028198,
+            ];
+            let expected_phases = [
+                -0.20398865640163422,
+                -0.4413689076900482,
+                -0.7485478520393372,
+                -1.1437640190124512,
+                1.570796251296997,
+                1.213962197303772,
+                0.9602996110916138,
+                0.7859256267547607,
+                0.662813127040863,
+                0.5722885727882385,
+            ];
+
+            let filter = context.create_biquad_filter();
+            filter.set_type(type_);
+            filter.frequency.set_value(frequency);
+            filter.q.set_value(q);
+            filter.gain.set_value(gain);
+
+            let mut mags = [0.; 10];
+            let mut phases = [0.; 10];
+
+            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+
+            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+        }
+
+        {
+            let type_ = BiquadFilterType::Allpass;
+            let expected_mags = [1., 1., 1., 1., 1., 1., 1., 1., 1., 1.];
+            let expected_phases = [
+                -0.40797731280326843,
+                -0.8827378153800964,
+                -1.4970957040786743,
+                -2.2875280380249023,
+                3.141592502593994,
+                2.427924394607544,
+                1.9205992221832275,
+                1.5718512535095215,
+                1.325626254081726,
+                1.144577145576477,
+            ];
+
+            let filter = context.create_biquad_filter();
+            filter.set_type(type_);
+            filter.frequency.set_value(frequency);
+            filter.q.set_value(q);
+            filter.gain.set_value(gain);
+
+            let mut mags = [0.; 10];
+            let mut phases = [0.; 10];
+
+            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+
+            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+        }
+
+        {
+            let type_ = BiquadFilterType::Peaking;
+            let expected_mags = [
+                1.0145272016525269,
+                1.0657449960708618,
+                1.1736305952072144,
+                1.330430030822754,
+                1.4125374555587769,
+                1.3534939289093018,
+                1.2603179216384888,
+                1.1887166500091553,
+                1.1401562690734863,
+                1.107250690460205,
+            ];
+            let expected_phases = [
+                0.06874943524599075,
+                0.13327200710773468,
+                0.17138442397117615,
+                0.13011260330677032,
+                -2.411762878296031e-8,
+                -0.1131250336766243,
+                -0.16162104904651642,
+                -0.17184172570705414,
+                -0.16679927706718445,
+                -0.1567305326461792,
+            ];
+
+            let filter = context.create_biquad_filter();
+            filter.set_type(type_);
+            filter.frequency.set_value(frequency);
+            filter.q.set_value(q);
+            filter.gain.set_value(gain);
+
+            let mut mags = [0.; 10];
+            let mut phases = [0.; 10];
+
+            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+
+            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+        }
+
+        {
+            let type_ = BiquadFilterType::Lowshelf;
+            let expected_mags = [
+                1.411763310432434,
+                1.4004594087600708,
+                1.3577604293823242,
+                1.2777900695800781,
+                1.1885021924972534,
+                1.1184993982315063,
+                1.07305908203125,
+                1.045626163482666,
+                1.029238224029541,
+                1.0192826986312866,
+            ];
+            let expected_phases = [
+                -0.050444066524505615,
+                -0.10995279997587204,
+                -0.17566977441310883,
+                -0.22642207145690918,
+                -0.24332194030284882,
+                -0.23164276778697968,
+                -0.2076151967048645,
+                -0.18214666843414307,
+                -0.15946431457996368,
+                -0.1404205560684204,
+            ];
+
+            let filter = context.create_biquad_filter();
+            filter.set_type(type_);
+            filter.frequency.set_value(frequency);
+            filter.q.set_value(q);
+            filter.gain.set_value(gain);
+
+            let mut mags = [0.; 10];
+            let mut phases = [0.; 10];
+
+            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+
+            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+        }
+
+        {
+            let type_ = BiquadFilterType::Highshelf;
+            let expected_mags = [
+                1.0005483627319336,
+                1.0086243152618408,
+                1.0403436422348022,
+                1.1054534912109375,
+                1.1885021924972534,
+                1.2628861665725708,
+                1.3163650035858154,
+                1.3509010076522827,
+                1.3724106550216675,
+                1.385815143585205,
+            ];
+            let expected_phases = [
+                0.050444066524505615,
+                0.10995279997587204,
+                0.17566977441310883,
+                0.22642207145690918,
+                0.24332194030284882,
+                0.23164276778697968,
+                0.2076151967048645,
+                0.18214666843414307,
+                0.15946431457996368,
+                0.1404205560684204,
+            ];
+
+            let filter = context.create_biquad_filter();
+            filter.set_type(type_);
+            filter.frequency.set_value(frequency);
+            filter.q.set_value(q);
+            filter.gain.set_value(gain);
+
+            let mut mags = [0.; 10];
+            let mut phases = [0.; 10];
+
+            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+
+            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+        }
+    }
 }

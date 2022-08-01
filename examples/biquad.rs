@@ -16,7 +16,9 @@ fn main() {
     // create a biquad filter
     let biquad = context.create_biquad_filter();
     biquad.frequency().set_value(10.);
-    biquad.frequency().exponential_ramp_to_value_at_time(10000., now + 10.);
+    biquad
+        .frequency()
+        .exponential_ramp_to_value_at_time(10000., now + 10.);
     // connect the biquad node to the destination node (speakers)
     biquad.connect(&context.destination());
 
@@ -32,7 +34,9 @@ fn main() {
     println!("> smoothly close low-pass filter for 10 sec");
 
     let now = context.current_time();
-    biquad.frequency().exponential_ramp_to_value_at_time(10., now + 10.);
+    biquad
+        .frequency()
+        .exponential_ramp_to_value_at_time(10., now + 10.);
 
     std::thread::sleep(std::time::Duration::from_secs(10));
 
