@@ -667,19 +667,19 @@ impl AudioProcessor for BiquadFilterRenderer {
                 .for_each(|((i, o), c)| {
                     // 𝑎0𝑦(𝑛)+𝑎1𝑦(𝑛−1)+𝑎2𝑦(𝑛−2)=𝑏0𝑥(𝑛)+𝑏1𝑥(𝑛−1)+𝑏2𝑥(𝑛−2), then:
                     // 𝑦(𝑛) = [𝑏0𝑥(𝑛)+𝑏1𝑥(𝑛−1)+𝑏2𝑥(𝑛−2) - 𝑎1𝑦(𝑛−1)+𝑎2𝑦(𝑛−2)] / 𝑎0
-                    let mut value =
-                        c.b0 * f64::from(*i) + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+                    let x = f64::from(*i);
+                    let mut y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
                     // fush subnormal to zero
-                    if value.is_subnormal() {
-                        value = 0.;
+                    if y.is_subnormal() {
+                        y = 0.;
                     }
                     // update state
                     x2 = x1;
-                    x1 = f64::from(*i);
+                    x1 = x;
                     y2 = y1;
-                    y1 = value;
+                    y1 = y;
                     // cast value as f32
-                    *o = value as f32;
+                    *o = y as f32;
                 });
 
             // store channel state for next block
