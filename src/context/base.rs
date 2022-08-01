@@ -171,6 +171,12 @@ pub trait BaseAudioContext {
         node::DelayNode::new(self.base(), opts)
     }
 
+    /// Creates a `DynamicsCompressorNode`, compressing the audio signal
+    #[must_use]
+    fn create_dynamics_compressor(&self) -> node::DynamicsCompressorNode {
+        node::DynamicsCompressorNode::new(self.base(), node::DynamicsCompressorOptions::default())
+    }
+
     /// Creates an `GainNode`, to control audio volume
     #[must_use]
     fn create_gain(&self) -> node::GainNode {

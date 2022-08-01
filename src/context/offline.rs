@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::buffer::AudioBuffer;
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
-use crate::{assert_valid_sample_rate, AtomicF64, RENDER_QUANTUM_SIZE};
+use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
 
 /// The `OfflineAudioContext` doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an `AudioBuffer`.
@@ -69,17 +69,12 @@ impl OfflineAudioContext {
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = frames_played.clone();
 
-        // output_latency is irrelevant for offline context, but it needs to
-        // be passed to the `RenderThread` constructor
-        let output_latency = Arc::new(AtomicF64::new(0.));
-
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
             sample_rate,
             number_of_channels,
             receiver,
             frames_played_clone,
-            output_latency,
         );
 
         // first, setup the base audio context

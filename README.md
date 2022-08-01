@@ -85,6 +85,35 @@ It is a work in progress, but eventually we should be able to run the official
 [WebAudioAPI test harness](https://github.com/web-platform-tests/wpt/tree/master/webaudio)
 and track our spec compliance improvements over time.
 
+## Audio backends
+
+By default, the [`cpal`](https://github.com/rustaudio/cpal) library is used for
+cross platform audio I/O.
+
+We offer [experimental
+support](https://github.com/orottier/web-audio-api-rs/issues/187) for the
+[`cubeb`](https://github.com/mozilla/cubeb-rs) backend via the `cubeb` feature
+flag. Please note that `cmake` must be installed locally in order to run
+`cubeb`.
+
+| Feature flag   | Backend        | Notes |
+| -------------- | -------------- | ----- |
+| cpal (default) | ALSA           | |
+| cpal (default) | WASAPI         | |
+| cpal (default) | CoreAudio      | |
+| cpal (default) | Oboe (Android) | |
+| cpal-jack      | JACK           | |
+| cpal-asio      | ASIO           | see <https://github.com/rustaudio/cpal#asio-on-windows> |
+| cubeb          | PulseAudio     | |
+| cubeb          | AudioUnit      | |
+| cubeb          | WASAPI         | |
+| cubeb          | OpenSL         | |
+| cubeb          | AAudio         | opt-in, will be default when ready, prefer OpenSL |
+| cubeb          | sndio          | |
+| cubeb          | Sun            | |
+| cubeb          | OSS            | |
+
+
 ## Contributing
 
 web-audio-api-rs welcomes contribution from everyone in the form of suggestions, bug reports,
