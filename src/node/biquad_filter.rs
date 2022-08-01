@@ -41,16 +41,13 @@ fn calculate_coefs(
     let a1: f64;
     let a2: f64;
 
-    let A = 10_f64.powf(gain / 40.);
-    let w0 = 2. * PI * f0 / sample_rate;
-    let sin_w0 = w0.sin();
-    let cos_w0 = w0.cos();
-    let alpha_q = sin_w0 / (2. * q);
-    let alpha_q_db = sin_w0 / (2. * 10_f64.powf(q / 20.));
-    let alpha_s = sin_w0 / 2. * SQRT_2; // formula simplified as S is 0
-
     match filter_type {
         BiquadFilterType::Lowpass => {
+            let w0 = 2. * PI * f0 / sample_rate;
+            let cos_w0 = w0.cos();
+            let sin_w0 = w0.sin();
+            let alpha_q_db = sin_w0 / (2. * 10_f64.powf(q / 20.));
+
             b0 = (1. - cos_w0) / 2.;
             b1 = 1. - cos_w0;
             b2 = (1. - cos_w0) / 2.;
@@ -59,6 +56,11 @@ fn calculate_coefs(
             a2 = 1. - alpha_q_db;
         }
         BiquadFilterType::Highpass => {
+            let w0 = 2. * PI * f0 / sample_rate;
+            let cos_w0 = w0.cos();
+            let sin_w0 = w0.sin();
+            let alpha_q_db = sin_w0 / (2. * 10_f64.powf(q / 20.));
+
             b0 = (1. + cos_w0) / 2.;
             b1 = -1. * (1. + cos_w0);
             b2 = (1. + cos_w0) / 2.;
@@ -67,6 +69,11 @@ fn calculate_coefs(
             a2 = 1. - alpha_q_db;
         }
         BiquadFilterType::Bandpass => {
+            let w0 = 2. * PI * f0 / sample_rate;
+            let cos_w0 = w0.cos();
+            let sin_w0 = w0.sin();
+            let alpha_q = sin_w0 / (2. * q);
+
             b0 = alpha_q;
             b1 = 0.;
             b2 = -1. * alpha_q;
@@ -75,6 +82,11 @@ fn calculate_coefs(
             a2 = 1. - alpha_q;
         }
         BiquadFilterType::Notch => {
+            let w0 = 2. * PI * f0 / sample_rate;
+            let cos_w0 = w0.cos();
+            let sin_w0 = w0.sin();
+            let alpha_q = sin_w0 / (2. * q);
+
             b0 = 1.;
             b1 = -2. * cos_w0;
             b2 = 1.;
@@ -83,6 +95,11 @@ fn calculate_coefs(
             a2 = 1. - alpha_q;
         }
         BiquadFilterType::Allpass => {
+            let w0 = 2. * PI * f0 / sample_rate;
+            let cos_w0 = w0.cos();
+            let sin_w0 = w0.sin();
+            let alpha_q = sin_w0 / (2. * q);
+
             b0 = 1. - alpha_q;
             b1 = -2. * cos_w0;
             b2 = 1. + alpha_q;
@@ -91,6 +108,12 @@ fn calculate_coefs(
             a2 = 1. - alpha_q;
         }
         BiquadFilterType::Peaking => {
+            let A = 10_f64.powf(gain / 40.);
+            let w0 = 2. * PI * f0 / sample_rate;
+            let cos_w0 = w0.cos();
+            let sin_w0 = w0.sin();
+            let alpha_q = sin_w0 / (2. * q);
+
             b0 = 1. + alpha_q * A;
             b1 = -2. * cos_w0;
             b2 = 1. - alpha_q * A;
@@ -99,24 +122,38 @@ fn calculate_coefs(
             a2 = 1. - alpha_q / A;
         }
         BiquadFilterType::Lowshelf => {
+            let A = 10_f64.powf(gain / 40.);
+            let w0 = 2. * PI * f0 / sample_rate;
+            let cos_w0 = w0.cos();
+            let sin_w0 = w0.sin();
+            let alpha_s = sin_w0 / 2. * SQRT_2; // formula simplified as S is 0
             let two_alpha_s_A_squared = 2. * alpha_s * A.sqrt();
+            let A_plus_one = A + 1.;
+            let A_minus_one = A - 1.;
 
-            b0 = A * ((A + 1.) - (A - 1.) * cos_w0 + two_alpha_s_A_squared);
-            b1 = 2. * A * ((A - 1.) - (A + 1.) * cos_w0);
-            b2 = A * ((A + 1.) - (A - 1.) * cos_w0 - two_alpha_s_A_squared);
-            a0 = (A + 1.) + (A - 1.) * cos_w0 + two_alpha_s_A_squared;
-            a1 = -2. * ((A - 1.) + (A + 1.) * cos_w0);
-            a2 = (A + 1.) + (A - 1.) * cos_w0 - two_alpha_s_A_squared;
+            b0 = A * (A_plus_one - A_minus_one * cos_w0 + two_alpha_s_A_squared);
+            b1 = 2. * A * (A_minus_one - A_plus_one * cos_w0);
+            b2 = A * (A_plus_one - A_minus_one * cos_w0 - two_alpha_s_A_squared);
+            a0 = A_plus_one + A_minus_one * cos_w0 + two_alpha_s_A_squared;
+            a1 = -2. * (A_minus_one + A_plus_one * cos_w0);
+            a2 = A_plus_one + A_minus_one * cos_w0 - two_alpha_s_A_squared;
         }
         BiquadFilterType::Highshelf => {
+            let A = 10_f64.powf(gain / 40.);
+            let w0 = 2. * PI * f0 / sample_rate;
+            let cos_w0 = w0.cos();
+            let sin_w0 = w0.sin();
+            let alpha_s = sin_w0 / 2. * SQRT_2; // formula simplified as S is 0
             let two_alpha_s_A_squared = 2. * alpha_s * A.sqrt();
+            let A_plus_one = A + 1.;
+            let A_minus_one = A - 1.;
 
-            b0 = A * ((A + 1.) + (A - 1.) * cos_w0 + two_alpha_s_A_squared);
-            b1 = -2. * A * ((A - 1.) + (A + 1.) * cos_w0);
-            b2 = A * ((A + 1.) + (A - 1.) * cos_w0 - two_alpha_s_A_squared);
-            a0 = (A + 1.) - (A - 1.) * cos_w0 + two_alpha_s_A_squared;
-            a1 = 2. * ((A - 1.) - (A + 1.) * cos_w0);
-            a2 = (A + 1.) - (A - 1.) * cos_w0 - two_alpha_s_A_squared;
+            b0 = A * (A_plus_one + A_minus_one * cos_w0 + two_alpha_s_A_squared);
+            b1 = -2. * A * (A_minus_one + A_plus_one * cos_w0);
+            b2 = A * (A_plus_one + A_minus_one * cos_w0 - two_alpha_s_A_squared);
+            a0 = A_plus_one - A_minus_one * cos_w0 + two_alpha_s_A_squared;
+            a1 = 2. * (A_minus_one - A_plus_one * cos_w0);
+            a2 = A_plus_one - A_minus_one * cos_w0 - two_alpha_s_A_squared;
         }
     }
 
