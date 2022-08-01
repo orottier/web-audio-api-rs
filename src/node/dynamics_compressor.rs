@@ -55,12 +55,13 @@ impl Default for DynamicsCompressorOptions {
     }
 }
 
-/// `DynamicsCompressorNode` provides a compression effect. It lowers the volume
-/// of the loudest parts of the signal and raises the volume of the softest parts.
-/// Overall, a louder, richer, and fuller sound can be achieved. It is especially
-/// important in games and musical applications where large numbers of individual
-/// sounds are played simultaneous to control the overall signal level and help
-/// avoid clipping (distorting) the audio output to the speakers.
+/// `DynamicsCompressorNode` provides a compression effect.
+///
+/// It lowers the volume of the loudest parts of the signal and raises the volume
+/// of the softest parts. Overall, a louder, richer, and fuller sound can be achieved.
+/// It is especially important in games and musical applications where large numbers
+/// of individual sounds are played simultaneous to control the overall signal level
+/// and help avoid clipping (distorting) the audio output to the speakers.
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/DynamicsCompressorNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#DynamicsCompressorNode>

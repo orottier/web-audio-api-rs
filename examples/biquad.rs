@@ -13,16 +13,15 @@ fn main() {
     let now = context.current_time();
 
     println!("> smoothly open low-pass filter for 10 sec");
-    // create a biquad filter
+    // create a lowpass filter (default)
     let biquad = context.create_biquad_filter();
+    biquad.connect(&context.destination());
     biquad.frequency().set_value(10.);
     biquad
         .frequency()
         .exponential_ramp_to_value_at_time(10000., now + 10.);
-    // connect the biquad node to the destination node (speakers)
-    biquad.connect(&context.destination());
 
-    // Play the buffer
+    // pipe the audio buffer source into the lowpass filter
     let src = context.create_buffer_source();
     src.connect(&biquad);
     src.set_buffer(buffer);
@@ -32,7 +31,6 @@ fn main() {
     let frequency_hz = [250., 500.0, 750.0, 1000., 1500.0, 2000.0, 4000.0];
     let mut mag_response = [0.; 7];
     let mut phase_response = [0.; 7];
-
 
     biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
     println!("=================================");

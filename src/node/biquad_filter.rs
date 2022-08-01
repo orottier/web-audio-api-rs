@@ -215,7 +215,49 @@ impl Default for BiquadFilterOptions {
     }
 }
 
-/// `BiquadFilterNode` is a second order IIR filter
+/// BiquadFilterNode is an AudioNode processor implementing very common low-order
+/// IIR filters.
+///
+/// Low-order filters are the building blocks of basic tone controls
+/// (bass, mid, treble), graphic equalizers, and more advanced filters. Multiple
+/// BiquadFilterNode filters can be combined to form more complex filters.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/BiquadFilterNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#BiquadFilterNode>
+/// - see also: [`BaseAudioContext::create_biquad_filter`](crate::context::BaseAudioContext::create_biquad_filter)
+///
+/// # Usage
+///
+/// ```no_run
+/// use std::fs::File;
+/// use web_audio_api::context::{AudioContext, BaseAudioContext};
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+///
+/// let context = AudioContext::default();
+///
+/// let file = File::open("samples/think-stereo-48000.wav").unwrap();
+/// let buffer = context.decode_audio_data_sync(file).unwrap();
+///
+/// // create a lowpass filter (default) and open frequency parameter over time
+/// let biquad = context.create_biquad_filter();
+/// biquad.connect(&context.destination());
+/// biquad.frequency().set_value(10.);
+/// biquad
+///     .frequency()
+///     .exponential_ramp_to_value_at_time(10000., context.current_time() + 10.);
+///
+/// // pipe the audio buffer source into the lowpass filter
+/// let src = context.create_buffer_source();
+/// src.connect(&biquad);
+/// src.set_buffer(buffer);
+/// src.set_loop(true);
+/// src.start();
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example biquad`
+///
 pub struct BiquadFilterNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
@@ -376,15 +418,18 @@ impl BiquadFilterNode {
     /// * `frequency_hz` - frequencies for which frequency response of the filter should be calculated
     /// * `mag_response` - magnitude of the frequency response of the filter
     /// * `phase_response` - phase of the frequency response of the filter
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if arguments' lengths don't match
+    ///
     pub fn get_frequency_response(
         &self,
         frequency_hz: &[f32],
         mag_response: &mut [f32],
         phase_response: &mut [f32],
     ) {
-        if frequency_hz.len() != mag_response.len()
-            || mag_response.len() != phase_response.len()
-        {
+        if frequency_hz.len() != mag_response.len() || mag_response.len() != phase_response.len() {
             panic!("InvalidAccessError - Parameter lengths must match");
         }
 
@@ -680,11 +725,11 @@ mod tests {
         let context = OfflineAudioContext::new(2, 555, 44_100.);
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
-        let mut frequency_hz = [0.];
+        let frequency_hz = [0.];
         let mut mag_response = [0., 1.0];
         let mut phase_response = [0.];
 
-        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+        biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
     }
 
     #[test]
@@ -693,15 +738,16 @@ mod tests {
         let context = OfflineAudioContext::new(2, 555, 44_100.);
         let biquad = BiquadFilterNode::new(&context, BiquadFilterOptions::default());
 
-        let mut frequency_hz = [0.];
+        let frequency_hz = [0.];
         let mut mag_response = [0.];
         let mut phase_response = [0., 1.0];
 
-        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+        biquad.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
     }
 
     // @note: expected values retrieved from chrome and firefox, both being coherent
     #[test]
+    #[allow(clippy::excessive_precision)]
     fn test_frequency_responses() {
         let context = OfflineAudioContext::new(1, 128, 44_100.);
 
