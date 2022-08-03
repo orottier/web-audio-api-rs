@@ -13,6 +13,12 @@ use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 use crossbeam_channel::{Receiver, Sender};
 use lazy_static::lazy_static;
 
+
+/// For SetTargetAtTime event, that theoreticaly cannot end, if the diff between
+/// the current value and the target is below this threshold, the value is set
+/// to target value and the event is considered ended.
+const SNAP_TO_TARGET: f32 = 1e-10;
+
 // arguments sanity check functions for automation methods
 #[track_caller]
 fn assert_non_negative(value: f64) {
@@ -875,10 +881,11 @@ impl AudioParamProcessor {
                     }
                 }
             }
-            // // [spec] Similarly a NotSupportedError exception MUST be thrown if any
-            // // automation method is called at a time which is contained in [𝑇,𝑇+𝐷), 𝑇
-            // // being the time of the curve and 𝐷 its duration.
-            // // @note - Cancel methods are not automation methods
+
+            // [spec] Similarly a NotSupportedError exception MUST be thrown if any
+            // automation method is called at a time which is contained in [𝑇,𝑇+𝐷), 𝑇
+            // being the time of the curve and 𝐷 its duration.
+            // @note - Cancel methods are not automation methods
             if event.event_type == AudioParamEventType::SetValueAtTime
                 || event.event_type == AudioParamEventType::SetValue
                 || event.event_type == AudioParamEventType::LinearRampToValueAtTime
@@ -1319,17 +1326,8 @@ impl AudioParamProcessor {
 
                                 let diff = end_value - value;
 
-                                // abort event if diff is subnormal
-                                if diff.is_subnormal() || diff == 0. {
-                                    // check that buffer does not contain subnormal values
-                                    for v in self.buffer.iter_mut() {
-                                        let diff = end_value - *v;
-
-                                        if diff.is_subnormal() {
-                                            *v = end_value;
-                                        }
-                                    }
-
+                                // abort event if diff is below SNAP_TO_TARGET
+                                if diff < SNAP_TO_TARGET {
                                     self.intrisic_value = end_value;
 
                                     let event = AudioParamEvent {
