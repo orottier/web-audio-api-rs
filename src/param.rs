@@ -13,7 +13,6 @@ use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 use crossbeam_channel::{Receiver, Sender};
 use lazy_static::lazy_static;
 
-
 /// For SetTargetAtTime event, that theoreticaly cannot end, if the diff between
 /// the current value and the target is below this threshold, the value is set
 /// to target value and the event is considered ended.
@@ -1296,17 +1295,29 @@ impl AudioParamProcessor {
                                     let mut time = (start_index as f64).mul_add(dt, block_time);
 
                                     for _ in start_index..end_index_clipped {
-                                        let value = self.compute_set_target_sample(
-                                            start_time,
-                                            time_constant,
-                                            end_value,
-                                            diff,
-                                            time,
-                                        );
+                                        // check if we have reached start_time
+                                        let mut value = if time - start_time < 0. {
+                                            self.intrisic_value
+                                        } else {
+                                            self.compute_set_target_sample(
+                                                start_time,
+                                                time_constant,
+                                                end_value,
+                                                diff,
+                                                time,
+                                            )
+                                        };
+
+                                        // as we check SNAP_TO_TARGET only once per
+                                        // block, if the end value is 0 we can still
+                                        // produce subnormal values.
+                                        // see `test_set_target_at_time_ends_at_threshold`
+                                        if end_value == 0. && value.is_subnormal() {
+                                            value = 0.;
+                                        }
 
                                         self.buffer.push(value);
                                         self.intrisic_value = value;
-
                                         time += dt;
                                     }
                                 }
@@ -1391,9 +1402,14 @@ impl AudioParamProcessor {
                                     let mut time = (start_index as f64).mul_add(dt, block_time);
 
                                     for _ in start_index..end_index_clipped {
-                                        let value = self.compute_set_value_curve_sample(
-                                            start_time, duration, values, time,
-                                        );
+                                        // check if we have reached start_time
+                                        let value = if time - start_time < 0. {
+                                            self.intrisic_value
+                                        } else {
+                                            self.compute_set_value_curve_sample(
+                                                start_time, duration, values, time,
+                                            )
+                                        };
 
                                         self.buffer.push(value);
                                         self.intrisic_value = value;
@@ -2281,44 +2297,58 @@ mod tests {
     }
 
     #[test]
-    fn test_set_target_at_time_ends_at_subnormal() {
+    fn test_set_target_at_time_ends_at_threshold() {
         let context = OfflineAudioContext::new(1, 0, 48000.);
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 2.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        {
-            let opts = AudioParamDescriptor {
-                automation_rate: AutomationRate::A,
-                default_value: 0.,
-                min_value: 0.,
-                max_value: 2.,
-            };
-            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+        param.set_value_at_time(1., 0.);
+        param.set_target_at_time(0., 1., 0.2);
 
-            param.set_value_at_time(1., 0.);
-            param.set_target_at_time(0., 1., 0.2);
-
-            let vs = render.compute_intrisic_values(0., 1., 10);
-            for v in vs.iter() {
-                assert!(!v.is_subnormal());
-            }
-
-            // subnormal values come in this buffer
-            let vs = render.compute_intrisic_values(10., 1., 10);
-            for v in vs.iter() {
-                assert!(!v.is_subnormal());
-            }
-
-            // check peek() has been replaced with set_value event
-            let peek = render.event_timeline.peek();
-            assert_eq!(
-                peek.unwrap().event_type,
-                AudioParamEventType::SetValueAtTime
-            );
-
-            let vs = render.compute_intrisic_values(20., 1., 10);
-            for v in vs.iter() {
-                assert!(!v.is_subnormal());
-            }
+        let vs = render.compute_intrisic_values(0., 1., 128);
+        for v in vs.iter() {
+            assert!(!v.is_subnormal());
         }
+        println!("{:?}", vs);
+
+        // check peek() has been replaced with set_value event
+        let peek = render.event_timeline.peek();
+        assert_eq!(
+            peek.unwrap().event_type,
+            AudioParamEventType::SetValueAtTime
+        );
+
+        // this buffer should be filled with target values
+        let vs = render.compute_intrisic_values(10., 1., 128);
+        assert_float_eq!(vs[..], [0.; 128], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_set_target_at_time_waits_for_start_time() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 2.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(1., 0.);
+        param.set_target_at_time(0., 5., 1.);
+
+        let vs = render.compute_intrisic_values(0., 1., 10);
+        assert_float_eq!(vs[0], 1., abs <= 0.);
+        assert_float_eq!(vs[1], 1., abs <= 0.);
+        assert_float_eq!(vs[2], 1., abs <= 0.);
+        assert_float_eq!(vs[3], 1., abs <= 0.);
+        assert_float_eq!(vs[4], 1., abs <= 0.);
+        assert_float_eq!(vs[5], 1., abs <= 0.);
     }
 
     #[test]
@@ -2857,6 +2887,30 @@ mod tests {
         // this is necessary as the panic is triggered in the audio thread
         // @note - argues in favor of maintaining the queue in control thread
         let _vs = render.compute_intrisic_values(0., 1., 10);
+    }
+
+    #[test]
+    fn test_set_value_curve_waits_for_start_time() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        // set to 0.0001 at t=0 (0. is a special case)
+        let curve = [0., 0.5, 1., 0.5, 0.];
+        param.set_value_curve_at_time(&curve[..], 5., 10.);
+
+        let vs = render.compute_intrisic_values(0., 1., 10);
+        assert_float_eq!(
+            vs,
+            &[0., 0., 0., 0., 0., 0., 0.2, 0.4, 0.6, 0.8][..],
+            abs_all <= 0.
+        );
     }
 
     #[test]
