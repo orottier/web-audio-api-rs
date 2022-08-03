@@ -1296,7 +1296,7 @@ impl AudioParamProcessor {
 
                                     for _ in start_index..end_index_clipped {
                                         // check if we have reached start_time
-                                        let mut value = if time - start_time < 0. {
+                                        let value = if time - start_time < 0. {
                                             self.intrisic_value
                                         } else {
                                             self.compute_set_target_sample(
@@ -1307,14 +1307,6 @@ impl AudioParamProcessor {
                                                 time,
                                             )
                                         };
-
-                                        // as we check SNAP_TO_TARGET only once per
-                                        // block, if the end value is 0 we can still
-                                        // produce subnormal values.
-                                        // see `test_set_target_at_time_ends_at_threshold`
-                                        if end_value == 0. && value.is_subnormal() {
-                                            value = 0.;
-                                        }
 
                                         self.buffer.push(value);
                                         self.intrisic_value = value;
@@ -1340,6 +1332,16 @@ impl AudioParamProcessor {
                                 // abort event if diff is below SNAP_TO_TARGET
                                 if diff < SNAP_TO_TARGET {
                                     self.intrisic_value = end_value;
+
+                                    // if end_value is zero, the buffer might contain
+                                    // subnormals, we need to check that and flush to zero
+                                    if end_value == 0. {
+                                        for v in self.buffer.iter_mut() {
+                                            if v.is_subnormal() {
+                                                *v = 0.;
+                                            }
+                                        }
+                                    }
 
                                     let event = AudioParamEvent {
                                         event_type: AudioParamEventType::SetValueAtTime,
@@ -2314,7 +2316,6 @@ mod tests {
         for v in vs.iter() {
             assert!(!v.is_subnormal());
         }
-        println!("{:?}", vs);
 
         // check peek() has been replaced with set_value event
         let peek = render.event_timeline.peek();
