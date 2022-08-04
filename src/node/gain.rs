@@ -106,7 +106,7 @@ impl AudioProcessor for GainRenderer {
             channel
                 .iter_mut()
                 .zip(gain_values.iter())
-                .for_each(|(value, g)| *value *= g)
+                .for_each(|(o, g)| *o *= g);
         });
 
         false
