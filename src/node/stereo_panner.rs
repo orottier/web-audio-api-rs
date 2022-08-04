@@ -126,7 +126,7 @@ impl AudioNode for StereoPannerNode {
 /// `StereoPannerNode` can be used to pan an audio stream left or right.
 ///
 /// It is an audio-processing module that positions an incoming audio stream
-/// in a stereo image using a low-cost equal-power panning algorithm.
+/// in a stereo image using a low-cost panning algorithm.
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/StereoPannerNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#stereopannernode>
