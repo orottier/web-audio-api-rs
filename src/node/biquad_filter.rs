@@ -467,14 +467,7 @@ impl BiquadFilterNode {
         }
 
         let sample_rate = self.context().sample_rate();
-
-        // Ensures that given frequencies are in the correct range
-        let mut freqs = frequency_hz.to_owned();
         let n_quist = sample_rate / 2.;
-
-        for f in freqs.iter_mut() {
-            *f = f.clamp(0., n_quist) / n_quist;
-        }
 
         let type_ = self.type_();
         let frequency = self.frequency().value();
@@ -493,6 +486,7 @@ impl BiquadFilterNode {
         );
 
         // @note - comment from Firefox source code, blink/Biquad.cpp
+        //
         // Evaluate the Z-transform of the filter at given normalized
         // frequency from 0 to 1.  (1 corresponds to the Nyquist
         // frequency.)
@@ -508,7 +502,10 @@ impl BiquadFilterNode {
         // 1 + (a1 + a2*z1)*z1
         //
         // with z1 = 1/z and z = exp(j*pi*frequency). Hence z1 = exp(-j*pi*frequency)
-        for (i, &f) in freqs.iter().enumerate() {
+        for (i, freq) in frequency_hz.iter().enumerate() {
+            // clamp and normalize frequency
+            let f = freq.clamp(0., n_quist) / n_quist;
+
             let omega = -1. * PI * f64::from(f);
             let z = Complex::new(omega.cos(), omega.sin());
             let numerator = b0 + (b1 + b2 * z) * z;
@@ -562,16 +559,13 @@ impl AudioProcessor for BiquadFilterRenderer {
         if input.is_silent() {
             let mut ended = true;
 
-            self.x1
-                .iter()
-                .zip(self.x2.iter())
-                .zip(self.y1.iter())
-                .zip(self.y2.iter())
-                .for_each(|(((x1, x2), y1), y2)| {
-                    if *x1 != 0. || *x2 != 0. || *y1 != 0. || *y2 != 0. {
-                        ended = false;
-                    }
-                });
+            if self.x1.iter().any(|&v| v.is_normal())
+                || self.x2.iter().any(|&v| v.is_normal())
+                || self.y1.iter().any(|&v| v.is_normal())
+                || self.y2.iter().any(|&v| v.is_normal())
+            {
+                ended = false;
+            }
 
             // input is silent and filter history is clean
             if ended {
@@ -622,27 +616,27 @@ impl AudioProcessor for BiquadFilterRenderer {
             .zip(q.iter())
             .zip(gain.iter())
             .enumerate()
-            .for_each(|(index, ((((coefs, f), d), q), g))| {
+            .for_each(|(index, ((((coefs, &f), &d), &q), &g))| {
                 // recompute coefs only if param change, done at least once per block
                 if index == 0
-                    || current_frequency != *f
-                    || current_detune != *d
-                    || current_q != *q
-                    || current_gain != *g
+                    || current_frequency != f
+                    || current_detune != d
+                    || current_q != q
+                    || current_gain != g
                 {
-                    let computed_freq = get_computed_freq(*f, *d);
+                    let computed_freq = get_computed_freq(f, d);
                     current_coefs = calculate_coefs(
                         type_,
-                        sample_rate as f64,
-                        computed_freq as f64,
-                        *g as f64,
-                        *q as f64,
+                        f64::from(sample_rate),
+                        f64::from(computed_freq),
+                        f64::from(g),
+                        f64::from(q),
                     );
 
-                    current_frequency = *f;
-                    current_detune = *d;
-                    current_q = *q;
-                    current_gain = *g;
+                    current_frequency = f;
+                    current_detune = d;
+                    current_q = q;
+                    current_gain = g;
                 }
 
                 *coefs = current_coefs;
@@ -660,11 +654,11 @@ impl AudioProcessor for BiquadFilterRenderer {
                 .iter()
                 .zip(output_channel.iter_mut())
                 .zip(coefs_list.iter())
-                .for_each(|((i, o), c)| {
+                .for_each(|((&i, o), c)| {
                     // 𝑎0𝑦(𝑛)+𝑎1𝑦(𝑛−1)+𝑎2𝑦(𝑛−2)=𝑏0𝑥(𝑛)+𝑏1𝑥(𝑛−1)+𝑏2𝑥(𝑛−2)
                     // as all coefs are normalized against 𝑎0, we get
                     // 𝑦(𝑛) = 𝑏0𝑥(𝑛) + 𝑏1𝑥(𝑛−1) + 𝑏2𝑥(𝑛−2) - 𝑎1𝑦(𝑛−1) - 𝑎2𝑦(𝑛−2)
-                    let x = f64::from(*i);
+                    let x = f64::from(i);
                     let mut y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
                     // fush subnormal to zero
                     if y.is_subnormal() {
