@@ -2,7 +2,6 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
-use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
@@ -189,7 +188,6 @@ impl StereoPannerNode {
 
             let renderer = StereoPannerRenderer {
                 pan: pan_proc,
-                buffer: [[0.; 2]; RENDER_QUANTUM_SIZE],
             };
 
             let node = Self {
@@ -214,7 +212,6 @@ struct StereoPannerRenderer {
     /// Position of the input in the output’s stereo image.
     /// -1 represents full left, +1 represents full right.
     pan: AudioParamId,
-    buffer: [[f32; 2]; 128],
 }
 
 impl AudioProcessor for StereoPannerRenderer {
@@ -238,61 +235,48 @@ impl AudioProcessor for StereoPannerRenderer {
 
         // a-rate param
         let pan_values = params.get(&self.pan);
-        let mut buffer = self.buffer;
+
+        let [left, right] = output.stereo_mut();
 
         match input.number_of_channels() {
             0 => (),
             1 => {
-                buffer
-                    .iter_mut()
+                left.iter_mut()
+                    .zip(right.iter_mut())
                     .zip(pan_values.iter())
                     .zip(input.channel_data(0).iter())
-                    .for_each(|((o, pan), input)| {
+                    .for_each(|(((l, r), pan), input)| {
                         let x = (pan + 1.) * 0.5;
                         let [gain_left, gain_right] = get_stereo_gains(x);
 
-                        *o = [input * gain_left, input * gain_right]
+                        *l = input * gain_left;
+                        *r = input * gain_right;
                     });
             }
             2 => {
-                buffer
-                    .iter_mut()
+                left.iter_mut()
+                    .zip(right.iter_mut())
                     .zip(pan_values.iter())
                     .zip(input.channel_data(0).iter())
                     .zip(input.channel_data(1).iter())
-                    .for_each(|(((o, &pan), &input_left), &input_right)| {
+                    .for_each(|((((l, r), &pan), &input_left), &input_right)| {
                         if pan <= 0. {
                             let x = pan + 1.;
                             let [gain_left, gain_right] = get_stereo_gains(x);
 
-                            *o = [
-                                input_right.mul_add(gain_left, input_left),
-                                input_right * gain_right,
-                            ]
+                            *l = input_right.mul_add(gain_left, input_left);
+                            *r = input_right * gain_right;
                         } else {
                             let x = pan;
                             let [gain_left, gain_right] = get_stereo_gains(x);
 
-                            *o = [
-                                input_left * gain_left,
-                                input_left.mul_add(gain_right, input_right),
-                            ]
+                            *l = input_left * gain_left;
+                            *r = input_left.mul_add(gain_right, input_right);
                         }
                     });
             }
             _ => panic!("StereoPannerNode should not have more than 2 channels to process"),
         }
-
-        output
-            .channels_mut()
-            .iter_mut()
-            .enumerate()
-            .for_each(|(channel_number, channel)| {
-                channel
-                    .iter_mut()
-                    .zip(buffer.iter())
-                    .for_each(|(o, i)| *o = i[channel_number]);
-            });
 
         false
     }

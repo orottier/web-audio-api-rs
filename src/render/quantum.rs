@@ -252,6 +252,11 @@ impl AudioRenderQuantum {
         !self.channels.iter().any(|channel| !channel.is_silent())
     }
 
+    pub fn stereo_mut(&mut self) -> [&mut AudioRenderQuantumChannel; 2] {
+        let (ls, rs) = self.channels_mut().split_at_mut(1);
+        [&mut ls[0], &mut rs[0]]
+    }
+
     /// Up/Down-mix to the desired number of channels
     ///
     /// # Panics
