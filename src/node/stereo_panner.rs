@@ -1,19 +1,7 @@
 //! The stereo panner control and renderer parts
-// #![warn(
-//     clippy::all,
-//     clippy::pedantic,
-//     clippy::perf,
-//     clippy::missing_docs_in_private_items
-// )]
-
-use float_eq::debug_assert_float_eq;
-use std::f32::consts::PI;
-
-use crate::{
-    context::{AudioContextRegistration, AudioParamId, BaseAudioContext},
-    param::{AudioParam, AudioParamDescriptor},
-    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope},
-};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
+use crate::param::{AudioParam, AudioParamDescriptor};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
@@ -45,13 +33,60 @@ impl Default for StereoPannerOptions {
     }
 }
 
+/// Assert that the channel count is valid for the StereoPannerNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count is greater than 2
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count(count: usize) {
+    if count > 2 {
+        panic!("NotSupportedError: StereoPannerNode channel count cannot be greater than two");
+    }
+}
+
+/// Assert that the channel count is valid for the StereoPannerNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count mode is [`ChannelCountMode::Max`]
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
+    if mode == ChannelCountMode::Max {
+        panic!("NotSupportedError: StereoPannerNode channel count mode cannot be set to max");
+    }
+}
+
+/// Generates the stereo gains for a specific x ∈ [0, 1] derived from pan.
+/// Basically the following by a table lookup:
+///
+/// ```ignore
+/// let gain_left = (x * PI / 2).cos();
+/// let gain_right = (x * PI / 2).sin();
+/// ```
+#[inline(always)]
+fn get_stereo_gains(x: f32) -> [f32; 2] {
+    let idx = (x * TABLE_LENGTH_BY_4_F32) as usize;
+    let gain_left = SINETABLE[idx + TABLE_LENGTH_BY_4_USIZE];
+    let gain_right = SINETABLE[idx];
+
+    [gain_left, gain_right]
+}
+
 /// `StereoPannerNode` positions an incoming audio stream in a stereo image
 pub struct StereoPannerNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
     /// Infos about audio node channel configuration
     channel_config: ChannelConfig,
-    /// The position of the input in the output’s stereo image. -1 represents full left, +1 represents full right.
+    /// The position of the input in the output’s stereo image. -1 represents
+    /// full left, +1 represents full right.
     pan: AudioParam,
 }
 
@@ -76,21 +111,51 @@ impl AudioNode for StereoPannerNode {
         ChannelCountMode::ClampedMax
     }
 
-    fn set_channel_count_mode(&self, v: ChannelCountMode) {
-        if v == ChannelCountMode::Max {
-            panic!("NotSupportedError: StereoPannerNode channel count mode cannot be set to max");
-        }
-        self.channel_config.set_count_mode(v);
+    fn set_channel_count_mode(&self, mode: ChannelCountMode) {
+        assert_valid_channel_count_mode(mode);
+        self.channel_config.set_count_mode(mode);
     }
 
-    fn set_channel_count(&self, v: usize) {
-        if v > 2 {
-            panic!("NotSupportedError: StereoPannerNode channel count cannot be greater than two");
-        }
-        self.channel_config.set_count(v);
+    fn set_channel_count(&self, count: usize) {
+        assert_valid_channel_count(count);
+        self.channel_config.set_count(count);
     }
 }
 
+/// `StereoPannerNode` can be used to pan an audio stream left or right.
+///
+/// It is an audio-processing module that positions an incoming audio stream
+/// in a stereo image using a low-cost panning algorithm.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/StereoPannerNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#stereopannernode>
+/// - see also: [`BaseAudioContext::create_stereo_panner`](crate::context::BaseAudioContext::create_stereo_panner)
+///
+/// # Usage
+///
+/// ```no_run
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+///
+/// // create an `AudioContext`
+/// let context = AudioContext::default();
+/// // load and decode a soundfile
+/// let panner = context.create_stereo_panner();
+/// panner.connect(&context.destination());
+/// // position source on the left
+/// panner.pan().set_value(-1.);
+///
+/// // pipe an oscillator into the stereo panner
+/// let osc = context.create_oscillator();
+/// osc.frequency().set_value(200.);
+/// osc.connect(&panner);
+/// osc.start();
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example stereo_panner`
+///
 impl StereoPannerNode {
     /// returns a `StereoPannerNode` instance
     ///
@@ -98,37 +163,31 @@ impl StereoPannerNode {
     ///
     /// Will panic if:
     ///
-    /// * `options.channel_config.count` is more than 2
+    /// * `options.channel_config.count` is greater than 2
     /// * `options.channel_config.mode` is `ChannelCountMode::Max`
     ///
     /// # Arguments
     ///
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - stereo panner options
+    ///
     pub fn new<C: BaseAudioContext>(context: &C, options: StereoPannerOptions) -> Self {
         context.register(move |registration| {
-            assert!(
-                options.channel_config.count <= 2,
-                "NotSupportedError: channel count"
-            );
-            assert!(
-                options.channel_config.mode != ChannelCountMode::Max,
-                "NotSupportedError: count mode"
-            );
+            assert_valid_channel_count_mode(options.channel_config.mode);
+            assert_valid_channel_count(options.channel_config.count);
 
-            let pan_value = options.pan;
-
-            let pan_param_opts = AudioParamDescriptor {
+            let pan_options = AudioParamDescriptor {
                 min_value: -1.,
                 max_value: 1.,
                 default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (pan_param, pan_proc) = context.create_audio_param(pan_param_opts, &registration);
+            let (pan_param, pan_proc) = context.create_audio_param(pan_options, &registration);
 
-            pan_param.set_value(pan_value);
+            pan_param.set_value(options.pan);
 
-            let renderer = StereoPannerRenderer::new(pan_proc);
+            let renderer = StereoPannerRenderer { pan: pan_proc };
+
             let node = Self {
                 registration,
                 channel_config: options.channel_config.into(),
@@ -148,7 +207,7 @@ impl StereoPannerNode {
 
 /// `StereoPannerRenderer` represents the rendering part of `StereoPannerNode`
 struct StereoPannerRenderer {
-    /// The position of the input in the output’s stereo image.
+    /// Position of the input in the output’s stereo image.
     /// -1 represents full left, +1 represents full right.
     pan: AudioParamId,
 }
@@ -172,34 +231,47 @@ impl AudioProcessor for StereoPannerRenderer {
 
         output.set_number_of_channels(2);
 
+        // a-rate param
         let pan_values = params.get(&self.pan);
+
+        let [left, right] = output.stereo_mut();
 
         match input.number_of_channels() {
             0 => (),
             1 => {
-                let in_data = input.channels();
-                let out_data = output.channels_mut();
+                left.iter_mut()
+                    .zip(right.iter_mut())
+                    .zip(pan_values.iter())
+                    .zip(input.channel_data(0).iter())
+                    .for_each(|(((l, r), pan), input)| {
+                        let x = (pan + 1.) * 0.5;
+                        let [gain_left, gain_right] = get_stereo_gains(x);
 
-                for (sample_idx, &input) in in_data[0].iter().enumerate() {
-                    // A-rate params
-                    let pan = pan_values[sample_idx];
-                    let (left, right) = Self::mono_tick(input, pan);
-                    out_data[0][sample_idx] = left;
-                    out_data[1][sample_idx] = right;
-                }
+                        *l = input * gain_left;
+                        *r = input * gain_right;
+                    });
             }
             2 => {
-                let in_data = input.channels();
-                let out_data = output.channels_mut();
+                left.iter_mut()
+                    .zip(right.iter_mut())
+                    .zip(pan_values.iter())
+                    .zip(input.channel_data(0).iter())
+                    .zip(input.channel_data(1).iter())
+                    .for_each(|((((l, r), &pan), &input_left), &input_right)| {
+                        if pan <= 0. {
+                            let x = pan + 1.;
+                            let [gain_left, gain_right] = get_stereo_gains(x);
 
-                for (sample_idx, &p) in pan_values.iter().enumerate() {
-                    // A-rate params
-                    let pan = p;
-                    let (left, right) =
-                        Self::stereo_tick((in_data[0][sample_idx], in_data[1][sample_idx]), pan);
-                    out_data[0][sample_idx] = left;
-                    out_data[1][sample_idx] = right;
-                }
+                            *l = input_right.mul_add(gain_left, input_left);
+                            *r = input_right * gain_right;
+                        } else {
+                            let x = pan;
+                            let [gain_left, gain_right] = get_stereo_gains(x);
+
+                            *l = input_left * gain_left;
+                            *r = input_left.mul_add(gain_right, input_right);
+                        }
+                    });
             }
             _ => panic!("StereoPannerNode should not have more than 2 channels to process"),
         }
@@ -208,187 +280,243 @@ impl AudioProcessor for StereoPannerRenderer {
     }
 }
 
-impl StereoPannerRenderer {
-    /// returns an `StereoPannerRenderer` instance
-    // new cannot be qualified as const, since constant functions cannot evaluate destructors
-    // and config param need this evaluation
-    #[allow(clippy::missing_const_for_fn)]
-    fn new(pan: AudioParamId) -> Self {
-        Self { pan }
-    }
+#[cfg(test)]
+mod tests {
+    use float_eq::assert_float_eq;
+    use std::f32::consts::PI;
 
-    /// Generates the output samples for a mono input
-    #[inline]
-    fn mono_tick(input: f32, pan: f32) -> (f32, f32) {
-        let x = (pan + 1.) * 0.5;
-        let (g_l, g_r) = Self::stereo_gains(x);
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::node::AudioScheduledSourceNode;
 
-        (input * g_l, input * g_r)
-    }
+    use super::*;
 
-    /// Generates the output samples for a stereo input
-    #[inline]
-    fn stereo_tick(inputs: (f32, f32), pan: f32) -> (f32, f32) {
-        match pan {
-            p if p <= 0. => {
-                let x = p + 1.;
-                let (g_l, g_r) = Self::stereo_gains(x);
-                (inputs.1.mul_add(g_l, inputs.0), inputs.1 * g_r)
-            }
-            x => {
-                let (g_l, g_r) = Self::stereo_gains(x);
-                (inputs.0 * g_l, inputs.0.mul_add(g_r, inputs.1))
-            }
+    #[test]
+    fn test_constructor() {
+        {
+            let context = OfflineAudioContext::new(2, 1, 44_100.);
+            let _panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
+        }
+
+        {
+            let context = OfflineAudioContext::new(2, 1, 44_100.);
+            let _panner = context.create_stereo_panner();
+        }
+
+        {
+            let context = OfflineAudioContext::new(2, 1, 44_100.);
+            let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
+
+            let default_pan = 0.;
+            let pan = panner.pan.value();
+            assert_float_eq!(pan, default_pan, abs_all <= 0.);
         }
     }
 
-    /// Generates the stereo gains for a specific x derived from pan
-    #[inline]
-    fn stereo_gains(x: f32) -> (f32, f32) {
-        // truncation is the intented behavior
-        #[allow(clippy::cast_possible_truncation)]
-        // no sign loss: x is always positive
-        #[allow(clippy::cast_sign_loss)]
-        let idx = (x * TABLE_LENGTH_BY_4_F32) as usize;
-        let gain_l = SINETABLE[idx + TABLE_LENGTH_BY_4_USIZE];
-        let gain_r = SINETABLE[idx];
-
-        // Assert correctness of wavetable optimization
-        debug_assert_float_eq!(gain_l, (x * PI / 2.).cos(), abs <= 0.1, "gain_l panicked");
-        debug_assert_float_eq!(gain_r, (x * PI / 2.).sin(), abs <= 0.1, "gain_r panicked");
-
-        (gain_l, gain_r)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use float_eq::assert_float_eq;
-
-    use crate::context::{BaseAudioContext, OfflineAudioContext};
-
-    use super::{StereoPannerNode, StereoPannerOptions, StereoPannerRenderer};
-    const LENGTH: usize = 555;
-
     #[test]
-    fn build_with_new() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let _panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
+    fn test_get_stereo_gains() {
+        // check correctness of wavetable lookup
+        for i in 0..1001 {
+            let x = i as f32 / 1000.;
+
+            let [gain_left, gain_right] = get_stereo_gains(x);
+
+            assert_float_eq!(
+                gain_left,
+                (x * PI / 2.).cos(),
+                abs <= 1e-3,
+                "gain_l panicked"
+            );
+            assert_float_eq!(
+                gain_right,
+                (x * PI / 2.).sin(),
+                abs <= 1e-3,
+                "gain_r panicked"
+            );
+        }
     }
 
     #[test]
-    fn build_with_factory_func() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let _panner = context.create_stereo_panner();
+    fn test_mono_panning() {
+        let sample_rate = 44_100.;
+
+        let context = OfflineAudioContext::new(2, 128, 44_100.);
+
+        let mut buffer = context.create_buffer(1, 128, sample_rate);
+        buffer.copy_to_channel(&[1.; 128], 0);
+
+        // left
+        {
+            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            // force channel count to mono
+            let panner = StereoPannerNode::new(
+                &context,
+                StereoPannerOptions {
+                    channel_config: ChannelConfigOptions {
+                        count: 1,
+                        mode: ChannelCountMode::ClampedMax,
+                        ..ChannelConfigOptions::default()
+                    },
+                    pan: -1.,
+                },
+            );
+            panner.connect(&context.destination());
+
+            let src = context.create_buffer_source();
+            src.connect(&panner);
+            src.set_buffer(buffer.clone());
+            src.start();
+
+            let res = context.start_rendering_sync();
+
+            assert_float_eq!(res.get_channel_data(0)[..], [1.; 128], abs_all <= 0.);
+            assert_float_eq!(res.get_channel_data(1)[..], [0.; 128], abs_all <= 0.);
+        }
+
+        // right
+        {
+            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            // force channel count to mono
+            let panner = StereoPannerNode::new(
+                &context,
+                StereoPannerOptions {
+                    channel_config: ChannelConfigOptions {
+                        count: 1,
+                        mode: ChannelCountMode::ClampedMax,
+                        ..ChannelConfigOptions::default()
+                    },
+                    pan: 1.,
+                },
+            );
+            panner.connect(&context.destination());
+
+            let src = context.create_buffer_source();
+            src.connect(&panner);
+            src.set_buffer(buffer.clone());
+            src.start();
+
+            let res = context.start_rendering_sync();
+
+            assert_float_eq!(res.get_channel_data(0)[..], [0.; 128], abs_all <= 1e-7);
+            assert_float_eq!(res.get_channel_data(1)[..], [1.; 128], abs_all <= 0.);
+        }
+
+        // equal power
+        {
+            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            // force channel count to mono
+            let panner = StereoPannerNode::new(
+                &context,
+                StereoPannerOptions {
+                    channel_config: ChannelConfigOptions {
+                        count: 1,
+                        mode: ChannelCountMode::ClampedMax,
+                        ..ChannelConfigOptions::default()
+                    },
+                    pan: 0.,
+                },
+            );
+            panner.connect(&context.destination());
+
+            let src = context.create_buffer_source();
+            src.connect(&panner);
+            src.set_buffer(buffer.clone());
+            src.start();
+
+            let res = context.start_rendering_sync();
+
+            let mut power = [0.; 128];
+            power
+                .iter_mut()
+                .zip(res.get_channel_data(0).iter())
+                .zip(res.get_channel_data(1).iter())
+                .for_each(|((p, l), r)| {
+                    *p = l * l + r * r;
+                });
+
+            assert_float_eq!(power, [1.; 128], abs_all <= 1e-7);
+        }
     }
 
     #[test]
-    fn assert_stereo_default_build() {
-        let default_pan = 0.;
+    fn test_stereo_panning() {
+        let sample_rate = 44_100.;
 
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+        let context = OfflineAudioContext::new(2, 128, 44_100.);
 
-        let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
+        let mut buffer = context.create_buffer(2, 128, sample_rate);
+        buffer.copy_to_channel(&[1.; 128], 0);
+        buffer.copy_to_channel(&[1.; 128], 1);
 
-        context.start_rendering_sync();
+        // left
+        {
+            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            // force channel count to mono
+            let panner = StereoPannerNode::new(
+                &context,
+                StereoPannerOptions {
+                    pan: -1.,
+                    ..StereoPannerOptions::default()
+                },
+            );
+            panner.connect(&context.destination());
 
-        let pan = panner.pan.value();
-        assert_float_eq!(pan, default_pan, abs_all <= 0.);
-    }
+            let src = context.create_buffer_source();
+            src.connect(&panner);
+            src.set_buffer(buffer.clone());
+            src.start();
 
-    #[test]
-    fn setting_pan() {
-        let default_pan = 0.;
-        let new_pan = 0.1;
+            let res = context.start_rendering_sync();
 
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+            assert_float_eq!(res.get_channel_data(0)[..], [2.; 128], abs_all <= 0.);
+            assert_float_eq!(res.get_channel_data(1)[..], [0.; 128], abs_all <= 0.);
+        }
 
-        let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
+        // right
+        {
+            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            // force channel count to mono
+            let panner = StereoPannerNode::new(
+                &context,
+                StereoPannerOptions {
+                    pan: 1.,
+                    ..StereoPannerOptions::default()
+                },
+            );
+            panner.connect(&context.destination());
 
-        let pan = panner.pan.value();
-        assert_float_eq!(pan, default_pan, abs_all <= 0.);
-        panner.pan().set_value(new_pan);
+            let src = context.create_buffer_source();
+            src.connect(&panner);
+            src.set_buffer(buffer.clone());
+            src.start();
 
-        context.start_rendering_sync();
+            let res = context.start_rendering_sync();
 
-        let pan = panner.pan.value();
-        assert_float_eq!(pan, new_pan, abs_all <= 0.);
-    }
+            assert_float_eq!(res.get_channel_data(0)[..], [0.; 128], abs_all <= 1e-7);
+            assert_float_eq!(res.get_channel_data(1)[..], [2.; 128], abs_all <= 0.);
+        }
 
-    #[test]
-    fn panning_should_be_on_the_right() {
-        let pan = 1.0;
+        // middle
+        {
+            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            // force channel count to mono
+            let panner = StereoPannerNode::new(
+                &context,
+                StereoPannerOptions {
+                    pan: 0.,
+                    ..StereoPannerOptions::default()
+                },
+            );
+            panner.connect(&context.destination());
 
-        let (i_l, i_r) = StereoPannerRenderer::stereo_tick((1., 1.), pan);
+            let src = context.create_buffer_source();
+            src.connect(&panner);
+            src.set_buffer(buffer.clone());
+            src.start();
 
-        // i_l is not exactly 0. due to precision error in the wavetable used
-        // to compute the panning gains
-        // 0.00001 corresponds to a reduction of -100 dB, so even if the gain is not exactly 0.
-        // it should not be audible
-        assert_float_eq!(i_l, 0.0, abs <= 0.00001);
-        assert_float_eq!(i_r, 2.0, abs <= 0.);
-    }
+            let res = context.start_rendering_sync();
 
-    #[test]
-    fn panning_should_be_on_the_left() {
-        let pan = -1.0;
-
-        let (i_l, i_r) = StereoPannerRenderer::stereo_tick((1., 1.), pan);
-
-        assert_float_eq!(i_l, 2.0, abs <= 0.);
-        assert_float_eq!(i_r, 0.0, abs <= 0.);
-    }
-
-    #[test]
-    fn panning_should_be_in_the_middle() {
-        let pan = 0.0;
-
-        let (i_l, i_r) = StereoPannerRenderer::stereo_tick((1., 1.), pan);
-
-        // i_l is not exactly 1. due to precision error in the wavetable used
-        // to compute the panning gains
-        // 0.1 corresponds to a difference of < 1 dB, so it should not be audible
-        assert_float_eq!(i_l, 1.0, abs <= 0.1);
-        assert_float_eq!(i_r, 1.0, abs <= 0.);
-    }
-
-    #[test]
-    #[should_panic]
-    fn setting_pan_more_than_1_should_fail() {
-        let default_pan = 0.;
-        let new_pan = 1.1;
-
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-
-        let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
-
-        let pan = panner.pan.value();
-        assert_float_eq!(pan, default_pan, abs_all <= 0.);
-        panner.pan().set_value(new_pan);
-
-        context.start_rendering_sync();
-
-        let pan = panner.pan.value();
-        assert_float_eq!(pan, new_pan, abs_all <= 0.);
-    }
-
-    #[test]
-    #[should_panic]
-    fn setting_pan_less_than_minus1_should_fail() {
-        let default_pan = 0.;
-        let new_pan = -1.1;
-
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-
-        let panner = StereoPannerNode::new(&context, StereoPannerOptions::default());
-
-        let pan = panner.pan.value();
-        assert_float_eq!(pan, default_pan, abs_all <= 0.);
-        panner.pan().set_value(new_pan);
-
-        context.start_rendering_sync();
-
-        let pan = panner.pan.value();
-        assert_float_eq!(pan, new_pan, abs_all <= 0.);
+            assert_float_eq!(res.get_channel_data(0)[..], [1.; 128], abs_all <= 1e-7);
+            assert_float_eq!(res.get_channel_data(1)[..], [1.; 128], abs_all <= 0.);
+        }
     }
 }
