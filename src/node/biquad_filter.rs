@@ -202,20 +202,16 @@ impl Default for BiquadFilterType {
 
 impl From<u32> for BiquadFilterType {
     fn from(i: u32) -> Self {
-        use BiquadFilterType::{
-            Allpass, Bandpass, Highpass, Highshelf, Lowpass, Lowshelf, Notch, Peaking,
-        };
-
         // @note - must be in same order as the struct declaration
         match i {
-            0 => Lowpass,
-            1 => Highpass,
-            2 => Bandpass,
-            3 => Notch,
-            4 => Allpass,
-            5 => Peaking,
-            6 => Lowshelf,
-            7 => Highshelf,
+            0 => BiquadFilterType::Lowpass,
+            1 => BiquadFilterType::Highpass,
+            2 => BiquadFilterType::Bandpass,
+            3 => BiquadFilterType::Notch,
+            4 => BiquadFilterType::Allpass,
+            5 => BiquadFilterType::Peaking,
+            6 => BiquadFilterType::Lowshelf,
+            7 => BiquadFilterType::Highshelf,
             _ => unreachable!(),
         }
     }
