@@ -252,7 +252,8 @@ impl AudioRenderQuantum {
         !self.channels.iter().any(|channel| !channel.is_silent())
     }
 
-    pub fn stereo_mut(&mut self) -> [&mut AudioRenderQuantumChannel; 2] {
+    pub(crate) fn stereo_mut(&mut self) -> [&mut AudioRenderQuantumChannel; 2] {
+        assert_eq!(self.number_of_channels(), 2);
         let (ls, rs) = self.channels_mut().split_at_mut(1);
         [&mut ls[0], &mut rs[0]]
     }

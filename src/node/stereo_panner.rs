@@ -186,9 +186,7 @@ impl StereoPannerNode {
 
             pan_param.set_value(options.pan);
 
-            let renderer = StereoPannerRenderer {
-                pan: pan_proc,
-            };
+            let renderer = StereoPannerRenderer { pan: pan_proc };
 
             let node = Self {
                 registration,
