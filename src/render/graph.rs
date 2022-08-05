@@ -82,6 +82,8 @@ pub(crate) struct Graph {
     marked_temp: Vec<NodeIndex>,
     /// Topological sorting helper
     in_cycle: Vec<NodeIndex>,
+    /// Topological sorting helper
+    cycle_breakers: Vec<NodeIndex>,
 }
 
 impl Graph {
@@ -92,6 +94,7 @@ impl Graph {
             marked: vec![],
             marked_temp: vec![],
             in_cycle: vec![],
+            cycle_breakers: vec![],
             alloc: Alloc::with_capacity(64),
         }
     }
@@ -180,13 +183,32 @@ impl Graph {
         marked_temp: &mut Vec<NodeIndex>,
         ordered: &mut Vec<NodeIndex>,
         in_cycle: &mut Vec<NodeIndex>,
+        cycle_breakers: &mut Vec<NodeIndex>,
     ) {
         // If this node is in the cycle detection list, it is part of a cycle!
         if let Some(pos) = marked_temp.iter().position(|&m| m == node_id) {
-            // Mark all nodes in the cycle
-            in_cycle.extend_from_slice(&marked_temp[pos..]);
-            // Do not continue, as we already have visited all these nodes
-            return;
+            // check if we can find some node that can break the cycle
+            let cycle_breaker_node = marked_temp.iter().skip(pos).find(|node_id| {
+                let node = self.nodes.get(node_id).unwrap();
+                node.processor.can_break_cycle()
+            });
+
+            match cycle_breaker_node {
+                Some(&node_id) => {
+                    // store node id to clear the node outgoing edges
+                    cycle_breakers.push(node_id);
+                    // remove nodes from mark temp after pos
+                    marked_temp.truncate(pos);
+
+                    return;
+                }
+                None => {
+                    // Mark all nodes in the cycle
+                    in_cycle.extend_from_slice(&marked_temp[pos..]);
+                    // Do not continue, as we already have visited all these nodes
+                    return;
+                }
+            }
         }
 
         // Do not visit nodes multiple times
@@ -205,7 +227,16 @@ impl Graph {
             .unwrap()
             .outgoing_edges
             .iter()
-            .for_each(|edge| self.visit(edge.other_id, marked, marked_temp, ordered, in_cycle));
+            .for_each(|edge| {
+                self.visit(
+                    edge.other_id,
+                    marked,
+                    marked_temp,
+                    ordered,
+                    in_cycle,
+                    cycle_breakers,
+                )
+            });
 
         // Then add this node to the ordered list
         ordered.push(node_id);
@@ -234,12 +265,14 @@ impl Graph {
         let mut marked = std::mem::take(&mut self.marked);
         let mut marked_temp = std::mem::take(&mut self.marked_temp);
         let mut in_cycle = std::mem::take(&mut self.in_cycle);
+        let mut cycle_breakers = std::mem::take(&mut self.cycle_breakers);
 
         // Clear previous administration
         ordered.clear();
         marked.clear();
         marked_temp.clear();
         in_cycle.clear();
+        cycle_breakers.clear();
 
         // Visit all registered nodes, and perform a depth first traversal.
         //
@@ -253,7 +286,14 @@ impl Graph {
                 &mut marked_temp,
                 &mut ordered,
                 &mut in_cycle,
+                &mut cycle_breakers,
             );
+        });
+
+        // clear the outgoing edges of the nodes that have been recognized as cycle breaker
+        cycle_breakers.iter().for_each(|node_id| {
+            let node = self.nodes.get_mut(node_id).unwrap();
+            node.outgoing_edges.clear();
         });
 
         // Remove nodes from the ordering if they are part of a cycle. The spec mandates that their
@@ -269,6 +309,7 @@ impl Graph {
         self.marked = marked;
         self.marked_temp = marked_temp;
         self.in_cycle = in_cycle;
+        self.cycle_breakers = cycle_breakers;
     }
 
     /// Render a single audio quantum by traversing the node list
