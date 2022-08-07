@@ -5,6 +5,7 @@ use crate::context::AudioParamId;
 use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 
 use rustc_hash::FxHashMap;
+use std::cell::RefCell;
 
 #[non_exhaustive] // we may want to add user-provided blobs to this later
 /// The execution context of all AudioProcessors in a given AudioContext
@@ -58,22 +59,26 @@ pub trait AudioProcessor: Send {
 ///
 /// Provided to implementations of [`AudioProcessor`] in the render thread
 pub struct AudioParamValues<'a> {
-    nodes: &'a FxHashMap<NodeIndex, Node>,
+    nodes: &'a FxHashMap<NodeIndex, RefCell<Node>>,
 }
 
 impl<'a> AudioParamValues<'a> {
-    pub(crate) fn from(nodes: &'a FxHashMap<NodeIndex, Node>) -> Self {
+    pub(crate) fn from(nodes: &'a FxHashMap<NodeIndex, RefCell<Node>>) -> Self {
         Self { nodes }
     }
 
     pub(crate) fn get_raw(&self, index: &AudioParamId) -> &AudioRenderQuantum {
-        self.nodes.get(&index.into()).unwrap().get_buffer()
+        unsafe {
+            (*self.nodes.get(&index.into()).unwrap().as_ptr()).get_buffer()
+        }
     }
 
     /// Get the computed values for the given [`crate::param::AudioParam`]
     ///
     /// For both A & K-rate params, it will provide a slice of length [`crate::RENDER_QUANTUM_SIZE`]
     pub fn get(&self, index: &AudioParamId) -> &[f32] {
+        // let buffer = self.nodes.get(&index.into()).unwrap().borrow().get_buffer();
+        // &buffer.channel_data(0)[..]
         &self.get_raw(index).channel_data(0)[..]
     }
 }
