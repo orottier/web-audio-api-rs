@@ -196,15 +196,15 @@ impl AudioProcessor for ListenerRenderer {
         _scope: &RenderScope,
     ) -> bool {
         // for now: persist param values in output, so PannerNodes have access
-        outputs[0] = params.get_raw(&self.position_x).clone();
-        outputs[1] = params.get_raw(&self.position_y).clone();
-        outputs[2] = params.get_raw(&self.position_z).clone();
-        outputs[3] = params.get_raw(&self.forward_x).clone();
-        outputs[4] = params.get_raw(&self.forward_y).clone();
-        outputs[5] = params.get_raw(&self.forward_z).clone();
-        outputs[6] = params.get_raw(&self.up_x).clone();
-        outputs[7] = params.get_raw(&self.up_y).clone();
-        outputs[8] = params.get_raw(&self.up_z).clone();
+        outputs[0] = params.get_raw(&self.position_x);
+        outputs[1] = params.get_raw(&self.position_y);
+        outputs[2] = params.get_raw(&self.position_z);
+        outputs[3] = params.get_raw(&self.forward_x);
+        outputs[4] = params.get_raw(&self.forward_y);
+        outputs[5] = params.get_raw(&self.forward_z);
+        outputs[6] = params.get_raw(&self.up_x);
+        outputs[7] = params.get_raw(&self.up_y);
+        outputs[8] = params.get_raw(&self.up_z);
 
         true // has intrinsic value
     }
