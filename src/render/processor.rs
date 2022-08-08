@@ -68,9 +68,7 @@ impl<'a> AudioParamValues<'a> {
     }
 
     pub(crate) fn get_raw(&self, index: &AudioParamId) -> &AudioRenderQuantum {
-        unsafe {
-            (*self.nodes.get(&index.into()).unwrap().as_ptr()).get_buffer()
-        }
+        unsafe { (*self.nodes.get(&index.into()).unwrap().as_ptr()).get_buffer() }
     }
 
     /// Get the computed values for the given [`crate::param::AudioParam`]

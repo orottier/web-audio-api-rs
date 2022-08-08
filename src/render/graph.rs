@@ -161,7 +161,9 @@ impl Graph {
             .clear();
 
         self.nodes.values().for_each(|node| {
-            node.borrow_mut().outgoing_edges.retain(|edge| edge.other_id != source);
+            node.borrow_mut()
+                .outgoing_edges
+                .retain(|edge| edge.other_id != source);
         });
 
         self.ordered.clear(); // void current ordering
@@ -277,7 +279,7 @@ impl Graph {
     }
 
     /// Render a single audio quantum by traversing the node list
-    pub fn render(&mut self, scope: &RenderScope) -> &AudioRenderQuantum {
+    pub fn render(&mut self, scope: &RenderScope) -> AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
             self.order_nodes();
@@ -346,7 +348,12 @@ impl Graph {
                 nodes.remove(index);
                 // Nodes are only dropped when they do not have incoming connections.
                 // But they may have AudioParams feeding into them, these can de dropped too.
-                nodes.retain(|_id, n| !n.borrow().outgoing_edges.iter().any(|e| e.other_id == *index));
+                nodes.retain(|_id, n| {
+                    !n.borrow()
+                        .outgoing_edges
+                        .iter()
+                        .any(|e| e.other_id == *index)
+                });
             }
         });
 
@@ -363,9 +370,7 @@ impl Graph {
         }
 
         // Return the output buffer of destination node
-        unsafe {
-            &(*self.nodes.get(&NodeIndex(0)).unwrap().as_ptr()).outputs[0]
-        }
+        self.nodes.get(&NodeIndex(0)).unwrap().borrow().outputs[0].clone()
     }
 }
 
