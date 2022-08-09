@@ -17,6 +17,11 @@ jobs:
     steps:
     # checkout repo, install dependencies
     - uses: actions/checkout@v2
+
+    # restore cargo cache from previous runs
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2.0.0
+
     - name: install alsa (sound driver) and cmake
       run: sudo apt-get update && sudo apt-get install libasound2-dev cmake
     - name: update rustc
