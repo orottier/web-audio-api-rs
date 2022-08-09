@@ -288,57 +288,54 @@ impl Graph {
         // keep track of end-of-lifecyle nodes
         let mut nodes_dropped = false;
 
-        // split (mut) borrows
-        let ordered = &self.ordered;
+        // for borrow-checker reasons, move mutable borrow of nodes out of self
         let nodes = &mut self.nodes;
 
         // process every node, in topological sorted order
-        ordered.iter().for_each(|index| {
-            let can_free = {
-                // remove node from graph, re-insert later (for borrowck reasons)
-                let mut node = nodes.get(index).unwrap().borrow_mut();
+        self.ordered.iter().for_each(|index| {
+            // remove node from graph, re-insert later (for borrowck reasons)
+            let mut node = nodes.get(index).unwrap().borrow_mut();
 
-                // make sure all input buffers have the correct number of channels, this might not be
-                // the case if the node has no inputs connected or the channel count has just changed
-                let interpretation = node.channel_config.interpretation();
-                let count = node.channel_config.count();
+            // make sure all input buffers have the correct number of channels, this might not be
+            // the case if the node has no inputs connected or the channel count has just changed
+            let interpretation = node.channel_config.interpretation();
+            let count = node.channel_config.count();
+            node.inputs
+                .iter_mut()
+                .for_each(|i| i.mix(count, interpretation));
+
+            // let the current node process
+            let params = AudioParamValues::from(&*nodes);
+            let tail_time = node.process(params, scope);
+
+            // iterate all outgoing edges, lookup these nodes and add to their input
+            node.outgoing_edges
+                .iter()
+                // audio params are connected to the 'hidden' usize::MAX output, ignore them here
+                .filter(|edge| edge.other_index != usize::MAX)
+                .for_each(|edge| {
+                    let mut output_node = nodes.get(&edge.other_id).unwrap().borrow_mut();
+                    output_node.has_inputs_connected = true;
+                    let signal = &node.outputs[edge.self_index];
+                    let channel_config = &output_node.channel_config.clone();
+
+                    output_node.inputs[edge.other_index].add(signal, channel_config);
+                });
+
+            let can_free = node.can_free(tail_time);
+
+            // Node is not dropped.
+            if !can_free {
+                // Reset input buffers as they will be summed up in the next render quantum.
                 node.inputs
                     .iter_mut()
-                    .for_each(|i| i.mix(count, interpretation));
+                    .for_each(AudioRenderQuantum::make_silent);
 
-                // let the current node process
-                let params = AudioParamValues::from(&*nodes);
-                let tail_time = node.process(params, scope);
+                // Reset input state
+                node.has_inputs_connected = false;
+            }
 
-                // iterate all outgoing edges, lookup these nodes and add to their input
-                node.outgoing_edges
-                    .iter()
-                    // audio params are connected to the 'hidden' usize::MAX output, ignore them here
-                    .filter(|edge| edge.other_index != usize::MAX)
-                    .for_each(|edge| {
-                        let mut output_node = nodes.get(&edge.other_id).unwrap().borrow_mut();
-                        output_node.has_inputs_connected = true;
-                        let signal = &node.outputs[edge.self_index];
-                        let channel_config = &output_node.channel_config.clone();
-
-                        output_node.inputs[edge.other_index].add(signal, channel_config);
-                    });
-
-                let can_free = node.can_free(tail_time);
-
-                // Node is not dropped.
-                if !can_free {
-                    // Reset input buffers as they will be summed up in the next render quantum.
-                    node.inputs
-                        .iter_mut()
-                        .for_each(AudioRenderQuantum::make_silent);
-
-                    // Reset input state
-                    node.has_inputs_connected = false;
-                }
-
-                can_free
-            };
+            drop(node); // release borrow of self.nodes
 
             // Check if we can decommission this node (end of life)
             if can_free {
