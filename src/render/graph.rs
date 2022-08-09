@@ -339,10 +339,12 @@ impl Graph {
 
             // Check if we can decommission this node (end of life)
             if can_free {
-                // Node is dropped, we should perform a new topological sort of the audio graph
+                // Node is dropped, remove it from the node list
+                nodes.remove(index);
+
+                // And remove it from the ordering after we have processed all nodes
                 nodes_dropped = true;
 
-                nodes.remove(index);
                 // Nodes are only dropped when they do not have incoming connections.
                 // But they may have AudioParams feeding into them, these can de dropped too.
                 nodes.retain(|_id, n| {
