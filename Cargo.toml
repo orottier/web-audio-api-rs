@@ -32,7 +32,6 @@ vecmath = "1.0"
 [dev-dependencies]
 alloc_counter = "0.0.4"
 env_logger = "0.9"
-iai = "0.1.1"
 rand = "0.8"
 
 # used in examples/mic_playback.rs:

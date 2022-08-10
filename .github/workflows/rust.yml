@@ -54,5 +54,7 @@ jobs:
     ## Benchmarks
     - name: install valgrind for benchmarks
       run: sudo apt-get install valgrind
+    - name: cargo install iai dependency
+      run: cargo add --dev iai
     - name: Run benchmarks
       run: cargo bench
