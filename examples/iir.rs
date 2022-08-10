@@ -15,11 +15,7 @@ fn main() {
         0.0002029799640409502,
     ];
 
-    let feedback = vec![
-        1.0126964557853775,
-        -1.9991880801438362,
-        0.9873035442146225,
-    ];
+    let feedback = vec![1.0126964557853775, -1.9991880801438362, 0.9873035442146225];
 
     // Create an IIR filter node
     let iir = context.create_iir_filter(feedforward, feedback);

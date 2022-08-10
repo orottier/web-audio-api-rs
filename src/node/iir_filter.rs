@@ -287,7 +287,10 @@ impl IirFilterRenderer {
         let coeffs_len = norm_coeffs.len();
         let states = vec![Vec::<f64>::with_capacity(MAX_CHANNELS); coeffs_len];
 
-        Self { norm_coeffs, states }
+        Self {
+            norm_coeffs,
+            states,
+        }
     }
 }
 
