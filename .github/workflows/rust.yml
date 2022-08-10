@@ -54,14 +54,12 @@ jobs:
     ## Benchmarks
     - name: install valgrind for benchmarks
       run: sudo apt-get install valgrind
-    - name: Checkout master
-      uses: actions/checkout@v2
-      with:
-        ref: main
+    - name: Checkout main branch
+      run: git checkout main
     - name: Run benchmarks for main branch
       run: cargo bench
-    - name: Checkout PR
-      uses: actions/checkout@v2
+    - name: Checkout PR branch
+      run: git checkout -
     - name: Run bench against baseline
       run: cargo bench | tee bench.txt
     - name: Write result in PR
