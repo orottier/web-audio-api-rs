@@ -67,7 +67,65 @@ pub struct IIRFilterOptions {
     pub feedback: Vec<f64>, // go for Option<Vec<f32>> w/ default to None?
 }
 
-/// An `AudioNode` implementing a general IIR filter
+/// IIRFilterNode is an AudioNode processor implementing a general IIR
+/// (infinite impulse response)Filter.
+///
+/// In general, you should prefer using a BiquadFilterNode for the following reasons:
+/// - Generally less sensitive to numeric issues
+/// - Filter parameters can be automated
+/// - Can be used to create all even-ordered IIR filters
+///
+/// However, odd-ordered filters cannot be created with BiquadFilterNode, so if
+/// your application require such filters and/or automation is not needed, then IIR
+/// filters may be appropriate. In short, use this if you know what you are doing!
+///
+/// Note that once created, the coefficients of the IIR filter cannot be changed.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/IIRFilterNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#IIRFilterNode>
+/// - see also: [`BaseAudioContext::create_iir_filter`](crate::context::BaseAudioContext::create_iir_filter)
+///
+/// # Usage
+///
+/// ```no_run
+/// use std::fs::File;
+/// use web_audio_api::context::{AudioContext, BaseAudioContext};
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+///
+/// // create context and grab some audio buffer
+/// let context = AudioContext::default();
+/// let file = File::open("samples/think-stereo-48000.wav").unwrap();
+/// let buffer = context.decode_audio_data_sync(file).unwrap();
+///
+/// // these coefficients correspond to a lowpass filter at 200Hz (calculated from biquad)
+/// let feedforward = vec![
+///     0.0002029799640409502,
+///     0.0004059599280819004,
+///     0.0002029799640409502,
+/// ];
+///
+/// let feedback = vec![
+///     1.0126964557853775,
+///     -1.9991880801438362,
+///     0.9873035442146225,
+/// ];
+///
+/// // create the IIR filter node
+/// let iir = context.create_iir_filter(feedforward, feedback);
+/// iir.connect(&context.destination());
+///
+/// // play the buffer and pipe it into the filter
+/// let src = context.create_buffer_source();
+/// src.connect(&iir);
+/// src.set_buffer(buffer);
+/// src.set_loop(true);
+/// src.start();
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example iir`
+///
 pub struct IIRFilterNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
