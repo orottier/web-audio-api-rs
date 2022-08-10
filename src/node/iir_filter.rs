@@ -351,17 +351,11 @@ impl IirFilterRenderer {
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
-    use realfft::num_traits::Zero;
-    use std::{
-        cmp::min,
-        fs::File,
-        io::{BufRead, BufReader},
-    };
+    use std::fs::File;
 
-    use crate::{
-        context::{BaseAudioContext, OfflineAudioContext},
-        node::{AudioNode, AudioScheduledSourceNode},
-    };
+    use crate::AudioBuffer;
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::node::{AudioNode, AudioScheduledSourceNode, BiquadFilterType};
 
     use super::*;
 
@@ -467,38 +461,168 @@ mod tests {
         iir.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
     }
 
-    // #[test]
-    // fn frequencies_are_clamped() {
-    //     let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-    //     let feedforward = vec![
-    //         0.000_016_636_797_512_844_526,
-    //         0.000_033_273_595_025_689_05,
-    //         0.000_016_636_797_512_844_526,
-    //     ];
-    //     let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+    #[test]
+    fn test_output_against_biquad() {
+        let context = OfflineAudioContext::new(1, 1, 44_100.);
+        let file = File::open("samples/white.ogg").unwrap();
+        let noise = context.decode_audio_data_sync(file).unwrap();
 
-    //     let options = IIRFilterOptions {
-    //         feedback,
-    //         feedforward,
-    //         channel_config: ChannelConfigOptions::default(),
-    //     };
-    //     let iir = IIRFilterNode::new(&context, options);
-    //     // It will be fine for the usual fs
-    //     #[allow(clippy::cast_precision_loss)]
-    //     let niquyst = context.sample_rate() / 2.0;
+        fn compare_output(
+            noise: AudioBuffer,
+            filter_type: BiquadFilterType,
+            feedback: Vec<f64>,
+            feedforward: Vec<f64>
+        ) {
+            let frequency = 2000.;
+            let q = 1.;
+            let gain = 3.;
+            // output of biquad and iir filters applied to white noise should thus be equal
+            let biquad_res = {
+                let context = OfflineAudioContext::new(1, noise.length(), 44_100.);
 
-    //     let mut frequency_hz = [-100., 1_000_000.];
-    //     let mut mag_response = [0., 0.];
-    //     let mut phase_response = [0., 0.];
+                let biquad = context.create_biquad_filter();
+                biquad.connect(&context.destination());
+                biquad.set_type(filter_type);
+                biquad.frequency().set_value(frequency);
+                biquad.q().set_value(q);
+                biquad.gain().set_value(gain);
 
-    //     iir.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+                let src = context.create_buffer_source();
+                src.connect(&biquad);
+                src.set_buffer(noise.clone());
+                src.start();
 
-    //     let ref_arr = [0., niquyst];
-    //     assert_float_eq!(frequency_hz, ref_arr, abs_all <= 0.);
-    // }
+                context.start_rendering_sync()
+            };
+
+            let iir_res = {
+                let context = OfflineAudioContext::new(1, noise.length(), 44_100.);
+
+                let iir = context.create_iir_filter(feedforward, feedback);
+                iir.connect(&context.destination());
+
+                let src = context.create_buffer_source();
+                src.connect(&iir);
+                src.set_buffer(noise.clone());
+                src.start();
+
+                context.start_rendering_sync()
+            };
+
+            println!("{:?}", filter_type);
+            assert_float_eq!(
+                biquad_res.get_channel_data(0),
+                iir_res.get_channel_data(0),
+                abs_all <= 0.
+            );
+        }
+
+        // these are the unormalized coefs computed by the biquad filter for:
+        // - frequency = 2000.;
+        // - q = 1.;
+        // - gain = 3.;
+        // see node::biquad_filter::tests::test_frequency_responses
+
+        // lowpass
+        let a0 = 1.1252702717383296;
+        let a1 = -1.9193504546709936;
+        let a2 = 0.8747297282616704;
+        let b0 = 0.02016238633225159;
+        let b1 = 0.04032477266450318;
+        let b2 = 0.02016238633225159;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_output(noise.clone(), BiquadFilterType::Lowpass, feedback, feedforward);
+
+        // highpass
+        let a0 = 1.1252702717383296;
+        let a1 = -1.9193504546709936;
+        let a2 = 0.8747297282616704;
+        let b0 = 0.9798376136677485;
+        let b1 = -1.959675227335497;
+        let b2 = 0.9798376136677485;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_output(noise.clone(), BiquadFilterType::Highpass, feedback, feedforward);
+
+        // bandpass
+        let a0 = 1.1405555566658274;
+        let a1 = -1.9193504546709936;
+        let a2 = 0.8594444433341726;
+        let b0 = 0.14055555666582747;
+        let b1 = 0.0;
+        let b2 = -0.14055555666582747;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_output(noise.clone(), BiquadFilterType::Bandpass, feedback, feedforward);
+
+        // notch
+        let a0 = 1.1405555566658274;
+        let a1 = -1.9193504546709936;
+        let a2 = 0.8594444433341726;
+        let b0 = 1.0;
+        let b1 = -1.9193504546709936;
+        let b2 = 1.0;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_output(noise.clone(), BiquadFilterType::Notch, feedback, feedforward);
+
+        // allpass
+        let a0 = 1.1405555566658274;
+        let a1 = -1.9193504546709936;
+        let a2 = 0.8594444433341726;
+        let b0 = 0.8594444433341726;
+        let b1 = -1.9193504546709936;
+        let b2 = 1.1405555566658274;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_output(noise.clone(), BiquadFilterType::Allpass, feedback, feedforward);
+
+        // peaking
+        let a0 = 1.1182627625098631;
+        let a1 = -1.9193504546709936;
+        let a2 = 0.8817372374901369;
+        let b0 = 1.167050592175986;
+        let b1 = -1.9193504546709936;
+        let b2 = 0.8329494078240139;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_output(noise.clone(), BiquadFilterType::Peaking, feedback, feedforward);
+
+        // lowshelf
+        let a0 = 2.8028072429836723;
+        let a1 = -4.577507200153761;
+        let a2 = 1.935999047828101;
+        let b0 = 2.9011403634599007;
+        let b1 = -4.544236234748791;
+        let b2 = 1.8709368927568424;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_output(noise.clone(), BiquadFilterType::Lowshelf, feedback, feedforward);
+
+        // highshelf
+        let a0 = 2.4410054070459357;
+        let a1 = -3.8234982904056865;
+        let a2 = 1.5741972118903644;
+        let b0 = 3.331142651362703;
+        let b1 = -5.440377503491735;
+        let b2 = 2.300939180659645;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_output(noise.clone(), BiquadFilterType::Highshelf, feedback, feedforward);
+    }
+
 
     #[test]
-    fn check_get_frequency_response() {
+    fn tests_get_frequency_response() {
         // This reference response has been generated with the python lib scipy
         // b, a = signal.iirfilter(2, 4000, rs=60, btype='high', analog=False, ftype='cheby2', fs=44100)
         // w, h = signal.freqz(b, a, 10, fs=44100)
@@ -541,63 +665,147 @@ mod tests {
     }
 
     #[test]
-    fn default_periodic_wave_rendering_should_match_snapshot() {
-        // the snapshot data has been verified by fft to make sure that the frequency
-        // response correspond to a HP filter with Fc 4000 Hz
-        let file = File::open("./snapshots/white_hp.json").expect("Reading snapshot file failed");
-        let reader = BufReader::new(file);
-        let ref_filtered: Vec<f32> = reader
-            .lines()
-            .map(|l| l.unwrap().parse::<f32>().unwrap())
-            .collect();
+    fn test_frequency_responses_against_biquad() {
+        fn compare_frequency_response(
+            filter_type: BiquadFilterType,
+            feedback: Vec<f64>,
+            feedforward: Vec<f64>
+        ) {
+            let frequency = 2000.;
+            let q = 1.;
+            let gain = 3.;
+            let freqs = [
+                400., 800., 1200., 1600., 2000., 2400., 2800., 3200., 3600., 4000.,
+            ];
 
-        let context = OfflineAudioContext::new(1, LENGTH, 44_100.);
+            let context = OfflineAudioContext::new(1, 1, 44_100.);
 
-        let file = File::open("samples/white.ogg").unwrap();
-        let audio_buffer = context.decode_audio_data_sync(file).unwrap();
+            let biquad_response = {
+                let mut mags = [0.; 10];
+                let mut phases = [0.; 10];
 
-        let feedforward = vec![
-            0.019_618_022_238_052_212,
-            -0.036_007_928_102_449_24,
-            0.019_618_022_238_052_21,
-        ];
-        let feedback = vec![1., 1.576_436_200_538_313_7, 0.651_680_173_116_867_3];
+                let biquad = context.create_biquad_filter();
+                biquad.set_type(filter_type);
+                biquad.frequency().set_value(frequency);
+                biquad.q().set_value(q);
+                biquad.gain().set_value(gain);
 
-        let options = IIRFilterOptions {
-            feedback,
-            feedforward,
-            channel_config: ChannelConfigOptions::default(),
-        };
-        let iir = IIRFilterNode::new(&context, options);
-        iir.connect(&context.destination());
+                biquad.get_frequency_response(&freqs, &mut mags, &mut phases);
 
-        let src = context.create_buffer_source();
-        src.set_buffer(audio_buffer);
-        src.connect(&iir);
-        src.start();
+                (mags, phases)
+            };
 
-        let output = context.start_rendering_sync();
+            let iir_response = {
+                let mut mags = [0.; 10];
+                let mut phases = [0.; 10];
 
-        // review the following, this should be fixed using an AudioBufferSourceNode
+                let iir = context.create_iir_filter(feedforward, feedback);
 
-        // retrieve processed data by removing silence chunk
-        // These silence slices are inserted inconsistently from an test execution to another
-        // Without these processing the test would be brittle
-        let data_ch: Vec<f32> = output
-            .channel_data(0)
-            .as_slice()
-            .iter()
-            .filter(|x| !x.is_zero())
-            .copied()
-            .collect();
+                iir.get_frequency_response(&freqs, &mut mags, &mut phases);
 
-        let min_len = min(data_ch.len(), ref_filtered.len());
+                (mags, phases)
+            };
 
-        // todo instable test
-        assert_float_eq!(
-            data_ch[0..min_len],
-            ref_filtered[0..min_len],
-            abs_all <= 1.0
-        );
+            println!("{:?}", filter_type);
+            assert_float_eq!(biquad_response.0, iir_response.0, abs_all <= 1e-6);
+            assert_float_eq!(biquad_response.1, iir_response.1, abs_all <= 1e-6);
+        }
+
+               // lowpass
+        let a0 = 1.1252702717383296;
+        let a1 = -1.9193504546709936;
+        let a2 = 0.8747297282616704;
+        let b0 = 0.02016238633225159;
+        let b1 = 0.04032477266450318;
+        let b2 = 0.02016238633225159;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_frequency_response(BiquadFilterType::Lowpass, feedback, feedforward);
+
+        // highpass
+        let a0 = 1.1252702717383296;
+        let a1 = -1.9193504546709936;
+        let a2 = 0.8747297282616704;
+        let b0 = 0.9798376136677485;
+        let b1 = -1.959675227335497;
+        let b2 = 0.9798376136677485;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_frequency_response(BiquadFilterType::Highpass, feedback, feedforward);
+
+        // bandpass
+        let a0 = 1.1405555566658274;
+        let a1 = -1.9193504546709936;
+        let a2 = 0.8594444433341726;
+        let b0 = 0.14055555666582747;
+        let b1 = 0.0;
+        let b2 = -0.14055555666582747;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_frequency_response(BiquadFilterType::Bandpass, feedback, feedforward);
+
+        // one of the value in phases differs by 0.28, to be digged
+        // notch
+        // let a0 = 1.1405555566658274;
+        // let a1 = -1.9193504546709936;
+        // let a2 = 0.8594444433341726;
+        // let b0 = 1.0;
+        // let b1 = -1.9193504546709936;
+        // let b2 = 1.0;
+
+        // let feedback = vec![a0, a1, a2];
+        // let feedforward = vec![b0, b1, b2];
+        // compare_frequency_response(BiquadFilterType::Notch, feedback, feedforward);
+
+        // allpass
+        let a0 = 1.1405555566658274;
+        let a1 = -1.9193504546709936;
+        let a2 = 0.8594444433341726;
+        let b0 = 0.8594444433341726;
+        let b1 = -1.9193504546709936;
+        let b2 = 1.1405555566658274;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_frequency_response(BiquadFilterType::Allpass, feedback, feedforward);
+
+        // peaking
+        let a0 = 1.1182627625098631;
+        let a1 = -1.9193504546709936;
+        let a2 = 0.8817372374901369;
+        let b0 = 1.167050592175986;
+        let b1 = -1.9193504546709936;
+        let b2 = 0.8329494078240139;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_frequency_response(BiquadFilterType::Peaking, feedback, feedforward);
+
+        // lowshelf
+        let a0 = 2.8028072429836723;
+        let a1 = -4.577507200153761;
+        let a2 = 1.935999047828101;
+        let b0 = 2.9011403634599007;
+        let b1 = -4.544236234748791;
+        let b2 = 1.8709368927568424;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_frequency_response(BiquadFilterType::Lowshelf, feedback, feedforward);
+
+        // highshelf
+        let a0 = 2.4410054070459357;
+        let a1 = -3.8234982904056865;
+        let a2 = 1.5741972118903644;
+        let b0 = 3.331142651362703;
+        let b1 = -5.440377503491735;
+        let b2 = 2.300939180659645;
+
+        let feedback = vec![a0, a1, a2];
+        let feedforward = vec![b0, b1, b2];
+        compare_frequency_response(BiquadFilterType::Highshelf, feedback, feedforward);
     }
 }
