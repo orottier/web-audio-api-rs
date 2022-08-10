@@ -1,24 +1,57 @@
 //! The IIR filter control and renderer parts
-// #![warn(
-//     clippy::all,
-//     clippy::pedantic,
-//     clippy::nursery,
-//     clippy::perf,
-//     clippy::missing_docs_in_private_items
-// )]
 use num_complex::Complex;
 use std::f64::consts::PI;
 
-use crate::{
-    context::{AudioContextRegistration, BaseAudioContext},
-    render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope},
-    MAX_CHANNELS,
-};
+use crate::context::{AudioContextRegistration, BaseAudioContext};
+use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::MAX_CHANNELS;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
 /// Filter order is limited to 20
 const MAX_IIR_COEFFS_LEN: usize = 20;
+
+/// Assert that the feedforward coefficients are valid
+/// see <https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createiirfilter-feedforward>
+///
+/// # Panics
+///
+/// This function panics if:
+/// - coefs length is 0 and greater than 20
+/// - all coefs are zeros
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_feedforward_coefs(coefs: &Vec<f64>) {
+    if coefs.len() == 0 || coefs.len() > MAX_IIR_COEFFS_LEN {
+        panic!("NotSupportedError - IIR Filter feedforward coefficients should have length >= 0 and <= 20");
+    }
+
+    if coefs.iter().all(|&f| f == 0.) {
+        panic!("InvalidStateError - IIR Filter feedforward coefficients cannot be all zeros");
+    }
+}
+
+/// Assert that the feedforward coefficients are valid
+/// see <https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createiirfilter-feedforward>
+///
+/// # Panics
+///
+/// This function panics if:
+/// - coefs length is 0 and greater than 20
+/// - first coef is zero
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_feedback_coefs(coefs: &Vec<f64>) {
+    if coefs.len() == 0 || coefs.len() > MAX_IIR_COEFFS_LEN {
+        panic!("NotSupportedError - IIR Filter feedback coefficients should have length >= 0 and <= 20");
+    }
+
+    if coefs[0] == 0. {
+        panic!("InvalidStateError - IIR Filter feedback first coefficient cannot be zero");
+    }
+}
 
 /// Options for constructing a [`IIRFilterNode`]
 // dictionary IIRFilterOptions : AudioNodeOptions {
@@ -69,16 +102,16 @@ impl IIRFilterNode {
     ///
     /// # Arguments
     ///
-    /// * `context` - Audio context in which the node will live
-    /// * `options` - node options
+    /// - `context` - Audio context in which the node will live
+    /// - `options` - node options
     ///
     /// # Panics
     ///
-    /// will panic if:
-    /// * coefficients length is more than 20
-    /// * `feedforward` or/and `feedback` is an empty vector
-    /// * all `feedforward` element or/and all `feedback` element are eqaul to 0.
-    /// *
+    /// This function panics if:
+    /// - coefs length is 0 and greater than 20
+    /// - feedforward coefs are all zeros
+    /// - feedback first coef is zero
+    ///
     pub fn new<C: BaseAudioContext>(context: &C, options: IIRFilterOptions) -> Self {
         context.register(move |registration| {
             let IIRFilterOptions {
@@ -87,12 +120,8 @@ impl IIRFilterNode {
                 channel_config,
             } = options;
 
-            assert!(feedforward.len() <= MAX_IIR_COEFFS_LEN, "NotSupportedError");
-            assert!(!feedforward.is_empty(), "NotSupportedError");
-            assert!(!feedforward.iter().all(|&ff| ff == 0.), "InvalidStateError");
-            assert!(feedback.len() <= MAX_IIR_COEFFS_LEN, "NotSupportedError");
-            assert!(!feedback.is_empty(), "NotSupportedError");
-            assert!(!feedback.iter().all(|&ff| ff == 0.), "InvalidStateError");
+            assert_valid_feedforward_coefs(&feedforward);
+            assert_valid_feedback_coefs(&feedback);
 
             let config = RendererConfig {
                 feedforward: feedforward.clone(),
@@ -356,157 +385,135 @@ mod test {
         node::{AudioNode, AudioScheduledSourceNode},
     };
 
-    use super::{ChannelConfigOptions, IIRFilterNode, IIRFilterOptions};
+    use super::*;
 
     const LENGTH: usize = 512;
 
     #[test]
-    fn build_with_new() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+    fn test_constructor_and_factory() {
+        {
+            let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
-        let feedforward = vec![
-            0.000_016_636_797_512_844_526,
-            0.000_033_273_595_025_689_05,
-            0.000_016_636_797_512_844_526,
-        ];
-        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+            let feedforward = vec![
+                0.000_016_636_797_512_844_526,
+                0.000_033_273_595_025_689_05,
+                0.000_016_636_797_512_844_526,
+            ];
+            let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
-        let options = IIRFilterOptions {
-            feedback,
-            feedforward,
-            channel_config: ChannelConfigOptions::default(),
-        };
+            let options = IIRFilterOptions {
+                feedback,
+                feedforward,
+                channel_config: ChannelConfigOptions::default(),
+            };
 
-        let _biquad = IIRFilterNode::new(&context, options);
-    }
+            let _biquad = IIRFilterNode::new(&context, options);
+        }
 
-    #[test]
-    fn build_with_factory_func() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+        {
+            let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
-        let feedforward = vec![
-            0.000_016_636_797_512_844_526,
-            0.000_033_273_595_025_689_05,
-            0.000_016_636_797_512_844_526,
-        ];
-        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+            let feedforward = vec![
+                0.000_016_636_797_512_844_526,
+                0.000_033_273_595_025_689_05,
+                0.000_016_636_797_512_844_526,
+            ];
+            let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
-        let _biquad = context.create_iir_filter(feedforward, feedback);
-    }
-
-    #[test]
-    #[should_panic]
-    fn panics_when_ffs_is_above_max_len() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let feedforward = vec![
-            0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-        ];
-        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
-
-        let _biquad = context.create_iir_filter(feedforward, feedback);
+            let _biquad = context.create_iir_filter(feedforward, feedback);
+        }
     }
 
     #[test]
     #[should_panic]
-    fn panics_when_fbs_is_above_max_len() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let feedback = vec![
-            0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-        ];
-        let feedforward = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
-
-        let _biquad = context.create_iir_filter(feedforward, feedback);
+    fn test_invalid_feedforward_size() {
+        let feedforward = vec![1.; 21];
+        assert_valid_feedforward_coefs(&feedforward);
     }
 
     #[test]
     #[should_panic]
-    fn panics_when_fbs_is_empty() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let feedback = vec![];
-        let feedforward = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+    fn test_invalid_feedforward_values() {
+        let feedforward = vec![0.; 5];
+        assert_valid_feedforward_coefs(&feedforward);
+    }
 
-        let _biquad = context.create_iir_filter(feedforward, feedback);
+    #[test]
+    fn test_valid_feedforward_values() {
+        let feedforward = vec![1.; 5];
+        assert_valid_feedforward_coefs(&feedforward);
     }
 
     #[test]
     #[should_panic]
-    fn panics_when_ffs_is_empty() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let feedforward = vec![];
-        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
-
-        let _biquad = context.create_iir_filter(feedforward, feedback);
+    fn test_invalid_feedback_size() {
+        let feedback = vec![1.; 21];
+        assert_valid_feedback_coefs(&feedback);
     }
 
     #[test]
     #[should_panic]
-    fn panics_when_ffs_are_zeros() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let feedforward = vec![0., 0.];
-        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
-
-        let _biquad = context.create_iir_filter(feedforward, feedback);
+    fn test_invalid_feedback_values() {
+        let mut feedback = vec![1.; 5];
+        feedback[0] = 0.;
+        assert_valid_feedback_coefs(&feedback);
     }
 
     #[test]
-    #[should_panic]
-    fn panics_when_fbs_are_zeros() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let feedback = vec![0., 0.];
-        let feedforward = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
-
-        let _biquad = context.create_iir_filter(feedforward, feedback);
+    fn test_valid_feedback_values() {
+        let feedback = vec![1.; 5];
+        assert_valid_feedback_coefs(&feedback);
     }
 
-    #[test]
-    #[should_panic]
-    fn panics_when_not_the_same_length() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let feedforward = vec![
-            0.000_016_636_797_512_844_526,
-            0.000_033_273_595_025_689_05,
-            0.000_016_636_797_512_844_526,
-        ];
-        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+    // #[test]
+    // #[should_panic]
+    // fn panics_when_not_the_same_length() {
+    //     let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+    //     let feedforward = vec![
+    //         0.000_016_636_797_512_844_526,
+    //         0.000_033_273_595_025_689_05,
+    //         0.000_016_636_797_512_844_526,
+    //     ];
+    //     let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
-        let options = IIRFilterOptions {
-            feedback,
-            feedforward,
-            channel_config: ChannelConfigOptions::default(),
-        };
-        let biquad = IIRFilterNode::new(&context, options);
+    //     let options = IIRFilterOptions {
+    //         feedback,
+    //         feedforward,
+    //         channel_config: ChannelConfigOptions::default(),
+    //     };
+    //     let biquad = IIRFilterNode::new(&context, options);
 
-        let mut frequency_hz = [0.];
-        let mut mag_response = [0., 1.0];
-        let mut phase_response = [0.];
+    //     let mut frequency_hz = [0.];
+    //     let mut mag_response = [0., 1.0];
+    //     let mut phase_response = [0.];
 
-        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
-    }
+    //     biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+    // }
 
-    #[test]
-    #[should_panic]
-    fn panics_when_not_the_same_length_2() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let feedforward = vec![
-            0.000_016_636_797_512_844_526,
-            0.000_033_273_595_025_689_05,
-            0.000_016_636_797_512_844_526,
-        ];
-        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+    // #[test]
+    // #[should_panic]
+    // fn panics_when_not_the_same_length_2() {
+    //     let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+    //     let feedforward = vec![
+    //         0.000_016_636_797_512_844_526,
+    //         0.000_033_273_595_025_689_05,
+    //         0.000_016_636_797_512_844_526,
+    //     ];
+    //     let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
 
-        let options = IIRFilterOptions {
-            feedback,
-            feedforward,
-            channel_config: ChannelConfigOptions::default(),
-        };
-        let biquad = IIRFilterNode::new(&context, options);
+    //     let options = IIRFilterOptions {
+    //         feedback,
+    //         feedforward,
+    //         channel_config: ChannelConfigOptions::default(),
+    //     };
+    //     let biquad = IIRFilterNode::new(&context, options);
 
-        let mut frequency_hz = [0.];
-        let mut mag_response = [0.];
-        let mut phase_response = [0., 1.0];
+    //     let mut frequency_hz = [0.];
+    //     let mut mag_response = [0.];
+    //     let mut phase_response = [0., 1.0];
 
-        biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
-    }
+    //     biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+    // }
 
     #[test]
     fn frequencies_are_clamped() {
