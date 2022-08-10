@@ -30,9 +30,10 @@ symphonia = { version = "0.5", default-features = false }
 vecmath = "1.0"
 
 [dev-dependencies]
-rand = "0.8"
 alloc_counter = "0.0.4"
 env_logger = "0.9"
+iai = "0.1.1"
+rand = "0.8"
 
 # used in examples/mic_playback.rs:
 simplelog = "0.11"
@@ -43,6 +44,10 @@ textplots = "0.8"
 # during CPU profiling
 # [profile.release]
 # debug = true
+
+[[bench]]
+name = "my_benchmark"
+harness = false
 
 [features]
 default = ["mp3", "ogg", "flac", "wav", "cpal"]
