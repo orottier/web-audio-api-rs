@@ -123,12 +123,10 @@ impl IIRFilterNode {
             assert_valid_feedforward_coefs(&feedforward);
             assert_valid_feedback_coefs(&feedback);
 
-            let config = RendererConfig {
-                feedforward: feedforward.clone(),
-                feedback: feedback.clone(),
-            };
-
-            let render = IirFilterRenderer::new(config);
+            let render = IirFilterRenderer::new(
+                feedforward.clone(),
+                feedback.clone(),
+            );
 
             let node = Self {
                 registration,
@@ -145,9 +143,10 @@ impl IIRFilterNode {
     ///
     /// # Arguments
     ///
-    /// * `frequency_hz` - frequencies for which frequency response of the filter should be calculated
-    /// * `mag_response` - magnitude of the frequency response of the filter
-    /// * `phase_response` - phase of the frequency response of the filter
+    /// - `frequency_hz` - frequencies for which frequency response of the filter should be calculated
+    /// - `mag_response` - magnitude of the frequency response of the filter
+    /// - `phase_response` - phase of the frequency response of the filter
+    ///
     #[allow(clippy::cast_possible_truncation)]
     pub fn get_frequency_response(
         &self,
@@ -164,55 +163,44 @@ impl IIRFilterNode {
 
         for (i, &f) in frequency_hz.iter().enumerate() {
             let freq = f64::from(f).clamp(0., nquist);
+            let z = -2.0 * PI * freq / sample_rate;
             let mut num: Complex<f64> = Complex::new(0., 0.);
             let mut denom: Complex<f64> = Complex::new(0., 0.);
 
-            // 0 through 20 casts without loss of precision
-            #[allow(clippy::cast_precision_loss)]
-            for (idx, &ff) in self.feedforward.iter().enumerate() {
-                num += Complex::from_polar(ff, idx as f64 * -2.0 * PI * freq / sample_rate);
+
+            for (idx, &b) in self.feedforward.iter().enumerate() {
+                num += Complex::from_polar(b, idx as f64 * z);
             }
 
-            // 0 through 20 casts without loss of precision
-            #[allow(clippy::cast_precision_loss)]
-            for (idx, &fb) in self.feedback.iter().enumerate() {
-                denom +=
-                    Complex::from_polar(fb, idx as f64 * -2.0 * PI * freq / sample_rate);
+            for (idx, &a) in self.feedback.iter().enumerate() {
+                denom += Complex::from_polar(a, idx as f64 * z);
             }
 
-            let h_f = num / denom;
+            let response = num / denom;
 
-            // Possible truncation is fine. f32 precision should be sufficients
-            // And it is required by the specs
-            mag_response[i] = h_f.norm() as f32;
-            phase_response[i] = h_f.arg() as f32;
+            let (mag, phase) = response.to_polar();
+            mag_response[i] = mag as f32;
+            phase_response[i] = phase as f32;
         }
     }
 }
 
-/// `FilterRendererBuilder` helps to build `IirFilterRenderer`
-struct FilterRendererBuilder {
-    /// filter's coefficients as (feedforward, feedback)[]
-    coeffs: Vec<(f64, f64)>,
+/// Renderer associated with the `IirFilterNode`
+struct IirFilterRenderer {
+    /// Normalized filter's coeffs -- `(b[n], a[n])`
+    norm_coeffs: Vec<(f64, f64)>,
     /// filter's states
-    /// if the states is not used, it stays to 0. and will be never accessed
     states: Vec<[f64; MAX_CHANNELS]>,
 }
 
-impl FilterRendererBuilder {
-    /// Generate filter's coeffs
+impl IirFilterRenderer {
+    /// Build an `IirFilterNode` renderer
     ///
     /// # Arguments
     ///
-    /// * `feedforward` - feedforward coeffs (numerator)
-    /// * `feedback` - feedback coeffs (denominator)
-    #[inline]
-    fn build(config: RendererConfig) -> Self {
-        let RendererConfig {
-            mut feedforward,
-            mut feedback,
-        } = config;
-
+    /// * `config` - renderer config
+    fn new(mut feedforward: Vec<f64>, mut feedback: Vec<f64>) -> Self {
+        // make sure feedback and feedforward have same length, fill with 0. to match
         match (feedforward.len(), feedback.len()) {
             (feedforward_len, feedback_len) if feedforward_len > feedback_len => {
                 feedforward = feedforward
@@ -231,46 +219,24 @@ impl FilterRendererBuilder {
             _ => (),
         };
 
-        let coeffs: Vec<(f64, f64)> = feedforward.into_iter().zip(feedback).collect();
+        let mut coeffs: Vec<(f64, f64)> = feedforward.into_iter().zip(feedback).collect();
+
+        // normalize coefs according to a0
+        let a0 = coeffs[0].1;
+
+        for (b, a) in coeffs.iter_mut() {
+            *b /= a0;
+            *a /= a0;
+        }
 
         let coeffs_len = coeffs.len();
         let states = vec![[0.; MAX_CHANNELS]; coeffs_len];
 
-        Self { coeffs, states }
-    }
-
-    /// Generate normalized filter's coeffs and filter's states
-    /// coeffs are normalized by `a[0]` coefficient
-    fn finish(mut self) -> IirFilterRenderer {
-        let a_0 = self.coeffs[0].1;
-
-        for (ff, fb) in &mut self.coeffs {
-            *ff /= a_0;
-            *fb /= a_0;
-        }
-
-        IirFilterRenderer {
-            norm_coeffs: self.coeffs,
-            states: self.states,
+        Self {
+            norm_coeffs: coeffs,
+            states: states,
         }
     }
-}
-
-/// Helper struct which regroups all parameters
-/// required to build `IirFilterRenderer` with the help of `FilterRendererBuilder`
-struct RendererConfig {
-    /// feedforward coeffs -- `b[n]` -- numerator coeffs
-    feedforward: Vec<f64>,
-    /// feedback coeffs -- `a[n]` -- denominator coeffs
-    feedback: Vec<f64>,
-}
-
-/// Renderer associated with the `IirFilterNode`
-struct IirFilterRenderer {
-    /// Normalized filter's coeffs -- `(b[n], a[n])`
-    norm_coeffs: Vec<(f64, f64)>,
-    /// filter's states
-    states: Vec<[f64; MAX_CHANNELS]>,
 }
 
 impl AudioProcessor for IirFilterRenderer {
@@ -285,66 +251,41 @@ impl AudioProcessor for IirFilterRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        self.filter(input, output);
+        // @todo - handle num channels
+        // @todo - handle tail time and
 
-        true // todo tail time - issue #34
-    }
-}
 
-impl IirFilterRenderer {
-    /// Build an `IirFilterNode` renderer
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - renderer config
-    fn new(config: RendererConfig) -> Self {
-        FilterRendererBuilder::build(config).finish()
-    }
-
-    /// Generate an output by filtering the input
-    ///
-    /// # Arguments
-    ///
-    /// * `input` - Audiobuffer input
-    /// * `output` - Audiobuffer output
-    #[inline]
-    fn filter(&mut self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
-        for (idx, (i_data, o_data)) in input
+        // apply filter
+        for (channel_number, (input_channel, output_channel)) in input
             .channels()
             .iter()
             .zip(output.channels_mut())
             .enumerate()
         {
-            for (&i, o) in i_data.iter().zip(o_data.iter_mut()) {
-                *o = self.tick(i, idx);
+            for (&i, o) in input_channel.iter().zip(output_channel.iter_mut()) {
+                let input = f64::from(i);
+                let b0 = self.norm_coeffs[0].0;
+                let last_state = self.states[0][channel_number];
+
+                let mut output = b0.mul_add(input, last_state);
+
+                for (i, (b, a)) in self.norm_coeffs.iter().skip(1).enumerate() {
+                    let state = self.states[i + 1][channel_number];
+                    self.states[i][channel_number] = b * input - a * output + state;
+                }
+
+                #[cfg(debug_assertions)]
+                if output.is_nan() || output.is_infinite() {
+                    output = 0.;
+                    log::debug!("An unstable filter is processed.");
+                }
+
+
+                *o = output as f32;
             }
         }
-    }
 
-    /// Generate an output sample by filtering an input sample
-    ///
-    /// # Arguments
-    ///
-    /// * `input` - Audiobuffer input
-    /// * `idx` - channel index mapping to the filter state index
-    #[inline]
-    #[allow(clippy::cast_possible_truncation)]
-    fn tick(&mut self, input: f32, idx: usize) -> f32 {
-        let input = f64::from(input);
-        let output = self.norm_coeffs[0].0.mul_add(input, self.states[0][idx]);
-
-        for (i, (ff, fb)) in self.norm_coeffs.iter().skip(1).enumerate() {
-            let state = self.states[i + 1][idx];
-            self.states[i][idx] = ff * input - fb * output + state;
-        }
-
-        #[cfg(debug_assertions)]
-        if output.is_nan() || output.is_infinite() {
-            log::debug!("An unstable filter is processed.");
-        }
-
-        // Value truncation will not be hearable
-        output as f32
+        true // todo tail time - issue #34
     }
 }
 
@@ -747,7 +688,8 @@ mod tests {
         let feedforward = vec![b0, b1, b2];
         compare_frequency_response(BiquadFilterType::Bandpass, feedback, feedforward);
 
-        // one of the value in phases differs by 0.28, to be digged
+        // one of the value in phases differs by 0.28
+        // @todo - handle that
         // notch
         // let a0 = 1.1405555566658274;
         // let a1 = -1.9193504546709936;
