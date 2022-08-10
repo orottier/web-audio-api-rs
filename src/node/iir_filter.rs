@@ -23,7 +23,7 @@ const MAX_IIR_COEFFS_LEN: usize = 20;
 #[track_caller]
 #[inline(always)]
 fn assert_valid_feedforward_coefs(coefs: &Vec<f64>) {
-    if coefs.len() == 0 || coefs.len() > MAX_IIR_COEFFS_LEN {
+    if coefs.is_empty() || coefs.len() > MAX_IIR_COEFFS_LEN {
         panic!("NotSupportedError - IIR Filter feedforward coefficients should have length >= 0 and <= 20");
     }
 
@@ -44,7 +44,7 @@ fn assert_valid_feedforward_coefs(coefs: &Vec<f64>) {
 #[track_caller]
 #[inline(always)]
 fn assert_valid_feedback_coefs(coefs: &Vec<f64>) {
-    if coefs.len() == 0 || coefs.len() > MAX_IIR_COEFFS_LEN {
+    if coefs.is_empty() || coefs.len() > MAX_IIR_COEFFS_LEN {
         panic!("NotSupportedError - IIR Filter feedback coefficients should have length >= 0 and <= 20");
     }
 
@@ -123,10 +123,7 @@ impl IIRFilterNode {
             assert_valid_feedforward_coefs(&feedforward);
             assert_valid_feedback_coefs(&feedback);
 
-            let render = IirFilterRenderer::new(
-                feedforward.clone(),
-                feedback.clone(),
-            );
+            let render = IirFilterRenderer::new(feedforward.clone(), feedback.clone());
 
             let node = Self {
                 registration,
@@ -147,7 +144,10 @@ impl IIRFilterNode {
     /// - `mag_response` - magnitude of the frequency response of the filter
     /// - `phase_response` - phase of the frequency response of the filter
     ///
-    #[allow(clippy::cast_possible_truncation)]
+    /// # Panics
+    ///
+    /// This function will panic if arguments' lengths don't match
+    ///
     pub fn get_frequency_response(
         &self,
         frequency_hz: &[f32],
@@ -159,14 +159,13 @@ impl IIRFilterNode {
         }
 
         let sample_rate = self.context().sample_rate() as f64;
-        let nquist = sample_rate / 2. ;
+        let nquist = sample_rate / 2.;
 
         for (i, &f) in frequency_hz.iter().enumerate() {
             let freq = f64::from(f).clamp(0., nquist);
             let z = -2.0 * PI * freq / sample_rate;
             let mut num: Complex<f64> = Complex::new(0., 0.);
             let mut denom: Complex<f64> = Complex::new(0., 0.);
-
 
             for (idx, &b) in self.feedforward.iter().enumerate() {
                 num += Complex::from_polar(b, idx as f64 * z);
@@ -190,7 +189,7 @@ struct IirFilterRenderer {
     /// Normalized filter's coeffs -- `(b[n], a[n])`
     norm_coeffs: Vec<(f64, f64)>,
     /// filter's states
-    states: Vec<[f64; MAX_CHANNELS]>,
+    states: Vec<Vec<f64>>,
 }
 
 impl IirFilterRenderer {
@@ -219,23 +218,18 @@ impl IirFilterRenderer {
             _ => (),
         };
 
-        let mut coeffs: Vec<(f64, f64)> = feedforward.into_iter().zip(feedback).collect();
+        let a0 = feedback[0];
+        let mut norm_coeffs: Vec<(f64, f64)> = feedforward.into_iter().zip(feedback).collect();
 
-        // normalize coefs according to a0
-        let a0 = coeffs[0].1;
-
-        for (b, a) in coeffs.iter_mut() {
+        norm_coeffs.iter_mut().for_each(|(b, a)| {
             *b /= a0;
             *a /= a0;
-        }
+        });
 
-        let coeffs_len = coeffs.len();
-        let states = vec![[0.; MAX_CHANNELS]; coeffs_len];
+        let coeffs_len = norm_coeffs.len();
+        let states = vec![Vec::<f64>::with_capacity(MAX_CHANNELS); coeffs_len];
 
-        Self {
-            norm_coeffs: coeffs,
-            states: states,
-        }
+        Self { norm_coeffs, states }
     }
 }
 
@@ -251,9 +245,44 @@ impl AudioProcessor for IirFilterRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        // @todo - handle num channels
-        // @todo - handle tail time and
+        // handle tail time
+        if input.is_silent() {
+            let mut ended = true;
 
+            // if all values in states are 0., we have nothing left to process
+            self.states.iter().all(|state| {
+                if state.iter().any(|&v| v.is_normal()) {
+                    ended = false;
+                }
+                // if ended is false, `iter().all` will stop early
+                ended
+            });
+
+            if ended {
+                output.make_silent();
+                return false;
+            }
+        }
+
+        // eventually resize state according to input number of channels
+        // if in tail time we should continue with previous number of channels
+        if !input.is_silent() {
+            // @todo - handle channel change cleanly, could cause discontinuities
+            // see https://github.com/WebAudio/web-audio-api/issues/1719
+            // see https://webaudio.github.io/web-audio-api/#channels-tail-time
+            let num_channels = input.number_of_channels();
+
+            if num_channels != self.states[0].len() {
+                self.states
+                    .iter_mut()
+                    .for_each(|state| state.resize(num_channels, 0.));
+            }
+
+            output.set_number_of_channels(num_channels);
+        } else {
+            let num_channels = self.states[0].len();
+            output.set_number_of_channels(num_channels);
+        }
 
         // apply filter
         for (channel_number, (input_channel, output_channel)) in input
@@ -269,6 +298,11 @@ impl AudioProcessor for IirFilterRenderer {
 
                 let mut output = b0.mul_add(input, last_state);
 
+                if output.is_subnormal() {
+                    output = 0.;
+                }
+
+                // update states for next call
                 for (i, (b, a)) in self.norm_coeffs.iter().skip(1).enumerate() {
                     let state = self.states[i + 1][channel_number];
                     self.states[i][channel_number] = b * input - a * output + state;
@@ -276,16 +310,14 @@ impl AudioProcessor for IirFilterRenderer {
 
                 #[cfg(debug_assertions)]
                 if output.is_nan() || output.is_infinite() {
-                    output = 0.;
                     log::debug!("An unstable filter is processed.");
                 }
-
 
                 *o = output as f32;
             }
         }
 
-        true // todo tail time - issue #34
+        true
     }
 }
 
@@ -294,9 +326,9 @@ mod tests {
     use float_eq::assert_float_eq;
     use std::fs::File;
 
-    use crate::AudioBuffer;
     use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::node::{AudioNode, AudioScheduledSourceNode, BiquadFilterType};
+    use crate::AudioBuffer;
 
     use super::*;
 
@@ -403,6 +435,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)]
     fn test_output_against_biquad() {
         let context = OfflineAudioContext::new(1, 1, 44_100.);
         let file = File::open("samples/white.ogg").unwrap();
@@ -412,7 +445,7 @@ mod tests {
             noise: AudioBuffer,
             filter_type: BiquadFilterType,
             feedback: Vec<f64>,
-            feedforward: Vec<f64>
+            feedforward: Vec<f64>,
         ) {
             let frequency = 2000.;
             let q = 1.;
@@ -474,7 +507,12 @@ mod tests {
 
         let feedback = vec![a0, a1, a2];
         let feedforward = vec![b0, b1, b2];
-        compare_output(noise.clone(), BiquadFilterType::Lowpass, feedback, feedforward);
+        compare_output(
+            noise.clone(),
+            BiquadFilterType::Lowpass,
+            feedback,
+            feedforward,
+        );
 
         // highpass
         let a0 = 1.1252702717383296;
@@ -486,7 +524,12 @@ mod tests {
 
         let feedback = vec![a0, a1, a2];
         let feedforward = vec![b0, b1, b2];
-        compare_output(noise.clone(), BiquadFilterType::Highpass, feedback, feedforward);
+        compare_output(
+            noise.clone(),
+            BiquadFilterType::Highpass,
+            feedback,
+            feedforward,
+        );
 
         // bandpass
         let a0 = 1.1405555566658274;
@@ -498,7 +541,12 @@ mod tests {
 
         let feedback = vec![a0, a1, a2];
         let feedforward = vec![b0, b1, b2];
-        compare_output(noise.clone(), BiquadFilterType::Bandpass, feedback, feedforward);
+        compare_output(
+            noise.clone(),
+            BiquadFilterType::Bandpass,
+            feedback,
+            feedforward,
+        );
 
         // notch
         let a0 = 1.1405555566658274;
@@ -510,7 +558,12 @@ mod tests {
 
         let feedback = vec![a0, a1, a2];
         let feedforward = vec![b0, b1, b2];
-        compare_output(noise.clone(), BiquadFilterType::Notch, feedback, feedforward);
+        compare_output(
+            noise.clone(),
+            BiquadFilterType::Notch,
+            feedback,
+            feedforward,
+        );
 
         // allpass
         let a0 = 1.1405555566658274;
@@ -522,7 +575,12 @@ mod tests {
 
         let feedback = vec![a0, a1, a2];
         let feedforward = vec![b0, b1, b2];
-        compare_output(noise.clone(), BiquadFilterType::Allpass, feedback, feedforward);
+        compare_output(
+            noise.clone(),
+            BiquadFilterType::Allpass,
+            feedback,
+            feedforward,
+        );
 
         // peaking
         let a0 = 1.1182627625098631;
@@ -534,7 +592,12 @@ mod tests {
 
         let feedback = vec![a0, a1, a2];
         let feedforward = vec![b0, b1, b2];
-        compare_output(noise.clone(), BiquadFilterType::Peaking, feedback, feedforward);
+        compare_output(
+            noise.clone(),
+            BiquadFilterType::Peaking,
+            feedback,
+            feedforward,
+        );
 
         // lowshelf
         let a0 = 2.8028072429836723;
@@ -546,7 +609,12 @@ mod tests {
 
         let feedback = vec![a0, a1, a2];
         let feedforward = vec![b0, b1, b2];
-        compare_output(noise.clone(), BiquadFilterType::Lowshelf, feedback, feedforward);
+        compare_output(
+            noise.clone(),
+            BiquadFilterType::Lowshelf,
+            feedback,
+            feedforward,
+        );
 
         // highshelf
         let a0 = 2.4410054070459357;
@@ -558,9 +626,14 @@ mod tests {
 
         let feedback = vec![a0, a1, a2];
         let feedforward = vec![b0, b1, b2];
-        compare_output(noise.clone(), BiquadFilterType::Highshelf, feedback, feedforward);
-    }
 
+        compare_output(
+            noise.clone(),
+            BiquadFilterType::Highshelf,
+            feedback,
+            feedforward,
+        );
+    }
 
     #[test]
     fn tests_get_frequency_response() {
@@ -594,13 +667,13 @@ mod tests {
         };
         let iir = IIRFilterNode::new(&context, options);
 
-        let mut frequency_hz = [
+        let frequency_hz = [
             0., 2205., 4410., 6615., 8820., 11025., 13230., 15435., 17640., 19845.,
         ];
         let mut mag_response = [0.; 10];
         let mut phase_response = [0.; 10];
 
-        iir.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+        iir.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
 
         assert_float_eq!(mag_response, ref_mag, abs_all <= 0.);
     }
@@ -610,7 +683,7 @@ mod tests {
         fn compare_frequency_response(
             filter_type: BiquadFilterType,
             feedback: Vec<f64>,
-            feedforward: Vec<f64>
+            feedforward: Vec<f64>,
         ) {
             let frequency = 2000.;
             let q = 1.;
@@ -652,7 +725,7 @@ mod tests {
             assert_float_eq!(biquad_response.1, iir_response.1, abs_all <= 1e-6);
         }
 
-               // lowpass
+        // lowpass
         let a0 = 1.1252702717383296;
         let a1 = -1.9193504546709936;
         let a2 = 0.8747297282616704;
