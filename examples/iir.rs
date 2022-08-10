@@ -5,24 +5,34 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 fn main() {
     let context = AudioContext::default();
 
-    let file = File::open("samples/major-scale.ogg").unwrap();
+    let file = File::open("samples/think-stereo-48000.wav").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();
 
-    // taken from https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Using_IIR_filters
-    let feed_forward = vec![0.00020298, 0.0004059599, 0.00020298];
-    let feed_backward = vec![1.0126964558, -1.9991880801, 0.9873035442];
+    // these values correspond to a lowpass filter at 200Hz (calculated from biquad)
+    let feedforward = vec![
+        0.0002029799640409502,
+        0.0004059599280819004,
+        0.0002029799640409502,
+    ];
+
+    let feedback = vec![
+        1.0126964557853775,
+        -1.9991880801438362,
+        0.9873035442146225,
+    ];
 
     // Create an IIR filter node
-    let iir = context.create_iir_filter(feed_forward, feed_backward);
+    let iir = context.create_iir_filter(feedforward, feedback);
     iir.connect(&context.destination());
 
-    // Play the buffer
+    // Play buffer and pipe to filter
     let src = context.create_buffer_source();
     src.connect(&iir);
     src.set_buffer(buffer);
     src.set_loop(true);
     src.start();
 
-    // enjoy listening
-    std::thread::sleep(std::time::Duration::from_secs(4));
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(4));
+    }
 }
