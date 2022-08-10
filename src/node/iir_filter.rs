@@ -151,28 +151,33 @@ impl IIRFilterNode {
     #[allow(clippy::cast_possible_truncation)]
     pub fn get_frequency_response(
         &self,
-        frequency_hz: &mut [f32],
+        frequency_hz: &[f32],
         mag_response: &mut [f32],
         phase_response: &mut [f32],
     ) {
-        self.validate_inputs(frequency_hz, mag_response, phase_response);
+        if frequency_hz.len() != mag_response.len() || mag_response.len() != phase_response.len() {
+            panic!("InvalidAccessError - Parameter lengths must match");
+        }
+
         let sample_rate = self.context().sample_rate() as f64;
+        let nquist = sample_rate / 2. ;
 
         for (i, &f) in frequency_hz.iter().enumerate() {
+            let freq = f64::from(f).clamp(0., nquist);
             let mut num: Complex<f64> = Complex::new(0., 0.);
             let mut denom: Complex<f64> = Complex::new(0., 0.);
 
             // 0 through 20 casts without loss of precision
             #[allow(clippy::cast_precision_loss)]
             for (idx, &ff) in self.feedforward.iter().enumerate() {
-                num += Complex::from_polar(ff, idx as f64 * -2.0 * PI * f64::from(f) / sample_rate);
+                num += Complex::from_polar(ff, idx as f64 * -2.0 * PI * freq / sample_rate);
             }
 
             // 0 through 20 casts without loss of precision
             #[allow(clippy::cast_precision_loss)]
             for (idx, &fb) in self.feedback.iter().enumerate() {
                 denom +=
-                    Complex::from_polar(fb, idx as f64 * -2.0 * PI * f64::from(f) / sample_rate);
+                    Complex::from_polar(fb, idx as f64 * -2.0 * PI * freq / sample_rate);
             }
 
             let h_f = num / denom;
@@ -181,33 +186,6 @@ impl IIRFilterNode {
             // And it is required by the specs
             mag_response[i] = h_f.norm() as f32;
             phase_response[i] = h_f.arg() as f32;
-        }
-    }
-
-    /// validates that the params given to `get_frequency_response` method
-    #[inline]
-    fn validate_inputs(
-        &self,
-        frequency_hz: &mut [f32],
-        mag_response: &mut [f32],
-        phase_response: &mut [f32],
-    ) {
-        assert_eq!(
-            frequency_hz.len(),
-            mag_response.len(),
-            " InvalidAccessError: All paramaters should be the same length"
-        );
-        assert_eq!(
-            mag_response.len(),
-            phase_response.len(),
-            " InvalidAccessError: All paramaters should be the same length"
-        );
-
-        // Ensures that given frequencies are in the correct range
-        let min = 0.;
-        let max = self.context().sample_rate() / 2.;
-        for f in frequency_hz.iter_mut() {
-            *f = f.clamp(min, max);
         }
     }
 }
@@ -371,7 +349,7 @@ impl IirFilterRenderer {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use float_eq::assert_float_eq;
     use realfft::num_traits::Zero;
     use std::{
@@ -394,16 +372,9 @@ mod test {
         {
             let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
-            let feedforward = vec![
-                0.000_016_636_797_512_844_526,
-                0.000_033_273_595_025_689_05,
-                0.000_016_636_797_512_844_526,
-            ];
-            let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
-
             let options = IIRFilterOptions {
-                feedback,
-                feedforward,
+                feedback: vec![1.; 3],
+                feedforward: vec![1.; 3],
                 channel_config: ChannelConfigOptions::default(),
             };
 
@@ -413,13 +384,8 @@ mod test {
         {
             let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
 
-            let feedforward = vec![
-                0.000_016_636_797_512_844_526,
-                0.000_033_273_595_025_689_05,
-                0.000_016_636_797_512_844_526,
-            ];
-            let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
-
+            let feedforward = vec![1.; 3];
+            let feedback = vec![1.; 3];
             let _biquad = context.create_iir_filter(feedforward, feedback);
         }
     }
@@ -465,85 +431,71 @@ mod test {
         assert_valid_feedback_coefs(&feedback);
     }
 
-    // #[test]
-    // #[should_panic]
-    // fn panics_when_not_the_same_length() {
-    //     let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-    //     let feedforward = vec![
-    //         0.000_016_636_797_512_844_526,
-    //         0.000_033_273_595_025_689_05,
-    //         0.000_016_636_797_512_844_526,
-    //     ];
-    //     let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
-
-    //     let options = IIRFilterOptions {
-    //         feedback,
-    //         feedforward,
-    //         channel_config: ChannelConfigOptions::default(),
-    //     };
-    //     let biquad = IIRFilterNode::new(&context, options);
-
-    //     let mut frequency_hz = [0.];
-    //     let mut mag_response = [0., 1.0];
-    //     let mut phase_response = [0.];
-
-    //     biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
-    // }
-
-    // #[test]
-    // #[should_panic]
-    // fn panics_when_not_the_same_length_2() {
-    //     let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-    //     let feedforward = vec![
-    //         0.000_016_636_797_512_844_526,
-    //         0.000_033_273_595_025_689_05,
-    //         0.000_016_636_797_512_844_526,
-    //     ];
-    //     let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
-
-    //     let options = IIRFilterOptions {
-    //         feedback,
-    //         feedforward,
-    //         channel_config: ChannelConfigOptions::default(),
-    //     };
-    //     let biquad = IIRFilterNode::new(&context, options);
-
-    //     let mut frequency_hz = [0.];
-    //     let mut mag_response = [0.];
-    //     let mut phase_response = [0., 1.0];
-
-    //     biquad.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
-    // }
-
     #[test]
-    fn frequencies_are_clamped() {
-        let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
-        let feedforward = vec![
-            0.000_016_636_797_512_844_526,
-            0.000_033_273_595_025_689_05,
-            0.000_016_636_797_512_844_526,
-        ];
-        let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
-
+    #[should_panic]
+    fn test_frequency_response_arguments() {
+        let context = OfflineAudioContext::new(2, 555, 44_100.);
         let options = IIRFilterOptions {
-            feedback,
-            feedforward,
+            feedback: vec![1.; 10],
+            feedforward: vec![1.; 10],
             channel_config: ChannelConfigOptions::default(),
         };
         let iir = IIRFilterNode::new(&context, options);
-        // It will be fine for the usual fs
-        #[allow(clippy::cast_precision_loss)]
-        let niquyst = context.sample_rate() / 2.0;
 
-        let mut frequency_hz = [-100., 1_000_000.];
-        let mut mag_response = [0., 0.];
-        let mut phase_response = [0., 0.];
+        let frequency_hz = [0.];
+        let mut mag_response = [0., 1.0];
+        let mut phase_response = [0.];
 
-        iir.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
-
-        let ref_arr = [0., niquyst];
-        assert_float_eq!(frequency_hz, ref_arr, abs_all <= 0.);
+        iir.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
     }
+
+    #[test]
+    #[should_panic]
+    fn test_frequency_response_arguments_2() {
+        let context = OfflineAudioContext::new(2, 555, 44_100.);
+        let options = IIRFilterOptions {
+            feedback: vec![1.; 10],
+            feedforward: vec![1.; 10],
+            channel_config: ChannelConfigOptions::default(),
+        };
+        let iir = IIRFilterNode::new(&context, options);
+
+        let frequency_hz = [0.];
+        let mut mag_response = [0.];
+        let mut phase_response = [0., 1.0];
+
+        iir.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
+    }
+
+    // #[test]
+    // fn frequencies_are_clamped() {
+    //     let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+    //     let feedforward = vec![
+    //         0.000_016_636_797_512_844_526,
+    //         0.000_033_273_595_025_689_05,
+    //         0.000_016_636_797_512_844_526,
+    //     ];
+    //     let feedback = vec![1.0, -1.988_430_010_622_553_9, 0.988_496_557_812_605_4];
+
+    //     let options = IIRFilterOptions {
+    //         feedback,
+    //         feedforward,
+    //         channel_config: ChannelConfigOptions::default(),
+    //     };
+    //     let iir = IIRFilterNode::new(&context, options);
+    //     // It will be fine for the usual fs
+    //     #[allow(clippy::cast_precision_loss)]
+    //     let niquyst = context.sample_rate() / 2.0;
+
+    //     let mut frequency_hz = [-100., 1_000_000.];
+    //     let mut mag_response = [0., 0.];
+    //     let mut phase_response = [0., 0.];
+
+    //     iir.get_frequency_response(&mut frequency_hz, &mut mag_response, &mut phase_response);
+
+    //     let ref_arr = [0., niquyst];
+    //     assert_float_eq!(frequency_hz, ref_arr, abs_all <= 0.);
+    // }
 
     #[test]
     fn check_get_frequency_response() {
