@@ -58,14 +58,10 @@ jobs:
       uses: actions/checkout@v2
       with:
         ref: master
-    - name: cargo install iai dependency
-      run: cargo add --dev iai
     - name: Run benchmarks for main branch
       run: cargo bench
     - name: Checkout PR
       uses: actions/checkout@v2
-    - name: cargo install iai dependency
-      run: cargo add --dev iai
     - name: Run bench against baseline
       run: cargo bench | tee bench.txt
     - name: Write result in PR
