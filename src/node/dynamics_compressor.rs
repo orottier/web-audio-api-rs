@@ -401,7 +401,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
         // if delayed signal is silent, there is no compression to apply
         // thus we can consider the node has reach is tail time. (TBC)
         if output.is_silent() {
-            output.make_silent(); // truncate to 1 channel is needed
+            output.make_silent(); // truncate to 1 channel if needed
             return false;
         }
 
