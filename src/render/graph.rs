@@ -23,9 +23,9 @@ pub struct Node {
     /// Renderer: converts inputs to outputs
     processor: Box<dyn AudioProcessor>,
     /// Reusable input buffers
-    inputs: Vec<AudioRenderQuantum>,
+    inputs: SmallVec<[AudioRenderQuantum; 2]>,
     /// Reusable output buffers, consumed by subsequent Nodes in this graph
-    outputs: Vec<AudioRenderQuantum>,
+    outputs: SmallVec<[AudioRenderQuantum; 2]>,
     /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
     /// Outgoing edges: tuple of outcoming node reference, our output index and their input index
@@ -109,8 +109,8 @@ impl Graph {
 
         // set input and output buffers to single channel of silence, will be upmixed when
         // necessary
-        let inputs = vec![AudioRenderQuantum::from(self.alloc.silence()); number_of_inputs];
-        let outputs = vec![AudioRenderQuantum::from(self.alloc.silence()); number_of_outputs];
+        let inputs = smallvec![AudioRenderQuantum::from(self.alloc.silence()); number_of_inputs];
+        let outputs = smallvec![AudioRenderQuantum::from(self.alloc.silence()); number_of_outputs];
 
         self.nodes.insert(
             index,
