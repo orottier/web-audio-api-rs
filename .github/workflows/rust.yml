@@ -50,3 +50,9 @@ jobs:
       env:
         RUSTDOCFLAGS: -D warnings
       run: cargo doc --no-deps --document-private-items --workspace --features cubeb
+
+    ## Benchmarks
+    - name: install valgrind for benchmarks
+      run: sudo apt-get install valgrind
+    - name: Run benchmarks
+      run: cargo bench
