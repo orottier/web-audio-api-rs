@@ -191,7 +191,7 @@ pub struct AudioRenderQuantum {
     channels: ArrayVec<AudioRenderQuantumChannel, MAX_CHANNELS>,
     // this field is only used by AudioParam so that when we know the param is
     // constant for a render_quantum it return a slice of length 1 instead of 128
-    is_single_valued: false,
+    is_single_valued: bool,
 }
 
 impl AudioRenderQuantum {
@@ -200,14 +200,17 @@ impl AudioRenderQuantum {
         let mut channels = ArrayVec::new();
         channels.push(channel);
 
-        Self { channels }
+        Self {
+            channels,
+            is_single_valued: false,
+        }
     }
 
-    pub(crate) fn is_single_valued() -> bool {
+    pub(crate) fn is_single_valued(&self) -> bool {
         self.is_single_valued
     }
 
-    pub(crate) fn set_is_single_valued(value: bool) {
+    pub(crate) fn set_is_single_valued(&mut self, value: bool) {
         self.is_single_valued = value;
     }
 

@@ -625,8 +625,6 @@ impl AudioParamProcessor {
     }
 
     fn mix_to_output(&mut self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
-        let output = output.channel_data_mut(0);
-
         if self.buffer.len() == 1 && input.is_silent() {
             let mut value = self.buffer[0];
 
@@ -635,18 +633,22 @@ impl AudioParamProcessor {
             }
 
             output.set_is_single_valued(true);
-            output[0] = value.clamp(self.min_value, self.max_value);
+
+            let output_channel = output.channel_data_mut(0);
+            output_channel[0] = value.clamp(self.min_value, self.max_value);
         } else {
-            // the param buffer is constant, but it must be modulated by an
-            // incoming signal
+            // the param buffer is constant but it should be modulated by an
+            // incoming signal, so we need to resize it to RENDER_QUANTUM_SIZE
             if self.buffer.len() == 1 {
                 self.buffer.resize(RENDER_QUANTUM_SIZE, self.buffer[0]);
             }
 
             output.set_is_single_valued(false);
-            output.copy_from_slice(self.buffer.as_slice());
 
-            output
+            let output_channel = output.channel_data_mut(0);
+            output_channel.copy_from_slice(self.buffer.as_slice());
+
+            output_channel
                 .iter_mut()
                 .zip(input.channel_data(0).iter())
                 .for_each(|(o, i)| {
@@ -3069,6 +3071,110 @@ mod tests {
     }
 
     #[test]
+    fn test_varying_param_size() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(0., 0.);
+        param.linear_ramp_to_value_at_time(9., 9.);
+
+        // first block should be length 10 (128 in real world)
+        let vs = render.compute_intrisic_values(0., 1., 10);
+        let expected = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9.];
+        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
+
+        // second block should have length 1
+        let vs = render.compute_intrisic_values(10., 1., 10);
+        let expected = [9.; 1];
+        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
+
+        // insert event in third block, should have length 0
+        param.set_value_at_time(1., 25.);
+        let vs = render.compute_intrisic_values(20., 1., 10);
+        let expected = [9., 9., 9., 9., 9., 1., 1., 1., 1., 1.];
+        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
+
+        // fourth block should have length 1
+        let vs = render.compute_intrisic_values(30., 1., 10);
+        let expected = [1.; 1];
+        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_varying_param_size_modulated() {
+        let alloc = Alloc::with_capacity(1);
+
+        // buffer length is 1 and input is silence (no modulation)
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (_param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            // no event in timeline, buffer length is 1
+            let vs = render.compute_intrisic_values(0., 1., 128);
+            assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
+
+            // mix to output step, input is silence
+            let signal = alloc.silence();
+            let input = AudioRenderQuantum::from(signal);
+
+            let signal = alloc.silence();
+            let mut output = AudioRenderQuantum::from(signal);
+
+            render.mix_to_output(&input, &mut output);
+
+            assert!(output.is_single_valued());
+            assert_float_eq!(output.channel_data(0)[0], 0., abs <= 0.);
+        }
+
+        // buffer length is 1 and input is non silent
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (_param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            // no event in timeline, buffer length is 1
+            let vs = render.compute_intrisic_values(0., 1., 128);
+            assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
+
+            // mix to output step, input is not silence
+            let signal = alloc.silence();
+            let mut input = AudioRenderQuantum::from(signal);
+            input.channel_data_mut(0)[0] = 1.;
+
+            let signal = alloc.silence();
+            let mut output = AudioRenderQuantum::from(signal);
+
+            render.mix_to_output(&input, &mut output);
+
+            let mut expected = [0.; 128];
+            expected[0] = 1.;
+
+            assert!(!output.is_single_valued());
+            assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
+        }
+    }
+
+    #[test]
     fn test_full_render_chain() {
         let alloc = Alloc::with_capacity(1);
         // prevent regression between the different processing stage
@@ -3112,75 +3218,4 @@ mod tests {
         assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
     }
 
-    #[test]
-    fn test_varying_param_size() {
-        let context = OfflineAudioContext::new(1, 0, 48000.);
-
-        let opts = AudioParamDescriptor {
-            automation_rate: AutomationRate::A,
-            default_value: 0.,
-            min_value: 0.,
-            max_value: 10.,
-        };
-        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-
-        param.set_value_at_time(0., 0.);
-        param.linear_ramp_to_value_at_time(9., 9.);
-
-        // first block should be length 10 (128 in real world)
-        let vs = render.compute_intrisic_values(0., 1., 10);
-        let expected = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9.];
-        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
-
-        // second block should have length 1
-        let vs = render.compute_intrisic_values(10., 1., 10);
-        let expected = [9.; 1];
-        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
-
-        // insert event in third block, should have length 0
-        param.set_value_at_time(1., 25.);
-        let vs = render.compute_intrisic_values(20., 1., 10);
-        let expected = [9., 9., 9., 9., 9., 1., 1., 1., 1., 1.];
-        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
-
-        // fourth block should have length 1
-        let vs = render.compute_intrisic_values(30., 1., 10);
-        let expected = [1.; 1];
-        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
-    }
-
-    #[test]
-    fn test_varying_param_size_modulated() {
-        let alloc = Alloc::with_capacity(1);
-
-        // buffer length is 1 and input is silence (no modulation)
-        {
-            // prevent regression between the different processing stage
-            let context = OfflineAudioContext::new(1, 0, 48000.);
-
-            let opts = AudioParamDescriptor {
-                automation_rate: AutomationRate::A,
-                default_value: 0.,
-                min_value: 0.,
-                max_value: 10.,
-            };
-            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-
-            // no event in timeline
-            let vs = render.compute_intrisic_values(0., 1., 10.);
-            assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
-
-            // mix to output step, input is silence
-            let signal = alloc.silence();
-            let mut input = AudioRenderQuantum::from(signal);
-
-            let signal = alloc.silence();
-            let mut output = AudioRenderQuantum::from(signal);
-
-            render.mix_to_output(&input, &mut output);
-
-            assert!(output.is_single_valued());
-            // assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
-        }
-    }
 }
