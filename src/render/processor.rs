@@ -5,6 +5,8 @@ use crate::context::AudioParamId;
 use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 
 use rustc_hash::FxHashMap;
+use std::cell::RefCell;
+use std::ops::Deref;
 
 #[non_exhaustive] // we may want to add user-provided blobs to this later
 /// The execution context of all AudioProcessors in a given AudioContext
@@ -54,26 +56,42 @@ pub trait AudioProcessor: Send {
     ) -> bool;
 }
 
+struct DerefAudioRenderQuantumChannel<'a>(std::cell::Ref<'a, Node>);
+
+impl Deref for DerefAudioRenderQuantumChannel<'_> {
+    type Target = [f32];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.get_buffer().channel_data(0).as_slice()
+    }
+}
+
 /// Accessor for current [`crate::param::AudioParam`] values
 ///
 /// Provided to implementations of [`AudioProcessor`] in the render thread
 pub struct AudioParamValues<'a> {
-    nodes: &'a FxHashMap<NodeIndex, Node>,
+    nodes: &'a FxHashMap<NodeIndex, RefCell<Node>>,
 }
 
 impl<'a> AudioParamValues<'a> {
-    pub(crate) fn from(nodes: &'a FxHashMap<NodeIndex, Node>) -> Self {
+    pub(crate) fn from(nodes: &'a FxHashMap<NodeIndex, RefCell<Node>>) -> Self {
         Self { nodes }
     }
 
-    pub(crate) fn get_raw(&self, index: &AudioParamId) -> &AudioRenderQuantum {
-        self.nodes.get(&index.into()).unwrap().get_buffer()
+    pub(crate) fn get_raw(&self, index: &AudioParamId) -> AudioRenderQuantum {
+        self.nodes
+            .get(&index.into())
+            .unwrap()
+            .borrow()
+            .get_buffer()
+            .clone()
     }
 
     /// Get the computed values for the given [`crate::param::AudioParam`]
     ///
     /// For both A & K-rate params, it will provide a slice of length [`crate::RENDER_QUANTUM_SIZE`]
-    pub fn get(&self, index: &AudioParamId) -> &[f32] {
-        &self.get_raw(index).channel_data(0)[..]
+    #[allow(clippy::missing_panics_doc)]
+    pub fn get(&self, index: &AudioParamId) -> impl std::ops::Deref<Target = [f32]> + '_ {
+        DerefAudioRenderQuantumChannel(self.nodes.get(&index.into()).unwrap().borrow())
     }
 }

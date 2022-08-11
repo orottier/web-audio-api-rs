@@ -6,6 +6,7 @@ use crate::render::RenderScope;
 
 use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
+use std::cell::RefCell;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -75,7 +76,7 @@ impl Node {
 /// The audio graph
 pub(crate) struct Graph {
     /// Processing Nodes
-    nodes: FxHashMap<NodeIndex, Node>,
+    nodes: FxHashMap<NodeIndex, RefCell<Node>>,
     /// Allocator for audio buffers
     alloc: Alloc,
 
@@ -121,7 +122,7 @@ impl Graph {
 
         self.nodes.insert(
             index,
-            Node {
+            RefCell::new(Node {
                 processor,
                 inputs,
                 outputs,
@@ -130,14 +131,15 @@ impl Graph {
                 free_when_finished: false,
                 has_inputs_connected: false,
                 cycle_breaker: None,
-            },
+            }),
         );
     }
 
     pub fn add_edge(&mut self, source: (NodeIndex, usize), dest: (NodeIndex, usize)) {
         self.nodes
-            .get_mut(&source.0)
+            .get(&source.0)
             .unwrap_or_else(|| panic!("cannot connect {:?} to {:?}", source, dest))
+            .borrow_mut()
             .outgoing_edges
             .push(OutgoingEdge {
                 self_index: source.1,
@@ -150,8 +152,9 @@ impl Graph {
 
     pub fn remove_edge(&mut self, source: NodeIndex, dest: NodeIndex) {
         self.nodes
-            .get_mut(&source)
+            .get(&source)
             .unwrap_or_else(|| panic!("cannot remove the edge from {:?} to {:?}", source, dest))
+            .borrow_mut()
             .outgoing_edges
             .retain(|edge| edge.other_id != dest);
 
@@ -159,14 +162,17 @@ impl Graph {
     }
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
-        let node = self
-            .nodes
-            .get_mut(&source)
-            .unwrap_or_else(|| panic!("cannot remove edges from {:?}", source));
-        node.outgoing_edges.clear();
+        self.nodes
+            .get(&source)
+            .unwrap_or_else(|| panic!("cannot remove edges from {:?}", source))
+            .borrow_mut()
+            .outgoing_edges
+            .clear();
 
-        self.nodes.values_mut().for_each(|node| {
-            node.outgoing_edges.retain(|edge| edge.other_id != source);
+        self.nodes.values().for_each(|node| {
+            node.borrow_mut()
+                .outgoing_edges
+                .retain(|edge| edge.other_id != source);
         });
 
         self.ordered.clear(); // void current ordering
@@ -176,8 +182,8 @@ impl Graph {
         // Issue #92, a race condition can occur for AudioParams. They may have already been
         // removed from the audio graph if the node they feed into was dropped.
         // Therefore, do not assume this node still exists:
-        if let Some(node) = self.nodes.get_mut(&index) {
-            node.free_when_finished = true;
+        if let Some(node) = self.nodes.get(&index) {
+            node.borrow_mut().free_when_finished = true;
         }
     }
 
@@ -241,6 +247,7 @@ impl Graph {
         self.nodes
             .get(&node_id)
             .unwrap()
+            .borrow()
             .outgoing_edges
             .iter()
             .for_each(|edge| {
@@ -329,7 +336,7 @@ impl Graph {
     }
 
     /// Render a single audio quantum by traversing the node list
-    pub fn render(&mut self, scope: &RenderScope) -> &AudioRenderQuantum {
+    pub fn render(&mut self, scope: &RenderScope) -> AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
             self.order_nodes();
@@ -338,14 +345,13 @@ impl Graph {
         // keep track of end-of-lifecyle nodes
         let mut nodes_dropped = false;
 
-        // split (mut) borrows
-        let ordered = &self.ordered;
+        // for borrow-checker reasons, move mutable borrow of nodes out of self
         let nodes = &mut self.nodes;
 
         // process every node, in topological sorted order
-        ordered.iter().for_each(|index| {
+        self.ordered.iter().for_each(|index| {
             // remove node from graph, re-insert later (for borrowck reasons)
-            let mut node = nodes.remove(index).unwrap();
+            let mut node = nodes.get(index).unwrap().borrow_mut();
 
             // make sure all input buffers have the correct number of channels, this might not be
             // the case if the node has no inputs connected or the channel count has just changed
@@ -365,24 +371,18 @@ impl Graph {
                 // audio params are connected to the 'hidden' usize::MAX output, ignore them here
                 .filter(|edge| edge.other_index != usize::MAX)
                 .for_each(|edge| {
-                    let output_node = nodes.get_mut(&edge.other_id).unwrap();
+                    let mut output_node = nodes.get(&edge.other_id).unwrap().borrow_mut();
                     output_node.has_inputs_connected = true;
                     let signal = &node.outputs[edge.self_index];
-                    let channel_config = &output_node.channel_config;
+                    let channel_config = &output_node.channel_config.clone();
 
                     output_node.inputs[edge.other_index].add(signal, channel_config);
                 });
 
-            // Check if we can decommission this node (end of life)
-            if node.can_free(tail_time) {
-                // Node is dropped, we should perform a new topological sort of the audio graph
-                nodes_dropped = true;
+            let can_free = node.can_free(tail_time);
 
-                // Nodes are only dropped when they do not have incoming connections.
-                // But they may have AudioParams feeding into them, these can de dropped too.
-                nodes.retain(|_id, n| !n.outgoing_edges.iter().any(|e| e.other_id == *index));
-            } else {
-                // Node is not dropped.
+            // Node is not dropped.
+            if !can_free {
                 // Reset input buffers as they will be summed up in the next render quantum.
                 node.inputs
                     .iter_mut()
@@ -390,9 +390,26 @@ impl Graph {
 
                 // Reset input state
                 node.has_inputs_connected = false;
+            }
 
-                // Re-insert node in graph
-                nodes.insert(*index, node);
+            drop(node); // release borrow of self.nodes
+
+            // Check if we can decommission this node (end of life)
+            if can_free {
+                // Node is dropped, remove it from the node list
+                nodes.remove(index);
+
+                // And remove it from the ordering after we have processed all nodes
+                nodes_dropped = true;
+
+                // Nodes are only dropped when they do not have incoming connections.
+                // But they may have AudioParams feeding into them, these can de dropped too.
+                nodes.retain(|_id, n| {
+                    !n.borrow()
+                        .outgoing_edges
+                        .iter()
+                        .any(|e| e.other_id == *index)
+                });
             }
         });
 
@@ -409,7 +426,7 @@ impl Graph {
         }
 
         // Return the output buffer of destination node
-        &self.nodes.get(&NodeIndex(0)).unwrap().outputs[0]
+        self.nodes.get(&NodeIndex(0)).unwrap().borrow().outputs[0].clone()
     }
 }
 

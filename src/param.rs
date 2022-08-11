@@ -917,14 +917,31 @@ impl AudioParamProcessor {
             // with intrisic value and calling time.
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
-            //
+            if self.event_timeline.is_empty()
+                && self.last_event.is_none()
+                && (event.event_type == AudioParamEventType::LinearRampToValueAtTime
+                    || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime)
+            {
+                let set_value_event = AudioParamEvent {
+                    event_type: AudioParamEventType::SetValue,
+                    value: self.intrisic_value,
+                    // make sure the event is applied before any other event, time
+                    // will be replaced by the block timestamp during event processing
+                    time: 0.,
+                    time_constant: None,
+                    cancel_time: None,
+                    duration: None,
+                    values: None,
+                };
+
+                self.event_timeline.push(set_value_event);
+            }
+
             // for SetTarget, this behavior is not per se specified, but it allows
             // to make sure we have a stable start_value available without having
             // to store it elsewhere.
             if self.event_timeline.is_empty()
-                && (event.event_type == AudioParamEventType::LinearRampToValueAtTime
-                    || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime
-                    || event.event_type == AudioParamEventType::SetTargetAtTime)
+                && event.event_type == AudioParamEventType::SetTargetAtTime
             {
                 let set_value_event = AudioParamEvent {
                     event_type: AudioParamEventType::SetValue,
@@ -1068,6 +1085,7 @@ impl AudioParamProcessor {
                                             diff,
                                             time,
                                         );
+
                                         self.buffer.push(value);
 
                                         time += dt;
@@ -1894,6 +1912,41 @@ mod tests {
     }
 
     #[test]
+    fn test_linear_ramp_start_time() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -10.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(1., 0.);
+        param.linear_ramp_to_value_at_time(-1., 10.);
+        let vs = render.compute_intrisic_values(0., 1., 10);
+        assert_float_eq!(
+            vs,
+            &[1., 0.8, 0.6, 0.4, 0.2, 0., -0.2, -0.4, -0.6, -0.8][..],
+            abs_all <= 1e-7
+        );
+
+        let vs = render.compute_intrisic_values(10., 1., 10);
+        assert_float_eq!(vs, &[-1.; 10][..], abs_all <= 0.);
+
+        // start time should be end time of last event, i.e. 10.
+        param.linear_ramp_to_value_at_time(1., 30.);
+
+        let vs = render.compute_intrisic_values(20., 1., 10);
+        assert_float_eq!(
+            vs,
+            &[0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9][..],
+            abs_all <= 1e-7
+        );
+    }
+
+    #[test]
     fn test_exponential_ramp_a_rate() {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
@@ -2115,6 +2168,45 @@ mod tests {
             let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
         }
+    }
+
+    #[test]
+    fn test_exponential_ramp_start_time() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -10.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(0., 0.);
+        param.linear_ramp_to_value_at_time(1., 10.);
+
+        let vs = render.compute_intrisic_values(0., 1., 10);
+        assert_float_eq!(
+            vs,
+            &[0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9][..],
+            abs_all <= 1e-7
+        );
+
+        let vs = render.compute_intrisic_values(10., 1., 10);
+        assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
+
+        // start time should be end time of last event, i.e. 10.
+        param.exponential_ramp_to_value_at_time(0.0001, 30.);
+        let vs = render.compute_intrisic_values(20., 1., 10);
+        // compute expected on 20 samples, the 10 last ones should be in vs
+        let start: f32 = 1.;
+        let end: f32 = 0.0001;
+        let mut res = [0.; 20];
+        for (t, v) in res.iter_mut().enumerate() {
+            *v = start * (end / start).powf(t as f32 / 20.);
+        }
+
+        assert_float_eq!(vs, &res[10..], abs_all <= 1e-7);
     }
 
     #[test]

@@ -125,7 +125,7 @@ impl RenderThread {
             // render audio graph
             let rendered = self.graph.render(&scope);
 
-            buf.extend_alloc(rendered);
+            buf.extend_alloc(&rendered);
         }
 
         buf
@@ -186,7 +186,7 @@ impl RenderThread {
             };
 
             // render audio graph
-            let mut rendered = self.graph.render(&scope).clone();
+            let mut rendered = self.graph.render(&scope);
 
             // online AudioContext allows channel count to be less than no of hardware channels
             if rendered.number_of_channels() != self.number_of_channels {

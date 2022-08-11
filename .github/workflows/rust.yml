@@ -16,7 +16,14 @@ jobs:
 
     steps:
     # checkout repo, install dependencies
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    # restore cargo cache from previous runs
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2.0.0
+
     - name: install alsa (sound driver) and cmake
       run: sudo apt-get update && sudo apt-get install libasound2-dev cmake
     - name: update rustc
@@ -45,3 +52,35 @@ jobs:
       env:
         RUSTDOCFLAGS: -D warnings
       run: cargo doc --no-deps --document-private-items --workspace --features cubeb
+
+    ## Benchmarks
+    - name: install valgrind for benchmarks
+      run: sudo apt-get install valgrind
+    - name: Checkout main branch
+      run: git checkout main
+    - name: Run benchmarks for main branch
+      run: cargo bench
+    - name: Checkout PR branch
+      run: git checkout -
+    - name: Run bench against baseline
+      run: cargo bench | sed '0,/^test result:/d' | tee bench.txt
+
+    - name: Write result in PR
+      uses: actions/github-script@v5
+      with:
+        script: |
+          const fs = require('fs');
+
+          // read the output file
+          const iai_feature = fs.readFileSync("bench.txt", {encoding:'utf8', flag:'r'});
+
+          // form message
+          const message = 'Benchmark result:\n\n' + iai_feature;
+
+          // post comment
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: message
+          })

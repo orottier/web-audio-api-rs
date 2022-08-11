@@ -390,11 +390,20 @@ impl AudioProcessor for DynamicsCompressorRenderer {
         // store input in delay line
         self.ring_buffer[self.ring_index] = input;
 
-        // apply
+        // apply compression to delayed signal
         let read_index = (self.ring_index + 1) % ring_size;
         let delayed = &self.ring_buffer[read_index];
 
+        self.ring_index = read_index;
+
         *output = delayed.clone();
+
+        // if delayed signal is silent, there is no compression to apply
+        // thus we can consider the node has reach is tail time. (TBC)
+        if output.is_silent() {
+            output.make_silent(); // truncate to 1 channel if needed
+            return false;
+        }
 
         output.channels_mut().iter_mut().for_each(|channel| {
             channel
@@ -403,9 +412,6 @@ impl AudioProcessor for DynamicsCompressorRenderer {
                 .for_each(|(o, g)| *o *= g);
         });
 
-        self.ring_index = read_index;
-
-        // has tail time
         true
     }
 }
@@ -459,7 +465,7 @@ mod tests {
         let sample_rate = 44_100.;
         let compressor_delay = 0.006;
         // index of the first non zero sample, rounded at next block after
-        // compressor theoretical delay
+        // compressor theoretical delay, i.e. 3 blocks at this sample_rate
         let non_zero_index = (compressor_delay * sample_rate / RENDER_QUANTUM_SIZE as f32).ceil()
             as usize
             * RENDER_QUANTUM_SIZE;
@@ -481,12 +487,14 @@ mod tests {
         let res = context.start_rendering_sync();
         let chan = res.channel_data(0).as_slice();
 
+        // this is the delay
         assert_float_eq!(
             chan[0..non_zero_index],
             vec![0.; non_zero_index][..],
             abs_all <= 0.
         );
 
+        // as some compresssion is applied, we just check the remaining is non zero
         for sample in chan.iter().take(128 * 8).skip(non_zero_index) {
             assert!(*sample != 0.);
         }
