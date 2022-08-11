@@ -2592,7 +2592,6 @@ mod tests {
             // cancels the ramp, the set value event is kept in timeline
             param.cancel_scheduled_values(10.);
 
-
             let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
         }
@@ -3088,23 +3087,23 @@ mod tests {
         // first block should be length 10 (128 in real world)
         let vs = render.compute_intrisic_values(0., 1., 10);
         let expected = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9.];
-        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
+        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
         // second block should have length 1
         let vs = render.compute_intrisic_values(10., 1., 10);
         let expected = [9.; 1];
-        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
+        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
         // insert event in third block, should have length 0
         param.set_value_at_time(1., 25.);
         let vs = render.compute_intrisic_values(20., 1., 10);
         let expected = [9., 9., 9., 9., 9., 1., 1., 1., 1., 1.];
-        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
+        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
         // fourth block should have length 1
         let vs = render.compute_intrisic_values(30., 1., 10);
         let expected = [1.; 1];
-        assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
+        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
     }
 
     #[test]
@@ -3217,5 +3216,4 @@ mod tests {
 
         assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
     }
-
 }

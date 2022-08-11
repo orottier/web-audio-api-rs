@@ -1,6 +1,7 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
@@ -99,13 +100,24 @@ impl AudioProcessor for GainRenderer {
             return false;
         }
 
-        let gain_values = params.get(&self.gain);
+        let gain = params.get(&self.gain);
+
+        if gain.len() == 1 {
+            if gain[0] == 0. {
+                output.make_silent();
+                return false;
+            } else if gain[0] == 1. {
+                *output = input.clone();
+                return false;
+            }
+        }
+
         *output = input.clone();
 
         output.modify_channels(|channel| {
             channel
                 .iter_mut()
-                .zip(gain_values.iter())
+                .zip(gain.iter().cycle().take(RENDER_QUANTUM_SIZE))
                 .for_each(|(o, g)| *o *= g);
         });
 

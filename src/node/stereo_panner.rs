@@ -239,39 +239,73 @@ impl AudioProcessor for StereoPannerRenderer {
         match input.number_of_channels() {
             0 => (),
             1 => {
-                left.iter_mut()
-                    .zip(right.iter_mut())
-                    .zip(pan_values.iter())
-                    .zip(input.channel_data(0).iter())
-                    .for_each(|(((l, r), pan), input)| {
-                        let x = (pan + 1.) * 0.5;
-                        let [gain_left, gain_right] = get_stereo_gains(x);
+                if pan_values.len() == 1 {
+                    let pan = pan_values[0];
+                    let x = (pan + 1.) * 0.5;
+                    let [gain_left, gain_right] = get_stereo_gains(x);
 
-                        *l = input * gain_left;
-                        *r = input * gain_right;
-                    });
+                    left.iter_mut()
+                        .zip(right.iter_mut())
+                        .zip(input.channel_data(0).iter())
+                        .for_each(|((l, r), input)| {
+                            *l = input * gain_left;
+                            *r = input * gain_right;
+                        });
+                } else {
+                    left.iter_mut()
+                        .zip(right.iter_mut())
+                        .zip(pan_values.iter())
+                        .zip(input.channel_data(0).iter())
+                        .for_each(|(((l, r), pan), input)| {
+                            let x = (pan + 1.) * 0.5;
+                            let [gain_left, gain_right] = get_stereo_gains(x);
+
+                            *l = input * gain_left;
+                            *r = input * gain_right;
+                        });
+                }
             }
             2 => {
-                left.iter_mut()
-                    .zip(right.iter_mut())
-                    .zip(pan_values.iter())
-                    .zip(input.channel_data(0).iter())
-                    .zip(input.channel_data(1).iter())
-                    .for_each(|((((l, r), &pan), &input_left), &input_right)| {
-                        if pan <= 0. {
-                            let x = pan + 1.;
-                            let [gain_left, gain_right] = get_stereo_gains(x);
+                if pan_values.len() == 1 {
+                    let pan = pan_values[0];
+                    let x = if pan <= 0. { pan + 1. } else { pan };
+                    let [gain_left, gain_right] = get_stereo_gains(x);
 
-                            *l = input_right.mul_add(gain_left, input_left);
-                            *r = input_right * gain_right;
-                        } else {
-                            let x = pan;
-                            let [gain_left, gain_right] = get_stereo_gains(x);
+                    left.iter_mut()
+                        .zip(right.iter_mut())
+                        .zip(input.channel_data(0).iter())
+                        .zip(input.channel_data(1).iter())
+                        .for_each(|(((l, r), &input_left), &input_right)| {
+                            if pan <= 0. {
+                                *l = input_right.mul_add(gain_left, input_left);
+                                *r = input_right * gain_right;
+                            } else {
+                                *l = input_left * gain_left;
+                                *r = input_left.mul_add(gain_right, input_right);
+                            }
+                        });
+                } else {
+                    left.iter_mut()
+                        .zip(right.iter_mut())
+                        .zip(pan_values.iter())
+                        .zip(input.channel_data(0).iter())
+                        .zip(input.channel_data(1).iter())
+                        .for_each(|((((l, r), &pan), &input_left), &input_right)| {
+                            if pan <= 0. {
+                                let x = pan + 1.;
+                                let [gain_left, gain_right] = get_stereo_gains(x);
 
-                            *l = input_left * gain_left;
-                            *r = input_left.mul_add(gain_right, input_right);
-                        }
-                    });
+                                *l = input_right.mul_add(gain_left, input_left);
+                                *r = input_right * gain_right;
+                            } else {
+                                let x = pan;
+                                let [gain_left, gain_right] = get_stereo_gains(x);
+
+                                *l = input_left * gain_left;
+                                *r = input_left.mul_add(gain_right, input_right);
+                            }
+                        });
+                }
             }
             _ => panic!("StereoPannerNode should not have more than 2 channels to process"),
         }

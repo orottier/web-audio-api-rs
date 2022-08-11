@@ -609,12 +609,13 @@ impl AudioProcessor for BiquadFilterRenderer {
         let mut current_gain = gain[0];
         let mut current_coefs = Coefficients::default();
 
+        // @todo - optimization only compute coefs once if all params have length == 1
         coefs_list
             .iter_mut()
-            .zip(frequency.iter())
-            .zip(detune.iter())
-            .zip(q.iter())
-            .zip(gain.iter())
+            .zip(frequency.iter().cycle().take(RENDER_QUANTUM_SIZE))
+            .zip(detune.iter().cycle().take(RENDER_QUANTUM_SIZE))
+            .zip(q.iter().cycle().take(RENDER_QUANTUM_SIZE))
+            .zip(gain.iter().cycle().take(RENDER_QUANTUM_SIZE))
             .enumerate()
             .for_each(|(index, ((((coefs, &f), &d), &q), &g))| {
                 // recompute coefs only if param change, done at least once per block

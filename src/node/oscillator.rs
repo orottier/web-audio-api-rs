@@ -377,49 +377,52 @@ impl AudioProcessor for OscillatorRenderer {
             start_time = current_time;
         }
 
-        for (index, output_sample) in channel_data.iter_mut().enumerate() {
-            if current_time < start_time || current_time >= stop_time {
-                *output_sample = 0.;
-                current_time += dt;
+        channel_data
+            .iter_mut()
+            .zip(frequency_values.iter().cycle().take(RENDER_QUANTUM_SIZE))
+            .zip(detune_values.iter().cycle().take(RENDER_QUANTUM_SIZE))
+            .for_each(|((o, &frequency), &detune)| {
+                if current_time < start_time || current_time >= stop_time {
+                    *o = 0.;
+                    current_time += dt;
 
-                continue;
-            }
-
-            let frequency = frequency_values[index];
-            let detune = detune_values[index];
-            let computed_frequency = frequency * (detune / 1200.).exp2();
-
-            // first sample to render
-            if !self.started {
-                // if start time was between last frame and current frame
-                // we need to adjust the phase first
-                if current_time > start_time {
-                    let phase_incr = computed_frequency as f64 / sample_rate;
-                    let ratio = (current_time - start_time) / dt;
-                    self.phase = Self::unroll_phase(phase_incr * ratio);
+                    return;
                 }
 
-                self.started = true;
-            }
+                // @todo: we could avoid recompute that if both param lengths are 0
+                let computed_frequency = frequency * (detune / 1200.).exp2();
 
-            let phase_incr = computed_frequency as f64 / sample_rate;
+                // first sample to render
+                if !self.started {
+                    // if start time was between last frame and current frame
+                    // we need to adjust the phase first
+                    if current_time > start_time {
+                        let phase_incr = computed_frequency as f64 / sample_rate;
+                        let ratio = (current_time - start_time) / dt;
+                        self.phase = Self::unroll_phase(phase_incr * ratio);
+                    }
 
-            // @note: per spec all default oscillators should be rendered from a
-            // wavetable, define if it worth the assle...
-            // e.g. for now `generate_sine` and `generate_custom` are almost the sames
-            // cf. https://webaudio.github.io/web-audio-api/#oscillator-coefficients
-            *output_sample = match type_ {
-                OscillatorType::Sine => self.generate_sine(),
-                OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
-                OscillatorType::Square => self.generate_square(phase_incr),
-                OscillatorType::Triangle => self.generate_triangle(),
-                OscillatorType::Custom => self.generate_custom(),
-            };
+                    self.started = true;
+                }
 
-            current_time += dt;
+                let phase_incr = computed_frequency as f64 / sample_rate;
 
-            self.phase = Self::unroll_phase(self.phase + phase_incr);
-        }
+                // @note: per spec all default oscillators should be rendered from a
+                // wavetable, define if it worth the assle...
+                // e.g. for now `generate_sine` and `generate_custom` are almost the sames
+                // cf. https://webaudio.github.io/web-audio-api/#oscillator-coefficients
+                *o = match type_ {
+                    OscillatorType::Sine => self.generate_sine(),
+                    OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
+                    OscillatorType::Square => self.generate_square(phase_incr),
+                    OscillatorType::Triangle => self.generate_triangle(),
+                    OscillatorType::Custom => self.generate_custom(),
+                };
+
+                current_time += dt;
+
+                self.phase = Self::unroll_phase(self.phase + phase_incr);
+            });
 
         true
     }
