@@ -137,9 +137,9 @@ impl Graph {
 
     pub fn add_edge(&mut self, source: (NodeIndex, usize), dest: (NodeIndex, usize)) {
         self.nodes
-            .get(&source.0)
+            .get_mut(&source.0)
             .unwrap_or_else(|| panic!("cannot connect {:?} to {:?}", source, dest))
-            .borrow_mut()
+            .get_mut()
             .outgoing_edges
             .push(OutgoingEdge {
                 self_index: source.1,
@@ -152,9 +152,9 @@ impl Graph {
 
     pub fn remove_edge(&mut self, source: NodeIndex, dest: NodeIndex) {
         self.nodes
-            .get(&source)
+            .get_mut(&source)
             .unwrap_or_else(|| panic!("cannot remove the edge from {:?} to {:?}", source, dest))
-            .borrow_mut()
+            .get_mut()
             .outgoing_edges
             .retain(|edge| edge.other_id != dest);
 
@@ -163,14 +163,14 @@ impl Graph {
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
         self.nodes
-            .get(&source)
+            .get_mut(&source)
             .unwrap_or_else(|| panic!("cannot remove edges from {:?}", source))
-            .borrow_mut()
+            .get_mut()
             .outgoing_edges
             .clear();
 
-        self.nodes.values().for_each(|node| {
-            node.borrow_mut()
+        self.nodes.values_mut().for_each(|node| {
+            node.get_mut()
                 .outgoing_edges
                 .retain(|edge| edge.other_id != source);
         });
@@ -182,13 +182,13 @@ impl Graph {
         // Issue #92, a race condition can occur for AudioParams. They may have already been
         // removed from the audio graph if the node they feed into was dropped.
         // Therefore, do not assume this node still exists:
-        if let Some(node) = self.nodes.get(&index) {
-            node.borrow_mut().free_when_finished = true;
+        if let Some(node) = self.nodes.get_mut(&index) {
+            node.get_mut().free_when_finished = true;
         }
     }
 
     pub fn mark_cycle_breaker(&mut self, index: NodeIndex, notify: Arc<AtomicBool>) {
-        self.nodes.get_mut(&index).unwrap().cycle_breaker = Some(notify);
+        self.nodes.get_mut(&index).unwrap().get_mut().cycle_breaker = Some(notify);
     }
 
     /// Helper function for `order_nodes` - traverse node and outgoing edges
@@ -206,7 +206,7 @@ impl Graph {
             // check if we can find some node that can break the cycle
             let cycle_breaker_node = marked_temp.iter().skip(pos).find(|node_id| {
                 let node = self.nodes.get(node_id).unwrap();
-                match node.cycle_breaker.as_ref() {
+                match node.borrow_mut().cycle_breaker.take() {
                     None => false,
                     Some(notify) => {
                         notify.store(true, Ordering::SeqCst);
@@ -316,7 +316,7 @@ impl Graph {
         // clear the outgoing edges of the nodes that have been recognized as cycle breaker
         cycle_breakers.iter().for_each(|node_id| {
             let node = self.nodes.get_mut(node_id).unwrap();
-            node.outgoing_edges.clear();
+            node.get_mut().outgoing_edges.clear();
         });
 
         // Remove nodes from the ordering if they are part of a cycle. The spec mandates that their
@@ -350,7 +350,7 @@ impl Graph {
 
         // process every node, in topological sorted order
         self.ordered.iter().for_each(|index| {
-            // remove node from graph, re-insert later (for borrowck reasons)
+            // acquire a mutable borrow of the current processing node
             let mut node = nodes.get(index).unwrap().borrow_mut();
 
             // make sure all input buffers have the correct number of channels, this might not be
@@ -426,7 +426,7 @@ impl Graph {
         }
 
         // Return the output buffer of destination node
-        self.nodes.get(&NodeIndex(0)).unwrap().borrow().outputs[0].clone()
+        self.nodes.get_mut(&NodeIndex(0)).unwrap().get_mut().outputs[0].clone()
     }
 }
 
