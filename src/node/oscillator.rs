@@ -49,7 +49,7 @@ impl Default for OscillatorOptions {
 }
 
 /// Type of the waveform rendered by an `OscillatorNode`
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum OscillatorType {
     /// Sine wave
     Sine,
