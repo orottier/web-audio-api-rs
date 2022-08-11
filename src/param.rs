@@ -1004,8 +1004,9 @@ impl AudioParamProcessor {
             }
         }
 
+        let next_block_time = dt.mul_add(count as f64, block_time);
+
         loop {
-            let next_block_time = dt.mul_add(count as f64, block_time);
             let some_event = self.event_timeline.peek();
 
             match some_event {
