@@ -6,6 +6,9 @@ use crate::render::AudioProcessor;
 
 use crossbeam_channel::Sender;
 
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+
 /// Commands from the control thread to the render thread
 pub(crate) enum ControlMessage {
     /// Register a new node in the audio graph
@@ -26,17 +29,29 @@ pub(crate) enum ControlMessage {
     },
 
     /// Clear the connection between two given nodes in the audio graph
-    DisconnectNode { from: u64, to: u64 },
+    DisconnectNode {
+        from: u64,
+        to: u64,
+    },
 
     /// Disconnect this node from the audio graph (drop all its connections)
-    DisconnectAll { from: u64 },
+    DisconnectAll {
+        from: u64,
+    },
 
     /// Notify the render thread this node is dropped in the control thread
-    FreeWhenFinished { id: u64 },
+    FreeWhenFinished {
+        id: u64,
+    },
 
     /// Pass an AudioParam AutomationEvent to the relevant node
     AudioParamEvent {
         to: Sender<AudioParamEvent>,
         event: AudioParamEvent,
+    },
+
+    MarkCycleBreaker {
+        id: u64,
+        notify: Arc<AtomicBool>,
     },
 }

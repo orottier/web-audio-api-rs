@@ -26,10 +26,6 @@ pub struct RenderScope {
 ///
 /// Check the `examples/worklet.rs` file for example usage of this trait.
 pub trait AudioProcessor: Send {
-    fn can_break_cycle(&self) -> bool {
-        false
-    }
-
     /// Audio processing function
     ///
     /// # Arguments

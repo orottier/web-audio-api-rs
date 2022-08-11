@@ -7,6 +7,9 @@ use crate::render::RenderScope;
 use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 /// Connection between two audio nodes
 struct OutgoingEdge {
     /// index of the current Nodes output port
@@ -33,6 +36,8 @@ pub struct Node {
     free_when_finished: bool,
     /// Indicates if the node has any incoming connections (for lifecycle management)
     has_inputs_connected: bool,
+    /// Indicates if the node can act as a cycle breaker (only DelayNode for now)
+    cycle_breaker: Option<Arc<AtomicBool>>,
 }
 
 impl Node {
@@ -124,6 +129,7 @@ impl Graph {
                 outgoing_edges: smallvec![],
                 free_when_finished: false,
                 has_inputs_connected: false,
+                cycle_breaker: None,
             },
         );
     }
@@ -175,6 +181,10 @@ impl Graph {
         }
     }
 
+    pub fn mark_cycle_breaker(&mut self, index: NodeIndex, notify: Arc<AtomicBool>) {
+        self.nodes.get_mut(&index).unwrap().cycle_breaker = Some(notify);
+    }
+
     /// Helper function for `order_nodes` - traverse node and outgoing edges
     fn visit(
         &self,
@@ -190,7 +200,13 @@ impl Graph {
             // check if we can find some node that can break the cycle
             let cycle_breaker_node = marked_temp.iter().skip(pos).find(|node_id| {
                 let node = self.nodes.get(node_id).unwrap();
-                node.processor.can_break_cycle()
+                match node.cycle_breaker.as_ref() {
+                    None => false,
+                    Some(notify) => {
+                        notify.store(true, Ordering::SeqCst);
+                        true
+                    }
+                }
             });
 
             match cycle_breaker_node {

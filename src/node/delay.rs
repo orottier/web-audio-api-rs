@@ -8,6 +8,7 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretatio
 use std::cell::{Cell, RefCell, RefMut};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Options for constructing a [`DelayNode`]
 // dictionary DelayOptions : AudioNodeOptions {
@@ -215,7 +216,7 @@ impl DelayNode {
         let last_written_index_clone = last_written_index.clone();
 
         // shared bool that defined if the node has been found in a cycle
-        let in_cycle = Rc::new(AtomicBool::new(false));
+        let in_cycle = Arc::new(AtomicBool::new(false));
         let in_cycle_clone = in_cycle.clone();
 
         let node = context.register(move |writer_registration| {
@@ -253,7 +254,6 @@ impl DelayNode {
                 ring_buffer: shared_ring_buffer,
                 index: 0,
                 last_written_index,
-                in_cycle,
             };
 
             (node, Box::new(writer_render))
@@ -264,6 +264,7 @@ impl DelayNode {
         // connect Writer to Reader to guarantee order of processing and enable
         // sub-quantum delay. If found in cycle this connection will be deleted
         // by the graph and the minimum delay clamped to one render quantum
+        context.base().mark_cycle_breaker(writer_id, in_cycle);
         context.base().connect(writer_id, reader_id, 0, 0);
 
         node
@@ -279,7 +280,6 @@ struct DelayWriter {
     ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
     last_written_index: Rc<Cell<Option<usize>>>,
-    in_cycle: Rc<AtomicBool>,
 }
 
 struct DelayReader {
@@ -289,7 +289,7 @@ struct DelayReader {
     last_written_index: Rc<Cell<Option<usize>>>,
     // local copy of shared `last_written_index` so as to avoid render ordering issues
     last_written_index_checked: Option<usize>,
-    in_cycle: Rc<AtomicBool>,
+    in_cycle: Arc<AtomicBool>,
 }
 
 // SAFETY:
@@ -340,11 +340,6 @@ impl RingBufferChecker for DelayWriter {
 }
 
 impl AudioProcessor for DelayWriter {
-    fn can_break_cycle(&self) -> bool {
-        self.in_cycle.store(true, Ordering::SeqCst);
-        true
-    }
-
     fn process(
         &mut self,
         inputs: &[AudioRenderQuantum],
