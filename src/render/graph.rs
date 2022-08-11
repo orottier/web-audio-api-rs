@@ -206,7 +206,7 @@ impl Graph {
             // check if we can find some node that can break the cycle
             let cycle_breaker_node = marked_temp.iter().skip(pos).find(|node_id| {
                 let node = self.nodes.get(node_id).unwrap();
-                match node.borrow_mut().cycle_breaker.take() {
+                match node.borrow().cycle_breaker.as_ref() {
                     None => false,
                     Some(notify) => {
                         notify.store(true, Ordering::SeqCst);
