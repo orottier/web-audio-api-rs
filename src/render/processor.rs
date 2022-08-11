@@ -62,7 +62,13 @@ impl Deref for DerefAudioRenderQuantumChannel<'_> {
     type Target = [f32];
 
     fn deref(&self) -> &Self::Target {
-        self.0.get_buffer().channel_data(0).as_slice()
+        let buffer = self.0.get_buffer();
+
+        if buffer.is_single_valued() {
+            &buffer.channel_data(0).as_slice()[..1]
+        } else {
+            buffer.channel_data(0).as_slice()
+        }
     }
 }
 
@@ -89,7 +95,9 @@ impl<'a> AudioParamValues<'a> {
 
     /// Get the computed values for the given [`crate::param::AudioParam`]
     ///
-    /// For both A & K-rate params, it will provide a slice of length [`crate::RENDER_QUANTUM_SIZE`]
+    /// For k-rate params or if the (a-rate) parameter is constant for this block, it will
+    /// provide a slice of length 1. In other cases, i.e. a-rate param with scheduled
+    /// automations it will provide a slice of length [`crate::RENDER_QUANTUM_SIZE`]
     #[allow(clippy::missing_panics_doc)]
     pub fn get(&self, index: &AudioParamId) -> impl std::ops::Deref<Target = [f32]> + '_ {
         DerefAudioRenderQuantumChannel(self.nodes.get(&index.into()).unwrap().borrow())
