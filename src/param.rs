@@ -626,20 +626,39 @@ impl AudioParamProcessor {
 
     fn mix_to_output(&mut self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
         let output = output.channel_data_mut(0);
-        output.copy_from_slice(self.buffer.as_slice());
 
-        output
-            .iter_mut()
-            .zip(input.channel_data(0).iter())
-            .for_each(|(o, i)| {
-                *o += i;
+        if self.buffer.len() == 1 && input.is_silent() {
+            let mut value = self.buffer[0];
 
-                if o.is_nan() {
-                    *o = self.default_value;
-                }
+            if value.is_nan() {
+                value = self.default_value;
+            }
 
-                *o = o.clamp(self.min_value, self.max_value)
-            });
+            output.set_is_single_valued(true);
+            output[0] = value.clamp(self.min_value, self.max_value);
+        } else {
+            // the param buffer is constant, but it must be modulated by an
+            // incoming signal
+            if self.buffer.len() == 1 {
+                self.buffer.resize(RENDER_QUANTUM_SIZE, self.buffer[0]);
+            }
+
+            output.set_is_single_valued(false);
+            output.copy_from_slice(self.buffer.as_slice());
+
+            output
+                .iter_mut()
+                .zip(input.channel_data(0).iter())
+                .for_each(|(o, i)| {
+                    *o += i;
+
+                    if o.is_nan() {
+                        *o = self.default_value;
+                    }
+
+                    *o = o.clamp(self.min_value, self.max_value)
+                });
+        }
     }
 
     // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
@@ -962,7 +981,6 @@ impl AudioParamProcessor {
     }
 
     fn compute_buffer(&mut self, block_time: f64, dt: f64, count: usize) {
-        println!("{:?}", self.event_timeline.inner);
         // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
         let clamped = self.intrisic_value.clamp(self.min_value, self.max_value);
@@ -3129,5 +3147,40 @@ mod tests {
         let vs = render.compute_intrisic_values(30., 1., 10);
         let expected = [1.; 1];
         assert_float_eq!(&vs[..], &expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_varying_param_size_modulated() {
+        let alloc = Alloc::with_capacity(1);
+
+        // buffer length is 1 and input is silence (no modulation)
+        {
+            // prevent regression between the different processing stage
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            // no event in timeline
+            let vs = render.compute_intrisic_values(0., 1., 10.);
+            assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
+
+            // mix to output step, input is silence
+            let signal = alloc.silence();
+            let mut input = AudioRenderQuantum::from(signal);
+
+            let signal = alloc.silence();
+            let mut output = AudioRenderQuantum::from(signal);
+
+            render.mix_to_output(&input, &mut output);
+
+            assert!(output.is_single_valued());
+            // assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
+        }
     }
 }
