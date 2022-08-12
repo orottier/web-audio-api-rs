@@ -204,8 +204,10 @@ impl ConcreteBaseAudioContext {
     }
 
     /// Inform render thread that this node can act as a cycle breaker
-    pub(crate) fn mark_cycle_breaker(&self, id: &AudioNodeId, notify: Arc<AtomicBool>) {
-        let message = ControlMessage::MarkCycleBreaker { id: id.0, notify };
+    #[doc(hidden)]
+    pub fn mark_cycle_breaker(&self, reg: &AudioContextRegistration, notify: Arc<AtomicBool>) {
+        let id = reg.id().0;
+        let message = ControlMessage::MarkCycleBreaker { id, notify };
 
         // Sending the message will fail when the render thread has already shut down.
         // This is fine

@@ -264,7 +264,9 @@ impl DelayNode {
         // connect Writer to Reader to guarantee order of processing and enable
         // sub-quantum delay. If found in cycle this connection will be deleted
         // by the graph and the minimum delay clamped to one render quantum
-        context.base().mark_cycle_breaker(writer_id, in_cycle);
+        context
+            .base()
+            .mark_cycle_breaker(&node.writer_registration, in_cycle);
         context.base().connect(writer_id, reader_id, 0, 0);
 
         node
