@@ -90,6 +90,8 @@ pub(crate) struct Graph {
     in_cycle: Vec<NodeIndex>,
     /// Topological sorting helper
     cycle_breakers: Vec<NodeIndex>,
+    /// When sorting, we may apply cycle breakers which should trigger a new sort
+    cycle_breaker_applied: RefCell<bool>,
 }
 
 impl Graph {
@@ -102,6 +104,7 @@ impl Graph {
             in_cycle: vec![],
             cycle_breakers: vec![],
             alloc: Alloc::with_capacity(64),
+            cycle_breaker_applied: Default::default(),
         }
     }
 
@@ -222,6 +225,8 @@ impl Graph {
                     // remove nodes from mark temp after pos
                     marked_temp.truncate(pos);
 
+                    *self.cycle_breaker_applied.borrow_mut() = true;
+
                     return;
                 }
                 None => {
@@ -279,9 +284,22 @@ impl Graph {
     ///
     /// The goals are:
     /// - Perform a topological sort of the graph
-    /// - Mute nodes that are in a cycle
+    /// - Break cycles when possible (if there is a DelayNode present)
+    /// - Mute nodes that are still in a cycle
     /// - For performance: no new allocations (reuse Vecs)
     fn order_nodes(&mut self) {
+        loop {
+            // when a cycle breaker is applied, the graph topology changes and we need to run the
+            // ordering again
+            *self.cycle_breaker_applied.get_mut() = false;
+            self.order_nodes_inner();
+            if !*self.cycle_breaker_applied.get_mut() {
+                break;
+            }
+        }
+    }
+
+    fn order_nodes_inner(&mut self) {
         // For borrowck reasons, we need the `visit` call to be &self.
         // So move out the bookkeeping Vecs, and pass them around as &mut.
         let mut ordered = std::mem::take(&mut self.ordered);
