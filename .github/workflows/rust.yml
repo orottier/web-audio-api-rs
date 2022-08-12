@@ -70,13 +70,14 @@ jobs:
     ## Save results
     ## see https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
     - name: Save PR number and bench results
-        run: |
-          mkdir -p ./pr
-          echo ${{ github.event.number }} > ./pr/pr_number.txt
-      - uses: actions/upload-artifact@v2
-        with:
-          name: pr
-          path: pr/
+      run: |
+        mkdir -p ./pr
+        echo ${{ github.event.number }} > ./pr/pr_number.txt
+        mv bench.txt ./pr/bench.txt
+    - uses: actions/upload-artifact@v2
+      with:
+        name: pr
+        path: pr/
 
 
 
