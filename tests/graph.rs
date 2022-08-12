@@ -3,7 +3,42 @@ use web_audio_api::node::{AudioNode, ChannelConfig};
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use web_audio_api::RENDER_QUANTUM_SIZE;
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+
+type Label = u32;
+
+fn test_ordering(nodes: &[Label], edges: &[[Label; 2]], test: impl Fn(Vec<Label>)) {
+    for _ in 0..10 {
+        // shuffle inputs because graph ordering may depend on initial ordering
+        let mut nodes = nodes.to_vec();
+        let mut edges = edges.to_vec();
+        let mut rng = thread_rng();
+        nodes.shuffle(&mut rng);
+        edges.shuffle(&mut rng);
+
+        let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, 44_100.);
+        let collect = Arc::new(Mutex::new(vec![]));
+
+        let map: HashMap<_, _> = nodes
+            .into_iter()
+            .map(|l| (l, DebugNode::new(&context, l, collect.clone())))
+            .collect();
+        edges.iter().for_each(|[s, d]| {
+            let source = map.get(s).unwrap();
+            let dest = map.get(d).unwrap();
+            source.connect(dest);
+        });
+
+        let _ = context.start_rendering_sync();
+        let results = Arc::try_unwrap(collect).unwrap().into_inner().unwrap();
+        dbg!(&results);
+        (test)(results);
+    }
+}
 
 struct DebugNode {
     registration: AudioContextRegistration,
@@ -29,16 +64,9 @@ impl AudioNode for DebugNode {
 }
 
 impl DebugNode {
-    fn new<C: BaseAudioContext>(
-        context: &C,
-        name: impl ToString,
-        collect: Arc<Mutex<Vec<String>>>,
-    ) -> Self {
+    fn new<C: BaseAudioContext>(context: &C, name: Label, collect: Arc<Mutex<Vec<Label>>>) -> Self {
         context.register(move |registration| {
-            let render = DebugProcessor {
-                name: name.to_string(),
-                collect,
-            };
+            let render = DebugProcessor { name, collect };
 
             let node = DebugNode {
                 registration,
@@ -51,8 +79,8 @@ impl DebugNode {
 }
 
 struct DebugProcessor {
-    name: String,
-    collect: Arc<Mutex<Vec<String>>>,
+    name: Label,
+    collect: Arc<Mutex<Vec<Label>>>,
 }
 
 impl AudioProcessor for DebugProcessor {
@@ -63,70 +91,53 @@ impl AudioProcessor for DebugProcessor {
         _params: AudioParamValues,
         _scope: &RenderScope,
     ) -> bool {
-        self.collect.lock().unwrap().push(self.name.clone());
+        self.collect.lock().unwrap().push(self.name);
         true
     }
 }
 
-/*
- +---+     +---+     +---+     +---+
- | 1 | --> | 2 | --> | 3 | --> | D |
- +---+     +---+     +---+     +---+
-*/
-#[test]
-fn sort_linear() {
-    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, 44_100.);
-    let collect = Arc::new(Mutex::new(vec![]));
-
-    let first = DebugNode::new(&context, "1", collect.clone());
-    let second = DebugNode::new(&context, "2", collect.clone());
-    let third = DebugNode::new(&context, "3", collect.clone());
-
-    first.connect(&second);
-    second.connect(&third);
-
-    let _ = context.start_rendering_sync();
-    assert_eq!(
-        &collect.lock().unwrap()[..],
-        ["1".to_string(), "2".to_string(), "3".to_string(),]
-    );
+fn pos(v: Label, list: &[Label]) -> usize {
+    list.iter().position(|&x| x == v).unwrap()
 }
 
 /*
- +----+     +----+     +---+     +---+
- | 1A | --> | 1B | --> | 3 | --> | D |
- +----+     +----+     +---+     +---+
+ +---+     +---+     +---+
+ | 1 | --> | 2 | --> | 3 |
+ +---+     +---+     +---+
+*/
+#[test]
+fn sort_linear() {
+    test_ordering(&[1, 2, 3], &[[1, 2], [2, 3]], |result| {
+        assert_eq!(result, [1, 2, 3])
+    });
+}
+
+/*
+ +----+     +----+     +---+
+ | 10 | --> | 11 | --> | 3 |
+ +----+     +----+     +---+
                          ^
  +----+     +----+       |
- | 2A | --> | 2B | ------+
+ | 20 | --> | 21 | ------+
  +----+     +----+
 */
 #[test]
 fn sort_fork() {
-    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, 44_100.);
-    let collect = Arc::new(Mutex::new(vec![]));
+    test_ordering(
+        &[10, 11, 20, 21, 3],
+        &[[10, 11], [11, 3], [20, 21], [21, 3]],
+        |result| {
+            let pos10 = pos(10, &result);
+            let pos11 = pos(11, &result);
+            let pos20 = pos(20, &result);
+            let pos21 = pos(21, &result);
+            let pos3 = pos(3, &result);
 
-    let one_a = DebugNode::new(&context, "1A", collect.clone());
-    let one_b = DebugNode::new(&context, "1B", collect.clone());
-    let two_a = DebugNode::new(&context, "2A", collect.clone());
-    let two_b = DebugNode::new(&context, "2B", collect.clone());
-    let three = DebugNode::new(&context, "3", collect.clone());
-
-    one_a.connect(&one_b);
-    one_b.connect(&three);
-    two_a.connect(&two_b);
-    two_b.connect(&three);
-
-    let _ = context.start_rendering_sync();
-    assert_eq!(
-        &collect.lock().unwrap()[..],
-        [
-            "1A".to_string(),
-            "1B".to_string(),
-            "2A".to_string(),
-            "2B".to_string(),
-            "3".to_string(),
-        ]
+            assert!(pos10 < pos11);
+            assert!(pos20 < pos21);
+            assert!(pos11 < pos3);
+            assert!(pos21 < pos3);
+        },
     );
 }
 
@@ -144,22 +155,7 @@ fn sort_fork() {
 */
 #[test]
 fn sort_mute_cycle() {
-    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, 44_100.);
-    let collect = Arc::new(Mutex::new(vec![]));
-
-    let one = DebugNode::new(&context, "1", collect.clone());
-    let two = DebugNode::new(&context, "2", collect.clone());
-    let three = DebugNode::new(&context, "3", collect.clone());
-    let four = DebugNode::new(&context, "4", collect.clone());
-
-    one.connect(&two);
-    two.connect(&three);
-    three.connect(&two);
-    two.connect(&four);
-
-    let _ = context.start_rendering_sync();
-    assert_eq!(
-        &collect.lock().unwrap()[..],
-        ["1".to_string(), "4".to_string(),]
-    );
+    test_ordering(&[1, 2, 3, 4], &[[1, 2], [2, 3], [3, 2], [2, 4]], |result| {
+        assert_eq!(result, &[1, 4])
+    });
 }
