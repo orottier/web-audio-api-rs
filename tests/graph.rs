@@ -173,6 +173,20 @@ fn sort_fork() {
 }
 
 /*
+   +-------------------+
+   |                   v
+ +---+     +---+     +---+
+ | 1 | --> | 2 | --> | 3 |
+ +---+     +---+     +---+
+*/
+#[test]
+fn sort_no_cyle() {
+    test_ordering(&[1, 2, 3], &[[1, 2], [2, 3], [1, 3]], |result| {
+        assert_eq!(result, [1, 2, 3])
+    });
+}
+
+/*
              +---------+
              v         |
  +---+     +---+     +---+
@@ -219,6 +233,49 @@ fn sort_cycle_breaker() {
             assert!(pos1 < pos2);
             assert!(pos2 < pos3);
             assert!(pos2 < pos4);
+        },
+    );
+}
+
+/*
+ +---+     +----------+     +---+
+ | 1 | --> | 2: delay | --> | 3 |
+ +---+     +----------+     +---+
+*/
+#[test]
+fn sort_dont_break_cycle_if_possible() {
+    test_ordering_with_cycle_breakers(&[1, 2, 3], &[2], &[[1, 2], [2, 3]], |result| {
+        assert_eq!(result, [1, 2, 3])
+    });
+}
+
+/*
++---+     +----------+     +----------+
+| 1 | --> |          | --> | 3: delay |
++---+     |          |     +----------+
+          |    2     |       |
+          |          | <-----+
++---+     |          |
+| 5 | <-- |          | <+
++---+     +----------+  |
+            |           |
+            |           |
+            v           |
+          +----------+  |
+          | 4: delay | -+
+          +----------+
+*/
+#[test]
+fn sort_two_cycles() {
+    test_ordering_with_cycle_breakers(
+        &[1, 2, 3, 4, 5],
+        &[3, 4],
+        &[[1, 2], [2, 3], [3, 2], [2, 5], [2, 4], [4, 2]],
+        |result| {
+            // cycle is broken, which clears the edges 3 -> 2 and 4 -> 2
+            assert_eq!(result[0], 1);
+            assert_eq!(result[1], 2);
+            assert_eq!(result.len(), 5); // all nodes present
         },
     );
 }
