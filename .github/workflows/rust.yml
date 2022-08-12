@@ -73,7 +73,6 @@ jobs:
         run: |
           mkdir -p ./pr
           echo ${{ github.event.number }} > ./pr/pr_number.txt
-          mv bench.txt ./pr/bench.txt
       - uses: actions/upload-artifact@v2
         with:
           name: pr
