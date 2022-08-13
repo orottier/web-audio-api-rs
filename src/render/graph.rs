@@ -87,8 +87,6 @@ pub(crate) struct Graph {
     in_cycle: Vec<NodeIndex>,
     /// Topological sorting helper
     cycle_breakers: Vec<NodeIndex>,
-    /// When sorting, we may apply cycle breakers which should trigger a new sort
-    cycle_breaker_applied: RefCell<bool>,
 }
 
 impl Graph {
@@ -101,7 +99,6 @@ impl Graph {
             in_cycle: vec![],
             cycle_breakers: vec![],
             alloc: Alloc::with_capacity(64),
-            cycle_breaker_applied: Default::default(),
         }
     }
 
@@ -192,6 +189,10 @@ impl Graph {
     }
 
     /// Helper function for `order_nodes` - traverse node and outgoing edges
+    ///
+    /// The return value indicates `cycle_breaker_applied`:
+    /// - true: a cycle was found and a cycle breaker was applied, current ordering is invalidated
+    /// - false: visiting this leg was successful and no topological changes were applied
     fn visit(
         &self,
         node_id: NodeIndex,
@@ -200,7 +201,7 @@ impl Graph {
         ordered: &mut Vec<NodeIndex>,
         in_cycle: &mut Vec<NodeIndex>,
         cycle_breakers: &mut Vec<NodeIndex>,
-    ) {
+    ) -> bool {
         // If this node is in the cycle detection list, it is part of a cycle!
         if let Some(pos) = marked_temp.iter().position(|&m| m == node_id) {
             // check if we can find some node that can break the cycle
@@ -213,25 +214,21 @@ impl Graph {
                 Some(&node_id) => {
                     // store node id to clear the node outgoing edges
                     cycle_breakers.push(node_id);
-                    // remove nodes from mark temp after pos
-                    marked_temp.truncate(pos);
 
-                    *self.cycle_breaker_applied.borrow_mut() = true;
-
-                    return;
+                    return true;
                 }
                 None => {
                     // Mark all nodes in the cycle
                     in_cycle.extend_from_slice(&marked_temp[pos..]);
                     // Do not continue, as we already have visited all these nodes
-                    return;
+                    return false;
                 }
             }
         }
 
         // Do not visit nodes multiple times
         if marked.contains(&node_id) {
-            return;
+            return false;
         }
 
         // Add node to the visited list
@@ -240,28 +237,34 @@ impl Graph {
         marked_temp.push(node_id);
 
         // Visit outgoing nodes, and call `visit` on them recursively
-        self.nodes
+        for edge in self
+            .nodes
             .get(&node_id)
             .unwrap()
             .borrow()
             .outgoing_edges
             .iter()
-            .for_each(|edge| {
-                self.visit(
-                    edge.other_id,
-                    marked,
-                    marked_temp,
-                    ordered,
-                    in_cycle,
-                    cycle_breakers,
-                )
-            });
+        {
+            let cycle_breaker_applied = self.visit(
+                edge.other_id,
+                marked,
+                marked_temp,
+                ordered,
+                in_cycle,
+                cycle_breakers,
+            );
+            if cycle_breaker_applied {
+                return true;
+            }
+        }
 
         // Then add this node to the ordered list
         ordered.push(node_id);
 
         // Finished visiting all nodes in this leg, clear the current cycle detection list
         marked_temp.retain(|marked| *marked != node_id);
+
+        false
     }
 
     /// Determine the order of the audio nodes for rendering
@@ -279,18 +282,6 @@ impl Graph {
     /// - Mute nodes that are still in a cycle
     /// - For performance: no new allocations (reuse Vecs)
     fn order_nodes(&mut self) {
-        loop {
-            // when a cycle breaker is applied, the graph topology changes and we need to run the
-            // ordering again
-            *self.cycle_breaker_applied.get_mut() = false;
-            self.order_nodes_inner();
-            if !*self.cycle_breaker_applied.get_mut() {
-                break;
-            }
-        }
-    }
-
-    fn order_nodes_inner(&mut self) {
         // For borrowck reasons, we need the `visit` call to be &self.
         // So move out the bookkeeping Vecs, and pass them around as &mut.
         let mut ordered = std::mem::take(&mut self.ordered);
@@ -299,34 +290,49 @@ impl Graph {
         let mut in_cycle = std::mem::take(&mut self.in_cycle);
         let mut cycle_breakers = std::mem::take(&mut self.cycle_breakers);
 
-        // Clear previous administration
-        ordered.clear();
-        marked.clear();
-        marked_temp.clear();
-        in_cycle.clear();
-        cycle_breakers.clear();
+        // When a cycle breaker is applied, the graph topology changes and we need to run the
+        // ordering again
+        loop {
+            // Clear previous administration
+            ordered.clear();
+            marked.clear();
+            marked_temp.clear();
+            in_cycle.clear();
+            cycle_breakers.clear();
 
-        // Visit all registered nodes, and perform a depth first traversal.
-        //
-        // We cannot just start from the AudioDestinationNode and visit all nodes connecting to it,
-        // since the audio graph could contain legs detached from the destination and those should
-        // still be rendered.
-        self.nodes.keys().for_each(|&node_id| {
-            self.visit(
-                node_id,
-                &mut marked,
-                &mut marked_temp,
-                &mut ordered,
-                &mut in_cycle,
-                &mut cycle_breakers,
-            );
-        });
+            // Visit all registered nodes, and perform a depth first traversal.
+            //
+            // We cannot just start from the AudioDestinationNode and visit all nodes connecting to it,
+            // since the audio graph could contain legs detached from the destination and those should
+            // still be rendered.
+            let mut cycle_breaker_applied = false;
+            for &node_id in self.nodes.keys() {
+                cycle_breaker_applied = self.visit(
+                    node_id,
+                    &mut marked,
+                    &mut marked_temp,
+                    &mut ordered,
+                    &mut in_cycle,
+                    &mut cycle_breakers,
+                );
 
-        // clear the outgoing edges of the nodes that have been recognized as cycle breaker
-        cycle_breakers.iter().for_each(|node_id| {
-            let node = self.nodes.get_mut(node_id).unwrap();
-            node.get_mut().outgoing_edges.clear();
-        });
+                if cycle_breaker_applied {
+                    break;
+                }
+            }
+
+            if cycle_breaker_applied {
+                // clear the outgoing edges of the nodes that have been recognized as cycle breaker
+                cycle_breakers.iter().for_each(|node_id| {
+                    let node = self.nodes.get_mut(node_id).unwrap();
+                    node.get_mut().outgoing_edges.clear();
+                });
+
+                continue;
+            }
+
+            break;
+        }
 
         // Remove nodes from the ordering if they are part of a cycle. The spec mandates that their
         // outputs should be silenced, but with our rendering algorithm that is not necessary.
