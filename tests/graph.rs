@@ -275,3 +275,37 @@ fn sort_two_cycles() {
         },
     );
 }
+
+/*
+            +---------+    +---------+
+            v         |    v         |
++---+     +---+     +----------+   +---+
+| 1 | --> | 2 | --> | 3: delay |   | 4 |
++---+     +---+     +----------+   +---+
+            |            |           |
+            v            +-----------+
+          +---+
+          | 5 |
+          +---+
+*/
+#[test]
+fn sort_one_breaker_for_two_cycles() {
+    test_ordering_with_cycle_breakers(
+        &[1, 2, 3, 4, 5],
+        &[3],
+        &[[1, 2], [2, 3], [3, 2], [2, 5], [3, 4], [4, 3]],
+        |result| {
+            // cycle is broken, which clears the edges 3 -> 2 and 3 -> 4
+            assert_eq!(result.len(), 5); // all nodes present
+
+            let pos1 = pos(1, &result);
+            let pos2 = pos(2, &result);
+            let pos3 = pos(3, &result);
+            let pos4 = pos(4, &result);
+            // 1, 2 and 4 feed into 3
+            assert!(pos1 < pos2);
+            assert!(pos2 < pos3);
+            assert!(pos4 < pos3);
+        },
+    );
+}
