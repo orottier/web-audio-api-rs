@@ -4,7 +4,6 @@ use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum
 use web_audio_api::RENDER_QUANTUM_SIZE;
 
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use rand::seq::SliceRandom;
@@ -99,10 +98,7 @@ impl DebugNode {
         });
 
         if cycle_breaker {
-            let in_cycle = Arc::new(AtomicBool::new(false));
-            context
-                .base()
-                .mark_cycle_breaker(node.registration(), in_cycle);
+            context.base().mark_cycle_breaker(node.registration());
         }
 
         node

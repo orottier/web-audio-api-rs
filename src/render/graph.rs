@@ -8,9 +8,6 @@ use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
 use std::cell::RefCell;
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-
 /// Connection between two audio nodes
 struct OutgoingEdge {
     /// index of the current Nodes output port
@@ -38,7 +35,7 @@ pub struct Node {
     /// Indicates if the node has any incoming connections (for lifecycle management)
     has_inputs_connected: bool,
     /// Indicates if the node can act as a cycle breaker (only DelayNode for now)
-    cycle_breaker: Option<Arc<AtomicBool>>,
+    cycle_breaker: bool,
 }
 
 impl Node {
@@ -133,7 +130,7 @@ impl Graph {
                 outgoing_edges: smallvec![],
                 free_when_finished: false,
                 has_inputs_connected: false,
-                cycle_breaker: None,
+                cycle_breaker: false,
             }),
         );
     }
@@ -190,8 +187,8 @@ impl Graph {
         }
     }
 
-    pub fn mark_cycle_breaker(&mut self, index: NodeIndex, notify: Arc<AtomicBool>) {
-        self.nodes.get_mut(&index).unwrap().get_mut().cycle_breaker = Some(notify);
+    pub fn mark_cycle_breaker(&mut self, index: NodeIndex) {
+        self.nodes.get_mut(&index).unwrap().get_mut().cycle_breaker = true;
     }
 
     /// Helper function for `order_nodes` - traverse node and outgoing edges
@@ -207,16 +204,10 @@ impl Graph {
         // If this node is in the cycle detection list, it is part of a cycle!
         if let Some(pos) = marked_temp.iter().position(|&m| m == node_id) {
             // check if we can find some node that can break the cycle
-            let cycle_breaker_node = marked_temp.iter().skip(pos).find(|node_id| {
-                let node = self.nodes.get(node_id).unwrap();
-                match node.borrow().cycle_breaker.as_ref() {
-                    None => false,
-                    Some(notify) => {
-                        notify.store(true, Ordering::SeqCst);
-                        true
-                    }
-                }
-            });
+            let cycle_breaker_node = marked_temp
+                .iter()
+                .skip(pos)
+                .find(|node_id| self.nodes.get(node_id).unwrap().borrow().cycle_breaker);
 
             match cycle_breaker_node {
                 Some(&node_id) => {

@@ -6,9 +6,6 @@ use crate::render::AudioProcessor;
 
 use crossbeam_channel::Sender;
 
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-
 /// Commands from the control thread to the render thread
 pub(crate) enum ControlMessage {
     /// Register a new node in the audio graph
@@ -52,6 +49,5 @@ pub(crate) enum ControlMessage {
 
     MarkCycleBreaker {
         id: u64,
-        notify: Arc<AtomicBool>,
     },
 }

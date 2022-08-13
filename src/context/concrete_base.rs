@@ -13,7 +13,7 @@ use crate::spatial::AudioListenerParams;
 use crate::AudioListener;
 
 use crossbeam_channel::Sender;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// The struct that corresponds to the Javascript `BaseAudioContext` object.
@@ -205,9 +205,9 @@ impl ConcreteBaseAudioContext {
 
     /// Inform render thread that this node can act as a cycle breaker
     #[doc(hidden)]
-    pub fn mark_cycle_breaker(&self, reg: &AudioContextRegistration, notify: Arc<AtomicBool>) {
+    pub fn mark_cycle_breaker(&self, reg: &AudioContextRegistration) {
         let id = reg.id().0;
-        let message = ControlMessage::MarkCycleBreaker { id, notify };
+        let message = ControlMessage::MarkCycleBreaker { id };
 
         // Sending the message will fail when the render thread has already shut down.
         // This is fine

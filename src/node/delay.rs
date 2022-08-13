@@ -7,8 +7,7 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretatio
 
 use std::cell::{Cell, RefCell, RefMut};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Options for constructing a [`DelayNode`]
 // dictionary DelayOptions : AudioNodeOptions {
@@ -215,9 +214,10 @@ impl DelayNode {
         let last_written_index = Rc::new(Cell::<Option<usize>>::new(None));
         let last_written_index_clone = last_written_index.clone();
 
-        // shared bool that defined if the node has been found in a cycle
-        let in_cycle = Arc::new(AtomicBool::new(false));
-        let in_cycle_clone = in_cycle.clone();
+        // shared value for reader/writer to determine who was rendered first,
+        // this will indicate if the delay node acts as a cycle breaker
+        let latest_frame_written = Rc::new(AtomicU64::new(u64::MAX));
+        let latest_frame_written_clone = latest_frame_written.clone();
 
         let node = context.register(move |writer_registration| {
             let node = context.register(move |reader_registration| {
@@ -237,7 +237,7 @@ impl DelayNode {
                     index: 0,
                     last_written_index: last_written_index_clone,
                     last_written_index_checked: None,
-                    in_cycle: in_cycle_clone,
+                    latest_frame_written: latest_frame_written_clone,
                 };
 
                 let node = DelayNode {
@@ -254,6 +254,7 @@ impl DelayNode {
                 ring_buffer: shared_ring_buffer,
                 index: 0,
                 last_written_index,
+                latest_frame_written,
             };
 
             (node, Box::new(writer_render))
@@ -264,9 +265,7 @@ impl DelayNode {
         // connect Writer to Reader to guarantee order of processing and enable
         // sub-quantum delay. If found in cycle this connection will be deleted
         // by the graph and the minimum delay clamped to one render quantum
-        context
-            .base()
-            .mark_cycle_breaker(&node.writer_registration, in_cycle);
+        context.base().mark_cycle_breaker(&node.writer_registration);
         context.base().connect(writer_id, reader_id, 0, 0);
 
         node
@@ -281,6 +280,7 @@ impl DelayNode {
 struct DelayWriter {
     ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
+    latest_frame_written: Rc<AtomicU64>,
     last_written_index: Rc<Cell<Option<usize>>>,
 }
 
@@ -288,10 +288,10 @@ struct DelayReader {
     delay_time: AudioParamId,
     ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
+    latest_frame_written: Rc<AtomicU64>,
     last_written_index: Rc<Cell<Option<usize>>>,
     // local copy of shared `last_written_index` so as to avoid render ordering issues
     last_written_index_checked: Option<usize>,
-    in_cycle: Arc<AtomicBool>,
 }
 
 // SAFETY:
@@ -347,7 +347,7 @@ impl AudioProcessor for DelayWriter {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues,
-        _scope: &RenderScope,
+        scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let input = inputs[0].clone();
@@ -364,13 +364,16 @@ impl AudioProcessor for DelayWriter {
         let mut buffer = self.ring_buffer.borrow_mut();
         buffer[self.index] = input;
 
-        // increment cursor
+        // increment cursor and last written frame
         self.index = (self.index + 1) % buffer.capacity();
+        self.latest_frame_written
+            .store(scope.current_frame, Ordering::SeqCst);
+
         // The writer end does not produce output,
         // clear the buffer so that it can be re-used
         output.make_silent();
 
-        // let the node be decommisionned if it has no input left
+        // let the node be decommisioned if it has no input left
         false
     }
 }
@@ -432,7 +435,9 @@ impl AudioProcessor for DelayReader {
         let quantum_duration = RENDER_QUANTUM_SIZE as f64 * dt;
 
         let delay_param = params.get(&self.delay_time);
-        let in_cycle = self.in_cycle.load(Ordering::SeqCst);
+
+        let latest_frame_written = self.latest_frame_written.load(Ordering::SeqCst);
+        let in_cycle = latest_frame_written != scope.current_frame;
 
         let ring_size = ring_buffer.len() as i32;
         let ring_index = self.index as i32;
@@ -527,7 +532,7 @@ impl AudioProcessor for DelayReader {
             return false;
         }
 
-        // check if the writer has been decommisionned
+        // check if the writer has been decommissioned
         // we need this local copy because if the writer has been processed
         // before the reader, the direct check against `self.last_written_index`
         // would be true earlier than we want
