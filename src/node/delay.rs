@@ -969,7 +969,7 @@ mod tests {
         // full render quantum.
         {
             let delay = context.create_delay(1.);
-            delay.delay_time.set_value(64 as f32 / sample_rate);
+            delay.delay_time.set_value(64_f32 / sample_rate);
             delay.connect(&context.destination());
 
             // emit 120 samples
