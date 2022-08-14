@@ -22,7 +22,8 @@ jobs:
     - name: Install rust
       uses: actions-rs/toolchain@v1
       with:
-          components: rustfmt, clippy
+        toolchain: stable
+        components: rustfmt, clippy
 
     # restore cargo cache from previous runs
     - name: Rust Cache
@@ -66,7 +67,8 @@ jobs:
     - name: Install rust
       uses: actions-rs/toolchain@v1
       with:
-          components: rustfmt, clippy
+        toolchain: stable
+        profile: minimal
 
     # restore cargo cache from previous runs
     - name: Rust Cache
