@@ -949,4 +949,34 @@ mod tests {
             assert_float_eq!(channel[..], expected[..], abs_all <= 1e-5);
         }
     }
+
+    #[test]
+    fn test_subquantum_delay_dynamic_lifetime() {
+        let sample_rate = 48000.;
+        let context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
+
+        // Setup a source that emits for 120 frames, so it deallocates after the first render
+        // quantum. Delay the signal with 64 frames. Deallocation of the delay writer might trick
+        // the delay reader into thinking it is part of a cycle, and would clamp the delay to a
+        // full render quantum.
+        {
+            let delay = context.create_delay(1.);
+            delay.delay_time.set_value(64 as f32 / sample_rate);
+            delay.connect(&context.destination());
+
+            // emit 120 samples
+            let src = context.create_constant_source();
+            src.connect(&delay);
+            src.start_at(0.);
+            src.stop_at(120. / sample_rate as f64);
+        } // drop all nodes, trigger dynamic lifetimes
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; 3 * 128];
+        expected[64..64 + 120].fill(1.);
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 1e-5);
+    }
 }

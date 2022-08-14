@@ -186,7 +186,8 @@ impl AudioProcessor for ConstantSourceRenderer {
             current_time += dt;
         }
 
-        true
+        // tail_time false when output has ended this quantum
+        stop_time > next_block_time
     }
 }
 
