@@ -236,6 +236,7 @@ impl DelayNode {
                     ring_buffer: shared_ring_buffer_clone,
                     index: 0,
                     last_written_index: last_written_index_clone,
+                    in_cycle: false,
                     last_written_index_checked: None,
                     latest_frame_written: latest_frame_written_clone,
                 };
@@ -289,6 +290,7 @@ struct DelayReader {
     ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
     latest_frame_written: Rc<AtomicU64>,
+    in_cycle: bool,
     last_written_index: Rc<Cell<Option<usize>>>,
     // local copy of shared `last_written_index` so as to avoid render ordering issues
     last_written_index_checked: Option<usize>,
@@ -436,8 +438,14 @@ impl AudioProcessor for DelayReader {
 
         let delay_param = params.get(&self.delay_time);
 
-        let latest_frame_written = self.latest_frame_written.load(Ordering::SeqCst);
-        let in_cycle = latest_frame_written != scope.current_frame;
+        if !self.in_cycle {
+            // check the latest written frame by the delay writer
+            let latest_frame_written = self.latest_frame_written.load(Ordering::SeqCst);
+            // if the delay writer has not rendered before us, the cycle breaker has been applied
+            self.in_cycle = latest_frame_written != scope.current_frame;
+            // once we store in_cycle = true, we do not want to go back to false
+            // https://github.com/orottier/web-audio-api-rs/pull/198#discussion_r945326200
+        }
 
         let ring_size = ring_buffer.len() as i32;
         let ring_index = self.index as i32;
@@ -461,7 +469,7 @@ impl AudioProcessor for DelayReader {
                         // param is already clamped to max_delay_time internally
                         let mut delay = f64::from(*delay);
                         // if delay is in cycle, minimum delay is one quantum
-                        if in_cycle {
+                        if self.in_cycle {
                             delay = delay.max(quantum_duration);
                         }
 
