@@ -1,4 +1,4 @@
-name: Comment on the pull request
+name: Post benchmark results
 
 # read-write repo token
 # access to secrets
@@ -7,7 +7,9 @@ name: Comment on the pull request
 # see https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
 on:
   workflow_run:
-    workflows: ["Rust"]
+    branches-ignore:
+      - 'main'
+    workflows: ["Build"]
     types:
       - completed
 
