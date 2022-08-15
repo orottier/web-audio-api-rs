@@ -34,6 +34,8 @@ pub struct Node {
     free_when_finished: bool,
     /// Indicates if the node has any incoming connections (for lifecycle management)
     has_inputs_connected: bool,
+    /// Indicates if the node can act as a cycle breaker (only DelayNode for now)
+    cycle_breaker: bool,
 }
 
 impl Node {
@@ -83,6 +85,8 @@ pub(crate) struct Graph {
     marked_temp: Vec<NodeIndex>,
     /// Topological sorting helper
     in_cycle: Vec<NodeIndex>,
+    /// Topological sorting helper
+    cycle_breakers: Vec<NodeIndex>,
 }
 
 impl Graph {
@@ -93,6 +97,7 @@ impl Graph {
             marked: vec![],
             marked_temp: vec![],
             in_cycle: vec![],
+            cycle_breakers: vec![],
             alloc: Alloc::with_capacity(64),
         }
     }
@@ -122,15 +127,16 @@ impl Graph {
                 outgoing_edges: smallvec![],
                 free_when_finished: false,
                 has_inputs_connected: false,
+                cycle_breaker: false,
             }),
         );
     }
 
     pub fn add_edge(&mut self, source: (NodeIndex, usize), dest: (NodeIndex, usize)) {
         self.nodes
-            .get(&source.0)
+            .get_mut(&source.0)
             .unwrap_or_else(|| panic!("cannot connect {:?} to {:?}", source, dest))
-            .borrow_mut()
+            .get_mut()
             .outgoing_edges
             .push(OutgoingEdge {
                 self_index: source.1,
@@ -143,9 +149,9 @@ impl Graph {
 
     pub fn remove_edge(&mut self, source: NodeIndex, dest: NodeIndex) {
         self.nodes
-            .get(&source)
+            .get_mut(&source)
             .unwrap_or_else(|| panic!("cannot remove the edge from {:?} to {:?}", source, dest))
-            .borrow_mut()
+            .get_mut()
             .outgoing_edges
             .retain(|edge| edge.other_id != dest);
 
@@ -154,14 +160,14 @@ impl Graph {
 
     pub fn remove_edges_from(&mut self, source: NodeIndex) {
         self.nodes
-            .get(&source)
+            .get_mut(&source)
             .unwrap_or_else(|| panic!("cannot remove edges from {:?}", source))
-            .borrow_mut()
+            .get_mut()
             .outgoing_edges
             .clear();
 
-        self.nodes.values().for_each(|node| {
-            node.borrow_mut()
+        self.nodes.values_mut().for_each(|node| {
+            node.get_mut()
                 .outgoing_edges
                 .retain(|edge| edge.other_id != source);
         });
@@ -173,12 +179,20 @@ impl Graph {
         // Issue #92, a race condition can occur for AudioParams. They may have already been
         // removed from the audio graph if the node they feed into was dropped.
         // Therefore, do not assume this node still exists:
-        if let Some(node) = self.nodes.get(&index) {
-            node.borrow_mut().free_when_finished = true;
+        if let Some(node) = self.nodes.get_mut(&index) {
+            node.get_mut().free_when_finished = true;
         }
     }
 
+    pub fn mark_cycle_breaker(&mut self, index: NodeIndex) {
+        self.nodes.get_mut(&index).unwrap().get_mut().cycle_breaker = true;
+    }
+
     /// Helper function for `order_nodes` - traverse node and outgoing edges
+    ///
+    /// The return value indicates `cycle_breaker_applied`:
+    /// - true: a cycle was found and a cycle breaker was applied, current ordering is invalidated
+    /// - false: visiting this leg was successful and no topological changes were applied
     fn visit(
         &self,
         node_id: NodeIndex,
@@ -186,18 +200,35 @@ impl Graph {
         marked_temp: &mut Vec<NodeIndex>,
         ordered: &mut Vec<NodeIndex>,
         in_cycle: &mut Vec<NodeIndex>,
-    ) {
+        cycle_breakers: &mut Vec<NodeIndex>,
+    ) -> bool {
         // If this node is in the cycle detection list, it is part of a cycle!
         if let Some(pos) = marked_temp.iter().position(|&m| m == node_id) {
-            // Mark all nodes in the cycle
-            in_cycle.extend_from_slice(&marked_temp[pos..]);
-            // Do not continue, as we already have visited all these nodes
-            return;
+            // check if we can find some node that can break the cycle
+            let cycle_breaker_node = marked_temp
+                .iter()
+                .skip(pos)
+                .find(|node_id| self.nodes.get(node_id).unwrap().borrow().cycle_breaker);
+
+            match cycle_breaker_node {
+                Some(&node_id) => {
+                    // store node id to clear the node outgoing edges
+                    cycle_breakers.push(node_id);
+
+                    return true;
+                }
+                None => {
+                    // Mark all nodes in the cycle
+                    in_cycle.extend_from_slice(&marked_temp[pos..]);
+                    // Do not continue, as we already have visited all these nodes
+                    return false;
+                }
+            }
         }
 
         // Do not visit nodes multiple times
         if marked.contains(&node_id) {
-            return;
+            return false;
         }
 
         // Add node to the visited list
@@ -206,19 +237,34 @@ impl Graph {
         marked_temp.push(node_id);
 
         // Visit outgoing nodes, and call `visit` on them recursively
-        self.nodes
+        for edge in self
+            .nodes
             .get(&node_id)
             .unwrap()
             .borrow()
             .outgoing_edges
             .iter()
-            .for_each(|edge| self.visit(edge.other_id, marked, marked_temp, ordered, in_cycle));
+        {
+            let cycle_breaker_applied = self.visit(
+                edge.other_id,
+                marked,
+                marked_temp,
+                ordered,
+                in_cycle,
+                cycle_breakers,
+            );
+            if cycle_breaker_applied {
+                return true;
+            }
+        }
 
         // Then add this node to the ordered list
         ordered.push(node_id);
 
         // Finished visiting all nodes in this leg, clear the current cycle detection list
         marked_temp.retain(|marked| *marked != node_id);
+
+        false
     }
 
     /// Determine the order of the audio nodes for rendering
@@ -232,7 +278,8 @@ impl Graph {
     ///
     /// The goals are:
     /// - Perform a topological sort of the graph
-    /// - Mute nodes that are in a cycle
+    /// - Break cycles when possible (if there is a DelayNode present)
+    /// - Mute nodes that are still in a cycle
     /// - For performance: no new allocations (reuse Vecs)
     fn order_nodes(&mut self) {
         // For borrowck reasons, we need the `visit` call to be &self.
@@ -241,27 +288,51 @@ impl Graph {
         let mut marked = std::mem::take(&mut self.marked);
         let mut marked_temp = std::mem::take(&mut self.marked_temp);
         let mut in_cycle = std::mem::take(&mut self.in_cycle);
+        let mut cycle_breakers = std::mem::take(&mut self.cycle_breakers);
 
-        // Clear previous administration
-        ordered.clear();
-        marked.clear();
-        marked_temp.clear();
-        in_cycle.clear();
+        // When a cycle breaker is applied, the graph topology changes and we need to run the
+        // ordering again
+        loop {
+            // Clear previous administration
+            ordered.clear();
+            marked.clear();
+            marked_temp.clear();
+            in_cycle.clear();
+            cycle_breakers.clear();
 
-        // Visit all registered nodes, and perform a depth first traversal.
-        //
-        // We cannot just start from the AudioDestinationNode and visit all nodes connecting to it,
-        // since the audio graph could contain legs detached from the destination and those should
-        // still be rendered.
-        self.nodes.keys().for_each(|&node_id| {
-            self.visit(
-                node_id,
-                &mut marked,
-                &mut marked_temp,
-                &mut ordered,
-                &mut in_cycle,
-            );
-        });
+            // Visit all registered nodes, and perform a depth first traversal.
+            //
+            // We cannot just start from the AudioDestinationNode and visit all nodes connecting to it,
+            // since the audio graph could contain legs detached from the destination and those should
+            // still be rendered.
+            let mut cycle_breaker_applied = false;
+            for &node_id in self.nodes.keys() {
+                cycle_breaker_applied = self.visit(
+                    node_id,
+                    &mut marked,
+                    &mut marked_temp,
+                    &mut ordered,
+                    &mut in_cycle,
+                    &mut cycle_breakers,
+                );
+
+                if cycle_breaker_applied {
+                    break;
+                }
+            }
+
+            if cycle_breaker_applied {
+                // clear the outgoing edges of the nodes that have been recognized as cycle breaker
+                cycle_breakers.iter().for_each(|node_id| {
+                    let node = self.nodes.get_mut(node_id).unwrap();
+                    node.get_mut().outgoing_edges.clear();
+                });
+
+                continue;
+            }
+
+            break;
+        }
 
         // Remove nodes from the ordering if they are part of a cycle. The spec mandates that their
         // outputs should be silenced, but with our rendering algorithm that is not necessary.
@@ -276,6 +347,7 @@ impl Graph {
         self.marked = marked;
         self.marked_temp = marked_temp;
         self.in_cycle = in_cycle;
+        self.cycle_breakers = cycle_breakers;
     }
 
     /// Render a single audio quantum by traversing the node list
@@ -293,7 +365,7 @@ impl Graph {
 
         // process every node, in topological sorted order
         self.ordered.iter().for_each(|index| {
-            // remove node from graph, re-insert later (for borrowck reasons)
+            // acquire a mutable borrow of the current processing node
             let mut node = nodes.get(index).unwrap().borrow_mut();
 
             // make sure all input buffers have the correct number of channels, this might not be
@@ -369,7 +441,7 @@ impl Graph {
         }
 
         // Return the output buffer of destination node
-        self.nodes.get(&NodeIndex(0)).unwrap().borrow().outputs[0].clone()
+        self.nodes.get_mut(&NodeIndex(0)).unwrap().get_mut().outputs[0].clone()
     }
 }
 
