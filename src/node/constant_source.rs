@@ -162,11 +162,6 @@ impl AudioProcessor for ConstantSourceRenderer {
             return true;
         }
 
-        if stop_time < scope.current_time {
-            output.make_silent();
-            return false;
-        }
-
         output.force_mono();
 
         let offset_values = params.get(&self.offset);
@@ -187,7 +182,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         }
 
         // tail_time false when output has ended this quantum
-        stop_time > next_block_time
+        stop_time >= next_block_time
     }
 }
 
