@@ -17,7 +17,7 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 struct CurveMessage(Vec<f32>);
 
 /// enumerates the oversampling rate available for `WaveShaperNode`
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // the naming comes from the web audio specfication
 pub enum OverSampleType {
     /// No oversampling is applied
