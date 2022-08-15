@@ -96,5 +96,7 @@ iai::main!(
     bench_ctor,
     bench_sine,
     bench_sine_gain,
-    bench_sine_gain_delay
+    bench_sine_gain_delay,
+    bench_buffer_src,
+    bench_buffer_src_iir,
 );
