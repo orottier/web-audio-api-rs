@@ -389,7 +389,7 @@ impl AudioProcessor for OscillatorRenderer {
                     return;
                 }
 
-                // @todo: we could avoid recompute that if both param lengths are 0
+                // @todo: we could avoid recompute that if both param lengths are 1
                 let computed_frequency = frequency * (detune / 1200.).exp2();
 
                 // first sample to render

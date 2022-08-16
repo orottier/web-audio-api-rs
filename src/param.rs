@@ -625,6 +625,9 @@ impl AudioParamProcessor {
     }
 
     fn mix_to_output(&mut self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
+        #[cfg(test)]
+        assert!(self.buffer.len() == 1 || self.buffer.len() == RENDER_QUANTUM_SIZE);
+
         if self.buffer.len() == 1 && input.is_silent() {
             let mut value = self.buffer[0];
 
