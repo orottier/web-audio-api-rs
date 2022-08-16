@@ -86,6 +86,9 @@ impl RenderThread {
                 AudioParamEvent { to, event } => {
                     to.send(event).expect("Audioparam disappeared unexpectedly")
                 }
+                MarkCycleBreaker { id } => {
+                    self.graph.mark_cycle_breaker(NodeIndex(id));
+                }
             }
         }
     }

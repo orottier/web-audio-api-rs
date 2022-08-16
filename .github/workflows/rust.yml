@@ -1,5 +1,7 @@
-name: Rust
+name: Build
 
+# read-only repo token
+# no access to secrets
 on:
   push:
     branches: [ main ]
@@ -10,15 +12,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  verify-build:
     runs-on: ubuntu-latest
 
     steps:
-    # checkout repo, install dependencies
+    # checkout repo
     - uses: actions/checkout@v3
+
+    - name: Install rust
+      uses: actions-rs/toolchain@v1
       with:
-        fetch-depth: 0
+        toolchain: stable
+        components: rustfmt, clippy
 
     # restore cargo cache from previous runs
     - name: Rust Cache
@@ -26,8 +31,6 @@ jobs:
 
     - name: install alsa (sound driver) and cmake
       run: sudo apt-get update && sudo apt-get install libasound2-dev cmake
-    - name: update rustc
-      run: rustup update
 
     # check it builds
     - name: Build
@@ -38,12 +41,10 @@ jobs:
       run: cargo test --verbose --features cubeb
 
     # make sure all code has been formatted with rustfmt
-    - run: rustup component add rustfmt
     - name: check rustfmt
       run: cargo fmt -- --check --color always
 
     # run clippy to verify we have no warnings
-    - run: rustup component add clippy
     - name: cargo clippy
       run: cargo clippy --all-targets --features cubeb -- -D warnings
 
@@ -53,34 +54,46 @@ jobs:
         RUSTDOCFLAGS: -D warnings
       run: cargo doc --no-deps --document-private-items --workspace --features cubeb
 
+  benchmark:
+    runs-on: ubuntu-latest
+    if: github.ref != 'refs/heads/main'
+
+    steps:
+    # checkout repo, install dependencies
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Install rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+
+    # restore cargo cache from previous runs
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2.0.0
+
     ## Benchmarks
     - name: install valgrind for benchmarks
       run: sudo apt-get install valgrind
     - name: Checkout main branch
       run: git checkout main
     - name: Run benchmarks for main branch
-      run: cargo bench
+      run: cargo bench --no-default-features
     - name: Checkout PR branch
       run: git checkout -
     - name: Run bench against baseline
-      run: cargo bench | sed '0,/^test result:/d' | tee bench.txt
+      run: cargo bench --no-default-features | sed '0,/^test result:/d' | tee bench.txt
 
-    - name: Write result in PR
-      uses: actions/github-script@v5
+    ## Save results
+    ## see https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+    - name: Save PR number and bench results
+      run: |
+        mkdir -p ./pr
+        echo ${{ github.event.number }} > ./pr/pr_number.txt
+        mv bench.txt ./pr/bench.txt
+    - uses: actions/upload-artifact@v2
       with:
-        script: |
-          const fs = require('fs');
-
-          // read the output file
-          const iai_feature = fs.readFileSync("bench.txt", {encoding:'utf8', flag:'r'});
-
-          // form message
-          const message = 'Benchmark result:\n\n' + iai_feature;
-
-          // post comment
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: message
-          })
+        name: pr
+        path: pr/

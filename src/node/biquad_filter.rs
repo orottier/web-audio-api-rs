@@ -167,7 +167,7 @@ fn calculate_coefs(
 }
 
 /// Biquad filter types
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BiquadFilterType {
     /// Allows frequencies below the cutoff frequency to pass through and
     /// attenuates frequencies above the cutoff. (12dB/oct rolloff)

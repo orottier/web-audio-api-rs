@@ -203,6 +203,17 @@ impl ConcreteBaseAudioContext {
         }
     }
 
+    /// Inform render thread that this node can act as a cycle breaker
+    #[doc(hidden)]
+    pub fn mark_cycle_breaker(&self, reg: &AudioContextRegistration) {
+        let id = reg.id().0;
+        let message = ControlMessage::MarkCycleBreaker { id };
+
+        // Sending the message will fail when the render thread has already shut down.
+        // This is fine
+        let _r = self.inner.render_channel.send(message);
+    }
+
     /// `ChannelConfig` of the `AudioDestinationNode`
     pub(super) fn destination_channel_config(&self) -> ChannelConfig {
         self.inner.destination_channel_config.clone()
