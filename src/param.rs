@@ -992,7 +992,7 @@ impl AudioParamProcessor {
         let is_timeline_empty = self.event_timeline.is_empty();
 
         if is_k_rate || is_timeline_empty {
-            self.buffer.resize(1, self.intrisic_value);
+            self.buffer.push(self.intrisic_value);
 
             // nothing to compute in timeline
             if is_timeline_empty {
