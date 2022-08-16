@@ -379,8 +379,8 @@ impl AudioProcessor for OscillatorRenderer {
 
         channel_data
             .iter_mut()
-            .zip(frequency_values.iter().cycle().take(RENDER_QUANTUM_SIZE))
-            .zip(detune_values.iter().cycle().take(RENDER_QUANTUM_SIZE))
+            .zip(frequency_values.iter().cycle())
+            .zip(detune_values.iter().cycle())
             .for_each(|((o, &frequency), &detune)| {
                 if current_time < start_time || current_time >= stop_time {
                     *o = 0.;

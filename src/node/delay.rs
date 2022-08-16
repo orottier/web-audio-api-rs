@@ -428,7 +428,7 @@ impl AudioProcessor for DelayReader {
             channel
                 .iter_mut()
                 .enumerate()
-                .zip(delay.iter().cycle().take(RENDER_QUANTUM_SIZE))
+                .zip(delay.iter().cycle())
                 .zip(playback_infos.iter_mut())
                 .for_each(|(((index, o), delay), infos)| {
                     if channel_number == 0 {

@@ -175,7 +175,7 @@ impl AudioProcessor for ConstantSourceRenderer {
 
         output_channel
             .iter_mut()
-            .zip(offset.iter().cycle().take(RENDER_QUANTUM_SIZE))
+            .zip(offset.iter().cycle())
             .for_each(|(o, &value)| {
                 if current_time < start_time || current_time >= stop_time {
                     *o = 0.;

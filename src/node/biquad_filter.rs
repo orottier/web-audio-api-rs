@@ -612,10 +612,10 @@ impl AudioProcessor for BiquadFilterRenderer {
         // @todo - optimization only compute coefs once if all params have length == 1
         coefs_list
             .iter_mut()
-            .zip(frequency.iter().cycle().take(RENDER_QUANTUM_SIZE))
-            .zip(detune.iter().cycle().take(RENDER_QUANTUM_SIZE))
-            .zip(q.iter().cycle().take(RENDER_QUANTUM_SIZE))
-            .zip(gain.iter().cycle().take(RENDER_QUANTUM_SIZE))
+            .zip(frequency.iter().cycle())
+            .zip(detune.iter().cycle())
+            .zip(q.iter().cycle())
+            .zip(gain.iter().cycle())
             .enumerate()
             .for_each(|(index, ((((coefs, &f), &d), &q), &g))| {
                 // recompute coefs only if param change, done at least once per block
