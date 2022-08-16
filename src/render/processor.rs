@@ -1,6 +1,6 @@
 //! Audio processing code that runs on the audio rendering thread
-use crate::RENDER_QUANTUM_SIZE;
 use crate::context::AudioParamId;
+use crate::RENDER_QUANTUM_SIZE;
 
 use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 
@@ -63,7 +63,11 @@ impl Deref for DerefAudioRenderQuantumChannel<'_> {
 
     fn deref(&self) -> &Self::Target {
         let buffer = self.0.get_buffer();
-        let len = if buffer.is_single_valued() { 1 } else { RENDER_QUANTUM_SIZE };
+        let len = if buffer.is_single_valued() {
+            1
+        } else {
+            RENDER_QUANTUM_SIZE
+        };
 
         &buffer.channel_data(0)[..len]
     }

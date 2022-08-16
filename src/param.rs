@@ -640,6 +640,11 @@ impl AudioParamProcessor {
             let output_channel = output.channel_data_mut(0);
             output_channel[0] = value.clamp(self.min_value, self.max_value);
         } else {
+            // @note: we could add two other optimizations here:
+            // - when buffer.len() == 1 and buffer[0] == 0., then we don't need to
+            //   zip and add, but we still need to clamp
+            // - when input.is_silent(), then we can copy_from_slice the buffer into
+            //   output and then just clamp
             *output = input.clone();
             output.set_is_single_valued(false);
 
