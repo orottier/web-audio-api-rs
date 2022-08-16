@@ -640,22 +640,15 @@ impl AudioParamProcessor {
             let output_channel = output.channel_data_mut(0);
             output_channel[0] = value.clamp(self.min_value, self.max_value);
         } else {
-            // the param buffer is constant but it should be modulated by an
-            // incoming signal, so we need to resize it to RENDER_QUANTUM_SIZE
-            if self.buffer.len() == 1 {
-                self.buffer.resize(RENDER_QUANTUM_SIZE, self.buffer[0]);
-            }
-
+            *output = input.clone();
             output.set_is_single_valued(false);
 
-            let output_channel = output.channel_data_mut(0);
-            output_channel.copy_from_slice(self.buffer.as_slice());
-
-            output_channel
+            output
+                .channel_data_mut(0)
                 .iter_mut()
-                .zip(input.channel_data(0).iter())
-                .for_each(|(o, i)| {
-                    *o += i;
+                .zip(self.buffer.iter().cycle())
+                .for_each(|(o, p)| {
+                    *o += p;
 
                     if o.is_nan() {
                         *o = self.default_value;
