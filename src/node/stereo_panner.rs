@@ -159,17 +159,17 @@ impl AudioNode for StereoPannerNode {
 impl StereoPannerNode {
     /// returns a `StereoPannerNode` instance
     ///
+    /// # Arguments
+    ///
+    /// * `context` - audio context in which the audio node will live.
+    /// * `options` - stereo panner options
+    ///
     /// # Panics
     ///
     /// Will panic if:
     ///
     /// * `options.channel_config.count` is greater than 2
     /// * `options.channel_config.mode` is `ChannelCountMode::Max`
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - audio context in which the audio node will live.
-    /// * `options` - stereo panner options
     ///
     pub fn new<C: BaseAudioContext>(context: &C, options: StereoPannerOptions) -> Self {
         context.register(move |registration| {

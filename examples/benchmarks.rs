@@ -548,6 +548,34 @@ fn main() {
         benchmark(&mut stdout, name, context, &mut results);
     }
 
+    {
+        let name = "IIR filter";
+
+        let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
+
+        // these values correspond to a lowpass filter at 200Hz (calculated from biquad)
+        let feedforward = vec![
+            0.0002029799640409502,
+            0.0004059599280819004,
+            0.0002029799640409502,
+        ];
+
+        let feedback = vec![1.0126964557853775, -1.9991880801438362, 0.9873035442146225];
+
+        // Create an IIR filter node
+        let iir = context.create_iir_filter(feedforward, feedback);
+        iir.connect(&context.destination());
+
+        let src = context.create_buffer_source();
+        let buffer = get_buffer(&sources, sample_rate, 2);
+        src.connect(&iir);
+        src.set_buffer(buffer);
+        src.set_loop(true);
+        src.start();
+
+        benchmark(&mut stdout, name, context, &mut results);
+    }
+
     write!(
         stdout,
         "{}{}> All done!\r\n\r\n",

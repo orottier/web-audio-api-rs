@@ -816,9 +816,9 @@ mod tests {
 
             let filter = context.create_biquad_filter();
             filter.set_type(type_);
-            filter.frequency.set_value(frequency);
-            filter.q.set_value(q);
-            filter.gain.set_value(gain);
+            filter.frequency().set_value(frequency);
+            filter.q().set_value(q);
+            filter.gain().set_value(gain);
 
             let mut mags = [0.; 10];
             let mut phases = [0.; 10];
@@ -858,9 +858,9 @@ mod tests {
 
             let filter = context.create_biquad_filter();
             filter.set_type(type_);
-            filter.frequency.set_value(frequency);
-            filter.q.set_value(q);
-            filter.gain.set_value(gain);
+            filter.frequency().set_value(frequency);
+            filter.q().set_value(q);
+            filter.gain().set_value(gain);
 
             let mut mags = [0.; 10];
             let mut phases = [0.; 10];
@@ -900,9 +900,9 @@ mod tests {
 
             let filter = context.create_biquad_filter();
             filter.set_type(type_);
-            filter.frequency.set_value(frequency);
-            filter.q.set_value(q);
-            filter.gain.set_value(gain);
+            filter.frequency().set_value(frequency);
+            filter.q().set_value(q);
+            filter.gain().set_value(gain);
 
             let mut mags = [0.; 10];
             let mut phases = [0.; 10];
@@ -942,9 +942,9 @@ mod tests {
 
             let filter = context.create_biquad_filter();
             filter.set_type(type_);
-            filter.frequency.set_value(frequency);
-            filter.q.set_value(q);
-            filter.gain.set_value(gain);
+            filter.frequency().set_value(frequency);
+            filter.q().set_value(q);
+            filter.gain().set_value(gain);
 
             let mut mags = [0.; 10];
             let mut phases = [0.; 10];
@@ -973,9 +973,9 @@ mod tests {
 
             let filter = context.create_biquad_filter();
             filter.set_type(type_);
-            filter.frequency.set_value(frequency);
-            filter.q.set_value(q);
-            filter.gain.set_value(gain);
+            filter.frequency().set_value(frequency);
+            filter.q().set_value(q);
+            filter.gain().set_value(gain);
 
             let mut mags = [0.; 10];
             let mut phases = [0.; 10];
@@ -1015,9 +1015,9 @@ mod tests {
 
             let filter = context.create_biquad_filter();
             filter.set_type(type_);
-            filter.frequency.set_value(frequency);
-            filter.q.set_value(q);
-            filter.gain.set_value(gain);
+            filter.frequency().set_value(frequency);
+            filter.q().set_value(q);
+            filter.gain().set_value(gain);
 
             let mut mags = [0.; 10];
             let mut phases = [0.; 10];
@@ -1057,9 +1057,9 @@ mod tests {
 
             let filter = context.create_biquad_filter();
             filter.set_type(type_);
-            filter.frequency.set_value(frequency);
-            filter.q.set_value(q);
-            filter.gain.set_value(gain);
+            filter.frequency().set_value(frequency);
+            filter.q().set_value(q);
+            filter.gain().set_value(gain);
 
             let mut mags = [0.; 10];
             let mut phases = [0.; 10];
@@ -1099,9 +1099,9 @@ mod tests {
 
             let filter = context.create_biquad_filter();
             filter.set_type(type_);
-            filter.frequency.set_value(frequency);
-            filter.q.set_value(q);
-            filter.gain.set_value(gain);
+            filter.frequency().set_value(frequency);
+            filter.q().set_value(q);
+            filter.gain().set_value(gain);
 
             let mut mags = [0.; 10];
             let mut phases = [0.; 10];
