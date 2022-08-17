@@ -63,7 +63,7 @@ impl Deref for DerefAudioRenderQuantumChannel<'_> {
 
     fn deref(&self) -> &Self::Target {
         let buffer = self.0.get_buffer();
-        let len = if buffer.is_single_valued() {
+        let len = if buffer.single_valued() {
             1
         } else {
             RENDER_QUANTUM_SIZE

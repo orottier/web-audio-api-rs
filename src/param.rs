@@ -636,7 +636,7 @@ impl AudioParamProcessor {
                 value = self.default_value;
             }
 
-            output.set_is_single_valued(true);
+            output.set_single_valued(true);
 
             let output_channel = output.channel_data_mut(0);
             output_channel[0] = value.clamp(self.min_value, self.max_value);
@@ -647,7 +647,7 @@ impl AudioParamProcessor {
             // - when input.is_silent(), then we can copy_from_slice the buffer into
             //   output and then just clamp
             *output = input.clone();
-            output.set_is_single_valued(false);
+            output.set_single_valued(false);
 
             output
                 .channel_data_mut(0)
@@ -3140,7 +3140,7 @@ mod tests {
 
             render.mix_to_output(&input, &mut output);
 
-            assert!(output.is_single_valued());
+            assert!(output.single_valued());
             assert_float_eq!(output.channel_data(0)[0], 0., abs <= 0.);
         }
 
@@ -3173,7 +3173,7 @@ mod tests {
             let mut expected = [0.; 128];
             expected[0] = 1.;
 
-            assert!(!output.is_single_valued());
+            assert!(!output.single_valued());
             assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
         }
     }
