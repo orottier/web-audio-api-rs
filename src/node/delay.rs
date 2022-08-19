@@ -35,8 +35,6 @@ impl Default for DelayOptions {
 struct PlaybackInfo {
     prev_block_index: usize,
     prev_frame_index: usize,
-    // next_block_index: usize,
-    // next_frame_index: usize,
     k: f32,
 }
 
@@ -536,6 +534,8 @@ impl AudioProcessor for DelayReader {
                     }
 
                     // update pointer to channel_data if needed
+                    // @note: most of the time the step is not necessary but can
+                    // be in case of an automotation with increasing delay time
                     if block_index != prev_block_index {
                         block_index = prev_block_index;
                         channel_data = ring_buffer[block_index].channel_data(channel_number);
