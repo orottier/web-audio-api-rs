@@ -1,6 +1,6 @@
 //! Audio processing code that runs on the audio rendering thread
-
 use crate::context::AudioParamId;
+use crate::RENDER_QUANTUM_SIZE;
 
 use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 
@@ -62,7 +62,14 @@ impl Deref for DerefAudioRenderQuantumChannel<'_> {
     type Target = [f32];
 
     fn deref(&self) -> &Self::Target {
-        self.0.get_buffer().channel_data(0).as_slice()
+        let buffer = self.0.get_buffer();
+        let len = if buffer.single_valued() {
+            1
+        } else {
+            RENDER_QUANTUM_SIZE
+        };
+
+        &buffer.channel_data(0)[..len]
     }
 }
 
@@ -89,7 +96,9 @@ impl<'a> AudioParamValues<'a> {
 
     /// Get the computed values for the given [`crate::param::AudioParam`]
     ///
-    /// For both A & K-rate params, it will provide a slice of length [`crate::RENDER_QUANTUM_SIZE`]
+    /// For k-rate params or if the (a-rate) parameter is constant for this block, it will
+    /// provide a slice of length 1. In other cases, i.e. a-rate param with scheduled
+    /// automations it will provide a slice of length [`crate::RENDER_QUANTUM_SIZE`]
     #[allow(clippy::missing_panics_doc)]
     pub fn get(&self, index: &AudioParamId) -> impl std::ops::Deref<Target = [f32]> + '_ {
         DerefAudioRenderQuantumChannel(self.nodes.get(&index.into()).unwrap().borrow())

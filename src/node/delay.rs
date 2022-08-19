@@ -436,7 +436,7 @@ impl AudioProcessor for DelayReader {
         let dt = 1. / sample_rate;
         let quantum_duration = RENDER_QUANTUM_SIZE as f64 * dt;
 
-        let delay_param = params.get(&self.delay_time);
+        let delay = params.get(&self.delay_time);
 
         if !self.in_cycle {
             // check the latest written frame by the delay writer
@@ -462,7 +462,7 @@ impl AudioProcessor for DelayReader {
             channel
                 .iter_mut()
                 .enumerate()
-                .zip(delay_param.iter())
+                .zip(delay.iter().cycle())
                 .zip(playback_infos.iter_mut())
                 .for_each(|(((index, o), delay), infos)| {
                     if channel_number == 0 {

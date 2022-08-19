@@ -164,22 +164,25 @@ impl AudioProcessor for ConstantSourceRenderer {
 
         output.force_mono();
 
-        let offset_values = params.get(&self.offset);
+        let offset = params.get(&self.offset);
         let output_channel = output.channel_data_mut(0);
         let mut current_time = scope.current_time;
 
-        for (index, sample_value) in offset_values.iter().enumerate() {
-            if current_time < start_time || current_time >= stop_time {
-                output_channel[index] = 0.;
-            } else {
-                // as we pick values directly from the offset param which is already
-                // computed at sub-sample accuracy, we don't need to do more than
-                // copying the values to their right place.
-                output_channel[index] = *sample_value;
-            }
+        output_channel
+            .iter_mut()
+            .zip(offset.iter().cycle())
+            .for_each(|(o, &value)| {
+                if current_time < start_time || current_time >= stop_time {
+                    *o = 0.;
+                } else {
+                    // as we pick values directly from the offset param which is already
+                    // computed at sub-sample accuracy, we don't need to do more than
+                    // copying the values to their right place.
+                    *o = value;
+                }
 
-            current_time += dt;
-        }
+                current_time += dt;
+            });
 
         // tail_time false when output has ended this quantum
         stop_time >= next_block_time

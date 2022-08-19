@@ -589,7 +589,6 @@ pub(crate) struct AudioParamProcessor {
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
     buffer: Vec<f32>,
-    is_buffer_clean: bool,
 }
 
 impl AudioProcessor for AudioParamProcessor {
@@ -627,23 +626,42 @@ impl AudioParamProcessor {
 
     fn mix_to_output(&mut self, input: &AudioRenderQuantum, output: &mut AudioRenderQuantum) {
         #[cfg(test)]
-        assert_eq!(self.buffer.len(), RENDER_QUANTUM_SIZE);
+        assert!(self.buffer.len() == 1 || self.buffer.len() == RENDER_QUANTUM_SIZE);
 
-        let output = output.channel_data_mut(0);
-        output.copy_from_slice(self.buffer.as_slice());
+        if self.buffer.len() == 1 && input.is_silent() {
+            let mut value = self.buffer[0];
 
-        output
-            .iter_mut()
-            .zip(input.channel_data(0).iter())
-            .for_each(|(o, i)| {
-                *o += i;
+            if value.is_nan() {
+                value = self.default_value;
+            }
 
-                if o.is_nan() {
-                    *o = self.default_value;
-                }
+            output.set_single_valued(true);
 
-                *o = o.clamp(self.min_value, self.max_value)
-            });
+            let output_channel = output.channel_data_mut(0);
+            output_channel[0] = value.clamp(self.min_value, self.max_value);
+        } else {
+            // @note: we could add two other optimizations here:
+            // - when buffer.len() == 1 and buffer[0] == 0., then we don't need to
+            //   zip and add, but we still need to clamp
+            // - when input.is_silent(), then we can copy_from_slice the buffer into
+            //   output and then just clamp
+            *output = input.clone();
+            output.set_single_valued(false);
+
+            output
+                .channel_data_mut(0)
+                .iter_mut()
+                .zip(self.buffer.iter().cycle())
+                .for_each(|(o, p)| {
+                    *o += p;
+
+                    if o.is_nan() {
+                        *o = self.default_value;
+                    }
+
+                    *o = o.clamp(self.min_value, self.max_value)
+                });
+        }
     }
 
     // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
@@ -772,10 +790,11 @@ impl AudioParamProcessor {
                     }
                 }
 
-                // remove all event in queue where cancel_time >= event.time
+                // remove all events in queue where event.time >= cancel_time
+                // i.e. keep all events where event.time < cancel_time
                 self.event_timeline
                     .retain(|queued| queued.time < event.time);
-                continue; // no need to insert cancel_values events in queue
+                continue; // cancel_values events are not inserted in queue
             }
 
             if event.event_type == AudioParamEventType::CancelAndHoldAtTime {
@@ -970,27 +989,23 @@ impl AudioParamProcessor {
         let clamped = self.intrisic_value.clamp(self.min_value, self.max_value);
         self.current_value.store(clamped);
 
-        // no even in timeline and buffer is clean, we can just reuse current buffer,
-        // instead of clearing to just refill with same values
-        if self.event_timeline.is_empty() && self.is_buffer_clean {
-            return;
-        }
-
-        // Define if intrisic buffer can be considered be clean in next call.
-        // If the timeline is empty, we know the buffer will be filled with a
-        // constant value. @note: there could other valid cases
-        self.is_buffer_clean = self.event_timeline.is_empty();
-
-        // populate the buffer for this block
+        // clear the buffer for this block
         self.buffer.clear();
 
-        let next_block_time = dt.mul_add(count as f64, block_time);
         let is_a_rate = self.is_a_rate.load(Ordering::SeqCst);
         let is_k_rate = !is_a_rate;
+        let is_timeline_empty = self.event_timeline.is_empty();
 
-        if is_k_rate {
-            self.buffer.resize(count, self.intrisic_value);
+        if is_k_rate || is_timeline_empty {
+            self.buffer.push(self.intrisic_value);
+
+            // nothing to compute in timeline
+            if is_timeline_empty {
+                return;
+            }
         }
+
+        let next_block_time = dt.mul_add(count as f64, block_time);
 
         loop {
             let some_event = self.event_timeline.peek();
@@ -1488,10 +1503,6 @@ impl AudioParamProcessor {
                 }
             }
         }
-
-        if cfg!(test) {
-            assert_eq!(self.buffer.len(), count);
-        }
     }
 }
 
@@ -1525,7 +1536,6 @@ pub(crate) fn audio_param_pair(
         event_timeline: AudioParamEventTimeline::new(),
         last_event: None,
         buffer: Vec::with_capacity(RENDER_QUANTUM_SIZE),
-        is_buffer_clean: false,
     };
 
     (param, render)
@@ -1673,8 +1683,9 @@ mod tests {
                 abs_all <= 0.
             );
 
+            // no event left in timeline, i.e. length is 1
             let vs = render.compute_intrisic_values(10., 1., 10);
-            assert_float_eq!(vs, &[8.; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[8.; 1][..], abs_all <= 0.);
         }
 
         {
@@ -1723,13 +1734,13 @@ mod tests {
         param.set_value_at_time(3., 14.0); // should appear in 3rd run
 
         let vs = render.compute_intrisic_values(0., 1., 10);
-        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+        assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
 
         let vs = render.compute_intrisic_values(10., 1., 10);
-        assert_float_eq!(vs, &[8.; 10][..], abs_all <= 0.);
+        assert_float_eq!(vs, &[8.; 1][..], abs_all <= 0.);
 
         let vs = render.compute_intrisic_values(20., 1., 10);
-        assert_float_eq!(vs, &[3.; 10][..], abs_all <= 0.);
+        assert_float_eq!(vs, &[3.; 1][..], abs_all <= 0.);
     }
 
     #[test]
@@ -1785,6 +1796,10 @@ mod tests {
     }
 
     #[test]
+    // @note - with real params, a set_value event is always used to provide
+    // init value to the param. Therefore this test is purely theoretical and
+    // in real world the param would not behave like that, which is wrong
+    // @todo - open an issue to review how init value is passed (or how last_event is set)
     fn test_linear_ramp_arate_implicit_set_value() {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
@@ -1798,9 +1813,12 @@ mod tests {
 
         // mimic a ramp inserted after start
         // i.e. setTimeout(() => param.linearRampToValueAtTime(10, now + 10)), 10 * 1000);
-        let vs = render.compute_intrisic_values(0., 1., 10);
-        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
 
+        // no event in timeline here, i.e. length is 1
+        let vs = render.compute_intrisic_values(0., 1., 10);
+        assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
+
+        // implicitely insert a SetValue event at time 10
         param.linear_ramp_to_value_at_time(10.0, 20.0);
 
         let vs = render.compute_intrisic_values(10., 1., 10);
@@ -1810,6 +1828,7 @@ mod tests {
             abs_all <= 0.
         );
 
+        // ramp finishes on first value of this block, i.e. length is 10
         let vs = render.compute_intrisic_values(20., 1., 10);
         assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
     }
@@ -1872,15 +1891,15 @@ mod tests {
             param.linear_ramp_to_value_at_time(20.0, 20.0);
             // first quantum t = 0..10
             let vs = render.compute_intrisic_values(0., 1., 10);
-            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 0., abs <= 0.);
             // next quantum t = 10..20
             let vs = render.compute_intrisic_values(10., 1., 10);
-            assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[10.; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 10., abs <= 0.);
             // ramp finished t = 20..30
             let vs = render.compute_intrisic_values(20., 1., 10);
-            assert_float_eq!(vs, &[20.0; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[20.0; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 20., abs <= 0.);
         }
 
@@ -1898,15 +1917,15 @@ mod tests {
             param.linear_ramp_to_value_at_time(15.0, 15.0);
             // first quantum t = 0..10
             let vs = render.compute_intrisic_values(0., 1., 10);
-            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 0., abs <= 0.);
             // next quantum t = 10..20
             let vs = render.compute_intrisic_values(10., 1., 10);
-            assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[10.; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 10., abs <= 0.);
             // ramp finished t = 20..30
             let vs = render.compute_intrisic_values(20., 1., 10);
-            assert_float_eq!(vs, &[15.0; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[15.0; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 15., abs <= 0.);
         }
     }
@@ -2116,13 +2135,13 @@ mod tests {
 
         // recreate k-rate blocks from computed values
         let vs = render.compute_intrisic_values(0., 1., 10);
-        assert_float_eq!(vs, &[res[0]; 10][..], abs_all <= 0.);
+        assert_float_eq!(vs, &[res[0]; 1][..], abs_all <= 0.);
 
         let vs = render.compute_intrisic_values(10., 1., 10);
-        assert_float_eq!(vs, &[res[10]; 10][..], abs_all <= 0.);
+        assert_float_eq!(vs, &[res[10]; 1][..], abs_all <= 0.);
 
         let vs = render.compute_intrisic_values(20., 1., 10);
-        assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
+        assert_float_eq!(vs, &[1.; 1][..], abs_all <= 0.);
     }
 
     #[test]
@@ -2143,10 +2162,10 @@ mod tests {
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
             let vs = render.compute_intrisic_values(0., 1., 10);
-            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
 
             let vs = render.compute_intrisic_values(10., 1., 10);
-            assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[1.; 1][..], abs_all <= 0.);
         }
 
         {
@@ -2163,10 +2182,10 @@ mod tests {
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
             let vs = render.compute_intrisic_values(0., 1., 10);
-            assert_float_eq!(vs, &[-1.; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[-1.; 1][..], abs_all <= 0.);
 
             let vs = render.compute_intrisic_values(10., 1., 10);
-            assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[1.; 1][..], abs_all <= 0.);
         }
     }
 
@@ -2525,10 +2544,10 @@ mod tests {
             }
 
             let vs = render.compute_intrisic_values(0., 1., 10);
-            assert_float_eq!(vs, &[res[0]; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[res[0]; 1][..], abs_all <= 0.);
 
             let vs = render.compute_intrisic_values(10., 1., 10);
-            assert_float_eq!(vs, &[res[10]; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[res[10]; 1][..], abs_all <= 0.);
         }
     }
 
@@ -2572,7 +2591,8 @@ mod tests {
 
             param.set_value_at_time(0., 0.);
             param.linear_ramp_to_value_at_time(10., 10.);
-            param.cancel_scheduled_values(10.); // cancels everything
+            // cancels the ramp, the set value event is kept in timeline
+            param.cancel_scheduled_values(10.);
 
             let vs = render.compute_intrisic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
@@ -2598,9 +2618,12 @@ mod tests {
                 abs_all <= 0.
             );
 
+            // the SetValue event has been consumed in first tick and the ramp
+            // is removed from timeline, no event left in timeline (length is 1)
             param.cancel_scheduled_values(10.);
+
             let vs = render.compute_intrisic_values(10., 1., 10);
-            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
         }
 
         // make sure we can't go into a situation where next_event is a ramp
@@ -2615,6 +2638,8 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
+            // the SetValue from param inserted by the Ramp is left in timeline
+            // i.e. length is 10
             param.linear_ramp_to_value_at_time(10., 10.);
             param.cancel_scheduled_values(10.); // cancels the ramp
 
@@ -2640,9 +2665,11 @@ mod tests {
                 abs_all <= 0.
             );
 
+            // ramp is removed from timeline, no event left
             param.cancel_scheduled_values(10.);
+
             let vs = render.compute_intrisic_values(10., 1., 10);
-            assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+            assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
         }
     }
 
@@ -3022,7 +3049,7 @@ mod tests {
         param.set_automation_rate(AutomationRate::K);
 
         let vs = render.compute_intrisic_values(0., 1., 10);
-        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+        assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
     }
 
     #[test]
@@ -3042,6 +3069,110 @@ mod tests {
 
         let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_varying_param_size() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(0., 0.);
+        param.linear_ramp_to_value_at_time(9., 9.);
+
+        // first block should be length 10 (128 in real world)
+        let vs = render.compute_intrisic_values(0., 1., 10);
+        let expected = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9.];
+        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+
+        // second block should have length 1
+        let vs = render.compute_intrisic_values(10., 1., 10);
+        let expected = [9.; 1];
+        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+
+        // insert event in third block, should have length 0
+        param.set_value_at_time(1., 25.);
+        let vs = render.compute_intrisic_values(20., 1., 10);
+        let expected = [9., 9., 9., 9., 9., 1., 1., 1., 1., 1.];
+        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+
+        // fourth block should have length 1
+        let vs = render.compute_intrisic_values(30., 1., 10);
+        let expected = [1.; 1];
+        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_varying_param_size_modulated() {
+        let alloc = Alloc::with_capacity(1);
+
+        // buffer length is 1 and input is silence (no modulation)
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (_param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            // no event in timeline, buffer length is 1
+            let vs = render.compute_intrisic_values(0., 1., 128);
+            assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
+
+            // mix to output step, input is silence
+            let signal = alloc.silence();
+            let input = AudioRenderQuantum::from(signal);
+
+            let signal = alloc.silence();
+            let mut output = AudioRenderQuantum::from(signal);
+
+            render.mix_to_output(&input, &mut output);
+
+            assert!(output.single_valued());
+            assert_float_eq!(output.channel_data(0)[0], 0., abs <= 0.);
+        }
+
+        // buffer length is 1 and input is non silent
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (_param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            // no event in timeline, buffer length is 1
+            let vs = render.compute_intrisic_values(0., 1., 128);
+            assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
+
+            // mix to output step, input is not silence
+            let signal = alloc.silence();
+            let mut input = AudioRenderQuantum::from(signal);
+            input.channel_data_mut(0)[0] = 1.;
+
+            let signal = alloc.silence();
+            let mut output = AudioRenderQuantum::from(signal);
+
+            render.mix_to_output(&input, &mut output);
+
+            let mut expected = [0.; 128];
+            expected[0] = 1.;
+
+            assert!(!output.single_valued());
+            assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
+        }
     }
 
     #[test]
