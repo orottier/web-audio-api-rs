@@ -10,7 +10,6 @@ use crate::node::{
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
-use arrayvec::ArrayVec;
 use crossbeam_channel::{Receiver, Sender};
 use lazy_static::lazy_static;
 
@@ -589,7 +588,7 @@ pub(crate) struct AudioParamProcessor {
     max_value: f32,
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
-    buffer: ArrayVec<f32, RENDER_QUANTUM_SIZE>,
+    buffer: Vec<f32>,
 }
 
 impl AudioProcessor for AudioParamProcessor {
@@ -1014,9 +1013,7 @@ impl AudioParamProcessor {
             match some_event {
                 None => {
                     if is_a_rate {
-                        for _ in self.buffer.len()..count {
-                            self.buffer.push(self.intrisic_value);
-                        }
+                        self.buffer.resize(count, self.intrisic_value);
                     }
                     break;
                 }
@@ -1538,7 +1535,7 @@ pub(crate) fn audio_param_pair(
         max_value: opts.max_value,
         event_timeline: AudioParamEventTimeline::new(),
         last_event: None,
-        buffer: ArrayVec::<f32, RENDER_QUANTUM_SIZE>::new(),
+        buffer: Vec::with_capacity(RENDER_QUANTUM_SIZE),
     };
 
     (param, render)
