@@ -35,8 +35,8 @@ impl Default for DelayOptions {
 struct PlaybackInfo {
     prev_block_index: usize,
     prev_frame_index: usize,
-    next_block_index: usize,
-    next_frame_index: usize,
+    // next_block_index: usize,
+    // next_frame_index: usize,
     k: f32,
 }
 
@@ -285,24 +285,11 @@ struct DelayWriter {
     last_written_index: Rc<Cell<Option<usize>>>,
 }
 
-struct DelayReader {
-    delay_time: AudioParamId,
-    ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
-    index: usize,
-    latest_frame_written: Rc<AtomicU64>,
-    in_cycle: bool,
-    last_written_index: Rc<Cell<Option<usize>>>,
-    // local copy of shared `last_written_index` so as to avoid render ordering issues
-    last_written_index_checked: Option<usize>,
-}
-
 // SAFETY:
 // AudioRenderQuantums are not Send but we promise the `ring_buffer` Vec is
 // empty before we ship it to the render thread.
 #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for DelayWriter {}
-#[allow(clippy::non_send_fields_in_send_ty)]
-unsafe impl Send for DelayReader {}
 
 trait RingBufferChecker {
     fn ring_buffer_mut(&self) -> RefMut<Vec<AudioRenderQuantum>>;
@@ -403,6 +390,23 @@ impl DelayWriter {
     }
 }
 
+struct DelayReader {
+    delay_time: AudioParamId,
+    ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
+    index: usize,
+    latest_frame_written: Rc<AtomicU64>,
+    in_cycle: bool,
+    last_written_index: Rc<Cell<Option<usize>>>,
+    // local copy of shared `last_written_index` so as to avoid render ordering issues
+    last_written_index_checked: Option<usize>,
+}
+
+// SAFETY:
+// AudioRenderQuantums are not Send but we promise the `ring_buffer` Vec is
+// empty before we ship it to the render thread.
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl Send for DelayReader {}
+
 impl RingBufferChecker for DelayReader {
     #[inline(always)]
     fn ring_buffer_mut(&self) -> RefMut<Vec<AudioRenderQuantum>> {
@@ -428,14 +432,13 @@ impl AudioProcessor for DelayReader {
 
         // we need to rely on ring buffer to know the actual number of output channels
         let number_of_channels = ring_buffer[0].number_of_channels();
-
         output.set_number_of_channels(number_of_channels);
 
-        // shadow and cast sample_rate, we don't need the wrapper type here
         let sample_rate = scope.sample_rate as f64;
         let dt = 1. / sample_rate;
         let quantum_duration = RENDER_QUANTUM_SIZE as f64 * dt;
 
+        // compute all playback infos for this block
         let delay = params.get(&self.delay_time);
 
         if !self.in_cycle {
@@ -449,78 +452,104 @@ impl AudioProcessor for DelayReader {
 
         let ring_size = ring_buffer.len() as i32;
         let ring_index = self.index as i32;
-
         let mut playback_infos = [PlaybackInfo::default(); RENDER_QUANTUM_SIZE];
 
-        // A DelayNode in a cycle is actively processing only when the absolute
+        if delay.len() == 1 {
+            playback_infos[0] = Self::get_playback_infos(
+                f64::from(delay[0]),
+                self.in_cycle,
+                0.,
+                quantum_duration,
+                sample_rate,
+                ring_size,
+                ring_index,
+            );
+
+            for i in 1..RENDER_QUANTUM_SIZE {
+                let PlaybackInfo {
+                    prev_block_index,
+                    prev_frame_index,
+                    k,
+                } = playback_infos[i - 1];
+
+                let mut prev_block_index = prev_block_index;
+                let mut prev_frame_index = prev_frame_index + 1;
+
+                if prev_frame_index >= RENDER_QUANTUM_SIZE {
+                    prev_block_index = (prev_block_index + 1) % ring_buffer.len();
+                    prev_frame_index = 0;
+                }
+
+                playback_infos[i] = PlaybackInfo {
+                    prev_block_index,
+                    prev_frame_index,
+                    k,
+                };
+            }
+        } else {
+            delay
+                .iter()
+                .zip(playback_infos.iter_mut())
+                .enumerate()
+                .for_each(|(index, (&d, infos))| {
+                    *infos = Self::get_playback_infos(
+                        f64::from(d),
+                        self.in_cycle,
+                        index as f64,
+                        quantum_duration,
+                        sample_rate,
+                        ring_size,
+                        ring_index,
+                    );
+                });
+        }
+
+        // [spec] A DelayNode in a cycle is actively processing only when the absolute
         // value of any output sample for the current render quantum is greater
         // than or equal to 2^−126 (smallest f32 value).
+        // @note: we use the same strategy even if not in a cycle
         let mut is_actively_processing = false;
 
         // render channels aligned
-        for (channel_number, channel) in output.channels_mut().iter_mut().enumerate() {
-            channel
+        for (channel_number, output_channel) in output.channels_mut().iter_mut().enumerate() {
+            // store channel data locally and update pointer only when needed
+            let mut block_index = playback_infos[0].prev_block_index;
+            let mut channel_data = ring_buffer[block_index].channel_data(channel_number);
+
+            output_channel
                 .iter_mut()
-                .enumerate()
-                .zip(delay.iter().cycle())
                 .zip(playback_infos.iter_mut())
-                .for_each(|(((index, o), delay), infos)| {
-                    if channel_number == 0 {
-                        // param is already clamped to max_delay_time internally
-                        let mut delay = f64::from(*delay);
-                        // if delay is in cycle, minimum delay is one quantum
-                        if self.in_cycle {
-                            delay = delay.max(quantum_duration);
-                        }
-
-                        let num_samples = delay * sample_rate;
-                        // negative position of the playhead relative to this block start
-                        // @note: in sub-quantum delays, position can be a positive number
-                        // because it is then positive according to the block start
-                        let position = index as f64 - num_samples;
-
-                        // find address of the frame in the ring buffer just before `position`
-                        let prev_position = position.floor();
-                        let (prev_block_index, prev_frame_index) =
-                            DelayReader::find_frame_adress_at_position(
-                                prev_position,
-                                ring_size,
-                                ring_index,
-                            );
-
-                        // find address of the frame in the ring buffer just after `position`
-                        let next_position = position.ceil();
-                        let (next_block_index, next_frame_index) =
-                            DelayReader::find_frame_adress_at_position(
-                                next_position,
-                                ring_size,
-                                ring_index,
-                            );
-
-                        // as position is negative k will be what we expect
-                        let k = (position - position.floor()) as f32;
-
-                        *infos = PlaybackInfo {
-                            prev_block_index,
-                            prev_frame_index,
-                            next_block_index,
-                            next_frame_index,
-                            k,
-                        };
-                    }
-
+                .for_each(|(o, infos)| {
                     let PlaybackInfo {
                         prev_block_index,
                         prev_frame_index,
-                        next_block_index,
-                        next_frame_index,
                         k,
                     } = *infos;
 
-                    let prev_sample = ring_buffer[prev_block_index].channel_data(channel_number)
-                        [prev_frame_index];
-                    let next_sample = ring_buffer[next_block_index].channel_data(channel_number)
-                        [next_frame_index];
+                    // find next sample address
+                    let mut next_block_index = prev_block_index;
+                    let mut next_frame_index = prev_frame_index + 1;
+
+                    if next_frame_index >= RENDER_QUANTUM_SIZE {
+                        next_block_index = (next_block_index + 1) % ring_buffer.len();
+                        next_frame_index = 0;
+                    }
+
+                    // update pointer to channel_data if needed
+                    if block_index != prev_block_index {
+                        block_index = prev_block_index;
+                        channel_data = ring_buffer[block_index].channel_data(channel_number);
+                    }
+
+                    let prev_sample = channel_data[prev_frame_index];
+
+                    // update pointer to channel_data if needed
+                    if block_index != next_block_index {
+                        block_index = next_block_index;
+                        channel_data = ring_buffer[block_index].channel_data(channel_number);
+                    }
+
+                    let next_sample = channel_data[next_frame_index];
 
                     let value = (1. - k).mul_add(prev_sample, k * next_sample);
 
@@ -545,6 +574,7 @@ impl AudioProcessor for DelayReader {
         // before the reader, the direct check against `self.last_written_index`
         // would be true earlier than we want
         let last_written_index = self.last_written_index.get();
+
         if last_written_index.is_some() && self.last_written_index_checked.is_none() {
             self.last_written_index_checked = last_written_index;
         }
@@ -557,38 +587,61 @@ impl AudioProcessor for DelayReader {
 
 impl DelayReader {
     #[inline(always)]
-    // note that `position` is negative as we look into the past
-    fn find_frame_adress_at_position(
-        position: f64,
+    fn get_playback_infos(
+        delay: f64,
+        in_cycle: bool,
+        sample_index: f64,
+        quantum_duration: f64,
+        sample_rate: f64,
         ring_size: i32,
         ring_index: i32,
-    ) -> (usize, usize) {
+    ) -> PlaybackInfo {
+        // param is already clamped to max_delay_time internally, so it is
+        // safe to only check lower boundary
+        let clamped_delay = if in_cycle {
+            delay.max(quantum_duration)
+        } else {
+            delay
+        };
+        let num_samples = clamped_delay * sample_rate;
+        // negative position of the playhead relative to this block start
+        let position = sample_index - num_samples;
+        let position_floored = position.floor();
+        // find address of the frame in the ring buffer just before `position`
         let num_frames = RENDER_QUANTUM_SIZE as i32;
 
         // offset of the block in which the target sample is recorded
         // we need to be `float` here so that `floor()` behaves as expected
-        let block_offset = (position / num_frames as f64).floor();
+        let block_offset = (position_floored / num_frames as f64).floor();
         // index of the block in which the target sample is recorded
-        let mut block_index = ring_index + block_offset as i32;
+        let mut prev_block_index = ring_index + block_offset as i32;
         // unroll ring buffer is needed
-        if block_index < 0 {
-            block_index += ring_size;
+        if prev_block_index < 0 {
+            prev_block_index += ring_size;
         }
 
         // find frame index in the target block
-        let mut frame_offset = position as i32 % num_frames;
+        let mut frame_offset = position_floored as i32 % num_frames;
         // handle special 0 case
         if frame_offset == 0 {
             frame_offset = -num_frames;
         }
-        let frame_index = if frame_offset <= 0 {
+
+        let prev_frame_index = if frame_offset <= 0 {
             num_frames + frame_offset
         } else {
             // sub-quantum delay
             frame_offset
         };
 
-        (block_index as usize, frame_index as usize)
+        // as position is negative k will be what we expect
+        let k = (position - position_floored) as f32;
+
+        PlaybackInfo {
+            prev_block_index: prev_block_index as usize,
+            prev_frame_index: prev_frame_index as usize,
+            k,
+        }
     }
 }
 
