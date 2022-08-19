@@ -51,7 +51,7 @@ jobs:
             const issue_number = Number(fs.readFileSync('./pr_number.txt'));
             const iai_feature = fs.readFileSync('bench.txt', { encoding:'utf8', flag:'r' });
 
-            const message = 'Benchmark result:\n\n' + iai_feature;
+            const message = '```\nBenchmark result:\n\n' + iai_feature + '\n```\n';
 
             await github.issues.createComment({
               owner: context.repo.owner,
