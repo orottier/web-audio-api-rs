@@ -432,13 +432,6 @@ impl AudioProcessor for DelayReader {
         let number_of_channels = ring_buffer[0].number_of_channels();
         output.set_number_of_channels(number_of_channels);
 
-        let sample_rate = scope.sample_rate as f64;
-        let dt = 1. / sample_rate;
-        let quantum_duration = RENDER_QUANTUM_SIZE as f64 * dt;
-
-        // compute all playback infos for this block
-        let delay = params.get(&self.delay_time);
-
         if !self.in_cycle {
             // check the latest written frame by the delay writer
             let latest_frame_written = self.latest_frame_written.load(Ordering::SeqCst);
@@ -448,6 +441,11 @@ impl AudioProcessor for DelayReader {
             // https://github.com/orottier/web-audio-api-rs/pull/198#discussion_r945326200
         }
 
+        // compute all playback infos for this block
+        let delay = params.get(&self.delay_time);
+        let sample_rate = scope.sample_rate as f64;
+        let dt = 1. / sample_rate;
+        let quantum_duration = RENDER_QUANTUM_SIZE as f64 * dt;
         let ring_size = ring_buffer.len() as i32;
         let ring_index = self.index as i32;
         let mut playback_infos = [PlaybackInfo::default(); RENDER_QUANTUM_SIZE];
