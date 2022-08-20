@@ -2336,47 +2336,6 @@ mod tests {
     }
 
     #[test]
-    fn test_set_target_at_time_snap_to_value() {
-        let context = OfflineAudioContext::new(1, 0, 48000.);
-        // implicit SetValue if SetTarget is first event
-        let opts = AudioParamDescriptor {
-            automation_rate: AutomationRate::A,
-            default_value: 0.,
-            min_value: 0.,
-            max_value: 1.,
-        };
-        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-        // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
-        let v0: f32 = 1.; // will be implicitly set in param (see default_value)
-        let v1: f32 = 0.;
-        let t0: f64 = 0.;
-        let time_constant: f64 = 1.;
-
-        param.set_value_at_time(v0, t0);
-        param.set_target_at_time(v1, t0, time_constant);
-
-        let mut res = [0.; 30];
-        for t in 0..30 {
-            let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
-            res[t] = val;
-        }
-
-        let vs = render.compute_intrisic_values(0., 1., 10);
-        assert_float_eq!(vs, &res[..10], abs_all <= 0.);
-
-        let vs = render.compute_intrisic_values(10., 1., 10);
-        assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
-
-        // this block contains values smaller the SNAP_TO_TARGET (i.e. 1e-10)
-        let vs = render.compute_intrisic_values(20., 1., 10);
-        assert_float_eq!(vs, &res[20..30], abs_all <= 0.);
-
-        // this block should thus be [0.; 10]
-        let vs = render.compute_intrisic_values(20., 1., 10);
-        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
-    }
-
-    #[test]
     fn test_set_target_at_time_a_rate_multiple_blocks() {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
@@ -2590,6 +2549,48 @@ mod tests {
             let vs = render.compute_intrisic_values(10., 1., 10);
             assert_float_eq!(vs, &[res[10]; 1][..], abs_all <= 0.);
         }
+    }
+
+    #[test]
+    // regression test for bcebfe6
+    fn test_set_target_at_time_snap_to_value() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+        let opts = AudioParamDescriptor {
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+        let v0: f32 = 1.;
+        let v1: f32 = 0.;
+        let t0: f64 = 0.;
+        let time_constant: f64 = 1.;
+
+        param.set_value_at_time(v0, t0);
+        param.set_target_at_time(v1, t0, time_constant);
+
+        let mut res = [0.; 30];
+        // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+        for t in 0..30 {
+            let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+            res[t] = val;
+        }
+
+        let vs = render.compute_intrisic_values(0., 1., 10);
+        assert_float_eq!(vs, &res[..10], abs_all <= 0.);
+
+        let vs = render.compute_intrisic_values(10., 1., 10);
+        assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
+
+        // the distance between the target value and the value just after this block
+        // is smaller than SNAP_TO_TARGET (i.e. 1e-10)
+        let vs = render.compute_intrisic_values(20., 1., 10);
+        assert_float_eq!(vs, &res[20..30], abs_all <= 0.);
+
+        // then this block should be [0.; 10]
+        let vs = render.compute_intrisic_values(20., 1., 10);
+        assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
     }
 
     #[test]
