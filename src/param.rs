@@ -2572,10 +2572,9 @@ mod tests {
 
         let mut res = [0.; 30];
         // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
-        for t in 0..30 {
-            let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
-            res[t] = val;
-        }
+        res.iter_mut().enumerate().for_each(|(t, r)| {
+            *r = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+        });
 
         let vs = render.compute_intrisic_values(0., 1., 10);
         assert_float_eq!(vs, &res[..10], abs_all <= 0.);
