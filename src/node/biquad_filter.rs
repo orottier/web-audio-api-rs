@@ -602,46 +602,41 @@ impl AudioProcessor for BiquadFilterRenderer {
         let q = params.get(&self.q);
         let gain = params.get(&self.gain);
 
-        let mut coefs_list = [Coefficients::default(); RENDER_QUANTUM_SIZE];
-        let mut current_frequency = frequency[0];
-        let mut current_detune = detune[0];
-        let mut current_q = q[0];
-        let mut current_gain = gain[0];
-        let mut current_coefs = Coefficients::default();
+        // compute first coef and fill the coef list with this value
+        let computed_freq = get_computed_freq(frequency[0], detune[0]);
+        let coef = calculate_coefs(
+            type_,
+            f64::from(sample_rate),
+            f64::from(computed_freq),
+            f64::from(gain[0]),
+            f64::from(q[0]),
+        );
 
-        // @todo - optimization only compute coefs once if all params have length == 1
-        coefs_list
-            .iter_mut()
-            .zip(frequency.iter().cycle())
-            .zip(detune.iter().cycle())
-            .zip(q.iter().cycle())
-            .zip(gain.iter().cycle())
-            .enumerate()
-            .for_each(|(index, ((((coefs, &f), &d), &q), &g))| {
-                // recompute coefs only if param change, done at least once per block
-                if index == 0
-                    || current_frequency != f
-                    || current_detune != d
-                    || current_q != q
-                    || current_gain != g
-                {
+        let mut coefs_list = [coef; RENDER_QUANTUM_SIZE];
+        // if one of the params has a length of RENDER_QUANTUM_SIZE, we need
+        // to compute the coefs for each sample
+        if frequency.len() != 1
+            || detune.len() != 1
+            || q.len() != 1
+            || gain.len() != 1
+        {
+            coefs_list
+                .iter_mut()
+                .zip(frequency.iter().cycle())
+                .zip(detune.iter().cycle())
+                .zip(q.iter().cycle())
+                .zip(gain.iter().cycle())
+                .for_each(|((((coefs, &f), &d), &q), &g)| {
                     let computed_freq = get_computed_freq(f, d);
-                    current_coefs = calculate_coefs(
+                    *coefs = calculate_coefs(
                         type_,
                         f64::from(sample_rate),
                         f64::from(computed_freq),
                         f64::from(g),
                         f64::from(q),
                     );
-
-                    current_frequency = f;
-                    current_detune = d;
-                    current_q = q;
-                    current_gain = g;
-                }
-
-                *coefs = current_coefs;
-            });
+                });
+        };
 
         for (channel_number, output_channel) in output.channels_mut().iter_mut().enumerate() {
             let input_channel = input.channel_data(channel_number);
@@ -660,17 +655,13 @@ impl AudioProcessor for BiquadFilterRenderer {
                     // as all coefs are normalized against 𝑎0, we get
                     // 𝑦(𝑛) = 𝑏0𝑥(𝑛) + 𝑏1𝑥(𝑛−1) + 𝑏2𝑥(𝑛−2) - 𝑎1𝑦(𝑛−1) - 𝑎2𝑦(𝑛−2)
                     let x = f64::from(i);
-                    let mut y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
-                    // fush subnormal to zero
-                    if y.is_subnormal() {
-                        y = 0.;
-                    }
+                    let y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
                     // update state
                     x2 = x1;
                     x1 = x;
                     y2 = y1;
                     y1 = y;
-                    // cast value as f32
+                    // cast output value as f32
                     *o = y as f32;
                 });
 
