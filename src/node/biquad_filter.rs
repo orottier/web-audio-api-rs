@@ -615,11 +615,7 @@ impl AudioProcessor for BiquadFilterRenderer {
         let mut coefs_list = [coef; RENDER_QUANTUM_SIZE];
         // if one of the params has a length of RENDER_QUANTUM_SIZE, we need
         // to compute the coefs for each frame
-        if frequency.len() != 1
-            || detune.len() != 1
-            || q.len() != 1
-            || gain.len() != 1
-        {
+        if frequency.len() != 1 || detune.len() != 1 || q.len() != 1 || gain.len() != 1 {
             coefs_list
                 .iter_mut()
                 .zip(frequency.iter().cycle())
@@ -646,7 +642,8 @@ impl AudioProcessor for BiquadFilterRenderer {
             let mut y1 = self.y1[channel_number];
             let mut y2 = self.y2[channel_number];
 
-            output_channel.iter_mut()
+            output_channel
+                .iter_mut()
                 .zip(input_channel.iter())
                 .zip(coefs_list.iter())
                 .for_each(|((o, &i), c)| {

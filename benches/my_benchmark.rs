@@ -98,8 +98,8 @@ pub fn bench_buffer_src_biquad() {
     let buffer = ctx.decode_audio_data_sync(file).unwrap();
 
     // Create an biquad filter node (defaults to low pass)
-    let biquad = context.create_biquad_filter();
-    biquad.connect(&context.destination());
+    let biquad = ctx.create_biquad_filter();
+    biquad.connect(&ctx.destination());
     biquad.frequency().set_value(200.);
 
     // Play buffer and pipe to filter
