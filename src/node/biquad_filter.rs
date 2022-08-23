@@ -601,12 +601,12 @@ impl AudioProcessor for BiquadFilterRenderer {
         let detune = params.get(&self.detune);
         let q = params.get(&self.q);
         let gain = params.get(&self.gain);
-
+        let sample_rate_f64 = f64::from(sample_rate);
         // compute first coef and fill the coef list with this value
         let computed_freq = get_computed_freq(frequency[0], detune[0]);
         let coef = calculate_coefs(
             type_,
-            f64::from(sample_rate),
+            sample_rate_f64,
             f64::from(computed_freq),
             f64::from(gain[0]),
             f64::from(q[0]),
@@ -630,7 +630,7 @@ impl AudioProcessor for BiquadFilterRenderer {
                     let computed_freq = get_computed_freq(f, d);
                     *coefs = calculate_coefs(
                         type_,
-                        f64::from(sample_rate),
+                        sample_rate_f64,
                         f64::from(computed_freq),
                         f64::from(g),
                         f64::from(q),
@@ -646,11 +646,10 @@ impl AudioProcessor for BiquadFilterRenderer {
             let mut y1 = self.y1[channel_number];
             let mut y2 = self.y2[channel_number];
 
-            input_channel
-                .iter()
-                .zip(output_channel.iter_mut())
+            output_channel.iter_mut()
+                .zip(input_channel.iter())
                 .zip(coefs_list.iter())
-                .for_each(|((&i, o), c)| {
+                .for_each(|((o, &i), c)| {
                     // 𝑎0𝑦(𝑛)+𝑎1𝑦(𝑛−1)+𝑎2𝑦(𝑛−2)=𝑏0𝑥(𝑛)+𝑏1𝑥(𝑛−1)+𝑏2𝑥(𝑛−2)
                     // as all coefs are normalized against 𝑎0, we get
                     // 𝑦(𝑛) = 𝑏0𝑥(𝑛) + 𝑏1𝑥(𝑛−1) + 𝑏2𝑥(𝑛−2) - 𝑎1𝑦(𝑛−1) - 𝑎2𝑦(𝑛−2)

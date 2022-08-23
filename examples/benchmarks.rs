@@ -581,7 +581,7 @@ fn main() {
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
-        // Create an biquad filter node (defaults to low pass)
+        // Create a biquad filter node (defaults to low pass)
         let biquad = context.create_biquad_filter();
         biquad.connect(&context.destination());
         biquad.frequency().set_value(200.);
