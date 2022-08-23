@@ -1,3 +1,10 @@
+# Version 0.23.0 (2021-08-23)
+
+- AudioParam computed values array now contains only a single value when k-rate or no automations scheduled
+- DelayNode supports sub-quantum delay
+- IIRFilterNode and BiquadFilterNode can handle multi-channel inputs
+- Various performance improvements
+
 # Version 0.22.0 (2021-07-29)
 
 - Added DynamicsCompressorNode
