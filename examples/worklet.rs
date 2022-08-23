@@ -93,12 +93,16 @@ impl AudioProcessor for WhiteNoiseProcessor {
         // edit the output buffer in place
         output.channels_mut().iter_mut().for_each(|buf| {
             let mut rng = rand::thread_rng();
-            amplitude_values
-                .iter()
-                .zip(buf.iter_mut())
-                .for_each(|(i, o)| {
+
+            // audio param buffer length is either 1 (k-rate, or when all a-rate samples are equal) or
+            // 128 (a-rate), so use `cycle` to be able to zip it with the output buffer
+            let amplitude_values_cycled = amplitude_values.iter().cycle();
+
+            buf.iter_mut()
+                .zip(amplitude_values_cycled)
+                .for_each(|(output_sample, amplitude)| {
                     let rand: f32 = rng.gen_range(-1.0..1.0);
-                    *o = *i * rand
+                    *output_sample = *amplitude * rand
                 })
         });
 
