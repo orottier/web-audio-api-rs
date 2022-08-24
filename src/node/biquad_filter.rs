@@ -622,6 +622,7 @@ impl AudioProcessor for BiquadFilterRenderer {
                 .zip(detune.iter().cycle())
                 .zip(q.iter().cycle())
                 .zip(gain.iter().cycle())
+                .skip(1)
                 .for_each(|((((coefs, &f), &d), &q), &g)| {
                     let computed_freq = get_computed_freq(f, d);
                     *coefs = calculate_coefs(
