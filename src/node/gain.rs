@@ -113,12 +113,20 @@ impl AudioProcessor for GainRenderer {
 
         *output = input.clone();
 
-        output.modify_channels(|channel| {
-            channel
-                .iter_mut()
-                .zip(gain.iter().cycle())
-                .for_each(|(o, g)| *o *= g);
-        });
+        if gain.len() == 1 {
+            let g = gain[0];
+
+            output.channels_mut().iter_mut().for_each(|channel| {
+                channel.iter_mut().for_each(|o| *o *= g);
+            });
+        } else {
+            output.channels_mut().iter_mut().for_each(|channel| {
+                channel
+                    .iter_mut()
+                    .zip(gain.iter().cycle())
+                    .for_each(|(o, g)| *o *= g);
+            });
+        }
 
         false
     }
