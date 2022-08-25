@@ -101,11 +101,20 @@ impl AudioProcessor for GainRenderer {
 
         let gain = params.get(&self.gain);
 
+        // very fast track for mute or pass-through
         if gain.len() == 1 {
-            if gain[0] == 0. {
+            // 1e-6 is -120 dB when close to 0 and ±8.283506e-6 dB when close to 1
+            // very probably small enough to not be audible
+            let threshold = 1e-6;
+
+            let diff_to_zero = gain[0].abs();
+            if diff_to_zero <= threshold {
                 output.make_silent();
                 return false;
-            } else if gain[0] == 1. {
+            }
+
+            let diff_to_one = (1. - gain[0]).abs();
+            if diff_to_one <= threshold {
                 *output = input.clone();
                 return false;
             }
