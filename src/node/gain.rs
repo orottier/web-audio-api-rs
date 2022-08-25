@@ -101,11 +101,20 @@ impl AudioProcessor for GainRenderer {
 
         let gain = params.get(&self.gain);
 
+        // very fast track for mute or pass-through
         if gain.len() == 1 {
-            if gain[0] == 0. {
+            // 1e-6 is -120 dB when close to 0 and ±8.283506e-6 dB when close to 1
+            // very probably small enough to not be audible
+            let threshold = 1e-6;
+
+            let diff_to_zero = gain[0].abs();
+            if diff_to_zero <= threshold {
                 output.make_silent();
                 return false;
-            } else if gain[0] == 1. {
+            }
+
+            let diff_to_one = (1. - gain[0]).abs();
+            if diff_to_one <= threshold {
                 *output = input.clone();
                 return false;
             }
@@ -113,12 +122,20 @@ impl AudioProcessor for GainRenderer {
 
         *output = input.clone();
 
-        output.modify_channels(|channel| {
-            channel
-                .iter_mut()
-                .zip(gain.iter().cycle())
-                .for_each(|(o, g)| *o *= g);
-        });
+        if gain.len() == 1 {
+            let g = gain[0];
+
+            output.channels_mut().iter_mut().for_each(|channel| {
+                channel.iter_mut().for_each(|o| *o *= g);
+            });
+        } else {
+            output.channels_mut().iter_mut().for_each(|channel| {
+                channel
+                    .iter_mut()
+                    .zip(gain.iter().cycle())
+                    .for_each(|(o, g)| *o *= g);
+            });
+        }
 
         false
     }

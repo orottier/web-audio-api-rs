@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn test_db_to_lin() {
-        assert_float_eq!(db_to_lin(0.), 1., abs <= 1e-8);
+        assert_float_eq!(db_to_lin(0.), 1., abs <= 0.);
         assert_float_eq!(db_to_lin(-20.), 0.1, abs <= 1e-8);
         assert_float_eq!(db_to_lin(-40.), 0.01, abs <= 1e-8);
         assert_float_eq!(db_to_lin(-60.), 0.001, abs <= 1e-8);
