@@ -85,6 +85,8 @@ jobs:
       run: git checkout -
     - name: Copy over benchmarks from PR branch
       run: git checkout - -- benches/my_benchmark.rs
+    - name: Revert when benches do not compile on main
+      run: cargo check --benches || git checkout main -- benches/my_benchmark.rs
     - name: Run bench against baseline
       run: cargo bench --no-default-features | sed '0,/^test result:/d' | tee bench.txt
 
