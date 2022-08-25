@@ -118,4 +118,5 @@ iai::main!(
     bench_sine_gain_delay,
     bench_buffer_src,
     bench_buffer_src_iir,
+    bench_buffer_src_biquad,
 );
