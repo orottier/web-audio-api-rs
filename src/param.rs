@@ -994,18 +994,41 @@ impl AudioParamProcessor {
 
         let is_a_rate = self.is_a_rate.load(Ordering::SeqCst);
         let is_k_rate = !is_a_rate;
-        let is_timeline_empty = self.event_timeline.is_empty();
 
-        if is_k_rate || is_timeline_empty {
+        let next_block_time = dt.mul_add(count as f64, block_time);
+
+        // Check if we can safely return a buffer of length 1 even for a-rate params.
+        // Several cases allow us to do so:
+        // - The timeline is empty
+        // - The timeline is not empty: in such case if `event.time >= next_block_time`
+        //   AND `event_type` is not `LinearRampToValueAtTime` or `ExponentialRampToValueAtTime`
+        //   this is safe, i.e.:
+        //   + For linear and exponential ramps `event.time` is the end time while their
+        //   start time is `last_event.time`, therefore if `peek()` is of these
+        //   types, we are in the middle of the ramp.
+        //   + For all other event, `event.time` is their start time.
+        //   (@note - `SetTargetAtTime` events also uses `last_event` but only for
+        //   its value, not for its timing informations, so no problem there)
+        let is_constant_block = match self.event_timeline.peek() {
+            None => true,
+            Some(event) => {
+                if event.event_type != AudioParamEventType::LinearRampToValueAtTime
+                    && event.event_type != AudioParamEventType::ExponentialRampToValueAtTime
+                {
+                    event.time >= next_block_time
+                } else {
+                    false
+                }
+            }
+        };
+
+        if is_k_rate || is_constant_block {
             self.buffer.push(self.intrisic_value);
-
-            // nothing to compute in timeline
-            if is_timeline_empty {
+            // nothing to compute in timeline, for both k-rate and a-rate
+            if is_constant_block {
                 return;
             }
         }
-
-        let next_block_time = dt.mul_add(count as f64, block_time);
 
         loop {
             let some_event = self.event_timeline.peek();
@@ -2588,7 +2611,7 @@ mod tests {
         assert_float_eq!(vs, &res[20..30], abs_all <= 0.);
 
         // then this block should be [0.; 10]
-        let vs = render.compute_intrisic_values(20., 1., 10);
+        let vs = render.compute_intrisic_values(30., 1., 10);
         assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
     }
 
@@ -3114,39 +3137,80 @@ mod tests {
 
     #[test]
     fn test_varying_param_size() {
-        let context = OfflineAudioContext::new(1, 0, 48000.);
+        // event registered online during rendering
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
 
-        let opts = AudioParamDescriptor {
-            automation_rate: AutomationRate::A,
-            default_value: 0.,
-            min_value: 0.,
-            max_value: 10.,
-        };
-        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(0., 0.);
-        param.linear_ramp_to_value_at_time(9., 9.);
+            param.set_value_at_time(0., 0.);
+            param.linear_ramp_to_value_at_time(9., 9.);
 
-        // first block should be length 10 (128 in real world)
-        let vs = render.compute_intrisic_values(0., 1., 10);
-        let expected = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9.];
-        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+            // first block should be length 10 (128 in real world)
+            let vs = render.compute_intrisic_values(0., 1., 10);
+            let expected = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9.];
+            assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
-        // second block should have length 1
-        let vs = render.compute_intrisic_values(10., 1., 10);
-        let expected = [9.; 1];
-        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+            // second block should have length 1
+            let vs = render.compute_intrisic_values(10., 1., 10);
+            let expected = [9.; 1];
+            assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
-        // insert event in third block, should have length 0
-        param.set_value_at_time(1., 25.);
-        let vs = render.compute_intrisic_values(20., 1., 10);
-        let expected = [9., 9., 9., 9., 9., 1., 1., 1., 1., 1.];
-        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+            // insert event in third block, should have length 10
+            param.set_value_at_time(1., 25.);
 
-        // fourth block should have length 1
-        let vs = render.compute_intrisic_values(30., 1., 10);
-        let expected = [1.; 1];
-        assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+            let vs = render.compute_intrisic_values(20., 1., 10);
+            let expected = [9., 9., 9., 9., 9., 1., 1., 1., 1., 1.];
+            assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+
+            // fourth block should have length 1
+            let vs = render.compute_intrisic_values(30., 1., 10);
+            let expected = [1.; 1];
+            assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+        }
+
+        // event registered before rendering
+        {
+            let context = OfflineAudioContext::new(1, 0, 48000.);
+
+            let opts = AudioParamDescriptor {
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: 0.,
+                max_value: 10.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+            param.set_value_at_time(0., 0.);
+            param.linear_ramp_to_value_at_time(9., 9.);
+            param.set_value_at_time(1., 25.);
+
+            // first block should be length 10 (128 in real world)
+            let vs = render.compute_intrisic_values(0., 1., 10);
+            let expected = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9.];
+            assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+
+            // second block should have length 1
+            let vs = render.compute_intrisic_values(10., 1., 10);
+            let expected = [9.; 1];
+            assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+
+            // set value event in third block, length should be 10
+            let vs = render.compute_intrisic_values(20., 1., 10);
+            let expected = [9., 9., 9., 9., 9., 1., 1., 1., 1., 1.];
+            assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+
+            // fourth block should have length 1
+            let vs = render.compute_intrisic_values(30., 1., 10);
+            let expected = [1.; 1];
+            assert_float_eq!(vs, &expected[..], abs_all <= 0.);
+        }
     }
 
     #[test]
