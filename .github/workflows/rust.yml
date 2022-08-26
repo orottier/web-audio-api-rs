@@ -79,14 +79,14 @@ jobs:
       run: sudo apt-get install valgrind
     - name: Checkout main branch
       run: git checkout main
-    - name: Run benchmarks for main branch
-      run: cargo bench --no-default-features
-    - name: Checkout PR branch
-      run: git checkout -
     - name: Copy over benchmarks from PR branch
       run: git checkout - -- benches/my_benchmark.rs
     - name: Revert when benches do not compile on main
       run: cargo check --benches || git checkout main -- benches/my_benchmark.rs
+    - name: Run benchmarks for main branch
+      run: cargo bench --no-default-features
+    - name: Checkout PR branch
+      run: git checkout -
     - name: Run bench against baseline
       run: cargo bench --no-default-features | sed '0,/^test result:/d' | tee bench.txt
 
