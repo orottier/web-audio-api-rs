@@ -92,6 +92,25 @@ pub fn bench_buffer_src_iir() {
     assert_eq!(ctx.start_rendering_sync().length(), 48000);
 }
 
+pub fn bench_buffer_src_biquad() {
+    let ctx = OfflineAudioContext::new(2, black_box(48000), 48000.);
+    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
+    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+
+    // Create an biquad filter node (defaults to low pass)
+    let biquad = ctx.create_biquad_filter();
+    biquad.connect(&ctx.destination());
+    biquad.frequency().set_value(200.);
+
+    // Play buffer and pipe to filter
+    let src = ctx.create_buffer_source();
+    src.connect(&biquad);
+    src.set_buffer(buffer);
+    src.start();
+
+    assert_eq!(ctx.start_rendering_sync().length(), 48000);
+}
+
 iai::main!(
     bench_ctor,
     bench_sine,
@@ -99,4 +118,5 @@ iai::main!(
     bench_sine_gain_delay,
     bench_buffer_src,
     bench_buffer_src_iir,
+    bench_buffer_src_biquad,
 );

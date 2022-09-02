@@ -576,6 +576,26 @@ fn main() {
         benchmark(&mut stdout, name, context, &mut results);
     }
 
+    {
+        let name = "Biquad filter";
+
+        let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
+
+        // Create a biquad filter node (defaults to low pass)
+        let biquad = context.create_biquad_filter();
+        biquad.connect(&context.destination());
+        biquad.frequency().set_value(200.);
+
+        let src = context.create_buffer_source();
+        let buffer = get_buffer(&sources, sample_rate, 2);
+        src.connect(&biquad);
+        src.set_buffer(buffer);
+        src.set_loop(true);
+        src.start();
+
+        benchmark(&mut stdout, name, context, &mut results);
+    }
+
     write!(
         stdout,
         "{}{}> All done!\r\n\r\n",
