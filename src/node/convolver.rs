@@ -221,6 +221,60 @@ impl ConvolverNode {
     }
 }
 
+struct FFT {
+    fft_planner: RealFftPlanner<f32>,
+    fft_input: Vec<f32>,
+    fft_scratch: Vec<Complex<f32>>,
+    fft_output: Vec<Complex<f32>>,
+}
+
+impl FFT {
+    fn new(length: usize) -> Self {
+        let mut fft_planner = RealFftPlanner::<f32>::new();
+        let fft = fft_planner.plan_fft_forward(length);
+        let fft_input = fft.make_input_vec();
+        let fft_scratch = fft.make_scratch_vec();
+        let fft_output = fft.make_output_vec();
+
+        Self {
+            fft_planner,
+            fft_input,
+            fft_scratch,
+            fft_output,
+        }
+    }
+
+    fn real(&mut self) -> &mut [f32] {
+        &mut self.fft_input[..]
+    }
+
+    fn complex(&mut self) -> &mut [Complex<f32>] {
+        &mut self.fft_output[..]
+    }
+
+    fn process(&mut self) -> &[Complex<f32>] {
+        let fft = self.fft_planner.plan_fft_forward(self.fft_input.len());
+        fft.process_with_scratch(
+            &mut self.fft_input,
+            &mut self.fft_output,
+            &mut self.fft_scratch,
+        )
+        .unwrap();
+        &self.fft_output[..]
+    }
+
+    fn inverse(&mut self) -> &[f32] {
+        let fft = self.fft_planner.plan_fft_inverse(self.fft_input.len());
+        fft.process_with_scratch(
+            &mut self.fft_output,
+            &mut self.fft_input,
+            &mut self.fft_scratch,
+        )
+        .unwrap();
+        &self.fft_input[..]
+    }
+}
+
 struct ConvolverRenderer {
     receiver: Receiver<ConvolverRendererInner>,
     inner: Option<ConvolverRendererInner>,
@@ -239,10 +293,7 @@ struct ConvolverRendererInner {
     length: usize,
     response_fft: Vec<Complex<f32>>,
     sample_buffer: Vec<f32>,
-    fft_planner: RealFftPlanner<f32>,
-    fft_input: Vec<f32>,
-    fft_scratch: Vec<Complex<f32>>,
-    fft_output: Vec<Complex<f32>>,
+    fft: FFT,
 }
 
 impl ConvolverRendererInner {
@@ -250,26 +301,49 @@ impl ConvolverRendererInner {
         let length = response.length();
         let sample_buffer = vec![0.; length];
 
-        let mut fft_planner = RealFftPlanner::<f32>::new();
-        let fft = fft_planner.plan_fft_forward(length);
-        let mut fft_input = fft.make_input_vec();
-        let mut fft_scratch = fft.make_scratch_vec();
-        let mut fft_output = fft.make_output_vec();
+        let mut fft = FFT::new(length);
 
-        fft_input.copy_from_slice(response.get_channel_data(0));
-        fft.process_with_scratch(&mut fft_input, &mut fft_output, &mut fft_scratch)
-            .unwrap();
-        let response_fft = fft_output.clone();
+        fft.real().copy_from_slice(response.get_channel_data(0));
+        let response_fft = fft.process().to_vec();
 
         Self {
             length,
             response_fft,
             sample_buffer,
-            fft_planner,
-            fft_input,
-            fft_scratch,
-            fft_output,
+            fft,
         }
+    }
+
+    fn process(&mut self, input: &[f32], output: &mut [f32]) -> bool {
+        // shift previous samples to the right
+        self.sample_buffer.copy_within(128.., 0);
+
+        // add current input to sample buffer
+        self.sample_buffer[self.length - 128..].copy_from_slice(input);
+
+        // FFT the entire sample buffer
+        self.fft.real().copy_from_slice(&self.sample_buffer[..]);
+        self.fft.process();
+
+        // Multiply frequency data with the response
+        self.fft
+            .complex()
+            .iter_mut()
+            .zip(self.response_fft.iter())
+            .for_each(|(o, r)| *o *= r);
+
+        // inverse FFT
+        let convolved = self.fft.inverse();
+
+        // write samples back to output, take them somewhere from the middle to prevent boundary
+        // artefacts - hence, add a delay of 512 samples
+        let len = self.length;
+        convolved[len - 512..len - 512 + 128]
+            .iter()
+            .zip(output)
+            .for_each(|(f, o)| *o = *f / len as f32);
+
+        true
     }
 }
 
@@ -307,47 +381,11 @@ impl AudioProcessor for ConvolverRenderer {
             Some(convolver) => convolver,
         };
 
-        // shift previous samples to the right
-        convolver.sample_buffer.copy_within(128.., 0);
-
-        // add current input to sample buffer
         let mut mono = input.clone();
         mono.mix(1, ChannelInterpretation::Speakers);
-        convolver.sample_buffer[convolver.length - 128..]
-            .copy_from_slice(mono.channel_data(0).as_slice());
+        let input = &mono.channel_data(0)[..];
+        let output = &mut output.channel_data_mut(0)[..];
 
-        // FFT the entire sample buffer
-        let fft = convolver.fft_planner.plan_fft_forward(convolver.length);
-        fft.process_with_scratch(
-            &mut convolver.sample_buffer,
-            &mut convolver.fft_output,
-            &mut convolver.fft_scratch,
-        )
-        .unwrap();
-
-        // Multiply frequency data with the response
-        convolver
-            .fft_output
-            .iter_mut()
-            .zip(convolver.response_fft.iter())
-            .for_each(|(o, r)| *o *= r);
-
-        // inverse FFT
-        let fft = convolver.fft_planner.plan_fft_inverse(convolver.length);
-        let fft_result = fft.process_with_scratch(
-            &mut convolver.fft_output,
-            &mut convolver.fft_input,
-            &mut convolver.fft_scratch,
-        );
-        fft_result.unwrap();
-
-        // write samples back to output, take them somewhere from the middle to prevent boundary
-        // artefacts - hence, add a delay of 512 samples
-        convolver.fft_input[convolver.length - 512..convolver.length - 512 + 128]
-            .iter()
-            .zip(output.channel_data_mut(0).iter_mut())
-            .for_each(|(f, o)| *o = *f / convolver.length as f32);
-
-        true
+        convolver.process(input, output)
     }
 }
