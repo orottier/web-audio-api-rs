@@ -339,7 +339,7 @@ impl ConvolverRendererInner {
         }
     }
 
-    fn process(&mut self, input: &[f32], output: &mut [f32]) -> bool {
+    fn process(&mut self, input: &[f32], output: &mut [f32]) {
         self.fft2.real()[..RENDER_QUANTUM_SIZE].copy_from_slice(input);
         self.fft2.real()[RENDER_QUANTUM_SIZE..].fill(0.);
         let spectrum = self.fft2.process();
@@ -366,8 +366,31 @@ impl ConvolverRendererInner {
 
         roll_zero(&mut self.fdl[..], 2 * RENDER_QUANTUM_SIZE);
         roll_zero(&mut self.out[..], RENDER_QUANTUM_SIZE);
+    }
 
-        true
+    fn tail(&mut self, output: &mut AudioRenderQuantum) -> bool {
+        if self.num_ir_blocks == 0 {
+            output.make_silent();
+            return false;
+        }
+
+        self.num_ir_blocks -= 1;
+
+        let c_len = self.fft2.complex().len();
+        self.fft2.complex().copy_from_slice(&self.fdl[..c_len]);
+        let inverse = self.fft2.inverse();
+        self.out.iter_mut().zip(inverse).for_each(|(o, i)| {
+            *o += i / RENDER_QUANTUM_SIZE as f32;
+        });
+
+        output
+            .channel_data_mut(0)
+            .copy_from_slice(&self.out[..RENDER_QUANTUM_SIZE]);
+
+        roll_zero(&mut self.fdl[..], 2 * RENDER_QUANTUM_SIZE);
+        roll_zero(&mut self.out[..], RENDER_QUANTUM_SIZE);
+
+        self.num_ir_blocks > 0
     }
 }
 
@@ -393,16 +416,23 @@ impl AudioProcessor for ConvolverRenderer {
             None => {
                 // no convolution buffer set, passthrough
                 *output = input.clone();
-                return true;
+                return !input.is_silent();
             }
             Some(convolver) => convolver,
         };
+
+        // handle tail time
+        if input.is_silent() {
+            return convolver.tail(output);
+        }
 
         let mut mono = input.clone();
         mono.mix(1, ChannelInterpretation::Speakers);
         let input = &mono.channel_data(0)[..];
         let output = &mut output.channel_data_mut(0)[..];
 
-        convolver.process(input, output)
+        convolver.process(input, output);
+
+        true
     }
 }

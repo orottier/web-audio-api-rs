@@ -35,5 +35,9 @@ fn main() {
 
     println!("Parking garage");
     convolve.set_buffer(Some(impulse_buffer2));
-    thread::sleep(time::Duration::from_millis(9_000));
+    thread::sleep(time::Duration::from_millis(5_000));
+
+    println!("Stop input - flush out remaining impulse response");
+    src.stop();
+    thread::sleep(time::Duration::from_millis(2_000));
 }
