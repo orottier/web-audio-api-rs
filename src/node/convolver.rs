@@ -230,14 +230,14 @@ fn roll_zero<T: Default + Copy>(signal: &mut [T], n: usize) {
     signal[len - n..].fill(T::default());
 }
 
-struct FFT {
+struct Fft {
     fft_planner: RealFftPlanner<f32>,
     fft_input: Vec<f32>,
     fft_scratch: Vec<Complex<f32>>,
     fft_output: Vec<Complex<f32>>,
 }
 
-impl FFT {
+impl Fft {
     fn new(length: usize) -> Self {
         let mut fft_planner = RealFftPlanner::<f32>::new();
         let fft = fft_planner.plan_fft_forward(length);
@@ -303,7 +303,7 @@ struct ConvolverRendererInner {
     h: Vec<Complex<f32>>,
     fdl: Vec<Complex<f32>>,
     out: Vec<f32>,
-    fft2: FFT,
+    fft2: Fft,
 }
 
 impl ConvolverRendererInner {
@@ -311,7 +311,7 @@ impl ConvolverRendererInner {
         // mono processing only for now
         let response = response.channel_data(0).as_slice();
 
-        let mut fft2 = FFT::new(2 * RENDER_QUANTUM_SIZE);
+        let mut fft2 = Fft::new(2 * RENDER_QUANTUM_SIZE);
         let p = response.len();
 
         let num_ir_blocks = p / RENDER_QUANTUM_SIZE;
