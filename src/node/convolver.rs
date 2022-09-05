@@ -2,6 +2,7 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretatio
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::RENDER_QUANTUM_SIZE;
 
 use crossbeam_channel::{Receiver, Sender};
 
@@ -221,6 +222,14 @@ impl ConvolverNode {
     }
 }
 
+fn roll_zero<T: Default + Copy>(signal: &mut [T], n: usize) {
+    // roll array by n elements
+    // zero out the last n elements
+    let len = signal.len();
+    signal.copy_within(n.., 0);
+    signal[len - n..].fill(T::default());
+}
+
 struct FFT {
     fft_planner: RealFftPlanner<f32>,
     fft_input: Vec<f32>,
@@ -290,58 +299,73 @@ impl ConvolverRenderer {
 }
 
 struct ConvolverRendererInner {
-    length: usize,
-    response_fft: Vec<Complex<f32>>,
-    sample_buffer: Vec<f32>,
-    fft: FFT,
+    num_ir_blocks: usize,
+    h: Vec<Complex<f32>>,
+    fdl: Vec<Complex<f32>>,
+    out: Vec<f32>,
+    fft2: FFT,
 }
 
 impl ConvolverRendererInner {
     fn new(response: AudioBuffer) -> Self {
-        let length = response.length();
-        let sample_buffer = vec![0.; length];
+        // mono processing only for now
+        let response = response.channel_data(0).as_slice();
 
-        let mut fft = FFT::new(length);
+        let mut fft2 = FFT::new(2 * RENDER_QUANTUM_SIZE);
+        let p = response.len();
 
-        fft.real().copy_from_slice(response.get_channel_data(0));
-        let response_fft = fft.process().to_vec();
+        let num_ir_blocks = p / RENDER_QUANTUM_SIZE;
+
+        let mut h = vec![Complex::default(); num_ir_blocks * 2 * RENDER_QUANTUM_SIZE];
+        for (resp_fft, resp) in h
+            .chunks_mut(2 * RENDER_QUANTUM_SIZE)
+            .zip(response.chunks(RENDER_QUANTUM_SIZE))
+        {
+            // fill resp_fft with FFT of resp.zero_pad(RENDER_QUANTUM_SIZE)
+            fft2.real()[..RENDER_QUANTUM_SIZE].copy_from_slice(resp);
+            fft2.real()[RENDER_QUANTUM_SIZE..].fill(0.);
+            resp_fft[..fft2.complex().len()].copy_from_slice(fft2.process());
+        }
+
+        let fdl = vec![Complex::default(); 2 * RENDER_QUANTUM_SIZE * num_ir_blocks];
+        let out = vec![0.; 2 * RENDER_QUANTUM_SIZE - 1];
 
         Self {
-            length,
-            response_fft,
-            sample_buffer,
-            fft,
+            num_ir_blocks,
+            h,
+            fdl,
+            out,
+            fft2,
         }
     }
 
     fn process(&mut self, input: &[f32], output: &mut [f32]) -> bool {
-        // shift previous samples to the right
-        self.sample_buffer.copy_within(128.., 0);
+        self.fft2.real()[..RENDER_QUANTUM_SIZE].copy_from_slice(input);
+        self.fft2.real()[RENDER_QUANTUM_SIZE..].fill(0.);
+        let spectrum = self.fft2.process();
 
-        // add current input to sample buffer
-        self.sample_buffer[self.length - 128..].copy_from_slice(input);
+        self.fdl
+            .chunks_mut(2 * RENDER_QUANTUM_SIZE)
+            .zip(self.h.chunks(2 * RENDER_QUANTUM_SIZE))
+            .for_each(|(fdl_c, h_c)| {
+                fdl_c
+                    .iter_mut()
+                    .zip(h_c)
+                    .zip(spectrum)
+                    .for_each(|((f, h), s)| *f += h * s)
+            });
 
-        // FFT the entire sample buffer
-        self.fft.real().copy_from_slice(&self.sample_buffer[..]);
-        self.fft.process();
+        let c_len = self.fft2.complex().len();
+        self.fft2.complex().copy_from_slice(&self.fdl[..c_len]);
+        let inverse = self.fft2.inverse();
+        self.out.iter_mut().zip(inverse).for_each(|(o, i)| {
+            *o += i / RENDER_QUANTUM_SIZE as f32;
+        });
 
-        // Multiply frequency data with the response
-        self.fft
-            .complex()
-            .iter_mut()
-            .zip(self.response_fft.iter())
-            .for_each(|(o, r)| *o *= r);
+        output.copy_from_slice(&self.out[..RENDER_QUANTUM_SIZE]);
 
-        // inverse FFT
-        let convolved = self.fft.inverse();
-
-        // write samples back to output, take them somewhere from the middle to prevent boundary
-        // artefacts - hence, add a delay of 512 samples
-        let len = self.length;
-        convolved[len - 512..len - 512 + 128]
-            .iter()
-            .zip(output)
-            .for_each(|(f, o)| *o = *f / len as f32);
+        roll_zero(&mut self.fdl[..], 2 * RENDER_QUANTUM_SIZE);
+        roll_zero(&mut self.out[..], RENDER_QUANTUM_SIZE);
 
         true
     }
@@ -360,15 +384,8 @@ impl AudioProcessor for ConvolverRenderer {
         let output = &mut outputs[0];
         output.force_mono();
 
-        if let Ok(mut msg) = self.receiver.try_recv() {
-            // Copy over previous sample buffer, if any
-            if let Some(inner) = &mut self.inner {
-                let prev_len = inner.sample_buffer.len();
-                let new_len = msg.sample_buffer.len();
-                let shared_size = prev_len.min(new_len);
-                msg.sample_buffer[..shared_size]
-                    .copy_from_slice(&inner.sample_buffer[..shared_size]);
-            }
+        // handle new impulse response buffer, if any
+        if let Ok(msg) = self.receiver.try_recv() {
             self.inner = Some(msg);
         }
 
