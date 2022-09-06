@@ -9,7 +9,7 @@ use crossbeam_channel::{Receiver, Sender};
 use realfft::{num_complex::Complex, RealFftPlanner};
 
 /// Scale buffer by an equal-power normalization
-fn normalize_buffer(buffer: &mut AudioBuffer) {
+fn normalization(buffer: &AudioBuffer) -> f32 {
     let gain_calibration = 0.00125;
     let gain_calibration_sample_rate = 44100.;
     let min_power = 0.000125;
@@ -17,6 +17,7 @@ fn normalize_buffer(buffer: &mut AudioBuffer) {
     // Normalize by RMS power.
     let number_of_channels = buffer.number_of_channels();
     let length = buffer.length();
+    let sample_rate = buffer.sample_rate();
 
     let mut power: f32 = buffer
         .channels()
@@ -37,17 +38,14 @@ fn normalize_buffer(buffer: &mut AudioBuffer) {
     scale *= gain_calibration;
 
     // Scale depends on sample-rate.
-    scale *= gain_calibration_sample_rate / buffer.sample_rate();
+    scale *= gain_calibration_sample_rate / sample_rate;
 
     // True-stereo compensation.
     if number_of_channels == 4 {
         scale *= 0.5;
     }
 
-    buffer
-        .channels_mut()
-        .iter_mut()
-        .for_each(|c| c.as_mut_slice().iter_mut().for_each(|s| *s *= scale))
+    scale
 }
 
 /// `ConvolverNode` options
@@ -187,21 +185,32 @@ impl ConvolverNode {
     /// sample rate.
     pub fn set_buffer(&mut self, buffer: Option<AudioBuffer>) {
         if let Some(buffer) = &buffer {
+            let sample_rate = buffer.sample_rate();
             // todo, resample when this happens?
             assert_eq!(buffer.sample_rate(), self.context().sample_rate());
 
+            // normalize before padding because the length of the buffer affects the scale
+            let scale = if self.normalize {
+                normalization(buffer)
+            } else {
+                1.
+            };
+
+            // Pad the response buffer with zeroes so its size is a power of 2, with 2 * 128 as min size
             let length = buffer.length();
+            let padded_length = length.next_power_of_two().max(2 * RENDER_QUANTUM_SIZE);
+            let samples: Vec<_> = (0..buffer.number_of_channels())
+                .map(|_| {
+                    let mut samples = vec![0.; padded_length];
+                    samples[..length]
+                        .iter_mut()
+                        .zip(buffer.get_channel_data(0))
+                        .for_each(|(o, i)| *o = *i * scale);
+                    samples
+                })
+                .collect();
 
-            // Pad the response buffer with zeroes so its size is a power of 2
-            let padded_length = length.next_power_of_two();
-            let sample_rate = buffer.sample_rate();
-            let mut samples = vec![0.; padded_length];
-            samples[..length].copy_from_slice(buffer.get_channel_data(0));
-            let mut padded_buffer = AudioBuffer::from(vec![samples], sample_rate);
-
-            if self.normalize {
-                normalize_buffer(&mut padded_buffer);
-            }
+            let padded_buffer = AudioBuffer::from(samples, sample_rate);
 
             let convolve = ConvolverRendererInner::new(padded_buffer);
             let _ = self.sender.send(convolve); // can fail when render thread shut down
@@ -359,7 +368,7 @@ impl ConvolverRendererInner {
         self.fft2.complex().copy_from_slice(&self.fdl[..c_len]);
         let inverse = self.fft2.inverse();
         self.out.iter_mut().zip(inverse).for_each(|(o, i)| {
-            *o += i / RENDER_QUANTUM_SIZE as f32;
+            *o += i / (2 * RENDER_QUANTUM_SIZE) as f32;
         });
 
         output.copy_from_slice(&self.out[..RENDER_QUANTUM_SIZE]);
@@ -380,7 +389,7 @@ impl ConvolverRendererInner {
         self.fft2.complex().copy_from_slice(&self.fdl[..c_len]);
         let inverse = self.fft2.inverse();
         self.out.iter_mut().zip(inverse).for_each(|(o, i)| {
-            *o += i / RENDER_QUANTUM_SIZE as f32;
+            *o += i / (2 * RENDER_QUANTUM_SIZE) as f32;
         });
 
         output
@@ -434,5 +443,110 @@ impl AudioProcessor for ConvolverRenderer {
         convolver.process(input, output);
 
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use float_eq::assert_float_eq;
+
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::node::{AudioBufferSourceNode, AudioBufferSourceOptions, AudioScheduledSourceNode};
+
+    use super::*;
+
+    #[test]
+    fn test_roll_zero() {
+        let mut input = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        roll_zero(&mut input, 3);
+        assert_eq!(&input, &[4, 5, 6, 7, 8, 9, 10, 0, 0, 0]);
+    }
+
+    fn test_convolve(signal: &[f32], impulse_resp: Option<Vec<f32>>, length: usize) -> AudioBuffer {
+        let sample_rate = 44100.;
+        let context = OfflineAudioContext::new(1, length, sample_rate);
+
+        let input = AudioBuffer::from(vec![signal.to_vec()], sample_rate);
+        let src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        src.set_buffer(input);
+        src.start();
+
+        let mut conv = ConvolverNode::new(&context, ConvolverOptions::default());
+        conv.set_buffer(impulse_resp.map(|b| AudioBuffer::from(vec![b.to_vec()], sample_rate)));
+
+        src.connect(&conv);
+        conv.connect(&context.destination());
+
+        context.start_rendering_sync()
+    }
+
+    #[test]
+    fn test_passthrough() {
+        let output = test_convolve(&[0., 1., 0., -1., 0.], None, 10);
+        let expected = vec![0., 1., 0., -1., 0., 0., 0., 0., 0., 0.];
+        assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
+    }
+
+    #[test]
+    fn test_empty() {
+        let identity_ir = vec![];
+        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(identity_ir), 10);
+        let expected = vec![0.; 10];
+        assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
+    }
+
+    #[test]
+    fn test_zeroed() {
+        let identity_ir = vec![0., 0., 0., 0., 0., 0.];
+        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(identity_ir), 10);
+        let expected = vec![0.; 10];
+        assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
+    }
+
+    #[test]
+    fn test_identity() {
+        let identity_ir = vec![1.];
+        let calibration = 0.00125;
+        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(identity_ir), 10);
+        let expected = vec![0., calibration, 0., -calibration, 0., 0., 0., 0., 0., 0.];
+        assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
+    }
+
+    #[test]
+    fn test_two_id() {
+        let identity_ir = vec![1., 1.];
+        let calibration = 0.00125;
+        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(identity_ir), 10);
+        let expected = vec![
+            0.,
+            calibration,
+            calibration,
+            -calibration,
+            -calibration,
+            0.,
+            0.,
+            0.,
+            0.,
+            0.,
+        ];
+        assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
+    }
+
+    #[test]
+    fn test_should_have_tail_time() {
+        // impulse response of length 256
+        const IR_LEN: usize = 256;
+        let identity_ir = vec![1.; IR_LEN];
+
+        // unity input signal
+        let input = &[1.];
+
+        // render into a buffer of size 512
+        let output = test_convolve(input, Some(identity_ir), 512);
+
+        // we expect non-zero output in the range 0 to IR_LEN
+        let output = output.channel_data(0).as_slice();
+        assert!(!output[..IR_LEN].iter().any(|v| *v <= 1E-6));
+        assert_float_eq!(&output[IR_LEN..], &[0.; 512 - IR_LEN][..], abs_all <= 1E-6);
     }
 }
