@@ -5,8 +5,8 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Render
 use crate::RENDER_QUANTUM_SIZE;
 
 use crossbeam_channel::{Receiver, Sender};
-
 use realfft::{num_complex::Complex, RealFftPlanner};
+use std::sync::Mutex;
 
 /// Scale buffer by an equal-power normalization
 fn normalization(buffer: &AudioBuffer) -> f32 {
@@ -88,7 +88,7 @@ pub struct ConvolverOptions {
 /// let src = context.create_buffer_source();
 /// src.set_buffer(audio_buffer);
 ///
-/// let mut convolve = ConvolverNode::new(&context, ConvolverOptions::default());
+/// let convolve = ConvolverNode::new(&context, ConvolverOptions::default());
 /// convolve.set_buffer(Some(impulse_buffer));
 ///
 /// src.connect(&convolve);
@@ -109,7 +109,7 @@ pub struct ConvolverNode {
     /// Perform equal power normalization on response buffer
     normalize: bool,
     /// The response buffer, nullable
-    buffer: Option<AudioBuffer>,
+    buffer: Mutex<Option<AudioBuffer>>,
     /// Message bus to the renderer
     sender: Sender<ConvolverRendererInner>,
 }
@@ -158,12 +158,12 @@ impl ConvolverNode {
 
             let renderer = ConvolverRenderer::new(receiver);
 
-            let mut node = Self {
+            let node = Self {
                 registration,
                 channel_config: channel_config.into(),
                 normalize: !disable_normalization,
                 sender,
-                buffer: None,
+                buffer: Mutex::new(None),
             };
 
             node.set_buffer(buffer);
@@ -173,8 +173,9 @@ impl ConvolverNode {
     }
 
     /// Get the current impulse response buffer
-    pub fn buffer(&self) -> Option<&AudioBuffer> {
-        self.buffer.as_ref()
+    #[allow(clippy::missing_panics_doc)]
+    pub fn buffer(&self) -> Option<AudioBuffer> {
+        self.buffer.lock().unwrap().clone()
     }
 
     /// Set or update the impulse response buffer
@@ -183,11 +184,11 @@ impl ConvolverNode {
     ///
     /// Panics when the sample rate of the provided AudioBuffer differs from the audio context
     /// sample rate.
-    pub fn set_buffer(&mut self, buffer: Option<AudioBuffer>) {
-        if let Some(buffer) = &buffer {
+    pub fn set_buffer(&self, mut buffer: Option<AudioBuffer>) {
+        if let Some(buffer) = buffer.as_mut() {
+            // resample if necessary
+            buffer.resample(self.context().sample_rate());
             let sample_rate = buffer.sample_rate();
-            // todo, resample when this happens?
-            assert_eq!(buffer.sample_rate(), self.context().sample_rate());
 
             // normalize before padding because the length of the buffer affects the scale
             let scale = if self.normalize {
@@ -216,7 +217,7 @@ impl ConvolverNode {
             let _ = self.sender.send(convolve); // can fail when render thread shut down
         }
 
-        self.buffer = buffer;
+        *self.buffer.lock().unwrap() = buffer;
     }
 
     /// Denotes if the response buffer will be scaled with an equal-power normalization
@@ -471,7 +472,7 @@ mod tests {
         src.set_buffer(input);
         src.start();
 
-        let mut conv = ConvolverNode::new(&context, ConvolverOptions::default());
+        let conv = ConvolverNode::new(&context, ConvolverOptions::default());
         conv.set_buffer(impulse_resp.map(|b| AudioBuffer::from(vec![b.to_vec()], sample_rate)));
 
         src.connect(&conv);
@@ -489,34 +490,34 @@ mod tests {
 
     #[test]
     fn test_empty() {
-        let identity_ir = vec![];
-        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(identity_ir), 10);
+        let ir = vec![];
+        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(ir), 10);
         let expected = vec![0.; 10];
         assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
     }
 
     #[test]
     fn test_zeroed() {
-        let identity_ir = vec![0., 0., 0., 0., 0., 0.];
-        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(identity_ir), 10);
+        let ir = vec![0., 0., 0., 0., 0., 0.];
+        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(ir), 10);
         let expected = vec![0.; 10];
         assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
     }
 
     #[test]
     fn test_identity() {
-        let identity_ir = vec![1.];
+        let ir = vec![1.];
         let calibration = 0.00125;
-        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(identity_ir), 10);
+        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(ir), 10);
         let expected = vec![0., calibration, 0., -calibration, 0., 0., 0., 0., 0., 0.];
         assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
     }
 
     #[test]
     fn test_two_id() {
-        let identity_ir = vec![1., 1.];
+        let ir = vec![1., 1.];
         let calibration = 0.00125;
-        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(identity_ir), 10);
+        let output = test_convolve(&[0., 1., 0., -1., 0.], Some(ir), 10);
         let expected = vec![
             0.,
             calibration,
@@ -536,17 +537,32 @@ mod tests {
     fn test_should_have_tail_time() {
         // impulse response of length 256
         const IR_LEN: usize = 256;
-        let identity_ir = vec![1.; IR_LEN];
+        let ir = vec![1.; IR_LEN];
 
         // unity input signal
         let input = &[1.];
 
         // render into a buffer of size 512
-        let output = test_convolve(input, Some(identity_ir), 512);
+        let output = test_convolve(input, Some(ir), 512);
 
         // we expect non-zero output in the range 0 to IR_LEN
         let output = output.channel_data(0).as_slice();
         assert!(!output[..IR_LEN].iter().any(|v| *v <= 1E-6));
         assert_float_eq!(&output[IR_LEN..], &[0.; 512 - IR_LEN][..], abs_all <= 1E-6);
+    }
+
+    #[test]
+    fn test_resample() {
+        let ctx_sample_rate = 44100.;
+        let ir_sample_rate = 48000.;
+
+        let context = OfflineAudioContext::new(1, 128, ctx_sample_rate);
+
+        let conv = ConvolverNode::new(&context, ConvolverOptions::default());
+        let ir = vec![1.; 128];
+        let ir_buffer = AudioBuffer::from(vec![ir], ir_sample_rate);
+        conv.set_buffer(Some(ir_buffer));
+
+        assert_eq!(conv.buffer().unwrap().sample_rate(), ctx_sample_rate);
     }
 }

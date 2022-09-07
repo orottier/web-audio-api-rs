@@ -19,7 +19,7 @@ fn main() {
     let src = context.create_buffer_source();
     src.set_buffer(audio_buffer);
 
-    let mut convolve = ConvolverNode::new(&context, ConvolverOptions::default());
+    let convolve = ConvolverNode::new(&context, ConvolverOptions::default());
 
     src.connect(&convolve);
     convolve.connect(&context.destination());
