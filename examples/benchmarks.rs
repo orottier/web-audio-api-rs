@@ -316,6 +316,50 @@ fn main() {
     }
 
     {
+        let name = "Convolution reverb";
+
+        let adjusted_duration = DURATION as f64 / 8.;
+        let length = (adjusted_duration * sample_rate as f64) as usize;
+        let context = OfflineAudioContext::new(1, length, sample_rate);
+        let buf = get_buffer(&sources, sample_rate, 1);
+
+        let mut rng = rand::thread_rng();
+
+        let decay = 10.;
+        let duration = 4.;
+        let len = duration * sample_rate;
+        let mut buffer = context.create_buffer(2, len as usize, sample_rate);
+
+        buffer
+            .get_channel_data_mut(0)
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, b)| {
+                *b = (rng.gen_range(0.0..2.) - 1.) * (1. - i as f32 / len).powf(decay)
+            });
+
+        buffer
+            .get_channel_data_mut(1)
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, b)| {
+                *b = (rng.gen_range(0.0..2.) - 1.) * (1. - i as f32 / len).powf(decay)
+            });
+
+        let convolver = context.create_convolver();
+        convolver.set_buffer(Some(buffer));
+        convolver.connect(&context.destination());
+
+        let source = context.create_buffer_source();
+        source.set_buffer(buf);
+        source.set_loop(true);
+        source.start();
+        source.connect(&convolver);
+
+        benchmark(&mut stdout, name, context, &mut results);
+    }
+
+    {
         let name = "Granular synthesis";
 
         let adjusted_duration = DURATION as f64 / 16.;
