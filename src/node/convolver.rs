@@ -5,8 +5,8 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Render
 use crate::RENDER_QUANTUM_SIZE;
 
 use crossbeam_channel::{Receiver, Sender};
-use realfft::{num_complex::Complex, RealFftPlanner};
-use std::sync::Mutex;
+use realfft::{num_complex::Complex, ComplexToReal, RealFftPlanner, RealToComplex};
+use std::sync::{Arc, Mutex};
 
 /// Scale buffer by an equal-power normalization
 fn normalization(buffer: &AudioBuffer) -> f32 {
@@ -241,7 +241,8 @@ fn roll_zero<T: Default + Copy>(signal: &mut [T], n: usize) {
 }
 
 struct Fft {
-    fft_planner: RealFftPlanner<f32>,
+    fft_forward: Arc<dyn RealToComplex<f32>>,
+    fft_inverse: Arc<dyn ComplexToReal<f32>>,
     fft_input: Vec<f32>,
     fft_scratch: Vec<Complex<f32>>,
     fft_output: Vec<Complex<f32>>,
@@ -250,13 +251,17 @@ struct Fft {
 impl Fft {
     fn new(length: usize) -> Self {
         let mut fft_planner = RealFftPlanner::<f32>::new();
-        let fft = fft_planner.plan_fft_forward(length);
-        let fft_input = fft.make_input_vec();
-        let fft_scratch = fft.make_scratch_vec();
-        let fft_output = fft.make_output_vec();
+
+        let fft_forward = fft_planner.plan_fft_forward(length);
+        let fft_inverse = fft_planner.plan_fft_inverse(length);
+
+        let fft_input = fft_forward.make_input_vec();
+        let fft_scratch = fft_forward.make_scratch_vec();
+        let fft_output = fft_forward.make_output_vec();
 
         Self {
-            fft_planner,
+            fft_forward,
+            fft_inverse,
             fft_input,
             fft_scratch,
             fft_output,
@@ -272,24 +277,24 @@ impl Fft {
     }
 
     fn process(&mut self) -> &[Complex<f32>] {
-        let fft = self.fft_planner.plan_fft_forward(self.fft_input.len());
-        fft.process_with_scratch(
-            &mut self.fft_input,
-            &mut self.fft_output,
-            &mut self.fft_scratch,
-        )
-        .unwrap();
+        self.fft_forward
+            .process_with_scratch(
+                &mut self.fft_input,
+                &mut self.fft_output,
+                &mut self.fft_scratch,
+            )
+            .unwrap();
         &self.fft_output[..]
     }
 
     fn inverse(&mut self) -> &[f32] {
-        let fft = self.fft_planner.plan_fft_inverse(self.fft_input.len());
-        fft.process_with_scratch(
-            &mut self.fft_output,
-            &mut self.fft_input,
-            &mut self.fft_scratch,
-        )
-        .unwrap();
+        self.fft_inverse
+            .process_with_scratch(
+                &mut self.fft_output,
+                &mut self.fft_input,
+                &mut self.fft_scratch,
+            )
+            .unwrap();
         &self.fft_input[..]
     }
 }
