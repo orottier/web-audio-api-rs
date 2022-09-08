@@ -347,7 +347,7 @@ fn main() {
             });
 
         let convolver = context.create_convolver();
-        convolver.set_buffer(Some(buffer));
+        convolver.set_buffer(buffer);
         convolver.connect(&context.destination());
 
         let source = context.create_buffer_source();

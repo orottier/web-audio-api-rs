@@ -89,7 +89,7 @@ pub struct ConvolverOptions {
 /// src.set_buffer(audio_buffer);
 ///
 /// let convolve = ConvolverNode::new(&context, ConvolverOptions::default());
-/// convolve.set_buffer(Some(impulse_buffer));
+/// convolve.set_buffer(impulse_buffer);
 ///
 /// src.connect(&convolve);
 /// convolve.connect(&context.destination());
@@ -166,7 +166,9 @@ impl ConvolverNode {
                 buffer: Mutex::new(None),
             };
 
-            node.set_buffer(buffer);
+            if let Some(buffer) = buffer {
+                node.set_buffer(buffer);
+            }
 
             (node, Box::new(renderer))
         })
@@ -184,40 +186,38 @@ impl ConvolverNode {
     ///
     /// Panics when the sample rate of the provided AudioBuffer differs from the audio context
     /// sample rate.
-    pub fn set_buffer(&self, mut buffer: Option<AudioBuffer>) {
-        if let Some(buffer) = buffer.as_mut() {
-            // resample if necessary
-            buffer.resample(self.context().sample_rate());
-            let sample_rate = buffer.sample_rate();
+    pub fn set_buffer(&self, mut buffer: AudioBuffer) {
+        // resample if necessary
+        buffer.resample(self.context().sample_rate());
+        let sample_rate = buffer.sample_rate();
 
-            // normalize before padding because the length of the buffer affects the scale
-            let scale = if self.normalize {
-                normalization(buffer)
-            } else {
-                1.
-            };
+        // normalize before padding because the length of the buffer affects the scale
+        let scale = if self.normalize {
+            normalization(&buffer)
+        } else {
+            1.
+        };
 
-            // Pad the response buffer with zeroes so its size is a power of 2, with 2 * 128 as min size
-            let length = buffer.length();
-            let padded_length = length.next_power_of_two().max(2 * RENDER_QUANTUM_SIZE);
-            let samples: Vec<_> = (0..buffer.number_of_channels())
-                .map(|_| {
-                    let mut samples = vec![0.; padded_length];
-                    samples[..length]
-                        .iter_mut()
-                        .zip(buffer.get_channel_data(0))
-                        .for_each(|(o, i)| *o = *i * scale);
-                    samples
-                })
-                .collect();
+        // Pad the response buffer with zeroes so its size is a power of 2, with 2 * 128 as min size
+        let length = buffer.length();
+        let padded_length = length.next_power_of_two().max(2 * RENDER_QUANTUM_SIZE);
+        let samples: Vec<_> = (0..buffer.number_of_channels())
+            .map(|_| {
+                let mut samples = vec![0.; padded_length];
+                samples[..length]
+                    .iter_mut()
+                    .zip(buffer.get_channel_data(0))
+                    .for_each(|(o, i)| *o = *i * scale);
+                samples
+            })
+            .collect();
 
-            let padded_buffer = AudioBuffer::from(samples, sample_rate);
+        let padded_buffer = AudioBuffer::from(samples, sample_rate);
 
-            let convolve = ConvolverRendererInner::new(padded_buffer);
-            let _ = self.sender.send(convolve); // can fail when render thread shut down
-        }
+        let convolve = ConvolverRendererInner::new(padded_buffer);
+        let _ = self.sender.send(convolve); // can fail when render thread shut down
 
-        *self.buffer.lock().unwrap() = buffer;
+        *self.buffer.lock().unwrap() = Some(buffer);
     }
 
     /// Denotes if the response buffer will be scaled with an equal-power normalization
@@ -478,7 +478,9 @@ mod tests {
         src.start();
 
         let conv = ConvolverNode::new(&context, ConvolverOptions::default());
-        conv.set_buffer(impulse_resp.map(|b| AudioBuffer::from(vec![b.to_vec()], sample_rate)));
+        if let Some(ir) = impulse_resp {
+            conv.set_buffer(AudioBuffer::from(vec![ir.to_vec()], sample_rate));
+        }
 
         src.connect(&conv);
         conv.connect(&context.destination());
@@ -566,7 +568,7 @@ mod tests {
         let conv = ConvolverNode::new(&context, ConvolverOptions::default());
         let ir = vec![1.; 128];
         let ir_buffer = AudioBuffer::from(vec![ir], ir_sample_rate);
-        conv.set_buffer(Some(ir_buffer));
+        conv.set_buffer(ir_buffer);
 
         assert_eq!(conv.buffer().unwrap().sample_rate(), ctx_sample_rate);
     }

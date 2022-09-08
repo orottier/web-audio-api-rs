@@ -30,11 +30,11 @@ fn main() {
     thread::sleep(time::Duration::from_millis(4_000));
 
     println!("Small room");
-    convolve.set_buffer(Some(impulse_buffer1));
+    convolve.set_buffer(impulse_buffer1);
     thread::sleep(time::Duration::from_millis(4_000));
 
     println!("Parking garage");
-    convolve.set_buffer(Some(impulse_buffer2));
+    convolve.set_buffer(impulse_buffer2);
     thread::sleep(time::Duration::from_millis(5_000));
 
     println!("Stop input - flush out remaining impulse response");
