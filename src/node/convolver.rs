@@ -70,6 +70,9 @@ pub struct ConvolverOptions {
 /// - see also:
 /// [`BaseAudioContext::create_convolver`](crate::context::BaseAudioContext::create_convolver)
 ///
+/// The current implementation only handles mono-to-mono convolutions. The provided impulse
+/// response buffer and the input signal will be downmixed appropriately.
+///
 /// # Usage
 ///
 /// ```no_run
