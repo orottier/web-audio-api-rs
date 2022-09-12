@@ -3,7 +3,7 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn main() {
     println!("AudioContextLatencyCategory::Interactive");
-    let context = AudioContext::new(Default::default());
+    let context = AudioContext::default();
 
     let sine = context.create_oscillator();
     sine.frequency().set_value(200.);
