@@ -26,7 +26,7 @@ impl Default for StereoPannerOptions {
             pan: 0.,
             channel_config: ChannelConfigOptions {
                 count: 2,
-                mode: ChannelCountMode::ClampedMax,
+                count_mode: ChannelCountMode::ClampedMax,
                 interpretation: ChannelInterpretation::Speakers,
             },
         }
@@ -173,7 +173,7 @@ impl StereoPannerNode {
     ///
     pub fn new<C: BaseAudioContext>(context: &C, options: StereoPannerOptions) -> Self {
         context.register(move |registration| {
-            assert_valid_channel_count_mode(options.channel_config.mode);
+            assert_valid_channel_count_mode(options.channel_config.count_mode);
             assert_valid_channel_count(options.channel_config.count);
 
             let pan_options = AudioParamDescriptor {
@@ -387,7 +387,7 @@ mod tests {
                 StereoPannerOptions {
                     channel_config: ChannelConfigOptions {
                         count: 1,
-                        mode: ChannelCountMode::ClampedMax,
+                        count_mode: ChannelCountMode::ClampedMax,
                         ..ChannelConfigOptions::default()
                     },
                     pan: -1.,
@@ -415,7 +415,7 @@ mod tests {
                 StereoPannerOptions {
                     channel_config: ChannelConfigOptions {
                         count: 1,
-                        mode: ChannelCountMode::ClampedMax,
+                        count_mode: ChannelCountMode::ClampedMax,
                         ..ChannelConfigOptions::default()
                     },
                     pan: 1.,
@@ -443,7 +443,7 @@ mod tests {
                 StereoPannerOptions {
                     channel_config: ChannelConfigOptions {
                         count: 1,
-                        mode: ChannelCountMode::ClampedMax,
+                        count_mode: ChannelCountMode::ClampedMax,
                         ..ChannelConfigOptions::default()
                     },
                     pan: 0.,

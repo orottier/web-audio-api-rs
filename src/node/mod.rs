@@ -113,7 +113,7 @@ impl From<u32> for ChannelInterpretation {
 #[derive(Clone, Debug)]
 pub struct ChannelConfigOptions {
     pub count: usize,
-    pub mode: ChannelCountMode,
+    pub count_mode: ChannelCountMode,
     pub interpretation: ChannelInterpretation,
 }
 
@@ -121,7 +121,7 @@ impl Default for ChannelConfigOptions {
     fn default() -> Self {
         Self {
             count: 2,
-            mode: ChannelCountMode::Max,
+            count_mode: ChannelCountMode::Max,
             interpretation: ChannelInterpretation::Speakers,
         }
     }
@@ -140,7 +140,7 @@ impl Default for ChannelConfigOptions {
 ///
 /// let opts = ChannelConfigOptions {
 ///     count: 1,
-///     mode: ChannelCountMode::Explicit,
+///     count_mode: ChannelCountMode::Explicit,
 ///     interpretation: ChannelInterpretation::Discrete,
 /// };
 /// let _: ChannelConfig = opts.into();
@@ -194,7 +194,7 @@ impl From<ChannelConfigOptions> for ChannelConfig {
     fn from(opts: ChannelConfigOptions) -> Self {
         Self {
             count: Arc::new(AtomicUsize::from(opts.count)),
-            mode: Arc::new(AtomicU32::from(opts.mode as u32)),
+            mode: Arc::new(AtomicU32::from(opts.count_mode as u32)),
             interpretation: Arc::new(AtomicU32::from(opts.interpretation as u32)),
         }
     }
