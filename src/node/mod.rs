@@ -109,11 +109,14 @@ impl From<u32> for ChannelInterpretation {
     }
 }
 
-/// Options for constructing ChannelConfig
+/// Options that can be used in constructing all AudioNodes.
 #[derive(Clone, Debug)]
 pub struct ChannelConfigOptions {
+    /// Desired number of channels for the [`AudioNode::channel_count`] attribute.
     pub count: usize,
+    /// Desired mode for the [`AudioNode::channel_count_mode`] attribute.
     pub count_mode: ChannelCountMode,
+    /// Desired mode for the [`AudioNode::channel_interpretation`] attribute.
     pub interpretation: ChannelInterpretation,
 }
 
@@ -281,6 +284,7 @@ pub trait AudioNode {
 
     /// The number of inputs feeding into the AudioNode. For source nodes, this will be 0.
     fn number_of_inputs(&self) -> usize;
+
     /// The number of outputs coming out of the AudioNode.
     fn number_of_outputs(&self) -> usize;
 
@@ -290,15 +294,18 @@ pub trait AudioNode {
         self.channel_config().count_mode()
     }
 
+    /// Update the `channel_count_mode` attribute
     fn set_channel_count_mode(&self, v: ChannelCountMode) {
         self.channel_config().set_count_mode(v)
     }
+
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
     /// will define how audio up-mixing and down-mixing will happen.
     fn channel_interpretation(&self) -> ChannelInterpretation {
         self.channel_config().interpretation()
     }
 
+    /// Update the `channel_interpretation` attribute
     fn set_channel_interpretation(&self, v: ChannelInterpretation) {
         self.channel_config().set_interpretation(v)
     }
@@ -308,6 +315,7 @@ pub trait AudioNode {
         self.channel_config().count()
     }
 
+    /// Update the `channel_count` attribute
     fn set_channel_count(&self, v: usize) {
         self.channel_config().set_count(v)
     }
