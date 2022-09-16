@@ -218,7 +218,7 @@ pub(crate) struct AudioParamRaw {
 lazy_static! {
     static ref AUDIO_PARAM_CHANNEL_CONFIG: ChannelConfig = ChannelConfigOptions {
         count: 1,
-        mode: ChannelCountMode::Explicit,
+        count_mode: ChannelCountMode::Explicit,
         interpretation: ChannelInterpretation::Discrete,
     }
     .into();

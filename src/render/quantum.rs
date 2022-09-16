@@ -1414,7 +1414,7 @@ mod tests {
 
         let channel_config = crate::node::ChannelConfigOptions {
             count: 2,
-            mode: ChannelCountMode::Explicit,
+            count_mode: ChannelCountMode::Explicit,
             interpretation: ChannelInterpretation::Discrete,
         }
         .into();

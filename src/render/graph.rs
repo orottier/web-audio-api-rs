@@ -467,7 +467,7 @@ mod tests {
     fn config() -> ChannelConfig {
         crate::node::ChannelConfigOptions {
             count: 2,
-            mode: crate::node::ChannelCountMode::Explicit,
+            count_mode: crate::node::ChannelCountMode::Explicit,
             interpretation: crate::node::ChannelInterpretation::Speakers,
         }
         .into()

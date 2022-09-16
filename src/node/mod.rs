@@ -109,11 +109,14 @@ impl From<u32> for ChannelInterpretation {
     }
 }
 
-/// Options for constructing ChannelConfig
+/// Options that can be used in constructing all AudioNodes.
 #[derive(Clone, Debug)]
 pub struct ChannelConfigOptions {
+    /// Desired number of channels for the [`AudioNode::channel_count`] attribute.
     pub count: usize,
-    pub mode: ChannelCountMode,
+    /// Desired mode for the [`AudioNode::channel_count_mode`] attribute.
+    pub count_mode: ChannelCountMode,
+    /// Desired mode for the [`AudioNode::channel_interpretation`] attribute.
     pub interpretation: ChannelInterpretation,
 }
 
@@ -121,7 +124,7 @@ impl Default for ChannelConfigOptions {
     fn default() -> Self {
         Self {
             count: 2,
-            mode: ChannelCountMode::Max,
+            count_mode: ChannelCountMode::Max,
             interpretation: ChannelInterpretation::Speakers,
         }
     }
@@ -140,14 +143,14 @@ impl Default for ChannelConfigOptions {
 ///
 /// let opts = ChannelConfigOptions {
 ///     count: 1,
-///     mode: ChannelCountMode::Explicit,
+///     count_mode: ChannelCountMode::Explicit,
 ///     interpretation: ChannelInterpretation::Discrete,
 /// };
 /// let _: ChannelConfig = opts.into();
 #[derive(Clone, Debug)]
 pub struct ChannelConfig {
     count: Arc<AtomicUsize>,
-    mode: Arc<AtomicU32>,
+    count_mode: Arc<AtomicU32>,
     interpretation: Arc<AtomicU32>,
 }
 
@@ -164,10 +167,10 @@ impl ChannelConfig {
     /// Represents an enumerated value describing the way channels must be matched between the
     /// node's inputs and outputs.
     pub(crate) fn count_mode(&self) -> ChannelCountMode {
-        self.mode.load(Ordering::SeqCst).into()
+        self.count_mode.load(Ordering::SeqCst).into()
     }
     fn set_count_mode(&self, v: ChannelCountMode) {
-        self.mode.store(v as u32, Ordering::SeqCst)
+        self.count_mode.store(v as u32, Ordering::SeqCst)
     }
 
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
@@ -194,7 +197,7 @@ impl From<ChannelConfigOptions> for ChannelConfig {
     fn from(opts: ChannelConfigOptions) -> Self {
         Self {
             count: Arc::new(AtomicUsize::from(opts.count)),
-            mode: Arc::new(AtomicU32::from(opts.mode as u32)),
+            count_mode: Arc::new(AtomicU32::from(opts.count_mode as u32)),
             interpretation: Arc::new(AtomicU32::from(opts.interpretation as u32)),
         }
     }
@@ -281,6 +284,7 @@ pub trait AudioNode {
 
     /// The number of inputs feeding into the AudioNode. For source nodes, this will be 0.
     fn number_of_inputs(&self) -> usize;
+
     /// The number of outputs coming out of the AudioNode.
     fn number_of_outputs(&self) -> usize;
 
@@ -290,15 +294,18 @@ pub trait AudioNode {
         self.channel_config().count_mode()
     }
 
+    /// Update the `channel_count_mode` attribute
     fn set_channel_count_mode(&self, v: ChannelCountMode) {
         self.channel_config().set_count_mode(v)
     }
+
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
     /// will define how audio up-mixing and down-mixing will happen.
     fn channel_interpretation(&self) -> ChannelInterpretation {
         self.channel_config().interpretation()
     }
 
+    /// Update the `channel_interpretation` attribute
     fn set_channel_interpretation(&self, v: ChannelInterpretation) {
         self.channel_config().set_interpretation(v)
     }
@@ -308,6 +315,7 @@ pub trait AudioNode {
         self.channel_config().count()
     }
 
+    /// Update the `channel_count` attribute
     fn set_channel_count(&self, v: usize) {
         self.channel_config().set_count(v)
     }

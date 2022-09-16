@@ -23,7 +23,7 @@ impl Default for ChannelSplitterOptions {
             number_of_outputs: 6,
             channel_config: ChannelConfigOptions {
                 count: 6, // must be same as number_of_outputs
-                mode: ChannelCountMode::Explicit,
+                count_mode: ChannelCountMode::Explicit,
                 interpretation: ChannelInterpretation::Discrete,
             },
         }
