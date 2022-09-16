@@ -150,7 +150,7 @@ impl Default for ChannelConfigOptions {
 #[derive(Clone, Debug)]
 pub struct ChannelConfig {
     count: Arc<AtomicUsize>,
-    mode: Arc<AtomicU32>,
+    count_mode: Arc<AtomicU32>,
     interpretation: Arc<AtomicU32>,
 }
 
@@ -167,10 +167,10 @@ impl ChannelConfig {
     /// Represents an enumerated value describing the way channels must be matched between the
     /// node's inputs and outputs.
     pub(crate) fn count_mode(&self) -> ChannelCountMode {
-        self.mode.load(Ordering::SeqCst).into()
+        self.count_mode.load(Ordering::SeqCst).into()
     }
     fn set_count_mode(&self, v: ChannelCountMode) {
-        self.mode.store(v as u32, Ordering::SeqCst)
+        self.count_mode.store(v as u32, Ordering::SeqCst)
     }
 
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
@@ -197,7 +197,7 @@ impl From<ChannelConfigOptions> for ChannelConfig {
     fn from(opts: ChannelConfigOptions) -> Self {
         Self {
             count: Arc::new(AtomicUsize::from(opts.count)),
-            mode: Arc::new(AtomicU32::from(opts.count_mode as u32)),
+            count_mode: Arc::new(AtomicU32::from(opts.count_mode as u32)),
             interpretation: Arc::new(AtomicU32::from(opts.interpretation as u32)),
         }
     }
