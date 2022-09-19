@@ -274,9 +274,9 @@ impl PannerNode {
 
             let hrtf_state = if let PanningModelType::HRTF = options.panning_model {
                 // TODO - embed sphere in library or let user specify location
-                let path = "./samples/IRC_1003_C.bin";
+                let resource = include_bytes!("../../resources/IRC_1003_C.bin");
                 let sample_rate = context.sample_rate() as u32;
-                let hrir_sphere = HrirSphere::from_file(path, sample_rate).unwrap();
+                let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
 
                 Some(HrtfState::new(hrir_sphere))
             } else {
