@@ -451,25 +451,12 @@ impl AudioProcessor for PannerRenderer {
 
         // azimuth and elevation of listener <> panner.
         // elevation is not used in the equal power panningModel (todo issue #44)
-        let (mut azimuth, _elevation) = crate::spatial::azimuth_and_elevation(
+        let (mut azimuth, elevation) = crate::spatial::azimuth_and_elevation(
             source_position,
             listener_position,
             listener_forward,
             listener_up,
         );
-
-        // First, clamp azimuth to allowed range of [-180, 180].
-        azimuth = azimuth.max(-180.);
-        azimuth = azimuth.min(180.);
-        // Then wrap to range [-90, 90].
-        if azimuth < -90. {
-            azimuth = -180. - azimuth;
-        } else if azimuth > 90. {
-            azimuth = 180. - azimuth;
-        }
-
-        // x is the horizontal plane orientation of the sound
-        let x = (azimuth + 90.) / 180.;
 
         // determine distance gain
         let distance = crate::spatial::distance(source_position, listener_position);
@@ -503,12 +490,14 @@ impl AudioProcessor for PannerRenderer {
 
         if let Some(hrtf_state) = &mut self.hrtf_state {
             let new_distance_gain = cone_gain * dist_gain;
-            let mut projected_source = crate::spatial::projected_source(
-                source_position,
-                listener_position,
-                listener_forward,
-                listener_up,
-            );
+
+            // convert az/el to carthesian coordinates to determine unit direction
+            let az_rad = azimuth * PI / 180.;
+            let el_rad = elevation * PI / 180.;
+            let x = az_rad.sin() * el_rad.cos();
+            let z = az_rad.cos() * el_rad.cos();
+            let y = el_rad.sin();
+            let mut projected_source = [x, y, z];
 
             if float_eq!(&projected_source[..], &[0.; 3][..], abs_all <= 1E-6) {
                 projected_source = [0., 0., 1.];
@@ -536,7 +525,19 @@ impl AudioProcessor for PannerRenderer {
 
             hrtf_state.output_interleaved.fill((0., 0.));
         } else {
-            // determine left/right ear gain
+            // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
+            azimuth = azimuth.max(-180.);
+            azimuth = azimuth.min(180.);
+
+            // Then wrap to range [-90, 90].
+            if azimuth < -90. {
+                azimuth = -180. - azimuth;
+            } else if azimuth > 90. {
+                azimuth = 180. - azimuth;
+            }
+
+            // x is the horizontal plane orientation of the sound
+            let x = (azimuth + 90.) / 180.;
             let gain_l = (x * PI / 2.).cos();
             let gain_r = (x * PI / 2.).sin();
 

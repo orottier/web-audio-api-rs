@@ -227,31 +227,6 @@ use vecmath::{
     vec3_cross, vec3_dot, vec3_len, vec3_normalized, vec3_scale, vec3_square_len, vec3_sub, Vector3,
 };
 
-/// Unit vector pointing from listener to source
-pub fn projected_source(
-    source_position: Vector3<f32>,
-    listener_position: Vector3<f32>,
-    listener_forward: Vector3<f32>,
-    listener_up: Vector3<f32>,
-) -> Vector3<f32> {
-    // calculate angles according to spec
-    let (az, el) = azimuth_and_elevation(
-        source_position,
-        listener_position,
-        listener_forward,
-        listener_up,
-    );
-
-    // convert to carthesian coordinates to determine unit direction
-    let az_rad = az * PI / 180.;
-    let el_rad = el * PI / 180.;
-    let x = az_rad.sin() * el_rad.cos();
-    let z = az_rad.cos() * el_rad.cos();
-    let y = el_rad.sin();
-
-    [x, y, z]
-}
-
 /// Direction to source position measured from listener in 3D
 pub fn azimuth_and_elevation(
     source_position: Vector3<f32>,
