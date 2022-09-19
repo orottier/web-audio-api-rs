@@ -63,16 +63,6 @@ deviations could not be avoided:
 - inheritance is modelled with traits
 - ...
 
-## Limitations
-
-Our main limitations include:
-
-- some PannerNode features missing
-- no async methods (JS Promises)
-- no event handling
-
-These will be resolved in the future, stay tuned!
-
 ## Bindings
 
 We provide NodeJS bindings to this library over at
