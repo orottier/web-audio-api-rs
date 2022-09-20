@@ -1,4 +1,5 @@
 use std::f32::consts::PI;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
@@ -10,14 +11,25 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
+use crossbeam_channel::{Receiver, Sender};
 use float_eq::float_eq;
 use hrtf::{HrirSphere, HrtfContext, HrtfProcessor, Vec3};
 
 /// Spatialization algorithm used to position the audio in 3D space
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PanningModelType {
     EqualPower,
     HRTF,
+}
+
+impl From<u8> for PanningModelType {
+    fn from(i: u8) -> Self {
+        match i {
+            0 => PanningModelType::EqualPower,
+            1 => PanningModelType::HRTF,
+            _ => unreachable!(),
+        }
+    }
 }
 
 /// Algorithm to reduce the volume of an audio source as it moves away from the listener
@@ -205,6 +217,9 @@ pub struct PannerNode {
     cone_inner_angle: Arc<AtomicF64>,
     cone_outer_angle: Arc<AtomicF64>,
     cone_outer_gain: Arc<AtomicF64>,
+    panning_model: AtomicU8,
+    /// HRTF message bus to the renderer
+    sender: Sender<Option<HrtfState>>,
 }
 
 impl AudioNode for PannerNode {
@@ -271,16 +286,9 @@ impl PannerNode {
             let cone_outer_angle = Arc::new(AtomicF64::new(options.cone_outer_angle));
             let cone_outer_gain = Arc::new(AtomicF64::new(options.cone_outer_gain));
 
-            let hrtf_state = if let PanningModelType::HRTF = options.panning_model {
-                // TODO - embed sphere in library or let user specify location
-                let resource = include_bytes!("../../resources/IRC_1003_C.bin");
-                let sample_rate = context.sample_rate() as u32;
-                let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
-
-                Some(HrtfState::new(hrir_sphere))
-            } else {
-                None
-            };
+            // Channel to send a HRTF processor to the renderer.  A capacity of 1 suffices, it will
+            // simply block the control thread when used concurrently
+            let (sender, receiver) = crossbeam_channel::bounded(1);
 
             let render = PannerRenderer {
                 position_x: render_px,
@@ -292,7 +300,8 @@ impl PannerNode {
                 cone_inner_angle: cone_inner_angle.clone(),
                 cone_outer_angle: cone_outer_angle.clone(),
                 cone_outer_gain: cone_outer_gain.clone(),
-                hrtf_state,
+                hrtf_state: None,
+                receiver,
                 tail_time_counter: 0,
             };
 
@@ -313,7 +322,11 @@ impl PannerNode {
                 cone_inner_angle,
                 cone_outer_angle,
                 cone_outer_gain,
+                sender,
+                panning_model: AtomicU8::new(0),
             };
+
+            node.set_panning_model(options.panning_model);
 
             // instruct to BaseContext to add the AudioListener if it has not already
             context.base().ensure_audio_listener_present();
@@ -376,6 +389,25 @@ impl PannerNode {
     pub fn set_cone_outer_gain(&self, value: f64) {
         self.cone_outer_gain.store(value);
     }
+
+    pub fn panning_model(&self) -> PanningModelType {
+        self.panning_model.load(Ordering::SeqCst).into()
+    }
+
+    pub fn set_panning_model(&self, p: PanningModelType) {
+        let hrtf_option = match p {
+            PanningModelType::EqualPower => None,
+            PanningModelType::HRTF => {
+                let resource = include_bytes!("../../resources/IRC_1003_C.bin");
+                let sample_rate = self.context().sample_rate() as u32;
+                let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
+                Some(HrtfState::new(hrir_sphere))
+            }
+        };
+
+        let _ = self.sender.send(hrtf_option); // can fail when render thread shut down
+        self.panning_model.store(p as u8, Ordering::SeqCst);
+    }
 }
 
 struct PannerRenderer {
@@ -388,6 +420,7 @@ struct PannerRenderer {
     cone_inner_angle: Arc<AtomicF64>,
     cone_outer_angle: Arc<AtomicF64>,
     cone_outer_gain: Arc<AtomicF64>,
+    receiver: Receiver<Option<HrtfState>>,
     hrtf_state: Option<HrtfState>,
     tail_time_counter: usize,
 }
@@ -496,6 +529,10 @@ impl AudioProcessor for PannerRenderer {
             }
         };
 
+        if let Ok(hrtf_state) = self.receiver.try_recv() {
+            self.hrtf_state = hrtf_state;
+        }
+
         if let Some(hrtf_state) = &mut self.hrtf_state {
             let new_distance_gain = cone_gain * dist_gain;
 
@@ -591,6 +628,7 @@ mod tests {
             ..PannerOptions::default()
         };
         let panner = PannerNode::new(&context, options);
+        assert_eq!(panner.panning_model(), PanningModelType::EqualPower);
         panner.position_x().set_value(1.); // sound comes from the right
 
         src.connect(&panner);
@@ -642,6 +680,7 @@ mod tests {
             ..PannerOptions::default()
         };
         let panner = PannerNode::new(&context, options);
+        assert_eq!(panner.panning_model(), PanningModelType::HRTF);
         panner.position_x().set_value(1.); // sound comes from the right
 
         src.connect(&panner);

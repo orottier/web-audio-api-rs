@@ -1,3 +1,4 @@
+use std::io::BufRead;
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
@@ -6,8 +7,6 @@ use web_audio_api::node::{
 };
 
 fn main() {
-    env_logger::init();
-
     let ctx_opts = AudioContextOptions {
         sample_rate: Some(44100.),
         latency_hint: AudioContextLatencyCategory::Interactive,
@@ -67,7 +66,17 @@ fn main() {
 
     // enjoy listening
     println!("Siren is circling in the horizontal plane around the listener");
-    loop {
-        std::thread::sleep(std::time::Duration::from_millis(250));
-    }
+    println!("HRTF enabled, press <Enter> to toggle");
+
+    let mut hrtf = true;
+    std::io::stdin().lock().lines().for_each(|_| {
+        hrtf = !hrtf;
+        let p = if hrtf {
+            PanningModelType::HRTF
+        } else {
+            PanningModelType::EqualPower
+        };
+        panner.set_panning_model(p);
+        println!("PanningMode: {:?}", panner.panning_model());
+    });
 }
