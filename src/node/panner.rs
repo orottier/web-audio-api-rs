@@ -33,7 +33,7 @@ impl From<u8> for PanningModelType {
 }
 
 /// Algorithm to reduce the volume of an audio source as it moves away from the listener
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DistanceModelType {
     Linear,
     Inverse,
@@ -100,7 +100,9 @@ impl Default for PannerOptions {
     }
 }
 
+/// Internal state of the HRTF renderer
 struct HrtfState {
+    len: usize,
     processor: HrtfProcessor,
     output_interleaved: Vec<(f32, f32)>,
     prev_sample_vector: Vec3,
@@ -111,12 +113,15 @@ struct HrtfState {
 
 impl HrtfState {
     fn new(hrir_sphere: HrirSphere) -> Self {
+        let len = hrir_sphere.len();
+
         let interpolation_steps = 1;
         let samples_per_step = RENDER_QUANTUM_SIZE / interpolation_steps;
 
         let processor = HrtfProcessor::new(hrir_sphere, interpolation_steps, samples_per_step);
 
         Self {
+            len,
             processor,
             output_interleaved: vec![(0., 0.); RENDER_QUANTUM_SIZE],
             prev_sample_vector: Vec3::new(0., 0., 1.),
@@ -132,6 +137,9 @@ impl HrtfState {
         new_distance_gain: f32,
         projected_source: [f32; 3],
     ) -> &[(f32, f32)] {
+        // reset state of output buffer
+        self.output_interleaved.fill((0., 0.));
+
         let new_sample_vector = Vec3 {
             x: projected_source[0],
             z: projected_source[1],
@@ -155,6 +163,10 @@ impl HrtfState {
         self.prev_distance_gain = new_distance_gain;
 
         &self.output_interleaved
+    }
+
+    fn tail_time_samples(&self) -> usize {
+        self.len
     }
 }
 
@@ -394,6 +406,8 @@ impl PannerNode {
         self.panning_model.load(Ordering::SeqCst).into()
     }
 
+    // can panic when loading HRIR-sphere
+    #[allow(clippy::missing_panics_doc)]
     pub fn set_panning_model(&self, p: PanningModelType) {
         let hrtf_option = match p {
             PanningModelType::EqualPower => None,
@@ -431,7 +445,7 @@ impl AudioProcessor for PannerRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        scope: &RenderScope,
+        _scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];
@@ -447,12 +461,14 @@ impl AudioProcessor for PannerRenderer {
         if input.is_silent() {
             // HRTF panner has tail time equal to the max length of the impulse response buffers
             // (12 ms)
-            if self.hrtf_state.is_none()
-                || self.tail_time_counter as f32 * scope.sample_rate > 0.012
-            {
+            let tail_time = match &self.hrtf_state {
+                None => false,
+                Some(hrtf_state) => hrtf_state.tail_time_samples() > self.tail_time_counter,
+            };
+            if !tail_time {
                 return false;
             }
-            self.tail_time_counter += 1;
+            self.tail_time_counter += RENDER_QUANTUM_SIZE;
         }
 
         // convert mono to identical stereo
@@ -529,11 +545,13 @@ impl AudioProcessor for PannerRenderer {
             }
         };
 
+        // handle changes in panning_model_type mandated from control thread
         if let Ok(hrtf_state) = self.receiver.try_recv() {
             self.hrtf_state = hrtf_state;
         }
 
         if let Some(hrtf_state) = &mut self.hrtf_state {
+            // HRTF panning
             let new_distance_gain = cone_gain * dist_gain;
 
             // convert az/el to carthesian coordinates to determine unit direction
@@ -554,22 +572,18 @@ impl AudioProcessor for PannerRenderer {
                 projected_source,
             );
 
+            let [left, right] = output.stereo_mut();
             output_interleaved
                 .iter()
-                .zip(output.channel_data_mut(0).iter_mut())
-                .for_each(|(p, l)| {
+                .zip(&mut left[..])
+                .zip(&mut right[..])
+                .for_each(|((p, l), r)| {
                     *l = p.0;
-                });
-
-            output_interleaved
-                .iter()
-                .zip(output.channel_data_mut(1).iter_mut())
-                .for_each(|(p, r)| {
                     *r = p.1;
                 });
-
-            hrtf_state.output_interleaved.fill((0., 0.));
         } else {
+            // EqualPower panning
+
             // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
             azimuth = azimuth.max(-180.);
             azimuth = azimuth.min(180.);
