@@ -12,7 +12,6 @@ use super::{
 
 use float_eq::float_eq;
 use hrtf::{HrirSphere, HrtfContext, HrtfProcessor, Vec3};
-use vecmath::Vector3;
 
 /// Spatialization algorithm used to position the audio in 3D space
 #[derive(Copy, Clone, Debug)]
@@ -119,7 +118,7 @@ impl HrtfState {
         &mut self,
         source: &[f32],
         new_distance_gain: f32,
-        projected_source: Vector3<f32>,
+        projected_source: [f32; 3],
     ) -> &[(f32, f32)] {
         let new_sample_vector = Vec3 {
             x: projected_source[0],
