@@ -293,6 +293,7 @@ impl PannerNode {
                 cone_outer_angle: cone_outer_angle.clone(),
                 cone_outer_gain: cone_outer_gain.clone(),
                 hrtf_state,
+                tail_time_counter: 0,
             };
 
             let node = PannerNode {
@@ -388,6 +389,7 @@ struct PannerRenderer {
     cone_outer_angle: Arc<AtomicF64>,
     cone_outer_gain: Arc<AtomicF64>,
     hrtf_state: Option<HrtfState>,
+    tail_time_counter: usize,
 }
 
 impl AudioProcessor for PannerRenderer {
@@ -396,7 +398,7 @@ impl AudioProcessor for PannerRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues,
-        _scope: &RenderScope,
+        scope: &RenderScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];
@@ -410,7 +412,14 @@ impl AudioProcessor for PannerRenderer {
 
         // early exit for silence
         if input.is_silent() {
-            return false;
+            // HRTF panner has tail time equal to the max length of the impulse response buffers
+            // (12 ms)
+            if self.hrtf_state.is_none()
+                || self.tail_time_counter as f32 * scope.sample_rate > 0.012
+            {
+                return false;
+            }
+            self.tail_time_counter += 1;
         }
 
         // convert mono to identical stereo
@@ -552,5 +561,112 @@ impl AudioProcessor for PannerRenderer {
         }
 
         false // only true for panning model HRTF
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use float_eq::{assert_float_eq, assert_float_ne};
+
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::node::{AudioBufferSourceNode, AudioBufferSourceOptions, AudioScheduledSourceNode};
+    use crate::AudioBuffer;
+
+    use super::*;
+
+    #[test]
+    fn test_equal_power() {
+        let sample_rate = 44100.;
+        let length = RENDER_QUANTUM_SIZE * 4;
+        let context = OfflineAudioContext::new(2, length, sample_rate);
+
+        // 128 input samples of value 1.
+        let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
+        let src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        src.set_buffer(input);
+        src.start();
+
+        let options = PannerOptions {
+            panning_model: PanningModelType::EqualPower,
+            ..PannerOptions::default()
+        };
+        let panner = PannerNode::new(&context, options);
+        panner.position_x().set_value(1.); // sound comes from the right
+
+        src.connect(&panner);
+        panner.connect(&context.destination());
+
+        let output = context.start_rendering_sync();
+        let original = vec![1.; RENDER_QUANTUM_SIZE];
+        let zero = vec![0.; RENDER_QUANTUM_SIZE];
+
+        // assert first quantum fully panned to the right
+        assert_float_eq!(
+            output.get_channel_data(0)[..128],
+            &zero[..],
+            abs_all <= 1E-6
+        );
+        assert_float_eq!(
+            output.get_channel_data(1)[..128],
+            &original[..],
+            abs_all <= 1E-6
+        );
+
+        // assert no tail-time
+        assert_float_eq!(
+            output.get_channel_data(0)[128..256],
+            &zero[..],
+            abs_all <= 1E-6
+        );
+        assert_float_eq!(
+            output.get_channel_data(1)[128..256],
+            &zero[..],
+            abs_all <= 1E-6
+        );
+    }
+
+    #[test]
+    fn test_hrtf() {
+        let sample_rate = 44100.;
+        let length = RENDER_QUANTUM_SIZE * 4;
+        let context = OfflineAudioContext::new(2, length, sample_rate);
+
+        // 128 input samples of value 1.
+        let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
+        let src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        src.set_buffer(input);
+        src.start();
+
+        let options = PannerOptions {
+            panning_model: PanningModelType::HRTF,
+            ..PannerOptions::default()
+        };
+        let panner = PannerNode::new(&context, options);
+        panner.position_x().set_value(1.); // sound comes from the right
+
+        src.connect(&panner);
+        panner.connect(&context.destination());
+
+        let output = context.start_rendering_sync();
+        let original = vec![1.; RENDER_QUANTUM_SIZE];
+
+        // assert first quantum not equal to input buffer (both left and right)
+        assert_float_ne!(
+            output.get_channel_data(0)[..128],
+            &original[..],
+            abs_all <= 1E-6
+        );
+        assert_float_ne!(
+            output.get_channel_data(1)[..128],
+            &original[..],
+            abs_all <= 1E-6
+        );
+
+        // assert some samples non-zero in the tail time
+        let left = output.channel_data(0).as_slice();
+        assert!(left[128..256].iter().any(|v| *v >= 1E-6));
+
+        let right = output.channel_data(1).as_slice();
+        assert!(right[128..256].iter().any(|v| *v >= 1E-6));
     }
 }
