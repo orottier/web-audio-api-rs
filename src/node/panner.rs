@@ -60,7 +60,6 @@ pub enum DistanceModelType {
 #[derive(Clone, Debug)]
 pub struct PannerOptions {
     pub panning_model: PanningModelType,
-    #[allow(dead_code)]
     pub distance_model: DistanceModelType,
     pub position_x: f32,
     pub position_y: f32,
@@ -68,11 +67,8 @@ pub struct PannerOptions {
     pub orientation_x: f32,
     pub orientation_y: f32,
     pub orientation_z: f32,
-    #[allow(dead_code)]
     pub ref_distance: f64,
-    #[allow(dead_code)]
     pub max_distance: f64,
-    #[allow(dead_code)]
     pub rolloff_factor: f64,
     pub cone_inner_angle: f64,
     pub cone_outer_angle: f64,
@@ -515,35 +511,8 @@ impl AudioProcessor for PannerRenderer {
             listener_up,
         );
 
-        // determine distance gain
-        let distance = crate::spatial::distance(source_position, listener_position);
-        let dist_gain = if distance > 0. {
-            1. / distance // inverse distance model is assumed (todo issue #44)
-        } else {
-            1.
-        };
-
-        // determine cone effect gain
-        let abs_inner_angle = self.cone_inner_angle.load().abs() as f32 / 2.;
-        let abs_outer_angle = self.cone_outer_angle.load().abs() as f32 / 2.;
-        let cone_gain = if abs_inner_angle >= 180. && abs_outer_angle >= 180. {
-            1. // no cone specified
-        } else {
-            let cone_outer_gain = self.cone_outer_gain.load() as f32;
-
-            let abs_angle =
-                crate::spatial::angle(source_position, source_orientation, listener_position);
-
-            if abs_angle < abs_inner_angle {
-                1. // No attenuation
-            } else if abs_angle >= abs_outer_angle {
-                cone_outer_gain // Max attenuation
-            } else {
-                // Between inner and outer cones: inner -> outer, x goes from 0 -> 1
-                let x = (abs_angle - abs_inner_angle) / (abs_outer_angle - abs_inner_angle);
-                (1. - x) + cone_outer_gain * x
-            }
-        };
+        let dist_gain = self.dist_gain(source_position, listener_position);
+        let cone_gain = self.cone_gain(source_position, source_orientation, listener_position);
 
         // handle changes in panning_model_type mandated from control thread
         if let Ok(hrtf_state) = self.receiver.try_recv() {
@@ -612,6 +581,45 @@ impl AudioProcessor for PannerRenderer {
         }
 
         false // only true for panning model HRTF
+    }
+}
+
+impl PannerRenderer {
+    fn cone_gain(
+        &self,
+        source_position: [f32; 3],
+        source_orientation: [f32; 3],
+        listener_position: [f32; 3],
+    ) -> f32 {
+        let abs_inner_angle = self.cone_inner_angle.load().abs() as f32 / 2.;
+        let abs_outer_angle = self.cone_outer_angle.load().abs() as f32 / 2.;
+        if abs_inner_angle >= 180. && abs_outer_angle >= 180. {
+            1. // no cone specified
+        } else {
+            let cone_outer_gain = self.cone_outer_gain.load() as f32;
+
+            let abs_angle =
+                crate::spatial::angle(source_position, source_orientation, listener_position);
+
+            if abs_angle < abs_inner_angle {
+                1. // No attenuation
+            } else if abs_angle >= abs_outer_angle {
+                cone_outer_gain // Max attenuation
+            } else {
+                // Between inner and outer cones: inner -> outer, x goes from 0 -> 1
+                let x = (abs_angle - abs_inner_angle) / (abs_outer_angle - abs_inner_angle);
+                (1. - x) + cone_outer_gain * x
+            }
+        }
+    }
+
+    fn dist_gain(&self, source_position: [f32; 3], listener_position: [f32; 3]) -> f32 {
+        let distance = crate::spatial::distance(source_position, listener_position);
+        if distance > 0. {
+            1. / distance // inverse distance model is assumed (todo issue #44)
+        } else {
+            1.
+        }
     }
 }
 
