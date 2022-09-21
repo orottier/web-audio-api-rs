@@ -40,6 +40,17 @@ pub enum DistanceModelType {
     Exponential,
 }
 
+impl From<u8> for DistanceModelType {
+    fn from(i: u8) -> Self {
+        match i {
+            0 => DistanceModelType::Linear,
+            1 => DistanceModelType::Inverse,
+            2 => DistanceModelType::Exponential,
+            _ => unreachable!(),
+        }
+    }
+}
+
 /// Options for constructing a [`PannerNode`]
 // dictionary PannerOptions : AudioNodeOptions {
 //   PanningModelType panningModel = "equalpower";
@@ -225,6 +236,10 @@ pub struct PannerNode {
     cone_inner_angle: Arc<AtomicF64>,
     cone_outer_angle: Arc<AtomicF64>,
     cone_outer_gain: Arc<AtomicF64>,
+    distance_model: Arc<AtomicU8>,
+    ref_distance: Arc<AtomicF64>,
+    max_distance: Arc<AtomicF64>,
+    rolloff_factor: Arc<AtomicF64>,
     panning_model: AtomicU8,
     /// HRTF message bus to the renderer
     sender: Sender<Option<HrtfState>>,
@@ -289,6 +304,12 @@ impl PannerNode {
             orientation_y.set_value_at_time(options.orientation_y, 0.);
             orientation_z.set_value_at_time(options.orientation_z, 0.);
 
+            // distance attributes
+            let distance_model = Arc::new(AtomicU8::new(options.distance_model as u8));
+            let ref_distance = Arc::new(AtomicF64::new(options.ref_distance));
+            let max_distance = Arc::new(AtomicF64::new(options.max_distance));
+            let rolloff_factor = Arc::new(AtomicF64::new(options.rolloff_factor));
+
             // cone attributes
             let cone_inner_angle = Arc::new(AtomicF64::new(options.cone_inner_angle));
             let cone_outer_angle = Arc::new(AtomicF64::new(options.cone_outer_angle));
@@ -305,6 +326,10 @@ impl PannerNode {
                 orientation_x: render_ox,
                 orientation_y: render_oy,
                 orientation_z: render_oz,
+                distance_model: distance_model.clone(),
+                ref_distance: ref_distance.clone(),
+                max_distance: max_distance.clone(),
+                rolloff_factor: rolloff_factor.clone(),
                 cone_inner_angle: cone_inner_angle.clone(),
                 cone_outer_angle: cone_outer_angle.clone(),
                 cone_outer_gain: cone_outer_gain.clone(),
@@ -327,6 +352,10 @@ impl PannerNode {
                 orientation_x,
                 orientation_y,
                 orientation_z,
+                distance_model,
+                ref_distance,
+                max_distance,
+                rolloff_factor,
                 cone_inner_angle,
                 cone_outer_angle,
                 cone_outer_gain,
@@ -374,6 +403,38 @@ impl PannerNode {
         &self.orientation_z
     }
 
+    pub fn distance_model(&self) -> DistanceModelType {
+        self.distance_model.load(Ordering::SeqCst).into()
+    }
+
+    pub fn set_distance_model(&self, value: DistanceModelType) {
+        self.distance_model.store(value as u8, Ordering::SeqCst);
+    }
+
+    pub fn ref_distance(&self) -> f64 {
+        self.ref_distance.load()
+    }
+
+    pub fn set_ref_distance(&self, value: f64) {
+        self.ref_distance.store(value);
+    }
+
+    pub fn max_distance(&self) -> f64 {
+        self.max_distance.load()
+    }
+
+    pub fn set_max_distance(&self, value: f64) {
+        self.max_distance.store(value);
+    }
+
+    pub fn rolloff_factor(&self) -> f64 {
+        self.rolloff_factor.load()
+    }
+
+    pub fn set_rolloff_factor(&self, value: f64) {
+        self.rolloff_factor.store(value);
+    }
+
     pub fn cone_inner_angle(&self) -> f64 {
         self.cone_inner_angle.load()
     }
@@ -404,8 +465,8 @@ impl PannerNode {
 
     // can panic when loading HRIR-sphere
     #[allow(clippy::missing_panics_doc)]
-    pub fn set_panning_model(&self, p: PanningModelType) {
-        let hrtf_option = match p {
+    pub fn set_panning_model(&self, value: PanningModelType) {
+        let hrtf_option = match value {
             PanningModelType::EqualPower => None,
             PanningModelType::HRTF => {
                 let resource = include_bytes!("../../resources/IRC_1003_C.bin");
@@ -416,7 +477,7 @@ impl PannerNode {
         };
 
         let _ = self.sender.send(hrtf_option); // can fail when render thread shut down
-        self.panning_model.store(p as u8, Ordering::SeqCst);
+        self.panning_model.store(value as u8, Ordering::SeqCst);
     }
 }
 
@@ -427,6 +488,10 @@ struct PannerRenderer {
     orientation_x: AudioParamId,
     orientation_y: AudioParamId,
     orientation_z: AudioParamId,
+    distance_model: Arc<AtomicU8>,
+    ref_distance: Arc<AtomicF64>,
+    max_distance: Arc<AtomicF64>,
+    rolloff_factor: Arc<AtomicF64>,
     cone_inner_angle: Arc<AtomicF64>,
     cone_outer_angle: Arc<AtomicF64>,
     cone_outer_gain: Arc<AtomicF64>,
@@ -614,12 +679,33 @@ impl PannerRenderer {
     }
 
     fn dist_gain(&self, source_position: [f32; 3], listener_position: [f32; 3]) -> f32 {
-        let distance = crate::spatial::distance(source_position, listener_position);
-        if distance > 0. {
-            1. / distance // inverse distance model is assumed (todo issue #44)
-        } else {
-            1.
-        }
+        let distance_model = self.distance_model.load(Ordering::SeqCst).into();
+        let ref_distance = self.ref_distance.load();
+        let rolloff_factor = self.rolloff_factor.load();
+        let distance = crate::spatial::distance(source_position, listener_position) as f64;
+
+        let dist_gain = match distance_model {
+            DistanceModelType::Linear => {
+                let max_distance = self.max_distance.load();
+                let d2ref = ref_distance.min(max_distance);
+                let d2max = ref_distance.max(max_distance);
+                let d_clamped = distance.min(d2max).max(d2ref);
+                1. - rolloff_factor * (d_clamped - d2ref) / (d2max - d2ref)
+            }
+            DistanceModelType::Inverse => {
+                if distance > 0. {
+                    ref_distance
+                        / (ref_distance
+                            + rolloff_factor * (ref_distance.max(distance) - ref_distance))
+                } else {
+                    1.
+                }
+            }
+            DistanceModelType::Exponential => {
+                (distance.max(ref_distance) / ref_distance).powf(-rolloff_factor)
+            }
+        };
+        dist_gain as f32
     }
 }
 
