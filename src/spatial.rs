@@ -2,7 +2,7 @@
 //!
 //! Required for panning algorithm, distance and cone effects of panner nodes
 
-use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
+use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
@@ -130,15 +130,15 @@ impl AudioListenerNode {
                 ..PARAM_OPTS
             };
 
-            let (p1, v1) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (p2, v2) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (p3, v3) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (p4, v4) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (p5, v5) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (p6, v6) = context.create_audio_param(forward_z_opts, &registration);
-            let (p7, v7) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (p8, v8) = context.create_audio_param(up_y_opts, &registration);
-            let (p9, v9) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p1, _v1) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p2, _v2) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p3, _v3) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p4, _v4) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p5, _v5) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p6, _v6) = context.create_audio_param(forward_z_opts, &registration);
+            let (p7, _v7) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (p8, _v8) = context.create_audio_param(up_y_opts, &registration);
+            let (p9, _v9) = context.create_audio_param(PARAM_OPTS, &registration);
 
             let node = Self {
                 registration,
@@ -154,17 +154,7 @@ impl AudioListenerNode {
                     up_z: p9,
                 },
             };
-            let proc = ListenerRenderer {
-                position_x: v1,
-                position_y: v2,
-                position_z: v3,
-                forward_x: v4,
-                forward_y: v5,
-                forward_z: v6,
-                up_x: v7,
-                up_y: v8,
-                up_z: v9,
-            };
+            let proc = ListenerRenderer {};
 
             (node, Box::new(proc))
         })
@@ -175,38 +165,19 @@ impl AudioListenerNode {
     }
 }
 
-struct ListenerRenderer {
-    position_x: AudioParamId,
-    position_y: AudioParamId,
-    position_z: AudioParamId,
-    forward_x: AudioParamId,
-    forward_y: AudioParamId,
-    forward_z: AudioParamId,
-    up_x: AudioParamId,
-    up_y: AudioParamId,
-    up_z: AudioParamId,
-}
+struct ListenerRenderer {}
 
 impl AudioProcessor for ListenerRenderer {
     fn process(
         &mut self,
         _inputs: &[AudioRenderQuantum],
-        outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        _outputs: &mut [AudioRenderQuantum],
+        _params: AudioParamValues,
         _scope: &RenderScope,
     ) -> bool {
-        // for now: persist param values in output, so PannerNodes have access
-        outputs[0] = params.get_raw(&self.position_x);
-        outputs[1] = params.get_raw(&self.position_y);
-        outputs[2] = params.get_raw(&self.position_z);
-        outputs[3] = params.get_raw(&self.forward_x);
-        outputs[4] = params.get_raw(&self.forward_y);
-        outputs[5] = params.get_raw(&self.forward_z);
-        outputs[6] = params.get_raw(&self.up_x);
-        outputs[7] = params.get_raw(&self.up_y);
-        outputs[8] = params.get_raw(&self.up_z);
+        // do nothing, the Listener is just here to make sure the position/forward/up params render in order
 
-        true // has intrinsic value
+        true // never drop
     }
 }
 

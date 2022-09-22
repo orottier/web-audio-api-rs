@@ -255,7 +255,7 @@ impl AudioNode for PannerNode {
     }
 
     fn number_of_inputs(&self) -> usize {
-        1 + 9 // todo, user should not be able to see these ports
+        1
     }
 
     fn number_of_outputs(&self) -> usize {
@@ -535,57 +535,76 @@ impl AudioProcessor for PannerRenderer {
         // convert mono to identical stereo
         output.mix(2, ChannelInterpretation::Speakers);
 
-        // K-rate processing for now (todo issue #44)
-
-        // source parameters (Panner)
-        let source_position_x = params.get(&self.position_x)[0];
-        let source_position_y = params.get(&self.position_y)[0];
-        let source_position_z = params.get(&self.position_z)[0];
-        let source_orientation_x = params.get(&self.orientation_x)[0];
-        let source_orientation_y = params.get(&self.orientation_y)[0];
-        let source_orientation_z = params.get(&self.orientation_z)[0];
-
-        // listener parameters (AudioListener)
-        let l_position_x = inputs[1].channel_data(0)[0];
-        let l_position_y = inputs[2].channel_data(0)[0];
-        let l_position_z = inputs[3].channel_data(0)[0];
-        let l_forward_x = inputs[4].channel_data(0)[0];
-        let l_forward_y = inputs[5].channel_data(0)[0];
-        let l_forward_z = inputs[6].channel_data(0)[0];
-        let l_up_x = inputs[7].channel_data(0)[0];
-        let l_up_y = inputs[8].channel_data(0)[0];
-        let l_up_z = inputs[9].channel_data(0)[0];
-
-        // define base vectors in 3D
-        let source_position = [source_position_x, source_position_y, source_position_z];
-        let source_orientation = [
-            source_orientation_x,
-            source_orientation_y,
-            source_orientation_z,
-        ];
-        let listener_position = [l_position_x, l_position_y, l_position_z];
-        let listener_forward = [l_forward_x, l_forward_y, l_forward_z];
-        let listener_up = [l_up_x, l_up_y, l_up_z];
-
-        // azimuth and elevation of listener <> panner.
-        // elevation is not used in the equal power panningModel (todo issue #44)
-        let (mut azimuth, elevation) = crate::spatial::azimuth_and_elevation(
-            source_position,
-            listener_position,
-            listener_forward,
-            listener_up,
-        );
-
-        let dist_gain = self.dist_gain(source_position, listener_position);
-        let cone_gain = self.cone_gain(source_position, source_orientation, listener_position);
-
         // handle changes in panning_model_type mandated from control thread
         if let Ok(hrtf_state) = self.receiver.try_recv() {
             self.hrtf_state = hrtf_state;
         }
+        // for borrow reasons, take the hrtf_state out of self
+        let mut hrtf_state = self.hrtf_state.take();
 
-        if let Some(hrtf_state) = &mut self.hrtf_state {
-            // HRTF panning
+        // source parameters (Panner)
+        let source_position_x = params.get(&self.position_x);
+        let source_position_y = params.get(&self.position_y);
+        let source_position_z = params.get(&self.position_z);
+        let source_orientation_x = params.get(&self.orientation_x);
+        let source_orientation_y = params.get(&self.orientation_y);
+        let source_orientation_z = params.get(&self.orientation_z);
+
+        // listener parameters (AudioListener)
+        let [listener_position_x, listener_position_y, listener_position_z, listener_forward_x, listener_forward_y, listener_forward_z, listener_up_x, listener_up_y, listener_up_z] =
+            params.listener_params();
+
+        // build up the a-rate iterator for spatial variables
+        let mut a_rate_params = source_position_x
+            .iter()
+            .cycle()
+            .zip(source_position_y.iter().cycle())
+            .zip(source_position_z.iter().cycle())
+            .zip(source_orientation_x.iter().cycle())
+            .zip(source_orientation_y.iter().cycle())
+            .zip(source_orientation_z.iter().cycle())
+            .zip(listener_position_x.iter().cycle())
+            .zip(listener_position_y.iter().cycle())
+            .zip(listener_position_z.iter().cycle())
+            .zip(listener_forward_x.iter().cycle())
+            .zip(listener_forward_y.iter().cycle())
+            .zip(listener_forward_z.iter().cycle())
+            .zip(listener_up_x.iter().cycle())
+            .zip(listener_up_y.iter().cycle())
+            .zip(listener_up_z.iter().cycle())
+            .map(|tuple| {
+                // unpack giant tuple
+                let ((((((sp_so_lp, lfx), lfy), lfz), lux), luy), luz) = tuple;
+                let (((sp_so, lpx), lpy), lpz) = sp_so_lp;
+                let (((sp, sox), soy), soz) = sp_so;
+                let ((spx, spy), spz) = sp;
+
+                // define base vectors in 3D
+                let source_position = [*spx, *spy, *spz];
+                let source_orientation = [*sox, *soy, *soz];
+                let listener_position = [*lpx, *lpy, *lpz];
+                let listener_forward = [*lfx, *lfy, *lfz];
+                let listener_up = [*lux, *luy, *luz];
+
+                // determine distance and cone gain
+                let dist_gain = self.dist_gain(source_position, listener_position);
+                let cone_gain =
+                    self.cone_gain(source_position, source_orientation, listener_position);
+
+                // azimuth and elevation of the panner in frame of reference of the listener
+                let (azimuth, elevation) = crate::spatial::azimuth_and_elevation(
+                    source_position,
+                    listener_position,
+                    listener_forward,
+                    listener_up,
+                );
+
+                (dist_gain, cone_gain, azimuth, elevation)
+            });
+
+        if let Some(hrtf_state) = &mut hrtf_state {
+            // HRTF panning - always k-rate so take a single value from the a-rate iter
+            let (dist_gain, cone_gain, azimuth, elevation) = a_rate_params.next().unwrap();
             let new_distance_gain = cone_gain * dist_gain;
 
             // convert az/el to carthesian coordinates to determine unit direction
@@ -617,35 +636,37 @@ impl AudioProcessor for PannerRenderer {
                 });
         } else {
             // EqualPower panning
+            let [left, right] = output.stereo_mut();
+            a_rate_params
+                .zip(&mut left[..])
+                .zip(&mut right[..])
+                .for_each(|(((dist_gain, cone_gain, azimuth, _elevation), l), r)| {
+                    // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
+                    let mut azimuth = azimuth.max(-180.).min(180.);
 
-            // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
-            azimuth = azimuth.max(-180.);
-            azimuth = azimuth.min(180.);
+                    // Then wrap to range [-90, 90].
+                    if azimuth < -90. {
+                        azimuth = -180. - azimuth;
+                    } else if azimuth > 90. {
+                        azimuth = 180. - azimuth;
+                    }
 
-            // Then wrap to range [-90, 90].
-            if azimuth < -90. {
-                azimuth = -180. - azimuth;
-            } else if azimuth > 90. {
-                azimuth = 180. - azimuth;
-            }
+                    // x is the horizontal plane orientation of the sound
+                    let x = (azimuth + 90.) / 180.;
+                    let gain_l = (x * PI / 2.).cos();
+                    let gain_r = (x * PI / 2.).sin();
 
-            // x is the horizontal plane orientation of the sound
-            let x = (azimuth + 90.) / 180.;
-            let gain_l = (x * PI / 2.).cos();
-            let gain_r = (x * PI / 2.).sin();
-
-            // multiply signal with gain per ear
-            output
-                .channel_data_mut(0)
-                .iter_mut()
-                .for_each(|v| *v *= gain_l * dist_gain * cone_gain);
-            output
-                .channel_data_mut(1)
-                .iter_mut()
-                .for_each(|v| *v *= gain_r * dist_gain * cone_gain);
+                    // multiply signal with gain per ear
+                    *l *= gain_l * dist_gain * cone_gain;
+                    *r *= gain_r * dist_gain * cone_gain;
+                });
         }
 
-        false // only true for panning model HRTF
+        // put the hrtf_state back into self (borrow reasons)
+        self.hrtf_state = hrtf_state;
+
+        // tail time only for HRTF panning
+        self.hrtf_state.is_some()
     }
 }
 

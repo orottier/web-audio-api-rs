@@ -22,6 +22,18 @@ const DESTINATION_NODE_ID: u64 = 0;
 const LISTENER_NODE_ID: u64 = 1;
 /// listener audio parameters ids are always at index 2 through 10
 const LISTENER_PARAM_IDS: Range<u64> = 2..11;
+/// listener audio parameters ids are always at index 2 through 10
+pub(crate) const LISTENER_AUDIO_PARAM_IDS: [AudioParamId; 9] = [
+    AudioParamId(2),
+    AudioParamId(3),
+    AudioParamId(4),
+    AudioParamId(5),
+    AudioParamId(6),
+    AudioParamId(7),
+    AudioParamId(8),
+    AudioParamId(9),
+    AudioParamId(10),
+];
 
 /// Unique identifier for audio nodes.
 ///
