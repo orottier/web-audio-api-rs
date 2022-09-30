@@ -637,29 +637,53 @@ impl AudioProcessor for PannerRenderer {
         } else {
             // EqualPower panning
             let [left, right] = output.stereo_mut();
-            a_rate_params
-                .zip(&mut left[..])
-                .zip(&mut right[..])
-                .for_each(|(((dist_gain, cone_gain, azimuth, _elevation), l), r)| {
-                    // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
-                    let mut azimuth = azimuth.max(-180.).min(180.);
 
-                    // Then wrap to range [-90, 90].
-                    if azimuth < -90. {
-                        azimuth = -180. - azimuth;
-                    } else if azimuth > 90. {
-                        azimuth = 180. - azimuth;
-                    }
+            // Closure to apply gain per stereo channel
+            let apply_stereo_gain = |(((dist_gain, cone_gain, azimuth, _elevation), l), r): (
+                ((f32, f32, f32, f32), &mut f32),
+                &mut f32,
+            )| {
+                // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
+                let mut azimuth = azimuth.max(-180.).min(180.);
 
-                    // x is the horizontal plane orientation of the sound
-                    let x = (azimuth + 90.) / 180.;
-                    let gain_l = (x * PI / 2.).cos();
-                    let gain_r = (x * PI / 2.).sin();
+                // Then wrap to range [-90, 90].
+                if azimuth < -90. {
+                    azimuth = -180. - azimuth;
+                } else if azimuth > 90. {
+                    azimuth = 180. - azimuth;
+                }
 
-                    // multiply signal with gain per ear
-                    *l *= gain_l * dist_gain * cone_gain;
-                    *r *= gain_r * dist_gain * cone_gain;
-                });
+                // x is the horizontal plane orientation of the sound
+                let x = (azimuth + 90.) / 180.;
+                let gain_l = (x * PI / 2.).cos();
+                let gain_r = (x * PI / 2.).sin();
+
+                // multiply signal with gain per ear
+                *l *= gain_l * dist_gain * cone_gain;
+                *r *= gain_r * dist_gain * cone_gain;
+            };
+
+            // Optimize for static Panner & Listener
+            let single_valued = listener_position_x.len() == 1
+                && listener_position_y.len() == 1
+                && listener_position_z.len() == 1
+                && listener_forward_x.len() == 1
+                && listener_forward_y.len() == 1
+                && listener_forward_z.len() == 1
+                && listener_up_x.len() == 1
+                && listener_up_y.len() == 1
+                && listener_up_z.len() == 1;
+            if single_valued {
+                std::iter::repeat(a_rate_params.next().unwrap())
+                    .zip(&mut left[..])
+                    .zip(&mut right[..])
+                    .for_each(apply_stereo_gain);
+            } else {
+                a_rate_params
+                    .zip(&mut left[..])
+                    .zip(&mut right[..])
+                    .for_each(apply_stereo_gain);
+            }
         }
 
         // put the hrtf_state back into self (borrow reasons)
