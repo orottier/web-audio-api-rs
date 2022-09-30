@@ -481,6 +481,14 @@ impl PannerNode {
     }
 }
 
+#[derive(Copy, Clone)]
+struct SpatialParams {
+    dist_gain: f32,
+    cone_gain: f32,
+    azimuth: f32,
+    elevation: f32,
+}
+
 struct PannerRenderer {
     position_x: AudioParamId,
     position_y: AudioParamId,
@@ -599,12 +607,22 @@ impl AudioProcessor for PannerRenderer {
                     listener_up,
                 );
 
-                (dist_gain, cone_gain, azimuth, elevation)
+                SpatialParams {
+                    dist_gain,
+                    cone_gain,
+                    azimuth,
+                    elevation,
+                }
             });
 
         if let Some(hrtf_state) = &mut hrtf_state {
             // HRTF panning - always k-rate so take a single value from the a-rate iter
-            let (dist_gain, cone_gain, azimuth, elevation) = a_rate_params.next().unwrap();
+            let SpatialParams {
+                dist_gain,
+                cone_gain,
+                azimuth,
+                elevation,
+            } = a_rate_params.next().unwrap();
             let new_distance_gain = cone_gain * dist_gain;
 
             // convert az/el to carthesian coordinates to determine unit direction
@@ -639,29 +657,34 @@ impl AudioProcessor for PannerRenderer {
             let [left, right] = output.stereo_mut();
 
             // Closure to apply gain per stereo channel
-            let apply_stereo_gain = |(((dist_gain, cone_gain, azimuth, _elevation), l), r): (
-                ((f32, f32, f32, f32), &mut f32),
-                &mut f32,
-            )| {
-                // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
-                let mut azimuth = azimuth.max(-180.).min(180.);
+            let apply_stereo_gain =
+                |((spatial_params, l), r): ((SpatialParams, &mut f32), &mut f32)| {
+                    let SpatialParams {
+                        dist_gain,
+                        cone_gain,
+                        azimuth,
+                        ..
+                    } = spatial_params;
 
-                // Then wrap to range [-90, 90].
-                if azimuth < -90. {
-                    azimuth = -180. - azimuth;
-                } else if azimuth > 90. {
-                    azimuth = 180. - azimuth;
-                }
+                    // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
+                    let mut azimuth = azimuth.max(-180.).min(180.);
 
-                // x is the horizontal plane orientation of the sound
-                let x = (azimuth + 90.) / 180.;
-                let gain_l = (x * PI / 2.).cos();
-                let gain_r = (x * PI / 2.).sin();
+                    // Then wrap to range [-90, 90].
+                    if azimuth < -90. {
+                        azimuth = -180. - azimuth;
+                    } else if azimuth > 90. {
+                        azimuth = 180. - azimuth;
+                    }
 
-                // multiply signal with gain per ear
-                *l *= gain_l * dist_gain * cone_gain;
-                *r *= gain_r * dist_gain * cone_gain;
-            };
+                    // x is the horizontal plane orientation of the sound
+                    let x = (azimuth + 90.) / 180.;
+                    let gain_l = (x * PI / 2.).cos();
+                    let gain_r = (x * PI / 2.).sin();
+
+                    // multiply signal with gain per ear
+                    *l *= gain_l * dist_gain * cone_gain;
+                    *r *= gain_r * dist_gain * cone_gain;
+                };
 
             // Optimize for static Panner & Listener
             let single_valued = listener_position_x.len() == 1
