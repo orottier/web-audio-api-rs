@@ -111,6 +111,30 @@ pub fn bench_buffer_src_biquad() {
     assert_eq!(ctx.start_rendering_sync().length(), 48000);
 }
 
+pub fn bench_stereo_positional() {
+    let ctx = OfflineAudioContext::new(2, black_box(48000), 48000.);
+    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
+    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+
+    // Create static panner node
+    let panner = ctx.create_panner();
+    panner.connect(&ctx.destination());
+    panner.position_x().set_value(1.);
+    panner.position_y().set_value(2.);
+    panner.position_z().set_value(3.);
+    panner.orientation_x().set_value(1.);
+    panner.orientation_y().set_value(2.);
+    panner.orientation_z().set_value(3.);
+
+    // Play buffer and pipe to filter
+    let src = ctx.create_buffer_source();
+    src.connect(&panner);
+    src.set_buffer(buffer);
+    src.start();
+
+    assert_eq!(ctx.start_rendering_sync().length(), 48000);
+}
+
 iai::main!(
     bench_ctor,
     bench_sine,
@@ -119,4 +143,5 @@ iai::main!(
     bench_buffer_src,
     bench_buffer_src_iir,
     bench_buffer_src_biquad,
+    bench_stereo_positional,
 );
