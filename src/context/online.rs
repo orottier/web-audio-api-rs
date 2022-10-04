@@ -1,12 +1,12 @@
 //! The `AudioContext` type and constructor options
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
+use crate::io::{self, AudioBackend};
 use crate::media::{MediaElement, MediaStream};
 use crate::node::{self, ChannelConfigOptions};
+use crate::AudioRenderCapacity;
 
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-
-use crate::io::{self, AudioBackend};
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
@@ -219,5 +219,13 @@ impl AudioContext {
     ) -> node::MediaElementAudioSourceNode {
         let opts = node::MediaElementAudioSourceOptions { media_element };
         node::MediaElementAudioSourceNode::new(self, opts)
+    }
+
+    /// Returns an [`AudioRenderCapacity`] instance associated with an AudioContext.
+    #[must_use]
+    pub fn render_capacity(&self) -> AudioRenderCapacity {
+        let (sender, receiver) = crossbeam_channel::bounded(1);
+        self.base().add_audio_capacity_listener(sender.clone());
+        AudioRenderCapacity::new(sender, receiver)
     }
 }

@@ -3,6 +3,7 @@
 use crate::node::ChannelConfig;
 use crate::param::AudioParamEvent;
 use crate::render::AudioProcessor;
+use crate::LoadValueData;
 
 use crossbeam_channel::Sender;
 
@@ -26,20 +27,13 @@ pub(crate) enum ControlMessage {
     },
 
     /// Clear the connection between two given nodes in the audio graph
-    DisconnectNode {
-        from: u64,
-        to: u64,
-    },
+    DisconnectNode { from: u64, to: u64 },
 
     /// Disconnect this node from the audio graph (drop all its connections)
-    DisconnectAll {
-        from: u64,
-    },
+    DisconnectAll { from: u64 },
 
     /// Notify the render thread this node is dropped in the control thread
-    FreeWhenFinished {
-        id: u64,
-    },
+    FreeWhenFinished { id: u64 },
 
     /// Pass an AudioParam AutomationEvent to the relevant node
     AudioParamEvent {
@@ -47,7 +41,9 @@ pub(crate) enum ControlMessage {
         event: AudioParamEvent,
     },
 
-    MarkCycleBreaker {
-        id: u64,
-    },
+    /// Mark node as a cycle breaker (DelayNode only)
+    MarkCycleBreaker { id: u64 },
+
+    /// Register a listener for load values of the render thread
+    LoadValueListener { sender: Sender<LoadValueData> },
 }

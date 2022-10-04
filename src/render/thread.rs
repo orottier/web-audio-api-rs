@@ -2,15 +2,16 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, Sender, TrySendError};
 
 use super::{AudioRenderQuantum, NodeIndex};
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::RenderScope;
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{LoadValueData, RENDER_QUANTUM_SIZE};
 
 use super::graph::Graph;
 
@@ -22,6 +23,7 @@ pub(crate) struct RenderThread {
     frames_played: Arc<AtomicU64>,
     receiver: Receiver<ControlMessage>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
+    load_value_senders: Vec<Sender<LoadValueData>>,
 }
 
 // SAFETY:
@@ -47,6 +49,7 @@ impl RenderThread {
             frames_played,
             receiver,
             buffer_offset: None,
+            load_value_senders: vec![],
         }
     }
 
@@ -88,6 +91,9 @@ impl RenderThread {
                 }
                 MarkCycleBreaker { id } => {
                     self.graph.mark_cycle_breaker(NodeIndex(id));
+                }
+                LoadValueListener { sender } => {
+                    self.load_value_senders.push(sender);
                 }
             }
         }
@@ -133,8 +139,38 @@ impl RenderThread {
 
     // This code is not dead: false positive from clippy
     // due to the use of #[cfg(not(test))]
-    #[allow(dead_code)]
-    pub fn render<S: crate::Sample>(&mut self, mut buffer: &mut [S]) {
+    pub fn render<S: crate::Sample>(&mut self, buffer: &mut [S]) {
+        // collect timing information
+        let render_start = Instant::now();
+
+        // perform actual rendering
+        self.render_inner(buffer);
+
+        // calculate load value and ship to control thread
+        let duration = render_start.elapsed().as_micros() as f64 / 1E6;
+        let max_duration = RENDER_QUANTUM_SIZE as f64 / self.sample_rate as f64;
+        let load_value = duration / max_duration;
+        let render_timestamp =
+            self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64;
+        let load_value_data = LoadValueData {
+            render_timestamp,
+            load_value,
+        };
+
+        // broadcast to all AudioRenderCapacity listeners
+        let mut i = 0;
+        while i < self.load_value_senders.len() {
+            let result = self.load_value_senders[i].try_send(load_value_data); // never block
+            if let Err(TrySendError::Disconnected(_)) = result {
+                // drop listeners that no longer exists
+                self.load_value_senders.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    fn render_inner<S: crate::Sample>(&mut self, mut buffer: &mut [S]) {
         // There may be audio frames left over from the previous render call,
         // if the cpal buffer size did not align with our internal RENDER_QUANTUM_SIZE
         if let Some((offset, prev_rendered)) = self.buffer_offset.take() {
