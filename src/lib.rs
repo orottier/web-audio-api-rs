@@ -72,6 +72,7 @@ mod spatial;
 pub use spatial::AudioListener;
 
 mod io;
+pub use io::{enumerate_devices, MediaDeviceInfo, MediaDeviceInfoKind};
 
 mod analysis;
 mod message;

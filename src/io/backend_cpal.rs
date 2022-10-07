@@ -13,7 +13,7 @@ use cpal::{
     Stream, StreamConfig, SupportedBufferSize,
 };
 
-use super::AudioBackend;
+use super::{AudioBackend, MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::media::MicrophoneRender;
@@ -231,6 +231,26 @@ impl AudioBackend for CpalBackend {
 
     fn boxed_clone(&self) -> Box<dyn AudioBackend> {
         Box::new(self.clone())
+    }
+
+    fn enumerate_devices() -> Vec<MediaDeviceInfo>
+    where
+        Self: Sized,
+    {
+        cpal::default_host()
+            .devices()
+            .unwrap()
+            .filter(|d| d.default_output_config().is_ok())
+            .enumerate()
+            .map(|(i, d)| {
+                MediaDeviceInfo::new(
+                    format!("{}", i + 1),
+                    None,
+                    MediaDeviceInfoKind::AudioOutput,
+                    d.name().unwrap(),
+                )
+            })
+            .collect()
     }
 }
 

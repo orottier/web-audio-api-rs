@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use super::AudioBackend;
+use super::{AudioBackend, MediaDeviceInfo, MediaDeviceInfoKind};
 
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
@@ -10,7 +10,7 @@ use crate::message::ControlMessage;
 use crate::render::RenderThread;
 use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
-use cubeb::{Context, StereoFrame, Stream, StreamParams};
+use cubeb::{Context, DeviceType, StereoFrame, Stream, StreamParams};
 
 use crossbeam_channel::{Receiver, Sender};
 
@@ -347,5 +347,26 @@ impl AudioBackend for CubebBackend {
 
     fn boxed_clone(&self) -> Box<dyn AudioBackend> {
         Box::new(self.clone())
+    }
+
+    fn enumerate_devices() -> Vec<MediaDeviceInfo>
+    where
+        Self: Sized,
+    {
+        Context::init(None, None)
+            .unwrap()
+            .enumerate_devices(DeviceType::OUTPUT)
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                MediaDeviceInfo::new(
+                    format!("{}", i + 1),
+                    d.group_id().map(str::to_string),
+                    MediaDeviceInfoKind::AudioOutput,
+                    d.friendly_name().unwrap().into(),
+                )
+            })
+            .collect()
     }
 }
