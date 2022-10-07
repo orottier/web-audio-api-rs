@@ -11,7 +11,7 @@ use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::RenderScope;
-use crate::{LoadValueData, RENDER_QUANTUM_SIZE};
+use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
 use super::graph::Graph;
 
@@ -23,7 +23,7 @@ pub(crate) struct RenderThread {
     frames_played: Arc<AtomicU64>,
     receiver: Receiver<ControlMessage>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
-    load_value_senders: Vec<Sender<LoadValueData>>,
+    load_value_senders: Vec<Sender<AudioRenderCapacityLoad>>,
 }
 
 // SAFETY:
@@ -152,7 +152,7 @@ impl RenderThread {
         let load_value = duration / max_duration;
         let render_timestamp =
             self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64;
-        let load_value_data = LoadValueData {
+        let load_value_data = AudioRenderCapacityLoad {
             render_timestamp,
             load_value,
         };

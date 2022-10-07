@@ -3,7 +3,7 @@
 use crate::node::ChannelConfig;
 use crate::param::AudioParamEvent;
 use crate::render::AudioProcessor;
-use crate::LoadValueData;
+use crate::AudioRenderCapacityLoad;
 
 use crossbeam_channel::Sender;
 
@@ -45,5 +45,7 @@ pub(crate) enum ControlMessage {
     MarkCycleBreaker { id: u64 },
 
     /// Register a listener for load values of the render thread
-    LoadValueListener { sender: Sender<LoadValueData> },
+    LoadValueListener {
+        sender: Sender<AudioRenderCapacityLoad>,
+    },
 }

@@ -2,7 +2,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 #[derive(Copy, Clone)]
-pub(crate) struct LoadValueData {
+pub(crate) struct AudioRenderCapacityLoad {
     pub render_timestamp: f64,
     pub load_value: f64,
 }
@@ -72,13 +72,16 @@ type EventHandler = Box<dyn FnMut(AudioRenderCapacityEvent) + Send + 'static>;
 /// took to play it out. An audio buffer underrun happens when this load value is greater than 1.0: the
 /// system could not render audio fast enough for real-time.
 pub struct AudioRenderCapacity {
-    sender: Sender<LoadValueData>,
-    receiver: Option<Receiver<LoadValueData>>,
+    sender: Sender<AudioRenderCapacityLoad>,
+    receiver: Option<Receiver<AudioRenderCapacityLoad>>,
     callback: Arc<Mutex<Option<EventHandler>>>,
 }
 
 impl AudioRenderCapacity {
-    pub(crate) fn new(sender: Sender<LoadValueData>, receiver: Receiver<LoadValueData>) -> Self {
+    pub(crate) fn new(
+        sender: Sender<AudioRenderCapacityLoad>,
+        receiver: Receiver<AudioRenderCapacityLoad>,
+    ) -> Self {
         let callback = Arc::new(Mutex::new(None));
 
         Self {
@@ -107,7 +110,7 @@ impl AudioRenderCapacity {
         let mut next_checkpoint = options.update_interval;
         std::thread::spawn(move || {
             for item in receiver {
-                let LoadValueData {
+                let AudioRenderCapacityLoad {
                     render_timestamp,
                     load_value,
                 } = item;
@@ -149,7 +152,7 @@ impl AudioRenderCapacity {
     /// Stop metric collection and analysis
     pub fn stop(self) {
         // halt callback thread
-        let signal = LoadValueData {
+        let signal = AudioRenderCapacityLoad {
             render_timestamp: f64::NAN,
             load_value: f64::NAN,
         };
