@@ -141,6 +141,12 @@ pub trait BaseAudioContext {
         node::ConstantSourceNode::new(self.base(), node::ConstantSourceOptions::default())
     }
 
+    /// Creates an `ConvolverNode`, a processing node which applies linear convolution
+    #[must_use]
+    fn create_convolver(&self) -> node::ConvolverNode {
+        node::ConvolverNode::new(self.base(), node::ConvolverOptions::default())
+    }
+
     /// Creates a `ChannelMergerNode`
     #[must_use]
     fn create_channel_merger(&self, number_of_inputs: usize) -> node::ChannelMergerNode {

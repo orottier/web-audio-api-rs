@@ -1,3 +1,8 @@
+# Version 0.24.0 (2021-09-10)
+
+- Added ConvolverNode (mono only)
+- GainNode, BiquadFilterNode, AudioParam performance improvements
+
 # Version 0.23.0 (2021-08-23)
 
 - AudioParam computed values array now contains only a single value when k-rate or no automations scheduled

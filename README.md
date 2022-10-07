@@ -67,8 +67,6 @@ deviations could not be avoided:
 
 Our main limitations include:
 
-- no ConvolverNode
-- no DynamicsCompressor
 - some PannerNode features missing
 - no async methods (JS Promises)
 - no event handling

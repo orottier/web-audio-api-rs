@@ -508,7 +508,7 @@ mod tests {
             let gain = 3.;
             // output of biquad and iir filters applied to white noise should thus be equal
             let biquad_res = {
-                let context = OfflineAudioContext::new(1, noise.length(), 44_100.);
+                let context = OfflineAudioContext::new(1, 1000, 44_100.);
 
                 let biquad = context.create_biquad_filter();
                 biquad.connect(&context.destination());
@@ -526,7 +526,7 @@ mod tests {
             };
 
             let iir_res = {
-                let context = OfflineAudioContext::new(1, noise.length(), 44_100.);
+                let context = OfflineAudioContext::new(1, 1000, 44_100.);
 
                 let iir = context.create_iir_filter(feedforward, feedback);
                 iir.connect(&context.destination());

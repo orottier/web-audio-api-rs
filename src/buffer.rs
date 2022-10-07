@@ -225,6 +225,17 @@ impl AudioBuffer {
         self.channel_data(channel_number).as_slice()
     }
 
+    /// Return a mutable slice of the underlying data of the channel
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if:
+    /// - the given channel number is greater than or equal to the given number of channels.
+    pub fn get_channel_data_mut(&mut self, channel_number: usize) -> &mut [f32] {
+        assert_valid_channel_number(channel_number, self.number_of_channels());
+        self.channel_data_mut(channel_number).as_mut_slice()
+    }
+
     /// Create a multi-channel audiobuffer directly from `ChannelData`s.
     // @todo - remove in favor of `AudioBuffer::from`
     pub(crate) fn from_channels(channels: Vec<ChannelData>, sample_rate: f32) -> Self {
@@ -489,6 +500,23 @@ mod tests {
         let sample_rate = 0.;
 
         AudioBuffer::from(samples, sample_rate); // should panic
+    }
+
+    #[test]
+    fn test_channel_data_get_set() {
+        let options = AudioBufferOptions {
+            number_of_channels: 1,
+            length: 10,
+            sample_rate: 48000.,
+        };
+
+        let mut audio_buffer = AudioBuffer::new(options);
+        audio_buffer.channel_data_mut(0).as_mut_slice().fill(1.);
+        assert_float_eq!(
+            audio_buffer.channel_data(0).as_slice()[..],
+            [1.; 10][..],
+            abs_all <= 0.
+        );
     }
 
     #[test]

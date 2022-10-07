@@ -70,7 +70,7 @@ impl AudioDestinationNode {
         context.register(move |registration| {
             let channel_config = ChannelConfigOptions {
                 count: channel_count,
-                mode: ChannelCountMode::Explicit,
+                count_mode: ChannelCountMode::Explicit,
                 interpretation: ChannelInterpretation::Speakers,
             }
             .into();

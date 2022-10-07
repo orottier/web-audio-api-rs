@@ -23,7 +23,7 @@ impl Default for ChannelMergerOptions {
             number_of_inputs: 6,
             channel_config: ChannelConfigOptions {
                 count: 1,
-                mode: ChannelCountMode::Explicit,
+                count_mode: ChannelCountMode::Explicit,
                 interpretation: ChannelInterpretation::Speakers,
             },
         }
