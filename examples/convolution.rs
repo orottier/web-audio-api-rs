@@ -9,7 +9,7 @@ fn main() {
     // create an `AudioContext` and load a sound file
     let context = AudioContext::default();
 
-    let mut cap = context.render_capacity();
+    let cap = context.render_capacity();
     cap.onupdate(|e| println!("{:?}", e));
     cap.start(AudioRenderCapacityOptions {
         update_interval: 1.,

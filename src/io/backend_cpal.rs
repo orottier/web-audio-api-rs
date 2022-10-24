@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use crate::message::ControlMessage;
-use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
+use crate::{AtomicF64, AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -81,7 +81,11 @@ impl AudioBackend for CpalBackend {
     fn build_output(
         options: AudioContextOptions,
         frames_played: Arc<AtomicU64>,
-    ) -> (Self, Sender<ControlMessage>)
+    ) -> (
+        Self,
+        Sender<ControlMessage>,
+        Receiver<AudioRenderCapacityLoad>,
+    )
     where
         Self: Sized,
     {
@@ -103,7 +107,7 @@ impl AudioBackend for CpalBackend {
             .or_fallback()
             .play();
 
-        let (stream, config, sender) = streamer.get_output_stream();
+        let (stream, config, sender, cap_receiver) = streamer.get_output_stream();
         let number_of_channels = usize::from(config.channels);
         let sample_rate = config.sample_rate.0 as f32;
 
@@ -114,7 +118,7 @@ impl AudioBackend for CpalBackend {
             number_of_channels,
         };
 
-        (backend, sender)
+        (backend, sender, cap_receiver)
     }
 
     fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
@@ -428,6 +432,8 @@ struct OutputStreamer {
     output_latency: Arc<AtomicF64>,
     /// communication channel between control and render thread (sender part)
     sender: Option<Sender<ControlMessage>>,
+    /// communication channel for render load values
+    cap_receiver: Option<Receiver<AudioRenderCapacityLoad>>,
     /// the output stream
     stream: Option<Stream>,
     /// a flag to know if the output stream has been build with prefered config
@@ -453,6 +459,7 @@ impl OutputStreamer {
             frames_played,
             output_latency,
             sender: None,
+            cap_receiver: None,
             stream: None,
             falled_back: false,
         }
@@ -466,10 +473,13 @@ impl OutputStreamer {
         // Creates the render thread
         let sample_rate = config.sample_rate.0 as f32;
 
-        // communication channel to the render thread
+        // communication channel for ctrl msgs to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
+        // communication channel for render load values
+        let (cap_sender, cap_receiver) = crossbeam_channel::bounded(1);
 
         self.sender = Some(sender);
+        self.cap_receiver = Some(cap_receiver);
 
         // spawn the render thread
         let renderer = RenderThread::new(
@@ -477,6 +487,7 @@ impl OutputStreamer {
             config.channels as usize,
             receiver,
             self.frames_played.clone(),
+            Some(cap_sender),
         );
 
         log::debug!("Attempt output stream with prefered config: {:?}", &config);
@@ -512,18 +523,27 @@ impl OutputStreamer {
     }
 
     /// returns the output stream infos
-    fn get_output_stream(self) -> (Stream, StreamConfig, Sender<ControlMessage>) {
+    fn get_output_stream(
+        self,
+    ) -> (
+        Stream,
+        StreamConfig,
+        Sender<ControlMessage>,
+        Receiver<AudioRenderCapacityLoad>,
+    ) {
         if self.falled_back {
             (
                 self.stream.unwrap(),
                 self.configs.fallback,
                 self.sender.unwrap(),
+                self.cap_receiver.unwrap(),
             )
         } else {
             (
                 self.stream.unwrap(),
                 self.configs.prefered,
                 self.sender.unwrap(),
+                self.cap_receiver.unwrap(),
             )
         }
     }
@@ -549,8 +569,11 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
 
                 // communication channel to the render thread
                 let (sender, receiver) = crossbeam_channel::unbounded();
+                // communication channel for render load values
+                let (cap_sender, cap_receiver) = crossbeam_channel::bounded(1);
 
                 streamer.sender = Some(sender);
+                streamer.cap_receiver = Some(cap_receiver);
 
                 // spawn the render thread
                 let renderer = RenderThread::new(
@@ -558,6 +581,7 @@ impl OrFallback for Result<OutputStreamer, OutputStreamer> {
                     config.channels as usize,
                     receiver,
                     streamer.frames_played.clone(),
+                    Some(cap_sender),
                 );
 
                 let spawned = spawn_output_stream(

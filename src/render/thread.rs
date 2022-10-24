@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use crossbeam_channel::{Receiver, Sender, TrySendError};
+use crossbeam_channel::{Receiver, Sender};
 
 use super::{AudioRenderQuantum, NodeIndex};
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
@@ -23,7 +23,7 @@ pub(crate) struct RenderThread {
     frames_played: Arc<AtomicU64>,
     receiver: Receiver<ControlMessage>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
-    load_value_senders: Vec<Sender<AudioRenderCapacityLoad>>,
+    load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
 }
 
 // SAFETY:
@@ -41,6 +41,7 @@ impl RenderThread {
         number_of_channels: usize,
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
+        load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
     ) -> Self {
         Self {
             graph: Graph::new(),
@@ -49,7 +50,7 @@ impl RenderThread {
             frames_played,
             receiver,
             buffer_offset: None,
-            load_value_senders: vec![],
+            load_value_sender,
         }
     }
 
@@ -91,9 +92,6 @@ impl RenderThread {
                 }
                 MarkCycleBreaker { id } => {
                     self.graph.mark_cycle_breaker(NodeIndex(id));
-                }
-                LoadValueListener { sender } => {
-                    self.load_value_senders.push(sender);
                 }
             }
         }
@@ -147,26 +145,17 @@ impl RenderThread {
         self.render_inner(buffer);
 
         // calculate load value and ship to control thread
-        let duration = render_start.elapsed().as_micros() as f64 / 1E6;
-        let max_duration = RENDER_QUANTUM_SIZE as f64 / self.sample_rate as f64;
-        let load_value = duration / max_duration;
-        let render_timestamp =
-            self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64;
-        let load_value_data = AudioRenderCapacityLoad {
-            render_timestamp,
-            load_value,
-        };
-
-        // broadcast to all AudioRenderCapacity listeners
-        let mut i = 0;
-        while i < self.load_value_senders.len() {
-            let result = self.load_value_senders[i].try_send(load_value_data); // never block
-            if let Err(TrySendError::Disconnected(_)) = result {
-                // drop listeners that no longer exists
-                self.load_value_senders.remove(i);
-            } else {
-                i += 1;
-            }
+        if let Some(load_value_sender) = &self.load_value_sender {
+            let duration = render_start.elapsed().as_micros() as f64 / 1E6;
+            let max_duration = RENDER_QUANTUM_SIZE as f64 / self.sample_rate as f64;
+            let load_value = duration / max_duration;
+            let render_timestamp =
+                self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64;
+            let load_value_data = AudioRenderCapacityLoad {
+                render_timestamp,
+                load_value,
+            };
+            let _ = load_value_sender.send(load_value_data);
         }
     }
 

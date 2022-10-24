@@ -1,6 +1,8 @@
 use crossbeam_channel::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
+use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
+
 #[derive(Copy, Clone)]
 pub(crate) struct AudioRenderCapacityLoad {
     pub render_timestamp: f64,
@@ -72,96 +74,103 @@ type EventHandler = Box<dyn FnMut(AudioRenderCapacityEvent) + Send + 'static>;
 /// took to play it out. An audio buffer underrun happens when this load value is greater than 1.0: the
 /// system could not render audio fast enough for real-time.
 pub struct AudioRenderCapacity {
-    sender: Sender<AudioRenderCapacityLoad>,
-    receiver: Option<Receiver<AudioRenderCapacityLoad>>,
+    context: ConcreteBaseAudioContext,
+    receiver: Receiver<AudioRenderCapacityLoad>,
     callback: Arc<Mutex<Option<EventHandler>>>,
+    stop_send: Arc<Mutex<Option<Sender<()>>>>,
 }
 
 impl AudioRenderCapacity {
     pub(crate) fn new(
-        sender: Sender<AudioRenderCapacityLoad>,
+        context: ConcreteBaseAudioContext,
         receiver: Receiver<AudioRenderCapacityLoad>,
     ) -> Self {
         let callback = Arc::new(Mutex::new(None));
+        let stop_send = Arc::new(Mutex::new(None));
 
         Self {
-            sender,
-            receiver: Some(receiver),
+            context,
+            receiver,
             callback,
+            stop_send,
         }
     }
 
     /// Start metric collection and analysis
     #[allow(clippy::missing_panics_doc)]
-    pub fn start(&mut self, options: AudioRenderCapacityOptions) {
-        let receiver = match self.receiver.take() {
-            None => return,
-            Some(receiver) => receiver,
-        };
+    pub fn start(&self, options: AudioRenderCapacityOptions) {
+        // stop current metric collection, if any
+        self.stop();
 
         let callback = self.callback.clone();
+        let receiver = self.receiver.clone();
+        let (stop_send, stop_recv) = crossbeam_channel::bounded(0);
+        *self.stop_send.lock().unwrap() = Some(stop_send);
 
-        let mut timestamp: f64 = 0.;
+        let mut timestamp: f64 = self.context.current_time();
         let mut load_sum: f64 = 0.;
         let mut counter = 0;
         let mut peak_load: f64 = 0.;
         let mut underrun_sum = 0;
 
-        let mut next_checkpoint = options.update_interval;
-        std::thread::spawn(move || {
-            for item in receiver {
-                let AudioRenderCapacityLoad {
-                    render_timestamp,
-                    load_value,
-                } = item;
+        let mut next_checkpoint = timestamp + options.update_interval;
+        std::thread::spawn(move || loop {
+            let try_item = crossbeam_channel::select! {
+                recv(receiver) -> item => item,
+                recv(stop_recv) -> _ => return,
+            };
 
-                // check for signal to stop
-                if render_timestamp.is_nan() && load_value.is_nan() {
-                    return; // stop thread
-                };
+            // stop thread when render thread has shut down
+            let item = match try_item {
+                Err(_) => return,
+                Ok(item) => item,
+            };
 
-                counter += 1;
-                load_sum += load_value;
-                peak_load = peak_load.max(load_value);
-                if load_value > 1. {
-                    underrun_sum += 1;
+            let AudioRenderCapacityLoad {
+                render_timestamp,
+                load_value,
+            } = item;
+
+            counter += 1;
+            load_sum += load_value;
+            peak_load = peak_load.max(load_value);
+            if load_value > 1. {
+                underrun_sum += 1;
+            }
+
+            if render_timestamp >= next_checkpoint {
+                let event = AudioRenderCapacityEvent::new(
+                    timestamp,
+                    load_sum / counter as f64,
+                    peak_load,
+                    underrun_sum as f64 / counter as f64,
+                );
+                if let Some(f) = &mut *callback.lock().unwrap() {
+                    (f)(event);
                 }
 
-                if render_timestamp >= next_checkpoint {
-                    let event = AudioRenderCapacityEvent::new(
-                        timestamp,
-                        load_sum / counter as f64,
-                        peak_load,
-                        underrun_sum as f64 / counter as f64,
-                    );
-                    if let Some(f) = &mut *callback.lock().unwrap() {
-                        (f)(event);
-                    }
-
-                    next_checkpoint += options.update_interval;
-                    timestamp = render_timestamp;
-                    load_sum = 0.;
-                    counter = 0;
-                    peak_load = 0.;
-                    underrun_sum = 0;
-                }
+                next_checkpoint += options.update_interval;
+                timestamp = render_timestamp;
+                load_sum = 0.;
+                counter = 0;
+                peak_load = 0.;
+                underrun_sum = 0;
             }
         });
     }
 
     /// Stop metric collection and analysis
-    pub fn stop(self) {
+    #[allow(clippy::missing_panics_doc)]
+    pub fn stop(&self) {
         // halt callback thread
-        let signal = AudioRenderCapacityLoad {
-            render_timestamp: f64::NAN,
-            load_value: f64::NAN,
-        };
-        let _ = self.sender.send(signal);
+        if let Some(stop_send) = self.stop_send.lock().unwrap().take() {
+            let _ = stop_send.send(());
+        }
     }
 
     /// An EventHandler for [`AudioRenderCapacityEvent`].
     #[allow(clippy::missing_panics_doc)]
-    pub fn onupdate<F: FnMut(AudioRenderCapacityEvent) + Send + 'static>(&mut self, callback: F) {
+    pub fn onupdate<F: FnMut(AudioRenderCapacityEvent) + Send + 'static>(&self, callback: F) {
         *self.callback.lock().unwrap() = Some(Box::new(callback));
     }
 }

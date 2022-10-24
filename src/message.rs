@@ -3,7 +3,6 @@
 use crate::node::ChannelConfig;
 use crate::param::AudioParamEvent;
 use crate::render::AudioProcessor;
-use crate::AudioRenderCapacityLoad;
 
 use crossbeam_channel::Sender;
 
@@ -43,9 +42,4 @@ pub(crate) enum ControlMessage {
 
     /// Mark node as a cycle breaker (DelayNode only)
     MarkCycleBreaker { id: u64 },
-
-    /// Register a listener for load values of the render thread
-    LoadValueListener {
-        sender: Sender<AudioRenderCapacityLoad>,
-    },
 }

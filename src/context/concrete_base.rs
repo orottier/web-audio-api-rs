@@ -10,7 +10,7 @@ use crate::param::{AudioParam, AudioParamEvent};
 use crate::render::AudioProcessor;
 use crate::spatial::AudioListenerParams;
 
-use crate::{AudioListener, AudioRenderCapacityLoad};
+use crate::AudioListener;
 
 use crossbeam_channel::Sender;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
@@ -208,14 +208,6 @@ impl ConcreteBaseAudioContext {
     pub fn mark_cycle_breaker(&self, reg: &AudioContextRegistration) {
         let id = reg.id().0;
         let message = ControlMessage::MarkCycleBreaker { id };
-
-        // Sending the message will fail when the render thread has already shut down.
-        // This is fine
-        let _r = self.inner.render_channel.send(message);
-    }
-
-    pub(crate) fn add_audio_capacity_listener(&self, sender: Sender<AudioRenderCapacityLoad>) {
-        let message = ControlMessage::LoadValueListener { sender };
 
         // Sending the message will fail when the render thread has already shut down.
         // This is fine

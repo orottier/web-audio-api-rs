@@ -8,7 +8,7 @@ use crossbeam_channel::{Receiver, Sender};
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::message::ControlMessage;
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
 #[cfg(feature = "cpal")]
 mod backend_cpal;
@@ -20,16 +20,20 @@ mod backend_cubeb;
 pub(crate) fn build_output(
     options: AudioContextOptions,
     frames_played: Arc<AtomicU64>,
-) -> (Box<dyn AudioBackend>, Sender<ControlMessage>) {
+) -> (
+    Box<dyn AudioBackend>,
+    Sender<ControlMessage>,
+    Receiver<AudioRenderCapacityLoad>,
+) {
     #[cfg(feature = "cubeb")]
     {
-        let (b, s) = backend_cubeb::CubebBackend::build_output(options, frames_played);
-        (Box::new(b), s)
+        let (b, s, r) = backend_cubeb::CubebBackend::build_output(options, frames_played);
+        (Box::new(b), s, r)
     }
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        let (b, s) = backend_cpal::CpalBackend::build_output(options, frames_played);
-        (Box::new(b), s)
+        let (b, s, r) = backend_cpal::CpalBackend::build_output(options, frames_played);
+        (Box::new(b), s, r)
     }
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
     {
@@ -64,7 +68,11 @@ pub(crate) trait AudioBackend: Send + Sync + 'static {
     fn build_output(
         options: AudioContextOptions,
         frames_played: Arc<AtomicU64>,
-    ) -> (Self, Sender<ControlMessage>)
+    ) -> (
+        Self,
+        Sender<ControlMessage>,
+        Receiver<AudioRenderCapacityLoad>,
+    )
     where
         Self: Sized;
 
