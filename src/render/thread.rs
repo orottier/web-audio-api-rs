@@ -135,8 +135,6 @@ impl RenderThread {
         buf
     }
 
-    // This code is not dead: false positive from clippy
-    // due to the use of #[cfg(not(test))]
     pub fn render<S: crate::Sample>(&mut self, buffer: &mut [S]) {
         // collect timing information
         let render_start = Instant::now();

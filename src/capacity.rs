@@ -34,6 +34,8 @@ pub struct AudioRenderCapacityEvent {
 
 impl AudioRenderCapacityEvent {
     fn new(timestamp: f64, average_load: f64, peak_load: f64, underrun_ratio: f64) -> Self {
+        // We are limiting the precision here conform
+        // https://webaudio.github.io/web-audio-api/#dom-audiorendercapacityevent-averageload
         Self {
             timestamp,
             average_load: (average_load * 100.).round() / 100.,
