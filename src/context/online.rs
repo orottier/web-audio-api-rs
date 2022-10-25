@@ -45,6 +45,8 @@ pub struct AudioContextOptions {
     pub latency_hint: AudioContextLatencyCategory,
     /// Sample rate of the audio Context and audio output hardware
     pub sample_rate: Option<f32>,
+    /// The identifier or associated information of the audio output device
+    pub sink_id: Option<String>,
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
