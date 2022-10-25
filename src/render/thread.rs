@@ -153,7 +153,7 @@ impl RenderThread {
                 render_timestamp,
                 load_value,
             };
-            let _ = load_value_sender.send(load_value_data);
+            let _ = load_value_sender.try_send(load_value_data);
         }
     }
 
