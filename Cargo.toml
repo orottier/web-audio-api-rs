@@ -36,7 +36,7 @@ iai = "0.1.1"
 rand = "0.8"
 
 # used in examples/mic_playback.rs:
-simplelog = "0.11"
+simplelog = "0.12"
 termion = "1.5"
 textplots = "0.8"
 
