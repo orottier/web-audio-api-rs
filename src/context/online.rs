@@ -85,7 +85,7 @@ impl AudioContext {
     /// // Request a sample rate of 44.1 kHz and default latency (buffer size 128, if available)
     /// let opts = AudioContextOptions {
     ///     sample_rate: Some(44100.),
-    ///     latency_hint: AudioContextLatencyCategory::Interactive,
+    ///     ..AudioContextOptions::default()
     /// };
     ///
     /// // Setup the audio context that will emit to your speakers

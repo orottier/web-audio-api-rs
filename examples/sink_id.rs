@@ -12,8 +12,10 @@ fn main() {
     let sink_id = std::io::stdin().lines().next().unwrap().unwrap();
 
     // Create an audio context (default: stereo);
-    let mut options = AudioContextOptions::default();
-    options.sink_id = Some(sink_id);
+    let options = AudioContextOptions {
+        sink_id: Some(sink_id),
+        ..AudioContextOptions::default()
+    };
 
     let context = AudioContext::new(options);
     println!("Playing beep for sink {:?}", context.sink_id());
