@@ -120,6 +120,9 @@ pub(crate) trait AudioBackend: Send + Sync + 'static {
     /// the listener can hear the sound.
     fn output_latency(&self) -> f64;
 
+    /// The audio output device - `None` means the default device
+    fn sink_id(&self) -> Option<&str>;
+
     /// Clone the stream reference
     fn boxed_clone(&self) -> Box<dyn AudioBackend>;
 

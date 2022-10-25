@@ -75,6 +75,7 @@ pub struct CpalBackend {
     output_latency: Arc<AtomicF64>,
     sample_rate: f32,
     number_of_channels: usize,
+    sink_id: Option<String>,
 }
 
 impl AudioBackend for CpalBackend {
@@ -92,7 +93,7 @@ impl AudioBackend for CpalBackend {
         let host = cpal::default_host();
         log::info!("Host: {:?}", host.id());
 
-        let device = match options.sink_id {
+        let device = match &options.sink_id {
             None => host
                 .default_output_device()
                 .expect("no output device available"),
@@ -132,6 +133,7 @@ impl AudioBackend for CpalBackend {
             output_latency,
             sample_rate,
             number_of_channels,
+            sink_id: options.sink_id,
         };
 
         (backend, sender, cap_receiver)
@@ -216,6 +218,7 @@ impl AudioBackend for CpalBackend {
             output_latency: Arc::new(AtomicF64::new(0.)),
             sample_rate,
             number_of_channels,
+            sink_id: None,
         };
 
         (backend, receiver)
@@ -243,6 +246,10 @@ impl AudioBackend for CpalBackend {
 
     fn output_latency(&self) -> f64 {
         self.output_latency.load()
+    }
+
+    fn sink_id(&self) -> Option<&str> {
+        self.sink_id.as_deref()
     }
 
     fn boxed_clone(&self) -> Box<dyn AudioBackend> {

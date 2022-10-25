@@ -139,6 +139,7 @@ pub struct CubebBackend {
     stream: ThreadSafeClosableStream,
     sample_rate: f32,
     number_of_channels: usize,
+    sink_id: Option<String>,
 }
 
 impl AudioBackend for CubebBackend {
@@ -200,7 +201,7 @@ impl AudioBackend for CubebBackend {
             .ok()
             .unwrap_or(RENDER_QUANTUM_SIZE as u32);
         let buffer_size = buffer_size_req.max(min_latency);
-        let device_id = options.sink_id.and_then(|d| {
+        let device_id = options.sink_id.as_ref().and_then(|d| {
             Self::enumerate_devices()
                 .into_iter()
                 .find(|e| e.device_id() == d)
@@ -248,6 +249,7 @@ impl AudioBackend for CubebBackend {
             stream,
             number_of_channels,
             sample_rate,
+            sink_id: options.sink_id,
         };
 
         backend.resume();
@@ -327,6 +329,7 @@ impl AudioBackend for CubebBackend {
             stream: ThreadSafeClosableStream::new(stream),
             number_of_channels,
             sample_rate,
+            sink_id: None,
         };
 
         (backend, receiver)
@@ -354,6 +357,10 @@ impl AudioBackend for CubebBackend {
 
     fn output_latency(&self) -> f64 {
         self.stream.output_latency(self.sample_rate)
+    }
+
+    fn sink_id(&self) -> Option<&str> {
+        self.sink_id.as_deref()
     }
 
     fn boxed_clone(&self) -> Box<dyn AudioBackend> {

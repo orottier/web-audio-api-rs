@@ -16,6 +16,7 @@ fn main() {
     options.sink_id = Some(sink_id);
 
     let context = AudioContext::new(options);
+    println!("Playing beep for sink {:?}", context.sink_id());
 
     // Create an oscillator node with sine (default) type
     let osc = context.create_oscillator();
