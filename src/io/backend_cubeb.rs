@@ -8,7 +8,7 @@ use crate::context::AudioContextOptions;
 use crate::media::MicrophoneRender;
 use crate::message::ControlMessage;
 use crate::render::RenderThread;
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
 use cubeb::{Context, StereoFrame, Stream, StreamParams};
 
@@ -140,7 +140,11 @@ impl AudioBackend for CubebBackend {
     fn build_output(
         options: AudioContextOptions,
         frames_played: Arc<AtomicU64>,
-    ) -> (Self, Sender<ControlMessage>)
+    ) -> (
+        Self,
+        Sender<ControlMessage>,
+        Receiver<AudioRenderCapacityLoad>,
+    )
     where
         Self: Sized,
     {
@@ -167,7 +171,14 @@ impl AudioBackend for CubebBackend {
 
         // Set up render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
-        let renderer = RenderThread::new(sample_rate, number_of_channels, receiver, frames_played);
+        let (cap_sender, cap_receiver) = crossbeam_channel::bounded(1);
+        let renderer = RenderThread::new(
+            sample_rate,
+            number_of_channels,
+            receiver,
+            frames_played,
+            Some(cap_sender),
+        );
 
         let params = cubeb::StreamParamsBuilder::new()
             .format(cubeb::SampleFormat::Float32NE) // use float (native endian)
@@ -230,7 +241,7 @@ impl AudioBackend for CubebBackend {
 
         backend.resume();
 
-        (backend, sender)
+        (backend, sender, cap_receiver)
     }
 
     fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)

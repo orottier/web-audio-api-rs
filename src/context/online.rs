@@ -1,12 +1,12 @@
 //! The `AudioContext` type and constructor options
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
+use crate::io::{self, AudioBackend};
 use crate::media::{MediaElement, MediaStream};
 use crate::node::{self, ChannelConfigOptions};
+use crate::AudioRenderCapacity;
 
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-
-use crate::io::{self, AudioBackend};
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
@@ -56,6 +56,8 @@ pub struct AudioContext {
     base: ConcreteBaseAudioContext,
     /// audio backend (play/pause functionality)
     backend: Box<dyn AudioBackend>,
+    /// Provider for rendering performance metrics
+    render_capacity: AudioRenderCapacity,
 }
 
 impl BaseAudioContext for AudioContext {
@@ -98,7 +100,7 @@ impl AudioContext {
         let frames_played_clone = frames_played.clone();
 
         // select backend based on cargo features
-        let (backend, sender) = io::build_output(options, frames_played_clone);
+        let (backend, sender, cap_recv) = io::build_output(options, frames_played_clone);
 
         let base = ConcreteBaseAudioContext::new(
             backend.sample_rate(),
@@ -109,7 +111,15 @@ impl AudioContext {
         );
         base.set_state(AudioContextState::Running);
 
-        Self { base, backend }
+        // setup AudioRenderCapacity for this context
+        let base_clone = base.clone();
+        let render_capacity = AudioRenderCapacity::new(base_clone, cap_recv);
+
+        Self {
+            base,
+            backend,
+            render_capacity,
+        }
     }
 
     /// This represents the number of seconds of processing latency incurred by
@@ -219,5 +229,11 @@ impl AudioContext {
     ) -> node::MediaElementAudioSourceNode {
         let opts = node::MediaElementAudioSourceOptions { media_element };
         node::MediaElementAudioSourceNode::new(self, opts)
+    }
+
+    /// Returns an [`AudioRenderCapacity`] instance associated with an AudioContext.
+    #[must_use]
+    pub fn render_capacity(&self) -> &AudioRenderCapacity {
+        &self.render_capacity
     }
 }
