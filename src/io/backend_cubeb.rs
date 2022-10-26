@@ -1,18 +1,16 @@
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use super::{AudioBackend, MediaDeviceInfo, MediaDeviceInfoKind};
+use super::{AudioBackend, MediaDeviceInfo, MediaDeviceInfoKind, RenderThreadInit};
 
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::media::MicrophoneRender;
-use crate::message::ControlMessage;
 use crate::render::RenderThread;
-use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
+use crate::RENDER_QUANTUM_SIZE;
 
 use cubeb::{Context, DeviceId, DeviceType, StereoFrame, Stream, StreamParams};
 
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::Receiver;
 
 // erase type of `Frame` in cubeb `Stream<Frame>`
 pub struct BoxedStream(Box<dyn CubebStream>);
@@ -143,17 +141,16 @@ pub struct CubebBackend {
 }
 
 impl AudioBackend for CubebBackend {
-    fn build_output(
-        options: AudioContextOptions,
-        frames_played: Arc<AtomicU64>,
-    ) -> (
-        Self,
-        Sender<ControlMessage>,
-        Receiver<AudioRenderCapacityLoad>,
-    )
+    fn build_output(options: AudioContextOptions, render_thread_init: RenderThreadInit) -> Self
     where
         Self: Sized,
     {
+        let RenderThreadInit {
+            frames_played,
+            ctrl_msg_recv,
+            load_value_send,
+        } = render_thread_init;
+
         // Set up cubeb context
         let ctx = Context::init(None, None).unwrap();
 
@@ -175,15 +172,12 @@ impl AudioBackend for CubebBackend {
             _ => cubeb::ChannelLayout::UNDEFINED, // TODO, does this work?
         };
 
-        // Set up render thread
-        let (sender, receiver) = crossbeam_channel::unbounded();
-        let (cap_sender, cap_receiver) = crossbeam_channel::bounded(1);
         let renderer = RenderThread::new(
             sample_rate,
             number_of_channels,
-            receiver,
+            ctrl_msg_recv,
             frames_played,
-            Some(cap_sender),
+            Some(load_value_send),
         );
 
         let params = cubeb::StreamParamsBuilder::new()
@@ -254,7 +248,7 @@ impl AudioBackend for CubebBackend {
 
         backend.resume();
 
-        (backend, sender, cap_receiver)
+        backend
     }
 
     fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)

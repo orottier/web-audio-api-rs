@@ -1,11 +1,9 @@
 //! Audio IO management API
 use std::convert::TryFrom;
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use crate::message::ControlMessage;
-use crate::{AtomicF64, AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
+use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -13,13 +11,13 @@ use cpal::{
     Stream, StreamConfig, SupportedBufferSize,
 };
 
-use super::{AudioBackend, MediaDeviceInfo, MediaDeviceInfoKind};
+use super::{AudioBackend, MediaDeviceInfo, MediaDeviceInfoKind, RenderThreadInit};
 use crate::buffer::AudioBuffer;
-use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
+use crate::context::AudioContextOptions;
 use crate::media::MicrophoneRender;
 use crate::render::RenderThread;
 
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::Receiver;
 
 mod private {
     use super::*;
@@ -79,19 +77,18 @@ pub struct CpalBackend {
 }
 
 impl AudioBackend for CpalBackend {
-    fn build_output(
-        options: AudioContextOptions,
-        frames_played: Arc<AtomicU64>,
-    ) -> (
-        Self,
-        Sender<ControlMessage>,
-        Receiver<AudioRenderCapacityLoad>,
-    )
+    fn build_output(options: AudioContextOptions, render_thread_init: RenderThreadInit) -> Self
     where
         Self: Sized,
     {
         let host = cpal::default_host();
         log::info!("Host: {:?}", host.id());
+
+        let RenderThreadInit {
+            frames_played,
+            ctrl_msg_recv,
+            load_value_send,
+        } = render_thread_init;
 
         let device = match &options.sink_id {
             None => host
@@ -106,37 +103,96 @@ impl AudioBackend for CpalBackend {
 
         log::info!("Output device: {:?}", device.name());
 
-        let mut builder = StreamConfigsBuilder::new(device);
+        let supported = device
+            .default_output_config()
+            .expect("error while querying configs");
+        let mut prefered: StreamConfig = supported.clone().into();
 
         // set specific sample rate if requested
         if let Some(sample_rate) = options.sample_rate {
-            builder.with_sample_rate(sample_rate);
+            crate::assert_valid_sample_rate(sample_rate);
+            prefered.sample_rate.0 = sample_rate as u32;
         }
 
         // always try to set a decent buffer size
-        builder.with_latency_hint(options.latency_hint);
+        let buffer_size = super::buffer_size_for_latency_category(
+            options.latency_hint,
+            prefered.sample_rate.0 as f32,
+        ) as u32;
 
-        let configs = builder.build();
+        let clamped_buffer_size: u32 = match supported.buffer_size() {
+            SupportedBufferSize::Unknown => buffer_size,
+            SupportedBufferSize::Range { min, max } => buffer_size.clamp(*min, *max),
+        };
+
+        prefered.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
 
         let output_latency = Arc::new(AtomicF64::new(0.));
-        let streamer = OutputStreamer::new(configs, frames_played, output_latency.clone())
-            .spawn()
-            .or_fallback()
-            .play();
+        let number_of_channels = usize::from(prefered.channels);
+        let mut sample_rate = prefered.sample_rate.0 as f32;
 
-        let (stream, config, sender, cap_receiver) = streamer.get_output_stream();
-        let number_of_channels = usize::from(config.channels);
-        let sample_rate = config.sample_rate.0 as f32;
+        let renderer = RenderThread::new(
+            sample_rate,
+            prefered.channels as usize,
+            ctrl_msg_recv.clone(),
+            frames_played.clone(),
+            Some(load_value_send.clone()),
+        );
 
-        let backend = CpalBackend {
+        log::debug!(
+            "Attempt output stream with prefered config: {:?}",
+            &prefered
+        );
+        let spawned = spawn_output_stream(
+            &device,
+            supported.sample_format(),
+            &prefered,
+            renderer,
+            output_latency.clone(),
+        );
+
+        let stream = match spawned {
+            Ok(stream) => {
+                log::debug!("Output stream set up successfully");
+                stream
+            }
+            Err(e) => {
+                log::warn!("Output stream build failed with prefered config: {}", e);
+                sample_rate = supported.sample_rate().0 as f32;
+                let supported_config: StreamConfig = supported.clone().into();
+                log::debug!(
+                    "Attempt output stream with fallback config: {:?}",
+                    &supported_config
+                );
+
+                let renderer = RenderThread::new(
+                    sample_rate,
+                    supported_config.channels as usize,
+                    ctrl_msg_recv,
+                    frames_played,
+                    Some(load_value_send),
+                );
+
+                let spawned = spawn_output_stream(
+                    &device,
+                    supported.sample_format(),
+                    &supported_config,
+                    renderer,
+                    output_latency.clone(),
+                );
+                spawned.expect("OutputStream build failed with default config")
+            }
+        };
+
+        stream.play().expect("Stream refused to play");
+
+        CpalBackend {
             stream: ThreadSafeClosableStream::new(stream),
             output_latency,
             sample_rate,
             number_of_channels,
             sink_id: options.sink_id,
-        };
-
-        (backend, sender, cap_receiver)
+        }
     }
 
     fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
@@ -357,271 +413,6 @@ fn spawn_input_stream(
         }
         SampleFormat::I16 => {
             device.build_input_stream(config, move |d: &[i16], _c| render.render(d), err_fn)
-        }
-    }
-}
-
-/// This struct helps to build `StreamConfigs`
-struct StreamConfigsBuilder {
-    // This is not a dead code, this field is used by OutputStreamer
-    #[allow(dead_code)]
-    /// The device on which the stream will be build
-    device: cpal::Device,
-    /// the device supported config from wich all the other configs are derived
-    supported: cpal::SupportedStreamConfig,
-    /// the prefered config is a primary config optionnaly modified by the user options `AudioContextOptions`
-    prefered: cpal::StreamConfig,
-}
-
-impl StreamConfigsBuilder {
-    /// creates the `StreamConfigBuilder`
-    fn new(device: cpal::Device) -> Self {
-        let supported = device
-            .default_output_config()
-            .expect("error while querying configs");
-
-        Self {
-            device,
-            supported: supported.clone(),
-            prefered: supported.into(),
-        }
-    }
-
-    /// set preferred sample rate
-    fn with_sample_rate(&mut self, sample_rate: f32) {
-        crate::assert_valid_sample_rate(sample_rate);
-        self.prefered.sample_rate.0 = sample_rate as u32;
-    }
-
-    /// define requested hardware buffer size
-    #[allow(clippy::needless_pass_by_value)]
-    fn with_latency_hint(&mut self, latency_hint: AudioContextLatencyCategory) {
-        let buffer_size = super::buffer_size_for_latency_category(
-            latency_hint,
-            self.prefered.sample_rate.0 as f32,
-        ) as u32;
-
-        let clamped_buffer_size: u32 = match self.supported.buffer_size() {
-            SupportedBufferSize::Unknown => buffer_size,
-            SupportedBufferSize::Range { min, max } => buffer_size.clamp(*min, *max),
-        };
-
-        self.prefered.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
-    }
-
-    /// builds `StreamConfigs`
-    fn build(self) -> StreamConfigs {
-        StreamConfigs::new(self)
-    }
-}
-
-/// `StreamConfigs` contains configs data
-/// required to build an output stream on
-/// a prefered config or a fallback config in case of failure
-struct StreamConfigs {
-    /// the requested sample format of the output stream
-    sample_format: cpal::SampleFormat,
-    /// the prefered config of the output stream
-    prefered: cpal::StreamConfig,
-    /// in case of failure to build the stream with `prefered`
-    /// a fallback config is used to spawn the stream
-    fallback: cpal::StreamConfig,
-}
-
-impl StreamConfigs {
-    /// creates a stream configs with the data prepared by the builder
-    fn new(builder: StreamConfigsBuilder) -> Self {
-        let StreamConfigsBuilder {
-            supported,
-            prefered,
-            ..
-        } = builder;
-
-        let sample_format = supported.sample_format();
-
-        Self {
-            sample_format,
-            prefered,
-            fallback: supported.into(),
-        }
-    }
-}
-
-/// `OutputStreamer` is used to spawn an output stream
-struct OutputStreamer {
-    /// The audio device on which the output stream is broadcast
-    device: cpal::Device,
-    /// The configs on which the output stream can be build
-    configs: StreamConfigs,
-    /// `frames_played` act as a time reference when processing
-    frames_played: Arc<AtomicU64>,
-    /// delay between render and actual system audio output
-    output_latency: Arc<AtomicF64>,
-    /// communication channel between control and render thread (sender part)
-    sender: Option<Sender<ControlMessage>>,
-    /// communication channel for render load values
-    cap_receiver: Option<Receiver<AudioRenderCapacityLoad>>,
-    /// the output stream
-    stream: Option<Stream>,
-    /// a flag to know if the output stream has been build with prefered config
-    /// or fallback config
-    falled_back: bool,
-}
-
-impl OutputStreamer {
-    /// creates an `OutputStreamer`
-    fn new(
-        configs: StreamConfigs,
-        frames_played: Arc<AtomicU64>,
-        output_latency: Arc<AtomicF64>,
-    ) -> Self {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .expect("no output device available");
-
-        Self {
-            device,
-            configs,
-            frames_played,
-            output_latency,
-            sender: None,
-            cap_receiver: None,
-            stream: None,
-            falled_back: false,
-        }
-    }
-
-    /// spawns the output stram with prefered config
-    fn spawn(mut self) -> Result<Self, Self> {
-        // try with prefered config
-        let config = &self.configs.prefered;
-
-        // Creates the render thread
-        let sample_rate = config.sample_rate.0 as f32;
-
-        // communication channel for ctrl msgs to the render thread
-        let (sender, receiver) = crossbeam_channel::unbounded();
-        // communication channel for render load values
-        let (cap_sender, cap_receiver) = crossbeam_channel::bounded(1);
-
-        self.sender = Some(sender);
-        self.cap_receiver = Some(cap_receiver);
-
-        // spawn the render thread
-        let renderer = RenderThread::new(
-            sample_rate,
-            config.channels as usize,
-            receiver,
-            self.frames_played.clone(),
-            Some(cap_sender),
-        );
-
-        log::debug!("Attempt output stream with prefered config: {:?}", &config);
-        let spawned = spawn_output_stream(
-            &self.device,
-            self.configs.sample_format,
-            config,
-            renderer,
-            self.output_latency.clone(),
-        );
-
-        match spawned {
-            Ok(stream) => {
-                log::debug!("Output stream set up successfully");
-                self.stream = Some(stream);
-                Ok(self)
-            }
-            Err(e) => {
-                log::warn!("Output stream build failed with prefered config: {}", e);
-                Err(self)
-            }
-        }
-    }
-
-    /// playes the output stream
-    fn play(self) -> Self {
-        self.stream
-            .as_ref()
-            .expect("Stream needs to exist to be played")
-            .play()
-            .expect("Stream refused to play");
-        self
-    }
-
-    /// returns the output stream infos
-    fn get_output_stream(
-        self,
-    ) -> (
-        Stream,
-        StreamConfig,
-        Sender<ControlMessage>,
-        Receiver<AudioRenderCapacityLoad>,
-    ) {
-        if self.falled_back {
-            (
-                self.stream.unwrap(),
-                self.configs.fallback,
-                self.sender.unwrap(),
-                self.cap_receiver.unwrap(),
-            )
-        } else {
-            (
-                self.stream.unwrap(),
-                self.configs.prefered,
-                self.sender.unwrap(),
-                self.cap_receiver.unwrap(),
-            )
-        }
-    }
-}
-
-/// adds a fallback path to `OutputStreamer`
-trait OrFallback {
-    /// falls back if previous attempt failed
-    fn or_fallback(self) -> OutputStreamer;
-}
-
-impl OrFallback for Result<OutputStreamer, OutputStreamer> {
-    fn or_fallback(self) -> OutputStreamer {
-        match self {
-            Ok(streamer) => streamer,
-            Err(mut streamer) => {
-                // try with fallback config
-                streamer.falled_back = true;
-                let config = &streamer.configs.fallback;
-
-                // Creates the renderer thread
-                let sample_rate = config.sample_rate.0 as f32;
-
-                // communication channel to the render thread
-                let (sender, receiver) = crossbeam_channel::unbounded();
-                // communication channel for render load values
-                let (cap_sender, cap_receiver) = crossbeam_channel::bounded(1);
-
-                streamer.sender = Some(sender);
-                streamer.cap_receiver = Some(cap_receiver);
-
-                // spawn the render thread
-                let renderer = RenderThread::new(
-                    sample_rate,
-                    config.channels as usize,
-                    receiver,
-                    streamer.frames_played.clone(),
-                    Some(cap_sender),
-                );
-
-                let spawned = spawn_output_stream(
-                    &streamer.device,
-                    streamer.configs.sample_format,
-                    config,
-                    renderer,
-                    streamer.output_latency.clone(),
-                );
-                let stream = spawned.expect("OutputStream build failed with default config");
-                streamer.stream = Some(stream);
-                streamer
-            }
         }
     }
 }

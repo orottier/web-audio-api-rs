@@ -1,12 +1,9 @@
 //! The `AudioContext` type and constructor options
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::io::{self, AudioBackend};
+use crate::io::{self, AudioBackend, ControlThreadInit};
 use crate::media::{MediaElement, MediaStream};
 use crate::node::{self, ChannelConfigOptions};
 use crate::AudioRenderCapacity;
-
-use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
@@ -97,25 +94,25 @@ impl AudioContext {
     #[allow(clippy::needless_pass_by_value)]
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
-        // track number of frames - synced from render thread to control thread
-        let frames_played = Arc::new(AtomicU64::new(0));
-        let frames_played_clone = frames_played.clone();
-
-        // select backend based on cargo features
-        let (backend, sender, cap_recv) = io::build_output(options, frames_played_clone);
+        let (backend, control_thread_init) = io::build_output(options);
+        let ControlThreadInit {
+            frames_played,
+            ctrl_msg_send,
+            load_value_recv,
+        } = control_thread_init;
 
         let base = ConcreteBaseAudioContext::new(
             backend.sample_rate(),
             backend.number_of_channels(),
             frames_played,
-            sender,
+            ctrl_msg_send,
             false,
         );
         base.set_state(AudioContextState::Running);
 
         // setup AudioRenderCapacity for this context
         let base_clone = base.clone();
-        let render_capacity = AudioRenderCapacity::new(base_clone, cap_recv);
+        let render_capacity = AudioRenderCapacity::new(base_clone, load_value_recv);
 
         Self {
             base,
