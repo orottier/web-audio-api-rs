@@ -1,6 +1,6 @@
 //! The `AudioContext` type and constructor options
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::io::{self, AudioBackend, ControlThreadInit};
+use crate::io::{self, AudioBackend, ControlThreadInit, RenderThreadInit};
 use crate::media::{MediaElement, MediaStream};
 use crate::node::{self, ChannelConfigOptions};
 use crate::AudioRenderCapacity;
@@ -57,6 +57,8 @@ pub struct AudioContext {
     backend: Box<dyn AudioBackend>,
     /// Provider for rendering performance metrics
     render_capacity: AudioRenderCapacity,
+    /// Initializer for the render thread (when restart is required)
+    render_thread_init: RenderThreadInit,
 }
 
 impl BaseAudioContext for AudioContext {
@@ -94,7 +96,9 @@ impl AudioContext {
     #[allow(clippy::needless_pass_by_value)]
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
-        let (backend, control_thread_init) = io::build_output(options);
+        let (control_thread_init, render_thread_init) = io::thread_init();
+        let backend = io::build_output(options, render_thread_init.clone());
+
         let ControlThreadInit {
             frames_played,
             ctrl_msg_send,
@@ -118,6 +122,7 @@ impl AudioContext {
             base,
             backend,
             render_capacity,
+            render_thread_init,
         }
     }
 
@@ -128,7 +133,7 @@ impl AudioContext {
     // it to the audio subsystem, so this value is zero. (see Gecko)
     #[allow(clippy::unused_self)]
     #[must_use]
-    pub const fn base_latency(&self) -> f64 {
+    pub fn base_latency(&self) -> f64 {
         0.
     }
 
@@ -146,6 +151,22 @@ impl AudioContext {
     /// The initial value is `None`, which means the default audio output device.
     pub fn sink_id(&self) -> Option<&str> {
         self.backend.sink_id()
+    }
+
+    /// Update the current audio output device.
+    // todo: not mut self
+    pub fn set_sink_id(&mut self, sink_id: String) {
+        self.close_sync(); // todo graceful exit, reuse Graph
+
+        // hotswap the backend
+        let options = AudioContextOptions {
+            sample_rate: Some(self.sample_rate()),
+            latency_hint: AudioContextLatencyCategory::default(), // todo reuse existing setting
+            sink_id: Some(sink_id),
+        };
+        self.backend = io::build_output(options, self.render_thread_init.clone());
+
+        self.base().set_state(AudioContextState::Running);
     }
 
     /// Suspends the progression of time in the audio context.

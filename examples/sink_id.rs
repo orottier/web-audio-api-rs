@@ -17,7 +17,7 @@ fn main() {
         ..AudioContextOptions::default()
     };
 
-    let context = AudioContext::new(options);
+    let mut context = AudioContext::new(options);
     println!("Playing beep for sink {:?}", context.sink_id());
 
     // Create an oscillator node with sine (default) type
@@ -25,5 +25,10 @@ fn main() {
     osc.connect(&context.destination());
     osc.start();
 
-    std::thread::sleep(std::time::Duration::from_secs(4));
+    loop {
+        println!("Choose output device, enter the 'device_id' and press <Enter>:");
+        let sink_id = std::io::stdin().lines().next().unwrap().unwrap();
+        context.set_sink_id(sink_id);
+        println!("Playing beep for sink {:?}", context.sink_id());
+    }
 }

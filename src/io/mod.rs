@@ -48,10 +48,7 @@ pub(crate) struct ControlThreadInit {
     pub load_value_recv: Receiver<AudioRenderCapacityLoad>,
 }
 
-/// Set up an output stream (speakers) bases on the selected features (cubeb/cpal/none)
-pub(crate) fn build_output(
-    options: AudioContextOptions,
-) -> (Box<dyn AudioBackend>, ControlThreadInit) {
+pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
     // track number of frames - synced from render thread to control thread
     let frames_played = Arc::new(AtomicU64::new(0));
     // communication channel for ctrl msgs to the render thread
@@ -59,26 +56,35 @@ pub(crate) fn build_output(
     // communication channel for render load values
     let (load_value_send, load_value_recv) = crossbeam_channel::bounded(1);
 
-    let render_thread_init = RenderThreadInit {
-        frames_played: frames_played.clone(),
-        ctrl_msg_recv,
-        load_value_send,
-    };
     let control_thread_init = ControlThreadInit {
         frames_played: frames_played.clone(),
         ctrl_msg_send,
         load_value_recv,
     };
 
+    let render_thread_init = RenderThreadInit {
+        frames_played,
+        ctrl_msg_recv,
+        load_value_send,
+    };
+
+    (control_thread_init, render_thread_init)
+}
+
+/// Set up an output stream (speakers) bases on the selected features (cubeb/cpal/none)
+pub(crate) fn build_output(
+    options: AudioContextOptions,
+    render_thread_init: RenderThreadInit,
+) -> Box<dyn AudioBackend> {
     #[cfg(feature = "cubeb")]
     {
         let backend = backend_cubeb::CubebBackend::build_output(options, render_thread_init);
-        (Box::new(backend), control_thread_init)
+        Box::new(backend)
     }
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
         let backend = backend_cpal::CpalBackend::build_output(options, render_thread_init);
-        (Box::new(backend), control_thread_init)
+        Box::new(backend)
     }
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
     {
