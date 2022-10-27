@@ -6,6 +6,8 @@ use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
 use crate::AudioRenderCapacity;
 
+use std::sync::Mutex;
+
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
 #[derive(Clone, Debug)]
@@ -55,7 +57,7 @@ pub struct AudioContext {
     /// represents the underlying `BaseAudioContext`
     base: ConcreteBaseAudioContext,
     /// audio backend (play/pause functionality)
-    backend: Box<dyn AudioBackend>,
+    backend: Mutex<Box<dyn AudioBackend>>,
     /// Provider for rendering performance metrics
     render_capacity: AudioRenderCapacity,
     /// Initializer for the render thread (when restart is required)
@@ -126,7 +128,7 @@ impl AudioContext {
 
         Self {
             base,
-            backend,
+            backend: Mutex::new(backend),
             render_capacity,
             render_thread_init,
         }
@@ -148,15 +150,17 @@ impl AudioContext {
     /// the time at which the first sample in the buffer is actually processed
     /// by the audio output device.
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn output_latency(&self) -> f64 {
-        self.backend.output_latency()
+        self.backend.lock().unwrap().output_latency()
     }
 
     /// Identifier or the information of the current audio output device.
     ///
     /// The initial value is `None`, which means the default audio output device.
-    pub fn sink_id(&self) -> Option<&str> {
-        self.backend.sink_id()
+    #[allow(clippy::missing_panics_doc)]
+    pub fn sink_id(&self) -> Option<String> {
+        self.backend.lock().unwrap().sink_id().map(str::to_string)
     }
 
     /// Update the current audio output device.
@@ -167,9 +171,10 @@ impl AudioContext {
     /// # Panics
     ///
     /// Panics when the provided sink_id is not valid (todo)
-    // todo: not mut self
     #[allow(clippy::needless_collect)]
-    pub fn set_sink_id_sync(&mut self, sink_id: String) {
+    pub fn set_sink_id_sync(&self, sink_id: String) {
+        let mut backend_guard = self.backend.lock().unwrap();
+
         // acquire exclusive lock on ctrl msg sender
         let ctrl_msg_send = self.base.lock_control_msg_sender();
 
@@ -188,7 +193,7 @@ impl AudioContext {
             latency_hint: AudioContextLatencyCategory::default(), // todo reuse existing setting
             sink_id: Some(sink_id),
         };
-        self.backend = io::build_output(options, self.render_thread_init.clone());
+        *backend_guard = io::build_output(options, self.render_thread_init.clone());
 
         // send the audio graph to the new render thread
         let message = ControlMessage::Startup { graph };
@@ -200,6 +205,9 @@ impl AudioContext {
         pending_msgs
             .into_iter()
             .for_each(|m| self.base().send_control_msg(m).unwrap());
+
+        // explicitly release the lock to prevent concurrent render threads
+        drop(backend_guard)
     }
 
     /// Suspends the progression of time in the audio context.
@@ -218,7 +226,7 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn suspend_sync(&self) {
-        if self.backend.suspend() {
+        if self.backend.lock().unwrap().suspend() {
             self.base().set_state(AudioContextState::Suspended);
         }
     }
@@ -237,7 +245,7 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn resume_sync(&self) {
-        if self.backend.resume() {
+        if self.backend.lock().unwrap().resume() {
             self.base().set_state(AudioContextState::Running);
         }
     }
@@ -255,7 +263,7 @@ impl AudioContext {
     /// Will panic when this function is called multiple times
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn close_sync(&self) {
-        self.backend.close();
+        self.backend.lock().unwrap().close();
 
         self.base().set_state(AudioContextState::Closed);
     }
