@@ -2,6 +2,7 @@
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::io::{self, AudioBackend, ControlThreadInit, RenderThreadInit};
 use crate::media::{MediaElement, MediaStream};
+use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
 use crate::AudioRenderCapacity;
 
@@ -94,6 +95,7 @@ impl AudioContext {
     /// // let context = AudioContext::default();
     /// ```
     #[allow(clippy::needless_pass_by_value)]
+    #[allow(clippy::missing_panics_doc)]
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
         let (control_thread_init, render_thread_init) = io::thread_init();
@@ -104,6 +106,10 @@ impl AudioContext {
             ctrl_msg_send,
             load_value_recv,
         } = control_thread_init;
+
+        let graph = crate::render::graph::Graph::new();
+        let message = crate::message::ControlMessage::Startup { graph };
+        ctrl_msg_send.send(message).unwrap();
 
         let base = ConcreteBaseAudioContext::new(
             backend.sample_rate(),
@@ -154,9 +160,27 @@ impl AudioContext {
     }
 
     /// Update the current audio output device.
+    ///
+    /// This function operates synchronously and might block the current thread. An async version
+    /// is currently not implemented.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the provided sink_id is not valid (todo)
     // todo: not mut self
-    pub fn set_sink_id(&mut self, sink_id: String) {
-        self.close_sync(); // todo graceful exit, reuse Graph
+    #[allow(clippy::needless_collect)]
+    pub fn set_sink_id_sync(&mut self, sink_id: String) {
+        // acquire exclusive lock on ctrl msg sender
+        let ctrl_msg_send = self.base.lock_control_msg_sender();
+
+        // flush out the ctrl msg receiver, cache
+        let pending_msgs: Vec<_> = self.render_thread_init.ctrl_msg_recv.try_iter().collect();
+
+        // acquire the audio graph from the current render thread, shutting it down
+        let (graph_send, graph_recv) = crossbeam_channel::bounded(1);
+        let message = ControlMessage::Shutdown { sender: graph_send };
+        ctrl_msg_send.send(message).unwrap();
+        let graph = graph_recv.recv().unwrap();
 
         // hotswap the backend
         let options = AudioContextOptions {
@@ -166,7 +190,16 @@ impl AudioContext {
         };
         self.backend = io::build_output(options, self.render_thread_init.clone());
 
+        // send the audio graph to the new render thread
+        let message = ControlMessage::Startup { graph };
+        ctrl_msg_send.send(message).unwrap();
+
         self.base().set_state(AudioContextState::Running);
+
+        // flush the cached msgs
+        pending_msgs
+            .into_iter()
+            .for_each(|m| self.base().send_control_msg(m).unwrap());
     }
 
     /// Suspends the progression of time in the audio context.
