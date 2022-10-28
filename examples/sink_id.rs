@@ -28,7 +28,7 @@ fn main() {
     loop {
         println!("Choose output device, enter the 'device_id' and press <Enter>:");
         let sink_id = std::io::stdin().lines().next().unwrap().unwrap();
-        context.set_sink_id_sync(sink_id);
+        context.set_sink_id_sync(sink_id).unwrap();
         println!("Playing beep for sink {:?}", context.sink_id());
     }
 }

@@ -6,6 +6,7 @@ use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
 use crate::AudioRenderCapacity;
 
+use std::error::Error;
 use std::sync::Mutex;
 
 /// Identify the type of playback, which affects tradeoffs
@@ -82,7 +83,7 @@ impl AudioContext {
     /// This will play live audio on the default output device.
     ///
     /// ```no_run
-    /// use web_audio_api::context::{AudioContext, AudioContextLatencyCategory, AudioContextOptions};
+    /// use web_audio_api::context::{AudioContext, AudioContextOptions};
     ///
     /// // Request a sample rate of 44.1 kHz and default latency (buffer size 128, if available)
     /// let opts = AudioContextOptions {
@@ -96,10 +97,24 @@ impl AudioContext {
     /// // Alternatively, use the default constructor to get the best settings for your hardware
     /// // let context = AudioContext::default();
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// The `AudioContext` constructor will panic when an invalid `sinkId` is provided in the
+    /// `AudioContextOptions`. In a future version, a `try_new` constructor will be introduced that
+    /// will never panic.
     #[allow(clippy::needless_pass_by_value)]
-    #[allow(clippy::missing_panics_doc)]
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
+        if let Some(sink_id) = &options.sink_id {
+            if !crate::enumerate_devices()
+                .into_iter()
+                .any(|d| d.device_id() == sink_id)
+            {
+                panic!("NotFoundError: invalid sinkId");
+            }
+        }
+
         let (control_thread_init, render_thread_init) = io::thread_init();
         let backend = io::build_output(options, render_thread_init.clone());
 
@@ -167,12 +182,15 @@ impl AudioContext {
     ///
     /// This function operates synchronously and might block the current thread. An async version
     /// is currently not implemented.
-    ///
-    /// # Panics
-    ///
-    /// Panics when the provided sink_id is not valid (todo)
-    #[allow(clippy::needless_collect)]
-    pub fn set_sink_id_sync(&self, sink_id: String) {
+    #[allow(clippy::needless_collect, clippy::missing_panics_doc)]
+    pub fn set_sink_id_sync(&self, sink_id: String) -> Result<(), Box<dyn Error>> {
+        if !crate::enumerate_devices()
+            .into_iter()
+            .any(|d| d.device_id() == sink_id)
+        {
+            Err("NotFoundError: invalid sinkId")?;
+        }
+
         let mut backend_guard = self.backend.lock().unwrap();
 
         // acquire exclusive lock on ctrl msg sender
@@ -207,7 +225,9 @@ impl AudioContext {
             .for_each(|m| self.base().send_control_msg(m).unwrap());
 
         // explicitly release the lock to prevent concurrent render threads
-        drop(backend_guard)
+        drop(backend_guard);
+
+        Ok(())
     }
 
     /// Suspends the progression of time in the audio context.
