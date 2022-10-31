@@ -184,6 +184,10 @@ impl AudioContext {
     /// is currently not implemented.
     #[allow(clippy::needless_collect, clippy::missing_panics_doc)]
     pub fn set_sink_id_sync(&self, sink_id: String) -> Result<(), Box<dyn Error>> {
+        if self.sink_id().as_deref() == Some(&sink_id) {
+            return Ok(()); // sink is already active
+        }
+
         if !crate::enumerate_devices()
             .into_iter()
             .any(|d| d.device_id() == sink_id)
