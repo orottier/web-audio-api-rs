@@ -11,10 +11,10 @@ use crate::message::ControlMessage;
 use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
 #[cfg(feature = "cpal")]
-mod backend_cpal;
+mod cpal;
 
 #[cfg(feature = "cubeb")]
-mod backend_cubeb;
+mod cubeb;
 
 /// List the available media output devices, such as speakers, headsets, loopbacks, etc
 ///
@@ -22,12 +22,12 @@ mod backend_cubeb;
 pub fn enumerate_devices() -> Vec<MediaDeviceInfo> {
     #[cfg(feature = "cubeb")]
     {
-        backend_cubeb::CubebBackend::enumerate_devices()
+        cubeb::CubebBackend::enumerate_devices()
     }
 
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        backend_cpal::CpalBackend::enumerate_devices()
+        cpal::CpalBackend::enumerate_devices()
     }
 
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
@@ -78,12 +78,12 @@ pub(crate) fn build_output(
 ) -> Box<dyn AudioBackendManager> {
     #[cfg(feature = "cubeb")]
     {
-        let backend = backend_cubeb::CubebBackend::build_output(options, render_thread_init);
+        let backend = cubeb::CubebBackend::build_output(options, render_thread_init);
         Box::new(backend)
     }
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        let backend = backend_cpal::CpalBackend::build_output(options, render_thread_init);
+        let backend = cpal::CpalBackend::build_output(options, render_thread_init);
         Box::new(backend)
     }
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
@@ -99,12 +99,12 @@ pub(crate) fn build_input(
 ) -> (Box<dyn AudioBackendManager>, Receiver<AudioBuffer>) {
     #[cfg(feature = "cubeb")]
     {
-        let (b, r) = backend_cubeb::CubebBackend::build_input(options);
+        let (b, r) = cubeb::CubebBackend::build_input(options);
         (Box::new(b), r)
     }
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        let (b, r) = backend_cpal::CpalBackend::build_input(options);
+        let (b, r) = cpal::CpalBackend::build_input(options);
         (Box::new(b), r)
     }
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
