@@ -10,6 +10,8 @@ use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::message::ControlMessage;
 use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
+mod none;
+
 #[cfg(feature = "cpal")]
 mod cpal;
 
@@ -76,6 +78,11 @@ pub(crate) fn build_output(
     options: AudioContextOptions,
     render_thread_init: RenderThreadInit,
 ) -> Box<dyn AudioBackendManager> {
+    if options.sink_id.is_none() {
+        let backend = none::NoneBackend::build_output(options, render_thread_init);
+        return Box::new(backend);
+    }
+
     #[cfg(feature = "cubeb")]
     {
         let backend = cubeb::CubebBackend::build_output(options, render_thread_init);
@@ -116,7 +123,7 @@ pub(crate) fn build_input(
 /// Interface for audio backends
 pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// Setup a new output stream (speakers)
-    fn build_output(options: AudioContextOptions, render_thread_ctor: RenderThreadInit) -> Self
+    fn build_output(options: AudioContextOptions, render_thread_init: RenderThreadInit) -> Self
     where
         Self: Sized;
 
