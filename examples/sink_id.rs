@@ -8,8 +8,14 @@ fn main() {
     let devices = enumerate_devices();
     dbg!(devices);
 
-    println!("Choose output device, enter the 'device_id' and press <Enter>:");
-    let sink_id = std::io::stdin().lines().next().unwrap().unwrap();
+    println!(
+        "Enter the output 'device_id' and press <Enter>. Leave empty for AudioSinkType 'none'"
+    );
+    let input = std::io::stdin().lines().next().unwrap().unwrap();
+    let sink_id = match input.trim() {
+        "" => None,
+        i => Some(i.to_string()),
+    };
 
     // Create an audio context (default: stereo);
     let options = AudioContextOptions {
@@ -26,8 +32,16 @@ fn main() {
     osc.start();
 
     loop {
-        println!("Choose output device, enter the 'device_id' and press <Enter>:");
-        let sink_id = std::io::stdin().lines().next().unwrap().unwrap();
+        println!(
+            "Enter the output 'device_id' and press <Enter>. Leave empty for AudioSinkType 'none'"
+        );
+
+        let input = std::io::stdin().lines().next().unwrap().unwrap();
+        let sink_id = match input.trim() {
+            "" => None,
+            i => Some(i.to_string()),
+        };
+
         context.set_sink_id_sync(sink_id).unwrap();
         println!("Playing beep for sink {:?}", context.sink_id());
     }

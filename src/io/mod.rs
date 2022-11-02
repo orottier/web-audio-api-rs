@@ -75,12 +75,17 @@ pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
 
 /// Set up an output stream (speakers) bases on the selected features (cubeb/cpal/none)
 pub(crate) fn build_output(
-    options: AudioContextOptions,
+    mut options: AudioContextOptions,
     render_thread_init: RenderThreadInit,
 ) -> Box<dyn AudioBackendManager> {
-    if options.sink_id.is_none() {
+    if options.sink_id == Some(None) {
         let backend = none::NoneBackend::build_output(options, render_thread_init);
         return Box::new(backend);
+    }
+
+    // sink_id=None means the default device
+    if options.sink_id.is_none() {
+        options.sink_id = Some(Some("".to_string()));
     }
 
     #[cfg(feature = "cubeb")]
@@ -153,7 +158,7 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// the listener can hear the sound.
     fn output_latency(&self) -> f64;
 
-    /// The audio output device - `None` means the default device
+    /// The audio output device - `Some("")` means the default device
     fn sink_id(&self) -> Option<&str>;
 
     /// Clone the stream reference

@@ -1,6 +1,6 @@
 //! The `AudioContext` type and constructor options
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::io::{self, AudioBackendManager, ControlThreadInit, RenderThreadInit};
+use crate::io::{self, enumerate_devices, AudioBackendManager, ControlThreadInit, RenderThreadInit};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
@@ -44,10 +44,15 @@ pub struct AudioContextOptions {
     /// Identify the type of playback, which affects
     /// tradeoffs between audio output latency and power consumption
     pub latency_hint: AudioContextLatencyCategory,
-    /// Sample rate of the audio Context and audio output hardware
+
+    /// Sample rate of the audio context and audio output hardware
     pub sample_rate: Option<f32>,
-    /// The audio output device - use `None` for the default device
-    pub sink_id: Option<String>,
+
+    /// The audio output device
+    /// - use `None` for the default device
+    /// - use `Some(None)` to process the audio graph without playing through an audio output device.
+    /// - use `Some(Some(sinkId))` to use the specified audio sink id, obtained with `enumerate_devices`
+    pub sink_id: Option<Option<String>>,
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
@@ -106,8 +111,8 @@ impl AudioContext {
     #[allow(clippy::needless_pass_by_value)]
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
-        if let Some(sink_id) = &options.sink_id {
-            if !crate::enumerate_devices()
+        if let Some(Some(sink_id)) = &options.sink_id {
+            if !enumerate_devices()
                 .into_iter()
                 .any(|d| d.device_id() == sink_id)
             {
@@ -172,7 +177,7 @@ impl AudioContext {
 
     /// Identifier or the information of the current audio output device.
     ///
-    /// The initial value is `None`, which means the default audio output device.
+    /// The initial value is `Some("")`, which means the default audio output device.
     #[allow(clippy::missing_panics_doc)]
     pub fn sink_id(&self) -> Option<String> {
         self.backend_manager
@@ -184,19 +189,26 @@ impl AudioContext {
 
     /// Update the current audio output device.
     ///
+    /// The provided `sink_id` string must match a device name `enumerate_devices`.
+    ///
+    /// Supplying `None` for the `sink_id` will process the audio graph without playing through an
+    /// audio output device.
+    ///
     /// This function operates synchronously and might block the current thread. An async version
     /// is currently not implemented.
     #[allow(clippy::needless_collect, clippy::missing_panics_doc)]
-    pub fn set_sink_id_sync(&self, sink_id: String) -> Result<(), Box<dyn Error>> {
-        if self.sink_id().as_deref() == Some(&sink_id) {
+    pub fn set_sink_id_sync(&self, sink_id: Option<String>) -> Result<(), Box<dyn Error>> {
+        if self.sink_id() == sink_id {
             return Ok(()); // sink is already active
         }
 
-        if !crate::enumerate_devices()
-            .into_iter()
-            .any(|d| d.device_id() == sink_id)
-        {
-            Err("NotFoundError: invalid sinkId")?;
+        if let Some(sink_id_value) = &sink_id {
+            if !enumerate_devices()
+                .into_iter()
+                .any(|d| d.device_id() == sink_id_value)
+            {
+                Err("NotFoundError: invalid sinkId")?;
+            }
         }
 
         let mut backend_manager_guard = self.backend_manager.lock().unwrap();
