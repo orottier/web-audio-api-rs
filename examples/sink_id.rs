@@ -44,5 +44,8 @@ fn main() {
 
         context.set_sink_id_sync(sink_id).unwrap();
         println!("Playing beep for sink {:?}", context.sink_id());
+
+        // with this info we can ensure the progression of time with any backend
+        println!("Current time is now {:<3}", context.current_time());
     }
 }

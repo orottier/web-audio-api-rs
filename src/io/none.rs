@@ -1,5 +1,5 @@
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::{AudioBackendManager, MediaDeviceInfo, RenderThreadInit};
 use crate::buffer::AudioBuffer;
@@ -26,22 +26,29 @@ pub struct NoneBackend {
 struct Callback {
     receiver: Receiver<NoneBackendMessage>,
     render_thread: RenderThread,
+    sample_rate: f32,
     running: bool,
 }
 
 impl Callback {
     fn run(mut self) {
-        let mut buffer = vec![0.; RENDER_QUANTUM_SIZE];
-        let interval = Duration::from_millis(1); // TODO
+        let buffer_size = RENDER_QUANTUM_SIZE; // TODO Latency Category
+        let mut buffer = vec![0.; buffer_size * NUMBER_OF_CHANNELS];
+        let interval = Duration::from_secs_f32(buffer_size as f32 / self.sample_rate);
+
+        // For an isochronous callback we must calculate the deadline every render quantum
+        let mut deadline = Instant::now().checked_add(interval).unwrap();
 
         loop {
-            // TODO, make truly isochronous
-            thread::sleep(interval);
-
-            for msg in self.receiver.try_iter() {
+            // poll the receiver as long as the deadline is in the future
+            while let Ok(msg) = self.receiver.recv_deadline(deadline) {
                 match msg {
                     NoneBackendMessage::Close => return,
-                    NoneBackendMessage::Resume => self.running = true,
+                    NoneBackendMessage::Resume => {
+                        self.running = true;
+                        deadline = Instant::now().checked_add(interval).unwrap();
+                        break; // start processing right away
+                    }
                     NoneBackendMessage::Suspend => self.running = false,
                 }
             }
@@ -49,6 +56,8 @@ impl Callback {
             if self.running {
                 self.render_thread.render(&mut buffer[..]);
             }
+
+            deadline = deadline.checked_add(interval).unwrap();
         }
     }
 }
@@ -82,6 +91,7 @@ impl AudioBackendManager for NoneBackend {
         let callback = Callback {
             render_thread,
             receiver,
+            sample_rate,
             running: true,
         };
 
