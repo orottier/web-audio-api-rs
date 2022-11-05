@@ -16,6 +16,24 @@ mod backend_cpal;
 #[cfg(feature = "cubeb")]
 mod backend_cubeb;
 
+/// List the available media output devices, such as speakers, headsets, loopbacks, etc
+///
+/// The media device_id can be used to specify the `sink_id` of the AudioContext
+pub fn enumerate_devices() -> Vec<MediaDeviceInfo> {
+    #[cfg(feature = "cubeb")]
+    {
+        backend_cubeb::CubebBackend::enumerate_devices()
+    }
+
+    #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
+    {
+        backend_cpal::CpalBackend::enumerate_devices()
+    }
+
+    #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
+    panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
+}
+
 /// Set up an output stream (speakers) bases on the selected features (cubeb/cpal/none)
 pub(crate) fn build_output(
     options: AudioContextOptions,
@@ -102,8 +120,15 @@ pub(crate) trait AudioBackend: Send + Sync + 'static {
     /// the listener can hear the sound.
     fn output_latency(&self) -> f64;
 
+    /// The audio output device - `None` means the default device
+    fn sink_id(&self) -> Option<&str>;
+
     /// Clone the stream reference
     fn boxed_clone(&self) -> Box<dyn AudioBackend>;
+
+    fn enumerate_devices() -> Vec<MediaDeviceInfo>
+    where
+        Self: Sized;
 }
 
 /// Calculate buffer size in frames for a given latency category
@@ -133,5 +158,68 @@ fn buffer_size_for_latency_category(
             let buffer_size = (latency * sample_rate as f64) as usize;
             buffer_size.next_power_of_two()
         }
+    }
+}
+
+/// Describes input/output type of a media device
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum MediaDeviceInfoKind {
+    VideoInput,
+    AudioInput,
+    AudioOutput,
+}
+
+/// Describes a single media input or output device
+#[derive(Debug)]
+pub struct MediaDeviceInfo {
+    device_id: String,
+    group_id: Option<String>,
+    kind: MediaDeviceInfoKind,
+    label: String,
+    device: Box<dyn std::any::Any>,
+}
+
+impl MediaDeviceInfo {
+    pub(crate) fn new(
+        device_id: String,
+        group_id: Option<String>,
+        kind: MediaDeviceInfoKind,
+        label: String,
+        device: Box<dyn std::any::Any>,
+    ) -> Self {
+        Self {
+            device_id,
+            group_id,
+            kind,
+            label,
+            device,
+        }
+    }
+
+    /// Identifier for the represented device
+    ///
+    /// The current implementation is not stable across sessions so you should not persist this
+    /// value
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
+    /// Two devices have the same group identifier if they belong to the same physical device
+    pub fn group_id(&self) -> Option<&str> {
+        self.group_id.as_deref()
+    }
+
+    /// Enumerated value that is either "videoinput", "audioinput" or "audiooutput".
+    pub fn kind(&self) -> MediaDeviceInfoKind {
+        self.kind
+    }
+
+    /// Friendly label describing this device
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    pub(crate) fn device(self) -> Box<dyn std::any::Any> {
+        self.device
     }
 }

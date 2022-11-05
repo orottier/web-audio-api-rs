@@ -13,7 +13,7 @@ use cpal::{
     Stream, StreamConfig, SupportedBufferSize,
 };
 
-use super::AudioBackend;
+use super::{AudioBackend, MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::media::MicrophoneRender;
@@ -75,6 +75,7 @@ pub struct CpalBackend {
     output_latency: Arc<AtomicF64>,
     sample_rate: f32,
     number_of_channels: usize,
+    sink_id: Option<String>,
 }
 
 impl AudioBackend for CpalBackend {
@@ -89,7 +90,23 @@ impl AudioBackend for CpalBackend {
     where
         Self: Sized,
     {
-        let mut builder = StreamConfigsBuilder::new();
+        let host = cpal::default_host();
+        log::info!("Host: {:?}", host.id());
+
+        let device = match &options.sink_id {
+            None => host
+                .default_output_device()
+                .expect("no output device available"),
+            Some(d) => Self::enumerate_devices()
+                .into_iter()
+                .find(|e| e.device_id() == d)
+                .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
+                .unwrap(),
+        };
+
+        log::info!("Output device: {:?}", device.name());
+
+        let mut builder = StreamConfigsBuilder::new(device);
 
         // set specific sample rate if requested
         if let Some(sample_rate) = options.sample_rate {
@@ -116,6 +133,7 @@ impl AudioBackend for CpalBackend {
             output_latency,
             sample_rate,
             number_of_channels,
+            sink_id: options.sink_id,
         };
 
         (backend, sender, cap_receiver)
@@ -200,6 +218,7 @@ impl AudioBackend for CpalBackend {
             output_latency: Arc::new(AtomicF64::new(0.)),
             sample_rate,
             number_of_channels,
+            sink_id: None,
         };
 
         (backend, receiver)
@@ -229,8 +248,33 @@ impl AudioBackend for CpalBackend {
         self.output_latency.load()
     }
 
+    fn sink_id(&self) -> Option<&str> {
+        self.sink_id.as_deref()
+    }
+
     fn boxed_clone(&self) -> Box<dyn AudioBackend> {
         Box::new(self.clone())
+    }
+
+    fn enumerate_devices() -> Vec<MediaDeviceInfo>
+    where
+        Self: Sized,
+    {
+        cpal::default_host()
+            .devices()
+            .unwrap()
+            .filter(|d| d.default_output_config().is_ok())
+            .enumerate()
+            .map(|(i, d)| {
+                MediaDeviceInfo::new(
+                    format!("{}", i + 1),
+                    None,
+                    MediaDeviceInfoKind::AudioOutput,
+                    d.name().unwrap(),
+                    Box::new(d),
+                )
+            })
+            .collect()
     }
 }
 
@@ -331,33 +375,16 @@ struct StreamConfigsBuilder {
 
 impl StreamConfigsBuilder {
     /// creates the `StreamConfigBuilder`
-    fn new() -> Self {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .expect("no output device available");
-
-        log::info!("Host: {:?}", host.id());
-        log::info!("Output device: {:?}", device.name());
-
-        let supported = Self::get_supported_config(&device);
+    fn new(device: cpal::Device) -> Self {
+        let supported = device
+            .default_output_config()
+            .expect("error while querying configs");
 
         Self {
             device,
             supported: supported.clone(),
             prefered: supported.into(),
         }
-    }
-
-    /// returns the supported stream config from with other configs are derived
-    ///
-    /// # Argument
-    ///
-    /// * `device` - the audio device on which the stream is broadcast
-    fn get_supported_config(device: &cpal::Device) -> cpal::SupportedStreamConfig {
-        device
-            .default_output_config()
-            .expect("error while querying configs")
     }
 
     /// set preferred sample rate

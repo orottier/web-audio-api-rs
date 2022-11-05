@@ -45,6 +45,8 @@ pub struct AudioContextOptions {
     pub latency_hint: AudioContextLatencyCategory,
     /// Sample rate of the audio Context and audio output hardware
     pub sample_rate: Option<f32>,
+    /// The audio output device - use `None` for the default device
+    pub sink_id: Option<String>,
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
@@ -83,7 +85,7 @@ impl AudioContext {
     /// // Request a sample rate of 44.1 kHz and default latency (buffer size 128, if available)
     /// let opts = AudioContextOptions {
     ///     sample_rate: Some(44100.),
-    ///     latency_hint: AudioContextLatencyCategory::Interactive,
+    ///     ..AudioContextOptions::default()
     /// };
     ///
     /// // Setup the audio context that will emit to your speakers
@@ -140,6 +142,13 @@ impl AudioContext {
     #[must_use]
     pub fn output_latency(&self) -> f64 {
         self.backend.output_latency()
+    }
+
+    /// Identifier or the information of the current audio output device.
+    ///
+    /// The initial value is `None`, which means the default audio output device.
+    pub fn sink_id(&self) -> Option<&str> {
+        self.backend.sink_id()
     }
 
     /// Suspends the progression of time in the audio context.
