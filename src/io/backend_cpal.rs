@@ -11,7 +11,7 @@ use cpal::{
     Stream, StreamConfig, SupportedBufferSize,
 };
 
-use super::{AudioBackend, MediaDeviceInfo, MediaDeviceInfoKind, RenderThreadInit};
+use super::{AudioBackendManager, MediaDeviceInfo, MediaDeviceInfoKind, RenderThreadInit};
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::media::MicrophoneRender;
@@ -76,7 +76,7 @@ pub struct CpalBackend {
     sink_id: Option<String>,
 }
 
-impl AudioBackend for CpalBackend {
+impl AudioBackendManager for CpalBackend {
     fn build_output(options: AudioContextOptions, render_thread_init: RenderThreadInit) -> Self
     where
         Self: Sized,
@@ -308,7 +308,7 @@ impl AudioBackend for CpalBackend {
         self.sink_id.as_deref()
     }
 
-    fn boxed_clone(&self) -> Box<dyn AudioBackend> {
+    fn boxed_clone(&self) -> Box<dyn AudioBackendManager> {
         Box::new(self.clone())
     }
 

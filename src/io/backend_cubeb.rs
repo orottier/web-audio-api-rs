@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::{AudioBackend, MediaDeviceInfo, MediaDeviceInfoKind, RenderThreadInit};
+use super::{AudioBackendManager, MediaDeviceInfo, MediaDeviceInfoKind, RenderThreadInit};
 
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
@@ -140,7 +140,7 @@ pub struct CubebBackend {
     sink_id: Option<String>,
 }
 
-impl AudioBackend for CubebBackend {
+impl AudioBackendManager for CubebBackend {
     fn build_output(options: AudioContextOptions, render_thread_init: RenderThreadInit) -> Self
     where
         Self: Sized,
@@ -357,7 +357,7 @@ impl AudioBackend for CubebBackend {
         self.sink_id.as_deref()
     }
 
-    fn boxed_clone(&self) -> Box<dyn AudioBackend> {
+    fn boxed_clone(&self) -> Box<dyn AudioBackendManager> {
         Box::new(self.clone())
     }
 

@@ -75,7 +75,7 @@ pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
 pub(crate) fn build_output(
     options: AudioContextOptions,
     render_thread_init: RenderThreadInit,
-) -> Box<dyn AudioBackend> {
+) -> Box<dyn AudioBackendManager> {
     #[cfg(feature = "cubeb")]
     {
         let backend = backend_cubeb::CubebBackend::build_output(options, render_thread_init);
@@ -96,7 +96,7 @@ pub(crate) fn build_output(
 #[cfg(any(feature = "cubeb", feature = "cpal"))]
 pub(crate) fn build_input(
     options: AudioContextOptions,
-) -> (Box<dyn AudioBackend>, Receiver<AudioBuffer>) {
+) -> (Box<dyn AudioBackendManager>, Receiver<AudioBuffer>) {
     #[cfg(feature = "cubeb")]
     {
         let (b, r) = backend_cubeb::CubebBackend::build_input(options);
@@ -114,7 +114,7 @@ pub(crate) fn build_input(
 }
 
 /// Interface for audio backends
-pub(crate) trait AudioBackend: Send + Sync + 'static {
+pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// Setup a new output stream (speakers)
     fn build_output(options: AudioContextOptions, render_thread_ctor: RenderThreadInit) -> Self
     where
@@ -150,7 +150,7 @@ pub(crate) trait AudioBackend: Send + Sync + 'static {
     fn sink_id(&self) -> Option<&str>;
 
     /// Clone the stream reference
-    fn boxed_clone(&self) -> Box<dyn AudioBackend>;
+    fn boxed_clone(&self) -> Box<dyn AudioBackendManager>;
 
     fn enumerate_devices() -> Vec<MediaDeviceInfo>
     where

@@ -9,7 +9,7 @@ use crate::context::AudioContextOptions;
 use crossbeam_channel::Sender;
 
 use crate::buffer::ChannelData;
-use crate::io::{self, AudioBackend};
+use crate::io::{self, AudioBackendManager};
 
 use crossbeam_channel::{Receiver, TryRecvError};
 
@@ -58,7 +58,7 @@ pub struct Microphone {
     receiver: Receiver<AudioBuffer>,
     number_of_channels: usize,
     sample_rate: f32,
-    backend: Box<dyn AudioBackend>,
+    backend: Box<dyn AudioBackendManager>,
 }
 
 impl Microphone {
@@ -138,7 +138,7 @@ pub struct MicrophoneStream {
     number_of_channels: usize,
     sample_rate: f32,
 
-    _stream: Box<dyn AudioBackend>,
+    _stream: Box<dyn AudioBackendManager>,
 }
 
 impl Iterator for MicrophoneStream {

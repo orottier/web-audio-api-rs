@@ -1,6 +1,6 @@
 //! The `AudioContext` type and constructor options
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::io::{self, AudioBackend, ControlThreadInit, RenderThreadInit};
+use crate::io::{self, AudioBackendManager, ControlThreadInit, RenderThreadInit};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
@@ -58,7 +58,7 @@ pub struct AudioContext {
     /// represents the underlying `BaseAudioContext`
     base: ConcreteBaseAudioContext,
     /// audio backend (play/pause functionality)
-    backend: Mutex<Box<dyn AudioBackend>>,
+    backend_manager: Mutex<Box<dyn AudioBackendManager>>,
     /// Provider for rendering performance metrics
     render_capacity: AudioRenderCapacity,
     /// Initializer for the render thread (when restart is required)
@@ -143,7 +143,7 @@ impl AudioContext {
 
         Self {
             base,
-            backend: Mutex::new(backend),
+            backend_manager: Mutex::new(backend),
             render_capacity,
             render_thread_init,
         }
@@ -167,7 +167,7 @@ impl AudioContext {
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn output_latency(&self) -> f64 {
-        self.backend.lock().unwrap().output_latency()
+        self.backend_manager.lock().unwrap().output_latency()
     }
 
     /// Identifier or the information of the current audio output device.
@@ -175,7 +175,11 @@ impl AudioContext {
     /// The initial value is `None`, which means the default audio output device.
     #[allow(clippy::missing_panics_doc)]
     pub fn sink_id(&self) -> Option<String> {
-        self.backend.lock().unwrap().sink_id().map(str::to_string)
+        self.backend_manager
+            .lock()
+            .unwrap()
+            .sink_id()
+            .map(str::to_string)
     }
 
     /// Update the current audio output device.
@@ -195,7 +199,7 @@ impl AudioContext {
             Err("NotFoundError: invalid sinkId")?;
         }
 
-        let mut backend_guard = self.backend.lock().unwrap();
+        let mut backend_manager_guard = self.backend_manager.lock().unwrap();
 
         // acquire exclusive lock on ctrl msg sender
         let ctrl_msg_send = self.base.lock_control_msg_sender();
@@ -215,7 +219,7 @@ impl AudioContext {
             latency_hint: AudioContextLatencyCategory::default(), // todo reuse existing setting
             sink_id: Some(sink_id),
         };
-        *backend_guard = io::build_output(options, self.render_thread_init.clone());
+        *backend_manager_guard = io::build_output(options, self.render_thread_init.clone());
 
         // send the audio graph to the new render thread
         let message = ControlMessage::Startup { graph };
@@ -229,7 +233,7 @@ impl AudioContext {
             .for_each(|m| self.base().send_control_msg(m).unwrap());
 
         // explicitly release the lock to prevent concurrent render threads
-        drop(backend_guard);
+        drop(backend_manager_guard);
 
         Ok(())
     }
@@ -250,7 +254,7 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn suspend_sync(&self) {
-        if self.backend.lock().unwrap().suspend() {
+        if self.backend_manager.lock().unwrap().suspend() {
             self.base().set_state(AudioContextState::Suspended);
         }
     }
@@ -269,7 +273,7 @@ impl AudioContext {
     /// * For a `BackendSpecificError`
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn resume_sync(&self) {
-        if self.backend.lock().unwrap().resume() {
+        if self.backend_manager.lock().unwrap().resume() {
             self.base().set_state(AudioContextState::Running);
         }
     }
@@ -287,7 +291,7 @@ impl AudioContext {
     /// Will panic when this function is called multiple times
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn close_sync(&self) {
-        self.backend.lock().unwrap().close();
+        self.backend_manager.lock().unwrap().close();
 
         self.base().set_state(AudioContextState::Closed);
     }
