@@ -200,18 +200,38 @@ impl AudioContext {
         }
 
         let mut backend_manager_guard = self.backend_manager.lock().unwrap();
+        let state = self.state();
+        if state == AudioContextState::Closed {
+            return Ok(());
+        }
 
-        // acquire exclusive lock on ctrl msg sender
+        // Acquire exclusive lock on ctrl msg sender
         let ctrl_msg_send = self.base.lock_control_msg_sender();
 
-        // flush out the ctrl msg receiver, cache
-        let pending_msgs: Vec<_> = self.render_thread_init.ctrl_msg_recv.try_iter().collect();
+        // Flush out the ctrl msg receiver, cache
+        let mut pending_msgs: Vec<_> = self.render_thread_init.ctrl_msg_recv.try_iter().collect();
 
-        // acquire the audio graph from the current render thread, shutting it down
-        let (graph_send, graph_recv) = crossbeam_channel::bounded(1);
-        let message = ControlMessage::Shutdown { sender: graph_send };
-        ctrl_msg_send.send(message).unwrap();
-        let graph = graph_recv.recv().unwrap();
+        // Acquire the active audio graph from the current render thread, shutting it down
+        let graph = if matches!(pending_msgs.get(0), Some(ControlMessage::Startup { .. })) {
+            // Handle the edge case where the previous backend was suspended for its entire lifetime.
+            // In this case, the `Startup` control message was never processed.
+            let msg = pending_msgs.remove(0);
+            match msg {
+                ControlMessage::Startup { graph } => graph,
+                _ => unreachable!(),
+            }
+        } else {
+            // Acquire the audio graph from the current render thread, shutting it down
+            let (graph_send, graph_recv) = crossbeam_channel::bounded(1);
+            let message = ControlMessage::Shutdown { sender: graph_send };
+            ctrl_msg_send.send(message).unwrap();
+            if state == AudioContextState::Suspended {
+                // We must wake up the render thread to be able to handle the shutdown.
+                // No new audio will be produced because it will receive the shutdown command first.
+                backend_manager_guard.resume();
+            }
+            graph_recv.recv().unwrap()
+        };
 
         // hotswap the backend
         let options = AudioContextOptions {
@@ -220,6 +240,11 @@ impl AudioContext {
             sink_id: Some(sink_id),
         };
         *backend_manager_guard = io::build_output(options, self.render_thread_init.clone());
+
+        // if the previous backend state was suspend, suspend the new one before shipping the graph
+        if state == AudioContextState::Suspended {
+            backend_manager_guard.suspend();
+        }
 
         // send the audio graph to the new render thread
         let message = ControlMessage::Startup { graph };
