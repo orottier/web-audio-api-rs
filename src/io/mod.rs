@@ -34,24 +34,57 @@ pub fn enumerate_devices() -> Vec<MediaDeviceInfo> {
     panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct RenderThreadInit {
+    pub frames_played: Arc<AtomicU64>,
+    pub ctrl_msg_recv: Receiver<ControlMessage>,
+    pub load_value_send: Sender<AudioRenderCapacityLoad>,
+}
+
+#[derive(Debug)]
+pub(crate) struct ControlThreadInit {
+    pub frames_played: Arc<AtomicU64>,
+    pub ctrl_msg_send: Sender<ControlMessage>,
+    pub load_value_recv: Receiver<AudioRenderCapacityLoad>,
+}
+
+pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
+    // track number of frames - synced from render thread to control thread
+    let frames_played = Arc::new(AtomicU64::new(0));
+    // communication channel for ctrl msgs to the render thread
+    let (ctrl_msg_send, ctrl_msg_recv) = crossbeam_channel::unbounded();
+    // communication channel for render load values
+    let (load_value_send, load_value_recv) = crossbeam_channel::bounded(1);
+
+    let control_thread_init = ControlThreadInit {
+        frames_played: frames_played.clone(),
+        ctrl_msg_send,
+        load_value_recv,
+    };
+
+    let render_thread_init = RenderThreadInit {
+        frames_played,
+        ctrl_msg_recv,
+        load_value_send,
+    };
+
+    (control_thread_init, render_thread_init)
+}
+
 /// Set up an output stream (speakers) bases on the selected features (cubeb/cpal/none)
 pub(crate) fn build_output(
     options: AudioContextOptions,
-    frames_played: Arc<AtomicU64>,
-) -> (
-    Box<dyn AudioBackend>,
-    Sender<ControlMessage>,
-    Receiver<AudioRenderCapacityLoad>,
-) {
+    render_thread_init: RenderThreadInit,
+) -> Box<dyn AudioBackendManager> {
     #[cfg(feature = "cubeb")]
     {
-        let (b, s, r) = backend_cubeb::CubebBackend::build_output(options, frames_played);
-        (Box::new(b), s, r)
+        let backend = backend_cubeb::CubebBackend::build_output(options, render_thread_init);
+        Box::new(backend)
     }
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        let (b, s, r) = backend_cpal::CpalBackend::build_output(options, frames_played);
-        (Box::new(b), s, r)
+        let backend = backend_cpal::CpalBackend::build_output(options, render_thread_init);
+        Box::new(backend)
     }
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
     {
@@ -63,7 +96,7 @@ pub(crate) fn build_output(
 #[cfg(any(feature = "cubeb", feature = "cpal"))]
 pub(crate) fn build_input(
     options: AudioContextOptions,
-) -> (Box<dyn AudioBackend>, Receiver<AudioBuffer>) {
+) -> (Box<dyn AudioBackendManager>, Receiver<AudioBuffer>) {
     #[cfg(feature = "cubeb")]
     {
         let (b, r) = backend_cubeb::CubebBackend::build_input(options);
@@ -81,16 +114,9 @@ pub(crate) fn build_input(
 }
 
 /// Interface for audio backends
-pub(crate) trait AudioBackend: Send + Sync + 'static {
+pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// Setup a new output stream (speakers)
-    fn build_output(
-        options: AudioContextOptions,
-        frames_played: Arc<AtomicU64>,
-    ) -> (
-        Self,
-        Sender<ControlMessage>,
-        Receiver<AudioRenderCapacityLoad>,
-    )
+    fn build_output(options: AudioContextOptions, render_thread_ctor: RenderThreadInit) -> Self
     where
         Self: Sized;
 
@@ -124,7 +150,7 @@ pub(crate) trait AudioBackend: Send + Sync + 'static {
     fn sink_id(&self) -> Option<&str>;
 
     /// Clone the stream reference
-    fn boxed_clone(&self) -> Box<dyn AudioBackend>;
+    fn boxed_clone(&self) -> Box<dyn AudioBackendManager>;
 
     fn enumerate_devices() -> Vec<MediaDeviceInfo>
     where

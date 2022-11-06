@@ -2,6 +2,7 @@
 
 use crate::node::ChannelConfig;
 use crate::param::AudioParamEvent;
+use crate::render::graph::Graph;
 use crate::render::AudioProcessor;
 
 use crossbeam_channel::Sender;
@@ -42,4 +43,10 @@ pub(crate) enum ControlMessage {
 
     /// Mark node as a cycle breaker (DelayNode only)
     MarkCycleBreaker { id: u64 },
+
+    /// Shut down and recycle the audio graph
+    Shutdown { sender: Sender<Graph> },
+
+    /// Start rendering with given audio graph
+    Startup { graph: Graph },
 }

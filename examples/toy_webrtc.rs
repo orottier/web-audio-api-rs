@@ -79,7 +79,7 @@ fn run_server() -> std::io::Result<()> {
         };
         */
 
-        socket.send_to(buf, &src)?;
+        socket.send_to(buf, src)?;
     }
 }
 
