@@ -1,6 +1,8 @@
 //! The `AudioContext` type and constructor options
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::io::{self, enumerate_devices, AudioBackendManager, ControlThreadInit, RenderThreadInit};
+use crate::io::{
+    self, enumerate_devices, AudioBackendManager, ControlThreadInit, RenderThreadInit,
+};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
