@@ -92,8 +92,7 @@ impl AudioBackendManager for CpalBackend {
 
         let sink_id = options
             .sink_id
-            .expect("None value is expanded to Some(Some(''))")
-            .expect("Some(None) value is handle with NoneBackend");
+            .expect("None value is handle with NoneBackend");
         let device = if sink_id.is_empty() {
             host.default_output_device()
                 .expect("no output device available")

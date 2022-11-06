@@ -2,24 +2,30 @@ use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext
 use web_audio_api::enumerate_devices;
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
+fn ask_sink_id() -> Option<String> {
+    println!("Enter the output 'device_id' and press <Enter>");
+    println!("- Leave empty for AudioSinkType 'none'");
+    println!("- Use 0 for the default audio output device");
+
+    let input = std::io::stdin().lines().next().unwrap().unwrap();
+    match input.trim() {
+        "" => None,
+        "0" => Some("".to_string()),
+        i => Some(i.to_string()),
+    }
+}
+
 fn main() {
     env_logger::init();
 
     let devices = enumerate_devices();
     dbg!(devices);
 
-    println!(
-        "Enter the output 'device_id' and press <Enter>. Leave empty for AudioSinkType 'none'"
-    );
-    let input = std::io::stdin().lines().next().unwrap().unwrap();
-    let sink_id = match input.trim() {
-        "" => None,
-        i => Some(i.to_string()),
-    };
+    let sink_id = ask_sink_id();
 
     // Create an audio context (default: stereo);
     let options = AudioContextOptions {
-        sink_id: Some(sink_id),
+        sink_id,
         ..AudioContextOptions::default()
     };
 
@@ -32,15 +38,7 @@ fn main() {
     osc.start();
 
     loop {
-        println!(
-            "Enter the output 'device_id' and press <Enter>. Leave empty for AudioSinkType 'none'"
-        );
-
-        let input = std::io::stdin().lines().next().unwrap().unwrap();
-        let sink_id = match input.trim() {
-            "" => None,
-            i => Some(i.to_string()),
-        };
+        let sink_id = ask_sink_id();
 
         context.set_sink_id_sync(sink_id).unwrap();
         println!("Playing beep for sink {:?}", context.sink_id());

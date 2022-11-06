@@ -198,8 +198,7 @@ impl AudioBackendManager for CubebBackend {
 
         let sink_id = options
             .sink_id
-            .expect("None value is expanded to Some(Some(''))")
-            .expect("Some(None) value is handle with NoneBackend");
+            .expect("None value is handle with NoneBackend");
         let device_id = if sink_id.is_empty() {
             None
         } else {

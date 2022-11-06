@@ -17,7 +17,7 @@ fn test_audio_context_send_sync() {
 #[test]
 fn test_none_sink_id() {
     let options = AudioContextOptions {
-        sink_id: Some(None),
+        sink_id: None,
         ..AudioContextOptions::default()
     };
 
