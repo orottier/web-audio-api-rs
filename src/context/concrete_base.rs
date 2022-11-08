@@ -12,9 +12,9 @@ use crate::spatial::AudioListenerParams;
 
 use crate::AudioListener;
 
-use crossbeam_channel::Sender;
+use crossbeam_channel::{SendError, Sender};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 
 /// The struct that corresponds to the Javascript `BaseAudioContext` object.
 ///
@@ -51,7 +51,7 @@ struct ConcreteBaseAudioContextInner {
     /// destination node's current channel count
     destination_channel_config: ChannelConfig,
     /// message channel from control to render thread
-    render_channel: Sender<ControlMessage>,
+    render_channel: RwLock<Sender<ControlMessage>>,
     /// control messages that cannot be sent immediately
     queued_messages: Mutex<Vec<ControlMessage>>,
     /// number of frames played
@@ -104,7 +104,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
                 self.inner.queued_audio_listener_msgs.lock().unwrap();
             queued_audio_listener_msgs.push(message);
         } else {
-            self.inner.render_channel.send(message).unwrap();
+            self.send_control_msg(message).unwrap();
             self.resolve_queued_control_msgs(id);
         }
 
@@ -124,7 +124,7 @@ impl ConcreteBaseAudioContext {
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             max_channel_count,
-            render_channel,
+            render_channel: RwLock::new(render_channel),
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
             destination_channel_config: ChannelConfigOptions::default().into(),
@@ -188,6 +188,17 @@ impl ConcreteBaseAudioContext {
         base
     }
 
+    pub(crate) fn send_control_msg(
+        &self,
+        msg: ControlMessage,
+    ) -> Result<(), SendError<ControlMessage>> {
+        self.inner.render_channel.read().unwrap().send(msg)
+    }
+
+    pub(crate) fn lock_control_msg_sender(&self) -> RwLockWriteGuard<Sender<ControlMessage>> {
+        self.inner.render_channel.write().unwrap()
+    }
+
     /// Inform render thread that the control thread `AudioNode` no langer has any handles
     pub(super) fn mark_node_dropped(&self, id: u64) {
         // do not drop magic nodes
@@ -199,7 +210,7 @@ impl ConcreteBaseAudioContext {
 
             // Sending the message will fail when the render thread has already shut down.
             // This is fine
-            let _r = self.inner.render_channel.send(message);
+            let _r = self.send_control_msg(message);
         }
     }
 
@@ -211,7 +222,7 @@ impl ConcreteBaseAudioContext {
 
         // Sending the message will fail when the render thread has already shut down.
         // This is fine
-        let _r = self.inner.render_channel.send(message);
+        let _r = self.send_control_msg(message);
     }
 
     /// `ChannelConfig` of the `AudioDestinationNode`
@@ -283,7 +294,7 @@ impl ConcreteBaseAudioContext {
         while i < queued.len() {
             if matches!(&queued[i], ControlMessage::ConnectNode {to, ..} if *to == id) {
                 let m = queued.remove(i);
-                self.inner.render_channel.send(m).unwrap();
+                self.send_control_msg(m).unwrap();
             } else {
                 i += 1;
             }
@@ -304,7 +315,7 @@ impl ConcreteBaseAudioContext {
             output,
             input,
         };
-        self.inner.render_channel.send(message).unwrap();
+        self.send_control_msg(message).unwrap();
     }
 
     /// Schedule a connection of an `AudioParam` to the `AudioNode` it belongs to
@@ -326,13 +337,13 @@ impl ConcreteBaseAudioContext {
             from: from.0,
             to: to.0,
         };
-        self.inner.render_channel.send(message).unwrap();
+        self.send_control_msg(message).unwrap();
     }
 
     /// Disconnects all outgoing connections from the audio node.
     pub(crate) fn disconnect(&self, from: &AudioNodeId) {
         let message = ControlMessage::DisconnectAll { from: from.0 };
-        self.inner.render_channel.send(message).unwrap();
+        self.send_control_msg(message).unwrap();
     }
 
     /// Pass an `AudioParam::AudioParamEvent` to the render thread
@@ -348,7 +359,7 @@ impl ConcreteBaseAudioContext {
             to: to.clone(),
             event,
         };
-        self.inner.render_channel.send(message).unwrap();
+        self.send_control_msg(message).unwrap();
     }
 
     /// Connect the `AudioListener` to a `PannerNode`
@@ -362,7 +373,7 @@ impl ConcreteBaseAudioContext {
         let mut released = false;
         while let Some(message) = queued_audio_listener_msgs.pop() {
             // add the AudioListenerRenderer to the graph
-            self.inner.render_channel.send(message).unwrap();
+            self.send_control_msg(message).unwrap();
             released = true;
         }
 

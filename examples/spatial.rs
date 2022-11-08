@@ -9,7 +9,7 @@ use web_audio_api::node::{
 fn main() {
     let ctx_opts = AudioContextOptions {
         sample_rate: Some(44100.),
-        latency_hint: AudioContextLatencyCategory::Interactive,
+        ..AudioContextOptions::default()
     };
     let context = AudioContext::new(ctx_opts);
 

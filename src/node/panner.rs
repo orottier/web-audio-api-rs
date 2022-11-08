@@ -342,7 +342,7 @@ impl PannerNode {
                 registration,
                 channel_config: ChannelConfigOptions {
                     count: 2,
-                    mode: ChannelCountMode::ClampedMax,
+                    count_mode: ChannelCountMode::ClampedMax,
                     interpretation: ChannelInterpretation::Speakers,
                 }
                 .into(),

@@ -8,36 +8,37 @@ use crate::media::MediaStream;
 /// A stream can be wrapped inside a `Resampler` to yield `AudioBuffer`s
 /// of the desired sample_rate and length
 ///
-/// ```ignore
-/// use crate::buffer::{AudioBuffer, Resampler};
-///
-/// // construct an input of 3 chunks of 5 samples
-/// let samples = vec![vec![1., 2., 3., 4., 5.]];
-/// let input_buf = AudioBuffer::from(samples, 44_100.);
-/// let input = vec![input_buf; 3].into_iter().map(|b| Ok(b));
-///
-/// // resample to chunks of 10 samples
-/// let mut resampler = Resampler::new(44_100., 10, input);
-///
-/// // first chunk contains 10 samples
-/// let next = resampler.next().unwrap().unwrap();
-/// assert_eq!(next.length(), 10);
-/// assert_eq!(next.get_channel_data(0)[..], vec![
-///     1., 2., 3., 4., 5.,
-///     1., 2., 3., 4., 5.,
-/// ][..]);
-///
-/// // second chunk contains 5 samples of signal, and 5 silent
-/// let next = resampler.next().unwrap().unwrap();
-/// assert_eq!(next.length(), 10);
-/// assert_eq!(next.get_channel_data(0)[..], vec![
-///     1., 2., 3., 4., 5.,
-///     0., 0., 0., 0., 0.,
-/// ][..]);
-///
-/// // no further chunks
-/// assert!(resampler.next().is_none());
-/// ```
+// ```
+// use crate::AudioBuffer;
+// use crate::media::Resampler;
+//
+// // construct an input of 3 chunks of 5 samples
+// let samples = vec![vec![1., 2., 3., 4., 5.]];
+// let input_buf = AudioBuffer::from(samples, 44_100.);
+// let input = vec![input_buf; 3].into_iter().map(|b| Ok(b));
+//
+// // resample to chunks of 10 samples
+// let mut resampler = Resampler::new(44_100., 10, input);
+//
+// // first chunk contains 10 samples
+// let next = resampler.next().unwrap().unwrap();
+// assert_eq!(next.length(), 10);
+// assert_eq!(next.get_channel_data(0)[..], vec![
+//     1., 2., 3., 4., 5.,
+//     1., 2., 3., 4., 5.,
+// ][..]);
+//
+// // second chunk contains 5 samples of signal, and 5 silent
+// let next = resampler.next().unwrap().unwrap();
+// assert_eq!(next.length(), 10);
+// assert_eq!(next.get_channel_data(0)[..], vec![
+//     1., 2., 3., 4., 5.,
+//     0., 0., 0., 0., 0.,
+// ][..]);
+//
+// // no further chunks
+// assert!(resampler.next().is_none());
+// ```
 pub struct Resampler<I> {
     /// desired sample rate
     sample_rate: f32,

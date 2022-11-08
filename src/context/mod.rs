@@ -54,7 +54,7 @@ impl From<&AudioParamId> for NodeIndex {
 }
 
 /// Describes the current state of the `AudioContext`
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AudioContextState {
     /// This context is currently suspended (context time is not proceeding,
     /// audio hardware may be powered down/released).

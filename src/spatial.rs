@@ -84,7 +84,7 @@ pub(crate) struct AudioListenerNode {
 lazy_static! {
     static ref AUDIO_LISTENER_CHANNEL_CONFIG: ChannelConfig = ChannelConfigOptions {
         count: 1,
-        mode: ChannelCountMode::Explicit,
+        count_mode: ChannelCountMode::Explicit,
         interpretation: ChannelInterpretation::Discrete,
     }
     .into();

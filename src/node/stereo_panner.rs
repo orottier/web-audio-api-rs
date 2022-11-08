@@ -26,7 +26,7 @@ impl Default for StereoPannerOptions {
             pan: 0.,
             channel_config: ChannelConfigOptions {
                 count: 2,
-                mode: ChannelCountMode::ClampedMax,
+                count_mode: ChannelCountMode::ClampedMax,
                 interpretation: ChannelInterpretation::Speakers,
             },
         }
@@ -66,10 +66,8 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
 /// Generates the stereo gains for a specific x ∈ [0, 1] derived from pan.
 /// Basically the following by a table lookup:
 ///
-/// ```ignore
-/// let gain_left = (x * PI / 2).cos();
-/// let gain_right = (x * PI / 2).sin();
-/// ```
+/// - `gain_left = (x * PI / 2.).cos()`
+/// - `gain_right = (x * PI / 2.).sin()`
 #[inline(always)]
 fn get_stereo_gains(x: f32) -> [f32; 2] {
     let idx = (x * TABLE_LENGTH_BY_4_F32) as usize;
@@ -173,7 +171,7 @@ impl StereoPannerNode {
     ///
     pub fn new<C: BaseAudioContext>(context: &C, options: StereoPannerOptions) -> Self {
         context.register(move |registration| {
-            assert_valid_channel_count_mode(options.channel_config.mode);
+            assert_valid_channel_count_mode(options.channel_config.count_mode);
             assert_valid_channel_count(options.channel_config.count);
 
             let pan_options = AudioParamDescriptor {
@@ -387,7 +385,7 @@ mod tests {
                 StereoPannerOptions {
                     channel_config: ChannelConfigOptions {
                         count: 1,
-                        mode: ChannelCountMode::ClampedMax,
+                        count_mode: ChannelCountMode::ClampedMax,
                         ..ChannelConfigOptions::default()
                     },
                     pan: -1.,
@@ -415,7 +413,7 @@ mod tests {
                 StereoPannerOptions {
                     channel_config: ChannelConfigOptions {
                         count: 1,
-                        mode: ChannelCountMode::ClampedMax,
+                        count_mode: ChannelCountMode::ClampedMax,
                         ..ChannelConfigOptions::default()
                     },
                     pan: 1.,
@@ -443,7 +441,7 @@ mod tests {
                 StereoPannerOptions {
                     channel_config: ChannelConfigOptions {
                         count: 1,
-                        mode: ChannelCountMode::ClampedMax,
+                        count_mode: ChannelCountMode::ClampedMax,
                         ..ChannelConfigOptions::default()
                     },
                     pan: 0.,

@@ -59,11 +59,16 @@ impl OfflineAudioContext {
     /// * `length` - length of the rendering audio buffer
     /// * `sample_rate` - output sample rate
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn new(number_of_channels: usize, length: usize, sample_rate: f32) -> Self {
         assert_valid_sample_rate(sample_rate);
 
         // communication channel to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
+
+        let graph = crate::render::graph::Graph::new();
+        let message = crate::message::ControlMessage::Startup { graph };
+        sender.send(message).unwrap();
 
         // track number of frames - synced from render thread to control thread
         let frames_played = Arc::new(AtomicU64::new(0));
@@ -75,6 +80,7 @@ impl OfflineAudioContext {
             number_of_channels,
             receiver,
             frames_played_clone,
+            None,
         );
 
         // first, setup the base audio context

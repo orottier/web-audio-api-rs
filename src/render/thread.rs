@@ -2,26 +2,28 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, Sender};
 
 use super::{AudioRenderQuantum, NodeIndex};
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::RenderScope;
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
 use super::graph::Graph;
 
 /// Operations running off the system-level audio callback
 pub(crate) struct RenderThread {
-    graph: Graph,
+    graph: Option<Graph>,
     sample_rate: f32,
     number_of_channels: usize,
     frames_played: Arc<AtomicU64>,
-    receiver: Receiver<ControlMessage>,
+    receiver: Option<Receiver<ControlMessage>>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
+    load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
 }
 
 // SAFETY:
@@ -30,6 +32,8 @@ pub(crate) struct RenderThread {
 // we can neither move the RenderThread object into the render thread, nor can we initialize the
 // Rc's in that thread.
 #[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl Send for Graph {}
+unsafe impl Sync for Graph {}
 unsafe impl Send for RenderThread {}
 unsafe impl Sync for RenderThread {}
 
@@ -39,19 +43,26 @@ impl RenderThread {
         number_of_channels: usize,
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
+        load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
     ) -> Self {
         Self {
-            graph: Graph::new(),
+            graph: None,
             sample_rate,
             number_of_channels,
             frames_played,
-            receiver,
+            receiver: Some(receiver),
             buffer_offset: None,
+            load_value_sender,
         }
     }
 
     fn handle_control_messages(&mut self) {
-        for msg in self.receiver.try_iter() {
+        let receiver = match &self.receiver {
+            None => return,
+            Some(receiver) => receiver,
+        };
+
+        for msg in receiver.try_iter() {
             use ControlMessage::*;
 
             match msg {
@@ -62,8 +73,13 @@ impl RenderThread {
                     outputs,
                     channel_config,
                 } => {
-                    self.graph
-                        .add_node(NodeIndex(id), node, inputs, outputs, channel_config);
+                    self.graph.as_mut().unwrap().add_node(
+                        NodeIndex(id),
+                        node,
+                        inputs,
+                        outputs,
+                        channel_config,
+                    );
                 }
                 ConnectNode {
                     from,
@@ -72,22 +88,44 @@ impl RenderThread {
                     input,
                 } => {
                     self.graph
+                        .as_mut()
+                        .unwrap()
                         .add_edge((NodeIndex(from), output), (NodeIndex(to), input));
                 }
                 DisconnectNode { from, to } => {
-                    self.graph.remove_edge(NodeIndex(from), NodeIndex(to));
+                    self.graph
+                        .as_mut()
+                        .unwrap()
+                        .remove_edge(NodeIndex(from), NodeIndex(to));
                 }
                 DisconnectAll { from } => {
-                    self.graph.remove_edges_from(NodeIndex(from));
+                    self.graph
+                        .as_mut()
+                        .unwrap()
+                        .remove_edges_from(NodeIndex(from));
                 }
                 FreeWhenFinished { id } => {
-                    self.graph.mark_free_when_finished(NodeIndex(id));
+                    self.graph
+                        .as_mut()
+                        .unwrap()
+                        .mark_free_when_finished(NodeIndex(id));
                 }
                 AudioParamEvent { to, event } => {
                     to.send(event).expect("Audioparam disappeared unexpectedly")
                 }
                 MarkCycleBreaker { id } => {
-                    self.graph.mark_cycle_breaker(NodeIndex(id));
+                    self.graph
+                        .as_mut()
+                        .unwrap()
+                        .mark_cycle_breaker(NodeIndex(id));
+                }
+                Shutdown { sender } => {
+                    let _ = sender.send(self.graph.take().unwrap());
+                    self.receiver = None;
+                    return; // no further handling of ctrl msgs
+                }
+                Startup { graph } => {
+                    self.graph = Some(graph);
                 }
             }
         }
@@ -123,7 +161,7 @@ impl RenderThread {
             };
 
             // render audio graph
-            let rendered = self.graph.render(&scope);
+            let rendered = self.graph.as_mut().unwrap().render(&scope);
 
             buf.extend_alloc(&rendered);
         }
@@ -131,10 +169,29 @@ impl RenderThread {
         buf
     }
 
-    // This code is not dead: false positive from clippy
-    // due to the use of #[cfg(not(test))]
-    #[allow(dead_code)]
-    pub fn render<S: crate::Sample>(&mut self, mut buffer: &mut [S]) {
+    pub fn render<S: crate::Sample>(&mut self, buffer: &mut [S]) {
+        // collect timing information
+        let render_start = Instant::now();
+
+        // perform actual rendering
+        self.render_inner(buffer);
+
+        // calculate load value and ship to control thread
+        if let Some(load_value_sender) = &self.load_value_sender {
+            let duration = render_start.elapsed().as_micros() as f64 / 1E6;
+            let max_duration = RENDER_QUANTUM_SIZE as f64 / self.sample_rate as f64;
+            let load_value = duration / max_duration;
+            let render_timestamp =
+                self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64;
+            let load_value_data = AudioRenderCapacityLoad {
+                render_timestamp,
+                load_value,
+            };
+            let _ = load_value_sender.try_send(load_value_data);
+        }
+    }
+
+    fn render_inner<S: crate::Sample>(&mut self, mut buffer: &mut [S]) {
         // There may be audio frames left over from the previous render call,
         // if the cpal buffer size did not align with our internal RENDER_QUANTUM_SIZE
         if let Some((offset, prev_rendered)) = self.buffer_offset.take() {
@@ -165,14 +222,20 @@ impl RenderThread {
             buffer = next;
         }
 
+        // handle addition/removal of nodes/edges
+        self.handle_control_messages();
+
+        // if the thread is still booting, or shutting down, fill with silence
+        if self.graph.is_none() {
+            buffer.fill(crate::Sample::from(&0.));
+            return;
+        }
+
         // The audio graph is rendered in chunks of RENDER_QUANTUM_SIZE frames.  But some audio backends
         // may not be able to emit chunks of this size.
         let chunk_size = RENDER_QUANTUM_SIZE * self.number_of_channels;
 
         for data in buffer.chunks_mut(chunk_size) {
-            // handle addition/removal of nodes/edges
-            self.handle_control_messages();
-
             // update time
             let current_frame = self
                 .frames_played
@@ -186,7 +249,7 @@ impl RenderThread {
             };
 
             // render audio graph
-            let mut rendered = self.graph.render(&scope);
+            let mut rendered = self.graph.as_mut().unwrap().render(&scope);
 
             // online AudioContext allows channel count to be less than no of hardware channels
             if rendered.number_of_channels() != self.number_of_channels {
@@ -209,6 +272,9 @@ impl RenderThread {
                 debug_assert!(channel_offset < RENDER_QUANTUM_SIZE);
                 self.buffer_offset = Some((channel_offset, rendered));
             }
+
+            // handle addition/removal of nodes/edges
+            self.handle_control_messages();
         }
     }
 }

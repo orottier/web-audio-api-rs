@@ -1,3 +1,9 @@
+# Version 0.25.0 (2021-11-06)
+
+- Added AudioRenderCapacity functionality
+- Added sinkId functionality to AudioContext (specify audio output device)
+- Renamed `ChannelConfigOptions.{mode -> count_mode}`
+
 # Version 0.24.0 (2021-09-10)
 
 - Added ConvolverNode (mono only)
