@@ -322,25 +322,6 @@ impl AudioBuffer {
     ///
     /// This function will panic if:
     /// - the given sample rate is zero
-    ///
-    /// ```ignore
-    /// use float_eq::assert_float_eq;
-    /// use crate::buffer::{ChannelData, AudioBuffer};
-    ///
-    /// let channel = ChannelData::from(vec![1., 2., 3., 4., 5.]);
-    /// let mut buffer = AudioBuffer::from_channels(vec![channel], 48000.);
-    ///
-    /// // upmix from 48k to 96k Hertz sample rate
-    /// buffer.resample(96000.);
-    ///
-    /// assert_float_eq!(
-    ///     buffer.get_channel_data(0)[..],
-    ///     [1.0, 1.4444444, 1.8888888, 2.3333335, 2.7777777, 3.2222223, 3.6666667, 4.111111, 4.5555553, 5.0][..],
-    ///     abs_all <= 1e-6
-    /// );
-    ///
-    /// assert_eq!(buffer.sample_rate().0, 96_000);
-    /// ```
     pub(crate) fn resample(&mut self, sample_rate: f32) {
         assert_valid_sample_rate(sample_rate);
 
