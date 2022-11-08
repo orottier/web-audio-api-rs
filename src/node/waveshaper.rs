@@ -323,17 +323,19 @@ impl AudioProcessor for WaveShaperRenderer {
                             self.sample_rate * 2,
                             256,
                             self.channels_x2,
-                        );
+                        )
+                        .unwrap();
 
                         self.downsampler_x2 = FftFixedInOut::<f32>::new(
                             self.sample_rate * 2,
                             self.sample_rate,
                             128,
                             self.channels_x2,
-                        );
+                        )
+                        .unwrap();
                     }
 
-                    let mut up_channels = self.upsampler_x2.process(channels).unwrap();
+                    let mut up_channels = self.upsampler_x2.process(channels, None).unwrap();
 
                     for channel in up_channels.iter_mut() {
                         for s in channel.iter_mut() {
@@ -341,7 +343,7 @@ impl AudioProcessor for WaveShaperRenderer {
                         }
                     }
 
-                    let down_channels = self.downsampler_x2.process(&up_channels).unwrap();
+                    let down_channels = self.downsampler_x2.process(&up_channels, None).unwrap();
 
                     for (processed, output) in down_channels.iter().zip(output.channels_mut()) {
                         output.copy_from_slice(&processed[..]);
@@ -359,17 +361,19 @@ impl AudioProcessor for WaveShaperRenderer {
                             self.sample_rate * 4,
                             512,
                             self.channels_x4,
-                        );
+                        )
+                        .unwrap();
 
                         self.downsampler_x4 = FftFixedInOut::<f32>::new(
                             self.sample_rate * 4,
                             self.sample_rate,
                             128,
                             self.channels_x4,
-                        );
+                        )
+                        .unwrap();
                     }
 
-                    let mut up_channels = self.upsampler_x4.process(channels).unwrap();
+                    let mut up_channels = self.upsampler_x4.process(channels, None).unwrap();
 
                     for channel in up_channels.iter_mut() {
                         for s in channel.iter_mut() {
@@ -377,7 +381,7 @@ impl AudioProcessor for WaveShaperRenderer {
                         }
                     }
 
-                    let down_channels = self.downsampler_x4.process(&up_channels).unwrap();
+                    let down_channels = self.downsampler_x4.process(&up_channels, None).unwrap();
 
                     for (processed, output) in down_channels.iter().zip(output.channels_mut()) {
                         output.copy_from_slice(&processed[..]);
@@ -405,16 +409,16 @@ impl WaveShaperRenderer {
         let channels_x4 = 1;
 
         let upsampler_x2 =
-            FftFixedInOut::<f32>::new(sample_rate, sample_rate * 2, 256, channels_x2);
+            FftFixedInOut::<f32>::new(sample_rate, sample_rate * 2, 256, channels_x2).unwrap();
 
         let downsampler_x2 =
-            FftFixedInOut::<f32>::new(sample_rate * 2, sample_rate, 128, channels_x2);
+            FftFixedInOut::<f32>::new(sample_rate * 2, sample_rate, 128, channels_x2).unwrap();
 
         let upsampler_x4 =
-            FftFixedInOut::<f32>::new(sample_rate, sample_rate * 4, 512, channels_x4);
+            FftFixedInOut::<f32>::new(sample_rate, sample_rate * 4, 512, channels_x4).unwrap();
 
         let downsampler_x4 =
-            FftFixedInOut::<f32>::new(sample_rate * 4, sample_rate, 128, channels_x4);
+            FftFixedInOut::<f32>::new(sample_rate * 4, sample_rate, 128, channels_x4).unwrap();
 
         Self {
             sample_rate,

@@ -49,6 +49,9 @@ pub const MAX_CHANNELS: usize = 32;
 mod buffer;
 pub use buffer::*;
 
+mod capacity;
+pub use capacity::*;
+
 pub mod context;
 pub(crate) mod control;
 pub mod media;
@@ -69,6 +72,7 @@ mod spatial;
 pub use spatial::AudioListener;
 
 mod io;
+pub use io::{enumerate_devices, MediaDeviceInfo, MediaDeviceInfoKind};
 
 mod analysis;
 mod message;

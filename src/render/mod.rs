@@ -6,7 +6,7 @@ use std::fmt::Debug;
 pub(crate) struct NodeIndex(pub u64);
 
 // private mods
-mod graph;
+pub(crate) mod graph;
 
 // pub(crate) mods
 mod thread;

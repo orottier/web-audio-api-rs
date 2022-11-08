@@ -1,18 +1,16 @@
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use super::AudioBackend;
+use super::{AudioBackendManager, MediaDeviceInfo, MediaDeviceInfoKind, RenderThreadInit};
 
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::media::MicrophoneRender;
-use crate::message::ControlMessage;
 use crate::render::RenderThread;
 use crate::RENDER_QUANTUM_SIZE;
 
-use cubeb::{Context, StereoFrame, Stream, StreamParams};
+use cubeb::{Context, DeviceId, DeviceType, StereoFrame, Stream, StreamParams};
 
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::Receiver;
 
 // erase type of `Frame` in cubeb `Stream<Frame>`
 pub struct BoxedStream(Box<dyn CubebStream>);
@@ -99,13 +97,18 @@ fn init_output_backend<const N: usize>(
     ctx: &Context,
     params: StreamParams,
     buffer_size: u32,
+    device: Option<DeviceId>,
     mut renderer: RenderThread,
 ) -> ThreadSafeClosableStream {
     let mut builder = cubeb::StreamBuilder::<[f32; N]>::new();
 
+    match device {
+        None => builder.default_output(&params),
+        Some(devid) => builder.output(devid, &params),
+    };
+
     builder
         .name("Cubeb web_audio_api")
-        .default_output(&params)
         .latency(buffer_size)
         .data_callback(move |_input, output| {
             // `output` is `&mut [[f32; N]]`, a slice of slices.
@@ -134,16 +137,20 @@ pub struct CubebBackend {
     stream: ThreadSafeClosableStream,
     sample_rate: f32,
     number_of_channels: usize,
+    sink_id: Option<String>,
 }
 
-impl AudioBackend for CubebBackend {
-    fn build_output(
-        options: AudioContextOptions,
-        frames_played: Arc<AtomicU64>,
-    ) -> (Self, Sender<ControlMessage>)
+impl AudioBackendManager for CubebBackend {
+    fn build_output(options: AudioContextOptions, render_thread_init: RenderThreadInit) -> Self
     where
         Self: Sized,
     {
+        let RenderThreadInit {
+            frames_played,
+            ctrl_msg_recv,
+            load_value_send,
+        } = render_thread_init;
+
         // Set up cubeb context
         let ctx = Context::init(None, None).unwrap();
 
@@ -165,9 +172,13 @@ impl AudioBackend for CubebBackend {
             _ => cubeb::ChannelLayout::UNDEFINED, // TODO, does this work?
         };
 
-        // Set up render thread
-        let (sender, receiver) = crossbeam_channel::unbounded();
-        let renderer = RenderThread::new(sample_rate, number_of_channels, receiver, frames_played);
+        let renderer = RenderThread::new(
+            sample_rate,
+            number_of_channels,
+            ctrl_msg_recv,
+            frames_played,
+            Some(load_value_send),
+        );
 
         let params = cubeb::StreamParamsBuilder::new()
             .format(cubeb::SampleFormat::Float32NE) // use float (native endian)
@@ -184,41 +195,47 @@ impl AudioBackend for CubebBackend {
             .ok()
             .unwrap_or(RENDER_QUANTUM_SIZE as u32);
         let buffer_size = buffer_size_req.max(min_latency);
+        let device_id = options.sink_id.as_ref().and_then(|d| {
+            Self::enumerate_devices()
+                .into_iter()
+                .find(|e| e.device_id() == d)
+                .map(|e| *e.device().downcast::<DeviceId>().unwrap())
+        });
 
         let stream = match number_of_channels {
             // so sorry, but I need to constify the non-const `number_of_channels`
-            1 => init_output_backend::<1>(&ctx, params, buffer_size, renderer),
-            2 => init_output_backend::<2>(&ctx, params, buffer_size, renderer),
-            3 => init_output_backend::<3>(&ctx, params, buffer_size, renderer),
-            4 => init_output_backend::<4>(&ctx, params, buffer_size, renderer),
-            5 => init_output_backend::<5>(&ctx, params, buffer_size, renderer),
-            6 => init_output_backend::<6>(&ctx, params, buffer_size, renderer),
-            7 => init_output_backend::<7>(&ctx, params, buffer_size, renderer),
-            8 => init_output_backend::<8>(&ctx, params, buffer_size, renderer),
-            9 => init_output_backend::<9>(&ctx, params, buffer_size, renderer),
-            10 => init_output_backend::<10>(&ctx, params, buffer_size, renderer),
-            11 => init_output_backend::<11>(&ctx, params, buffer_size, renderer),
-            12 => init_output_backend::<12>(&ctx, params, buffer_size, renderer),
-            13 => init_output_backend::<13>(&ctx, params, buffer_size, renderer),
-            14 => init_output_backend::<14>(&ctx, params, buffer_size, renderer),
-            15 => init_output_backend::<15>(&ctx, params, buffer_size, renderer),
-            16 => init_output_backend::<16>(&ctx, params, buffer_size, renderer),
-            17 => init_output_backend::<17>(&ctx, params, buffer_size, renderer),
-            18 => init_output_backend::<18>(&ctx, params, buffer_size, renderer),
-            19 => init_output_backend::<19>(&ctx, params, buffer_size, renderer),
-            20 => init_output_backend::<20>(&ctx, params, buffer_size, renderer),
-            21 => init_output_backend::<21>(&ctx, params, buffer_size, renderer),
-            22 => init_output_backend::<22>(&ctx, params, buffer_size, renderer),
-            23 => init_output_backend::<23>(&ctx, params, buffer_size, renderer),
-            24 => init_output_backend::<24>(&ctx, params, buffer_size, renderer),
-            25 => init_output_backend::<25>(&ctx, params, buffer_size, renderer),
-            26 => init_output_backend::<26>(&ctx, params, buffer_size, renderer),
-            27 => init_output_backend::<27>(&ctx, params, buffer_size, renderer),
-            28 => init_output_backend::<28>(&ctx, params, buffer_size, renderer),
-            29 => init_output_backend::<29>(&ctx, params, buffer_size, renderer),
-            30 => init_output_backend::<30>(&ctx, params, buffer_size, renderer),
-            31 => init_output_backend::<31>(&ctx, params, buffer_size, renderer),
-            32 => init_output_backend::<32>(&ctx, params, buffer_size, renderer),
+            1 => init_output_backend::<1>(&ctx, params, buffer_size, device_id, renderer),
+            2 => init_output_backend::<2>(&ctx, params, buffer_size, device_id, renderer),
+            3 => init_output_backend::<3>(&ctx, params, buffer_size, device_id, renderer),
+            4 => init_output_backend::<4>(&ctx, params, buffer_size, device_id, renderer),
+            5 => init_output_backend::<5>(&ctx, params, buffer_size, device_id, renderer),
+            6 => init_output_backend::<6>(&ctx, params, buffer_size, device_id, renderer),
+            7 => init_output_backend::<7>(&ctx, params, buffer_size, device_id, renderer),
+            8 => init_output_backend::<8>(&ctx, params, buffer_size, device_id, renderer),
+            9 => init_output_backend::<9>(&ctx, params, buffer_size, device_id, renderer),
+            10 => init_output_backend::<10>(&ctx, params, buffer_size, device_id, renderer),
+            11 => init_output_backend::<11>(&ctx, params, buffer_size, device_id, renderer),
+            12 => init_output_backend::<12>(&ctx, params, buffer_size, device_id, renderer),
+            13 => init_output_backend::<13>(&ctx, params, buffer_size, device_id, renderer),
+            14 => init_output_backend::<14>(&ctx, params, buffer_size, device_id, renderer),
+            15 => init_output_backend::<15>(&ctx, params, buffer_size, device_id, renderer),
+            16 => init_output_backend::<16>(&ctx, params, buffer_size, device_id, renderer),
+            17 => init_output_backend::<17>(&ctx, params, buffer_size, device_id, renderer),
+            18 => init_output_backend::<18>(&ctx, params, buffer_size, device_id, renderer),
+            19 => init_output_backend::<19>(&ctx, params, buffer_size, device_id, renderer),
+            20 => init_output_backend::<20>(&ctx, params, buffer_size, device_id, renderer),
+            21 => init_output_backend::<21>(&ctx, params, buffer_size, device_id, renderer),
+            22 => init_output_backend::<22>(&ctx, params, buffer_size, device_id, renderer),
+            23 => init_output_backend::<23>(&ctx, params, buffer_size, device_id, renderer),
+            24 => init_output_backend::<24>(&ctx, params, buffer_size, device_id, renderer),
+            25 => init_output_backend::<25>(&ctx, params, buffer_size, device_id, renderer),
+            26 => init_output_backend::<26>(&ctx, params, buffer_size, device_id, renderer),
+            27 => init_output_backend::<27>(&ctx, params, buffer_size, device_id, renderer),
+            28 => init_output_backend::<28>(&ctx, params, buffer_size, device_id, renderer),
+            29 => init_output_backend::<29>(&ctx, params, buffer_size, device_id, renderer),
+            30 => init_output_backend::<30>(&ctx, params, buffer_size, device_id, renderer),
+            31 => init_output_backend::<31>(&ctx, params, buffer_size, device_id, renderer),
+            32 => init_output_backend::<32>(&ctx, params, buffer_size, device_id, renderer),
             _ => unreachable!(),
         };
 
@@ -226,11 +243,12 @@ impl AudioBackend for CubebBackend {
             stream,
             number_of_channels,
             sample_rate,
+            sink_id: options.sink_id,
         };
 
         backend.resume();
 
-        (backend, sender)
+        backend
     }
 
     fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
@@ -305,6 +323,7 @@ impl AudioBackend for CubebBackend {
             stream: ThreadSafeClosableStream::new(stream),
             number_of_channels,
             sample_rate,
+            sink_id: None,
         };
 
         (backend, receiver)
@@ -334,7 +353,33 @@ impl AudioBackend for CubebBackend {
         self.stream.output_latency(self.sample_rate)
     }
 
-    fn boxed_clone(&self) -> Box<dyn AudioBackend> {
+    fn sink_id(&self) -> Option<&str> {
+        self.sink_id.as_deref()
+    }
+
+    fn boxed_clone(&self) -> Box<dyn AudioBackendManager> {
         Box::new(self.clone())
+    }
+
+    fn enumerate_devices() -> Vec<MediaDeviceInfo>
+    where
+        Self: Sized,
+    {
+        Context::init(None, None)
+            .unwrap()
+            .enumerate_devices(DeviceType::OUTPUT)
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                MediaDeviceInfo::new(
+                    format!("{}", i + 1),
+                    d.group_id().map(str::to_string),
+                    MediaDeviceInfoKind::AudioOutput,
+                    d.friendly_name().unwrap().into(),
+                    Box::new(d.devid()),
+                )
+            })
+            .collect()
     }
 }

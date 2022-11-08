@@ -8,7 +8,7 @@ use crossbeam_channel::{Receiver, Sender};
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::message::ControlMessage;
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
 #[cfg(feature = "cpal")]
 mod backend_cpal;
@@ -16,20 +16,75 @@ mod backend_cpal;
 #[cfg(feature = "cubeb")]
 mod backend_cubeb;
 
+/// List the available media output devices, such as speakers, headsets, loopbacks, etc
+///
+/// The media device_id can be used to specify the `sink_id` of the AudioContext
+pub fn enumerate_devices() -> Vec<MediaDeviceInfo> {
+    #[cfg(feature = "cubeb")]
+    {
+        backend_cubeb::CubebBackend::enumerate_devices()
+    }
+
+    #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
+    {
+        backend_cpal::CpalBackend::enumerate_devices()
+    }
+
+    #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
+    panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RenderThreadInit {
+    pub frames_played: Arc<AtomicU64>,
+    pub ctrl_msg_recv: Receiver<ControlMessage>,
+    pub load_value_send: Sender<AudioRenderCapacityLoad>,
+}
+
+#[derive(Debug)]
+pub(crate) struct ControlThreadInit {
+    pub frames_played: Arc<AtomicU64>,
+    pub ctrl_msg_send: Sender<ControlMessage>,
+    pub load_value_recv: Receiver<AudioRenderCapacityLoad>,
+}
+
+pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
+    // track number of frames - synced from render thread to control thread
+    let frames_played = Arc::new(AtomicU64::new(0));
+    // communication channel for ctrl msgs to the render thread
+    let (ctrl_msg_send, ctrl_msg_recv) = crossbeam_channel::unbounded();
+    // communication channel for render load values
+    let (load_value_send, load_value_recv) = crossbeam_channel::bounded(1);
+
+    let control_thread_init = ControlThreadInit {
+        frames_played: frames_played.clone(),
+        ctrl_msg_send,
+        load_value_recv,
+    };
+
+    let render_thread_init = RenderThreadInit {
+        frames_played,
+        ctrl_msg_recv,
+        load_value_send,
+    };
+
+    (control_thread_init, render_thread_init)
+}
+
 /// Set up an output stream (speakers) bases on the selected features (cubeb/cpal/none)
 pub(crate) fn build_output(
     options: AudioContextOptions,
-    frames_played: Arc<AtomicU64>,
-) -> (Box<dyn AudioBackend>, Sender<ControlMessage>) {
+    render_thread_init: RenderThreadInit,
+) -> Box<dyn AudioBackendManager> {
     #[cfg(feature = "cubeb")]
     {
-        let (b, s) = backend_cubeb::CubebBackend::build_output(options, frames_played);
-        (Box::new(b), s)
+        let backend = backend_cubeb::CubebBackend::build_output(options, render_thread_init);
+        Box::new(backend)
     }
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        let (b, s) = backend_cpal::CpalBackend::build_output(options, frames_played);
-        (Box::new(b), s)
+        let backend = backend_cpal::CpalBackend::build_output(options, render_thread_init);
+        Box::new(backend)
     }
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
     {
@@ -41,7 +96,7 @@ pub(crate) fn build_output(
 #[cfg(any(feature = "cubeb", feature = "cpal"))]
 pub(crate) fn build_input(
     options: AudioContextOptions,
-) -> (Box<dyn AudioBackend>, Receiver<AudioBuffer>) {
+) -> (Box<dyn AudioBackendManager>, Receiver<AudioBuffer>) {
     #[cfg(feature = "cubeb")]
     {
         let (b, r) = backend_cubeb::CubebBackend::build_input(options);
@@ -59,12 +114,9 @@ pub(crate) fn build_input(
 }
 
 /// Interface for audio backends
-pub(crate) trait AudioBackend: Send + Sync + 'static {
+pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// Setup a new output stream (speakers)
-    fn build_output(
-        options: AudioContextOptions,
-        frames_played: Arc<AtomicU64>,
-    ) -> (Self, Sender<ControlMessage>)
+    fn build_output(options: AudioContextOptions, render_thread_ctor: RenderThreadInit) -> Self
     where
         Self: Sized;
 
@@ -94,8 +146,15 @@ pub(crate) trait AudioBackend: Send + Sync + 'static {
     /// the listener can hear the sound.
     fn output_latency(&self) -> f64;
 
+    /// The audio output device - `None` means the default device
+    fn sink_id(&self) -> Option<&str>;
+
     /// Clone the stream reference
-    fn boxed_clone(&self) -> Box<dyn AudioBackend>;
+    fn boxed_clone(&self) -> Box<dyn AudioBackendManager>;
+
+    fn enumerate_devices() -> Vec<MediaDeviceInfo>
+    where
+        Self: Sized;
 }
 
 /// Calculate buffer size in frames for a given latency category
@@ -125,5 +184,68 @@ fn buffer_size_for_latency_category(
             let buffer_size = (latency * sample_rate as f64) as usize;
             buffer_size.next_power_of_two()
         }
+    }
+}
+
+/// Describes input/output type of a media device
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum MediaDeviceInfoKind {
+    VideoInput,
+    AudioInput,
+    AudioOutput,
+}
+
+/// Describes a single media input or output device
+#[derive(Debug)]
+pub struct MediaDeviceInfo {
+    device_id: String,
+    group_id: Option<String>,
+    kind: MediaDeviceInfoKind,
+    label: String,
+    device: Box<dyn std::any::Any>,
+}
+
+impl MediaDeviceInfo {
+    pub(crate) fn new(
+        device_id: String,
+        group_id: Option<String>,
+        kind: MediaDeviceInfoKind,
+        label: String,
+        device: Box<dyn std::any::Any>,
+    ) -> Self {
+        Self {
+            device_id,
+            group_id,
+            kind,
+            label,
+            device,
+        }
+    }
+
+    /// Identifier for the represented device
+    ///
+    /// The current implementation is not stable across sessions so you should not persist this
+    /// value
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
+    /// Two devices have the same group identifier if they belong to the same physical device
+    pub fn group_id(&self) -> Option<&str> {
+        self.group_id.as_deref()
+    }
+
+    /// Enumerated value that is either "videoinput", "audioinput" or "audiooutput".
+    pub fn kind(&self) -> MediaDeviceInfoKind {
+        self.kind
+    }
+
+    /// Friendly label describing this device
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    pub(crate) fn device(self) -> Box<dyn std::any::Any> {
+        self.device
     }
 }

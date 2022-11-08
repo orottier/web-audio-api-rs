@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::{thread, time};
+use web_audio_api::AudioRenderCapacityOptions;
 
 use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, ConvolverNode, ConvolverOptions};
@@ -7,6 +8,13 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, ConvolverNode, Co
 fn main() {
     // create an `AudioContext` and load a sound file
     let context = AudioContext::default();
+
+    let cap = context.render_capacity();
+    cap.onupdate(|e| println!("{:?}", e));
+    cap.start(AudioRenderCapacityOptions {
+        update_interval: 1.,
+    });
+
     let file = File::open("samples/vocals-dry.wav").unwrap();
     let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
