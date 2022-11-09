@@ -147,8 +147,8 @@ impl AudioBackendManager for NoneBackend {
     }
 
     /// The audio output device
-    fn sink_id(&self) -> Option<&str> {
-        None
+    fn sink_id(&self) -> &str {
+        "none"
     }
 
     /// Clone the stream reference

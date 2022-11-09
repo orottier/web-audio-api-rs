@@ -13,32 +13,32 @@ use std::sync::Mutex;
 
 /// Check if the provided sink_id is available for playback
 ///
-/// It should be `None` of `Some(sinkId)` where `sinkId` is returned from `enumerate_devices`
-fn is_valid_sink_id(sink_id: Option<&str>) -> bool {
-    sink_id
-        .filter(|&sink_id| !sink_id.is_empty())
-        .filter(|&sink_id| {
-            !enumerate_devices()
-                .into_iter()
-                .any(|d| d.device_id() == sink_id)
-        })
-        .is_none()
+/// It should be "", "none" or a valid `sinkId` returned from [`enumerate_devices`]
+fn is_valid_sink_id(sink_id: &str) -> bool {
+    if sink_id.is_empty() || sink_id == "none" {
+        true
+    } else {
+        enumerate_devices()
+            .into_iter()
+            .any(|d| d.device_id() == sink_id)
+    }
 }
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum AudioContextLatencyCategory {
     /// Balance audio output latency and power consumption.
     Balanced,
     /// Provide the lowest audio output latency possible without glitching. This is the default.
     Interactive,
-    /// Prioritize sustained playback without interruption
-    /// over audio output latency. Lowest power consumption.
+    /// Prioritize sustained playback without interruption over audio output latency.
+    ///
+    /// Lowest power consumption.
     Playback,
     /// Specify the number of seconds of latency
-    /// this latency is not guaranted to be applied,
-    /// it depends on the audio hardware capabilities
+    ///
+    /// This latency is not guaranted to be applied, it depends on the audio hardware capabilities
     Custom(f64),
 }
 
@@ -73,10 +73,10 @@ pub struct AudioContextOptions {
     pub sample_rate: Option<f32>,
 
     /// The audio output device
-    /// - use `None` to process the audio graph without playing through an audio output device.
-    /// - use `Some("")` for the default audio output device
-    /// - use `Some(sinkId)` to use the specified audio sink id, obtained with `enumerate_devices`
-    pub sink_id: Option<String>,
+    /// - use `""` for the default audio output device
+    /// - use `"none"` to process the audio graph without playing through an audio output device.
+    /// - use `"sinkId"` to use the specified audio sink id, obtained with [`enumerate_devices`]
+    pub sink_id: String,
 }
 
 impl Default for AudioContextOptions {
@@ -84,7 +84,7 @@ impl Default for AudioContextOptions {
         Self {
             latency_hint: AudioContextLatencyCategory::default(),
             sample_rate: None,
-            sink_id: Some("".into()),
+            sink_id: String::from(""),
         }
     }
 }
@@ -145,7 +145,7 @@ impl AudioContext {
     #[allow(clippy::needless_pass_by_value)]
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
-        if !is_valid_sink_id(options.sink_id.as_deref()) {
+        if !is_valid_sink_id(&options.sink_id) {
             panic!("NotFoundError: invalid sinkId {:?}", options.sink_id);
         }
 
@@ -206,33 +206,29 @@ impl AudioContext {
 
     /// Identifier or the information of the current audio output device.
     ///
-    /// The initial value is `Some("")`, which means the default audio output device.
+    /// The initial value is `""`, which means the default audio output device.
     #[allow(clippy::missing_panics_doc)]
-    pub fn sink_id(&self) -> Option<String> {
-        self.backend_manager
-            .lock()
-            .unwrap()
-            .sink_id()
-            .map(str::to_string)
+    pub fn sink_id(&self) -> String {
+        self.backend_manager.lock().unwrap().sink_id().to_owned()
     }
 
     /// Update the current audio output device.
     ///
     /// The provided `sink_id` string must match a device name `enumerate_devices`.
     ///
-    /// Supplying `None` for the `sink_id` will process the audio graph without playing through an
+    /// Supplying `"none"` for the `sink_id` will process the audio graph without playing through an
     /// audio output device.
     ///
     /// This function operates synchronously and might block the current thread. An async version
     /// is currently not implemented.
     #[allow(clippy::needless_collect, clippy::missing_panics_doc)]
-    pub fn set_sink_id_sync(&self, sink_id: Option<String>) -> Result<(), Box<dyn Error>> {
+    pub fn set_sink_id_sync(&self, sink_id: String) -> Result<(), Box<dyn Error>> {
         if self.sink_id() == sink_id {
             return Ok(()); // sink is already active
         }
 
-        if !is_valid_sink_id(sink_id.as_deref()) {
-            Err(format!("NotFoundError: invalid sinkId {:?}", sink_id))?;
+        if !is_valid_sink_id(&sink_id) {
+            Err(format!("NotFoundError: invalid sinkId {}", sink_id))?;
         };
 
         let mut backend_manager_guard = self.backend_manager.lock().unwrap();

@@ -90,16 +90,13 @@ impl AudioBackendManager for CpalBackend {
             load_value_send,
         } = render_thread_init;
 
-        let sink_id = options
-            .sink_id
-            .expect("None value is handle with NoneBackend");
-        let device = if sink_id.is_empty() {
+        let device = if options.sink_id.is_empty() {
             host.default_output_device()
                 .expect("no output device available")
         } else {
             Self::enumerate_devices()
                 .into_iter()
-                .find(|e| e.device_id() == sink_id)
+                .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
                 .unwrap()
         };
@@ -194,7 +191,7 @@ impl AudioBackendManager for CpalBackend {
             output_latency,
             sample_rate,
             number_of_channels,
-            sink_id,
+            sink_id: options.sink_id,
         }
     }
 
@@ -307,8 +304,8 @@ impl AudioBackendManager for CpalBackend {
         self.output_latency.load()
     }
 
-    fn sink_id(&self) -> Option<&str> {
-        Some(self.sink_id.as_str())
+    fn sink_id(&self) -> &str {
+        self.sink_id.as_str()
     }
 
     fn boxed_clone(&self) -> Box<dyn AudioBackendManager> {

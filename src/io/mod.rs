@@ -20,7 +20,17 @@ mod cubeb;
 
 /// List the available media output devices, such as speakers, headsets, loopbacks, etc
 ///
-/// The media device_id can be used to specify the `sink_id` of the AudioContext
+/// The media device_id can be used to specify the [`sink_id` of the `AudioContext`](AudioContextOptions::sink_id)
+///
+/// ```no_run
+/// use web_audio_api::{enumerate_devices, MediaDeviceInfoKind};
+///
+/// let devices = enumerate_devices();
+/// assert_eq!(devices[0].device_id(), "1");
+/// assert_eq!(devices[0].group_id(), None);
+/// assert_eq!(devices[0].kind(), MediaDeviceInfoKind::AudioOutput);
+/// assert_eq!(devices[0].label(), "Macbook Pro Builtin Speakers");
+/// ```
 pub fn enumerate_devices() -> Vec<MediaDeviceInfo> {
     #[cfg(feature = "cubeb")]
     {
@@ -78,7 +88,7 @@ pub(crate) fn build_output(
     options: AudioContextOptions,
     render_thread_init: RenderThreadInit,
 ) -> Box<dyn AudioBackendManager> {
-    if options.sink_id.is_none() {
+    if options.sink_id == "none" {
         let backend = none::NoneBackend::build_output(options, render_thread_init);
         return Box::new(backend);
     }
@@ -153,8 +163,8 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// the listener can hear the sound.
     fn output_latency(&self) -> f64;
 
-    /// The audio output device - `Some("")` means the default device
-    fn sink_id(&self) -> Option<&str>;
+    /// The audio output device - `""` means the default device
+    fn sink_id(&self) -> &str;
 
     /// Clone the stream reference
     fn boxed_clone(&self) -> Box<dyn AudioBackendManager>;
@@ -203,6 +213,8 @@ pub enum MediaDeviceInfoKind {
 }
 
 /// Describes a single media input or output device
+///
+/// Call [`enumerate_devices`] to obtain a list of devices for your hardware.
 #[derive(Debug)]
 pub struct MediaDeviceInfo {
     device_id: String,

@@ -2,16 +2,15 @@ use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext
 use web_audio_api::enumerate_devices;
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
-fn ask_sink_id() -> Option<String> {
+fn ask_sink_id() -> String {
     println!("Enter the output 'device_id' and press <Enter>");
     println!("- Leave empty for AudioSinkType 'none'");
     println!("- Use 0 for the default audio output device");
 
     let input = std::io::stdin().lines().next().unwrap().unwrap();
     match input.trim() {
-        "" => None,
-        "0" => Some("".to_string()),
-        i => Some(i.to_string()),
+        "0" => "none".to_string(),
+        i => i.to_string(),
     }
 }
 

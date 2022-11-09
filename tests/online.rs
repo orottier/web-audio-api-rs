@@ -17,17 +17,17 @@ fn test_audio_context_send_sync() {
 #[test]
 fn test_none_sink_id() {
     let options = AudioContextOptions {
-        sink_id: None,
+        sink_id: "none".into(),
         ..AudioContextOptions::default()
     };
 
     // construct with 'none' sink_id
     let context = AudioContext::new(options);
-    assert!(context.sink_id().is_none());
+    assert!(context.sink_id() == "none");
 
     // changing sink_id to 'none' again should make no changes
-    context.set_sink_id_sync(None).unwrap();
-    assert!(context.sink_id().is_none());
+    context.set_sink_id_sync("none".into()).unwrap();
+    assert!(context.sink_id() == "none");
 
     context.suspend_sync();
     assert_eq!(context.state(), AudioContextState::Suspended);

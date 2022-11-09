@@ -196,15 +196,12 @@ impl AudioBackendManager for CubebBackend {
             .unwrap_or(RENDER_QUANTUM_SIZE as u32);
         let buffer_size = buffer_size_req.max(min_latency);
 
-        let sink_id = options
-            .sink_id
-            .expect("None value is handle with NoneBackend");
-        let device_id = if sink_id.is_empty() {
+        let device_id = if options.sink_id.is_empty() {
             None
         } else {
             Self::enumerate_devices()
                 .into_iter()
-                .find(|e| e.device_id() == sink_id)
+                .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<DeviceId>().unwrap())
         };
 
@@ -249,7 +246,7 @@ impl AudioBackendManager for CubebBackend {
             stream,
             number_of_channels,
             sample_rate,
-            sink_id,
+            sink_id: options.sink_id,
         };
 
         backend.resume();
@@ -359,8 +356,8 @@ impl AudioBackendManager for CubebBackend {
         self.stream.output_latency(self.sample_rate)
     }
 
-    fn sink_id(&self) -> Option<&str> {
-        Some(self.sink_id.as_str())
+    fn sink_id(&self) -> &str {
+        self.sink_id.as_str()
     }
 
     fn boxed_clone(&self) -> Box<dyn AudioBackendManager> {
