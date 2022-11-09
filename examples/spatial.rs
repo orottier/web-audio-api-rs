@@ -1,7 +1,5 @@
 use std::io::BufRead;
-use web_audio_api::context::{
-    AudioContext, AudioContextOptions, BaseAudioContext,
-};
+use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext};
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, PannerNode, PannerOptions, PanningModelType,
 };
