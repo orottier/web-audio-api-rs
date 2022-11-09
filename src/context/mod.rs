@@ -26,8 +26,8 @@ const LISTENER_PARAM_IDS: Range<u64> = 2..11;
 /// Unique identifier for audio nodes.
 ///
 /// Used for internal bookkeeping.
-#[derive(Debug)]
-pub(crate) struct AudioNodeId(u64);
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct AudioNodeId(pub u64);
 
 /// Unique identifier for audio params.
 ///

@@ -8,6 +8,7 @@ use crossbeam_channel::{Receiver, Sender};
 
 use super::{AudioRenderQuantum, NodeIndex};
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
+use crate::events::EventEmitterMessage;
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::RenderScope;
@@ -24,6 +25,7 @@ pub(crate) struct RenderThread {
     receiver: Option<Receiver<ControlMessage>>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
+    event_sender: Option<Sender<EventEmitterMessage>>,
 }
 
 // SAFETY:
@@ -44,6 +46,7 @@ impl RenderThread {
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
         load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
+        event_sender: Option<Sender<EventEmitterMessage>>,
     ) -> Self {
         Self {
             graph: None,
@@ -53,6 +56,7 @@ impl RenderThread {
             receiver: Some(receiver),
             buffer_offset: None,
             load_value_sender,
+            event_sender,
         }
     }
 
@@ -127,6 +131,9 @@ impl RenderThread {
                 Startup { graph } => {
                     self.graph = Some(graph);
                 }
+                // InitEventEmitter { sender } => {
+
+                // }
             }
         }
     }
@@ -161,7 +168,8 @@ impl RenderThread {
             };
 
             // render audio graph
-            let rendered = self.graph.as_mut().unwrap().render(&scope);
+            let event_sender = self.event_sender.as_ref(); // None
+            let rendered = self.graph.as_mut().unwrap().render(&scope, &event_sender);
 
             buf.extend_alloc(&rendered);
         }
@@ -249,7 +257,8 @@ impl RenderThread {
             };
 
             // render audio graph
-            let mut rendered = self.graph.as_mut().unwrap().render(&scope);
+            let event_sender = self.event_sender.as_ref();
+            let mut rendered = self.graph.as_mut().unwrap().render(&scope, &event_sender);
 
             // online AudioContext allows channel count to be less than no of hardware channels
             if rendered.number_of_channels() != self.number_of_channels {

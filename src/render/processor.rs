@@ -1,5 +1,6 @@
 //! Audio processing code that runs on the audio rendering thread
 use crate::context::AudioParamId;
+use crate::events::EventEmitter;
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{graph::Node, AudioRenderQuantum, NodeIndex};
@@ -54,6 +55,10 @@ pub trait AudioProcessor: Send {
         params: AudioParamValues,
         scope: &RenderScope,
     ) -> bool;
+
+    fn event_emitter(&mut self) -> Option<&mut dyn EventEmitter> {
+        None
+    }
 }
 
 struct DerefAudioRenderQuantumChannel<'a>(std::cell::Ref<'a, Node>);

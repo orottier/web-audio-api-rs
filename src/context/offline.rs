@@ -81,6 +81,7 @@ impl OfflineAudioContext {
             receiver,
             frames_played_clone,
             None,
+            None,
         );
 
         // first, setup the base audio context
@@ -89,6 +90,7 @@ impl OfflineAudioContext {
             number_of_channels,
             frames_played,
             sender,
+            None,
             true,
         );
 
