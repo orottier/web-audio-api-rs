@@ -4,7 +4,7 @@ use crate::context::{
     AudioContextRegistration, AudioContextState, AudioNodeId, BaseAudioContext,
     DESTINATION_NODE_ID, LISTENER_NODE_ID, LISTENER_PARAM_IDS,
 };
-use crate::events::{EventEmitterMessage, EventHandlerInfos, EventType};
+use crate::events::{EventHandler, EventType, TriggerEventMessage};
 use crate::message::ControlMessage;
 use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamEvent};
@@ -66,7 +66,7 @@ struct ConcreteBaseAudioContextInner {
     /// Describes the current state of the `ConcreteBaseAudioContext`
     state: AtomicU8,
     /// Stores the event handlers
-    event_handlers: Arc<Mutex<Vec<EventHandlerInfos>>>,
+    event_handlers: Arc<Mutex<Vec<EventHandler>>>,
 }
 
 impl BaseAudioContext for ConcreteBaseAudioContext {
@@ -122,7 +122,7 @@ impl ConcreteBaseAudioContext {
         max_channel_count: usize,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
-        event_channel: Option<Receiver<EventEmitterMessage>>,
+        event_channel: Option<Receiver<TriggerEventMessage>>,
         offline: bool,
     ) -> Self {
         let base_inner = ConcreteBaseAudioContextInner {
@@ -437,7 +437,7 @@ impl ConcreteBaseAudioContext {
         event_type: EventType,
         callback: Box<dyn Fn() + Send + Sync + 'static>,
     ) {
-        let handler = EventHandlerInfos {
+        let handler = EventHandler {
             node_id: node.registration().id().0,
             event_type,
             callback,
