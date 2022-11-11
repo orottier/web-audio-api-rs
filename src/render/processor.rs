@@ -1,12 +1,13 @@
 //! Audio processing code that runs on the audio rendering thread
 use crate::context::AudioParamId;
-use crate::events::EventEmitter;
+use crate::events::{EventEmitterMessage, EventType};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{graph::Node, AudioRenderQuantum, NodeIndex};
 
+use crossbeam_channel::Sender;
 use rustc_hash::FxHashMap;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ops::Deref;
 
 #[non_exhaustive] // we may want to add user-provided blobs to this later
@@ -19,6 +20,21 @@ pub struct RenderScope {
     pub current_frame: u64,
     pub current_time: f64,
     pub sample_rate: f32,
+
+    pub(crate) node_id: Cell<u64>,
+    pub(crate) event_sender: Option<Sender<EventEmitterMessage>>,
+}
+
+impl RenderScope {
+    pub(crate) fn send_event(&self, event_type: EventType) {
+        if let Some(sender) = self.event_sender.as_ref() {
+            let message = EventEmitterMessage {
+                node_id: self.node_id.get(),
+                event_type,
+            };
+            let _ = sender.try_send(message);
+        }
+    }
 }
 
 /// Interface for audio processing code that runs on the audio rendering thread.
@@ -55,10 +71,6 @@ pub trait AudioProcessor: Send {
         params: AudioParamValues,
         scope: &RenderScope,
     ) -> bool;
-
-    fn event_emitter(&mut self) -> Option<&mut dyn EventEmitter> {
-        None
-    }
 }
 
 struct DerefAudioRenderQuantumChannel<'a>(std::cell::Ref<'a, Node>);

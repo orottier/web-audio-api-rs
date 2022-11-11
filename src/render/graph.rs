@@ -1,12 +1,10 @@
 //! The audio graph topology and render algorithm
 use std::cell::RefCell;
 
-use crossbeam_channel::Sender;
 use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
 
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeIndex};
-use crate::events::{EventEmitter, EventEmitterMessage};
 use crate::node::ChannelConfig;
 use crate::render::RenderScope;
 
@@ -45,10 +43,6 @@ impl Node {
     fn process(&mut self, params: AudioParamValues, scope: &RenderScope) -> bool {
         self.processor
             .process(&self.inputs[..], &mut self.outputs[..], params, scope)
-    }
-
-    fn event_emitter(&mut self) -> Option<&mut dyn EventEmitter> {
-        self.processor.event_emitter()
     }
 
     /// Determine if this node is done playing and can be removed from the audio graph
@@ -357,11 +351,7 @@ impl Graph {
     }
 
     /// Render a single audio quantum by traversing the node list
-    pub fn render(
-        &mut self,
-        scope: &RenderScope,
-        event_sender: &Option<&Sender<EventEmitterMessage>>,
-    ) -> AudioRenderQuantum {
+    pub fn render(&mut self, scope: &RenderScope) -> AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
             self.order_nodes();
@@ -388,6 +378,7 @@ impl Graph {
 
             // let the current node process
             let params = AudioParamValues::from(&*nodes);
+            scope.node_id.set(index.0);
             let tail_time = node.process(params, scope);
 
             // iterate all outgoing edges, lookup these nodes and add to their input
@@ -415,25 +406,6 @@ impl Graph {
 
                 // Reset input state
                 node.has_inputs_connected = false;
-            }
-
-            // we must dispatch events here, before the nodes are removed
-            // (?) would be better to do that in RenderThread after the output buffer
-            // is filled, cf. handle_control_message, but it would recquire to
-            // review the node cleaning logic
-            if event_sender.is_some() {
-                let event_sender = event_sender.unwrap();
-
-                if let Some(event_emitter) = node.event_emitter() {
-                    if let Some(event) = event_emitter.get_stagging_event() {
-                        let message = EventEmitterMessage {
-                            node_id: index.0, // this is inconsistent maybe we could use AudioNodeId everywhere
-                            event_type: event,
-                        };
-
-                        let _r = event_sender.send(message);
-                    }
-                }
             }
 
             drop(node); // release borrow of self.nodes

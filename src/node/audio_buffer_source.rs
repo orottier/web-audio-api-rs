@@ -7,7 +7,7 @@ use crate::context::{
     AudioContextRegistration, AudioParamId, BaseAudioContext, ConcreteBaseAudioContext,
 };
 use crate::control::Controller;
-use crate::events::{EventEmitter, EventListener, EventType};
+use crate::events::{EventListener, EventType};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::RENDER_QUANTUM_SIZE;
@@ -201,7 +201,6 @@ impl AudioBufferSourceNode {
                 detune: d_proc,
                 playback_rate: pr_proc,
                 render_state: AudioBufferRendererState::default(),
-                stagging_event: None,
                 ended_triggered: false,
             };
 
@@ -352,21 +351,10 @@ struct AudioBufferSourceRenderer {
     detune: AudioParamId,
     playback_rate: AudioParamId,
     render_state: AudioBufferRendererState,
-    stagging_event: Option<EventType>,
     ended_triggered: bool,
 }
 
-impl EventEmitter for AudioBufferSourceRenderer {
-    fn stagging_event(&mut self) -> &mut Option<EventType> {
-        &mut self.stagging_event
-    }
-}
-
 impl AudioProcessor for AudioBufferSourceRenderer {
-    fn event_emitter(&mut self) -> Option<&mut dyn EventEmitter> {
-        Some(self)
-    }
-
     fn process(
         &mut self,
         _inputs: &[AudioRenderQuantum], // no input...
@@ -438,7 +426,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             // @note: we need this check because this is called a until the program
             // ends, such as if the node was never removed from the graph
             if !self.ended_triggered {
-                self.register_event(EventType::Ended);
+                scope.send_event(EventType::Ended);
                 self.ended_triggered = true;
             }
             return false;
@@ -449,7 +437,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
                 output.make_silent(); // also converts to mono
                 if !self.ended_triggered {
-                    self.register_event(EventType::Ended);
+                    scope.send_event(EventType::Ended);
                     self.ended_triggered = true;
                 }
                 return false;
@@ -458,7 +446,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             if computed_playback_rate < 0. && self.render_state.buffer_time < 0. {
                 output.make_silent(); // also converts to mono
                 if !self.ended_triggered {
-                    self.register_event(EventType::Ended);
+                    scope.send_event(EventType::Ended);
                     self.ended_triggered = true;
                 }
                 return false;

@@ -1,5 +1,6 @@
 //! Communicates with the control thread and ships audio samples to the hardware
 
+use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -162,11 +163,12 @@ impl RenderThread {
                 current_frame,
                 current_time,
                 sample_rate: self.sample_rate,
+                event_sender: self.event_sender.clone(),
+                node_id: Cell::new(0), // placeholder value
             };
 
             // render audio graph
-            let event_sender = self.event_sender.as_ref(); // None
-            let rendered = self.graph.as_mut().unwrap().render(&scope, &event_sender);
+            let rendered = self.graph.as_mut().unwrap().render(&scope);
 
             buf.extend_alloc(&rendered);
         }
@@ -251,11 +253,12 @@ impl RenderThread {
                 current_frame,
                 current_time,
                 sample_rate: self.sample_rate,
+                event_sender: self.event_sender.clone(),
+                node_id: Cell::new(0), // placeholder value
             };
 
             // render audio graph
-            let event_sender = self.event_sender.as_ref();
-            let mut rendered = self.graph.as_mut().unwrap().render(&scope, &event_sender);
+            let mut rendered = self.graph.as_mut().unwrap().render(&scope);
 
             // online AudioContext allows channel count to be less than no of hardware channels
             if rendered.number_of_channels() != self.number_of_channels {

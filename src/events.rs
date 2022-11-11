@@ -43,19 +43,3 @@ pub(crate) struct EventEmitterMessage {
     // and listeners can be cleared
     pub event_type: EventType,
 }
-
-// for render thread entities
-// @todo - maybe should be a (bounded?) queue
-pub trait EventEmitter {
-    fn stagging_event(&mut self) -> &mut Option<EventType>;
-
-    fn register_event(&mut self, event: EventType) {
-        // @note: weird this is called a lot of time just as if the node was
-        // never removed from the graph
-        self.stagging_event().get_or_insert(event);
-    }
-
-    fn get_stagging_event(&mut self) -> Option<EventType> {
-        self.stagging_event().take()
-    }
-}
