@@ -1,10 +1,5 @@
 //! Primitives related to audio graph rendering
 
-use std::fmt::Debug;
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub(crate) struct NodeIndex(pub u64);
-
 // private mods
 pub(crate) mod graph;
 

@@ -5,13 +5,14 @@ use crate::param::AudioParamEvent;
 use crate::render::graph::Graph;
 use crate::render::AudioProcessor;
 
+use crate::context::AudioNodeId;
 use crossbeam_channel::Sender;
 
 /// Commands from the control thread to the render thread
 pub(crate) enum ControlMessage {
     /// Register a new node in the audio graph
     RegisterNode {
-        id: u64,
+        id: AudioNodeId,
         node: Box<dyn AudioProcessor>,
         inputs: usize,
         outputs: usize,
@@ -20,20 +21,20 @@ pub(crate) enum ControlMessage {
 
     /// Connect a node to another in the audio graph
     ConnectNode {
-        from: u64,
-        to: u64,
+        from: AudioNodeId,
+        to: AudioNodeId,
         input: usize,
         output: usize,
     },
 
     /// Clear the connection between two given nodes in the audio graph
-    DisconnectNode { from: u64, to: u64 },
+    DisconnectNode { from: AudioNodeId, to: AudioNodeId },
 
     /// Disconnect this node from the audio graph (drop all its connections)
-    DisconnectAll { from: u64 },
+    DisconnectAll { from: AudioNodeId },
 
     /// Notify the render thread this node is dropped in the control thread
-    FreeWhenFinished { id: u64 },
+    FreeWhenFinished { id: AudioNodeId },
 
     /// Pass an AudioParam AutomationEvent to the relevant node
     AudioParamEvent {
@@ -42,7 +43,7 @@ pub(crate) enum ControlMessage {
     },
 
     /// Mark node as a cycle breaker (DelayNode only)
-    MarkCycleBreaker { id: u64 },
+    MarkCycleBreaker { id: AudioNodeId },
 
     /// Shut down and recycle the audio graph
     Shutdown { sender: Sender<Graph> },

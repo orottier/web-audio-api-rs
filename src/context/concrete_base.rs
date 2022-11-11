@@ -83,9 +83,9 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
     ) -> T {
         // create unique identifier for this node
         let id = self.inner.node_id_inc.fetch_add(1, Ordering::SeqCst);
-        let node_id = AudioNodeId(id);
+        let id = AudioNodeId(id);
         let registration = AudioContextRegistration {
-            id: node_id,
+            id,
             context: self.clone(),
         };
 
@@ -102,7 +102,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
         };
 
         // if this is the AudioListener or its params, do not add it to the graph just yet
-        if id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id) {
+        if id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id.0) {
             let mut queued_audio_listener_msgs =
                 self.inner.queued_audio_listener_msgs.lock().unwrap();
             queued_audio_listener_msgs.push(message);
@@ -225,10 +225,11 @@ impl ConcreteBaseAudioContext {
     }
 
     /// Inform render thread that the control thread `AudioNode` no langer has any handles
-    pub(super) fn mark_node_dropped(&self, id: u64) {
+    pub(super) fn mark_node_dropped(&self, id: AudioNodeId) {
         // do not drop magic nodes
-        let magic =
-            id == DESTINATION_NODE_ID || id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id);
+        let magic = id == DESTINATION_NODE_ID
+            || id == LISTENER_NODE_ID
+            || LISTENER_PARAM_IDS.contains(&id.0);
 
         if !magic {
             let message = ControlMessage::FreeWhenFinished { id };
@@ -242,7 +243,7 @@ impl ConcreteBaseAudioContext {
     /// Inform render thread that this node can act as a cycle breaker
     #[doc(hidden)]
     pub fn mark_cycle_breaker(&self, reg: &AudioContextRegistration) {
-        let id = reg.id().0;
+        let id = reg.id();
         let message = ControlMessage::MarkCycleBreaker { id };
 
         // Sending the message will fail when the render thread has already shut down.
@@ -312,7 +313,7 @@ impl ConcreteBaseAudioContext {
 
     /// Release queued control messages to the render thread that were blocking on the availability
     /// of the Node with the given `id`
-    fn resolve_queued_control_msgs(&self, id: u64) {
+    fn resolve_queued_control_msgs(&self, id: AudioNodeId) {
         // resolve control messages that depend on this registration
         let mut queued = self.inner.queued_messages.lock().unwrap();
         let mut i = 0; // waiting for Vec::drain_filter to stabilize
@@ -327,16 +328,10 @@ impl ConcreteBaseAudioContext {
     }
 
     /// Connects the output of the `from` audio node to the input of the `to` audio node
-    pub(crate) fn connect(
-        &self,
-        from: &AudioNodeId,
-        to: &AudioNodeId,
-        output: usize,
-        input: usize,
-    ) {
+    pub(crate) fn connect(&self, from: AudioNodeId, to: AudioNodeId, output: usize, input: usize) {
         let message = ControlMessage::ConnectNode {
-            from: from.0,
-            to: to.0,
+            from,
+            to,
             output,
             input,
         };
@@ -346,10 +341,10 @@ impl ConcreteBaseAudioContext {
     /// Schedule a connection of an `AudioParam` to the `AudioNode` it belongs to
     ///
     /// It is not performed immediately as the `AudioNode` is not registered at this point.
-    pub(super) fn queue_audio_param_connect(&self, param: &AudioParam, audio_node: &AudioNodeId) {
+    pub(super) fn queue_audio_param_connect(&self, param: &AudioParam, audio_node: AudioNodeId) {
         let message = ControlMessage::ConnectNode {
-            from: param.registration().id().0,
-            to: audio_node.0,
+            from: param.registration().id(),
+            to: audio_node,
             output: 0,
             input: usize::MAX, // audio params connect to the 'hidden' input port
         };
@@ -357,17 +352,14 @@ impl ConcreteBaseAudioContext {
     }
 
     /// Disconnects all outputs of the audio node that go to a specific destination node.
-    pub(crate) fn disconnect_from(&self, from: &AudioNodeId, to: &AudioNodeId) {
-        let message = ControlMessage::DisconnectNode {
-            from: from.0,
-            to: to.0,
-        };
+    pub(crate) fn disconnect_from(&self, from: AudioNodeId, to: AudioNodeId) {
+        let message = ControlMessage::DisconnectNode { from, to };
         self.send_control_msg(message).unwrap();
     }
 
     /// Disconnects all outgoing connections from the audio node.
-    pub(crate) fn disconnect(&self, from: &AudioNodeId) {
-        let message = ControlMessage::DisconnectAll { from: from.0 };
+    pub(crate) fn disconnect(&self, from: AudioNodeId) {
+        let message = ControlMessage::DisconnectAll { from };
         self.send_control_msg(message).unwrap();
     }
 
@@ -388,16 +380,16 @@ impl ConcreteBaseAudioContext {
     }
 
     /// Attach the 9 `AudioListener` coordinates to a `PannerNode`
-    pub(crate) fn connect_listener_to_panner(&self, panner: &AudioNodeId) {
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 0, 1);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 1, 2);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 2, 3);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 3, 4);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 4, 5);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 5, 6);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 6, 7);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 7, 8);
-        self.connect(&AudioNodeId(LISTENER_NODE_ID), panner, 8, 9);
+    pub(crate) fn connect_listener_to_panner(&self, panner: AudioNodeId) {
+        self.connect(LISTENER_NODE_ID, panner, 0, 1);
+        self.connect(LISTENER_NODE_ID, panner, 1, 2);
+        self.connect(LISTENER_NODE_ID, panner, 2, 3);
+        self.connect(LISTENER_NODE_ID, panner, 3, 4);
+        self.connect(LISTENER_NODE_ID, panner, 4, 5);
+        self.connect(LISTENER_NODE_ID, panner, 5, 6);
+        self.connect(LISTENER_NODE_ID, panner, 6, 7);
+        self.connect(LISTENER_NODE_ID, panner, 7, 8);
+        self.connect(LISTENER_NODE_ID, panner, 8, 9);
     }
 
     /// Add the [`AudioListener`] to the audio graph (if not already)
@@ -417,12 +409,7 @@ impl ConcreteBaseAudioContext {
             // hack: Connect the listener to the destination node to force it to render at each
             // quantum. Abuse the magical usize::MAX port so it acts as an AudioParam and has no side
             // effects
-            self.connect(
-                &AudioNodeId(LISTENER_NODE_ID),
-                &AudioNodeId(DESTINATION_NODE_ID),
-                0,
-                usize::MAX,
-            );
+            self.connect(LISTENER_NODE_ID, DESTINATION_NODE_ID, 0, usize::MAX);
         }
     }
 
@@ -438,7 +425,7 @@ impl ConcreteBaseAudioContext {
         callback: Box<dyn Fn() + Send + Sync + 'static>,
     ) {
         let handler = EventHandler {
-            node_id: node.registration().id().0,
+            node_id: node.registration().id(),
             event_type,
             callback,
         };

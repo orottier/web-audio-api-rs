@@ -1,9 +1,9 @@
 //! Audio processing code that runs on the audio rendering thread
-use crate::context::AudioParamId;
+use crate::context::{AudioNodeId, AudioParamId};
 use crate::events::{EventType, TriggerEventMessage};
 use crate::RENDER_QUANTUM_SIZE;
 
-use super::{graph::Node, AudioRenderQuantum, NodeIndex};
+use super::{graph::Node, AudioRenderQuantum};
 
 use crossbeam_channel::Sender;
 use rustc_hash::FxHashMap;
@@ -21,7 +21,7 @@ pub struct RenderScope {
     pub current_time: f64,
     pub sample_rate: f32,
 
-    pub(crate) node_id: Cell<u64>,
+    pub(crate) node_id: Cell<AudioNodeId>,
     pub(crate) event_sender: Option<Sender<TriggerEventMessage>>,
 }
 
@@ -94,11 +94,11 @@ impl Deref for DerefAudioRenderQuantumChannel<'_> {
 ///
 /// Provided to implementations of [`AudioProcessor`] in the render thread
 pub struct AudioParamValues<'a> {
-    nodes: &'a FxHashMap<NodeIndex, RefCell<Node>>,
+    nodes: &'a FxHashMap<AudioNodeId, RefCell<Node>>,
 }
 
 impl<'a> AudioParamValues<'a> {
-    pub(crate) fn from(nodes: &'a FxHashMap<NodeIndex, RefCell<Node>>) -> Self {
+    pub(crate) fn from(nodes: &'a FxHashMap<AudioNodeId, RefCell<Node>>) -> Self {
         Self { nodes }
     }
 

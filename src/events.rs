@@ -1,3 +1,5 @@
+use crate::context::AudioNodeId;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum EventType {
     Ended,
@@ -5,7 +7,7 @@ pub enum EventType {
 
 pub(crate) struct EventHandler {
     // could be optional meaning that its a context event (cf. onSinkChange, onStateChange, etc.)
-    pub node_id: u64,
+    pub node_id: AudioNodeId,
     pub event_type: EventType,
     pub callback: Box<dyn Fn() + Send + Sync + 'static>,
 }
@@ -13,7 +15,7 @@ pub(crate) struct EventHandler {
 #[derive(Debug)]
 pub(crate) struct TriggerEventMessage {
     // could be Option w/ None meaning that its a context event
-    pub node_id: u64, // we use raw u64 to
+    pub node_id: AudioNodeId, // we use raw u64 to
     // could be Option w/ None meaning the node is dropped on the render thread
     // and listeners can be cleared
     pub event_type: EventType,
