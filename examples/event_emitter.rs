@@ -16,7 +16,7 @@ fn main() {
     src.set_buffer(buffer);
 
     // @todo - should receive an event
-    src.onended(&|| {
+    src.onended(|| {
         println!("> Ended event trigerred!");
     });
 

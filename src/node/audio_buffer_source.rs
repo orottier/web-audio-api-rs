@@ -318,8 +318,8 @@ impl AudioBufferSourceNode {
         self.controller.set_loop_end(value);
     }
 
-    pub fn onended<'a>(&self, callback: &'static (dyn Fn() + Send + Sync + 'static)) {
-        self.register_event_listener(EventType::Ended, callback);
+    pub fn onended<F: Fn() + Send + Sync + 'static>(&self, callback: F) {
+        self.register_event_listener(EventType::Ended, Box::new(callback));
     }
 }
 

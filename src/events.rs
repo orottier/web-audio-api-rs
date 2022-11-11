@@ -10,7 +10,7 @@ pub(crate) struct EventHandlerInfos {
     // could be Option w/ None meaning that its a context event (cf. onSinkChange, onStateChange, etc.)
     pub node_id: u64,
     pub event_type: EventType,
-    pub callback: Box<&'static (dyn Fn() + Send + Sync + 'static)>,
+    pub callback: Box<dyn Fn() + Send + Sync + 'static>,
 }
 
 // for control thread entities
@@ -23,12 +23,12 @@ pub(crate) trait EventListener {
     fn register_event_listener(
         &self,
         event_type: EventType,
-        callback: &'static (dyn Fn() + Send + Sync + 'static),
+        callback: Box<dyn Fn() + Send + Sync + 'static>,
     ) {
         let handler = EventHandlerInfos {
             node_id: self.id(),
             event_type: event_type,
-            callback: Box::new(callback),
+            callback,
         };
 
         self.context().register_event_handler(handler);
