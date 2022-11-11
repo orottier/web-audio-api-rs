@@ -3,11 +3,9 @@ use once_cell::sync::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::buffer::AudioBuffer;
-use crate::context::{
-    AudioContextRegistration, AudioParamId, BaseAudioContext, ConcreteBaseAudioContext,
-};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Controller;
-use crate::events::{EventListener, EventType};
+use crate::events::EventType;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::RENDER_QUANTUM_SIZE;
@@ -112,17 +110,6 @@ impl AudioNode for AudioBufferSourceNode {
 
     fn number_of_outputs(&self) -> usize {
         1
-    }
-}
-
-impl EventListener for AudioBufferSourceNode {
-    fn context(&self) -> &ConcreteBaseAudioContext {
-        self.registration().context()
-    }
-
-    // this is not clean...
-    fn id(&self) -> u64 {
-        self.registration().id().to_owned().0
     }
 }
 
@@ -320,7 +307,8 @@ impl AudioBufferSourceNode {
     }
 
     pub fn onended<F: Fn() + Send + Sync + 'static>(&self, callback: F) {
-        self.register_event_listener(EventType::Ended, Box::new(callback));
+        self.context()
+            .register_event_handler(self, EventType::Ended, Box::new(callback));
     }
 }
 
