@@ -3,7 +3,9 @@ use once_cell::sync::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::buffer::AudioBuffer;
-use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext, ConcreteBaseAudioContext};
+use crate::context::{
+    AudioContextRegistration, AudioParamId, BaseAudioContext, ConcreteBaseAudioContext,
+};
 use crate::control::Controller;
 use crate::events::{EventEmitter, EventListener, EventType};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};

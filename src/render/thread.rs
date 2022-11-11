@@ -131,9 +131,6 @@ impl RenderThread {
                 Startup { graph } => {
                     self.graph = Some(graph);
                 }
-                // InitEventEmitter { sender } => {
-
-                // }
             }
         }
     }

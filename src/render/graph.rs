@@ -1,7 +1,7 @@
 //! The audio graph topology and render algorithm
 use std::cell::RefCell;
 
-use crossbeam_channel::{Sender};
+use crossbeam_channel::Sender;
 use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
 
@@ -47,7 +47,7 @@ impl Node {
             .process(&self.inputs[..], &mut self.outputs[..], params, scope)
     }
 
-    fn event_emitter(&mut self) -> Option<&mut dyn EventEmitter>{
+    fn event_emitter(&mut self) -> Option<&mut dyn EventEmitter> {
         self.processor.event_emitter()
     }
 

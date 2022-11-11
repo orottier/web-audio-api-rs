@@ -1,8 +1,8 @@
-use crate::context::{ConcreteBaseAudioContext};
+use crate::context::ConcreteBaseAudioContext;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum EventType {
-    Ended
+    Ended,
 }
 
 // maybe not the right, but needs to review according to type EventHandler in capacity.rs
