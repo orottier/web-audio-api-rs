@@ -435,7 +435,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
             // @note: we need this check because this is called a until the program
             // ends, such as if the node was never removed from the graph
-            if self.ended_triggered == false {
+            if !self.ended_triggered {
                 self.register_event(EventType::Ended);
                 self.ended_triggered = true;
             }
@@ -446,7 +446,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         if !loop_ {
             if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
                 output.make_silent(); // also converts to mono
-                if self.ended_triggered == false {
+                if !self.ended_triggered {
                     self.register_event(EventType::Ended);
                     self.ended_triggered = true;
                 }
@@ -455,7 +455,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
             if computed_playback_rate < 0. && self.render_state.buffer_time < 0. {
                 output.make_silent(); // also converts to mono
-                if self.ended_triggered == false {
+                if !self.ended_triggered {
                     self.register_event(EventType::Ended);
                     self.ended_triggered = true;
                 }

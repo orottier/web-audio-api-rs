@@ -1,6 +1,6 @@
 use crate::context::{ConcreteBaseAudioContext};
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum EventType {
     Ended
 }
@@ -27,7 +27,7 @@ pub(crate) trait EventListener {
     ) {
         let handler = EventHandlerInfos {
             node_id: self.id(),
-            event_type: event_type,
+            event_type,
             callback,
         };
 

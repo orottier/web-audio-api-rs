@@ -172,8 +172,8 @@ impl AudioBackendManager for CpalBackend {
                     supported_config.channels as usize,
                     ctrl_msg_recv,
                     frames_played,
-                    Some(load_value_send.clone()),
-                    Some(event_send.clone()),
+                    Some(load_value_send),
+                    Some(event_send),
                 );
 
                 let spawned = spawn_output_stream(

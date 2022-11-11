@@ -191,11 +191,10 @@ impl ConcreteBaseAudioContext {
         );
 
         // (?) only for online context
-        if event_channel.is_some() {
+        if let Some(event_channel) = event_channel {
             // init event loop
-            let event_channel = event_channel.unwrap();
             let event_handlers = base.inner.event_handlers.clone();
-            //
+
             std::thread::spawn(move || loop {
                 // (?) this thread is dedicated to event so we can block
                 if let Ok(message) = event_channel.recv() {
