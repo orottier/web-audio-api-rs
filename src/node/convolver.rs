@@ -6,7 +6,10 @@ use crate::RENDER_QUANTUM_SIZE;
 
 use crossbeam_channel::{Receiver, Sender};
 use realfft::{num_complex::Complex, ComplexToReal, RealFftPlanner, RealToComplex};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
 /// Scale buffer by an equal-power normalization
 fn normalization(buffer: &AudioBuffer) -> f32 {
@@ -110,7 +113,7 @@ pub struct ConvolverNode {
     /// Info about audio node channel configuration
     channel_config: ChannelConfig,
     /// Perform equal power normalization on response buffer
-    normalize: bool,
+    normalize: AtomicBool,
     /// The response buffer, nullable
     buffer: Mutex<Option<AudioBuffer>>,
     /// Message bus to the renderer
@@ -164,7 +167,7 @@ impl ConvolverNode {
             let node = Self {
                 registration,
                 channel_config: channel_config.into(),
-                normalize: !disable_normalization,
+                normalize: AtomicBool::new(!disable_normalization),
                 sender,
                 buffer: Mutex::new(None),
             };
@@ -195,7 +198,7 @@ impl ConvolverNode {
         let sample_rate = buffer.sample_rate();
 
         // normalize before padding because the length of the buffer affects the scale
-        let scale = if self.normalize {
+        let scale = if self.normalize() {
             normalization(&buffer)
         } else {
             1.
@@ -225,13 +228,12 @@ impl ConvolverNode {
 
     /// Denotes if the response buffer will be scaled with an equal-power normalization
     pub fn normalize(&self) -> bool {
-        self.normalize
+        self.normalize.load(Ordering::SeqCst)
     }
 
     /// Update the `normalize` setting. This will only have an effect when `set_buffer` is called.
-    pub fn set_normalize(&mut self, value: bool) {
-        // TODO, use AtomicBool to prevent &mut self?
-        self.normalize = value;
+    pub fn set_normalize(&self, value: bool) {
+        self.normalize.store(value, Ordering::SeqCst);
     }
 }
 
