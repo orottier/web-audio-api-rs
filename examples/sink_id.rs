@@ -2,18 +2,29 @@ use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext
 use web_audio_api::enumerate_devices;
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
+fn ask_sink_id() -> String {
+    println!("Enter the output 'device_id' and press <Enter>");
+    println!("- Leave empty for AudioSinkType 'none'");
+    println!("- Use 0 for the default audio output device");
+
+    let input = std::io::stdin().lines().next().unwrap().unwrap();
+    match input.trim() {
+        "0" => "none".to_string(),
+        i => i.to_string(),
+    }
+}
+
 fn main() {
     env_logger::init();
 
     let devices = enumerate_devices();
     dbg!(devices);
 
-    println!("Choose output device, enter the 'device_id' and press <Enter>:");
-    let sink_id = std::io::stdin().lines().next().unwrap().unwrap();
+    let sink_id = ask_sink_id();
 
     // Create an audio context (default: stereo);
     let options = AudioContextOptions {
-        sink_id: Some(sink_id),
+        sink_id,
         ..AudioContextOptions::default()
     };
 
@@ -26,9 +37,12 @@ fn main() {
     osc.start();
 
     loop {
-        println!("Choose output device, enter the 'device_id' and press <Enter>:");
-        let sink_id = std::io::stdin().lines().next().unwrap().unwrap();
+        let sink_id = ask_sink_id();
+
         context.set_sink_id_sync(sink_id).unwrap();
         println!("Playing beep for sink {:?}", context.sink_id());
+
+        // with this info we can ensure the progression of time with any backend
+        println!("Current time is now {:<3}", context.current_time());
     }
 }

@@ -10,24 +10,36 @@ use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::message::ControlMessage;
 use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
+mod none;
+
 #[cfg(feature = "cpal")]
-mod backend_cpal;
+mod cpal;
 
 #[cfg(feature = "cubeb")]
-mod backend_cubeb;
+mod cubeb;
 
 /// List the available media output devices, such as speakers, headsets, loopbacks, etc
 ///
-/// The media device_id can be used to specify the `sink_id` of the AudioContext
+/// The media device_id can be used to specify the [`sink_id` of the `AudioContext`](AudioContextOptions::sink_id)
+///
+/// ```no_run
+/// use web_audio_api::{enumerate_devices, MediaDeviceInfoKind};
+///
+/// let devices = enumerate_devices();
+/// assert_eq!(devices[0].device_id(), "1");
+/// assert_eq!(devices[0].group_id(), None);
+/// assert_eq!(devices[0].kind(), MediaDeviceInfoKind::AudioOutput);
+/// assert_eq!(devices[0].label(), "Macbook Pro Builtin Speakers");
+/// ```
 pub fn enumerate_devices() -> Vec<MediaDeviceInfo> {
     #[cfg(feature = "cubeb")]
     {
-        backend_cubeb::CubebBackend::enumerate_devices()
+        cubeb::CubebBackend::enumerate_devices()
     }
 
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        backend_cpal::CpalBackend::enumerate_devices()
+        cpal::CpalBackend::enumerate_devices()
     }
 
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
@@ -76,14 +88,19 @@ pub(crate) fn build_output(
     options: AudioContextOptions,
     render_thread_init: RenderThreadInit,
 ) -> Box<dyn AudioBackendManager> {
+    if options.sink_id == "none" {
+        let backend = none::NoneBackend::build_output(options, render_thread_init);
+        return Box::new(backend);
+    }
+
     #[cfg(feature = "cubeb")]
     {
-        let backend = backend_cubeb::CubebBackend::build_output(options, render_thread_init);
+        let backend = cubeb::CubebBackend::build_output(options, render_thread_init);
         Box::new(backend)
     }
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        let backend = backend_cpal::CpalBackend::build_output(options, render_thread_init);
+        let backend = cpal::CpalBackend::build_output(options, render_thread_init);
         Box::new(backend)
     }
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
@@ -99,12 +116,12 @@ pub(crate) fn build_input(
 ) -> (Box<dyn AudioBackendManager>, Receiver<AudioBuffer>) {
     #[cfg(feature = "cubeb")]
     {
-        let (b, r) = backend_cubeb::CubebBackend::build_input(options);
+        let (b, r) = cubeb::CubebBackend::build_input(options);
         (Box::new(b), r)
     }
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        let (b, r) = backend_cpal::CpalBackend::build_input(options);
+        let (b, r) = cpal::CpalBackend::build_input(options);
         (Box::new(b), r)
     }
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
@@ -116,7 +133,7 @@ pub(crate) fn build_input(
 /// Interface for audio backends
 pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// Setup a new output stream (speakers)
-    fn build_output(options: AudioContextOptions, render_thread_ctor: RenderThreadInit) -> Self
+    fn build_output(options: AudioContextOptions, render_thread_init: RenderThreadInit) -> Self
     where
         Self: Sized;
 
@@ -146,8 +163,8 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// the listener can hear the sound.
     fn output_latency(&self) -> f64;
 
-    /// The audio output device - `None` means the default device
-    fn sink_id(&self) -> Option<&str>;
+    /// The audio output device - `""` means the default device
+    fn sink_id(&self) -> &str;
 
     /// Clone the stream reference
     fn boxed_clone(&self) -> Box<dyn AudioBackendManager>;
@@ -196,6 +213,8 @@ pub enum MediaDeviceInfoKind {
 }
 
 /// Describes a single media input or output device
+///
+/// Call [`enumerate_devices`] to obtain a list of devices for your hardware.
 #[derive(Debug)]
 pub struct MediaDeviceInfo {
     device_id: String,
