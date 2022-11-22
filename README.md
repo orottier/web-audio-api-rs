@@ -129,9 +129,5 @@ This project is licensed under the [MIT license].
 
 ## Acknowledgements
 
-We would like to thank the [IRCAM Institute](https://www.ircam.fr/) for
-allowing us to use their Head Related Transfer Function (HRTF) databases for
-spatialization. If you are experiencing any issue related to HRTF panning using
-our library, please
-[submit an issue](https://github.com/orottier/web-audio-api-rs/issues/new)
-on our end first so we can audit our implementation.
+The IR files used for HRTF spatialization are part of the LISTEN database
+created by the EAC team from Ircam.
