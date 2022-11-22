@@ -125,11 +125,7 @@ impl AudioProcessor for DestinationRenderer {
         let input = &inputs[0];
 
         // convert AudioRenderQuantum to AudioBuffer
-        let samples: Vec<_> = input
-            .channels()
-            .iter()
-            .map(|c| c.as_slice().to_vec())
-            .collect();
+        let samples: Vec<_> = input.channels().iter().map(|c| c.to_vec()).collect();
         let buffer = AudioBuffer::from(samples, scope.sample_rate);
 
         // clear previous entry if it was not consumed

@@ -111,12 +111,12 @@ impl AudioRenderQuantumChannel {
     /// `O(1)` check if this buffer is equal to the 'silence buffer'
     ///
     /// If this function returns false, it is still possible for all samples to be zero.
-    pub fn is_silent(&self) -> bool {
+    pub(crate) fn is_silent(&self) -> bool {
         Rc::ptr_eq(&self.data, &self.alloc.zeroes)
     }
 
     /// Sum two channels
-    pub fn add(&mut self, other: &Self) {
+    pub(crate) fn add(&mut self, other: &Self) {
         if self.is_silent() {
             *self = other.clone();
         } else if !other.is_silent() {
@@ -135,10 +135,10 @@ impl AudioRenderQuantumChannel {
 use std::ops::{Deref, DerefMut};
 
 impl Deref for AudioRenderQuantumChannel {
-    type Target = [f32; RENDER_QUANTUM_SIZE];
+    type Target = [f32];
 
     fn deref(&self) -> &Self::Target {
-        &self.data
+        self.data.as_slice()
     }
 }
 
@@ -262,7 +262,7 @@ impl AudioRenderQuantum {
         &mut self.channels[..]
     }
 
-    pub fn is_silent(&self) -> bool {
+    pub(crate) fn is_silent(&self) -> bool {
         !self.channels.iter().any(|channel| !channel.is_silent())
     }
 
@@ -639,7 +639,7 @@ mod tests {
                 assert_eq!(alloc.pool_size(), 2);
 
                 // but should be silent, even though a dirty buffer is taken
-                assert_float_eq!(&a_vals[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
+                assert_float_eq!(a_vals, &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
 
                 // is_silent is a superficial ptr check
                 assert!(!a.is_silent());
