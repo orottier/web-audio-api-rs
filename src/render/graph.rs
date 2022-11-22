@@ -419,11 +419,13 @@ impl Graph {
 
                 // Nodes are only dropped when they do not have incoming connections.
                 // But they may have AudioParams feeding into them, these can de dropped too.
-                nodes.retain(|_id, n| {
-                    !n.borrow()
-                        .outgoing_edges
-                        .iter()
-                        .any(|e| e.other_id == *index)
+                nodes.retain(|id, n| {
+                    id.0 < 2 // never drop Listener and Destination node
+                        || !n
+                            .borrow()
+                            .outgoing_edges
+                            .iter()
+                            .any(|e| e.other_id == *index)
                 });
             }
         });

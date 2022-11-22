@@ -1,28 +1,54 @@
 use std::f32::consts::PI;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
-use crate::AtomicF64;
+use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
 
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
+use crossbeam_channel::{Receiver, Sender};
+use float_eq::float_eq;
+use hrtf::{HrirSphere, HrtfContext, HrtfProcessor, Vec3};
+
 /// Spatialization algorithm used to position the audio in 3D space
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PanningModelType {
     EqualPower,
     HRTF,
 }
 
+impl From<u8> for PanningModelType {
+    fn from(i: u8) -> Self {
+        match i {
+            0 => PanningModelType::EqualPower,
+            1 => PanningModelType::HRTF,
+            _ => unreachable!(),
+        }
+    }
+}
+
 /// Algorithm to reduce the volume of an audio source as it moves away from the listener
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DistanceModelType {
     Linear,
     Inverse,
     Exponential,
+}
+
+impl From<u8> for DistanceModelType {
+    fn from(i: u8) -> Self {
+        match i {
+            0 => DistanceModelType::Linear,
+            1 => DistanceModelType::Inverse,
+            2 => DistanceModelType::Exponential,
+            _ => unreachable!(),
+        }
+    }
 }
 
 /// Options for constructing a [`PannerNode`]
@@ -44,9 +70,7 @@ pub enum DistanceModelType {
 // };
 #[derive(Clone, Debug)]
 pub struct PannerOptions {
-    #[allow(dead_code)]
     pub panning_model: PanningModelType,
-    #[allow(dead_code)]
     pub distance_model: DistanceModelType,
     pub position_x: f32,
     pub position_y: f32,
@@ -54,11 +78,8 @@ pub struct PannerOptions {
     pub orientation_x: f32,
     pub orientation_y: f32,
     pub orientation_z: f32,
-    #[allow(dead_code)]
     pub ref_distance: f64,
-    #[allow(dead_code)]
     pub max_distance: f64,
-    #[allow(dead_code)]
     pub rolloff_factor: f64,
     pub cone_inner_angle: f64,
     pub cone_outer_angle: f64,
@@ -83,6 +104,76 @@ impl Default for PannerOptions {
             cone_outer_angle: 360.,
             cone_outer_gain: 0.,
         }
+    }
+}
+
+/// Internal state of the HRTF renderer
+struct HrtfState {
+    len: usize,
+    processor: HrtfProcessor,
+    output_interleaved: Vec<(f32, f32)>,
+    prev_sample_vector: Vec3,
+    prev_left_samples: Vec<f32>,
+    prev_right_samples: Vec<f32>,
+    prev_distance_gain: f32,
+}
+
+impl HrtfState {
+    fn new(hrir_sphere: HrirSphere) -> Self {
+        let len = hrir_sphere.len();
+
+        let interpolation_steps = 1;
+        let samples_per_step = RENDER_QUANTUM_SIZE / interpolation_steps;
+
+        let processor = HrtfProcessor::new(hrir_sphere, interpolation_steps, samples_per_step);
+
+        Self {
+            len,
+            processor,
+            output_interleaved: vec![(0., 0.); RENDER_QUANTUM_SIZE],
+            prev_sample_vector: Vec3::new(0., 0., 1.),
+            prev_left_samples: vec![],  // will resize accordingly
+            prev_right_samples: vec![], // will resize accordingly
+            prev_distance_gain: 0.,
+        }
+    }
+
+    fn process(
+        &mut self,
+        source: &[f32],
+        new_distance_gain: f32,
+        projected_source: [f32; 3],
+    ) -> &[(f32, f32)] {
+        // reset state of output buffer
+        self.output_interleaved.fill((0., 0.));
+
+        let new_sample_vector = Vec3 {
+            x: projected_source[0],
+            z: projected_source[1],
+            y: projected_source[2],
+        };
+
+        let context = HrtfContext {
+            source,
+            output: &mut self.output_interleaved,
+            new_sample_vector,
+            prev_sample_vector: self.prev_sample_vector,
+            prev_left_samples: &mut self.prev_left_samples,
+            prev_right_samples: &mut self.prev_right_samples,
+            new_distance_gain,
+            prev_distance_gain: self.prev_distance_gain,
+        };
+
+        self.processor.process_samples(context);
+
+        self.prev_sample_vector = new_sample_vector;
+        self.prev_distance_gain = new_distance_gain;
+
+        &self.output_interleaved
+    }
+
+    fn tail_time_samples(&self) -> usize {
+        self.len
     }
 }
 
@@ -145,6 +236,13 @@ pub struct PannerNode {
     cone_inner_angle: Arc<AtomicF64>,
     cone_outer_angle: Arc<AtomicF64>,
     cone_outer_gain: Arc<AtomicF64>,
+    distance_model: Arc<AtomicU8>,
+    ref_distance: Arc<AtomicF64>,
+    max_distance: Arc<AtomicF64>,
+    rolloff_factor: Arc<AtomicF64>,
+    panning_model: AtomicU8,
+    /// HRTF message bus to the renderer
+    sender: Sender<Option<HrtfState>>,
 }
 
 impl AudioNode for PannerNode {
@@ -157,7 +255,7 @@ impl AudioNode for PannerNode {
     }
 
     fn number_of_inputs(&self) -> usize {
-        1 + 9 // todo, user should not be able to see these ports
+        1
     }
 
     fn number_of_outputs(&self) -> usize {
@@ -180,6 +278,8 @@ impl AudioNode for PannerNode {
 }
 
 impl PannerNode {
+    // can panic when loading HRIR-sphere
+    #[allow(clippy::missing_panics_doc)]
     pub fn new<C: BaseAudioContext>(context: &C, options: PannerOptions) -> Self {
         let node = context.register(move |registration| {
             use crate::spatial::PARAM_OPTS;
@@ -204,10 +304,20 @@ impl PannerNode {
             orientation_y.set_value_at_time(options.orientation_y, 0.);
             orientation_z.set_value_at_time(options.orientation_z, 0.);
 
+            // distance attributes
+            let distance_model = Arc::new(AtomicU8::new(options.distance_model as u8));
+            let ref_distance = Arc::new(AtomicF64::new(options.ref_distance));
+            let max_distance = Arc::new(AtomicF64::new(options.max_distance));
+            let rolloff_factor = Arc::new(AtomicF64::new(options.rolloff_factor));
+
             // cone attributes
             let cone_inner_angle = Arc::new(AtomicF64::new(options.cone_inner_angle));
             let cone_outer_angle = Arc::new(AtomicF64::new(options.cone_outer_angle));
             let cone_outer_gain = Arc::new(AtomicF64::new(options.cone_outer_gain));
+
+            // Channel to send a HRTF processor to the renderer.  A capacity of 1 suffices, it will
+            // simply block the control thread when used concurrently
+            let (sender, receiver) = crossbeam_channel::bounded(1);
 
             let render = PannerRenderer {
                 position_x: render_px,
@@ -216,9 +326,16 @@ impl PannerNode {
                 orientation_x: render_ox,
                 orientation_y: render_oy,
                 orientation_z: render_oz,
+                distance_model: distance_model.clone(),
+                ref_distance: ref_distance.clone(),
+                max_distance: max_distance.clone(),
+                rolloff_factor: rolloff_factor.clone(),
                 cone_inner_angle: cone_inner_angle.clone(),
                 cone_outer_angle: cone_outer_angle.clone(),
                 cone_outer_gain: cone_outer_gain.clone(),
+                hrtf_state: None,
+                receiver,
+                tail_time_counter: 0,
             };
 
             let node = PannerNode {
@@ -235,10 +352,18 @@ impl PannerNode {
                 orientation_x,
                 orientation_y,
                 orientation_z,
+                distance_model,
+                ref_distance,
+                max_distance,
+                rolloff_factor,
                 cone_inner_angle,
                 cone_outer_angle,
                 cone_outer_gain,
+                sender,
+                panning_model: AtomicU8::new(0),
             };
+
+            node.set_panning_model(options.panning_model);
 
             // instruct to BaseContext to add the AudioListener if it has not already
             context.base().ensure_audio_listener_present();
@@ -278,6 +403,38 @@ impl PannerNode {
         &self.orientation_z
     }
 
+    pub fn distance_model(&self) -> DistanceModelType {
+        self.distance_model.load(Ordering::SeqCst).into()
+    }
+
+    pub fn set_distance_model(&self, value: DistanceModelType) {
+        self.distance_model.store(value as u8, Ordering::SeqCst);
+    }
+
+    pub fn ref_distance(&self) -> f64 {
+        self.ref_distance.load()
+    }
+
+    pub fn set_ref_distance(&self, value: f64) {
+        self.ref_distance.store(value);
+    }
+
+    pub fn max_distance(&self) -> f64 {
+        self.max_distance.load()
+    }
+
+    pub fn set_max_distance(&self, value: f64) {
+        self.max_distance.store(value);
+    }
+
+    pub fn rolloff_factor(&self) -> f64 {
+        self.rolloff_factor.load()
+    }
+
+    pub fn set_rolloff_factor(&self, value: f64) {
+        self.rolloff_factor.store(value);
+    }
+
     pub fn cone_inner_angle(&self) -> f64 {
         self.cone_inner_angle.load()
     }
@@ -301,6 +458,35 @@ impl PannerNode {
     pub fn set_cone_outer_gain(&self, value: f64) {
         self.cone_outer_gain.store(value);
     }
+
+    pub fn panning_model(&self) -> PanningModelType {
+        self.panning_model.load(Ordering::SeqCst).into()
+    }
+
+    // can panic when loading HRIR-sphere
+    #[allow(clippy::missing_panics_doc)]
+    pub fn set_panning_model(&self, value: PanningModelType) {
+        let hrtf_option = match value {
+            PanningModelType::EqualPower => None,
+            PanningModelType::HRTF => {
+                let resource = include_bytes!("../../resources/IRC_1003_C.bin");
+                let sample_rate = self.context().sample_rate() as u32;
+                let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
+                Some(HrtfState::new(hrir_sphere))
+            }
+        };
+
+        let _ = self.sender.send(hrtf_option); // can fail when render thread shut down
+        self.panning_model.store(value as u8, Ordering::SeqCst);
+    }
+}
+
+#[derive(Copy, Clone)]
+struct SpatialParams {
+    dist_gain: f32,
+    cone_gain: f32,
+    azimuth: f32,
+    elevation: f32,
 }
 
 struct PannerRenderer {
@@ -310,9 +496,16 @@ struct PannerRenderer {
     orientation_x: AudioParamId,
     orientation_y: AudioParamId,
     orientation_z: AudioParamId,
+    distance_model: Arc<AtomicU8>,
+    ref_distance: Arc<AtomicF64>,
+    max_distance: Arc<AtomicF64>,
+    rolloff_factor: Arc<AtomicF64>,
     cone_inner_angle: Arc<AtomicF64>,
     cone_outer_angle: Arc<AtomicF64>,
     cone_outer_gain: Arc<AtomicF64>,
+    receiver: Receiver<Option<HrtfState>>,
+    hrtf_state: Option<HrtfState>,
+    tail_time_counter: usize,
 }
 
 impl AudioProcessor for PannerRenderer {
@@ -323,81 +516,217 @@ impl AudioProcessor for PannerRenderer {
         params: AudioParamValues,
         _scope: &RenderScope,
     ) -> bool {
-        // Single input node
-        // assume mono (todo issue #44)
-        let input = inputs[0].channel_data(0);
-        // Single output node
+        // single input/output node
+        let input = &inputs[0];
         let output = &mut outputs[0];
 
+        // pass through input
+        *output = input.clone();
+
+        // only handle mono for now (todo issue #44)
+        output.mix(1, ChannelInterpretation::Speakers);
+
+        // early exit for silence
         if input.is_silent() {
-            output.make_silent();
-            return false;
+            // HRTF panner has tail time equal to the max length of the impulse response buffers
+            // (12 ms)
+            let tail_time = match &self.hrtf_state {
+                None => false,
+                Some(hrtf_state) => hrtf_state.tail_time_samples() > self.tail_time_counter,
+            };
+            if !tail_time {
+                return false;
+            }
+            self.tail_time_counter += RENDER_QUANTUM_SIZE;
         }
 
-        // K-rate processing for now (todo issue #44)
+        // convert mono to identical stereo
+        output.mix(2, ChannelInterpretation::Speakers);
+
+        // handle changes in panning_model_type mandated from control thread
+        if let Ok(hrtf_state) = self.receiver.try_recv() {
+            self.hrtf_state = hrtf_state;
+        }
+        // for borrow reasons, take the hrtf_state out of self
+        let mut hrtf_state = self.hrtf_state.take();
 
         // source parameters (Panner)
-        let source_position_x = params.get(&self.position_x)[0];
-        let source_position_y = params.get(&self.position_y)[0];
-        let source_position_z = params.get(&self.position_z)[0];
-        let source_orientation_x = params.get(&self.orientation_x)[0];
-        let source_orientation_y = params.get(&self.orientation_y)[0];
-        let source_orientation_z = params.get(&self.orientation_z)[0];
+        let source_position_x = params.get(&self.position_x);
+        let source_position_y = params.get(&self.position_y);
+        let source_position_z = params.get(&self.position_z);
+        let source_orientation_x = params.get(&self.orientation_x);
+        let source_orientation_y = params.get(&self.orientation_y);
+        let source_orientation_z = params.get(&self.orientation_z);
 
         // listener parameters (AudioListener)
-        let l_position_x = inputs[1].channel_data(0)[0];
-        let l_position_y = inputs[2].channel_data(0)[0];
-        let l_position_z = inputs[3].channel_data(0)[0];
-        let l_forward_x = inputs[4].channel_data(0)[0];
-        let l_forward_y = inputs[5].channel_data(0)[0];
-        let l_forward_z = inputs[6].channel_data(0)[0];
-        let l_up_x = inputs[7].channel_data(0)[0];
-        let l_up_y = inputs[8].channel_data(0)[0];
-        let l_up_z = inputs[9].channel_data(0)[0];
+        let [listener_position_x, listener_position_y, listener_position_z, listener_forward_x, listener_forward_y, listener_forward_z, listener_up_x, listener_up_y, listener_up_z] =
+            params.listener_params();
 
-        // define base vectors in 3D
-        let source_position = [source_position_x, source_position_y, source_position_z];
-        let source_orientation = [
-            source_orientation_x,
-            source_orientation_y,
-            source_orientation_z,
-        ];
-        let listener_position = [l_position_x, l_position_y, l_position_z];
-        let listener_forward = [l_forward_x, l_forward_y, l_forward_z];
-        let listener_up = [l_up_x, l_up_y, l_up_z];
+        // build up the a-rate iterator for spatial variables
+        let mut a_rate_params = source_position_x
+            .iter()
+            .cycle()
+            .zip(source_position_y.iter().cycle())
+            .zip(source_position_z.iter().cycle())
+            .zip(source_orientation_x.iter().cycle())
+            .zip(source_orientation_y.iter().cycle())
+            .zip(source_orientation_z.iter().cycle())
+            .zip(listener_position_x.iter().cycle())
+            .zip(listener_position_y.iter().cycle())
+            .zip(listener_position_z.iter().cycle())
+            .zip(listener_forward_x.iter().cycle())
+            .zip(listener_forward_y.iter().cycle())
+            .zip(listener_forward_z.iter().cycle())
+            .zip(listener_up_x.iter().cycle())
+            .zip(listener_up_y.iter().cycle())
+            .zip(listener_up_z.iter().cycle())
+            .map(|tuple| {
+                // unpack giant tuple
+                let ((((((sp_so_lp, lfx), lfy), lfz), lux), luy), luz) = tuple;
+                let (((sp_so, lpx), lpy), lpz) = sp_so_lp;
+                let (((sp, sox), soy), soz) = sp_so;
+                let ((spx, spy), spz) = sp;
 
-        // azimuth and elevation of listener <> panner.
-        // elevation is not used in the equal power panningModel (todo issue #44)
-        let (mut azimuth, _elevation) = crate::spatial::azimuth_and_elevation(
-            source_position,
-            listener_position,
-            listener_forward,
-            listener_up,
-        );
+                // define base vectors in 3D
+                let source_position = [*spx, *spy, *spz];
+                let source_orientation = [*sox, *soy, *soz];
+                let listener_position = [*lpx, *lpy, *lpz];
+                let listener_forward = [*lfx, *lfy, *lfz];
+                let listener_up = [*lux, *luy, *luz];
 
-        // First, clamp azimuth to allowed range of [-180, 180].
-        azimuth = azimuth.max(-180.);
-        azimuth = azimuth.min(180.);
-        // Then wrap to range [-90, 90].
-        if azimuth < -90. {
-            azimuth = -180. - azimuth;
-        } else if azimuth > 90. {
-            azimuth = 180. - azimuth;
+                // determine distance and cone gain
+                let dist_gain = self.dist_gain(source_position, listener_position);
+                let cone_gain =
+                    self.cone_gain(source_position, source_orientation, listener_position);
+
+                // azimuth and elevation of the panner in frame of reference of the listener
+                let (azimuth, elevation) = crate::spatial::azimuth_and_elevation(
+                    source_position,
+                    listener_position,
+                    listener_forward,
+                    listener_up,
+                );
+
+                SpatialParams {
+                    dist_gain,
+                    cone_gain,
+                    azimuth,
+                    elevation,
+                }
+            });
+
+        if let Some(hrtf_state) = &mut hrtf_state {
+            // HRTF panning - always k-rate so take a single value from the a-rate iter
+            let SpatialParams {
+                dist_gain,
+                cone_gain,
+                azimuth,
+                elevation,
+            } = a_rate_params.next().unwrap();
+            let new_distance_gain = cone_gain * dist_gain;
+
+            // convert az/el to carthesian coordinates to determine unit direction
+            let az_rad = azimuth * PI / 180.;
+            let el_rad = elevation * PI / 180.;
+            let x = az_rad.sin() * el_rad.cos();
+            let z = az_rad.cos() * el_rad.cos();
+            let y = el_rad.sin();
+            let mut projected_source = [x, y, z];
+
+            if float_eq!(&projected_source[..], &[0.; 3][..], abs_all <= 1E-6) {
+                projected_source = [0., 0., 1.];
+            }
+
+            let output_interleaved = hrtf_state.process(
+                output.channel_data(0).as_slice(),
+                new_distance_gain,
+                projected_source,
+            );
+
+            let [left, right] = output.stereo_mut();
+            output_interleaved
+                .iter()
+                .zip(&mut left[..])
+                .zip(&mut right[..])
+                .for_each(|((p, l), r)| {
+                    *l = p.0;
+                    *r = p.1;
+                });
+        } else {
+            // EqualPower panning
+            let [left, right] = output.stereo_mut();
+
+            // Closure to apply gain per stereo channel
+            let apply_stereo_gain =
+                |((spatial_params, l), r): ((SpatialParams, &mut f32), &mut f32)| {
+                    let SpatialParams {
+                        dist_gain,
+                        cone_gain,
+                        azimuth,
+                        ..
+                    } = spatial_params;
+
+                    // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
+                    let mut azimuth = azimuth.max(-180.).min(180.);
+
+                    // Then wrap to range [-90, 90].
+                    if azimuth < -90. {
+                        azimuth = -180. - azimuth;
+                    } else if azimuth > 90. {
+                        azimuth = 180. - azimuth;
+                    }
+
+                    // x is the horizontal plane orientation of the sound
+                    let x = (azimuth + 90.) / 180.;
+                    let gain_l = (x * PI / 2.).cos();
+                    let gain_r = (x * PI / 2.).sin();
+
+                    // multiply signal with gain per ear
+                    *l *= gain_l * dist_gain * cone_gain;
+                    *r *= gain_r * dist_gain * cone_gain;
+                };
+
+            // Optimize for static Panner & Listener
+            let single_valued = listener_position_x.len() == 1
+                && listener_position_y.len() == 1
+                && listener_position_z.len() == 1
+                && listener_forward_x.len() == 1
+                && listener_forward_y.len() == 1
+                && listener_forward_z.len() == 1
+                && listener_up_x.len() == 1
+                && listener_up_y.len() == 1
+                && listener_up_z.len() == 1;
+            if single_valued {
+                std::iter::repeat(a_rate_params.next().unwrap())
+                    .zip(&mut left[..])
+                    .zip(&mut right[..])
+                    .for_each(apply_stereo_gain);
+            } else {
+                a_rate_params
+                    .zip(&mut left[..])
+                    .zip(&mut right[..])
+                    .for_each(apply_stereo_gain);
+            }
         }
 
-        // determine left/right ear gain
-        let x = (azimuth + 90.) / 180.;
-        let gain_l = (x * PI / 2.).cos();
-        let gain_r = (x * PI / 2.).sin();
+        // put the hrtf_state back into self (borrow reasons)
+        self.hrtf_state = hrtf_state;
 
-        // determine distance gain
-        let distance = crate::spatial::distance(source_position, listener_position);
-        let dist_gain = 1. / distance; // inverse distance model is assumed (todo issue #44)
+        // tail time only for HRTF panning
+        self.hrtf_state.is_some()
+    }
+}
 
-        // determine cone effect gain
+impl PannerRenderer {
+    fn cone_gain(
+        &self,
+        source_position: [f32; 3],
+        source_orientation: [f32; 3],
+        listener_position: [f32; 3],
+    ) -> f32 {
         let abs_inner_angle = self.cone_inner_angle.load().abs() as f32 / 2.;
         let abs_outer_angle = self.cone_outer_angle.load().abs() as f32 / 2.;
-        let cone_gain = if abs_inner_angle >= 180. && abs_outer_angle >= 180. {
+        if abs_inner_angle >= 180. && abs_outer_angle >= 180. {
             1. // no cone specified
         } else {
             let cone_outer_gain = self.cone_outer_gain.load() as f32;
@@ -414,24 +743,145 @@ impl AudioProcessor for PannerRenderer {
                 let x = (abs_angle - abs_inner_angle) / (abs_outer_angle - abs_inner_angle);
                 (1. - x) + cone_outer_gain * x
             }
+        }
+    }
+
+    fn dist_gain(&self, source_position: [f32; 3], listener_position: [f32; 3]) -> f32 {
+        let distance_model = self.distance_model.load(Ordering::SeqCst).into();
+        let ref_distance = self.ref_distance.load();
+        let rolloff_factor = self.rolloff_factor.load();
+        let distance = crate::spatial::distance(source_position, listener_position) as f64;
+
+        let dist_gain = match distance_model {
+            DistanceModelType::Linear => {
+                let max_distance = self.max_distance.load();
+                let d2ref = ref_distance.min(max_distance);
+                let d2max = ref_distance.max(max_distance);
+                let d_clamped = distance.min(d2max).max(d2ref);
+                1. - rolloff_factor * (d_clamped - d2ref) / (d2max - d2ref)
+            }
+            DistanceModelType::Inverse => {
+                if distance > 0. {
+                    ref_distance
+                        / (ref_distance
+                            + rolloff_factor * (ref_distance.max(distance) - ref_distance))
+                } else {
+                    1.
+                }
+            }
+            DistanceModelType::Exponential => {
+                (distance.max(ref_distance) / ref_distance).powf(-rolloff_factor)
+            }
         };
+        dist_gain as f32
+    }
+}
 
-        // multiply signal with gain per ear
-        let left = input.iter().map(|&v| v * gain_l * dist_gain * cone_gain);
-        let right = input.iter().map(|&v| v * gain_r * dist_gain * cone_gain);
+#[cfg(test)]
+mod tests {
+    use float_eq::{assert_float_eq, assert_float_ne};
 
-        output.set_number_of_channels(2);
-        output
-            .channel_data_mut(0)
-            .iter_mut()
-            .zip(left)
-            .for_each(|(o, i)| *o = i);
-        output
-            .channel_data_mut(1)
-            .iter_mut()
-            .zip(right)
-            .for_each(|(o, i)| *o = i);
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::node::{AudioBufferSourceNode, AudioBufferSourceOptions, AudioScheduledSourceNode};
+    use crate::AudioBuffer;
 
-        false // only true for panning model HRTF
+    use super::*;
+
+    #[test]
+    fn test_equal_power() {
+        let sample_rate = 44100.;
+        let length = RENDER_QUANTUM_SIZE * 4;
+        let context = OfflineAudioContext::new(2, length, sample_rate);
+
+        // 128 input samples of value 1.
+        let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
+        let src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        src.set_buffer(input);
+        src.start();
+
+        let options = PannerOptions {
+            panning_model: PanningModelType::EqualPower,
+            ..PannerOptions::default()
+        };
+        let panner = PannerNode::new(&context, options);
+        assert_eq!(panner.panning_model(), PanningModelType::EqualPower);
+        panner.position_x().set_value(1.); // sound comes from the right
+
+        src.connect(&panner);
+        panner.connect(&context.destination());
+
+        let output = context.start_rendering_sync();
+        let original = vec![1.; RENDER_QUANTUM_SIZE];
+        let zero = vec![0.; RENDER_QUANTUM_SIZE];
+
+        // assert first quantum fully panned to the right
+        assert_float_eq!(
+            output.get_channel_data(0)[..128],
+            &zero[..],
+            abs_all <= 1E-6
+        );
+        assert_float_eq!(
+            output.get_channel_data(1)[..128],
+            &original[..],
+            abs_all <= 1E-6
+        );
+
+        // assert no tail-time
+        assert_float_eq!(
+            output.get_channel_data(0)[128..256],
+            &zero[..],
+            abs_all <= 1E-6
+        );
+        assert_float_eq!(
+            output.get_channel_data(1)[128..256],
+            &zero[..],
+            abs_all <= 1E-6
+        );
+    }
+
+    #[test]
+    fn test_hrtf() {
+        let sample_rate = 44100.;
+        let length = RENDER_QUANTUM_SIZE * 4;
+        let context = OfflineAudioContext::new(2, length, sample_rate);
+
+        // 128 input samples of value 1.
+        let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
+        let src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        src.set_buffer(input);
+        src.start();
+
+        let options = PannerOptions {
+            panning_model: PanningModelType::HRTF,
+            ..PannerOptions::default()
+        };
+        let panner = PannerNode::new(&context, options);
+        assert_eq!(panner.panning_model(), PanningModelType::HRTF);
+        panner.position_x().set_value(1.); // sound comes from the right
+
+        src.connect(&panner);
+        panner.connect(&context.destination());
+
+        let output = context.start_rendering_sync();
+        let original = vec![1.; RENDER_QUANTUM_SIZE];
+
+        // assert first quantum not equal to input buffer (both left and right)
+        assert_float_ne!(
+            output.get_channel_data(0)[..128],
+            &original[..],
+            abs_all <= 1E-6
+        );
+        assert_float_ne!(
+            output.get_channel_data(1)[..128],
+            &original[..],
+            abs_all <= 1E-6
+        );
+
+        // assert some samples non-zero in the tail time
+        let left = output.channel_data(0).as_slice();
+        assert!(left[128..256].iter().any(|v| *v >= 1E-6));
+
+        let right = output.channel_data(1).as_slice();
+        assert!(right[128..256].iter().any(|v| *v >= 1E-6));
     }
 }

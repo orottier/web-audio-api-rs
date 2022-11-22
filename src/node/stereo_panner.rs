@@ -66,10 +66,8 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
 /// Generates the stereo gains for a specific x ∈ [0, 1] derived from pan.
 /// Basically the following by a table lookup:
 ///
-/// ```ignore
-/// let gain_left = (x * PI / 2).cos();
-/// let gain_right = (x * PI / 2).sin();
-/// ```
+/// - `gain_left = (x * PI / 2.).cos()`
+/// - `gain_right = (x * PI / 2.).sin()`
 #[inline(always)]
 fn get_stereo_gains(x: f32) -> [f32; 2] {
     let idx = (x * TABLE_LENGTH_BY_4_F32) as usize;
