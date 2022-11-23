@@ -137,7 +137,7 @@ pub struct CubebBackend {
     stream: ThreadSafeClosableStream,
     sample_rate: f32,
     number_of_channels: usize,
-    sink_id: Option<String>,
+    sink_id: String,
 }
 
 impl AudioBackendManager for CubebBackend {
@@ -197,12 +197,15 @@ impl AudioBackendManager for CubebBackend {
             .ok()
             .unwrap_or(RENDER_QUANTUM_SIZE as u32);
         let buffer_size = buffer_size_req.max(min_latency);
-        let device_id = options.sink_id.as_ref().and_then(|d| {
+
+        let device_id = if options.sink_id.is_empty() {
+            None
+        } else {
             Self::enumerate_devices()
                 .into_iter()
-                .find(|e| e.device_id() == d)
+                .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<DeviceId>().unwrap())
-        });
+        };
 
         let stream = match number_of_channels {
             // so sorry, but I need to constify the non-const `number_of_channels`
@@ -325,7 +328,7 @@ impl AudioBackendManager for CubebBackend {
             stream: ThreadSafeClosableStream::new(stream),
             number_of_channels,
             sample_rate,
-            sink_id: None,
+            sink_id: "".into(),
         };
 
         (backend, receiver)
@@ -355,8 +358,8 @@ impl AudioBackendManager for CubebBackend {
         self.stream.output_latency(self.sample_rate)
     }
 
-    fn sink_id(&self) -> Option<&str> {
-        self.sink_id.as_deref()
+    fn sink_id(&self) -> &str {
+        self.sink_id.as_str()
     }
 
     fn boxed_clone(&self) -> Box<dyn AudioBackendManager> {

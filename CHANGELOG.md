@@ -1,3 +1,8 @@
+# Version 0.26.0 (2021-11-13)
+
+- Added the "none" `sinkId`, render audio graph without emitting to speakers
+- Fix `ConvolverNode.set_normalize` to take `&self`, not `&mut self`
+
 # Version 0.25.0 (2021-11-06)
 
 - Added AudioRenderCapacity functionality

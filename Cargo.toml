@@ -1,6 +1,6 @@
 [package]
 name = "web-audio-api"
-version = "0.25.0"
+version = "0.26.0"
 authors = ["Otto <otto@ot-to.nl>"]
 edition = "2018"
 description = "A pure Rust implementation of the Web Audio API, for use in non-browser contexts"
@@ -9,7 +9,7 @@ repository = "https://github.com/orottier/web-audio-api-rs"
 keywords = ["web-audio-api", "audio", "sound", "dsp"]
 license = "MIT"
 categories = ["multimedia::audio"]
-exclude = ["/samples", "/snapshots"]
+exclude = ["/samples", "/snapshots", "/.github"]
 
 [dependencies]
 arrayvec = "0.7"
@@ -18,6 +18,7 @@ creek = "0.2.1"
 crossbeam-channel = "0.5"
 cubeb = { version = "0.10.0", optional = true }
 float_eq = "1.0"
+hrtf = "0.8.0"
 lazy_static = "1.4"
 log = "0.4"
 num-complex = "0.4"

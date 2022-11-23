@@ -379,17 +379,9 @@ impl ConcreteBaseAudioContext {
         self.send_control_msg(message).unwrap();
     }
 
-    /// Attach the 9 `AudioListener` coordinates to a `PannerNode`
+    /// Connect the `AudioListener` to a `PannerNode`
     pub(crate) fn connect_listener_to_panner(&self, panner: AudioNodeId) {
-        self.connect(LISTENER_NODE_ID, panner, 0, 1);
-        self.connect(LISTENER_NODE_ID, panner, 1, 2);
-        self.connect(LISTENER_NODE_ID, panner, 2, 3);
-        self.connect(LISTENER_NODE_ID, panner, 3, 4);
-        self.connect(LISTENER_NODE_ID, panner, 4, 5);
-        self.connect(LISTENER_NODE_ID, panner, 5, 6);
-        self.connect(LISTENER_NODE_ID, panner, 6, 7);
-        self.connect(LISTENER_NODE_ID, panner, 7, 8);
-        self.connect(LISTENER_NODE_ID, panner, 8, 9);
+        self.connect(LISTENER_NODE_ID, panner, 0, usize::MAX);
     }
 
     /// Add the [`AudioListener`] to the audio graph (if not already)

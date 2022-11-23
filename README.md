@@ -63,21 +63,11 @@ deviations could not be avoided:
 - inheritance is modelled with traits
 - ...
 
-## Limitations
-
-Our main limitations include:
-
-- some PannerNode features missing
-- no async methods (JS Promises)
-- no event handling
-
-These will be resolved in the future, stay tuned!
-
 ## Bindings
 
 We provide NodeJS bindings to this library over at
-<https://github.com/b-ma/node-web-audio-api-rs> so you can use this library by
-simply writing native NodeJS code.
+<https://github.com/ircam-ismm/node-web-audio-api> so you can use this library
+by simply writing native NodeJS code.
 
 It is a work in progress, but eventually we should be able to run the official
 [WebAudioAPI test harness](https://github.com/web-platform-tests/wpt/tree/master/webaudio)
@@ -136,3 +126,8 @@ additional terms or conditions.
 This project is licensed under the [MIT license].
 
 [mit license]: https://github.com/orottier/web-audio-api-rs/blob/main/LICENSE
+
+## Acknowledgements
+
+The IR files used for HRTF spatialization are part of the LISTEN database
+created by the EAC team from Ircam.

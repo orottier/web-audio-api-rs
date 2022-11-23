@@ -1,6 +1,8 @@
 //! The `AudioContext` type and constructor options
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::io::{self, AudioBackendManager, ControlThreadInit, RenderThreadInit};
+use crate::io::{
+    self, enumerate_devices, AudioBackendManager, ControlThreadInit, RenderThreadInit,
+};
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
@@ -9,20 +11,34 @@ use crate::AudioRenderCapacity;
 use std::error::Error;
 use std::sync::Mutex;
 
+/// Check if the provided sink_id is available for playback
+///
+/// It should be "", "none" or a valid `sinkId` returned from [`enumerate_devices`]
+fn is_valid_sink_id(sink_id: &str) -> bool {
+    if sink_id.is_empty() || sink_id == "none" {
+        true
+    } else {
+        enumerate_devices()
+            .into_iter()
+            .any(|d| d.device_id() == sink_id)
+    }
+}
+
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum AudioContextLatencyCategory {
     /// Balance audio output latency and power consumption.
     Balanced,
     /// Provide the lowest audio output latency possible without glitching. This is the default.
     Interactive,
-    /// Prioritize sustained playback without interruption
-    /// over audio output latency. Lowest power consumption.
+    /// Prioritize sustained playback without interruption over audio output latency.
+    ///
+    /// Lowest power consumption.
     Playback,
     /// Specify the number of seconds of latency
-    /// this latency is not guaranted to be applied,
-    /// it depends on the audio hardware capabilities
+    ///
+    /// This latency is not guaranted to be applied, it depends on the audio hardware capabilities
     Custom(f64),
 }
 
@@ -37,17 +53,40 @@ impl Default for AudioContextLatencyCategory {
 /// All fields are optional and will default to the value best suited for interactive playback on
 /// your hardware configuration.
 ///
-/// Check the documentation of the [`AudioContext` constructor](AudioContext::new) for usage
-/// instructions.
-#[derive(Clone, Debug, Default)]
+/// For future compatibility, it is best to construct a default implementation of this struct and
+/// set the fields you would like to override:
+/// ```
+/// use web_audio_api::context::AudioContextOptions;
+///
+/// // Request a sample rate of 44.1 kHz, leave other fields to their default values
+/// let opts = AudioContextOptions {
+///     sample_rate: Some(44100.),
+///     ..AudioContextOptions::default()
+/// };
+#[derive(Clone, Debug)]
 pub struct AudioContextOptions {
-    /// Identify the type of playback, which affects
-    /// tradeoffs between audio output latency and power consumption
+    /// Identify the type of playback, which affects tradeoffs between audio output latency and
+    /// power consumption.
     pub latency_hint: AudioContextLatencyCategory,
-    /// Sample rate of the audio Context and audio output hardware
+
+    /// Sample rate of the audio context and audio output hardware. Use `None` for a default value.
     pub sample_rate: Option<f32>,
-    /// The audio output device - use `None` for the default device
-    pub sink_id: Option<String>,
+
+    /// The audio output device
+    /// - use `""` for the default audio output device
+    /// - use `"none"` to process the audio graph without playing through an audio output device.
+    /// - use `"sinkId"` to use the specified audio sink id, obtained with [`enumerate_devices`]
+    pub sink_id: String,
+}
+
+impl Default for AudioContextOptions {
+    fn default() -> Self {
+        Self {
+            latency_hint: AudioContextLatencyCategory::default(),
+            sample_rate: None,
+            sink_id: String::from(""),
+        }
+    }
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
@@ -102,17 +141,12 @@ impl AudioContext {
     ///
     /// The `AudioContext` constructor will panic when an invalid `sinkId` is provided in the
     /// `AudioContextOptions`. In a future version, a `try_new` constructor will be introduced that
-    /// will never panic.
+    /// never panics.
     #[allow(clippy::needless_pass_by_value)]
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
-        if let Some(sink_id) = &options.sink_id {
-            if !crate::enumerate_devices()
-                .into_iter()
-                .any(|d| d.device_id() == sink_id)
-            {
-                panic!("NotFoundError: invalid sinkId");
-            }
+        if !is_valid_sink_id(&options.sink_id) {
+            panic!("NotFoundError: invalid sinkId {:?}", options.sink_id);
         }
 
         let (control_thread_init, render_thread_init) = io::thread_init();
@@ -174,32 +208,30 @@ impl AudioContext {
 
     /// Identifier or the information of the current audio output device.
     ///
-    /// The initial value is `None`, which means the default audio output device.
+    /// The initial value is `""`, which means the default audio output device.
     #[allow(clippy::missing_panics_doc)]
-    pub fn sink_id(&self) -> Option<String> {
-        self.backend_manager
-            .lock()
-            .unwrap()
-            .sink_id()
-            .map(str::to_string)
+    pub fn sink_id(&self) -> String {
+        self.backend_manager.lock().unwrap().sink_id().to_owned()
     }
 
     /// Update the current audio output device.
+    ///
+    /// The provided `sink_id` string must match a device name `enumerate_devices`.
+    ///
+    /// Supplying `"none"` for the `sink_id` will process the audio graph without playing through an
+    /// audio output device.
     ///
     /// This function operates synchronously and might block the current thread. An async version
     /// is currently not implemented.
     #[allow(clippy::needless_collect, clippy::missing_panics_doc)]
     pub fn set_sink_id_sync(&self, sink_id: String) -> Result<(), Box<dyn Error>> {
-        if self.sink_id().as_deref() == Some(&sink_id) {
+        if self.sink_id() == sink_id {
             return Ok(()); // sink is already active
         }
 
-        if !crate::enumerate_devices()
-            .into_iter()
-            .any(|d| d.device_id() == sink_id)
-        {
-            Err("NotFoundError: invalid sinkId")?;
-        }
+        if !is_valid_sink_id(&sink_id) {
+            Err(format!("NotFoundError: invalid sinkId {}", sink_id))?;
+        };
 
         let mut backend_manager_guard = self.backend_manager.lock().unwrap();
         let state = self.state();
@@ -239,7 +271,7 @@ impl AudioContext {
         let options = AudioContextOptions {
             sample_rate: Some(self.sample_rate()),
             latency_hint: AudioContextLatencyCategory::default(), // todo reuse existing setting
-            sink_id: Some(sink_id),
+            sink_id,
         };
         *backend_manager_guard = io::build_output(options, self.render_thread_init.clone());
 

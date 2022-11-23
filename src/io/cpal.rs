@@ -73,7 +73,7 @@ pub struct CpalBackend {
     output_latency: Arc<AtomicF64>,
     sample_rate: f32,
     number_of_channels: usize,
-    sink_id: Option<String>,
+    sink_id: String,
 }
 
 impl AudioBackendManager for CpalBackend {
@@ -91,15 +91,15 @@ impl AudioBackendManager for CpalBackend {
             event_send,
         } = render_thread_init;
 
-        let device = match &options.sink_id {
-            None => host
-                .default_output_device()
-                .expect("no output device available"),
-            Some(d) => Self::enumerate_devices()
+        let device = if options.sink_id.is_empty() {
+            host.default_output_device()
+                .expect("no output device available")
+        } else {
+            Self::enumerate_devices()
                 .into_iter()
-                .find(|e| e.device_id() == d)
+                .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
-                .unwrap(),
+                .unwrap()
         };
 
         log::info!("Output device: {:?}", device.name());
@@ -277,7 +277,7 @@ impl AudioBackendManager for CpalBackend {
             output_latency: Arc::new(AtomicF64::new(0.)),
             sample_rate,
             number_of_channels,
-            sink_id: None,
+            sink_id: "".into(),
         };
 
         (backend, receiver)
@@ -307,8 +307,8 @@ impl AudioBackendManager for CpalBackend {
         self.output_latency.load()
     }
 
-    fn sink_id(&self) -> Option<&str> {
-        self.sink_id.as_deref()
+    fn sink_id(&self) -> &str {
+        self.sink_id.as_str()
     }
 
     fn boxed_clone(&self) -> Box<dyn AudioBackendManager> {
