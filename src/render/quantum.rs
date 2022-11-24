@@ -75,8 +75,11 @@ impl AllocInner {
 
 /// Render thread channel buffer
 ///
-/// Basically wraps a `Rc<[f32; RENDER_QUANTUM_SIZE]>`, which means it derefs to a (mutable) slice
+/// Basically wraps a `Rc<[f32; render_quantum_size]>`, which means it derefs to a (mutable) slice
 /// of `[f32]` sample values. Plus it has copy-on-write semantics, so it is cheap to clone.
+///
+/// The `render_quantum_size` is equal to 128 by default, but in future versions it may be equal to
+/// the hardware preferred render quantum size or any other value.
 ///
 /// # Usage
 ///
@@ -165,9 +168,12 @@ impl std::ops::Drop for AudioRenderQuantumChannel {
 
 /// Render thread audio buffer, consisting of multiple channel buffers
 ///
-/// Internal fixed length audio asset of `RENDER_QUANTUM_SIZE` sample frames for
-/// block rendering, basically a matrix of `channels * AudioRenderQuantumChannel`
-/// cf. <https://webaudio.github.io/web-audio-api/#render-quantum>
+/// This is a  fixed length audio asset of `render_quantum_size` sample frames for block rendering,
+/// basically a matrix of `channels * AudioRenderQuantumChannel` cf.
+/// <https://webaudio.github.io/web-audio-api/#render-quantum>
+///
+/// The `render_quantum_size` is equal to 128 by default, but in future versions it may be equal to
+/// the hardware preferred render quantum size or any other value.
 ///
 /// An `AudioRenderQuantum` has copy-on-write semantics, so it is cheap to clone.
 ///

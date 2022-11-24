@@ -1,7 +1,6 @@
 use web_audio_api::context::{AudioContextRegistration, BaseAudioContext, OfflineAudioContext};
 use web_audio_api::node::{AudioNode, ChannelConfig};
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
-use web_audio_api::RENDER_QUANTUM_SIZE;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -29,7 +28,7 @@ fn test_ordering_with_cycle_breakers(
         nodes.shuffle(&mut rng);
         edges.shuffle(&mut rng);
 
-        let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, 44_100.);
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
         let collect = Arc::new(Mutex::new(vec![]));
 
         let map: HashMap<_, _> = nodes

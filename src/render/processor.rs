@@ -100,9 +100,9 @@ impl<'a> AudioParamValues<'a> {
 
     /// Get the computed values for the given [`crate::param::AudioParam`]
     ///
-    /// For k-rate params or if the (a-rate) parameter is constant for this block, it will
-    /// provide a slice of length 1. In other cases, i.e. a-rate param with scheduled
-    /// automations it will provide a slice of length [`crate::RENDER_QUANTUM_SIZE`]
+    /// For k-rate params or if the (a-rate) parameter is constant for this block, it will provide
+    /// a slice of length 1. In other cases, i.e. a-rate param with scheduled automations it will
+    /// provide a slice of length equal to the render quantum size (default: 128)
     #[allow(clippy::missing_panics_doc)]
     pub fn get(&self, index: &AudioParamId) -> impl Deref<Target = [f32]> + '_ {
         DerefAudioRenderQuantumChannel(self.nodes.get(&index.into()).unwrap().borrow())

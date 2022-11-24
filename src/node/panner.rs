@@ -638,7 +638,7 @@ impl AudioProcessor for PannerRenderer {
             }
 
             let output_interleaved = hrtf_state.process(
-                output.channel_data(0).as_slice(),
+                output.channel_data(0),
                 new_distance_gain,
                 projected_source,
             );
