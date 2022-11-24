@@ -169,7 +169,7 @@ impl std::ops::Drop for AudioRenderQuantumChannel {
 /// Render thread audio buffer, consisting of multiple channel buffers
 ///
 /// This is a  fixed length audio asset of `render_quantum_size` sample frames for block rendering,
-/// basically a matrix of `channels * AudioRenderQuantumChannel` cf.
+/// basically a list of [`AudioRenderQuantumChannel`]s cf.
 /// <https://webaudio.github.io/web-audio-api/#render-quantum>
 ///
 /// The `render_quantum_size` is equal to 128 by default, but in future versions it may be equal to
@@ -268,7 +268,10 @@ impl AudioRenderQuantum {
         &mut self.channels[..]
     }
 
-    pub(crate) fn is_silent(&self) -> bool {
+    /// `O(1)` check if this buffer is equal to the 'silence buffer'
+    ///
+    /// If this function returns false, it is still possible for all samples to be zero.
+    pub fn is_silent(&self) -> bool {
         !self.channels.iter().any(|channel| !channel.is_silent())
     }
 
@@ -518,6 +521,9 @@ impl AudioRenderQuantum {
     }
 
     /// Convert this buffer to silence
+    ///
+    /// `O(1)` operation to convert this buffer to the 'silence buffer' which will enable some
+    /// optimizations in the graph rendering.
     pub fn make_silent(&mut self) {
         let silence = self.channels[0].silence();
 
