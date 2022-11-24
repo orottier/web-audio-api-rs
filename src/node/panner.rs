@@ -637,11 +637,8 @@ impl AudioProcessor for PannerRenderer {
                 projected_source = [0., 0., 1.];
             }
 
-            let output_interleaved = hrtf_state.process(
-                output.channel_data(0),
-                new_distance_gain,
-                projected_source,
-            );
+            let output_interleaved =
+                hrtf_state.process(output.channel_data(0), new_distance_gain, projected_source);
 
             let [left, right] = output.stereo_mut();
             output_interleaved
