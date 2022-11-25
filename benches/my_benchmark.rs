@@ -69,6 +69,25 @@ pub fn bench_buffer_src() {
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
+pub fn bench_buffer_src_delay() {
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+
+    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
+    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+
+    let delay = ctx.create_delay(0.3);
+    delay.delay_time().set_value(0.2);
+
+    let src = ctx.create_buffer_source();
+    src.set_buffer(buffer);
+    src.start();
+
+    src.connect(&delay);
+    delay.connect(&ctx.destination());
+
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
+}
+
 pub fn bench_buffer_src_iir() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
@@ -139,13 +158,34 @@ pub fn bench_stereo_positional() {
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
+pub fn bench_stereo_panning_automation() {
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
+    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+
+    let panner = ctx.create_stereo_panner();
+    panner.connect(&ctx.destination());
+    panner.pan().set_value_at_time(-1., 0.);
+    panner.pan().set_value_at_time(0.2, 0.5);
+
+    let src = ctx.create_buffer_source();
+    src.connect(&panner);
+    src.set_buffer(buffer);
+    src.set_loop(true);
+    src.start();
+
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
+}
+
 iai::main!(
     bench_ctor,
     bench_sine,
     bench_sine_gain,
     bench_sine_gain_delay,
     bench_buffer_src,
+    bench_buffer_src_delay,
     bench_buffer_src_iir,
     bench_buffer_src_biquad,
     bench_stereo_positional,
+    bench_stereo_panning_automation,
 );
