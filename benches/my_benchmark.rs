@@ -5,23 +5,27 @@ use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::node::AudioNode;
 use web_audio_api::node::AudioScheduledSourceNode;
 
+const SAMPLE_RATE: f32 = 48000.;
+const DURATION: usize = 10;
+const SAMPLES: usize = SAMPLE_RATE as usize * DURATION;
+
 pub fn bench_ctor() {
-    let ctx = OfflineAudioContext::new(2, black_box(48000), 48000.);
-    assert_eq!(ctx.start_rendering_sync().length(), 48000);
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
 pub fn bench_sine() {
-    let ctx = OfflineAudioContext::new(2, black_box(48000), 48000.);
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let osc = ctx.create_oscillator();
 
     osc.connect(&ctx.destination());
     osc.start();
 
-    assert_eq!(ctx.start_rendering_sync().length(), 48000);
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
 pub fn bench_sine_gain() {
-    let ctx = OfflineAudioContext::new(2, black_box(48000), 48000.);
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let osc = ctx.create_oscillator();
     let gain = ctx.create_gain();
 
@@ -30,11 +34,11 @@ pub fn bench_sine_gain() {
 
     osc.start();
 
-    assert_eq!(ctx.start_rendering_sync().length(), 48000);
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
 pub fn bench_sine_gain_delay() {
-    let ctx = OfflineAudioContext::new(2, black_box(48000), 48000.);
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
 
     let osc = ctx.create_oscillator();
     let gain = ctx.create_gain();
@@ -48,11 +52,11 @@ pub fn bench_sine_gain_delay() {
 
     osc.start();
 
-    assert_eq!(ctx.start_rendering_sync().length(), 48000);
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
 pub fn bench_buffer_src() {
-    let ctx = OfflineAudioContext::new(2, black_box(48000), 48000.);
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
 
     let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
     let buffer = ctx.decode_audio_data_sync(file).unwrap();
@@ -62,11 +66,11 @@ pub fn bench_buffer_src() {
     src.set_buffer(buffer);
     src.start();
 
-    assert_eq!(ctx.start_rendering_sync().length(), 48000);
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
 pub fn bench_buffer_src_iir() {
-    let ctx = OfflineAudioContext::new(2, black_box(48000), 48000.);
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
     let buffer = ctx.decode_audio_data_sync(file).unwrap();
 
@@ -89,11 +93,11 @@ pub fn bench_buffer_src_iir() {
     src.set_buffer(buffer);
     src.start();
 
-    assert_eq!(ctx.start_rendering_sync().length(), 48000);
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
 pub fn bench_buffer_src_biquad() {
-    let ctx = OfflineAudioContext::new(2, black_box(48000), 48000.);
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
     let buffer = ctx.decode_audio_data_sync(file).unwrap();
 
@@ -108,11 +112,11 @@ pub fn bench_buffer_src_biquad() {
     src.set_buffer(buffer);
     src.start();
 
-    assert_eq!(ctx.start_rendering_sync().length(), 48000);
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
 pub fn bench_stereo_positional() {
-    let ctx = OfflineAudioContext::new(2, black_box(48000), 48000.);
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
     let buffer = ctx.decode_audio_data_sync(file).unwrap();
 
@@ -132,7 +136,7 @@ pub fn bench_stereo_positional() {
     src.set_buffer(buffer);
     src.start();
 
-    assert_eq!(ctx.start_rendering_sync().length(), 48000);
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
 iai::main!(
