@@ -305,11 +305,6 @@ impl AudioBufferSourceNode {
     pub fn set_loop_end(&self, value: f64) {
         self.controller.set_loop_end(value);
     }
-
-    pub fn onended<F: Fn() + Send + Sync + 'static>(&self, callback: F) {
-        self.context()
-            .register_event_handler(self, EventType::Ended, Box::new(callback));
-    }
 }
 
 struct AudioBufferRendererState {

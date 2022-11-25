@@ -1,7 +1,7 @@
 use crate::context::AudioNodeId;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum EventType {
+pub(crate) enum EventType {
     Ended,
 }
 
@@ -15,7 +15,7 @@ pub(crate) struct EventHandler {
 #[derive(Debug)]
 pub(crate) struct TriggerEventMessage {
     // could be Option w/ None meaning that its a context event
-    pub node_id: AudioNodeId, // we use raw u64 to
+    pub node_id: AudioNodeId,
     // could be Option w/ None meaning the node is dropped on the render thread
     // and listeners can be cleared
     pub event_type: EventType,
