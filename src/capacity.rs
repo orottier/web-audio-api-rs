@@ -170,7 +170,10 @@ impl AudioRenderCapacity {
         }
     }
 
-    /// An EventHandler for [`AudioRenderCapacityEvent`].
+    /// The EventHandler for [`AudioRenderCapacityEvent`].
+    ///
+    /// Only a single event handler is active at any time. Calling this method multiple times will
+    /// disable the previous event handlers.
     #[allow(clippy::missing_panics_doc)]
     pub fn onupdate<F: FnMut(AudioRenderCapacityEvent) + Send + 'static>(&self, callback: F) {
         *self.callback.lock().unwrap() = Some(Box::new(callback));

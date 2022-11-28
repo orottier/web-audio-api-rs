@@ -198,9 +198,9 @@ impl ConcreteBaseAudioContext {
             std::thread::spawn(move || loop {
                 // (?) this thread is dedicated to event so we can block
                 if let Ok(message) = event_channel.recv() {
-                    let handlers = event_handlers.lock().unwrap();
+                    let mut handlers = event_handlers.lock().unwrap();
                     // find EventHandlerInfos that match messsage
-                    if let Some(infos) = handlers.iter().find(|item| {
+                    if let Some(infos) = handlers.iter_mut().find(|item| {
                         item.node_id == message.node_id && item.event_type == message.event_type
                     }) {
                         (infos.callback)();
@@ -414,7 +414,7 @@ impl ConcreteBaseAudioContext {
         &self,
         node: &dyn AudioNode,
         event_type: EventType,
-        callback: Box<dyn Fn() + Send + Sync + 'static>,
+        callback: Box<dyn FnMut() + Send + 'static>,
     ) {
         let handler = EventHandler {
             node_id: node.registration().id(),

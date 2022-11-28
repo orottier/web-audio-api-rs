@@ -9,7 +9,7 @@ pub(crate) struct EventHandler {
     // could be optional meaning that its a context event (cf. onSinkChange, onStateChange, etc.)
     pub node_id: AudioNodeId,
     pub event_type: EventType,
-    pub callback: Box<dyn Fn() + Send + Sync + 'static>,
+    pub callback: Box<dyn FnMut() + Send + 'static>,
 }
 
 #[derive(Debug)]
