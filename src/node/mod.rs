@@ -358,9 +358,8 @@ pub trait AudioScheduledSourceNode: AudioNode {
     /// determined by stop() is reached. For an [`AudioBufferSourceNode`], the event is also
     /// dispatched because the duration has been reached or if the entire buffer has been played.
     ///
-    /// Multiple event handlers can be active at any time. Calling this function multiple times
-    /// will accumulate all event handlers. It is currently not possible to remove an event
-    /// handler.
+    /// Calling this function multiple times will accumulate all event handlers. It is currently
+    /// not possible to remove an event handler.
     fn onended<F: FnMut() + Send + 'static>(&self, callback: F)
     where
         Self: Sized,
