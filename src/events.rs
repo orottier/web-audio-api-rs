@@ -7,11 +7,25 @@ pub(crate) enum EventType {
     Ended,
 }
 
+pub(crate) enum Callback {
+    Once(Box<dyn FnOnce() + Send + 'static>),
+    Multiple(Box<dyn FnMut() + Send + 'static>),
+}
+
+impl Callback {
+    fn run(self) {
+        match self {
+            Self::Once(f) => (f)(),
+            Self::Multiple(mut f) => (f)(),
+        }
+    }
+}
+
 pub(crate) struct EventHandler {
     // could be optional meaning that its a context event (cf. onSinkChange, onStateChange, etc.)
     pub node_id: AudioNodeId,
     pub event_type: EventType,
-    pub callback: Box<dyn FnMut() + Send + 'static>,
+    pub callback: Callback,
 }
 
 #[derive(Debug)]
@@ -41,12 +55,23 @@ impl EventLoop {
             for message in event_channel.iter() {
                 let mut handlers = self_clone.callbacks.lock().unwrap();
                 // find EventHandlerInfos that matches messsage and execute callback
-                handlers
-                    .iter_mut()
-                    .filter(|item| {
-                        item.node_id == message.node_id && item.event_type == message.event_type
-                    })
-                    .for_each(|handler| (handler.callback)())
+
+                let mut i = 0;
+                while i < handlers.len() {
+                    let handler = &mut handlers[i];
+                    if handler.node_id != message.node_id
+                        || handler.event_type != message.event_type
+                    {
+                        i += 1;
+                        continue;
+                    }
+                    if let Callback::Multiple(f) = &mut handler.callback {
+                        (f)();
+                    } else {
+                        let handler = handlers.remove(i);
+                        handler.callback.run();
+                    }
+                }
             }
         });
     }

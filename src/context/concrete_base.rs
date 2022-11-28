@@ -4,7 +4,7 @@ use crate::context::{
     AudioContextRegistration, AudioContextState, AudioNodeId, BaseAudioContext,
     DESTINATION_NODE_ID, LISTENER_NODE_ID, LISTENER_PARAM_IDS,
 };
-use crate::events::{EventHandler, EventLoop, EventType, TriggerEventMessage};
+use crate::events::{Callback, EventHandler, EventLoop, EventType, TriggerEventMessage};
 use crate::message::ControlMessage;
 use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamEvent};
@@ -402,7 +402,7 @@ impl ConcreteBaseAudioContext {
         &self,
         node: &dyn AudioNode,
         event_type: EventType,
-        callback: Box<dyn FnMut() + Send + 'static>,
+        callback: Callback,
     ) {
         self.inner.event_loop.add_handler(EventHandler {
             node_id: node.registration().id(),
