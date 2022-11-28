@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Controller;
+use crate::events::EventType;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::RENDER_QUANTUM_SIZE;
@@ -187,6 +188,7 @@ impl AudioBufferSourceNode {
                 detune: d_proc,
                 playback_rate: pr_proc,
                 render_state: AudioBufferRendererState::default(),
+                ended_triggered: false,
             };
 
             let node = Self {
@@ -332,6 +334,7 @@ struct AudioBufferSourceRenderer {
     detune: AudioParamId,
     playback_rate: AudioParamId,
     render_state: AudioBufferRendererState,
+    ended_triggered: bool,
 }
 
 impl AudioProcessor for AudioBufferSourceRenderer {
@@ -402,6 +405,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // 2. the duration has been reached.
         if scope.current_time >= stop_time || self.render_state.buffer_time_elapsed >= duration {
             output.make_silent(); // also converts to mono
+
+            // @note: we need this check because this is called a until the program
+            // ends, such as if the node was never removed from the graph
+            if !self.ended_triggered {
+                scope.send_event(EventType::Ended);
+                self.ended_triggered = true;
+            }
             return false;
         }
 
@@ -409,11 +419,19 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         if !loop_ {
             if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
                 output.make_silent(); // also converts to mono
+                if !self.ended_triggered {
+                    scope.send_event(EventType::Ended);
+                    self.ended_triggered = true;
+                }
                 return false;
             }
 
             if computed_playback_rate < 0. && self.render_state.buffer_time < 0. {
                 output.make_silent(); // also converts to mono
+                if !self.ended_triggered {
+                    scope.send_event(EventType::Ended);
+                    self.ended_triggered = true;
+                }
                 return false;
             }
         }

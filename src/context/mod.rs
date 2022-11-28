@@ -13,13 +13,11 @@ pub use offline::*;
 mod online;
 pub use online::*;
 
-use crate::render::NodeIndex;
-
 // magic node values
 /// Destination node id is always at index 0
-const DESTINATION_NODE_ID: u64 = 0;
+const DESTINATION_NODE_ID: AudioNodeId = AudioNodeId(0);
 /// listener node id is always at index 1
-const LISTENER_NODE_ID: u64 = 1;
+const LISTENER_NODE_ID: AudioNodeId = AudioNodeId(1);
 /// listener audio parameters ids are always at index 2 through 10
 const LISTENER_PARAM_IDS: Range<u64> = 2..11;
 /// listener audio parameters ids are always at index 2 through 10
@@ -38,8 +36,8 @@ pub(crate) const LISTENER_AUDIO_PARAM_IDS: [AudioParamId; 9] = [
 /// Unique identifier for audio nodes.
 ///
 /// Used for internal bookkeeping.
-#[derive(Debug)]
-pub(crate) struct AudioNodeId(u64);
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+pub(crate) struct AudioNodeId(pub u64);
 
 /// Unique identifier for audio params.
 ///
@@ -47,7 +45,7 @@ pub(crate) struct AudioNodeId(u64);
 pub struct AudioParamId(u64);
 
 // bit contrived, but for type safety only the context mod can access the inner u64
-impl From<&AudioParamId> for NodeIndex {
+impl From<&AudioParamId> for AudioNodeId {
     fn from(i: &AudioParamId) -> Self {
         Self(i.0)
     }
@@ -91,16 +89,12 @@ pub struct AudioContextRegistration {
 
 impl AudioContextRegistration {
     /// Get the audio node id of the registration
-    // false positive: AudioContextRegistration is not const
-    #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
-    pub(crate) fn id(&self) -> &AudioNodeId {
-        &self.id
+    pub(crate) fn id(&self) -> AudioNodeId {
+        self.id
     }
 
     /// Get the [`BaseAudioContext`] concrete type associated with this `AudioContext`
-    // false positive: AudioContextRegistration is not const
-    #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     #[must_use]
     pub(crate) fn context(&self) -> &ConcreteBaseAudioContext {
         &self.context
@@ -109,7 +103,7 @@ impl AudioContextRegistration {
 
 impl Drop for AudioContextRegistration {
     fn drop(&mut self) {
-        self.context.mark_node_dropped(self.id.0);
+        self.context.mark_node_dropped(self.id);
     }
 }
 

@@ -75,6 +75,7 @@ impl AudioBackendManager for NoneBackend {
             frames_played,
             ctrl_msg_recv,
             load_value_send,
+            event_send,
         } = render_thread_init;
 
         let render_thread = RenderThread::new(
@@ -83,6 +84,7 @@ impl AudioBackendManager for NoneBackend {
             ctrl_msg_recv,
             frames_played,
             Some(load_value_send),
+            Some(event_send),
         );
 
         let (sender, receiver) = crossbeam_channel::unbounded();

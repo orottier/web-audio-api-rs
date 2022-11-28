@@ -88,6 +88,7 @@ impl AudioBackendManager for CpalBackend {
             frames_played,
             ctrl_msg_recv,
             load_value_send,
+            event_send,
         } = render_thread_init;
 
         let device = if options.sink_id.is_empty() {
@@ -137,6 +138,7 @@ impl AudioBackendManager for CpalBackend {
             ctrl_msg_recv.clone(),
             frames_played.clone(),
             Some(load_value_send.clone()),
+            Some(event_send.clone()),
         );
 
         log::debug!(
@@ -171,6 +173,7 @@ impl AudioBackendManager for CpalBackend {
                     ctrl_msg_recv,
                     frames_played,
                     Some(load_value_send),
+                    Some(event_send),
                 );
 
                 let spawned = spawn_output_stream(

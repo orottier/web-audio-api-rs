@@ -57,6 +57,8 @@ pub(crate) mod control;
 pub mod media;
 pub mod node;
 
+mod events;
+
 mod param;
 pub use param::*;
 

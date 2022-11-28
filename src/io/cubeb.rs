@@ -149,6 +149,7 @@ impl AudioBackendManager for CubebBackend {
             frames_played,
             ctrl_msg_recv,
             load_value_send,
+            event_send,
         } = render_thread_init;
 
         // Set up cubeb context
@@ -178,6 +179,7 @@ impl AudioBackendManager for CubebBackend {
             ctrl_msg_recv,
             frames_played,
             Some(load_value_send),
+            Some(event_send),
         );
 
         let params = cubeb::StreamParamsBuilder::new()

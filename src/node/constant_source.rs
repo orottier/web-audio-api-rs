@@ -1,5 +1,6 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
+use crate::events::EventType;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::RENDER_QUANTUM_SIZE;
@@ -117,6 +118,7 @@ impl ConstantSourceNode {
             let render = ConstantSourceRenderer {
                 offset: proc,
                 scheduler: scheduler.clone(),
+                ended_triggered: false,
             };
 
             let node = ConstantSourceNode {
@@ -138,6 +140,7 @@ impl ConstantSourceNode {
 struct ConstantSourceRenderer {
     offset: AudioParamId,
     scheduler: Scheduler,
+    ended_triggered: bool,
 }
 
 impl AudioProcessor for ConstantSourceRenderer {
@@ -185,7 +188,18 @@ impl AudioProcessor for ConstantSourceRenderer {
             });
 
         // tail_time false when output has ended this quantum
-        stop_time >= next_block_time
+        let still_running = stop_time >= next_block_time;
+
+        if !still_running {
+            // @note: we need this check because this is called a until the program
+            // ends, such as if the node was never removed from the graph
+            if !self.ended_triggered {
+                scope.send_event(EventType::Ended);
+                self.ended_triggered = true;
+            }
+        }
+
+        still_running
     }
 }
 

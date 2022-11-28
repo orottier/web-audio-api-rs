@@ -323,7 +323,7 @@ pub trait AudioNode {
 
 /// Interface of source nodes, controlling start and stop times.
 /// The node will emit silence before it is started, and after it has ended.
-pub trait AudioScheduledSourceNode {
+pub trait AudioScheduledSourceNode: AudioNode {
     /// Play immediately
     ///
     /// # Panics
@@ -351,6 +351,22 @@ pub trait AudioScheduledSourceNode {
     ///
     /// Panics if the source was already stopped
     fn stop_at(&self, when: f64);
+
+    /// Register callback to run when the source node has stopped playing
+    ///
+    /// For all [`AudioScheduledSourceNode`]s, the ended event is dispatched when the stop time
+    /// determined by stop() is reached. For an [`AudioBufferSourceNode`], the event is also
+    /// dispatched because the duration has been reached or if the entire buffer has been played.
+    fn onended<F: Fn() + Send + Sync + 'static>(&self, callback: F)
+    where
+        Self: Sized,
+    {
+        self.context().register_event_handler(
+            self,
+            crate::events::EventType::Ended,
+            Box::new(callback),
+        );
+    }
 }
 
 // `MediaStreamRenderer` is internally used by `MediaElementAudioSourceNode` and

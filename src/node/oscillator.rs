@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
+use crate::events::EventType;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::periodic_wave::PeriodicWave;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
@@ -222,6 +223,7 @@ impl OscillatorNode {
                 phase: 0.,
                 started: false,
                 periodic_wave: None,
+                ended_triggered: false,
             };
 
             let node = Self {
@@ -321,10 +323,12 @@ struct OscillatorRenderer {
     receiver: Receiver<PeriodicWave>,
     /// current phase of the oscillator
     phase: f64,
-    // defines if the oscillator has started
+    /// defines if the oscillator has started
     started: bool,
-    // wavetable placeholder for custom oscillators
+    /// wavetable placeholder for custom oscillators
     periodic_wave: Option<PeriodicWave>,
+    /// defines if the `ended` events was already dispatched
+    ended_triggered: bool,
 }
 
 impl AudioProcessor for OscillatorRenderer {
@@ -358,6 +362,14 @@ impl AudioProcessor for OscillatorRenderer {
             return true;
         } else if stop_time < scope.current_time {
             output.make_silent();
+
+            // @note: we need this check because this is called a until the program
+            // ends, such as if the node was never removed from the graph
+            if !self.ended_triggered {
+                scope.send_event(EventType::Ended);
+                self.ended_triggered = true;
+            }
+
             return false;
         }
 

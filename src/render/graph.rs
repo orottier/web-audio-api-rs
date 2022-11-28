@@ -1,19 +1,20 @@
 //! The audio graph topology and render algorithm
+use std::cell::RefCell;
 
-use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeIndex};
-use crate::node::ChannelConfig;
-use crate::render::RenderScope;
-
+use crate::context::AudioNodeId;
 use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
-use std::cell::RefCell;
+
+use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum};
+use crate::node::ChannelConfig;
+use crate::render::RenderScope;
 
 /// Connection between two audio nodes
 struct OutgoingEdge {
     /// index of the current Nodes output port
     self_index: usize,
     /// reference to the other Node
-    other_id: NodeIndex,
+    other_id: AudioNodeId,
     /// index of the other Nodes input port
     other_index: usize,
 }
@@ -73,20 +74,20 @@ impl Node {
 /// The audio graph
 pub(crate) struct Graph {
     /// Processing Nodes
-    nodes: FxHashMap<NodeIndex, RefCell<Node>>,
+    nodes: FxHashMap<AudioNodeId, RefCell<Node>>,
     /// Allocator for audio buffers
     alloc: Alloc,
 
     /// Topological ordering of the nodes
-    ordered: Vec<NodeIndex>,
+    ordered: Vec<AudioNodeId>,
     /// Topological sorting helper
-    marked: Vec<NodeIndex>,
+    marked: Vec<AudioNodeId>,
     /// Topological sorting helper
-    marked_temp: Vec<NodeIndex>,
+    marked_temp: Vec<AudioNodeId>,
     /// Topological sorting helper
-    in_cycle: Vec<NodeIndex>,
+    in_cycle: Vec<AudioNodeId>,
     /// Topological sorting helper
-    cycle_breakers: Vec<NodeIndex>,
+    cycle_breakers: Vec<AudioNodeId>,
 }
 
 impl Graph {
@@ -104,7 +105,7 @@ impl Graph {
 
     pub fn add_node(
         &mut self,
-        index: NodeIndex,
+        index: AudioNodeId,
         processor: Box<dyn AudioProcessor>,
         number_of_inputs: usize,
         number_of_outputs: usize,
@@ -132,7 +133,7 @@ impl Graph {
         );
     }
 
-    pub fn add_edge(&mut self, source: (NodeIndex, usize), dest: (NodeIndex, usize)) {
+    pub fn add_edge(&mut self, source: (AudioNodeId, usize), dest: (AudioNodeId, usize)) {
         self.nodes
             .get_mut(&source.0)
             .unwrap_or_else(|| panic!("cannot connect {:?} to {:?}", source, dest))
@@ -147,7 +148,7 @@ impl Graph {
         self.ordered.clear(); // void current ordering
     }
 
-    pub fn remove_edge(&mut self, source: NodeIndex, dest: NodeIndex) {
+    pub fn remove_edge(&mut self, source: AudioNodeId, dest: AudioNodeId) {
         self.nodes
             .get_mut(&source)
             .unwrap_or_else(|| panic!("cannot remove the edge from {:?} to {:?}", source, dest))
@@ -158,7 +159,7 @@ impl Graph {
         self.ordered.clear(); // void current ordering
     }
 
-    pub fn remove_edges_from(&mut self, source: NodeIndex) {
+    pub fn remove_edges_from(&mut self, source: AudioNodeId) {
         self.nodes
             .get_mut(&source)
             .unwrap_or_else(|| panic!("cannot remove edges from {:?}", source))
@@ -175,7 +176,7 @@ impl Graph {
         self.ordered.clear(); // void current ordering
     }
 
-    pub fn mark_free_when_finished(&mut self, index: NodeIndex) {
+    pub fn mark_free_when_finished(&mut self, index: AudioNodeId) {
         // Issue #92, a race condition can occur for AudioParams. They may have already been
         // removed from the audio graph if the node they feed into was dropped.
         // Therefore, do not assume this node still exists:
@@ -184,7 +185,7 @@ impl Graph {
         }
     }
 
-    pub fn mark_cycle_breaker(&mut self, index: NodeIndex) {
+    pub fn mark_cycle_breaker(&mut self, index: AudioNodeId) {
         self.nodes.get_mut(&index).unwrap().get_mut().cycle_breaker = true;
     }
 
@@ -195,12 +196,12 @@ impl Graph {
     /// - false: visiting this leg was successful and no topological changes were applied
     fn visit(
         &self,
-        node_id: NodeIndex,
-        marked: &mut Vec<NodeIndex>,
-        marked_temp: &mut Vec<NodeIndex>,
-        ordered: &mut Vec<NodeIndex>,
-        in_cycle: &mut Vec<NodeIndex>,
-        cycle_breakers: &mut Vec<NodeIndex>,
+        node_id: AudioNodeId,
+        marked: &mut Vec<AudioNodeId>,
+        marked_temp: &mut Vec<AudioNodeId>,
+        ordered: &mut Vec<AudioNodeId>,
+        in_cycle: &mut Vec<AudioNodeId>,
+        cycle_breakers: &mut Vec<AudioNodeId>,
     ) -> bool {
         // If this node is in the cycle detection list, it is part of a cycle!
         if let Some(pos) = marked_temp.iter().position(|&m| m == node_id) {
@@ -378,6 +379,7 @@ impl Graph {
 
             // let the current node process
             let params = AudioParamValues::from(&*nodes);
+            scope.node_id.set(*index);
             let tail_time = node.process(params, scope);
 
             // iterate all outgoing edges, lookup these nodes and add to their input
@@ -443,7 +445,12 @@ impl Graph {
         }
 
         // Return the output buffer of destination node
-        self.nodes.get_mut(&NodeIndex(0)).unwrap().get_mut().outputs[0].clone()
+        self.nodes
+            .get_mut(&AudioNodeId(0))
+            .unwrap()
+            .get_mut()
+            .outputs[0]
+            .clone()
     }
 }
 
@@ -480,35 +487,35 @@ mod tests {
         let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(3), node, 1, 1, config());
+        graph.add_node(AudioNodeId(0), node.clone(), 1, 1, config());
+        graph.add_node(AudioNodeId(1), node.clone(), 1, 1, config());
+        graph.add_node(AudioNodeId(2), node.clone(), 1, 1, config());
+        graph.add_node(AudioNodeId(3), node, 1, 1, config());
 
-        graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
-        graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
-        graph.add_edge((NodeIndex(3), 0), (NodeIndex(0), 0));
+        graph.add_edge((AudioNodeId(1), 0), (AudioNodeId(0), 0));
+        graph.add_edge((AudioNodeId(2), 0), (AudioNodeId(1), 0));
+        graph.add_edge((AudioNodeId(3), 0), (AudioNodeId(0), 0));
 
         graph.order_nodes();
 
         // sorting is not deterministic, but this should uphold:
         assert_eq!(graph.ordered.len(), 4); // all nodes present
-        assert_eq!(graph.ordered[3], NodeIndex(0)); // root node comes last
+        assert_eq!(graph.ordered[3], AudioNodeId(0)); // root node comes last
 
         let pos1 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(1))
+            .position(|&n| n == AudioNodeId(1))
             .unwrap();
         let pos2 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(2))
+            .position(|&n| n == AudioNodeId(2))
             .unwrap();
         assert!(pos2 < pos1); // node 1 depends on node 2
 
         // Detach node 1 (and thus node 2) from the root node
-        graph.remove_edge(NodeIndex(1), NodeIndex(0));
+        graph.remove_edge(AudioNodeId(1), AudioNodeId(0));
         graph.order_nodes();
 
         // sorting is not deterministic, but this should uphold:
@@ -516,12 +523,12 @@ mod tests {
         let pos1 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(1))
+            .position(|&n| n == AudioNodeId(1))
             .unwrap();
         let pos2 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(2))
+            .position(|&n| n == AudioNodeId(2))
             .unwrap();
         assert!(pos2 < pos1); // node 1 depends on node 2
     }
@@ -531,23 +538,23 @@ mod tests {
         let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(2), node, 1, 1, config());
+        graph.add_node(AudioNodeId(0), node.clone(), 1, 1, config());
+        graph.add_node(AudioNodeId(1), node.clone(), 1, 1, config());
+        graph.add_node(AudioNodeId(2), node, 1, 1, config());
 
         // link 1->0, 1->2 and 2->0
-        graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
-        graph.add_edge((NodeIndex(1), 0), (NodeIndex(2), 0));
-        graph.add_edge((NodeIndex(2), 0), (NodeIndex(0), 0));
+        graph.add_edge((AudioNodeId(1), 0), (AudioNodeId(0), 0));
+        graph.add_edge((AudioNodeId(1), 0), (AudioNodeId(2), 0));
+        graph.add_edge((AudioNodeId(2), 0), (AudioNodeId(0), 0));
 
         graph.order_nodes();
 
         assert_eq!(
             graph.ordered,
-            vec![NodeIndex(1), NodeIndex(2), NodeIndex(0)]
+            vec![AudioNodeId(1), AudioNodeId(2), AudioNodeId(0)]
         );
 
-        graph.remove_edges_from(NodeIndex(1));
+        graph.remove_edges_from(AudioNodeId(1));
         graph.order_nodes();
 
         // sorting is not deterministic, but this should uphold:
@@ -555,12 +562,12 @@ mod tests {
         let pos0 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(0))
+            .position(|&n| n == AudioNodeId(0))
             .unwrap();
         let pos2 = graph
             .ordered
             .iter()
-            .position(|&n| n == NodeIndex(2))
+            .position(|&n| n == AudioNodeId(2))
             .unwrap();
         assert!(pos2 < pos0); // node 1 depends on node 0
     }
@@ -570,26 +577,26 @@ mod tests {
         let mut graph = Graph::new();
 
         let node = Box::new(TestNode {});
-        graph.add_node(NodeIndex(0), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(1), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(2), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(3), node.clone(), 1, 1, config());
-        graph.add_node(NodeIndex(4), node, 1, 1, config());
+        graph.add_node(AudioNodeId(0), node.clone(), 1, 1, config());
+        graph.add_node(AudioNodeId(1), node.clone(), 1, 1, config());
+        graph.add_node(AudioNodeId(2), node.clone(), 1, 1, config());
+        graph.add_node(AudioNodeId(3), node.clone(), 1, 1, config());
+        graph.add_node(AudioNodeId(4), node, 1, 1, config());
 
         // link 4->2, 2->1, 1->0, 1->2, 3->0
-        graph.add_edge((NodeIndex(4), 0), (NodeIndex(2), 0));
-        graph.add_edge((NodeIndex(2), 0), (NodeIndex(1), 0));
-        graph.add_edge((NodeIndex(1), 0), (NodeIndex(0), 0));
-        graph.add_edge((NodeIndex(1), 0), (NodeIndex(2), 0));
-        graph.add_edge((NodeIndex(3), 0), (NodeIndex(0), 0));
+        graph.add_edge((AudioNodeId(4), 0), (AudioNodeId(2), 0));
+        graph.add_edge((AudioNodeId(2), 0), (AudioNodeId(1), 0));
+        graph.add_edge((AudioNodeId(1), 0), (AudioNodeId(0), 0));
+        graph.add_edge((AudioNodeId(1), 0), (AudioNodeId(2), 0));
+        graph.add_edge((AudioNodeId(3), 0), (AudioNodeId(0), 0));
 
         graph.order_nodes();
 
-        let pos0 = graph.ordered.iter().position(|&n| n == NodeIndex(0));
-        let pos1 = graph.ordered.iter().position(|&n| n == NodeIndex(1));
-        let pos2 = graph.ordered.iter().position(|&n| n == NodeIndex(2));
-        let pos3 = graph.ordered.iter().position(|&n| n == NodeIndex(3));
-        let pos4 = graph.ordered.iter().position(|&n| n == NodeIndex(4));
+        let pos0 = graph.ordered.iter().position(|&n| n == AudioNodeId(0));
+        let pos1 = graph.ordered.iter().position(|&n| n == AudioNodeId(1));
+        let pos2 = graph.ordered.iter().position(|&n| n == AudioNodeId(2));
+        let pos3 = graph.ordered.iter().position(|&n| n == AudioNodeId(3));
+        let pos4 = graph.ordered.iter().position(|&n| n == AudioNodeId(4));
 
         // cycle 1<>2 should be removed
         assert_eq!(pos1, None);

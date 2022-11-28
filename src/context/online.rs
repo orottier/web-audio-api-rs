@@ -156,6 +156,7 @@ impl AudioContext {
             frames_played,
             ctrl_msg_send,
             load_value_recv,
+            event_recv,
         } = control_thread_init;
 
         let graph = crate::render::graph::Graph::new();
@@ -167,6 +168,7 @@ impl AudioContext {
             backend.number_of_channels(),
             frames_played,
             ctrl_msg_send,
+            Some(event_recv),
             false,
         );
         base.set_state(AudioContextState::Running);

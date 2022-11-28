@@ -2,8 +2,8 @@
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::context::{
-    AudioContextRegistration, AudioContextState, AudioNodeId, AudioParamId,
-    ConcreteBaseAudioContext, DESTINATION_NODE_ID,
+    AudioContextRegistration, AudioContextState, AudioParamId, ConcreteBaseAudioContext,
+    DESTINATION_NODE_ID,
 };
 use crate::media::MediaDecoder;
 use crate::node::{AudioNode, ChannelConfigOptions};
@@ -245,7 +245,7 @@ pub trait BaseAudioContext {
     #[must_use]
     fn destination(&self) -> node::AudioDestinationNode {
         let registration = AudioContextRegistration {
-            id: AudioNodeId(DESTINATION_NODE_ID),
+            id: DESTINATION_NODE_ID,
             context: self.base().clone(),
         };
         let channel_config = self.base().destination_channel_config();
@@ -302,7 +302,7 @@ pub trait BaseAudioContext {
     #[cfg(test)]
     fn mock_registration(&self) -> AudioContextRegistration {
         AudioContextRegistration {
-            id: AudioNodeId(0),
+            id: crate::context::AudioNodeId(0),
             context: self.base().clone(),
         }
     }

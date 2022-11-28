@@ -1,13 +1,16 @@
 //! Communicates with the control thread and ships audio samples to the hardware
 
+use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
 use crossbeam_channel::{Receiver, Sender};
 
-use super::{AudioRenderQuantum, NodeIndex};
+use super::AudioRenderQuantum;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
+use crate::context::AudioNodeId;
+use crate::events::TriggerEventMessage;
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::RenderScope;
@@ -24,6 +27,7 @@ pub(crate) struct RenderThread {
     receiver: Option<Receiver<ControlMessage>>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
+    event_sender: Option<Sender<TriggerEventMessage>>,
 }
 
 // SAFETY:
@@ -44,6 +48,7 @@ impl RenderThread {
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
         load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
+        event_sender: Option<Sender<TriggerEventMessage>>,
     ) -> Self {
         Self {
             graph: None,
@@ -53,6 +58,7 @@ impl RenderThread {
             receiver: Some(receiver),
             buffer_offset: None,
             load_value_sender,
+            event_sender,
         }
     }
 
@@ -67,14 +73,14 @@ impl RenderThread {
 
             match msg {
                 RegisterNode {
-                    id,
+                    id: node_id,
                     node,
                     inputs,
                     outputs,
                     channel_config,
                 } => {
                     self.graph.as_mut().unwrap().add_node(
-                        NodeIndex(id),
+                        node_id,
                         node,
                         inputs,
                         outputs,
@@ -90,34 +96,22 @@ impl RenderThread {
                     self.graph
                         .as_mut()
                         .unwrap()
-                        .add_edge((NodeIndex(from), output), (NodeIndex(to), input));
+                        .add_edge((from, output), (to, input));
                 }
                 DisconnectNode { from, to } => {
-                    self.graph
-                        .as_mut()
-                        .unwrap()
-                        .remove_edge(NodeIndex(from), NodeIndex(to));
+                    self.graph.as_mut().unwrap().remove_edge(from, to);
                 }
                 DisconnectAll { from } => {
-                    self.graph
-                        .as_mut()
-                        .unwrap()
-                        .remove_edges_from(NodeIndex(from));
+                    self.graph.as_mut().unwrap().remove_edges_from(from);
                 }
                 FreeWhenFinished { id } => {
-                    self.graph
-                        .as_mut()
-                        .unwrap()
-                        .mark_free_when_finished(NodeIndex(id));
+                    self.graph.as_mut().unwrap().mark_free_when_finished(id);
                 }
                 AudioParamEvent { to, event } => {
                     to.send(event).expect("Audioparam disappeared unexpectedly")
                 }
                 MarkCycleBreaker { id } => {
-                    self.graph
-                        .as_mut()
-                        .unwrap()
-                        .mark_cycle_breaker(NodeIndex(id));
+                    self.graph.as_mut().unwrap().mark_cycle_breaker(id);
                 }
                 Shutdown { sender } => {
                     let _ = sender.send(self.graph.take().unwrap());
@@ -158,6 +152,8 @@ impl RenderThread {
                 current_frame,
                 current_time,
                 sample_rate: self.sample_rate,
+                event_sender: self.event_sender.clone(),
+                node_id: Cell::new(AudioNodeId(0)), // placeholder value
             };
 
             // render audio graph
@@ -246,6 +242,8 @@ impl RenderThread {
                 current_frame,
                 current_time,
                 sample_rate: self.sample_rate,
+                event_sender: self.event_sender.clone(),
+                node_id: Cell::new(AudioNodeId(0)), // placeholder value
             };
 
             // render audio graph
