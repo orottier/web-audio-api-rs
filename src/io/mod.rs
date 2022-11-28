@@ -7,7 +7,7 @@ use crossbeam_channel::{Receiver, Sender};
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
-use crate::events::TriggerEventMessage;
+use crate::events::Event;
 use crate::message::ControlMessage;
 use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
@@ -52,7 +52,7 @@ pub(crate) struct ControlThreadInit {
     pub frames_played: Arc<AtomicU64>,
     pub ctrl_msg_send: Sender<ControlMessage>,
     pub load_value_recv: Receiver<AudioRenderCapacityLoad>,
-    pub event_recv: Receiver<TriggerEventMessage>,
+    pub event_recv: Receiver<Event>,
 }
 
 #[derive(Clone, Debug)]
@@ -60,7 +60,7 @@ pub(crate) struct RenderThreadInit {
     pub frames_played: Arc<AtomicU64>,
     pub ctrl_msg_recv: Receiver<ControlMessage>,
     pub load_value_send: Sender<AudioRenderCapacityLoad>,
-    pub event_send: Sender<TriggerEventMessage>,
+    pub event_send: Sender<Event>,
 }
 
 pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {

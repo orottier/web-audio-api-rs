@@ -1,6 +1,5 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Scheduler;
-use crate::events::EventType;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::RENDER_QUANTUM_SIZE;
@@ -194,7 +193,7 @@ impl AudioProcessor for ConstantSourceRenderer {
             // @note: we need this check because this is called a until the program
             // ends, such as if the node was never removed from the graph
             if !self.ended_triggered {
-                scope.send_event(EventType::Ended);
+                scope.send_ended_event();
                 self.ended_triggered = true;
             }
         }

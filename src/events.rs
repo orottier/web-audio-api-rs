@@ -3,8 +3,8 @@ use crossbeam_channel::Receiver;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum EventType {
-    Ended,
+pub(crate) enum Event {
+    Ended(AudioNodeId),
 }
 
 pub(crate) enum Callback {
@@ -22,19 +22,8 @@ impl Callback {
 }
 
 pub(crate) struct EventHandler {
-    // could be optional meaning that its a context event (cf. onSinkChange, onStateChange, etc.)
-    pub node_id: AudioNodeId,
-    pub event_type: EventType,
+    pub event: Event,
     pub callback: Callback,
-}
-
-#[derive(Debug)]
-pub(crate) struct TriggerEventMessage {
-    // could be Option w/ None meaning that its a context event
-    pub node_id: AudioNodeId,
-    // could be Option w/ None meaning the node is dropped on the render thread
-    // and listeners can be cleared
-    pub event_type: EventType,
 }
 
 #[derive(Clone, Default)]
@@ -47,7 +36,7 @@ impl EventLoop {
         Self::default()
     }
 
-    pub fn run(&self, event_channel: Receiver<TriggerEventMessage>) {
+    pub fn run(&self, event_channel: Receiver<Event>) {
         let self_clone = self.clone();
 
         std::thread::spawn(move || loop {
@@ -59,9 +48,7 @@ impl EventLoop {
                 let mut i = 0;
                 while i < handlers.len() {
                     let handler = &mut handlers[i];
-                    if handler.node_id != message.node_id
-                        || handler.event_type != message.event_type
-                    {
+                    if handler.event != message {
                         i += 1;
                         continue;
                     }
