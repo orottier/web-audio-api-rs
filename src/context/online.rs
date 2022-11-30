@@ -8,6 +8,8 @@ use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
 use crate::AudioRenderCapacity;
 
+use crate::events::{Callback, Event};
+use crossbeam_channel::Sender;
 use std::error::Error;
 use std::sync::Mutex;
 
@@ -102,6 +104,8 @@ pub struct AudioContext {
     render_capacity: AudioRenderCapacity,
     /// Initializer for the render thread (when restart is required)
     render_thread_init: RenderThreadInit,
+    /// Sender for events that will be handled by the EventLoop
+    event_send: Sender<Event>,
 }
 
 impl BaseAudioContext for AudioContext {
@@ -156,6 +160,7 @@ impl AudioContext {
             frames_played,
             ctrl_msg_send,
             load_value_recv,
+            event_send,
             event_recv,
         } = control_thread_init;
 
@@ -182,6 +187,7 @@ impl AudioContext {
             backend_manager: Mutex::new(backend),
             render_capacity,
             render_thread_init,
+            event_send,
         }
     }
 
@@ -299,7 +305,17 @@ impl AudioContext {
         // explicitly release the lock to prevent concurrent render threads
         drop(backend_manager_guard);
 
+        // trigger event when all the work is done
+        let _ = self.event_send.send(Event::SinkChanged);
+
         Ok(())
+    }
+
+    pub fn onsinkchange<F: FnMut() + Send + 'static>(&self, callback: F) {
+        self.base().register_event_handler(
+            crate::events::Event::SinkChanged,
+            Callback::Multiple(Box::new(callback)),
+        );
     }
 
     /// Suspends the progression of time in the audio context.

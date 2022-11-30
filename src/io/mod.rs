@@ -52,6 +52,7 @@ pub(crate) struct ControlThreadInit {
     pub frames_played: Arc<AtomicU64>,
     pub ctrl_msg_send: Sender<ControlMessage>,
     pub load_value_recv: Receiver<AudioRenderCapacityLoad>,
+    pub event_send: Sender<Event>,
     pub event_recv: Receiver<Event>,
 }
 
@@ -71,13 +72,13 @@ pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
     // communication channel for render load values
     let (load_value_send, load_value_recv) = crossbeam_channel::bounded(1);
     // communication channel for events for render thread to control thread
-    // (?) fixed sized to prevent allocating memory in render thread
-    let (event_send, event_recv) = crossbeam_channel::bounded(64);
+    let (event_send, event_recv) = crossbeam_channel::unbounded();
 
     let control_thread_init = ControlThreadInit {
         frames_played: frames_played.clone(),
         ctrl_msg_send,
         load_value_recv,
+        event_send: event_send.clone(),
         event_recv,
     };
 

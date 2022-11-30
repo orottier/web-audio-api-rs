@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Event {
     Ended(AudioNodeId),
+    SinkChanged,
 }
 
 pub(crate) enum Callback {
@@ -54,6 +55,7 @@ impl EventLoop {
                     }
                     if let Callback::Multiple(f) = &mut handler.callback {
                         (f)();
+                        i += 1;
                     } else {
                         let handler = handlers.remove(i);
                         handler.callback.run();
