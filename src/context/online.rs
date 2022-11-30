@@ -311,6 +311,10 @@ impl AudioContext {
         Ok(())
     }
 
+    /// Register callback to run when the audio sink has changed
+    ///
+    /// Calling this function multiple times will accumulate all event handlers. It is currently
+    /// not possible to remove an event handler.
     pub fn onsinkchange<F: FnMut() + Send + 'static>(&self, callback: F) {
         self.base().register_event_handler(
             crate::events::Event::SinkChanged,
