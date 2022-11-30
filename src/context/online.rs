@@ -234,10 +234,13 @@ impl AudioContext {
         };
 
         let mut backend_manager_guard = self.backend_manager.lock().unwrap();
-        let state = self.state();
-        if state == AudioContextState::Closed {
+        let original_state = self.state();
+        if original_state == AudioContextState::Closed {
             return Ok(());
         }
+
+        // Temporarily set the state to Suspended, resume after the new backend is up
+        self.base().set_state(AudioContextState::Suspended);
 
         // Acquire exclusive lock on ctrl msg sender
         let ctrl_msg_send = self.base.lock_control_msg_sender();
@@ -259,7 +262,7 @@ impl AudioContext {
             let (graph_send, graph_recv) = crossbeam_channel::bounded(1);
             let message = ControlMessage::Shutdown { sender: graph_send };
             ctrl_msg_send.send(message).unwrap();
-            if state == AudioContextState::Suspended {
+            if original_state == AudioContextState::Suspended {
                 // We must wake up the render thread to be able to handle the shutdown.
                 // No new audio will be produced because it will receive the shutdown command first.
                 backend_manager_guard.resume();
@@ -276,7 +279,7 @@ impl AudioContext {
         *backend_manager_guard = io::build_output(options, self.render_thread_init.clone());
 
         // if the previous backend state was suspend, suspend the new one before shipping the graph
-        if state == AudioContextState::Suspended {
+        if original_state == AudioContextState::Suspended {
             backend_manager_guard.suspend();
         }
 
@@ -284,7 +287,9 @@ impl AudioContext {
         let message = ControlMessage::Startup { graph };
         ctrl_msg_send.send(message).unwrap();
 
-        self.base().set_state(AudioContextState::Running);
+        if original_state == AudioContextState::Running {
+            self.base().set_state(AudioContextState::Running);
+        }
 
         // flush the cached msgs
         pending_msgs
