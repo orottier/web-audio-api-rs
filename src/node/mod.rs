@@ -362,6 +362,7 @@ pub trait AudioScheduledSourceNode: AudioNode {
     /// Calling this function multiple times will accumulate all event handlers. It is currently
     /// not possible to remove an event handler.
     fn onended<F: FnOnce() + Send + 'static>(&self, callback: F) {
+        let callback = |_| callback();
         self.context().register_event_handler(
             crate::events::Event::Ended(self.registration().id()),
             Callback::Once(Box::new(callback)),

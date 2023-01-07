@@ -9,7 +9,6 @@ use crate::node::{self, ChannelConfigOptions};
 use crate::AudioRenderCapacity;
 
 use crate::events::{Callback, Event};
-use crossbeam_channel::Sender;
 use std::error::Error;
 use std::sync::Mutex;
 
@@ -94,8 +93,6 @@ pub struct AudioContext {
     render_capacity: AudioRenderCapacity,
     /// Initializer for the render thread (when restart is required)
     render_thread_init: RenderThreadInit,
-    /// Sender for events that will be handled by the EventLoop
-    event_send: Sender<Event>,
 }
 
 impl BaseAudioContext for AudioContext {
@@ -163,7 +160,7 @@ impl AudioContext {
             backend.number_of_channels(),
             frames_played,
             ctrl_msg_send,
-            Some(event_recv),
+            Some((event_send, event_recv)),
             false,
         );
         base.set_state(AudioContextState::Running);
@@ -177,7 +174,6 @@ impl AudioContext {
             backend_manager: Mutex::new(backend),
             render_capacity,
             render_thread_init,
-            event_send,
         }
     }
 
@@ -296,7 +292,7 @@ impl AudioContext {
         drop(backend_manager_guard);
 
         // trigger event when all the work is done
-        let _ = self.event_send.send(Event::SinkChanged);
+        let _ = self.base.send_event(Event::SinkChanged);
 
         Ok(())
     }
@@ -305,7 +301,8 @@ impl AudioContext {
     ///
     /// Calling this function multiple times will accumulate all event handlers. It is currently
     /// not possible to remove an event handler.
-    pub fn onsinkchange<F: FnMut() + Send + 'static>(&self, callback: F) {
+    pub fn onsinkchange<F: FnMut() + Send + 'static>(&self, mut callback: F) {
+        let callback = move |_| callback();
         self.base().register_event_handler(
             crate::events::Event::SinkChanged,
             Callback::Multiple(Box::new(callback)),
@@ -366,7 +363,7 @@ impl AudioContext {
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn close_sync(&self) {
         self.backend_manager.lock().unwrap().close();
-
+        self.render_capacity.stop();
         self.base().set_state(AudioContextState::Closed);
     }
 

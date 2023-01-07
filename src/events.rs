@@ -1,23 +1,38 @@
 use crate::context::AudioNodeId;
+use crate::AudioRenderCapacityEvent;
 use crossbeam_channel::Receiver;
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) enum Event {
     Ended(AudioNodeId),
     SinkChanged,
+    RenderCapacity(AudioRenderCapacityEvent),
+}
+
+impl PartialEq for Event {
+    fn eq(&self, other: &Self) -> bool {
+        use Event::*;
+
+        match (&self, other) {
+            (Ended(s), Ended(o)) => s.eq(o),
+            (SinkChanged, SinkChanged) => true,
+            (RenderCapacity(_), RenderCapacity(_)) => true,
+            _ => false,
+        }
+    }
 }
 
 pub(crate) enum Callback {
-    Once(Box<dyn FnOnce() + Send + 'static>),
-    Multiple(Box<dyn FnMut() + Send + 'static>),
+    Once(Box<dyn FnOnce(Event) + Send + 'static>),
+    Multiple(Box<dyn FnMut(Event) + Send + 'static>),
 }
 
 impl Callback {
-    fn run(self) {
+    fn run(self, event: Event) {
         match self {
-            Self::Once(f) => (f)(),
-            Self::Multiple(mut f) => (f)(),
+            Self::Once(f) => (f)(event),
+            Self::Multiple(mut f) => (f)(event),
         }
     }
 }
@@ -54,11 +69,11 @@ impl EventLoop {
                         continue;
                     }
                     if let Callback::Multiple(f) = &mut handler.callback {
-                        (f)();
+                        (f)(message.clone());
                         i += 1;
                     } else {
                         let handler = handlers.remove(i);
-                        handler.callback.run();
+                        handler.callback.run(message.clone());
                     }
                 }
             }
