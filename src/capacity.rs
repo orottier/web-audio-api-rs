@@ -2,7 +2,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
-use crate::events::{Callback, Event};
+use crate::events::{Event, EventHandler};
 
 #[derive(Copy, Clone)]
 pub(crate) struct AudioRenderCapacityLoad {
@@ -170,8 +170,8 @@ impl AudioRenderCapacity {
 
     /// The EventHandler for [`AudioRenderCapacityEvent`].
     ///
-    /// Calling this function multiple times will accumulate all event handlers. It is currently
-    /// not possible to remove an event handler.
+    /// Only a single event handler is active at any time. Calling this method multiple times will
+    /// override the previous event handler.
     pub fn onupdate<F: FnMut(AudioRenderCapacityEvent) + Send + 'static>(&self, mut callback: F) {
         let callback = move |event: Event| match event {
             Event::RenderCapacity(payload) => callback(payload),
@@ -180,7 +180,7 @@ impl AudioRenderCapacity {
 
         self.context.register_event_handler(
             crate::events::Event::RenderCapacity(Default::default()),
-            Callback::Multiple(Box::new(callback)),
+            EventHandler::Multiple(Box::new(callback)),
         );
     }
 }

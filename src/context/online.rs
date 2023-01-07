@@ -8,7 +8,7 @@ use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
 use crate::AudioRenderCapacity;
 
-use crate::events::{Callback, Event};
+use crate::events::{Event, EventHandler};
 use std::error::Error;
 use std::sync::Mutex;
 
@@ -299,13 +299,13 @@ impl AudioContext {
 
     /// Register callback to run when the audio sink has changed
     ///
-    /// Calling this function multiple times will accumulate all event handlers. It is currently
-    /// not possible to remove an event handler.
+    /// Only a single event handler is active at any time. Calling this method multiple times will
+    /// override the previous event handler.
     pub fn onsinkchange<F: FnMut() + Send + 'static>(&self, mut callback: F) {
         let callback = move |_| callback();
         self.base().register_event_handler(
             crate::events::Event::SinkChanged,
-            Callback::Multiple(Box::new(callback)),
+            EventHandler::Multiple(Box::new(callback)),
         );
     }
 

@@ -46,7 +46,7 @@ pub use panner::*;
 mod stereo_panner;
 pub use stereo_panner::*;
 mod waveshaper;
-use crate::events::Callback;
+use crate::events::EventHandler;
 pub use waveshaper::*;
 
 pub(crate) const TABLE_LENGTH_USIZE: usize = 8192;
@@ -359,13 +359,13 @@ pub trait AudioScheduledSourceNode: AudioNode {
     /// determined by stop() is reached. For an [`AudioBufferSourceNode`], the event is also
     /// dispatched because the duration has been reached or if the entire buffer has been played.
     ///
-    /// Calling this function multiple times will accumulate all event handlers. It is currently
-    /// not possible to remove an event handler.
+    /// Only a single event handler is active at any time. Calling this method multiple times will
+    /// override the previous event handler.
     fn onended<F: FnOnce() + Send + 'static>(&self, callback: F) {
         let callback = |_| callback();
         self.context().register_event_handler(
             crate::events::Event::Ended(self.registration().id()),
-            Callback::Once(Box::new(callback)),
+            EventHandler::Once(Box::new(callback)),
         );
     }
 }
