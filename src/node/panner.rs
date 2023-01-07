@@ -667,7 +667,7 @@ impl AudioProcessor for PannerRenderer {
                     } = spatial_params;
 
                     // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
-                    let mut azimuth = azimuth.max(-180.).min(180.);
+                    let mut azimuth = azimuth.clamp(-180., 180.);
 
                     // Then wrap to range [-90, 90].
                     if azimuth < -90. {
@@ -757,7 +757,7 @@ impl PannerRenderer {
                 let max_distance = self.max_distance.load();
                 let d2ref = ref_distance.min(max_distance);
                 let d2max = ref_distance.max(max_distance);
-                let d_clamped = distance.min(d2max).max(d2ref);
+                let d_clamped = distance.clamp(d2ref, d2max);
                 1. - rolloff_factor * (d_clamped - d2ref) / (d2max - d2ref)
             }
             DistanceModelType::Inverse => {

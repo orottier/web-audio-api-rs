@@ -65,7 +65,7 @@ impl Default for AudioContextLatencyCategory {
 ///     sample_rate: Some(44100.),
 ///     ..AudioContextOptions::default()
 /// };
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct AudioContextOptions {
     /// Identify the type of playback, which affects tradeoffs between audio output latency and
     /// power consumption.
@@ -79,16 +79,6 @@ pub struct AudioContextOptions {
     /// - use `"none"` to process the audio graph without playing through an audio output device.
     /// - use `"sinkId"` to use the specified audio sink id, obtained with [`enumerate_devices`]
     pub sink_id: String,
-}
-
-impl Default for AudioContextOptions {
-    fn default() -> Self {
-        Self {
-            latency_hint: AudioContextLatencyCategory::default(),
-            sample_rate: None,
-            sink_id: String::from(""),
-        }
-    }
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time

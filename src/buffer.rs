@@ -169,7 +169,7 @@ impl AudioBuffer {
         // Then the number of frames copied from buffer to destination is max(0,min(𝑁𝑏−𝑘,𝑁𝑓)).
         // If this is less than 𝑁𝑓, then the remaining elements of destination are not modified.
         let dest_length = destination.len();
-        let max_frame = (self.length() - offset).min(dest_length).max(0);
+        let max_frame = (self.length() - offset).clamp(0, dest_length);
         let channel = self.channel_data(channel_number).as_slice();
 
         destination[..max_frame].copy_from_slice(&channel[offset..(max_frame + offset)]);
@@ -206,7 +206,7 @@ impl AudioBuffer {
         // the number of frames copied from source to the buffer is max(0,min(𝑁𝑏−𝑘,𝑁𝑓)).
         // If this is less than 𝑁𝑓, then the remaining elements of buffer are not modified.
         let src_len = source.len();
-        let max_frame = (self.length() - offset).min(src_len).max(0);
+        let max_frame = (self.length() - offset).clamp(0, src_len);
         let channel = self.channel_data_mut(channel_number).as_mut_slice();
 
         channel[offset..(max_frame + offset)].copy_from_slice(&source[..max_frame]);

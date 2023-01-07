@@ -228,7 +228,7 @@ fn poll_frequency_graph(
     width: u16,
     height: u16,
 ) -> ! {
-    let bin_count = analyser.frequency_bin_count() as usize;
+    let bin_count = analyser.frequency_bin_count();
     let mut freq_buffer = Some(vec![0.; bin_count]);
 
     loop {
