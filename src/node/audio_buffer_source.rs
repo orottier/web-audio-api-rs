@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::control::Controller;
-use crate::events::EventType;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::RENDER_QUANTUM_SIZE;
@@ -409,7 +408,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             // @note: we need this check because this is called a until the program
             // ends, such as if the node was never removed from the graph
             if !self.ended_triggered {
-                scope.send_event(EventType::Ended);
+                scope.send_ended_event();
                 self.ended_triggered = true;
             }
             return false;
@@ -420,7 +419,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
                 output.make_silent(); // also converts to mono
                 if !self.ended_triggered {
-                    scope.send_event(EventType::Ended);
+                    scope.send_ended_event();
                     self.ended_triggered = true;
                 }
                 return false;
@@ -429,7 +428,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             if computed_playback_rate < 0. && self.render_state.buffer_time < 0. {
                 output.make_silent(); // also converts to mono
                 if !self.ended_triggered {
-                    scope.send_event(EventType::Ended);
+                    scope.send_ended_event();
                     self.ended_triggered = true;
                 }
                 return false;

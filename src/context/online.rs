@@ -8,6 +8,8 @@ use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
 use crate::AudioRenderCapacity;
 
+use crate::events::{Callback, Event};
+use crossbeam_channel::Sender;
 use std::error::Error;
 use std::sync::Mutex;
 
@@ -102,6 +104,8 @@ pub struct AudioContext {
     render_capacity: AudioRenderCapacity,
     /// Initializer for the render thread (when restart is required)
     render_thread_init: RenderThreadInit,
+    /// Sender for events that will be handled by the EventLoop
+    event_send: Sender<Event>,
 }
 
 impl BaseAudioContext for AudioContext {
@@ -156,6 +160,7 @@ impl AudioContext {
             frames_played,
             ctrl_msg_send,
             load_value_recv,
+            event_send,
             event_recv,
         } = control_thread_init;
 
@@ -182,6 +187,7 @@ impl AudioContext {
             backend_manager: Mutex::new(backend),
             render_capacity,
             render_thread_init,
+            event_send,
         }
     }
 
@@ -234,10 +240,13 @@ impl AudioContext {
         };
 
         let mut backend_manager_guard = self.backend_manager.lock().unwrap();
-        let state = self.state();
-        if state == AudioContextState::Closed {
+        let original_state = self.state();
+        if original_state == AudioContextState::Closed {
             return Ok(());
         }
+
+        // Temporarily set the state to Suspended, resume after the new backend is up
+        self.base().set_state(AudioContextState::Suspended);
 
         // Acquire exclusive lock on ctrl msg sender
         let ctrl_msg_send = self.base.lock_control_msg_sender();
@@ -259,7 +268,7 @@ impl AudioContext {
             let (graph_send, graph_recv) = crossbeam_channel::bounded(1);
             let message = ControlMessage::Shutdown { sender: graph_send };
             ctrl_msg_send.send(message).unwrap();
-            if state == AudioContextState::Suspended {
+            if original_state == AudioContextState::Suspended {
                 // We must wake up the render thread to be able to handle the shutdown.
                 // No new audio will be produced because it will receive the shutdown command first.
                 backend_manager_guard.resume();
@@ -276,7 +285,7 @@ impl AudioContext {
         *backend_manager_guard = io::build_output(options, self.render_thread_init.clone());
 
         // if the previous backend state was suspend, suspend the new one before shipping the graph
-        if state == AudioContextState::Suspended {
+        if original_state == AudioContextState::Suspended {
             backend_manager_guard.suspend();
         }
 
@@ -284,7 +293,9 @@ impl AudioContext {
         let message = ControlMessage::Startup { graph };
         ctrl_msg_send.send(message).unwrap();
 
-        self.base().set_state(AudioContextState::Running);
+        if original_state == AudioContextState::Running {
+            self.base().set_state(AudioContextState::Running);
+        }
 
         // flush the cached msgs
         pending_msgs
@@ -294,7 +305,21 @@ impl AudioContext {
         // explicitly release the lock to prevent concurrent render threads
         drop(backend_manager_guard);
 
+        // trigger event when all the work is done
+        let _ = self.event_send.send(Event::SinkChanged);
+
         Ok(())
+    }
+
+    /// Register callback to run when the audio sink has changed
+    ///
+    /// Calling this function multiple times will accumulate all event handlers. It is currently
+    /// not possible to remove an event handler.
+    pub fn onsinkchange<F: FnMut() + Send + 'static>(&self, callback: F) {
+        self.base().register_event_handler(
+            crate::events::Event::SinkChanged,
+            Callback::Multiple(Box::new(callback)),
+        );
     }
 
     /// Suspends the progression of time in the audio context.

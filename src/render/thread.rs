@@ -10,7 +10,7 @@ use crossbeam_channel::{Receiver, Sender};
 use super::AudioRenderQuantum;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::context::AudioNodeId;
-use crate::events::TriggerEventMessage;
+use crate::events::Event;
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::RenderScope;
@@ -27,7 +27,7 @@ pub(crate) struct RenderThread {
     receiver: Option<Receiver<ControlMessage>>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
-    event_sender: Option<Sender<TriggerEventMessage>>,
+    event_sender: Option<Sender<Event>>,
 }
 
 // SAFETY:
@@ -48,7 +48,7 @@ impl RenderThread {
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
         load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
-        event_sender: Option<Sender<TriggerEventMessage>>,
+        event_sender: Option<Sender<Event>>,
     ) -> Self {
         Self {
             graph: None,

@@ -17,7 +17,7 @@ fn main() {
 
     // @todo - should receive an event
     src.onended(|| {
-        println!("> Ended event trigerred!");
+        println!("> Ended event triggered!");
     });
 
     let now = audio_context.current_time();

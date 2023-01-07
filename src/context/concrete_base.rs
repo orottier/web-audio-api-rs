@@ -4,7 +4,7 @@ use crate::context::{
     AudioContextRegistration, AudioContextState, AudioNodeId, BaseAudioContext,
     DESTINATION_NODE_ID, LISTENER_NODE_ID, LISTENER_PARAM_IDS,
 };
-use crate::events::{EventHandler, EventType, TriggerEventMessage};
+use crate::events::{Callback, Event, EventHandler, EventLoop};
 use crate::message::ControlMessage;
 use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamEvent};
@@ -66,7 +66,7 @@ struct ConcreteBaseAudioContextInner {
     /// Describes the current state of the `ConcreteBaseAudioContext`
     state: AtomicU8,
     /// Stores the event handlers
-    event_handlers: Arc<Mutex<Vec<EventHandler>>>,
+    event_loop: EventLoop,
 }
 
 impl BaseAudioContext for ConcreteBaseAudioContext {
@@ -122,9 +122,11 @@ impl ConcreteBaseAudioContext {
         max_channel_count: usize,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
-        event_channel: Option<Receiver<TriggerEventMessage>>,
+        event_channel: Option<Receiver<Event>>,
         offline: bool,
     ) -> Self {
+        let event_loop = EventLoop::new();
+
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             max_channel_count,
@@ -137,7 +139,7 @@ impl ConcreteBaseAudioContext {
             listener_params: None,
             offline,
             state: AtomicU8::new(AudioContextState::Suspended as u8),
-            event_handlers: Arc::new(Mutex::new(Vec::new())),
+            event_loop: event_loop.clone(),
         };
         let base = Self {
             inner: Arc::new(base_inner),
@@ -193,21 +195,7 @@ impl ConcreteBaseAudioContext {
         // (?) only for online context
         if let Some(event_channel) = event_channel {
             // init event loop
-            let event_handlers = base.inner.event_handlers.clone();
-
-            std::thread::spawn(move || loop {
-                // (?) this thread is dedicated to event so we can block
-                if let Ok(message) = event_channel.recv() {
-                    let handlers = event_handlers.lock().unwrap();
-                    // find EventHandlerInfos that match messsage
-                    if let Some(infos) = handlers.iter().find(|item| {
-                        item.node_id == message.node_id && item.event_type == message.event_type
-                    }) {
-                        (infos.callback)();
-                    }
-                    // execute event_handler.callback
-                }
-            });
+            event_loop.run(event_channel);
         }
 
         base
@@ -410,17 +398,9 @@ impl ConcreteBaseAudioContext {
         self.inner.offline
     }
 
-    pub(crate) fn register_event_handler(
-        &self,
-        node: &dyn AudioNode,
-        event_type: EventType,
-        callback: Box<dyn Fn() + Send + Sync + 'static>,
-    ) {
-        let handler = EventHandler {
-            node_id: node.registration().id(),
-            event_type,
-            callback,
-        };
-        self.inner.event_handlers.lock().unwrap().push(handler);
+    pub(crate) fn register_event_handler(&self, event: Event, callback: Callback) {
+        self.inner
+            .event_loop
+            .add_handler(EventHandler { event, callback });
     }
 }
