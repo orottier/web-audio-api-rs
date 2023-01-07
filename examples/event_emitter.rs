@@ -16,9 +16,9 @@ fn main() {
     src.set_buffer(buffer);
 
     // @todo - should receive an event
-    src.onended(|| {
+    src.onended(Some(|| {
         println!("> Ended event triggered!");
-    });
+    }));
 
     let now = audio_context.current_time();
     src.start_at(now);

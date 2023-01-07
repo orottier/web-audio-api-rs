@@ -85,7 +85,11 @@ impl EventLoop {
         });
     }
 
-    pub fn add_handler(&self, event: Event, callback: EventHandler) {
-        self.event_handlers.lock().unwrap().insert(event, callback);
+    pub fn set_handler(&self, event: Event, callback: Option<EventHandler>) {
+        let mut event_handlers = self.event_handlers.lock().unwrap();
+        match callback {
+            Some(callback) => event_handlers.insert(event, callback),
+            None => event_handlers.remove(&event),
+        };
     }
 }

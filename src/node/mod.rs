@@ -361,11 +361,15 @@ pub trait AudioScheduledSourceNode: AudioNode {
     ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
-    fn onended<F: FnOnce() + Send + 'static>(&self, callback: F) {
-        let callback = |_| callback();
-        self.context().register_event_handler(
+    fn onended<F: FnOnce() + Send + 'static>(&self, value: Option<F>) {
+        let callback = value.map(|f| {
+            let callback = move |_| f();
+            EventHandler::Once(Box::new(callback))
+        });
+
+        self.context().set_event_handler(
             crate::events::Event::Ended(self.registration().id()),
-            EventHandler::Once(Box::new(callback)),
+            callback,
         );
     }
 }
