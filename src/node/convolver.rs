@@ -3,12 +3,13 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::RENDER_QUANTUM_SIZE;
+use easyfft::num_complex::Complex;
+use easyfft::prelude::*;
 
 use crossbeam_channel::{Receiver, Sender};
-use realfft::{num_complex::Complex, ComplexToReal, RealFftPlanner, RealToComplex};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Mutex,
 };
 
 /// Scale buffer by an equal-power normalization
@@ -245,65 +246,6 @@ fn roll_zero<T: Default + Copy>(signal: &mut [T], n: usize) {
     signal[len - n..].fill(T::default());
 }
 
-struct Fft {
-    fft_forward: Arc<dyn RealToComplex<f32>>,
-    fft_inverse: Arc<dyn ComplexToReal<f32>>,
-    fft_input: Vec<f32>,
-    fft_scratch: Vec<Complex<f32>>,
-    fft_output: Vec<Complex<f32>>,
-}
-
-impl Fft {
-    fn new(length: usize) -> Self {
-        let mut fft_planner = RealFftPlanner::<f32>::new();
-
-        let fft_forward = fft_planner.plan_fft_forward(length);
-        let fft_inverse = fft_planner.plan_fft_inverse(length);
-
-        let fft_input = fft_forward.make_input_vec();
-        let fft_scratch = fft_forward.make_scratch_vec();
-        let fft_output = fft_forward.make_output_vec();
-
-        Self {
-            fft_forward,
-            fft_inverse,
-            fft_input,
-            fft_scratch,
-            fft_output,
-        }
-    }
-
-    fn real(&mut self) -> &mut [f32] {
-        &mut self.fft_input[..]
-    }
-
-    fn complex(&mut self) -> &mut [Complex<f32>] {
-        &mut self.fft_output[..]
-    }
-
-    fn process(&mut self) -> &[Complex<f32>] {
-        self.fft_forward
-            .process_with_scratch(
-                &mut self.fft_input,
-                &mut self.fft_output,
-                &mut self.fft_scratch,
-            )
-            .unwrap();
-        &self.fft_output[..]
-    }
-
-    fn inverse(&mut self) -> &[f32] {
-        self.fft_inverse
-            .process_with_scratch(
-                &mut self.fft_output,
-                &mut self.fft_input,
-                &mut self.fft_scratch,
-            )
-            .unwrap();
-        &self.fft_input[..]
-    }
-}
-
 struct ConvolverRenderer {
     receiver: Receiver<ConvolverRendererInner>,
     inner: Option<ConvolverRendererInner>,
@@ -323,7 +265,8 @@ struct ConvolverRendererInner {
     h: Vec<Complex<f32>>,
     fdl: Vec<Complex<f32>>,
     out: Vec<f32>,
-    fft2: Fft,
+    temp_input: Vec<f32>,
+    temp_output: DynRealDft<f32>,
 }
 
 impl ConvolverRendererInner {
@@ -331,20 +274,23 @@ impl ConvolverRendererInner {
         // mono processing only for now
         let response = response.channel_data(0).as_slice();
 
-        let mut fft2 = Fft::new(2 * RENDER_QUANTUM_SIZE);
         let p = response.len();
 
         let num_ir_blocks = p / RENDER_QUANTUM_SIZE;
 
         let mut h = vec![Complex::default(); num_ir_blocks * 2 * RENDER_QUANTUM_SIZE];
+
+        let mut temp_input = vec![0.0; 2 * RENDER_QUANTUM_SIZE];
+        let mut temp_output = DynRealDft::default(2 * RENDER_QUANTUM_SIZE);
         for (resp_fft, resp) in h
             .chunks_mut(2 * RENDER_QUANTUM_SIZE)
             .zip(response.chunks(RENDER_QUANTUM_SIZE))
         {
             // fill resp_fft with FFT of resp.zero_pad(RENDER_QUANTUM_SIZE)
-            fft2.real()[..RENDER_QUANTUM_SIZE].copy_from_slice(resp);
-            fft2.real()[RENDER_QUANTUM_SIZE..].fill(0.);
-            resp_fft[..fft2.complex().len()].copy_from_slice(fft2.process());
+            temp_input[..RENDER_QUANTUM_SIZE].copy_from_slice(resp);
+            temp_input[RENDER_QUANTUM_SIZE..].fill(0.);
+            temp_input.real_fft_using(&mut temp_output);
+            resp_fft[..temp_output.len()].copy_from_slice(&temp_output);
         }
 
         let fdl = vec![Complex::default(); 2 * RENDER_QUANTUM_SIZE * num_ir_blocks];
@@ -355,14 +301,16 @@ impl ConvolverRendererInner {
             h,
             fdl,
             out,
-            fft2,
+            temp_input,
+            temp_output,
         }
     }
 
     fn process(&mut self, input: &[f32], output: &mut [f32]) {
-        self.fft2.real()[..RENDER_QUANTUM_SIZE].copy_from_slice(input);
-        self.fft2.real()[RENDER_QUANTUM_SIZE..].fill(0.);
-        let spectrum = self.fft2.process();
+        self.temp_input[..RENDER_QUANTUM_SIZE].copy_from_slice(input);
+        self.temp_input[RENDER_QUANTUM_SIZE..].fill(0.);
+        self.temp_input.real_fft_using(&mut self.temp_output);
+        let spectrum = &self.temp_output;
 
         self.fdl
             .chunks_mut(2 * RENDER_QUANTUM_SIZE)
@@ -371,13 +319,14 @@ impl ConvolverRendererInner {
                 fdl_c
                     .iter_mut()
                     .zip(h_c)
-                    .zip(spectrum)
+                    .zip(spectrum.iter())
                     .for_each(|((f, h), s)| *f += h * s)
             });
 
-        let c_len = self.fft2.complex().len();
-        self.fft2.complex().copy_from_slice(&self.fdl[..c_len]);
-        let inverse = self.fft2.inverse();
+        self.temp_output
+            .copy_from_slice(&self.fdl[..self.temp_output.len()]);
+        self.temp_output.real_ifft_using(&mut self.temp_input);
+        let inverse = &self.temp_input;
         self.out.iter_mut().zip(inverse).for_each(|(o, i)| {
             *o += i / (2 * RENDER_QUANTUM_SIZE) as f32;
         });
@@ -396,9 +345,10 @@ impl ConvolverRendererInner {
 
         self.num_ir_blocks -= 1;
 
-        let c_len = self.fft2.complex().len();
-        self.fft2.complex().copy_from_slice(&self.fdl[..c_len]);
-        let inverse = self.fft2.inverse();
+        self.temp_output
+            .copy_from_slice(&self.fdl[..self.temp_output.len()]);
+        self.temp_output.real_ifft_using(&mut self.temp_input);
+        let inverse = &self.temp_input;
         self.out.iter_mut().zip(inverse).for_each(|(o, i)| {
             *o += i / (2 * RENDER_QUANTUM_SIZE) as f32;
         });

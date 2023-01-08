@@ -4,8 +4,8 @@
 
 use crate::render::AudioRenderQuantumChannel;
 use crate::RENDER_QUANTUM_SIZE;
-
-use realfft::{num_complex::Complex, RealFftPlanner};
+use easyfft::prelude::DynRealDft;
+use easyfft::prelude::*;
 
 use std::f32::consts::PI;
 
@@ -99,10 +99,8 @@ impl TimeAnalyser {
 pub(crate) struct Analyser {
     time: TimeAnalyser,
 
-    fft_planner: RealFftPlanner<f32>,
     fft_input: Vec<f32>,
-    fft_scratch: Vec<Complex<f32>>,
-    fft_output: Vec<Complex<f32>>,
+    fft_output: DynRealDft<f32>,
 
     current_fft_size: usize,
     previous_block: Vec<f32>,
@@ -112,12 +110,8 @@ pub(crate) struct Analyser {
 impl Analyser {
     /// Create a new analyser kernel
     pub fn new(initial_fft_size: usize) -> Self {
-        let mut fft_planner = RealFftPlanner::<f32>::new();
-        let max_fft = fft_planner.plan_fft_forward(MAX_SAMPLES);
-
-        let fft_input = max_fft.make_input_vec();
-        let fft_scratch = max_fft.make_scratch_vec();
-        let fft_output = max_fft.make_output_vec();
+        let fft_input = vec![0.; initial_fft_size];
+        let fft_output = DynRealDft::default(initial_fft_size);
         let previous_block = vec![0.; fft_output.len()];
 
         // precalculate Blackman window values, reserve enough space for all input sizes
@@ -126,9 +120,7 @@ impl Analyser {
 
         Self {
             time: TimeAnalyser::new(),
-            fft_planner,
             fft_input,
-            fft_scratch,
             fft_output,
             current_fft_size: initial_fft_size,
             previous_block,
@@ -183,12 +175,8 @@ impl Analyser {
             self.current_fft_size = fft_size;
         }
 
-        let r2c = self.fft_planner.plan_fft_forward(fft_size);
-
         // setup proper sized buffers
         let input = &mut self.fft_input[..fft_size];
-        let output = &mut self.fft_output[..fft_size / 2 + 1];
-        let scratch = &mut self.fft_scratch[..r2c.get_scratch_len()];
         let previous_block = &mut self.previous_block[..fft_size / 2 + 1];
 
         // put time domain data in fft_input
@@ -201,12 +189,12 @@ impl Analyser {
             .for_each(|(i, b)| *i *= *b);
 
         // calculate frequency data
-        r2c.process_with_scratch(input, output, scratch).unwrap();
+        input.real_fft_using(&mut self.fft_output);
 
         // smoothing over time
         previous_block
             .iter_mut()
-            .zip(output.iter())
+            .zip(self.fft_output.iter())
             .for_each(|(p, c)| {
                 *p = smoothing_time_constant * *p + (1. - smoothing_time_constant) * c.norm()
             });
