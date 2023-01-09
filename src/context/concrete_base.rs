@@ -4,7 +4,7 @@ use crate::context::{
     AudioContextRegistration, AudioContextState, AudioNodeId, BaseAudioContext,
     DESTINATION_NODE_ID, LISTENER_NODE_ID, LISTENER_PARAM_IDS,
 };
-use crate::events::{Event, EventHandler, EventLoop};
+use crate::events::{Event, EventHandler, EventLoop, EventType};
 use crate::message::ControlMessage;
 use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamEvent};
@@ -412,11 +412,11 @@ impl ConcreteBaseAudioContext {
         self.inner.offline
     }
 
-    pub(crate) fn set_event_handler(&self, event: Event, callback: EventHandler) {
+    pub(crate) fn set_event_handler(&self, event: EventType, callback: EventHandler) {
         self.inner.event_loop.set_handler(event, callback);
     }
 
-    pub(crate) fn clear_event_handler(&self, event: Event) {
+    pub(crate) fn clear_event_handler(&self, event: EventType) {
         self.inner.event_loop.clear_handler(event);
     }
 }

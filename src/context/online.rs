@@ -8,7 +8,7 @@ use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
 use crate::AudioRenderCapacity;
 
-use crate::events::{Event, EventHandler};
+use crate::events::{Event, EventHandler, EventType};
 use std::error::Error;
 use std::sync::Mutex;
 
@@ -292,7 +292,7 @@ impl AudioContext {
         drop(backend_manager_guard);
 
         // trigger event when all the work is done
-        let _ = self.base.send_event(Event::SinkChanged);
+        let _ = self.base.send_event(Event::sink_changed());
 
         Ok(())
     }
@@ -305,14 +305,14 @@ impl AudioContext {
         let callback = move |_| callback();
 
         self.base().set_event_handler(
-            Event::SinkChanged,
+            EventType::SinkChanged,
             EventHandler::Multiple(Box::new(callback)),
         );
     }
 
     /// Unset the callback to run when the audio sink has changed
     pub fn clear_onsinkchange(&self) {
-        self.base().clear_event_handler(Event::SinkChanged);
+        self.base().clear_event_handler(EventType::SinkChanged);
     }
 
     /// Suspends the progression of time in the audio context.

@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
-use crate::events::Event;
+use crate::events::EventType;
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
@@ -366,7 +366,7 @@ pub trait AudioScheduledSourceNode: AudioNode {
         let callback = move |_| callback();
 
         self.context().set_event_handler(
-            Event::Ended(self.registration().id()),
+            EventType::Ended(self.registration().id()),
             EventHandler::Once(Box::new(callback)),
         );
     }
@@ -374,7 +374,7 @@ pub trait AudioScheduledSourceNode: AudioNode {
     /// Unset the callback to run when the source node has stopped playing
     fn clear_onended(&self) {
         self.context()
-            .clear_event_handler(Event::Ended(self.registration().id()));
+            .clear_event_handler(EventType::Ended(self.registration().id()));
     }
 }
 

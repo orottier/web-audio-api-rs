@@ -2,7 +2,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
-use crate::events::{Event, EventHandler};
+use crate::events::{Event, EventHandler, EventPayload, EventType};
 
 #[derive(Copy, Clone)]
 pub(crate) struct AudioRenderCapacityLoad {
@@ -144,7 +144,7 @@ impl AudioRenderCapacity {
                     underrun_sum as f64 / counter as f64,
                 );
 
-                let send_result = base_context.send_event(Event::RenderCapacity(event));
+                let send_result = base_context.send_event(Event::render_capacity(event));
                 if send_result.is_err() {
                     break;
                 }
@@ -176,20 +176,19 @@ impl AudioRenderCapacity {
         &self,
         mut callback: F,
     ) {
-        let callback = move |event: Event| match event {
-            Event::RenderCapacity(payload) => callback(payload),
+        let callback = move |v| match v {
+            EventPayload::RenderCapacity(v) => callback(v),
             _ => unreachable!(),
         };
 
         self.context.set_event_handler(
-            Event::RenderCapacity(Default::default()),
+            EventType::RenderCapacity,
             EventHandler::Multiple(Box::new(callback)),
         );
     }
 
     /// Unset the EventHandler for [`AudioRenderCapacityEvent`].
     pub fn clear_onupdate(&self) {
-        self.context
-            .clear_event_handler(Event::RenderCapacity(Default::default()));
+        self.context.clear_event_handler(EventType::RenderCapacity);
     }
 }

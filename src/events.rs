@@ -2,61 +2,60 @@ use crate::context::AudioNodeId;
 use crate::AudioRenderCapacityEvent;
 
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 
 use crossbeam_channel::Receiver;
 
-#[derive(Debug, Clone)]
-pub(crate) enum Event {
+#[derive(Hash, Eq, PartialEq)]
+pub(crate) enum EventType {
     Ended(AudioNodeId),
     SinkChanged,
+    RenderCapacity,
+    //
+}
+
+pub(crate) enum EventPayload {
+    None,
     RenderCapacity(AudioRenderCapacityEvent),
 }
 
-/*
- * Hack: derive custom PartialEq and Hash implementation for Event, ignoring the payload of the
- * RenderCapacity variant.
- *
- * TODO, remove this hack and use a proper EventPayload enum alongside.
- */
+pub(crate) struct Event {
+    type_: EventType,
+    payload: EventPayload,
+}
 
-impl Hash for Event {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match &self {
-            Event::Ended(id) => {
-                state.write_u8(0);
-                state.write_u64(id.0);
-            }
-            Event::SinkChanged => state.write_u8(1),
-            Event::RenderCapacity(_) => state.write_u8(2),
+impl Event {
+    pub fn ended(id: AudioNodeId) -> Self {
+        Event {
+            type_: EventType::Ended(id),
+            payload: EventPayload::None,
+        }
+    }
+
+    pub fn sink_changed() -> Self {
+        Event {
+            type_: EventType::SinkChanged,
+            payload: EventPayload::None,
+        }
+    }
+
+    pub fn render_capacity(value: AudioRenderCapacityEvent) -> Self {
+        Event {
+            type_: EventType::RenderCapacity,
+            payload: EventPayload::RenderCapacity(value),
         }
     }
 }
-
-impl PartialEq for Event {
-    fn eq(&self, other: &Self) -> bool {
-        use Event::*;
-
-        match (&self, other) {
-            (Ended(s), Ended(o)) => s.eq(o),
-            (SinkChanged, SinkChanged) => true,
-            (RenderCapacity(_), RenderCapacity(_)) => true,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for Event {}
 
 pub(crate) enum EventHandler {
-    Once(Box<dyn FnOnce(Event) + Send + 'static>),
-    Multiple(Box<dyn FnMut(Event) + Send + 'static>),
+    Once(Box<dyn FnOnce(EventPayload) + Send + 'static>),
+    Multiple(Box<dyn FnMut(EventPayload) + Send + 'static>),
 }
 
 #[derive(Clone, Default)]
 pub(crate) struct EventLoop {
-    event_handlers: Arc<Mutex<HashMap<Event, EventHandler>>>,
+    event_handlers: Arc<Mutex<HashMap<EventType, EventHandler>>>,
 }
 
 impl EventLoop {
@@ -71,12 +70,12 @@ impl EventLoop {
             // this thread is dedicated to event handling so we can block
             for event in event_channel.iter() {
                 let mut handlers = self_clone.event_handlers.lock().unwrap();
-                if let Some(callback) = handlers.remove(&event) {
+                if let Some(callback) = handlers.remove(&event.type_) {
                     match callback {
-                        EventHandler::Once(f) => (f)(event),
+                        EventHandler::Once(f) => (f)(event.payload),
                         EventHandler::Multiple(mut f) => {
-                            (f)(event.clone());
-                            handlers.insert(event, EventHandler::Multiple(f));
+                            (f)(event.payload);
+                            handlers.insert(event.type_, EventHandler::Multiple(f));
                         }
                     };
                 }
@@ -85,11 +84,11 @@ impl EventLoop {
         });
     }
 
-    pub fn set_handler(&self, event: Event, callback: EventHandler) {
+    pub fn set_handler(&self, event: EventType, callback: EventHandler) {
         self.event_handlers.lock().unwrap().insert(event, callback);
     }
 
-    pub fn clear_handler(&self, event: Event) {
+    pub fn clear_handler(&self, event: EventType) {
         self.event_handlers.lock().unwrap().remove(&event);
     }
 }
