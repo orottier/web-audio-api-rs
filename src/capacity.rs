@@ -172,16 +172,24 @@ impl AudioRenderCapacity {
     ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
-    pub fn onupdate<F: FnMut(AudioRenderCapacityEvent) + Send + 'static>(&self, value: Option<F>) {
-        let callback = value.map(|mut f| {
-            let callback = move |event: Event| match event {
-                Event::RenderCapacity(payload) => f(payload),
-                _ => unreachable!(),
-            };
-            EventHandler::Multiple(Box::new(callback))
-        });
+    pub fn set_onupdate<F: FnMut(AudioRenderCapacityEvent) + Send + 'static>(
+        &self,
+        mut callback: F,
+    ) {
+        let callback = move |event: Event| match event {
+            Event::RenderCapacity(payload) => callback(payload),
+            _ => unreachable!(),
+        };
 
+        self.context.set_event_handler(
+            Event::RenderCapacity(Default::default()),
+            EventHandler::Multiple(Box::new(callback)),
+        );
+    }
+
+    /// Unset the EventHandler for [`AudioRenderCapacityEvent`].
+    pub fn clear_onupdate(&self) {
         self.context
-            .set_event_handler(Event::RenderCapacity(Default::default()), callback);
+            .clear_event_handler(Event::RenderCapacity(Default::default()));
     }
 }

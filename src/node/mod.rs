@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
+use crate::events::Event;
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
@@ -361,16 +362,19 @@ pub trait AudioScheduledSourceNode: AudioNode {
     ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
-    fn onended<F: FnOnce() + Send + 'static>(&self, value: Option<F>) {
-        let callback = value.map(|f| {
-            let callback = move |_| f();
-            EventHandler::Once(Box::new(callback))
-        });
+    fn set_onended<F: FnOnce() + Send + 'static>(&self, callback: F) {
+        let callback = move |_| callback();
 
         self.context().set_event_handler(
-            crate::events::Event::Ended(self.registration().id()),
-            callback,
+            Event::Ended(self.registration().id()),
+            EventHandler::Once(Box::new(callback)),
         );
+    }
+
+    /// Unset the callback to run when the source node has stopped playing
+    fn clear_onended(&self) {
+        self.context()
+            .clear_event_handler(Event::Ended(self.registration().id()));
     }
 }
 

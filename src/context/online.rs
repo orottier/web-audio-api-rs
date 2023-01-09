@@ -301,14 +301,18 @@ impl AudioContext {
     ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
-    pub fn onsinkchange<F: FnMut() + Send + 'static>(&self, value: Option<F>) {
-        let callback = value.map(|mut f| {
-            let callback = move |_| f();
-            EventHandler::Multiple(Box::new(callback))
-        });
+    pub fn set_onsinkchange<F: FnMut() + Send + 'static>(&self, mut callback: F) {
+        let callback = move |_| callback();
 
-        self.base()
-            .set_event_handler(crate::events::Event::SinkChanged, callback)
+        self.base().set_event_handler(
+            Event::SinkChanged,
+            EventHandler::Multiple(Box::new(callback)),
+        );
+    }
+
+    /// Unset the callback to run when the audio sink has changed
+    pub fn clear_onsinkchange(&self) {
+        self.base().clear_event_handler(Event::SinkChanged);
     }
 
     /// Suspends the progression of time in the audio context.

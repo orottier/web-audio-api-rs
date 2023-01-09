@@ -412,7 +412,11 @@ impl ConcreteBaseAudioContext {
         self.inner.offline
     }
 
-    pub(crate) fn set_event_handler(&self, event: Event, callback: Option<EventHandler>) {
+    pub(crate) fn set_event_handler(&self, event: Event, callback: EventHandler) {
         self.inner.event_loop.set_handler(event, callback);
+    }
+
+    pub(crate) fn clear_event_handler(&self, event: Event) {
+        self.inner.event_loop.clear_handler(event);
     }
 }
