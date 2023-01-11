@@ -1,5 +1,6 @@
 //! The audio graph topology and render algorithm
 use std::cell::RefCell;
+use std::panic::{self, AssertUnwindSafe};
 
 use crate::context::AudioNodeId;
 use rustc_hash::FxHashMap;
@@ -377,10 +378,23 @@ impl Graph {
                 .iter_mut()
                 .for_each(|i| i.mix(count, interpretation));
 
-            // let the current node process
+            // let the current node process (catch any panics that may occur)
             let params = AudioParamValues::from(&*nodes);
             scope.node_id.set(*index);
-            let tail_time = node.process(params, scope);
+            let (success, tail_time) = {
+                // We are abusing AssertUnwindSafe here, we cannot guarantee it upholds.
+                // This may lead to logic bugs later on, but it is the best that we can do.
+                // The alternative is to crash and reboot the render thread.
+                let catch_me = AssertUnwindSafe(|| node.process(params, scope));
+                match panic::catch_unwind(catch_me) {
+                    Ok(tail_time) => (true, tail_time),
+                    Err(e) => {
+                        node.outgoing_edges.clear();
+                        scope.report_error(e);
+                        (false, false)
+                    }
+                }
+            };
 
             // iterate all outgoing edges, lookup these nodes and add to their input
             node.outgoing_edges
@@ -396,7 +410,7 @@ impl Graph {
                     output_node.inputs[edge.other_index].add(signal, channel_config);
                 });
 
-            let can_free = node.can_free(tail_time);
+            let can_free = !success || node.can_free(tail_time);
 
             // Node is not dropped.
             if !can_free {

@@ -1,6 +1,7 @@
 use crate::context::AudioNodeId;
 use crate::AudioRenderCapacityEvent;
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
@@ -12,12 +13,20 @@ pub(crate) enum EventType {
     Ended(AudioNodeId),
     SinkChanged,
     RenderCapacity,
-    //
+    ProcessorError(AudioNodeId),
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct ErrorEvent {
+    pub message: String,
+    pub error: Box<dyn Any + Send + 'static>,
 }
 
 pub(crate) enum EventPayload {
     None,
     RenderCapacity(AudioRenderCapacityEvent),
+    ProcessorError(ErrorEvent),
 }
 
 pub(crate) struct Event {
@@ -44,6 +53,13 @@ impl Event {
         Event {
             type_: EventType::RenderCapacity,
             payload: EventPayload::RenderCapacity(value),
+        }
+    }
+
+    pub fn processor_error(id: AudioNodeId, value: ErrorEvent) -> Self {
+        Event {
+            type_: EventType::ProcessorError(id),
+            payload: EventPayload::ProcessorError(value),
         }
     }
 }
