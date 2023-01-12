@@ -58,6 +58,7 @@ pub mod media;
 pub mod node;
 
 mod events;
+pub use events::Event;
 
 mod param;
 pub use param::*;

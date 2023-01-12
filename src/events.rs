@@ -7,6 +7,11 @@ use std::sync::{Arc, Mutex};
 
 use crossbeam_channel::Receiver;
 
+#[derive(Debug, Clone)]
+pub struct Event {
+    pub type_: &'static str,
+}
+
 #[derive(Hash, Eq, PartialEq)]
 pub(crate) enum EventType {
     Ended(AudioNodeId),
