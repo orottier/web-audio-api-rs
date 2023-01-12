@@ -48,6 +48,7 @@ mod stereo_panner;
 pub use stereo_panner::*;
 mod waveshaper;
 use crate::events::EventHandler;
+use crate::Event;
 pub use waveshaper::*;
 
 pub(crate) const TABLE_LENGTH_USIZE: usize = 8192;
@@ -362,8 +363,8 @@ pub trait AudioScheduledSourceNode: AudioNode {
     ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
-    fn set_onended<F: FnOnce() + Send + 'static>(&self, callback: F) {
-        let callback = move |_| callback();
+    fn set_onended<F: FnOnce(Event) + Send + 'static>(&self, callback: F) {
+        let callback = move |_| callback(Event { type_: "ended" });
 
         self.context().set_event_handler(
             EventType::Ended(self.registration().id()),

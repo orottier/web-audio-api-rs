@@ -6,7 +6,7 @@ use crate::io::{
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
-use crate::AudioRenderCapacity;
+use crate::{AudioRenderCapacity, Event};
 
 use crate::events::{EventDispatch, EventHandler, EventType};
 use std::error::Error;
@@ -301,8 +301,12 @@ impl AudioContext {
     ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
-    pub fn set_onsinkchange<F: FnMut() + Send + 'static>(&self, mut callback: F) {
-        let callback = move |_| callback();
+    pub fn set_onsinkchange<F: FnMut(Event) + Send + 'static>(&self, mut callback: F) {
+        let callback = move |_| {
+            callback(Event {
+                type_: "onsinkchange",
+            })
+        };
 
         self.base().set_event_handler(
             EventType::SinkChange,
