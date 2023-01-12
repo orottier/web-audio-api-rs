@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use crossbeam_channel::Receiver;
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Event {
     pub type_: &'static str,
 }
