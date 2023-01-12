@@ -15,7 +15,7 @@ pub struct Event {
 #[derive(Hash, Eq, PartialEq)]
 pub(crate) enum EventType {
     Ended(AudioNodeId),
-    SinkChanged,
+    SinkChange,
     RenderCapacity,
     //
 }
@@ -38,9 +38,9 @@ impl EventDispatch {
         }
     }
 
-    pub fn sink_changed() -> Self {
+    pub fn sink_change() -> Self {
         EventDispatch {
-            type_: EventType::SinkChanged,
+            type_: EventType::SinkChange,
             payload: EventPayload::None,
         }
     }
