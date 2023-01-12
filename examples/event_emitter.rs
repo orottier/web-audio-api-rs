@@ -15,8 +15,7 @@ fn main() {
     src.connect(&audio_context.destination());
     src.set_buffer(buffer);
 
-    // @todo - should receive an event
-    src.onended(|| {
+    src.set_onended(|| {
         println!("> Ended event triggered!");
     });
 

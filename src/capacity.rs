@@ -2,6 +2,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
+use crate::events::{Event, EventHandler, EventPayload, EventType};
 
 #[derive(Copy, Clone)]
 pub(crate) struct AudioRenderCapacityLoad {
@@ -24,7 +25,7 @@ impl Default for AudioRenderCapacityOptions {
 }
 
 /// Performance metrics of the rendering thread
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct AudioRenderCapacityEvent {
     timestamp: f64,
     average_load: f64,
@@ -65,8 +66,6 @@ impl AudioRenderCapacityEvent {
     }
 }
 
-type EventHandler = Box<dyn FnMut(AudioRenderCapacityEvent) + Send + 'static>;
-
 /// Provider for rendering performance metrics
 ///
 /// A load value is computed for each system-level audio callback, by dividing its execution
@@ -78,7 +77,6 @@ type EventHandler = Box<dyn FnMut(AudioRenderCapacityEvent) + Send + 'static>;
 pub struct AudioRenderCapacity {
     context: ConcreteBaseAudioContext,
     receiver: Receiver<AudioRenderCapacityLoad>,
-    callback: Arc<Mutex<Option<EventHandler>>>,
     stop_send: Arc<Mutex<Option<Sender<()>>>>,
 }
 
@@ -87,13 +85,11 @@ impl AudioRenderCapacity {
         context: ConcreteBaseAudioContext,
         receiver: Receiver<AudioRenderCapacityLoad>,
     ) -> Self {
-        let callback = Arc::new(Mutex::new(None));
         let stop_send = Arc::new(Mutex::new(None));
 
         Self {
             context,
             receiver,
-            callback,
             stop_send,
         }
     }
@@ -104,7 +100,6 @@ impl AudioRenderCapacity {
         // stop current metric collection, if any
         self.stop();
 
-        let callback = self.callback.clone();
         let receiver = self.receiver.clone();
         let (stop_send, stop_recv) = crossbeam_channel::bounded(0);
         *self.stop_send.lock().unwrap() = Some(stop_send);
@@ -116,6 +111,7 @@ impl AudioRenderCapacity {
         let mut underrun_sum = 0;
 
         let mut next_checkpoint = timestamp + options.update_interval;
+        let base_context = self.context.clone();
         std::thread::spawn(move || loop {
             let try_item = crossbeam_channel::select! {
                 recv(receiver) -> item => item,
@@ -147,8 +143,10 @@ impl AudioRenderCapacity {
                     peak_load,
                     underrun_sum as f64 / counter as f64,
                 );
-                if let Some(f) = &mut *callback.lock().unwrap() {
-                    (f)(event);
+
+                let send_result = base_context.send_event(Event::render_capacity(event));
+                if send_result.is_err() {
+                    break;
                 }
 
                 next_checkpoint += options.update_interval;
@@ -173,9 +171,24 @@ impl AudioRenderCapacity {
     /// The EventHandler for [`AudioRenderCapacityEvent`].
     ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
-    /// disable the previous event handlers.
-    #[allow(clippy::missing_panics_doc)]
-    pub fn onupdate<F: FnMut(AudioRenderCapacityEvent) + Send + 'static>(&self, callback: F) {
-        *self.callback.lock().unwrap() = Some(Box::new(callback));
+    /// override the previous event handler.
+    pub fn set_onupdate<F: FnMut(AudioRenderCapacityEvent) + Send + 'static>(
+        &self,
+        mut callback: F,
+    ) {
+        let callback = move |v| match v {
+            EventPayload::RenderCapacity(v) => callback(v),
+            _ => unreachable!(),
+        };
+
+        self.context.set_event_handler(
+            EventType::RenderCapacity,
+            EventHandler::Multiple(Box::new(callback)),
+        );
+    }
+
+    /// Unset the EventHandler for [`AudioRenderCapacityEvent`].
+    pub fn clear_onupdate(&self) {
+        self.context.clear_event_handler(EventType::RenderCapacity);
     }
 }

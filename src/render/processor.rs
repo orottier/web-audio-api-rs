@@ -28,7 +28,7 @@ pub struct RenderScope {
 impl RenderScope {
     pub(crate) fn send_ended_event(&self) {
         if let Some(sender) = self.event_sender.as_ref() {
-            let _ = sender.try_send(Event::Ended(self.node_id.get()));
+            let _ = sender.try_send(Event::ended(self.node_id.get()));
         }
     }
 }

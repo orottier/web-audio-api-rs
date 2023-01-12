@@ -4,7 +4,7 @@ use crate::context::{
     AudioContextRegistration, AudioContextState, AudioNodeId, BaseAudioContext,
     DESTINATION_NODE_ID, LISTENER_NODE_ID, LISTENER_PARAM_IDS,
 };
-use crate::events::{Callback, Event, EventHandler, EventLoop};
+use crate::events::{Event, EventHandler, EventLoop, EventType};
 use crate::message::ControlMessage;
 use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamEvent};
@@ -67,6 +67,8 @@ struct ConcreteBaseAudioContextInner {
     state: AtomicU8,
     /// Stores the event handlers
     event_loop: EventLoop,
+    /// Sender for events that will be handled by the EventLoop
+    event_send: Option<Sender<Event>>,
 }
 
 impl BaseAudioContext for ConcreteBaseAudioContext {
@@ -122,10 +124,14 @@ impl ConcreteBaseAudioContext {
         max_channel_count: usize,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
-        event_channel: Option<Receiver<Event>>,
+        event_channel: Option<(Sender<Event>, Receiver<Event>)>,
         offline: bool,
     ) -> Self {
         let event_loop = EventLoop::new();
+        let (event_send, event_recv) = match event_channel {
+            None => (None, None),
+            Some((send, recv)) => (Some(send), Some(recv)),
+        };
 
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
@@ -140,6 +146,7 @@ impl ConcreteBaseAudioContext {
             offline,
             state: AtomicU8::new(AudioContextState::Suspended as u8),
             event_loop: event_loop.clone(),
+            event_send,
         };
         let base = Self {
             inner: Arc::new(base_inner),
@@ -193,7 +200,7 @@ impl ConcreteBaseAudioContext {
         );
 
         // (?) only for online context
-        if let Some(event_channel) = event_channel {
+        if let Some(event_channel) = event_recv {
             // init event loop
             event_loop.run(event_channel);
         }
@@ -206,6 +213,13 @@ impl ConcreteBaseAudioContext {
         msg: ControlMessage,
     ) -> Result<(), SendError<ControlMessage>> {
         self.inner.render_channel.read().unwrap().send(msg)
+    }
+
+    pub(crate) fn send_event(&self, msg: Event) -> Result<(), SendError<Event>> {
+        match self.inner.event_send.as_ref() {
+            Some(s) => s.send(msg),
+            None => Err(SendError(msg)),
+        }
     }
 
     pub(crate) fn lock_control_msg_sender(&self) -> RwLockWriteGuard<Sender<ControlMessage>> {
@@ -398,9 +412,11 @@ impl ConcreteBaseAudioContext {
         self.inner.offline
     }
 
-    pub(crate) fn register_event_handler(&self, event: Event, callback: Callback) {
-        self.inner
-            .event_loop
-            .add_handler(EventHandler { event, callback });
+    pub(crate) fn set_event_handler(&self, event: EventType, callback: EventHandler) {
+        self.inner.event_loop.set_handler(event, callback);
+    }
+
+    pub(crate) fn clear_event_handler(&self, event: EventType) {
+        self.inner.event_loop.clear_handler(event);
     }
 }

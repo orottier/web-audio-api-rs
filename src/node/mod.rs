@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
+use crate::events::EventType;
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
@@ -46,7 +47,7 @@ pub use panner::*;
 mod stereo_panner;
 pub use stereo_panner::*;
 mod waveshaper;
-use crate::events::Callback;
+use crate::events::EventHandler;
 pub use waveshaper::*;
 
 pub(crate) const TABLE_LENGTH_USIZE: usize = 8192;
@@ -359,13 +360,21 @@ pub trait AudioScheduledSourceNode: AudioNode {
     /// determined by stop() is reached. For an [`AudioBufferSourceNode`], the event is also
     /// dispatched because the duration has been reached or if the entire buffer has been played.
     ///
-    /// Calling this function multiple times will accumulate all event handlers. It is currently
-    /// not possible to remove an event handler.
-    fn onended<F: FnOnce() + Send + 'static>(&self, callback: F) {
-        self.context().register_event_handler(
-            crate::events::Event::Ended(self.registration().id()),
-            Callback::Once(Box::new(callback)),
+    /// Only a single event handler is active at any time. Calling this method multiple times will
+    /// override the previous event handler.
+    fn set_onended<F: FnOnce() + Send + 'static>(&self, callback: F) {
+        let callback = move |_| callback();
+
+        self.context().set_event_handler(
+            EventType::Ended(self.registration().id()),
+            EventHandler::Once(Box::new(callback)),
         );
+    }
+
+    /// Unset the callback to run when the source node has stopped playing
+    fn clear_onended(&self) {
+        self.context()
+            .clear_event_handler(EventType::Ended(self.registration().id()));
     }
 }
 

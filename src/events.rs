@@ -1,35 +1,61 @@
 use crate::context::AudioNodeId;
-use crossbeam_channel::Receiver;
+use crate::AudioRenderCapacityEvent;
+
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Event {
+use crossbeam_channel::Receiver;
+
+#[derive(Hash, Eq, PartialEq)]
+pub(crate) enum EventType {
     Ended(AudioNodeId),
     SinkChanged,
+    RenderCapacity,
+    //
 }
 
-pub(crate) enum Callback {
-    Once(Box<dyn FnOnce() + Send + 'static>),
-    Multiple(Box<dyn FnMut() + Send + 'static>),
+pub(crate) enum EventPayload {
+    None,
+    RenderCapacity(AudioRenderCapacityEvent),
 }
 
-impl Callback {
-    fn run(self) {
-        match self {
-            Self::Once(f) => (f)(),
-            Self::Multiple(mut f) => (f)(),
+pub(crate) struct Event {
+    type_: EventType,
+    payload: EventPayload,
+}
+
+impl Event {
+    pub fn ended(id: AudioNodeId) -> Self {
+        Event {
+            type_: EventType::Ended(id),
+            payload: EventPayload::None,
+        }
+    }
+
+    pub fn sink_changed() -> Self {
+        Event {
+            type_: EventType::SinkChanged,
+            payload: EventPayload::None,
+        }
+    }
+
+    pub fn render_capacity(value: AudioRenderCapacityEvent) -> Self {
+        Event {
+            type_: EventType::RenderCapacity,
+            payload: EventPayload::RenderCapacity(value),
         }
     }
 }
 
-pub(crate) struct EventHandler {
-    pub event: Event,
-    pub callback: Callback,
+pub(crate) enum EventHandler {
+    Once(Box<dyn FnOnce(EventPayload) + Send + 'static>),
+    Multiple(Box<dyn FnMut(EventPayload) + Send + 'static>),
 }
 
 #[derive(Clone, Default)]
 pub(crate) struct EventLoop {
-    callbacks: Arc<Mutex<Vec<EventHandler>>>,
+    event_handlers: Arc<Mutex<HashMap<EventType, EventHandler>>>,
 }
 
 impl EventLoop {
@@ -42,30 +68,27 @@ impl EventLoop {
 
         std::thread::spawn(move || loop {
             // this thread is dedicated to event handling so we can block
-            for message in event_channel.iter() {
-                let mut handlers = self_clone.callbacks.lock().unwrap();
-                // find EventHandlerInfos that matches messsage and execute callback
-
-                let mut i = 0;
-                while i < handlers.len() {
-                    let handler = &mut handlers[i];
-                    if handler.event != message {
-                        i += 1;
-                        continue;
-                    }
-                    if let Callback::Multiple(f) = &mut handler.callback {
-                        (f)();
-                        i += 1;
-                    } else {
-                        let handler = handlers.remove(i);
-                        handler.callback.run();
-                    }
+            for event in event_channel.iter() {
+                let mut handlers = self_clone.event_handlers.lock().unwrap();
+                if let Some(callback) = handlers.remove(&event.type_) {
+                    match callback {
+                        EventHandler::Once(f) => (f)(event.payload),
+                        EventHandler::Multiple(mut f) => {
+                            (f)(event.payload);
+                            handlers.insert(event.type_, EventHandler::Multiple(f));
+                        }
+                    };
                 }
+                // handlers Mutex guard drops here
             }
         });
     }
 
-    pub fn add_handler(&self, handler: EventHandler) {
-        self.callbacks.lock().unwrap().push(handler)
+    pub fn set_handler(&self, event: EventType, callback: EventHandler) {
+        self.event_handlers.lock().unwrap().insert(event, callback);
+    }
+
+    pub fn clear_handler(&self, event: EventType) {
+        self.event_handlers.lock().unwrap().remove(&event);
     }
 }
