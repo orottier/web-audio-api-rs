@@ -1,6 +1,6 @@
 //! Audio processing code that runs on the audio rendering thread
 use crate::context::{AudioNodeId, AudioParamId};
-use crate::events::Event;
+use crate::events::EventDispatch;
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{graph::Node, AudioRenderQuantum};
@@ -22,13 +22,13 @@ pub struct RenderScope {
     pub sample_rate: f32,
 
     pub(crate) node_id: Cell<AudioNodeId>,
-    pub(crate) event_sender: Option<Sender<Event>>,
+    pub(crate) event_sender: Option<Sender<EventDispatch>>,
 }
 
 impl RenderScope {
     pub(crate) fn send_ended_event(&self) {
         if let Some(sender) = self.event_sender.as_ref() {
-            let _ = sender.try_send(Event::ended(self.node_id.get()));
+            let _ = sender.try_send(EventDispatch::ended(self.node_id.get()));
         }
     }
 }

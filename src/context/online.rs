@@ -8,7 +8,7 @@ use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
 use crate::AudioRenderCapacity;
 
-use crate::events::{Event, EventHandler, EventType};
+use crate::events::{EventDispatch, EventHandler, EventType};
 use std::error::Error;
 use std::sync::Mutex;
 
@@ -292,7 +292,7 @@ impl AudioContext {
         drop(backend_manager_guard);
 
         // trigger event when all the work is done
-        let _ = self.base.send_event(Event::sink_changed());
+        let _ = self.base.send_event(EventDispatch::sink_changed());
 
         Ok(())
     }

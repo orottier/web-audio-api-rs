@@ -20,28 +20,28 @@ pub(crate) enum EventPayload {
     RenderCapacity(AudioRenderCapacityEvent),
 }
 
-pub(crate) struct Event {
+pub(crate) struct EventDispatch {
     type_: EventType,
     payload: EventPayload,
 }
 
-impl Event {
+impl EventDispatch {
     pub fn ended(id: AudioNodeId) -> Self {
-        Event {
+        EventDispatch {
             type_: EventType::Ended(id),
             payload: EventPayload::None,
         }
     }
 
     pub fn sink_changed() -> Self {
-        Event {
+        EventDispatch {
             type_: EventType::SinkChanged,
             payload: EventPayload::None,
         }
     }
 
     pub fn render_capacity(value: AudioRenderCapacityEvent) -> Self {
-        Event {
+        EventDispatch {
             type_: EventType::RenderCapacity,
             payload: EventPayload::RenderCapacity(value),
         }
@@ -63,7 +63,7 @@ impl EventLoop {
         Self::default()
     }
 
-    pub fn run(&self, event_channel: Receiver<Event>) {
+    pub fn run(&self, event_channel: Receiver<EventDispatch>) {
         let self_clone = self.clone();
 
         std::thread::spawn(move || loop {

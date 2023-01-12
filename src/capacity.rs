@@ -2,7 +2,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
-use crate::events::{Event, EventHandler, EventPayload, EventType};
+use crate::events::{EventDispatch, EventHandler, EventPayload, EventType};
 
 #[derive(Copy, Clone)]
 pub(crate) struct AudioRenderCapacityLoad {
@@ -144,7 +144,7 @@ impl AudioRenderCapacity {
                     underrun_sum as f64 / counter as f64,
                 );
 
-                let send_result = base_context.send_event(Event::render_capacity(event));
+                let send_result = base_context.send_event(EventDispatch::render_capacity(event));
                 if send_result.is_err() {
                     break;
                 }
