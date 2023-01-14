@@ -58,7 +58,7 @@ pub mod media;
 pub mod node;
 
 mod events;
-pub use events::Event;
+pub use events::{ErrorEvent, Event};
 
 mod param;
 pub use param::*;

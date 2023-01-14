@@ -1,7 +1,7 @@
 //! Audio processing code that runs on the audio rendering thread
 use crate::context::{AudioNodeId, AudioParamId};
 use crate::events::{ErrorEvent, EventDispatch};
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{Event, RENDER_QUANTUM_SIZE};
 
 use super::{graph::Node, AudioRenderQuantum};
 
@@ -51,7 +51,13 @@ impl RenderScope {
         );
 
         if let Some(sender) = self.event_sender.as_ref() {
-            let event = ErrorEvent { message, error };
+            let event = ErrorEvent {
+                message,
+                error,
+                event: Event {
+                    type_: "ErrorEvent",
+                },
+            };
             let _ = sender.try_send(EventDispatch::processor_error(self.node_id.get(), event));
         }
     }
