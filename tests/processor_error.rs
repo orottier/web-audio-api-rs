@@ -2,7 +2,6 @@ use float_eq::assert_float_eq;
 use web_audio_api::context::{AudioContextRegistration, BaseAudioContext, OfflineAudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
-use web_audio_api::RENDER_QUANTUM_SIZE;
 
 struct PanicNode {
     registration: AudioContextRegistration,
@@ -59,7 +58,7 @@ impl AudioProcessor for PanicProcessor {
 
 #[test]
 fn test_processor_error() {
-    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, 48000.);
+    let context = OfflineAudioContext::new(1, 128, 48000.);
 
     {
         // create constant source with value 1, connect to destination
@@ -79,9 +78,5 @@ fn test_processor_error() {
 
     let output = context.start_rendering_sync();
     // error branch should be muted, and other source should be processed
-    assert_float_eq!(
-        output.get_channel_data(0),
-        &[1.; RENDER_QUANTUM_SIZE][..],
-        abs_all <= 0.
-    );
+    assert_float_eq!(output.get_channel_data(0), &[1.; 128][..], abs_all <= 0.);
 }
