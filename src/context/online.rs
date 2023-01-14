@@ -6,9 +6,9 @@ use crate::io::{
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
-use crate::AudioRenderCapacity;
+use crate::{AudioRenderCapacity, Event};
 
-use crate::events::{Event, EventHandler, EventType};
+use crate::events::{EventDispatch, EventHandler, EventType};
 use std::error::Error;
 use std::sync::Mutex;
 
@@ -292,7 +292,7 @@ impl AudioContext {
         drop(backend_manager_guard);
 
         // trigger event when all the work is done
-        let _ = self.base.send_event(Event::sink_changed());
+        let _ = self.base.send_event(EventDispatch::sink_change());
 
         Ok(())
     }
@@ -301,18 +301,22 @@ impl AudioContext {
     ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
-    pub fn set_onsinkchange<F: FnMut() + Send + 'static>(&self, mut callback: F) {
-        let callback = move |_| callback();
+    pub fn set_onsinkchange<F: FnMut(Event) + Send + 'static>(&self, mut callback: F) {
+        let callback = move |_| {
+            callback(Event {
+                type_: "onsinkchange",
+            })
+        };
 
         self.base().set_event_handler(
-            EventType::SinkChanged,
+            EventType::SinkChange,
             EventHandler::Multiple(Box::new(callback)),
         );
     }
 
     /// Unset the callback to run when the audio sink has changed
     pub fn clear_onsinkchange(&self) {
-        self.base().clear_event_handler(EventType::SinkChanged);
+        self.base().clear_event_handler(EventType::SinkChange);
     }
 
     /// Suspends the progression of time in the audio context.

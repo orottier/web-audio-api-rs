@@ -4,7 +4,7 @@ use crate::context::{
     AudioContextRegistration, AudioContextState, AudioNodeId, BaseAudioContext,
     DESTINATION_NODE_ID, LISTENER_NODE_ID, LISTENER_PARAM_IDS,
 };
-use crate::events::{Event, EventHandler, EventLoop, EventType};
+use crate::events::{EventDispatch, EventHandler, EventLoop, EventType};
 use crate::message::ControlMessage;
 use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamEvent};
@@ -68,7 +68,7 @@ struct ConcreteBaseAudioContextInner {
     /// Stores the event handlers
     event_loop: EventLoop,
     /// Sender for events that will be handled by the EventLoop
-    event_send: Option<Sender<Event>>,
+    event_send: Option<Sender<EventDispatch>>,
 }
 
 impl BaseAudioContext for ConcreteBaseAudioContext {
@@ -124,7 +124,7 @@ impl ConcreteBaseAudioContext {
         max_channel_count: usize,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
-        event_channel: Option<(Sender<Event>, Receiver<Event>)>,
+        event_channel: Option<(Sender<EventDispatch>, Receiver<EventDispatch>)>,
         offline: bool,
     ) -> Self {
         let event_loop = EventLoop::new();
@@ -215,7 +215,7 @@ impl ConcreteBaseAudioContext {
         self.inner.render_channel.read().unwrap().send(msg)
     }
 
-    pub(crate) fn send_event(&self, msg: Event) -> Result<(), SendError<Event>> {
+    pub(crate) fn send_event(&self, msg: EventDispatch) -> Result<(), SendError<EventDispatch>> {
         match self.inner.event_send.as_ref() {
             Some(s) => s.send(msg),
             None => Err(SendError(msg)),

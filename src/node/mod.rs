@@ -7,6 +7,7 @@ use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
 use crate::events::{ErrorEvent, EventHandler, EventPayload, EventType};
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::Event;
 
 use lazy_static::lazy_static;
 
@@ -385,8 +386,8 @@ pub trait AudioScheduledSourceNode: AudioNode {
     ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
-    fn set_onended<F: FnOnce() + Send + 'static>(&self, callback: F) {
-        let callback = move |_| callback();
+    fn set_onended<F: FnOnce(Event) + Send + 'static>(&self, callback: F) {
+        let callback = move |_| callback(Event { type_: "ended" });
 
         self.context().set_event_handler(
             EventType::Ended(self.registration().id()),

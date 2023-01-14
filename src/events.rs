@@ -8,10 +8,16 @@ use std::sync::{Arc, Mutex};
 
 use crossbeam_channel::Receiver;
 
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct Event {
+    pub type_: &'static str,
+}
+
 #[derive(Hash, Eq, PartialEq)]
 pub(crate) enum EventType {
     Ended(AudioNodeId),
-    SinkChanged,
+    SinkChange,
     RenderCapacity,
     ProcessorError(AudioNodeId),
 }
@@ -29,35 +35,35 @@ pub(crate) enum EventPayload {
     ProcessorError(ErrorEvent),
 }
 
-pub(crate) struct Event {
+pub(crate) struct EventDispatch {
     type_: EventType,
     payload: EventPayload,
 }
 
-impl Event {
+impl EventDispatch {
     pub fn ended(id: AudioNodeId) -> Self {
-        Event {
+        EventDispatch {
             type_: EventType::Ended(id),
             payload: EventPayload::None,
         }
     }
 
-    pub fn sink_changed() -> Self {
-        Event {
-            type_: EventType::SinkChanged,
+    pub fn sink_change() -> Self {
+        EventDispatch {
+            type_: EventType::SinkChange,
             payload: EventPayload::None,
         }
     }
 
     pub fn render_capacity(value: AudioRenderCapacityEvent) -> Self {
-        Event {
+        EventDispatch {
             type_: EventType::RenderCapacity,
             payload: EventPayload::RenderCapacity(value),
         }
     }
 
     pub fn processor_error(id: AudioNodeId, value: ErrorEvent) -> Self {
-        Event {
+        EventDispatch {
             type_: EventType::ProcessorError(id),
             payload: EventPayload::ProcessorError(value),
         }
@@ -79,7 +85,7 @@ impl EventLoop {
         Self::default()
     }
 
-    pub fn run(&self, event_channel: Receiver<Event>) {
+    pub fn run(&self, event_channel: Receiver<EventDispatch>) {
         let self_clone = self.clone();
 
         std::thread::spawn(move || loop {
