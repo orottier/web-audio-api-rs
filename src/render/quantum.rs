@@ -75,8 +75,11 @@ impl AllocInner {
 
 /// Render thread channel buffer
 ///
-/// Basically wraps a `Rc<[f32; RENDER_QUANTUM_SIZE]>`, which means it derefs to a (mutable) slice
+/// Basically wraps a `Rc<[f32; render_quantum_size]>`, which means it derefs to a (mutable) slice
 /// of `[f32]` sample values. Plus it has copy-on-write semantics, so it is cheap to clone.
+///
+/// The `render_quantum_size` is equal to 128 by default, but in future versions it may be equal to
+/// the hardware preferred render quantum size or any other value.
 ///
 /// # Usage
 ///
@@ -111,12 +114,12 @@ impl AudioRenderQuantumChannel {
     /// `O(1)` check if this buffer is equal to the 'silence buffer'
     ///
     /// If this function returns false, it is still possible for all samples to be zero.
-    pub fn is_silent(&self) -> bool {
+    pub(crate) fn is_silent(&self) -> bool {
         Rc::ptr_eq(&self.data, &self.alloc.zeroes)
     }
 
     /// Sum two channels
-    pub fn add(&mut self, other: &Self) {
+    pub(crate) fn add(&mut self, other: &Self) {
         if self.is_silent() {
             *self = other.clone();
         } else if !other.is_silent() {
@@ -135,10 +138,10 @@ impl AudioRenderQuantumChannel {
 use std::ops::{Deref, DerefMut};
 
 impl Deref for AudioRenderQuantumChannel {
-    type Target = [f32; RENDER_QUANTUM_SIZE];
+    type Target = [f32];
 
     fn deref(&self) -> &Self::Target {
-        &self.data
+        self.data.as_slice()
     }
 }
 
@@ -165,9 +168,12 @@ impl std::ops::Drop for AudioRenderQuantumChannel {
 
 /// Render thread audio buffer, consisting of multiple channel buffers
 ///
-/// Internal fixed length audio asset of `RENDER_QUANTUM_SIZE` sample frames for
-/// block rendering, basically a matrix of `channels * AudioRenderQuantumChannel`
-/// cf. <https://webaudio.github.io/web-audio-api/#render-quantum>
+/// This is a  fixed length audio asset of `render_quantum_size` sample frames for block rendering,
+/// basically a list of [`AudioRenderQuantumChannel`]s cf.
+/// <https://webaudio.github.io/web-audio-api/#render-quantum>
+///
+/// The `render_quantum_size` is equal to 128 by default, but in future versions it may be equal to
+/// the hardware preferred render quantum size or any other value.
 ///
 /// An `AudioRenderQuantum` has copy-on-write semantics, so it is cheap to clone.
 ///
@@ -262,6 +268,9 @@ impl AudioRenderQuantum {
         &mut self.channels[..]
     }
 
+    /// `O(1)` check if this buffer is equal to the 'silence buffer'
+    ///
+    /// If this function returns false, it is still possible for all samples to be zero.
     pub fn is_silent(&self) -> bool {
         !self.channels.iter().any(|channel| !channel.is_silent())
     }
@@ -512,6 +521,9 @@ impl AudioRenderQuantum {
     }
 
     /// Convert this buffer to silence
+    ///
+    /// `O(1)` operation to convert this buffer to the 'silence buffer' which will enable some
+    /// optimizations in the graph rendering.
     pub fn make_silent(&mut self) {
         let silence = self.channels[0].silence();
 
@@ -639,7 +651,7 @@ mod tests {
                 assert_eq!(alloc.pool_size(), 2);
 
                 // but should be silent, even though a dirty buffer is taken
-                assert_float_eq!(&a_vals[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
+                assert_float_eq!(a_vals, &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
 
                 // is_silent is a superficial ptr check
                 assert!(!a.is_silent());
