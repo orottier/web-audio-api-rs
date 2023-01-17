@@ -2,7 +2,8 @@ use crossbeam_channel::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
-use crate::events::{Event, EventHandler, EventPayload, EventType};
+use crate::events::{EventDispatch, EventHandler, EventPayload, EventType};
+use crate::Event;
 
 #[derive(Copy, Clone)]
 pub(crate) struct AudioRenderCapacityLoad {
@@ -25,12 +26,18 @@ impl Default for AudioRenderCapacityOptions {
 }
 
 /// Performance metrics of the rendering thread
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct AudioRenderCapacityEvent {
-    timestamp: f64,
-    average_load: f64,
-    peak_load: f64,
-    underrun_ratio: f64,
+    /// The start time of the data collection period in terms of the associated AudioContext's currentTime
+    pub timestamp: f64,
+    /// An average of collected load values over the given update interval
+    pub average_load: f64,
+    /// A maximum value from collected load values over the given update interval.
+    pub peak_load: f64,
+    /// A ratio between the number of buffer underruns and the total number of system-level audio callbacks over the given update interval.
+    pub underrun_ratio: f64,
+    /// Inherits from this base Event
+    pub event: Event,
 }
 
 impl AudioRenderCapacityEvent {
@@ -42,27 +49,10 @@ impl AudioRenderCapacityEvent {
             average_load: (average_load * 100.).round() / 100.,
             peak_load: (peak_load * 100.).round() / 100.,
             underrun_ratio: (underrun_ratio * 100.).ceil() / 100.,
+            event: Event {
+                type_: "AudioRenderCapacityEvent",
+            },
         }
-    }
-
-    /// The start time of the data collection period in terms of the associated AudioContext's currentTime
-    pub fn timestamp(&self) -> f64 {
-        self.timestamp
-    }
-
-    /// An average of collected load values over the given update interval
-    pub fn average_load(&self) -> f64 {
-        self.average_load
-    }
-
-    /// A maximum value from collected load values over the given update interval.
-    pub fn peak_load(&self) -> f64 {
-        self.peak_load
-    }
-
-    /// A ratio between the number of buffer underruns and the total number of system-level audio callbacks over the given update interval.
-    pub fn underrun_ratio(&self) -> f64 {
-        self.underrun_ratio
     }
 }
 
@@ -144,7 +134,7 @@ impl AudioRenderCapacity {
                     underrun_sum as f64 / counter as f64,
                 );
 
-                let send_result = base_context.send_event(Event::render_capacity(event));
+                let send_result = base_context.send_event(EventDispatch::render_capacity(event));
                 if send_result.is_err() {
                     break;
                 }

@@ -30,7 +30,7 @@ fn test_none_sink_id() {
 
     // changing sink_id to 'none' again should make no changes
     let sink_stable = &*Box::leak(Box::new(AtomicBool::new(true)));
-    context.set_onsinkchange(move || {
+    context.set_onsinkchange(move |_| {
         sink_stable.store(false, Ordering::SeqCst);
     });
     context.set_sink_id_sync("none".into()).unwrap();

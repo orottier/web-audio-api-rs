@@ -15,7 +15,7 @@ fn main() {
     src.connect(&audio_context.destination());
     src.set_buffer(buffer);
 
-    src.set_onended(|| {
+    src.set_onended(|_| {
         println!("> Ended event triggered!");
     });
 
