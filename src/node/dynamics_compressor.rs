@@ -338,7 +338,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
             let mut max = f32::MIN;
 
             for channel in input.channels().iter() {
-                let sample = channel.as_slice()[i].abs();
+                let sample = channel[i].abs();
                 if sample > max {
                     max = sample;
                 }

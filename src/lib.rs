@@ -41,7 +41,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// Render quantum size, the audio graph is rendered in blocks of RENDER_QUANTUM_SIZE samples
 /// see. <https://webaudio.github.io/web-audio-api/#render-quantum>
-pub const RENDER_QUANTUM_SIZE: usize = 128;
+pub(crate) const RENDER_QUANTUM_SIZE: usize = 128;
 
 /// Maximum number of channels for audio processing
 pub const MAX_CHANNELS: usize = 32;
@@ -58,6 +58,7 @@ pub mod media;
 pub mod node;
 
 mod events;
+pub use events::Event;
 
 mod param;
 pub use param::*;

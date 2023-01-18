@@ -4,7 +4,8 @@ use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, OscillatorNode, OscillatorOptions, OscillatorType,
 };
-use web_audio_api::RENDER_QUANTUM_SIZE;
+
+const RENDER_QUANTUM_SIZE: usize = 128;
 
 #[test]
 fn test_offline_render() {

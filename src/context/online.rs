@@ -6,10 +6,9 @@ use crate::io::{
 use crate::media::{MediaElement, MediaStream};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
-use crate::AudioRenderCapacity;
+use crate::{AudioRenderCapacity, Event};
 
-use crate::events::{Callback, Event};
-use crossbeam_channel::Sender;
+use crate::events::{EventDispatch, EventHandler, EventType};
 use std::error::Error;
 use std::sync::Mutex;
 
@@ -50,6 +49,22 @@ impl Default for AudioContextLatencyCategory {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+#[non_exhaustive]
+/// This allows users to ask for a particular render quantum size.
+///
+/// Currently, only the default value is available
+pub enum AudioContextRenderSizeCategory {
+    /// The default value of 128 frames
+    Default,
+}
+
+impl Default for AudioContextRenderSizeCategory {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
 /// Specify the playback configuration for the [`AudioContext`] constructor.
 ///
 /// All fields are optional and will default to the value best suited for interactive playback on
@@ -79,6 +94,9 @@ pub struct AudioContextOptions {
     /// - use `"none"` to process the audio graph without playing through an audio output device.
     /// - use `"sinkId"` to use the specified audio sink id, obtained with [`enumerate_devices`]
     pub sink_id: String,
+
+    /// Option to request a default, optimized or specific render quantum size. It is a hint that might not be honored.
+    pub render_size_hint: AudioContextRenderSizeCategory,
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
@@ -94,8 +112,6 @@ pub struct AudioContext {
     render_capacity: AudioRenderCapacity,
     /// Initializer for the render thread (when restart is required)
     render_thread_init: RenderThreadInit,
-    /// Sender for events that will be handled by the EventLoop
-    event_send: Sender<Event>,
 }
 
 impl BaseAudioContext for AudioContext {
@@ -163,7 +179,7 @@ impl AudioContext {
             backend.number_of_channels(),
             frames_played,
             ctrl_msg_send,
-            Some(event_recv),
+            Some((event_send, event_recv)),
             false,
         );
         base.set_state(AudioContextState::Running);
@@ -177,7 +193,6 @@ impl AudioContext {
             backend_manager: Mutex::new(backend),
             render_capacity,
             render_thread_init,
-            event_send,
         }
     }
 
@@ -271,6 +286,7 @@ impl AudioContext {
             sample_rate: Some(self.sample_rate()),
             latency_hint: AudioContextLatencyCategory::default(), // todo reuse existing setting
             sink_id,
+            render_size_hint: AudioContextRenderSizeCategory::default(), // todo reuse existing setting
         };
         *backend_manager_guard = io::build_output(options, self.render_thread_init.clone());
 
@@ -296,20 +312,31 @@ impl AudioContext {
         drop(backend_manager_guard);
 
         // trigger event when all the work is done
-        let _ = self.event_send.send(Event::SinkChanged);
+        let _ = self.base.send_event(EventDispatch::sink_change());
 
         Ok(())
     }
 
     /// Register callback to run when the audio sink has changed
     ///
-    /// Calling this function multiple times will accumulate all event handlers. It is currently
-    /// not possible to remove an event handler.
-    pub fn onsinkchange<F: FnMut() + Send + 'static>(&self, callback: F) {
-        self.base().register_event_handler(
-            crate::events::Event::SinkChanged,
-            Callback::Multiple(Box::new(callback)),
+    /// Only a single event handler is active at any time. Calling this method multiple times will
+    /// override the previous event handler.
+    pub fn set_onsinkchange<F: FnMut(Event) + Send + 'static>(&self, mut callback: F) {
+        let callback = move |_| {
+            callback(Event {
+                type_: "onsinkchange",
+            })
+        };
+
+        self.base().set_event_handler(
+            EventType::SinkChange,
+            EventHandler::Multiple(Box::new(callback)),
         );
+    }
+
+    /// Unset the callback to run when the audio sink has changed
+    pub fn clear_onsinkchange(&self) {
+        self.base().clear_event_handler(EventType::SinkChange);
     }
 
     /// Suspends the progression of time in the audio context.
@@ -366,7 +393,7 @@ impl AudioContext {
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn close_sync(&self) {
         self.backend_manager.lock().unwrap().close();
-
+        self.render_capacity.stop();
         self.base().set_state(AudioContextState::Closed);
     }
 
