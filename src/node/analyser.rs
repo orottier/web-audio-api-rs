@@ -41,12 +41,12 @@ impl Default for AnalyserOptions {
 
 enum AnalyserRequest {
     FloatTime {
-        sender: Sender<Vec<f32>>,
-        buffer: Vec<f32>,
+        send_done_signal: Sender<()>,
+        buffer: &'static mut [f32],
     },
     FloatFrequency {
-        sender: Sender<Vec<f32>>,
-        buffer: Vec<f32>,
+        send_done_signal: Sender<()>,
+        buffer: &'static mut [f32],
     },
 }
 
@@ -137,21 +137,39 @@ impl AnalyserNode {
     /// Copies the current time domain data (waveform data) into the provided buffer
     // we can fix this panic cf issue #101
     #[allow(clippy::missing_panics_doc)]
-    pub fn get_float_time_domain_data(&self, buffer: Vec<f32>) -> Vec<f32> {
-        let (sender, receiver) = crossbeam_channel::bounded(0);
-        let request = AnalyserRequest::FloatTime { sender, buffer };
+    pub fn get_float_time_domain_data(&self, buffer: &mut [f32]) {
+        // SAFETY:
+        // We transmute to a static reference so we can ship it to the render thread.
+        // The render thread will only write to the reference, and will send back a signal when it
+        // is done writing. This function will block until the signal is received.
+        let buffer: &'static mut [f32] = unsafe { std::mem::transmute(buffer) };
+
+        let (send_done_signal, recv_done_signal) = crossbeam_channel::bounded(0);
+        let request = AnalyserRequest::FloatTime {
+            send_done_signal,
+            buffer,
+        };
         self.sender.send(request).unwrap();
-        receiver.recv().unwrap()
+        recv_done_signal.recv().unwrap()
     }
 
     /// Copies the current frequency data into the provided buffer
     // we can fix this panic cf issue #101
     #[allow(clippy::missing_panics_doc)]
-    pub fn get_float_frequency_data(&self, buffer: Vec<f32>) -> Vec<f32> {
-        let (sender, receiver) = crossbeam_channel::bounded(0);
-        let request = AnalyserRequest::FloatFrequency { sender, buffer };
+    pub fn get_float_frequency_data(&self, buffer: &mut [f32]) {
+        // SAFETY:
+        // We transmute to a static reference so we can ship it to the render thread.
+        // The render thread will only write to the reference, and will send back a signal when it
+        // is done writing. This function will block until the signal is received.
+        let buffer: &'static mut [f32] = unsafe { std::mem::transmute(buffer) };
+
+        let (send_done_signal, recv_done_signal) = crossbeam_channel::bounded(0);
+        let request = AnalyserRequest::FloatFrequency {
+            send_done_signal,
+            buffer,
+        };
         self.sender.send(request).unwrap();
-        receiver.recv().unwrap()
+        recv_done_signal.recv().unwrap()
     }
 }
 
@@ -202,17 +220,23 @@ impl AudioProcessor for AnalyserRenderer {
         // check if any information was requested from the control thread
         if let Ok(request) = self.receiver.try_recv() {
             match request {
-                AnalyserRequest::FloatTime { sender, mut buffer } => {
-                    self.analyser.get_float_time(&mut buffer[..], fft_size);
+                AnalyserRequest::FloatTime {
+                    send_done_signal: sender,
+                    buffer,
+                } => {
+                    self.analyser.get_float_time(buffer, fft_size);
 
                     // allow to fail when receiver is disconnected
-                    let _ = sender.send(buffer);
+                    let _ = sender.send(());
                 }
-                AnalyserRequest::FloatFrequency { sender, mut buffer } => {
-                    self.analyser.get_float_frequency(&mut buffer[..]);
+                AnalyserRequest::FloatFrequency {
+                    send_done_signal: sender,
+                    buffer,
+                } => {
+                    self.analyser.get_float_frequency(buffer);
 
                     // allow to fail when receiver is disconnected
-                    let _ = sender.send(buffer);
+                    let _ = sender.send(());
                 }
             }
         }

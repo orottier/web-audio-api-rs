@@ -229,7 +229,7 @@ fn poll_frequency_graph(
     height: u16,
 ) -> ! {
     let bin_count = analyser.frequency_bin_count();
-    let mut freq_buffer = Some(vec![0.; bin_count]);
+    let mut freq_buffer = vec![0.; bin_count];
 
     loop {
         // 5 frames per second
@@ -237,10 +237,9 @@ fn poll_frequency_graph(
 
         // todo, check BaseAudioContext.state if it is still running
 
-        let tmp_buf = freq_buffer.take().unwrap();
-        let tmp_buf = analyser.get_float_frequency_data(tmp_buf);
+        analyser.get_float_frequency_data(&mut freq_buffer);
 
-        let points: Vec<_> = tmp_buf
+        let points: Vec<_> = freq_buffer
             .iter()
             .enumerate()
             .map(|(i, &f)| (i as f32, f))
@@ -259,9 +258,6 @@ fn poll_frequency_graph(
 
         let event = UiEvent::GraphUpdate(plot);
         let _ = plot_send.send(event); // allowed to fail if the main thread is shutting down
-
-        // restore Vec
-        freq_buffer = Some(tmp_buf);
     }
 }
 
