@@ -4,16 +4,16 @@ use std::sync::Mutex;
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    BuildStreamError, Device, OutputCallbackInfo, SampleFormat,
-    Stream, StreamConfig, SupportedBufferSize,
+    BuildStreamError, Device, OutputCallbackInfo, SampleFormat, Stream, StreamConfig,
+    SupportedBufferSize,
 };
 
 use super::{AudioBackendManager, MediaDeviceInfo, MediaDeviceInfoKind, RenderThreadInit};
-use crate::{AtomicF64};
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::media::MicrophoneRender;
 use crate::render::RenderThread;
+use crate::AtomicF64;
 
 use crossbeam_channel::Receiver;
 
@@ -247,12 +247,8 @@ impl AudioBackendManager for CpalBackend {
         let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
         let renderer = MicrophoneRender::new(number_of_channels, sample_rate, sender);
 
-        let maybe_stream = spawn_input_stream(
-            &device,
-            supported.sample_format(),
-            &prefered,
-            renderer
-        );
+        let maybe_stream =
+            spawn_input_stream(&device, supported.sample_format(), &prefered, renderer);
 
         // the required block size prefered config may not be supported, in that
         // case, fallback the supported config
@@ -279,7 +275,7 @@ impl AudioBackendManager for CpalBackend {
                     &device,
                     supported.sample_format(),
                     &supported_config,
-                    renderer
+                    renderer,
                 );
                 spawned.expect("Unable to spawn input stream with default config")
             }
