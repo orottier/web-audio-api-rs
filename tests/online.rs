@@ -6,6 +6,7 @@
 use web_audio_api::context::{
     AudioContext, AudioContextOptions, AudioContextState, BaseAudioContext,
 };
+use web_audio_api::node::AudioNode;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -16,6 +17,31 @@ fn test_audio_context_send_sync() {
     let context = AudioContext::default();
     require_send_sync_static(context);
 }
+
+#[allow(dead_code)]
+fn ensure_audio_node_send_sync() {
+    let context = AudioContext::default();
+    let node = context.create_constant_source();
+    require_send_sync_static(node);
+}
+
+#[allow(dead_code)]
+fn ensure_audio_node_object_safe() {
+    let context = AudioContext::default();
+    let node = context.create_constant_source();
+    let _object: Box<dyn AudioNode> = Box::new(node);
+}
+
+/*
+ * AudioScheduledSourceNode trait is not object safe, see #249
+ *
+#[allow(dead_code)]
+fn ensure_audio_scheduled_source_node_object_safe() {
+    let context = AudioContext::default();
+    let node = context.create_constant_source();
+    let _object: Box<dyn AudioScheduledSourceNode> = Box::new(node);
+}
+*/
 
 #[test]
 fn test_none_sink_id() {
