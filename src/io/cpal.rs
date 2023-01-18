@@ -1,17 +1,15 @@
 //! Audio IO management API
-use std::convert::TryFrom;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
-
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    BuildStreamError, Device, OutputCallbackInfo, SampleFormat, SampleRate as CpalSampleRate,
+    BuildStreamError, Device, OutputCallbackInfo, SampleFormat,
     Stream, StreamConfig, SupportedBufferSize,
 };
 
 use super::{AudioBackendManager, MediaDeviceInfo, MediaDeviceInfoKind, RenderThreadInit};
+use crate::{AtomicF64};
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::media::MicrophoneRender;
@@ -130,7 +128,7 @@ impl AudioBackendManager for CpalBackend {
         prefered.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
 
         let output_latency = Arc::new(AtomicF64::new(0.));
-        let number_of_channels = usize::from(prefered.channels);
+        let mut number_of_channels = usize::from(prefered.channels);
         let mut sample_rate = prefered.sample_rate.0 as f32;
 
         let renderer = RenderThread::new(
