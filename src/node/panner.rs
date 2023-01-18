@@ -125,7 +125,7 @@ impl Default for PannerOptions {
     }
 }
 
-/// Assert that the channel count is valid for the StereoPannerNode
+/// Assert that the channel count is valid for the PannerNode
 /// see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
 ///
 /// # Panics
@@ -140,7 +140,7 @@ fn assert_valid_channel_count(count: usize) {
     }
 }
 
-/// Assert that the channel count is valid for the StereoPannerNode
+/// Assert that the channel count is valid for the PannerNode
 /// see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
 ///
 /// # Panics
@@ -310,7 +310,7 @@ impl AudioNode for PannerNode {
         1
     }
 
-    // same limitations as for the PannerNode
+    // same limitations as for the StereoPannerNode
     // see: https://webaudio.github.io/web-audio-api/#panner-channel-limitations
     fn set_channel_count(&self, count: usize) {
         assert_valid_channel_count(count);
