@@ -225,7 +225,7 @@ impl HrtfState {
     }
 }
 
-/// Node that positions / spatializes an incoming audio stream in three-dimensional space.
+/// `PannerNode` positions / spatializes an incoming audio stream in three-dimensional space.
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/PannerNode>
 /// - specification: <https://www.w3.org/TR/webaudio/#pannernode> and
