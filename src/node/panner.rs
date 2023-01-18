@@ -32,6 +32,12 @@ impl From<u8> for PanningModelType {
     }
 }
 
+impl Default for PanningModelType {
+    fn default() -> Self {
+        PanningModelType::EqualPower
+    }
+}
+
 /// Algorithm to reduce the volume of an audio source as it moves away from the listener
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DistanceModelType {
@@ -48,6 +54,12 @@ impl From<u8> for DistanceModelType {
             2 => DistanceModelType::Exponential,
             _ => unreachable!(),
         }
+    }
+}
+
+impl Default for DistanceModelType {
+    fn default() -> Self {
+        DistanceModelType::Inverse
     }
 }
 
@@ -84,13 +96,14 @@ pub struct PannerOptions {
     pub cone_inner_angle: f64,
     pub cone_outer_angle: f64,
     pub cone_outer_gain: f64,
+    pub channel_config: ChannelConfigOptions,
 }
 
 impl Default for PannerOptions {
     fn default() -> Self {
         PannerOptions {
-            panning_model: PanningModelType::EqualPower,
-            distance_model: DistanceModelType::Inverse,
+            panning_model: PanningModelType::default(),
+            distance_model: DistanceModelType::default(),
             position_x: 0.,
             position_y: 0.,
             position_z: 0.,
@@ -103,7 +116,42 @@ impl Default for PannerOptions {
             cone_inner_angle: 360.,
             cone_outer_angle: 360.,
             cone_outer_gain: 0.,
+            channel_config: ChannelConfigOptions {
+                count: 2,
+                count_mode: ChannelCountMode::ClampedMax,
+                interpretation: ChannelInterpretation::Speakers,
+            },
         }
+    }
+}
+
+/// Assert that the channel count is valid for the PannerNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count is greater than 2
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count(count: usize) {
+    if count > 2 {
+        panic!("NotSupportedError: PannerNode channel count cannot be greater than two");
+    }
+}
+
+/// Assert that the channel count is valid for the PannerNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count mode is [`ChannelCountMode::Max`]
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
+    if mode == ChannelCountMode::Max {
+        panic!("NotSupportedError: PannerNode channel count mode cannot be set to max");
     }
 }
 
@@ -177,7 +225,7 @@ impl HrtfState {
     }
 }
 
-/// Node that positions / spatializes an incoming audio stream in three-dimensional space.
+/// `PannerNode` positions / spatializes an incoming audio stream in three-dimensional space.
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/PannerNode>
 /// - specification: <https://www.w3.org/TR/webaudio/#pannernode> and
@@ -262,23 +310,35 @@ impl AudioNode for PannerNode {
         1
     }
 
-    fn set_channel_count(&self, v: usize) {
-        if v > 2 {
-            panic!("NotSupportedError: PannerNode channel count cannot be greater than two");
-        }
-        self.channel_config.set_count(v);
+    // same limitations as for the StereoPannerNode
+    // see: https://webaudio.github.io/web-audio-api/#panner-channel-limitations
+    fn set_channel_count(&self, count: usize) {
+        assert_valid_channel_count(count);
+        self.channel_config.set_count(count);
     }
 
-    fn set_channel_count_mode(&self, v: ChannelCountMode) {
-        if v == ChannelCountMode::Max {
-            panic!("NotSupportedError: PannerNode channel count mode cannot be set to max");
-        }
-        self.channel_config.set_count_mode(v);
+    fn set_channel_count_mode(&self, mode: ChannelCountMode) {
+        assert_valid_channel_count_mode(mode);
+        self.channel_config.set_count_mode(mode);
     }
 }
 
 impl PannerNode {
-    // can panic when loading HRIR-sphere
+    /// returns a `PannerNode` instance
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - audio context in which the audio node will live.
+    /// * `options` - stereo panner options
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * `options.channel_config.count` is greater than 2
+    /// * `options.channel_config.mode` is `ChannelCountMode::Max`
+    ///
+    /// Can panic when loading HRIR-sphere
     #[allow(clippy::missing_panics_doc)]
     pub fn new<C: BaseAudioContext>(context: &C, options: PannerOptions) -> Self {
         let node = context.register(move |registration| {
