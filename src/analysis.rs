@@ -275,7 +275,9 @@ impl Analyser {
         self.ring_buffer.read(&mut tmp, fft_size);
 
         dst.iter_mut().zip(tmp.iter()).for_each(|(o, i)| {
-            *o = (128. * (1. + i)) as u8;
+            let scaled = (128. * (1. + i));
+            let clamped = scaled.max(0).min(255);
+            *o = clamped as u8;
         });
     }
 
