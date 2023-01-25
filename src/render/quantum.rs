@@ -562,6 +562,17 @@ impl AudioRenderQuantum {
             ChannelCountMode::ClampedMax => max_channels.min(count),
         };
 
+        // fast path if both buffers are upmixed mono signals
+        if interpretation == ChannelInterpretation::Speakers
+            && self.all_channels_identical()
+            && other.all_channels_identical()
+        {
+            self.channels.truncate(1);
+            self.channels[0].add(&other.channels[0]);
+            self.mix(new_channels, interpretation);
+            return;
+        }
+
         self.mix(new_channels, interpretation);
 
         let mut other_mixed = other.clone();
@@ -571,6 +582,22 @@ impl AudioRenderQuantum {
             .iter_mut()
             .zip(other_mixed.channels.iter())
             .for_each(|(s, o)| s.add(o));
+    }
+
+    /// Determine if all channels are identical (by pointer)
+    ///
+    /// This is often the case for upmixed buffers. When all channels are identical, modifications
+    /// only need to be applied once.
+    fn all_channels_identical(&self) -> bool {
+        let mut channels = self.channels.iter();
+        let first = channels.next().unwrap();
+        for c in channels {
+            if !Rc::ptr_eq(&first.data, &c.data) {
+                return false;
+            }
+        }
+
+        true
     }
 }
 
