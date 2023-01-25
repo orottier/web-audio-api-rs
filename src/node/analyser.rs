@@ -164,7 +164,7 @@ impl AnalyserNode {
         self.analyser.read().unwrap().frequency_bin_count()
     }
 
-    /// Copies the current time domain data into the provided buffer
+    /// Copy the current time domain data as f32 values into the provided buffer
     pub fn get_float_time_domain_data(&self, buffer: &mut [f32]) {
         self.analyser
             .write()
@@ -172,6 +172,7 @@ impl AnalyserNode {
             .get_float_time_domain_data(buffer);
     }
 
+    /// Copy the current time domain data as u8 values into the provided buffer
     pub fn get_byte_time_domain_data(&self, buffer: &mut [u8]) {
         self.analyser
             .write()
@@ -179,19 +180,23 @@ impl AnalyserNode {
             .get_byte_time_domain_data(buffer);
     }
 
-    /// Copies the current frequency data into the provided buffer
+    /// Copy the current frequency data into the provided buffer
     pub fn get_float_frequency_data(&self, buffer: &mut [f32]) {
+        let current_time = self.registration.context().current_time();
         self.analyser
             .write()
             .unwrap()
-            .get_float_frequency_data(buffer);
+            .get_float_frequency_data(buffer, current_time);
     }
 
+    /// Copy the current frequency data scaled between min_decibels and
+    /// max_decibels into the provided buffer
     pub fn get_byte_frequency_data(&self, buffer: &mut [u8]) {
+        let current_time = self.registration.context().current_time();
         self.analyser
             .write()
             .unwrap()
-            .get_byte_frequency_data(buffer);
+            .get_byte_frequency_data(buffer, current_time);
     }
 }
 

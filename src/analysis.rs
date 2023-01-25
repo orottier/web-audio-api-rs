@@ -165,6 +165,7 @@ pub(crate) struct Analyser {
     fft_scratch: Vec<Complex<f32>>,
     fft_output: Vec<Complex<f32>>,
     last_fft_output: Vec<f32>,
+    last_fft_time: f64,
     blackman: Vec<f32>,
 }
 
@@ -195,6 +196,7 @@ impl Analyser {
             fft_scratch,
             fft_output,
             last_fft_output,
+            last_fft_time: f64::NEG_INFINITY,
             blackman,
         }
     }
@@ -275,13 +277,14 @@ impl Analyser {
         self.ring_buffer.read(&mut tmp, fft_size);
 
         dst.iter_mut().zip(tmp.iter()).for_each(|(o, i)| {
-            let scaled = (128. * (1. + i));
-            let clamped = scaled.max(0).min(255);
+            let scaled = 128. * (1. + i);
+            let clamped = scaled.max(0.).min(255.);
             *o = clamped as u8;
         });
     }
 
-    fn compute_fft(&mut self, fft_size: usize) {
+    fn compute_fft(&mut self) {
+        let fft_size = self.fft_size();
         let smoothing_time_constant = self.smoothing_time_constant() as f32;
         // setup FFT planner and properly sized buffers
         let r2c = self.fft_planner.lock().unwrap().plan_fft_forward(fft_size);
@@ -348,11 +351,17 @@ impl Analyser {
             });
     }
 
-    pub fn get_float_frequency_data(&mut self, dst: &mut [f32]) {
-        let fft_size = self.fft_size();
+    pub fn get_float_frequency_data(&mut self, dst: &mut [f32], current_time: f64) {
         let frequency_bin_count = self.frequency_bin_count();
 
-        self.compute_fft(fft_size);
+        // [spec] If another call to getByteFrequencyData() or getFloatFrequencyData()
+        // occurs within the same render quantum as a previous call, the current
+        // frequency data is not updated with the same data. Instead, the previously
+        // computed data is returned.
+        if current_time != self.last_fft_time {
+            self.compute_fft();
+            self.last_fft_time = current_time;
+        }
 
         // [spec] Write the current frequency data into array. If array’s byte
         // length is less than frequencyBinCount, the excess elements will be
@@ -366,13 +375,19 @@ impl Analyser {
             .for_each(|(v, b)| *v = 20. * b.log10());
     }
 
-    pub fn get_byte_frequency_data(&mut self, dst: &mut [u8]) {
-        let fft_size = self.fft_size();
+    pub fn get_byte_frequency_data(&mut self, dst: &mut [u8], current_time: f64) {
         let frequency_bin_count = self.frequency_bin_count();
         let min_decibels = self.min_decibels() as f32;
         let max_decibels = self.max_decibels() as f32;
 
-        self.compute_fft(fft_size);
+        // [spec] If another call to getByteFrequencyData() or getFloatFrequencyData()
+        // occurs within the same render quantum as a previous call, the current
+        // frequency data is not updated with the same data. Instead, the previously
+        // computed data is returned.
+        if current_time != self.last_fft_time {
+            self.compute_fft();
+            self.last_fft_time = current_time;
+        }
 
         // [spec] Write the current frequency data into array. If array’s byte
         // length is less than frequencyBinCount, the excess elements will be
@@ -733,7 +748,7 @@ mod tests {
             ring_buffer.write(&signal);
 
             let mut bins = vec![0.; analyser.frequency_bin_count()];
-            analyser.get_float_frequency_data(&mut bins[..]);
+            analyser.get_float_frequency_data(&mut bins[..], 0.);
 
             let highest = bins[num_bin];
 
@@ -752,7 +767,7 @@ mod tests {
 
         // get data, should be zero (negative infinity decibel)
         let mut bins = vec![-1.; RENDER_QUANTUM_SIZE];
-        analyser.get_float_frequency_data(&mut bins[..]);
+        analyser.get_float_frequency_data(&mut bins[..], 0.);
 
         // only N / 2 values should contain frequency data, rest is unaltered
         assert!(
@@ -772,7 +787,7 @@ mod tests {
 
         // get data, should be zero (negative infinity decibel)
         let mut bins = vec![255; RENDER_QUANTUM_SIZE];
-        analyser.get_byte_frequency_data(&mut bins[..]);
+        analyser.get_byte_frequency_data(&mut bins[..], 0.);
 
         // only N / 2 values should contain frequency data, rest is unaltered
         assert!(bins[0..(RENDER_QUANTUM_SIZE / 2)] == [0; (RENDER_QUANTUM_SIZE / 2)]);
