@@ -370,15 +370,6 @@ impl Analyser {
                 *p = smoothing_time_constant * *p + (1. - smoothing_time_constant) * norm;
 
             });
-
-        // Smooth over time the frequency domain data.
-        last_fft_output
-            .iter_mut()
-            .zip(output.iter().skip(1)) // skip first bin, i.e. DC Offset
-            .for_each(|(p, c)| {
-                let norm = c.norm() / fft_size as f32;
-                *p = smoothing_time_constant * *p + (1. - smoothing_time_constant) * norm;
-            });
     }
 
     pub fn get_float_frequency_data(&mut self, dst: &mut [f32]) {
@@ -734,10 +725,12 @@ mod tests {
         let fft_size = 1024;
         let freq_resolution = 43.066;
 
-        for num_bin in 1..5 {
-            // frequency centered on `num_bin` bin, we should have highest value
-            // in `num_bin` bin
-            let freq = freq_resolution * (num_bin as f32 + 0.5);
+        // note: we don't check all the bin range to keep low tests time
+        for num_bin in 1..(fft_size / 8) {
+            // create sines whose frequency centered on `num_bin` bin, we should
+            // the have highest value in `num_bin` bin
+            // @note (tbc): bin 0 seems to represent freq_resolution / 2
+            let freq = freq_resolution * num_bin as f32;
 
             let mut analyser = Analyser::new();
             analyser.set_fft_size(fft_size);
@@ -756,10 +749,10 @@ mod tests {
             let mut bins = vec![0.; analyser.frequency_bin_count()];
             analyser.get_float_frequency_data(&mut bins[..]);
 
-            let highest = bins[num_bin as usize];
+            let highest = bins[num_bin];
 
             bins.iter().enumerate().for_each(|(index, db)| {
-                if index != num_bin as usize {
+                if index != num_bin {
                     assert!(db < &highest);
                 }
             });
