@@ -80,13 +80,11 @@ pub use io::{enumerate_devices, MediaDeviceInfo, MediaDeviceInfoKind};
 mod analysis;
 mod message;
 
-/// Atomic float 32, only `load` and `store` are supported, no arithmetics
 #[derive(Debug)]
-pub(crate) struct AtomicF32 {
+pub (crate) struct AtomicF32 {
     inner: AtomicU32,
 }
 
-// `swap()` is not implemented as `AtomicF32` is only used in `param.rs` for now
 impl AtomicF32 {
     pub fn new(v: f32) -> Self {
         Self {
@@ -94,13 +92,13 @@ impl AtomicF32 {
         }
     }
 
-    pub fn load(&self) -> f32 {
-        f32::from_ne_bytes(self.inner.load(Ordering::SeqCst).to_ne_bytes())
+    pub fn load(&self, ordering: Ordering) -> f32 {
+        f32::from_ne_bytes(self.inner.load(ordering).to_ne_bytes())
     }
 
-    pub fn store(&self, v: f32) {
+    pub fn store(&self, v: f32, ordering: Ordering) {
         self.inner
-            .store(u32::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst)
+            .store(u32::from_ne_bytes(v.to_ne_bytes()), ordering);
     }
 }
 

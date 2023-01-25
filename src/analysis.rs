@@ -3,35 +3,12 @@
 //! These are used in the [`AnalyserNode`](crate::node::AnalyserNode)
 
 use std::f32::consts::PI;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use realfft::{num_complex::Complex, RealFftPlanner};
 
-use crate::{RENDER_QUANTUM_SIZE};
-
-// @todo - modify AtomicF32 in `lib.rs` to expose Ordering
-#[derive(Debug)]
-struct AtomicF32 {
-    inner: AtomicU32,
-}
-
-impl AtomicF32 {
-    pub fn new(v: f32) -> Self {
-        Self {
-            inner: AtomicU32::new(u32::from_ne_bytes(v.to_ne_bytes())),
-        }
-    }
-
-    pub fn load(&self, ordering: Ordering) -> f32 {
-        f32::from_ne_bytes(self.inner.load(ordering).to_ne_bytes())
-    }
-
-    pub fn store(&self, v: f32, ordering: Ordering) {
-        self.inner
-            .store(u32::from_ne_bytes(v.to_ne_bytes()), ordering);
-    }
-}
+use crate::{RENDER_QUANTUM_SIZE, AtomicF32};
 
 /// Blackman window values iterator with alpha = 0.16
 pub fn generate_blackman(size: usize) -> impl Iterator<Item = f32> {
