@@ -345,9 +345,10 @@ impl Analyser {
         last_fft_output
             .iter_mut()
             .zip(output.iter())
-            .for_each(|(p, c)| {
+            .for_each(|(o, c)| {
                 let norm = c.norm() * normalize_factor;
-                *p = smoothing_time_constant * *p + (1. - smoothing_time_constant) * norm;
+                let value = smoothing_time_constant * *o + (1. - smoothing_time_constant) * norm;
+                *o = if value.is_finite() { value } else { 0. };
             });
     }
 
