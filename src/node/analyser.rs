@@ -1,5 +1,5 @@
-use std::cell::RefCell;
-use std::sync::{Arc};
+// use std::cell::RefCell;
+use std::sync::{Arc, RwLock};
 
 use crate::analysis::{Analyser, AnalyserRingBuffer};
 use crate::context::{AudioContextRegistration, BaseAudioContext};
@@ -42,7 +42,7 @@ pub struct AnalyserNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     // needed to make the AnalyserNode API immutable
-    analyser: RefCell<Analyser>,
+    analyser: Arc<RwLock<Analyser>>,
 }
 
 impl AudioNode for AnalyserNode {
@@ -82,7 +82,7 @@ impl AnalyserNode {
             let node = AnalyserNode {
                 registration,
                 channel_config: options.channel_config.into(),
-                analyser: RefCell::new(analyser),
+                analyser: Arc::new(RwLock::new(analyser)),
             };
 
             (node, Box::new(render))
@@ -91,7 +91,7 @@ impl AnalyserNode {
 
     /// The size of the FFT used for frequency-domain analysis (in sample-frames)
     pub fn fft_size(&self) -> usize {
-        self.analyser.borrow().fft_size()
+        self.analyser.read().unwrap().fft_size()
     }
 
     /// Set FFT size
@@ -100,14 +100,14 @@ impl AnalyserNode {
     ///
     /// This function panics if fft_size is not a power of two or not in the range [32, 32768]
     pub fn set_fft_size(&self, fft_size: usize) {
-        self.analyser.borrow_mut().set_fft_size(fft_size);
+        self.analyser.write().unwrap().set_fft_size(fft_size);
     }
 
     /// Time averaging parameter with the last analysis frame.
     /// A value from 0 -> 1 where 0 represents no time averaging with the last
     /// analysis frame. The default value is 0.8.
     pub fn smoothing_time_constant(&self) -> f64 {
-        self.analyser.borrow().smoothing_time_constant()
+        self.analyser.read().unwrap().smoothing_time_constant()
     }
 
     /// Set smoothing time constant
@@ -116,14 +116,14 @@ impl AnalyserNode {
     ///
     /// This function panics if the value is set to a value less than 0 or more than 1.
     pub fn set_smoothing_time_constant(&self, value: f64) {
-        self.analyser.borrow_mut().set_smoothing_time_constant(value);
+        self.analyser.write().unwrap().set_smoothing_time_constant(value);
     }
 
 
     /// Minimum power value in the scaling range for the FFT analysis data for
     /// conversion to unsigned byte values. The default value is -100.
     pub fn min_decibels(&self) -> f64 {
-        self.analyser.borrow().min_decibels()
+        self.analyser.read().unwrap().min_decibels()
     }
 
     /// Set min decibels
@@ -133,13 +133,13 @@ impl AnalyserNode {
     /// This function panics if the value is set to a value more than or equal
     /// to max decibels.
     pub fn set_min_decibels(&self, value: f64) {
-        self.analyser.borrow_mut().set_min_decibels(value);
+        self.analyser.write().unwrap().set_min_decibels(value);
     }
 
     /// Maximum power value in the scaling range for the FFT analysis data for
     /// conversion to unsigned byte values. The default value is -30.
     pub fn max_decibels(&self) -> f64 {
-        self.analyser.borrow().max_decibels()
+        self.analyser.read().unwrap().max_decibels()
     }
 
     /// Set max decibels
@@ -149,30 +149,30 @@ impl AnalyserNode {
     /// This function panics if the value is set to a value less than or equal
     /// to min decibels.
     pub fn set_max_decibels(&self, value: f64) {
-        self.analyser.borrow_mut().set_max_decibels(value);
+        self.analyser.write().unwrap().set_max_decibels(value);
     }
 
     /// Number of bins in the FFT results, is half the FFT size
     pub fn frequency_bin_count(&self) -> usize {
-        self.analyser.borrow().frequency_bin_count()
+        self.analyser.read().unwrap().frequency_bin_count()
     }
 
     /// Copies the current time domain data (waveform data) into the provided buffer
     pub fn get_float_time_domain_data(&self, buffer: &mut [f32]) {
-        self.analyser.borrow_mut().get_float_time_domain_data(buffer);
+        self.analyser.write().unwrap().get_float_time_domain_data(buffer);
     }
 
     pub fn get_byte_time_domain_data(&self, buffer: &mut [u8]) {
-        self.analyser.borrow_mut().get_byte_time_domain_data(buffer);
+        self.analyser.write().unwrap().get_byte_time_domain_data(buffer);
     }
 
     /// Copies the current frequency data into the provided buffer
     pub fn get_float_frequency_data(&self, buffer: &mut [f32]) {
-        self.analyser.borrow_mut().get_float_frequency_data(buffer);
+        self.analyser.write().unwrap().get_float_frequency_data(buffer);
     }
 
     pub fn get_byte_frequency_data(&self, buffer: &mut [u8]) {
-        self.analyser.borrow_mut().get_byte_frequency_data(buffer);
+        self.analyser.write().unwrap().get_byte_frequency_data(buffer);
     }
 }
 

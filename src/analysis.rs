@@ -3,12 +3,12 @@
 //! These are used in the [`AnalyserNode`](crate::node::AnalyserNode)
 
 use std::f32::consts::PI;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use realfft::{num_complex::Complex, RealFftPlanner};
 
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{RENDER_QUANTUM_SIZE, AtomicF64};
 
 
 // @todo - modify AtomicF32 in `lib.rs` to expose Ordering
@@ -179,12 +179,14 @@ impl AnalyserRingBuffer {
 pub(crate) struct Analyser {
     // ring buffer informations
     ring_buffer: Arc<AnalyserRingBuffer>,
-    fft_size: usize,
-    smoothing_time_constant: f64,
-    min_decibels: f64,
-    max_decibels: f64,
+    fft_size: AtomicUsize,
+    smoothing_time_constant: AtomicF64,
+    min_decibels: AtomicF64,
+    max_decibels: AtomicF64,
 
-    fft_planner: RealFftPlanner<f32>,
+    // fft planner is not thread safe, but the Mutex is ok here as we are not
+    // in audio thread
+    fft_planner: Arc<Mutex<RealFftPlanner<f32>>>,
     fft_input: Vec<f32>,
     fft_scratch: Vec<Complex<f32>>,
     fft_output: Vec<Complex<f32>>,
@@ -211,11 +213,11 @@ impl Analyser {
 
         Self {
             ring_buffer,
-            fft_size: DEFAULT_FFT_SIZE,
-            smoothing_time_constant: DEFAULT_SMOOTHING_TIME_CONSTANT,
-            min_decibels: DEFAULT_MIN_DECIBELS,
-            max_decibels: DEFAULT_MAX_DECIBELS,
-            fft_planner,
+            fft_size: AtomicUsize::new(DEFAULT_FFT_SIZE),
+            smoothing_time_constant: AtomicF64::new(DEFAULT_SMOOTHING_TIME_CONSTANT),
+            min_decibels: AtomicF64::new(DEFAULT_MIN_DECIBELS),
+            max_decibels: AtomicF64::new(DEFAULT_MAX_DECIBELS),
+            fft_planner: Arc::new(Mutex::new(fft_planner)),
             fft_input,
             fft_scratch,
             fft_output,
@@ -229,13 +231,13 @@ impl Analyser {
     }
 
     pub fn fft_size(&self) -> usize {
-        self.fft_size
+        self.fft_size.load(Ordering::SeqCst)
     }
 
     pub fn set_fft_size(&mut self, fft_size: usize) {
         assert_valid_fft_size(fft_size);
 
-        let current_fft_size = self.fft_size;
+        let current_fft_size = self.fft_size.swap(fft_size, Ordering::SeqCst);
 
         if current_fft_size != fft_size {
             // reset last fft buffer
@@ -243,40 +245,38 @@ impl Analyser {
             // generate blackman window
             self.blackman.clear();
             generate_blackman(fft_size).for_each(|v| self.blackman.push(v));
-
-            self.fft_size = fft_size;
         }
     }
 
     pub fn smoothing_time_constant(&self) -> f64 {
-        self.smoothing_time_constant
+        self.smoothing_time_constant.load()
     }
 
     pub fn set_smoothing_time_constant(&mut self, value: f64) {
         assert_valid_smoothing_time_constant(value);
-        self.smoothing_time_constant = value;
+        self.smoothing_time_constant.store(value);
     }
 
     pub fn min_decibels(&self) -> f64 {
-        self.min_decibels
+        self.min_decibels.load()
     }
 
     pub fn set_min_decibels(&mut self, value: f64) {
-        assert_valid_min_decibels(value, self.max_decibels);
-        self.min_decibels = value;
+        assert_valid_min_decibels(value, self.max_decibels());
+        self.min_decibels.store(value);
     }
 
     pub fn max_decibels(&self) -> f64 {
-        self.max_decibels
+        self.max_decibels.load()
     }
 
     pub fn set_max_decibels(&mut self, value: f64) {
-        assert_valid_max_decibels(value, self.min_decibels);
-        self.max_decibels = value;
+        assert_valid_max_decibels(value, self.min_decibels());
+        self.max_decibels.store(value);
     }
 
     pub fn frequency_bin_count(&self) -> usize {
-        self.fft_size / 2
+        self.fft_size.load(Ordering::SeqCst) / 2
     }
 
     // @note: `add_input`, `get_float_time_domain_data`, `get_byte_time_domain_data`
@@ -288,14 +288,14 @@ impl Analyser {
     // the excess elements will be ignored. The most recent fftSize frames are
     // written (after downmixing)
     pub fn get_float_time_domain_data(&self, dst: &mut [f32]) {
-        let fft_size = self.fft_size;
+        let fft_size = self.fft_size();
         self.ring_buffer.read(dst, fft_size);
     }
 
     // we need to duplicate the `get_float_time_domain_data` to avoid creating
     // an intermediate vector of floats
     pub fn get_byte_time_domain_data(&self, dst: &mut [u8]) {
-        let fft_size = self.fft_size;
+        let fft_size = self.fft_size();
         let mut tmp = vec![0.; dst.len()];
         self.ring_buffer.read(&mut tmp, fft_size);
 
@@ -305,9 +305,9 @@ impl Analyser {
     }
 
     fn compute_fft(&mut self, fft_size: usize) {
-        let smoothing_time_constant = self.smoothing_time_constant as f32;
+        let smoothing_time_constant = self.smoothing_time_constant() as f32;
         // setup FFT planner and properly sized buffers
-        let r2c = self.fft_planner.plan_fft_forward(fft_size);
+        let r2c = self.fft_planner.lock().unwrap().plan_fft_forward(fft_size);
         let input = &mut self.fft_input[..fft_size];
         let output = &mut self.fft_output[..fft_size / 2 + 1];
         let scratch = &mut self.fft_scratch[..r2c.get_scratch_len()];
@@ -373,7 +373,7 @@ impl Analyser {
     }
 
     pub fn get_float_frequency_data(&mut self, dst: &mut [f32]) {
-        let fft_size = self.fft_size;
+        let fft_size = self.fft_size();
         let frequency_bin_count = self.frequency_bin_count();
 
         self.compute_fft(fft_size);
@@ -391,7 +391,7 @@ impl Analyser {
     }
 
     pub fn get_byte_frequency_data(&mut self, dst: &mut [u8]) {
-        let fft_size = self.fft_size;
+        let fft_size = self.fft_size();
         let frequency_bin_count = self.frequency_bin_count();
         let min_decibels = self.min_decibels() as f32;
         let max_decibels = self.max_decibels() as f32;
@@ -421,6 +421,7 @@ impl Analyser {
 #[cfg(test)]
 mod tests {
     use std::thread;
+    use std::sync::{RwLock};
 
     use float_eq::{assert_float_eq, float_eq};
     use rand::Rng;
@@ -804,7 +805,7 @@ mod tests {
     // SEGFAULT traps or something, but this is difficult to really test something
     // in an accurante way, other tests are there for such thing
     #[test]
-    fn test_concurrency() {
+    fn test_ring_buffer_concurrency() {
         let analyser = Arc::new(Analyser::new());
         let ring_buffer = analyser.get_ring_buffer_clone();
 
@@ -847,4 +848,13 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_thread_safety() {
+        let analyser = Arc::new(RwLock::new(Analyser::new()));
+
+        thread::spawn(move || {
+            analyser.write().unwrap().set_fft_size(MIN_FFT_SIZE);
+            assert_eq!(analyser.write().unwrap().fft_size(), MIN_FFT_SIZE);
+        });
+    }
 }
