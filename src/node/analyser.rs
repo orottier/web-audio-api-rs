@@ -1,7 +1,10 @@
 // use std::cell::RefCell;
 use std::sync::{Arc, RwLock};
 
-use crate::analysis::{Analyser, AnalyserRingBuffer};
+use crate::analysis::{
+    Analyser, AnalyserRingBuffer, DEFAULT_FFT_SIZE, DEFAULT_MAX_DECIBELS, DEFAULT_MIN_DECIBELS,
+    DEFAULT_SMOOTHING_TIME_CONSTANT,
+};
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
@@ -28,10 +31,10 @@ pub struct AnalyserOptions {
 impl Default for AnalyserOptions {
     fn default() -> Self {
         Self {
-            fft_size: 2048,
-            max_decibels: -30.,
-            min_decibels: 100.,
-            smoothing_time_constant: 0.8,
+            fft_size: DEFAULT_FFT_SIZE,
+            max_decibels: DEFAULT_MAX_DECIBELS,
+            min_decibels: DEFAULT_MIN_DECIBELS,
+            smoothing_time_constant: DEFAULT_SMOOTHING_TIME_CONSTANT,
             channel_config: ChannelConfigOptions::default(),
         }
     }
@@ -41,7 +44,7 @@ impl Default for AnalyserOptions {
 pub struct AnalyserNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
-    // needed to make the AnalyserNode API immutable
+    // RwLock is needed to make the AnalyserNode API immutable
     analyser: Arc<RwLock<Analyser>>,
 }
 
@@ -66,14 +69,16 @@ impl AudioNode for AnalyserNode {
 impl AnalyserNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: AnalyserOptions) -> Self {
         context.register(move |registration| {
-            // let fft_size = Arc::new(AtomicUsize::new(options.fft_size));
-            // let smoothing_time_constant = Arc::new(AtomicU32::new(
-            //     (options.smoothing_time_constant * 100.) as u32,
-            // ));
+            let fft_size = options.fft_size;
+            let smoothing_time_constant = options.smoothing_time_constant;
+            let min_decibels = options.min_decibels;
+            let max_decibels = options.max_decibels;
 
-            let analyser = Analyser::new();
-
-            // apply options
+            let mut analyser = Analyser::new();
+            analyser.set_fft_size(fft_size);
+            analyser.set_smoothing_time_constant(smoothing_time_constant);
+            analyser.set_min_decibels(min_decibels);
+            analyser.set_max_decibels(max_decibels);
 
             let render = AnalyserRenderer {
                 ring_buffer: analyser.get_ring_buffer_clone(),
@@ -116,9 +121,11 @@ impl AnalyserNode {
     ///
     /// This function panics if the value is set to a value less than 0 or more than 1.
     pub fn set_smoothing_time_constant(&self, value: f64) {
-        self.analyser.write().unwrap().set_smoothing_time_constant(value);
+        self.analyser
+            .write()
+            .unwrap()
+            .set_smoothing_time_constant(value);
     }
-
 
     /// Minimum power value in the scaling range for the FFT analysis data for
     /// conversion to unsigned byte values. The default value is -100.
@@ -157,22 +164,34 @@ impl AnalyserNode {
         self.analyser.read().unwrap().frequency_bin_count()
     }
 
-    /// Copies the current time domain data (waveform data) into the provided buffer
+    /// Copies the current time domain data into the provided buffer
     pub fn get_float_time_domain_data(&self, buffer: &mut [f32]) {
-        self.analyser.write().unwrap().get_float_time_domain_data(buffer);
+        self.analyser
+            .write()
+            .unwrap()
+            .get_float_time_domain_data(buffer);
     }
 
     pub fn get_byte_time_domain_data(&self, buffer: &mut [u8]) {
-        self.analyser.write().unwrap().get_byte_time_domain_data(buffer);
+        self.analyser
+            .write()
+            .unwrap()
+            .get_byte_time_domain_data(buffer);
     }
 
     /// Copies the current frequency data into the provided buffer
     pub fn get_float_frequency_data(&self, buffer: &mut [f32]) {
-        self.analyser.write().unwrap().get_float_frequency_data(buffer);
+        self.analyser
+            .write()
+            .unwrap()
+            .get_float_frequency_data(buffer);
     }
 
     pub fn get_byte_frequency_data(&self, buffer: &mut [u8]) {
-        self.analyser.write().unwrap().get_byte_frequency_data(buffer);
+        self.analyser
+            .write()
+            .unwrap()
+            .get_byte_frequency_data(buffer);
     }
 }
 

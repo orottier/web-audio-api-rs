@@ -3,13 +3,12 @@
 //! These are used in the [`AnalyserNode`](crate::node::AnalyserNode)
 
 use std::f32::consts::PI;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use realfft::{num_complex::Complex, RealFftPlanner};
 
-use crate::{RENDER_QUANTUM_SIZE, AtomicF64};
-
+use crate::{RENDER_QUANTUM_SIZE};
 
 // @todo - modify AtomicF32 in `lib.rs` to expose Ordering
 #[derive(Debug)]
@@ -29,7 +28,8 @@ impl AtomicF32 {
     }
 
     pub fn store(&self, v: f32, ordering: Ordering) {
-        self.inner.store(u32::from_ne_bytes(v.to_ne_bytes()), ordering);
+        self.inner
+            .store(u32::from_ne_bytes(v.to_ne_bytes()), ordering);
     }
 }
 
@@ -46,19 +46,13 @@ pub fn generate_blackman(size: usize) -> impl Iterator<Item = f32> {
     })
 }
 
-
-/// FFT size is max 32768 samples, mandated in spec
-// const MAX_SAMPLES: usize = 32768;
-/// Max FFT size corresponds to 256 render quanta
-// const MAX_QUANTA: usize = MAX_SAMPLES / RENDER_QUANTUM_SIZE;
-
-const DEFAULT_SMOOTHING_TIME_CONSTANT: f64 = 0.8;
-const DEFAULT_MIN_DECIBELS: f64 = -100.;
-const DEFAULT_MAX_DECIBELS: f64 = -30.;
+pub(crate) const DEFAULT_SMOOTHING_TIME_CONSTANT: f64 = 0.8;
+pub(crate) const DEFAULT_MIN_DECIBELS: f64 = -100.;
+pub(crate) const DEFAULT_MAX_DECIBELS: f64 = -30.;
+pub(crate) const DEFAULT_FFT_SIZE: usize = 2048;
 
 const MIN_FFT_SIZE: usize = 32;
 const MAX_FFT_SIZE: usize = 32768;
-const DEFAULT_FFT_SIZE: usize = 2048;
 
 // [spec] This MUST be a power of two in the range 32 to 32768, otherwise an
 // IndexSizeError exception MUST be thrown.
@@ -111,7 +105,6 @@ fn assert_valid_max_decibels(max_decibels: f64, min_decibels: f64) {
     }
 }
 
-
 // as the queue is composed of AtomicF32 having only 1 render quantum of room should be enough
 const RING_BUFFER_SIZE: usize = MAX_FFT_SIZE + RENDER_QUANTUM_SIZE;
 
@@ -155,11 +148,14 @@ impl AnalyserRingBuffer {
         // let fft_size = self.fft_size.load(Ordering::SeqCst);
         let len = dst.len().min(max_len);
 
-        dst.iter_mut().take(len).enumerate().for_each(|(index, value)| {
-            // offset calculation by RING_BUFFER_SIZE so we cant negative values
-            let position = (RING_BUFFER_SIZE + write_index - len + index) % RING_BUFFER_SIZE;
-            *value = self.buffer[position].load(Ordering::Relaxed);
-        });
+        dst.iter_mut()
+            .take(len)
+            .enumerate()
+            .for_each(|(index, value)| {
+                // offset calculation by RING_BUFFER_SIZE so we cant negative values
+                let position = (RING_BUFFER_SIZE + write_index - len + index) % RING_BUFFER_SIZE;
+                *value = self.buffer[position].load(Ordering::Relaxed);
+            });
     }
 
     // so that we can easily share the tests with the unsafe version
@@ -175,24 +171,24 @@ impl AnalyserRingBuffer {
     }
 }
 
-// this cannot be made thread safe because RealFftPlanner does not support it
+// As the analyser is wrapped into a Arc<RwLock<T>> by the analyser node to get interior
+// mutability and expose an immutable public API, we should be ok with thread safety.
 pub(crate) struct Analyser {
-    // ring buffer informations
     ring_buffer: Arc<AnalyserRingBuffer>,
-    fft_size: AtomicUsize,
-    smoothing_time_constant: AtomicF64,
-    min_decibels: AtomicF64,
-    max_decibels: AtomicF64,
-
-    // fft planner is not thread safe, but the Mutex is ok here as we are not
-    // in audio thread
+    fft_size: usize,
+    smoothing_time_constant: f64,
+    min_decibels: f64,
+    max_decibels: f64,
+    // If not wrapped into Arc<Mutex<T>>, compiler complains about thread safety:
+    // `(dyn rustfft::avx::avx_planner::AvxPlannerInternalAPI<f32> + 'static)`
+    // cannot be shared between threads safely
+    // But the Mutex is ok here as `compute_fft` Analyser lives outside the audio thread.
     fft_planner: Arc<Mutex<RealFftPlanner<f32>>>,
     fft_input: Vec<f32>,
     fft_scratch: Vec<Complex<f32>>,
     fft_output: Vec<Complex<f32>>,
     last_fft_output: Vec<f32>,
     blackman: Vec<f32>,
-
 }
 
 impl Analyser {
@@ -213,10 +209,10 @@ impl Analyser {
 
         Self {
             ring_buffer,
-            fft_size: AtomicUsize::new(DEFAULT_FFT_SIZE),
-            smoothing_time_constant: AtomicF64::new(DEFAULT_SMOOTHING_TIME_CONSTANT),
-            min_decibels: AtomicF64::new(DEFAULT_MIN_DECIBELS),
-            max_decibels: AtomicF64::new(DEFAULT_MAX_DECIBELS),
+            fft_size: DEFAULT_FFT_SIZE,
+            smoothing_time_constant: DEFAULT_SMOOTHING_TIME_CONSTANT,
+            min_decibels: DEFAULT_MIN_DECIBELS,
+            max_decibels: DEFAULT_MAX_DECIBELS,
             fft_planner: Arc::new(Mutex::new(fft_planner)),
             fft_input,
             fft_scratch,
@@ -231,13 +227,13 @@ impl Analyser {
     }
 
     pub fn fft_size(&self) -> usize {
-        self.fft_size.load(Ordering::SeqCst)
+        self.fft_size
     }
 
     pub fn set_fft_size(&mut self, fft_size: usize) {
         assert_valid_fft_size(fft_size);
 
-        let current_fft_size = self.fft_size.swap(fft_size, Ordering::SeqCst);
+        let current_fft_size = self.fft_size;
 
         if current_fft_size != fft_size {
             // reset last fft buffer
@@ -245,38 +241,40 @@ impl Analyser {
             // generate blackman window
             self.blackman.clear();
             generate_blackman(fft_size).for_each(|v| self.blackman.push(v));
+
+            self.fft_size = fft_size;
         }
     }
 
     pub fn smoothing_time_constant(&self) -> f64 {
-        self.smoothing_time_constant.load()
+        self.smoothing_time_constant
     }
 
     pub fn set_smoothing_time_constant(&mut self, value: f64) {
         assert_valid_smoothing_time_constant(value);
-        self.smoothing_time_constant.store(value);
+        self.smoothing_time_constant = value;
     }
 
     pub fn min_decibels(&self) -> f64 {
-        self.min_decibels.load()
+        self.min_decibels
     }
 
     pub fn set_min_decibels(&mut self, value: f64) {
         assert_valid_min_decibels(value, self.max_decibels());
-        self.min_decibels.store(value);
+        self.min_decibels = value;
     }
 
     pub fn max_decibels(&self) -> f64 {
-        self.max_decibels.load()
+        self.max_decibels
     }
 
     pub fn set_max_decibels(&mut self, value: f64) {
         assert_valid_max_decibels(value, self.min_decibels());
-        self.max_decibels.store(value);
+        self.max_decibels = value;
     }
 
     pub fn frequency_bin_count(&self) -> usize {
-        self.fft_size.load(Ordering::SeqCst) / 2
+        self.fft_size() / 2
     }
 
     // @note: `add_input`, `get_float_time_domain_data`, `get_byte_time_domain_data`
@@ -368,7 +366,6 @@ impl Analyser {
             .for_each(|(p, c)| {
                 let norm = c.norm() * normalize_factor;
                 *p = smoothing_time_constant * *p + (1. - smoothing_time_constant) * norm;
-
             });
     }
 
@@ -417,11 +414,10 @@ impl Analyser {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
+    use std::sync::RwLock;
     use std::thread;
-    use std::sync::{RwLock};
 
     use float_eq::{assert_float_eq, float_eq};
     use rand::Rng;
@@ -453,7 +449,6 @@ mod tests {
         assert_eq!(max_pos, 1024);
     }
 
-
     #[test]
     fn test_ring_buffer_write_simple() {
         let ring_buffer = AnalyserRingBuffer::new();
@@ -468,7 +463,8 @@ mod tests {
 
                     // check write index is properly updated
                     let write_index = ring_buffer.write_index.load(Ordering::SeqCst);
-                    let expected = (j * RENDER_QUANTUM_SIZE + RENDER_QUANTUM_SIZE) % RING_BUFFER_SIZE;
+                    let expected =
+                        (j * RENDER_QUANTUM_SIZE + RENDER_QUANTUM_SIZE) % RING_BUFFER_SIZE;
 
                     assert_eq!(write_index, expected);
                 }
@@ -488,7 +484,9 @@ mod tests {
             let ring_buffer = AnalyserRingBuffer::new();
 
             let offset = 10;
-            ring_buffer.write_index.store(RING_BUFFER_SIZE - offset, Ordering::SeqCst);
+            ring_buffer
+                .write_index
+                .store(RING_BUFFER_SIZE - offset, Ordering::SeqCst);
 
             let data = [1.; RENDER_QUANTUM_SIZE];
             ring_buffer.write(&data);
@@ -510,7 +508,9 @@ mod tests {
         {
             let ring_buffer = AnalyserRingBuffer::new();
             let offset = 2;
-            ring_buffer.write_index.store(RING_BUFFER_SIZE - offset, Ordering::SeqCst);
+            ring_buffer
+                .write_index
+                .store(RING_BUFFER_SIZE - offset, Ordering::SeqCst);
 
             let data = [1., 2., 3., 4.];
             ring_buffer.write(&data);
@@ -543,7 +543,6 @@ mod tests {
         let expected = [1.; RENDER_QUANTUM_SIZE];
         assert_float_eq!(&expected, &read_buffer, abs_all <= 1e-12);
 
-
         // second pass
         let data = [2.; RENDER_QUANTUM_SIZE];
         ring_buffer.write(&data);
@@ -559,13 +558,16 @@ mod tests {
         assert_float_eq!(&expected, &read_buffer, abs_all <= 1e-12);
 
         let mut full_buffer_expected = [0.; RING_BUFFER_SIZE];
-        full_buffer_expected[0..RENDER_QUANTUM_SIZE]
-            .copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
+        full_buffer_expected[0..RENDER_QUANTUM_SIZE].copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
         full_buffer_expected[RENDER_QUANTUM_SIZE..(RENDER_QUANTUM_SIZE * 2)]
             .copy_from_slice(&[2.; RENDER_QUANTUM_SIZE]);
 
-        assert_float_eq!(&ring_buffer.raw()[..], &full_buffer_expected[..], abs_all <= 1e-12);
+        assert_float_eq!(
+            &ring_buffer.raw()[..],
+            &full_buffer_expected[..],
+            abs_all <= 1e-12
+        );
     }
 
     #[test]
@@ -575,7 +577,9 @@ mod tests {
             let ring_buffer = AnalyserRingBuffer::new();
 
             let offset = 10;
-            ring_buffer.write_index.store(RING_BUFFER_SIZE - offset, Ordering::SeqCst);
+            ring_buffer
+                .write_index
+                .store(RING_BUFFER_SIZE - offset, Ordering::SeqCst);
 
             let data = [1.; RENDER_QUANTUM_SIZE];
             ring_buffer.write(&data);
@@ -590,7 +594,9 @@ mod tests {
         {
             let ring_buffer = AnalyserRingBuffer::new();
             let offset = 2;
-            ring_buffer.write_index.store(RING_BUFFER_SIZE - offset, Ordering::SeqCst);
+            ring_buffer
+                .write_index
+                .store(RING_BUFFER_SIZE - offset, Ordering::SeqCst);
 
             let data = [1., 2., 3., 4.];
             ring_buffer.write(&data);
@@ -771,8 +777,7 @@ mod tests {
 
         // only N / 2 values should contain frequency data, rest is unaltered
         assert!(
-            bins[0..(RENDER_QUANTUM_SIZE / 2)]
-                == [f32::NEG_INFINITY; (RENDER_QUANTUM_SIZE / 2)]
+            bins[0..(RENDER_QUANTUM_SIZE / 2)] == [f32::NEG_INFINITY; (RENDER_QUANTUM_SIZE / 2)]
         );
         assert_float_eq!(
             &bins[(RENDER_QUANTUM_SIZE / 2)..],
@@ -781,7 +786,7 @@ mod tests {
         );
     }
 
-     #[test]
+    #[test]
     fn test_get_byte_frequency_data_vs_frequenc_bin_count() {
         let mut analyser = Analyser::new();
         analyser.set_fft_size(RENDER_QUANTUM_SIZE);
@@ -791,14 +796,8 @@ mod tests {
         analyser.get_byte_frequency_data(&mut bins[..]);
 
         // only N / 2 values should contain frequency data, rest is unaltered
-        assert!(
-            bins[0..(RENDER_QUANTUM_SIZE / 2)]
-                == [0; (RENDER_QUANTUM_SIZE / 2)]
-        );
-        assert!(
-            bins[(RENDER_QUANTUM_SIZE / 2)..]
-                == [255; (RENDER_QUANTUM_SIZE / 2)][..],
-        );
+        assert!(bins[0..(RENDER_QUANTUM_SIZE / 2)] == [0; (RENDER_QUANTUM_SIZE / 2)]);
+        assert!(bins[(RENDER_QUANTUM_SIZE / 2)..] == [255; (RENDER_QUANTUM_SIZE / 2)][..],);
     }
 
     // this mostly tries to show that it works concurrently and we don't fall into
