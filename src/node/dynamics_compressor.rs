@@ -1,5 +1,5 @@
-use std::sync::atomic::{Ordering};
-use std::sync::{Arc};
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};

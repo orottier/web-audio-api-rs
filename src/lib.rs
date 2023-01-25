@@ -81,7 +81,7 @@ mod analysis;
 mod message;
 
 #[derive(Debug)]
-pub (crate) struct AtomicF32 {
+pub(crate) struct AtomicF32 {
     inner: AtomicU32,
 }
 

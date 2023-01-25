@@ -40,7 +40,48 @@ impl Default for AnalyserOptions {
     }
 }
 
-/// Provides real-time frequency and time-domain analysis information
+/// `AnalyserNode` represents a node able to provide real-time frequency and
+/// time-domain analysis information.
+///
+/// It is an AudioNode that passes the audio stream unchanged from the input to
+/// the output, but allows you to take the generated data, process it, and create
+/// audio visualizations..
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AnalyserNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#AnalyserNode>
+/// - see also: [`BaseAudioContext::create_analyser`](crate::context::BaseAudioContext::create_analyser)
+///
+/// # Usage
+///
+/// ```no_run
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+///
+/// let context = AudioContext::default();
+///
+/// let analyser = context.create_analyser();
+/// analyser.connect(&context.destination());
+///
+/// let osc = context.create_oscillator();
+/// osc.frequency().set_value(200.);
+/// osc.connect(&analyser);
+/// osc.start();
+///
+/// let mut bins = vec![0.; analyser.frequency_bin_count()];
+///
+///
+/// loop {
+///     analyser.get_float_frequency_data(&mut bins);
+///     println!("{:?}", &bins[0..20]); // print 20 first bins
+///     std::thread::sleep(std::time::Duration::from_millis(1000));
+/// }
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example analyser`
+/// - `cargo run --release --example mic_playback`
+///
 pub struct AnalyserNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
@@ -95,13 +136,17 @@ impl AnalyserNode {
     }
 
     /// The size of the FFT used for frequency-domain analysis (in sample-frames)
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the lock to the inner analyser is poisoned
     pub fn fft_size(&self) -> usize {
         self.analyser.read().unwrap().fft_size()
     }
 
     /// Set FFT size
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// This function panics if fft_size is not a power of two or not in the range [32, 32768]
     pub fn set_fft_size(&self, fft_size: usize) {
@@ -111,13 +156,17 @@ impl AnalyserNode {
     /// Time averaging parameter with the last analysis frame.
     /// A value from 0 -> 1 where 0 represents no time averaging with the last
     /// analysis frame. The default value is 0.8.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the lock to the inner analyser is poisoned
     pub fn smoothing_time_constant(&self) -> f64 {
         self.analyser.read().unwrap().smoothing_time_constant()
     }
 
     /// Set smoothing time constant
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// This function panics if the value is set to a value less than 0 or more than 1.
     pub fn set_smoothing_time_constant(&self, value: f64) {
@@ -129,13 +178,17 @@ impl AnalyserNode {
 
     /// Minimum power value in the scaling range for the FFT analysis data for
     /// conversion to unsigned byte values. The default value is -100.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the lock to the inner analyser is poisoned
     pub fn min_decibels(&self) -> f64 {
         self.analyser.read().unwrap().min_decibels()
     }
 
     /// Set min decibels
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// This function panics if the value is set to a value more than or equal
     /// to max decibels.
@@ -145,13 +198,17 @@ impl AnalyserNode {
 
     /// Maximum power value in the scaling range for the FFT analysis data for
     /// conversion to unsigned byte values. The default value is -30.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the lock to the inner analyser is poisoned
     pub fn max_decibels(&self) -> f64 {
         self.analyser.read().unwrap().max_decibels()
     }
 
     /// Set max decibels
     ///
-    /// ## Panics
+    /// # Panics
     ///
     /// This function panics if the value is set to a value less than or equal
     /// to min decibels.
@@ -160,11 +217,19 @@ impl AnalyserNode {
     }
 
     /// Number of bins in the FFT results, is half the FFT size
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the lock to the inner analyser is poisoned
     pub fn frequency_bin_count(&self) -> usize {
         self.analyser.read().unwrap().frequency_bin_count()
     }
 
     /// Copy the current time domain data as f32 values into the provided buffer
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the lock to the inner analyser is poisoned
     pub fn get_float_time_domain_data(&self, buffer: &mut [f32]) {
         self.analyser
             .write()
@@ -173,6 +238,10 @@ impl AnalyserNode {
     }
 
     /// Copy the current time domain data as u8 values into the provided buffer
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the lock to the inner analyser is poisoned
     pub fn get_byte_time_domain_data(&self, buffer: &mut [u8]) {
         self.analyser
             .write()
@@ -181,6 +250,10 @@ impl AnalyserNode {
     }
 
     /// Copy the current frequency data into the provided buffer
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the lock to the inner analyser is poisoned
     pub fn get_float_frequency_data(&self, buffer: &mut [f32]) {
         let current_time = self.registration.context().current_time();
         self.analyser
@@ -191,6 +264,10 @@ impl AnalyserNode {
 
     /// Copy the current frequency data scaled between min_decibels and
     /// max_decibels into the provided buffer
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the lock to the inner analyser is poisoned
     pub fn get_byte_frequency_data(&self, buffer: &mut [u8]) {
         let current_time = self.registration.context().current_time();
         self.analyser

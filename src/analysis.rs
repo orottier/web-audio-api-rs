@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use realfft::{num_complex::Complex, RealFftPlanner};
 
-use crate::{RENDER_QUANTUM_SIZE, AtomicF32};
+use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
 /// Blackman window values iterator with alpha = 0.16
 pub fn generate_blackman(size: usize) -> impl Iterator<Item = f32> {
@@ -41,7 +41,7 @@ fn assert_valid_fft_size(fft_size: usize) {
         );
     }
 
-    if fft_size < MIN_FFT_SIZE || fft_size > MAX_FFT_SIZE {
+    if !(MIN_FFT_SIZE..=MAX_FFT_SIZE).contains(&fft_size) {
         panic!(
             "IndexSizeError - Invalid fft size: {:?} is outside range [{:?}, {:?}]",
             fft_size, MIN_FFT_SIZE, MAX_FFT_SIZE
@@ -52,7 +52,7 @@ fn assert_valid_fft_size(fft_size: usize) {
 // [spec] If the value of this attribute is set to a value less than 0 or more
 // than 1, an IndexSizeError exception MUST be thrown.
 fn assert_valid_smoothing_time_constant(smoothing_time_constant: f64) {
-    if smoothing_time_constant < 0. || smoothing_time_constant > 1. {
+    if !(0. ..=1.).contains(&smoothing_time_constant) {
         panic!(
             "IndexSizeError - Invalid smoothing time constant: {:?} is outside range [0, 1]",
             smoothing_time_constant
@@ -278,7 +278,7 @@ impl Analyser {
 
         dst.iter_mut().zip(tmp.iter()).for_each(|(o, i)| {
             let scaled = 128. * (1. + i);
-            let clamped = scaled.max(0.).min(255.);
+            let clamped = scaled.clamp(0., 255.);
             *o = clamped as u8;
         });
     }
@@ -402,7 +402,7 @@ impl Analyser {
                 let db = 20. * b.log10();
                 // 𝑏[𝑘]=⌊255 / dB𝑚𝑎𝑥−dB𝑚𝑖𝑛 * (𝑌[𝑘]−dB𝑚𝑖𝑛)⌋
                 let scaled = 255. / (max_decibels - min_decibels) * (db - min_decibels);
-                let clamped = scaled.max(0.).min(255.);
+                let clamped = scaled.clamp(0., 255.);
                 *v = clamped as u8;
             });
     }
