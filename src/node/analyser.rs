@@ -1,13 +1,13 @@
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::cell::RefCell;
+use std::sync::{Arc};
 
-use crate::analysis::Analyser;
+use crate::analysis::{Analyser, AnalyserRingBuffer};
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
 
-use crossbeam_channel::{self, Receiver, Sender};
+// use crossbeam_channel::{self, Receiver, Sender};
 
 /// Options for constructing an [`AnalyserNode`]
 // dictionary AnalyserOptions : AudioNodeOptions {
@@ -19,9 +19,7 @@ use crossbeam_channel::{self, Receiver, Sender};
 #[derive(Clone, Debug)]
 pub struct AnalyserOptions {
     pub fft_size: usize,
-    #[allow(dead_code)]
     pub max_decibels: f64,
-    #[allow(dead_code)]
     pub min_decibels: f64,
     pub smoothing_time_constant: f64,
     pub channel_config: ChannelConfigOptions,
@@ -39,24 +37,12 @@ impl Default for AnalyserOptions {
     }
 }
 
-enum AnalyserRequest {
-    FloatTime {
-        send_done_signal: Sender<()>,
-        buffer: &'static mut [f32],
-    },
-    FloatFrequency {
-        send_done_signal: Sender<()>,
-        buffer: &'static mut [f32],
-    },
-}
-
 /// Provides real-time frequency and time-domain analysis information
 pub struct AnalyserNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
-    fft_size: Arc<AtomicUsize>,
-    smoothing_time_constant: Arc<AtomicU32>,
-    sender: Sender<AnalyserRequest>,
+    // needed to make the AnalyserNode API immutable
+    analyser: RefCell<Analyser>,
 }
 
 impl AudioNode for AnalyserNode {
@@ -80,110 +66,119 @@ impl AudioNode for AnalyserNode {
 impl AnalyserNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: AnalyserOptions) -> Self {
         context.register(move |registration| {
-            let fft_size = Arc::new(AtomicUsize::new(options.fft_size));
-            let smoothing_time_constant = Arc::new(AtomicU32::new(
-                (options.smoothing_time_constant * 100.) as u32,
-            ));
+            // let fft_size = Arc::new(AtomicUsize::new(options.fft_size));
+            // let smoothing_time_constant = Arc::new(AtomicU32::new(
+            //     (options.smoothing_time_constant * 100.) as u32,
+            // ));
 
-            let (sender, receiver) = crossbeam_channel::bounded(0);
+            let analyser = Analyser::new();
+
+            // apply options
 
             let render = AnalyserRenderer {
-                analyser: Analyser::new(options.fft_size),
-                fft_size: fft_size.clone(),
-                smoothing_time_constant: smoothing_time_constant.clone(),
-                receiver,
+                ring_buffer: analyser.get_ring_buffer_clone(),
             };
 
             let node = AnalyserNode {
                 registration,
                 channel_config: options.channel_config.into(),
-                fft_size,
-                smoothing_time_constant,
-                sender,
+                analyser: RefCell::new(analyser),
             };
 
             (node, Box::new(render))
         })
     }
 
-    /// Half the FFT size
-    pub fn frequency_bin_count(&self) -> usize {
-        self.fft_size.load(Ordering::SeqCst) / 2
-    }
-
     /// The size of the FFT used for frequency-domain analysis (in sample-frames)
     pub fn fft_size(&self) -> usize {
-        self.fft_size.load(Ordering::SeqCst)
+        self.analyser.borrow().fft_size()
     }
 
-    /// This MUST be a power of two in the range 32 to 32768
+    /// Set FFT size
+    ///
+    /// ## Panics
+    ///
+    /// This function panics if fft_size is not a power of two or not in the range [32, 32768]
     pub fn set_fft_size(&self, fft_size: usize) {
-        // todo assert size
-        self.fft_size.store(fft_size, Ordering::SeqCst);
+        self.analyser.borrow_mut().set_fft_size(fft_size);
     }
 
     /// Time averaging parameter with the last analysis frame.
+    /// A value from 0 -> 1 where 0 represents no time averaging with the last
+    /// analysis frame. The default value is 0.8.
     pub fn smoothing_time_constant(&self) -> f64 {
-        self.smoothing_time_constant.load(Ordering::SeqCst) as f64 / 100.
+        self.analyser.borrow().smoothing_time_constant()
     }
 
-    /// Set smoothing time constant, this MUST be a value between 0 and 1
+    /// Set smoothing time constant
+    ///
+    /// ## Panics
+    ///
+    /// This function panics if the value is set to a value less than 0 or more than 1.
     pub fn set_smoothing_time_constant(&self, value: f64) {
-        // todo assert range
-        self.smoothing_time_constant
-            .store((value * 100.) as u32, Ordering::SeqCst);
+        self.analyser.borrow_mut().set_smoothing_time_constant(value);
+    }
+
+
+    /// Minimum power value in the scaling range for the FFT analysis data for
+    /// conversion to unsigned byte values. The default value is -100.
+    pub fn min_decibels(&self) -> f64 {
+        self.analyser.borrow().min_decibels()
+    }
+
+    /// Set min decibels
+    ///
+    /// ## Panics
+    ///
+    /// This function panics if the value is set to a value more than or equal
+    /// to max decibels.
+    pub fn set_min_decibels(&self, value: f64) {
+        self.analyser.borrow_mut().set_min_decibels(value);
+    }
+
+    /// Maximum power value in the scaling range for the FFT analysis data for
+    /// conversion to unsigned byte values. The default value is -30.
+    pub fn max_decibels(&self) -> f64 {
+        self.analyser.borrow().max_decibels()
+    }
+
+    /// Set max decibels
+    ///
+    /// ## Panics
+    ///
+    /// This function panics if the value is set to a value less than or equal
+    /// to min decibels.
+    pub fn set_max_decibels(&self, value: f64) {
+        self.analyser.borrow_mut().set_max_decibels(value);
+    }
+
+    /// Number of bins in the FFT results, is half the FFT size
+    pub fn frequency_bin_count(&self) -> usize {
+        self.analyser.borrow().frequency_bin_count()
     }
 
     /// Copies the current time domain data (waveform data) into the provided buffer
-    // we can fix this panic cf issue #101
-    #[allow(clippy::missing_panics_doc)]
     pub fn get_float_time_domain_data(&self, buffer: &mut [f32]) {
-        // SAFETY:
-        // We transmute to a static reference so we can ship it to the render thread.
-        // The render thread will only write to the reference, and will send back a signal when it
-        // is done writing. This function will block until the signal is received.
-        let buffer: &'static mut [f32] = unsafe { std::mem::transmute(buffer) };
+        self.analyser.borrow_mut().get_float_time_domain_data(buffer);
+    }
 
-        let (send_done_signal, recv_done_signal) = crossbeam_channel::bounded(0);
-        let request = AnalyserRequest::FloatTime {
-            send_done_signal,
-            buffer,
-        };
-        self.sender.send(request).unwrap();
-        recv_done_signal.recv().unwrap()
+    pub fn get_byte_time_domain_data(&self, buffer: &mut [u8]) {
+        self.analyser.borrow_mut().get_byte_time_domain_data(buffer);
     }
 
     /// Copies the current frequency data into the provided buffer
-    // we can fix this panic cf issue #101
-    #[allow(clippy::missing_panics_doc)]
     pub fn get_float_frequency_data(&self, buffer: &mut [f32]) {
-        // SAFETY:
-        // We transmute to a static reference so we can ship it to the render thread.
-        // The render thread will only write to the reference, and will send back a signal when it
-        // is done writing. This function will block until the signal is received.
-        let buffer: &'static mut [f32] = unsafe { std::mem::transmute(buffer) };
+        self.analyser.borrow_mut().get_float_frequency_data(buffer);
+    }
 
-        let (send_done_signal, recv_done_signal) = crossbeam_channel::bounded(0);
-        let request = AnalyserRequest::FloatFrequency {
-            send_done_signal,
-            buffer,
-        };
-        self.sender.send(request).unwrap();
-        recv_done_signal.recv().unwrap()
+    pub fn get_byte_frequency_data(&self, buffer: &mut [u8]) {
+        self.analyser.borrow_mut().get_byte_frequency_data(buffer);
     }
 }
 
 struct AnalyserRenderer {
-    pub analyser: Analyser,
-    pub fft_size: Arc<AtomicUsize>,
-    pub smoothing_time_constant: Arc<AtomicU32>,
-    pub receiver: Receiver<AnalyserRequest>,
+    ring_buffer: Arc<AnalyserRingBuffer>,
 }
-
-// SAFETY:
-// AudioBuffer is not Send, but the buffer Vec is empty when we move it to the render thread.
-#[allow(clippy::non_send_fields_in_send_ty)]
-unsafe impl Send for AnalyserRenderer {}
 
 impl AudioProcessor for AnalyserRenderer {
     fn process(
@@ -200,47 +195,15 @@ impl AudioProcessor for AnalyserRenderer {
         // pass through input
         *output = input.clone();
 
-        // add current input to ring buffer
+        // down mix to mono
         let mut mono = input.clone();
         mono.mix(1, ChannelInterpretation::Speakers);
-        let mono_data = mono.channel_data(0).clone();
-        self.analyser.add_data(mono_data);
 
-        // calculate frequency domain every `fft_size` samples
-        let fft_size = self.fft_size.load(Ordering::Relaxed);
-        let resized = self.analyser.current_fft_size() != fft_size;
-        let complete_cycle = self.analyser.check_complete_cycle(fft_size);
-        if resized || complete_cycle {
-            let smoothing_time_constant =
-                self.smoothing_time_constant.load(Ordering::Relaxed) as f32 / 100.;
-            self.analyser
-                .calculate_float_frequency(fft_size, smoothing_time_constant);
-        }
+        // add current input to ring buffer
+        let data = mono.channel_data(0).as_ref();
+        self.ring_buffer.write(data);
 
-        // check if any information was requested from the control thread
-        if let Ok(request) = self.receiver.try_recv() {
-            match request {
-                AnalyserRequest::FloatTime {
-                    send_done_signal: sender,
-                    buffer,
-                } => {
-                    self.analyser.get_float_time(buffer, fft_size);
-
-                    // allow to fail when receiver is disconnected
-                    let _ = sender.send(());
-                }
-                AnalyserRequest::FloatFrequency {
-                    send_done_signal: sender,
-                    buffer,
-                } => {
-                    self.analyser.get_float_frequency(buffer);
-
-                    // allow to fail when receiver is disconnected
-                    let _ = sender.send(());
-                }
-            }
-        }
-
+        // @todo - review
         false
     }
 }
