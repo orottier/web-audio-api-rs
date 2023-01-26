@@ -82,10 +82,10 @@ fn assert_valid_max_decibels(max_decibels: f64, min_decibels: f64) {
     }
 }
 
-// as the queue is composed of AtomicF32 having only 1 render quantum of room should be enough
+// as the queue is composed of AtomicF32 having only 1 render quantum of extra room should be enough
 const RING_BUFFER_SIZE: usize = MAX_FFT_SIZE + RENDER_QUANTUM_SIZE;
 
-// single producer / single consumer ring buffer
+// single producer / multiple consumer ring buffer
 pub(crate) struct AnalyserRingBuffer {
     buffer: Arc<Vec<AtomicF32>>,
     write_index: AtomicUsize,
@@ -135,7 +135,7 @@ impl AnalyserRingBuffer {
             });
     }
 
-    // so that we can easily share the tests with the unsafe version
+    // to simply share tests with the unsafe version
     #[cfg(test)]
     fn raw(&self) -> Vec<f32> {
         let mut slice = vec![0.; RING_BUFFER_SIZE];
@@ -157,9 +157,9 @@ pub(crate) struct Analyser {
     min_decibels: f64,
     max_decibels: f64,
     // If not wrapped into Arc<Mutex<T>>, compiler complains about thread safety:
-    // `(dyn rustfft::avx::avx_planner::AvxPlannerInternalAPI<f32> + 'static)`
-    // cannot be shared between threads safely
-    // But the Mutex is ok here as `compute_fft` Analyser lives outside the audio thread.
+    // > `(dyn rustfft::avx::avx_planner::AvxPlannerInternalAPI<f32> + 'static)`
+    // > cannot be shared between threads safely
+    // But the Mutex is ok here as `Analyser` lives outside the audio thread.
     fft_planner: Arc<Mutex<RealFftPlanner<f32>>>,
     fft_input: Vec<f32>,
     fft_scratch: Vec<Complex<f32>>,
@@ -255,9 +255,6 @@ impl Analyser {
     pub fn frequency_bin_count(&self) -> usize {
         self.fft_size() / 2
     }
-
-    // @note: `add_input`, `get_float_time_domain_data`, `get_byte_time_domain_data`
-    // are the methods that should be adapted to review the buffering strategy
 
     // [spec] Write the current time-domain data (waveform data) into array.
     // If array has fewer elements than the value of fftSize, the excess elements

@@ -1,4 +1,3 @@
-// use std::cell::RefCell;
 use std::sync::{Arc, RwLock};
 
 use crate::analysis::{
@@ -9,8 +8,6 @@ use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
-
-// use crossbeam_channel::{self, Receiver, Sender};
 
 /// Options for constructing an [`AnalyserNode`]
 // dictionary AnalyserOptions : AudioNodeOptions {
