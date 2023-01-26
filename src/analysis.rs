@@ -11,7 +11,7 @@ use realfft::{num_complex::Complex, RealFftPlanner};
 use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
 /// Blackman window values iterator with alpha = 0.16
-pub fn generate_blackman(size: usize) -> impl Iterator<Item = f32> {
+fn generate_blackman(size: usize) -> impl Iterator<Item = f32> {
     let alpha = 0.16;
     let a0 = (1. - alpha) / 2.;
     let a1 = 1. / 2.;
@@ -82,7 +82,8 @@ fn assert_valid_max_decibels(max_decibels: f64, min_decibels: f64) {
     }
 }
 
-// as the queue is composed of AtomicF32 having only 1 render quantum of extra room should be enough
+// as the queue is composed of AtomicF32 having only 1 render quantum of extra
+// room should be enough
 const RING_BUFFER_SIZE: usize = MAX_FFT_SIZE + RENDER_QUANTUM_SIZE;
 
 // single producer / multiple consumer ring buffer
@@ -268,8 +269,6 @@ impl Analyser {
         self.ring_buffer.read(dst, fft_size);
     }
 
-    // we need to duplicate the `get_float_time_domain_data` to avoid creating
-    // an intermediate vector of floats
     pub fn get_byte_time_domain_data(&self, dst: &mut [u8]) {
         let fft_size = self.fft_size();
         let mut tmp = vec![0.; dst.len()];
@@ -400,7 +399,7 @@ impl Analyser {
             .zip(self.last_fft_output.iter())
             .for_each(|(v, b)| {
                 let db = 20. * b.log10();
-                // 𝑏[𝑘]=⌊255 / dB𝑚𝑎𝑥−dB𝑚𝑖𝑛 * (𝑌[𝑘]−dB𝑚𝑖𝑛)⌋
+                // 𝑏[𝑘] = ⌊255 / dB𝑚𝑎𝑥−dB𝑚𝑖𝑛 * (𝑌[𝑘]−dB𝑚𝑖𝑛)⌋
                 let scaled = 255. / (max_decibels - min_decibels) * (db - min_decibels);
                 let clamped = scaled.clamp(0., 255.);
                 *v = clamped as u8;

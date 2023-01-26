@@ -301,7 +301,7 @@ impl AudioProcessor for AnalyserRenderer {
         let data = mono.channel_data(0).as_ref();
         self.ring_buffer.write(data);
 
-        // @todo - review
+        // no tail-time
         false
     }
 }
