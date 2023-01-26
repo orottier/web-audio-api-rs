@@ -86,9 +86,10 @@ fn assert_valid_max_decibels(max_decibels: f64, min_decibels: f64) {
 const RING_BUFFER_SIZE: usize = MAX_FFT_SIZE + RENDER_QUANTUM_SIZE;
 
 // single producer / multiple consumer ring buffer
+#[derive(Clone)]
 pub(crate) struct AnalyserRingBuffer {
     buffer: Arc<Vec<AtomicF32>>,
-    write_index: AtomicUsize,
+    write_index: Arc<AtomicUsize>,
 }
 
 impl AnalyserRingBuffer {
@@ -97,8 +98,8 @@ impl AnalyserRingBuffer {
         buffer.resize_with(RING_BUFFER_SIZE, || AtomicF32::new(0.));
 
         Self {
-            buffer: Arc::new(buffer),
-            write_index: AtomicUsize::new(0),
+            buffer: Arc::from(buffer),
+            write_index: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -151,7 +152,7 @@ impl AnalyserRingBuffer {
 // As the analyser is wrapped into a Arc<RwLock<T>> by the analyser node to get interior
 // mutability and expose an immutable public API, we should be ok with thread safety.
 pub(crate) struct Analyser {
-    ring_buffer: Arc<AnalyserRingBuffer>,
+    ring_buffer: AnalyserRingBuffer,
     fft_size: usize,
     smoothing_time_constant: f64,
     min_decibels: f64,
@@ -171,7 +172,7 @@ pub(crate) struct Analyser {
 
 impl Analyser {
     pub fn new() -> Self {
-        let ring_buffer = Arc::new(AnalyserRingBuffer::new());
+        let ring_buffer = AnalyserRingBuffer::new();
         // FFT utils
         let mut fft_planner = RealFftPlanner::<f32>::new();
         let max_fft = fft_planner.plan_fft_forward(MAX_FFT_SIZE);
@@ -179,7 +180,8 @@ impl Analyser {
         let fft_input = max_fft.make_input_vec();
         let fft_scratch = max_fft.make_scratch_vec();
         let fft_output = max_fft.make_output_vec();
-        let last_fft_output = vec![0.; fft_output.len()];
+        let mut last_fft_output = Vec::with_capacity(fft_output.len());
+        last_fft_output.resize_with(fft_output.len(), || 0.);
 
         // precalculate Blackman window values, reserve enough space for all input sizes
         let mut blackman = Vec::with_capacity(fft_input.len());
@@ -201,7 +203,7 @@ impl Analyser {
         }
     }
 
-    pub fn get_ring_buffer_clone(&self) -> Arc<AnalyserRingBuffer> {
+    pub fn get_ring_buffer_clone(&self) -> AnalyserRingBuffer {
         self.ring_buffer.clone()
     }
 

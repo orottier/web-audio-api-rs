@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 use crate::analysis::{
     Analyser, AnalyserRingBuffer, DEFAULT_FFT_SIZE, DEFAULT_MAX_DECIBELS, DEFAULT_MIN_DECIBELS,
@@ -83,7 +83,7 @@ pub struct AnalyserNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     // RwLock is needed to make the AnalyserNode API immutable
-    analyser: Arc<RwLock<Analyser>>,
+    analyser: RwLock<Analyser>,
 }
 
 impl AudioNode for AnalyserNode {
@@ -125,7 +125,7 @@ impl AnalyserNode {
             let node = AnalyserNode {
                 registration,
                 channel_config: options.channel_config.into(),
-                analyser: Arc::new(RwLock::new(analyser)),
+                analyser: RwLock::new(analyser),
             };
 
             (node, Box::new(render))
@@ -275,7 +275,7 @@ impl AnalyserNode {
 }
 
 struct AnalyserRenderer {
-    ring_buffer: Arc<AnalyserRingBuffer>,
+    ring_buffer: AnalyserRingBuffer,
 }
 
 impl AudioProcessor for AnalyserRenderer {
