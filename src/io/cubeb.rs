@@ -124,7 +124,7 @@ fn init_output_backend<const N: usize>(
             output.len() as isize
         })
         .state_callback(|state| {
-            println!("stream state changed: {:?}", state);
+            println!("stream state changed: {state:?}");
         });
 
     let stream = builder.init(ctx).expect("Failed to create cubeb stream");
@@ -317,7 +317,7 @@ impl AudioBackendManager for CubebBackend {
                 input.len() as isize
             })
             .state_callback(|state| {
-                println!("stream state changed: {:?}", state);
+                println!("stream state changed: {state:?}");
             });
 
         let stream = builder.init(&ctx).expect("Failed to create cubeb stream");
