@@ -241,7 +241,7 @@ impl AudioContext {
         }
 
         if !is_valid_sink_id(&sink_id) {
-            Err(format!("NotFoundError: invalid sinkId {}", sink_id))?;
+            Err(format!("NotFoundError: invalid sinkId {sink_id}"))?;
         };
 
         let mut backend_manager_guard = self.backend_manager.lock().unwrap();

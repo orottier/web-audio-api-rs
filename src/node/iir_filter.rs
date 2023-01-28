@@ -539,7 +539,6 @@ mod tests {
                 context.start_rendering_sync()
             };
 
-            println!("{:?}", filter_type);
             assert_float_eq!(
                 biquad_res.get_channel_data(0),
                 iir_res.get_channel_data(0),
@@ -776,7 +775,6 @@ mod tests {
                 (mags, phases)
             };
 
-            println!("{:?}", filter_type);
             assert_float_eq!(biquad_response.0, iir_response.0, abs_all <= 1e-6);
             assert_float_eq!(biquad_response.1, iir_response.1, abs_all <= 1e-6);
         }
