@@ -796,42 +796,28 @@ mod tests {
     fn test_ring_buffer_concurrency() {
         let analyser = Arc::new(Analyser::new());
         let ring_buffer = analyser.get_ring_buffer_clone();
-
         let num_loops = 10_000;
+        let (sender, receiver) = crossbeam_channel::bounded(1);
 
-        let _ = thread::spawn(move || {
+        thread::spawn(move || {
             let mut rng = rand::thread_rng();
-            let mut counter = 0;
+            sender.send(()).unwrap(); // signal ready
 
-            loop {
+            for _ in 0..num_loops {
                 let rand = rng.gen::<f32>();
                 let data = [rand; RENDER_QUANTUM_SIZE];
                 ring_buffer.write(&data);
-
-                counter += 1;
-
-                if counter == num_loops {
-                    break;
-                }
 
                 std::thread::sleep(std::time::Duration::from_nanos(30));
             }
         });
 
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        // wait for thread to boot
+        receiver.recv().unwrap();
 
-        let mut counter = 0;
-
-        loop {
+        for _ in 0..num_loops {
             let mut read_buffer = [0.; RENDER_QUANTUM_SIZE];
             analyser.get_float_time_domain_data(&mut read_buffer);
-
-            counter += 1;
-
-            if counter == num_loops {
-                break;
-            }
-
             std::thread::sleep(std::time::Duration::from_nanos(25));
         }
     }
@@ -840,9 +826,11 @@ mod tests {
     fn test_thread_safety() {
         let analyser = Arc::new(RwLock::new(Analyser::new()));
 
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             analyser.write().unwrap().set_fft_size(MIN_FFT_SIZE);
             assert_eq!(analyser.write().unwrap().fft_size(), MIN_FFT_SIZE);
         });
+
+        handle.join().unwrap();
     }
 }
