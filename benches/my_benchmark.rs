@@ -177,6 +177,26 @@ pub fn bench_stereo_panning_automation() {
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
+// This only benchmarks the render thread filling the analyser buffers.
+// We don't request freq/time data because that happens off thread and there is no sensible way to
+// benchmark this in deterministic way [citation needed].
+pub fn bench_analyser_node() {
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
+    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+
+    let analyser = ctx.create_analyser();
+    analyser.connect(&ctx.destination());
+
+    let src = ctx.create_buffer_source();
+    src.connect(&analyser);
+    src.set_buffer(buffer);
+    src.set_loop(true);
+    src.start();
+
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
+}
+
 iai::main!(
     bench_ctor,
     bench_sine,
@@ -188,4 +208,5 @@ iai::main!(
     bench_buffer_src_biquad,
     bench_stereo_positional,
     bench_stereo_panning_automation,
+    bench_analyser_node,
 );
