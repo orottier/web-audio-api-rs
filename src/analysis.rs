@@ -89,7 +89,7 @@ const RING_BUFFER_SIZE: usize = MAX_FFT_SIZE + RENDER_QUANTUM_SIZE;
 // single producer / multiple consumer ring buffer
 #[derive(Clone)]
 pub(crate) struct AnalyserRingBuffer {
-    buffer: Arc<Vec<AtomicF32>>,
+    buffer: Arc<[AtomicF32]>,
     write_index: Arc<AtomicUsize>,
 }
 
@@ -99,7 +99,7 @@ impl AnalyserRingBuffer {
         buffer.resize_with(RING_BUFFER_SIZE, || AtomicF32::new(0.));
 
         Self {
-            buffer: Arc::from(buffer),
+            buffer: buffer.into(),
             write_index: Arc::new(AtomicUsize::new(0)),
         }
     }
