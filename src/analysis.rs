@@ -4,7 +4,7 @@
 
 use std::f32::consts::PI;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use realfft::{num_complex::Complex, RealFftPlanner};
 
@@ -158,11 +158,7 @@ pub(crate) struct Analyser {
     smoothing_time_constant: f64,
     min_decibels: f64,
     max_decibels: f64,
-    // If not wrapped into Arc<Mutex<T>>, compiler complains about thread safety:
-    // > `(dyn rustfft::avx::avx_planner::AvxPlannerInternalAPI<f32> + 'static)`
-    // > cannot be shared between threads safely
-    // But the Mutex is ok here as `Analyser` lives outside the audio thread.
-    fft_planner: Arc<Mutex<RealFftPlanner<f32>>>,
+    fft_planner: RealFftPlanner<f32>,
     fft_input: Vec<f32>,
     fft_scratch: Vec<Complex<f32>>,
     fft_output: Vec<Complex<f32>>,
@@ -194,7 +190,7 @@ impl Analyser {
             smoothing_time_constant: DEFAULT_SMOOTHING_TIME_CONSTANT,
             min_decibels: DEFAULT_MIN_DECIBELS,
             max_decibels: DEFAULT_MAX_DECIBELS,
-            fft_planner: Arc::new(Mutex::new(fft_planner)),
+            fft_planner,
             fft_input,
             fft_scratch,
             fft_output,
@@ -285,7 +281,7 @@ impl Analyser {
         let fft_size = self.fft_size();
         let smoothing_time_constant = self.smoothing_time_constant() as f32;
         // setup FFT planner and properly sized buffers
-        let r2c = self.fft_planner.lock().unwrap().plan_fft_forward(fft_size);
+        let r2c = self.fft_planner.plan_fft_forward(fft_size);
         let input = &mut self.fft_input[..fft_size];
         let output = &mut self.fft_output[..fft_size / 2 + 1];
         let scratch = &mut self.fft_scratch[..r2c.get_scratch_len()];
