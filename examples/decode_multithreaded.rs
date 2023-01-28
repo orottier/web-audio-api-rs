@@ -42,9 +42,9 @@ pub fn main() {
         let info = result
             .1
             .map(|buffer| format!("Succes - decoded {} samples", buffer.length()))
-            .unwrap_or_else(|e| format!("Error - {:?}", e));
+            .unwrap_or_else(|e| format!("Error - {e:?}"));
 
-        println!("{} - {}", path, info);
+        println!("{path} - {info}");
 
         // We are done when all jobs are handled
         if job_count == result_count {

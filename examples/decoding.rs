@@ -27,7 +27,7 @@ fn main() {
 
         match res {
             Ok(buffer) => {
-                println!("> playing file: {:?}", filepath);
+                println!("> playing file: {filepath:?}");
                 println!("> duration: {:?}", buffer.duration());
                 println!("> length: {:?}", buffer.length());
                 println!("> channels: {:?}", buffer.number_of_channels());
@@ -42,8 +42,8 @@ fn main() {
                 std::thread::sleep(std::time::Duration::from_secs(4));
             }
             Err(e) => {
-                println!("> Error decoding audio file: {:?}", filepath);
-                eprintln!("> {:?}", e);
+                println!("> Error decoding audio file: {filepath:?}");
+                eprintln!("> {e:?}");
                 println!("> --------------------------------");
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }

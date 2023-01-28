@@ -146,7 +146,7 @@ fn run_client() -> std::io::Result<()> {
     socket.set_nonblocking(true).unwrap();
     println!("Client listening at {}", socket.local_addr()?);
     socket.connect(SERVER_ADDR)?;
-    println!("Client 'connected' to {}", SERVER_ADDR);
+    println!("Client 'connected' to {SERVER_ADDR}");
 
     // hack, make socket static to avoid `Arc` or similar
     let socket: &'static UdpSocket = Box::leak(Box::new(socket));

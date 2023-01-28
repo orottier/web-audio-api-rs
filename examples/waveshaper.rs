@@ -45,7 +45,7 @@ fn main() {
 
     for i in 1..10 {
         let gain = i as f32 * 2.;
-        println!("+ pre gain: {:?}", gain);
+        println!("+ pre gain: {gain:?}");
 
         pre_gain.gain().set_value(gain);
         post_gain.gain().set_value(1. / gain);

@@ -738,7 +738,7 @@ fn main() {
             Key::Char(c) => {
                 if c.is_ascii_digit() {
                     inputs.push(c);
-                    write!(stdout, "{}", c).unwrap();
+                    write!(stdout, "{c}").unwrap();
                 }
             }
             Key::Backspace => {
