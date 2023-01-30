@@ -13,10 +13,11 @@ exclude = ["/samples", "/snapshots", "/.github"]
 
 [dependencies]
 arrayvec = "0.7"
-cpal = { version = "0.14.1", optional = true }
+cpal = { version = "0.15.0", optional = true }
 creek = "0.2.1"
 crossbeam-channel = "0.5"
 cubeb = { version = "0.10.0", optional = true }
+dasp_sample = "0.11.0"
 float_eq = "1.0"
 hrtf = "0.8.0"
 lazy_static = "1.4"

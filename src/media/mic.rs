@@ -187,7 +187,7 @@ impl MicrophoneRender {
         }
     }
 
-    pub fn render<S: crate::Sample>(&self, data: &[S]) {
+    pub fn render<S: dasp_sample::ToSample<f32> + Copy>(&self, data: &[S]) {
         let mut channels = Vec::with_capacity(self.number_of_channels);
 
         // copy rendered audio into output slice
@@ -196,7 +196,7 @@ impl MicrophoneRender {
                 data.iter()
                     .skip(i)
                     .step_by(self.number_of_channels)
-                    .map(|v| v.to_f32())
+                    .map(|v| v.to_sample_())
                     .collect(),
             ));
         }

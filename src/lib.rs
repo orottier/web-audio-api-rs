@@ -68,9 +68,6 @@ pub use periodic_wave::*;
 
 pub mod render;
 
-mod sample;
-pub(crate) use sample::Sample;
-
 mod spatial;
 pub use spatial::AudioListener;
 
