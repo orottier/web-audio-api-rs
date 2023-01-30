@@ -1,3 +1,9 @@
+# Version 0.28.0 (2023-01-30)
+
+- Improved AnalyserNode (performance and correctness)
+- Fixed microphone input on Raspberry Pi
+- Fixed overriding channel config for PannerNode
+
 # Version 0.27.0 (2023-01-17)
 
 - Head Related Transfer Function (HRTF) panning mode
