@@ -383,6 +383,25 @@ fn spawn_output_stream(
                 output_latency.store(latency_in_seconds(i));
             },
             err_fn,
+            None,
+        ),
+        SampleFormat::F64 => device.build_output_stream(
+            config,
+            move |d: &mut [f64], i: &OutputCallbackInfo| {
+                render.render(d);
+                output_latency.store(latency_in_seconds(i));
+            },
+            err_fn,
+            None,
+        ),
+        SampleFormat::U8 => device.build_output_stream(
+            config,
+            move |d: &mut [u8], i: &OutputCallbackInfo| {
+                render.render(d);
+                output_latency.store(latency_in_seconds(i));
+            },
+            err_fn,
+            None,
         ),
         SampleFormat::U16 => device.build_output_stream(
             config,
@@ -391,6 +410,34 @@ fn spawn_output_stream(
                 output_latency.store(latency_in_seconds(i));
             },
             err_fn,
+            None,
+        ),
+        SampleFormat::U32 => device.build_output_stream(
+            config,
+            move |d: &mut [u32], i: &OutputCallbackInfo| {
+                render.render(d);
+                output_latency.store(latency_in_seconds(i));
+            },
+            err_fn,
+            None,
+        ),
+        SampleFormat::U64 => device.build_output_stream(
+            config,
+            move |d: &mut [u64], i: &OutputCallbackInfo| {
+                render.render(d);
+                output_latency.store(latency_in_seconds(i));
+            },
+            err_fn,
+            None,
+        ),
+        SampleFormat::I8 => device.build_output_stream(
+            config,
+            move |d: &mut [i8], i: &OutputCallbackInfo| {
+                render.render(d);
+                output_latency.store(latency_in_seconds(i));
+            },
+            err_fn,
+            None,
         ),
         SampleFormat::I16 => device.build_output_stream(
             config,
@@ -399,7 +446,27 @@ fn spawn_output_stream(
                 output_latency.store(latency_in_seconds(i));
             },
             err_fn,
+            None,
         ),
+        SampleFormat::I32 => device.build_output_stream(
+            config,
+            move |d: &mut [i32], i: &OutputCallbackInfo| {
+                render.render(d);
+                output_latency.store(latency_in_seconds(i));
+            },
+            err_fn,
+            None,
+        ),
+        SampleFormat::I64 => device.build_output_stream(
+            config,
+            move |d: &mut [i64], i: &OutputCallbackInfo| {
+                render.render(d);
+                output_latency.store(latency_in_seconds(i));
+            },
+            err_fn,
+            None,
+        ),
+        _ => panic!("Unknown cpal output sample format"),
     }
 }
 
@@ -421,13 +488,35 @@ fn spawn_input_stream(
 
     match sample_format {
         SampleFormat::F32 => {
-            device.build_input_stream(config, move |d: &[f32], _c| render.render(d), err_fn)
+            device.build_input_stream(config, move |d: &[f32], _c| render.render(d), err_fn, None)
+        }
+        SampleFormat::F64 => {
+            device.build_input_stream(config, move |d: &[f64], _c| render.render(d), err_fn, None)
+        }
+        SampleFormat::U8 => {
+            device.build_input_stream(config, move |d: &[u8], _c| render.render(d), err_fn, None)
         }
         SampleFormat::U16 => {
-            device.build_input_stream(config, move |d: &[u16], _c| render.render(d), err_fn)
+            device.build_input_stream(config, move |d: &[u16], _c| render.render(d), err_fn, None)
+        }
+        SampleFormat::U32 => {
+            device.build_input_stream(config, move |d: &[u32], _c| render.render(d), err_fn, None)
+        }
+        SampleFormat::U64 => {
+            device.build_input_stream(config, move |d: &[u64], _c| render.render(d), err_fn, None)
+        }
+        SampleFormat::I8 => {
+            device.build_input_stream(config, move |d: &[i8], _c| render.render(d), err_fn, None)
         }
         SampleFormat::I16 => {
-            device.build_input_stream(config, move |d: &[i16], _c| render.render(d), err_fn)
+            device.build_input_stream(config, move |d: &[i16], _c| render.render(d), err_fn, None)
         }
+        SampleFormat::I32 => {
+            device.build_input_stream(config, move |d: &[i32], _c| render.render(d), err_fn, None)
+        }
+        SampleFormat::I64 => {
+            device.build_input_stream(config, move |d: &[i64], _c| render.render(d), err_fn, None)
+        }
+        _ => panic!("Unknown cpal input sample format"),
     }
 }

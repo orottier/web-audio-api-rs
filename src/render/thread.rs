@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crossbeam_channel::{Receiver, Sender};
+use dasp_sample::FromSample;
 
 use super::AudioRenderQuantum;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
@@ -165,7 +166,7 @@ impl RenderThread {
         buf
     }
 
-    pub fn render<S: crate::Sample>(&mut self, buffer: &mut [S]) {
+    pub fn render<S: FromSample<f32> + Clone>(&mut self, buffer: &mut [S]) {
         // collect timing information
         let render_start = Instant::now();
 
@@ -187,7 +188,7 @@ impl RenderThread {
         }
     }
 
-    fn render_inner<S: crate::Sample>(&mut self, mut buffer: &mut [S]) {
+    fn render_inner<S: FromSample<f32> + Clone>(&mut self, mut buffer: &mut [S]) {
         // There may be audio frames left over from the previous render call,
         // if the cpal buffer size did not align with our internal RENDER_QUANTUM_SIZE
         if let Some((offset, prev_rendered)) = self.buffer_offset.take() {
@@ -200,7 +201,7 @@ impl RenderThread {
                 let output = first.iter_mut().skip(i).step_by(self.number_of_channels);
                 let channel = prev_rendered.channel_data(i)[offset..].iter();
                 for (sample, input) in output.zip(channel) {
-                    let value = crate::Sample::from::<f32>(input);
+                    let value = S::from_sample_(*input);
                     *sample = value;
                 }
             }
@@ -223,7 +224,7 @@ impl RenderThread {
 
         // if the thread is still booting, or shutting down, fill with silence
         if self.graph.is_none() {
-            buffer.fill(crate::Sample::from(&0.));
+            buffer.fill(S::from_sample_(0.));
             return;
         }
 
@@ -259,7 +260,7 @@ impl RenderThread {
                 let output = data.iter_mut().skip(i).step_by(self.number_of_channels);
                 let channel = rendered.channel_data(i).iter();
                 for (sample, input) in output.zip(channel) {
-                    let value = crate::Sample::from::<f32>(input);
+                    let value = S::from_sample_(*input);
                     *sample = value;
                 }
             }
