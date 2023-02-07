@@ -129,17 +129,22 @@ impl RenderThread {
     // render method of the OfflineAudioContext
     pub fn render_audiobuffer(mut self, length: usize) -> AudioBuffer {
         // assert input was properly sized
-        debug_assert_eq!(length % RENDER_QUANTUM_SIZE, 0);
+        // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
+        // the desired number of frames.
+        let buffer_size =
+            (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE * RENDER_QUANTUM_SIZE;
+
+        debug_assert_eq!(buffer_size % RENDER_QUANTUM_SIZE, 0);
 
         let options = AudioBufferOptions {
             number_of_channels: self.number_of_channels,
-            length,
+            length: buffer_size,
             sample_rate: self.sample_rate,
         };
 
         let mut buffer = AudioBuffer::new(options);
 
-        for _ in 0..length / RENDER_QUANTUM_SIZE {
+        for _ in 0..buffer_size / RENDER_QUANTUM_SIZE {
             // handle addition/removal of nodes/edges
             self.handle_control_messages();
 
@@ -170,6 +175,8 @@ impl RenderThread {
                 },
             );
         }
+
+        buffer.split_off(length);
 
         buffer
     }

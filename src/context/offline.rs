@@ -2,10 +2,10 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+use crate::assert_valid_sample_rate;
 use crate::buffer::AudioBuffer;
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
-use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
 
 /// The `OfflineAudioContext` doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an `AudioBuffer`.
@@ -106,15 +106,7 @@ impl OfflineAudioContext {
     /// This function will block the current thread and returns the rendered `AudioBuffer`
     /// synchronously. An async version is currently not implemented.
     pub fn start_rendering_sync(self) -> AudioBuffer {
-        // make buffer_size always a multiple of RENDER_QUANTUM_SIZE, so we can still render piecewise with
-        // the desired number of frames.
-        let buffer_size =
-            (self.length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE * RENDER_QUANTUM_SIZE;
-
-        let mut buffer = self.renderer.render_audiobuffer(buffer_size);
-        buffer.split_off(self.length);
-
-        buffer
+        self.renderer.render_audiobuffer(self.length)
     }
 
     /// get the length of rendering audio buffer
