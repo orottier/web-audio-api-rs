@@ -133,11 +133,11 @@ impl RenderThread {
 
         let options = AudioBufferOptions {
             number_of_channels: self.number_of_channels,
-            length: 0,
+            length,
             sample_rate: self.sample_rate,
         };
 
-        let mut buf = AudioBuffer::new(options);
+        let mut buffer = AudioBuffer::new(options);
 
         for _ in 0..length / RENDER_QUANTUM_SIZE {
             // handle addition/removal of nodes/edges
@@ -160,10 +160,18 @@ impl RenderThread {
             // render audio graph
             let rendered = self.graph.as_mut().unwrap().render(&scope);
 
-            buf.extend_alloc(&rendered);
+            rendered.channels().iter().enumerate().for_each(
+                |(channel_number, rendered_channel)| {
+                    buffer.copy_to_channel_with_offset(
+                        rendered_channel,
+                        channel_number,
+                        current_frame as usize,
+                    );
+                },
+            );
         }
 
-        buf
+        buffer
     }
 
     pub fn render<S: FromSample<f32> + Clone>(&mut self, buffer: &mut [S]) {

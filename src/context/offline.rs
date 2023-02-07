@@ -111,10 +111,10 @@ impl OfflineAudioContext {
         let buffer_size =
             (self.length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE * RENDER_QUANTUM_SIZE;
 
-        let mut buf = self.renderer.render_audiobuffer(buffer_size);
-        let _split = buf.split_off(self.length);
+        let mut buffer = self.renderer.render_audiobuffer(buffer_size);
+        buffer.split_off(self.length);
 
-        buf
+        buffer
     }
 
     /// get the length of rendering audio buffer
