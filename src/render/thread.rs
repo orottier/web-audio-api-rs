@@ -3,6 +3,7 @@
 use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::thread;
 use std::time::Instant;
 
 use crossbeam_channel::{Receiver, Sender};
@@ -127,6 +128,7 @@ impl RenderThread {
     }
 
     // render method of the OfflineAudioContext
+    // cf. https://webaudio.github.io/web-audio-api/#dom-offlineaudiocontext-startrendering
     pub fn render_audiobuffer(mut self, length: usize) -> AudioBuffer {
         let options = AudioBufferOptions {
             number_of_channels: self.number_of_channels,
@@ -137,39 +139,45 @@ impl RenderThread {
         let mut buffer = AudioBuffer::new(options);
         let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
 
-        for _ in 0..num_frames {
-            // handle addition/removal of nodes/edges
-            self.handle_control_messages();
+        // [spec] To begin offline rendering, the following steps MUST happen on
+        // a rendering thread that is created for the occasion.
+        let handle = thread::spawn(move || {
+            for _ in 0..num_frames {
+                // handle addition/removal of nodes/edges
+                self.handle_control_messages();
 
-            // update time
-            let current_frame = self
-                .frames_played
-                .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
-            let current_time = current_frame as f64 / self.sample_rate as f64;
+                // update time
+                let current_frame = self
+                    .frames_played
+                    .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
+                let current_time = current_frame as f64 / self.sample_rate as f64;
 
-            let scope = RenderScope {
-                current_frame,
-                current_time,
-                sample_rate: self.sample_rate,
-                event_sender: self.event_sender.clone(),
-                node_id: Cell::new(AudioNodeId(0)), // placeholder value
-            };
+                let scope = RenderScope {
+                    current_frame,
+                    current_time,
+                    sample_rate: self.sample_rate,
+                    event_sender: self.event_sender.clone(),
+                    node_id: Cell::new(AudioNodeId(0)), // placeholder value
+                };
 
-            // render audio graph
-            let rendered = self.graph.as_mut().unwrap().render(&scope);
+                // render audio graph
+                let rendered = self.graph.as_mut().unwrap().render(&scope);
 
-            rendered.channels().iter().enumerate().for_each(
-                |(channel_number, rendered_channel)| {
-                    buffer.copy_to_channel_with_offset(
-                        rendered_channel,
-                        channel_number,
-                        current_frame as usize,
-                    );
-                },
-            );
-        }
+                rendered.channels().iter().enumerate().for_each(
+                    |(channel_number, rendered_channel)| {
+                        buffer.copy_to_channel_with_offset(
+                            rendered_channel,
+                            channel_number,
+                            current_frame as usize,
+                        );
+                    },
+                );
+            }
 
-        buffer
+            buffer
+        });
+
+        handle.join().unwrap()
     }
 
     pub fn render<S: FromSample<f32> + Clone>(&mut self, buffer: &mut [S]) {
