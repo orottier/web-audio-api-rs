@@ -1,7 +1,6 @@
 //! General purpose audio signal data structures
 use std::sync::Arc;
 
-use crate::render::AudioRenderQuantum;
 use crate::{
     assert_valid_channel_number, assert_valid_number_of_channels, assert_valid_sample_rate,
 };
@@ -283,21 +282,6 @@ impl AudioBuffer {
             .for_each(|(channel, other_channel)| {
                 let cur_channel_data = Arc::make_mut(&mut channel.data);
                 cur_channel_data.extend(other_channel.as_slice());
-            })
-    }
-
-    /// Extends an AudioBuffer with an [`AudioRenderQuantum`]
-    ///
-    /// This assumes the sample_rate matches. No up/down-mixing is performed
-    pub(crate) fn extend_alloc(&mut self, other: &AudioRenderQuantum) {
-        assert_eq!(self.number_of_channels(), other.number_of_channels());
-
-        self.channels_mut()
-            .iter_mut()
-            .zip(other.channels())
-            .for_each(|(channel, other_channel)| {
-                let cur_channel_data = Arc::make_mut(&mut channel.data);
-                cur_channel_data.extend_from_slice(&other_channel[..]);
             })
     }
 

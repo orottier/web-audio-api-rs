@@ -126,20 +126,22 @@ impl RenderThread {
         }
     }
 
-    // render method of the OfflineAudioContext
+    // Render method of the `OfflineAudioContext::start_redering_sync`
+    // This method is not spec compliant and obviously marked as synchronous, so we
+    // don't launch a thread.
+    //
+    // cf. https://webaudio.github.io/web-audio-api/#dom-offlineaudiocontext-startrendering
     pub fn render_audiobuffer(mut self, length: usize) -> AudioBuffer {
-        // assert input was properly sized
-        debug_assert_eq!(length % RENDER_QUANTUM_SIZE, 0);
-
         let options = AudioBufferOptions {
             number_of_channels: self.number_of_channels,
-            length: 0,
+            length,
             sample_rate: self.sample_rate,
         };
 
-        let mut buf = AudioBuffer::new(options);
+        let mut buffer = AudioBuffer::new(options);
+        let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
 
-        for _ in 0..length / RENDER_QUANTUM_SIZE {
+        for _ in 0..num_frames {
             // handle addition/removal of nodes/edges
             self.handle_control_messages();
 
@@ -160,10 +162,18 @@ impl RenderThread {
             // render audio graph
             let rendered = self.graph.as_mut().unwrap().render(&scope);
 
-            buf.extend_alloc(&rendered);
+            rendered.channels().iter().enumerate().for_each(
+                |(channel_number, rendered_channel)| {
+                    buffer.copy_to_channel_with_offset(
+                        rendered_channel,
+                        channel_number,
+                        current_frame as usize,
+                    );
+                },
+            );
         }
 
-        buf
+        buffer
     }
 
     pub fn render<S: FromSample<f32> + Clone>(&mut self, buffer: &mut [S]) {
