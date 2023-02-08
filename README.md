@@ -96,7 +96,7 @@ flag. Please note that `cmake` must be installed locally in order to run
 | cubeb          | AudioUnit      | |
 | cubeb          | WASAPI         | |
 | cubeb          | OpenSL         | |
-| cubeb          | AAudio         | opt-in, will be default when ready, prefer OpenSL |
+| cubeb          | AAudio         | |
 | cubeb          | sndio          | |
 | cubeb          | Sun            | |
 | cubeb          | OSS            | |

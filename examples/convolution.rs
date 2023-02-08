@@ -10,7 +10,7 @@ fn main() {
     let context = AudioContext::default();
 
     let cap = context.render_capacity();
-    cap.set_onupdate(|e| println!("{:?}", e));
+    cap.set_onupdate(|e| println!("{e:?}"));
     cap.start(AudioRenderCapacityOptions {
         update_interval: 1.,
     });

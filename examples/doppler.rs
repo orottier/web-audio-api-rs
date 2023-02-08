@@ -42,6 +42,7 @@ fn main() {
         cone_inner_angle: 360.,
         cone_outer_angle: 0.,
         cone_outer_gain: 0.,
+        ..PannerOptions::default()
     };
     let panner = PannerNode::new(&context, opts);
     // move the siren in 10 seconds from y = 100 to y = -100

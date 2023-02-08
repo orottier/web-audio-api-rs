@@ -49,6 +49,22 @@ impl Default for AudioContextLatencyCategory {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+#[non_exhaustive]
+/// This allows users to ask for a particular render quantum size.
+///
+/// Currently, only the default value is available
+pub enum AudioContextRenderSizeCategory {
+    /// The default value of 128 frames
+    Default,
+}
+
+impl Default for AudioContextRenderSizeCategory {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
 /// Specify the playback configuration for the [`AudioContext`] constructor.
 ///
 /// All fields are optional and will default to the value best suited for interactive playback on
@@ -78,6 +94,9 @@ pub struct AudioContextOptions {
     /// - use `"none"` to process the audio graph without playing through an audio output device.
     /// - use `"sinkId"` to use the specified audio sink id, obtained with [`enumerate_devices`]
     pub sink_id: String,
+
+    /// Option to request a default, optimized or specific render quantum size. It is a hint that might not be honored.
+    pub render_size_hint: AudioContextRenderSizeCategory,
 }
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
@@ -222,7 +241,7 @@ impl AudioContext {
         }
 
         if !is_valid_sink_id(&sink_id) {
-            Err(format!("NotFoundError: invalid sinkId {}", sink_id))?;
+            Err(format!("NotFoundError: invalid sinkId {sink_id}"))?;
         };
 
         let mut backend_manager_guard = self.backend_manager.lock().unwrap();
@@ -267,6 +286,7 @@ impl AudioContext {
             sample_rate: Some(self.sample_rate()),
             latency_hint: AudioContextLatencyCategory::default(), // todo reuse existing setting
             sink_id,
+            render_size_hint: AudioContextRenderSizeCategory::default(), // todo reuse existing setting
         };
         *backend_manager_guard = io::build_output(options, self.render_thread_init.clone());
 

@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
@@ -240,7 +241,7 @@ impl DynamicsCompressorNode {
     }
 
     pub fn reduction(&self) -> f32 {
-        self.reduction.load()
+        self.reduction.load(Ordering::SeqCst)
     }
 }
 
@@ -338,7 +339,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
             let mut max = f32::MIN;
 
             for channel in input.channels().iter() {
-                let sample = channel.as_slice()[i].abs();
+                let sample = channel[i].abs();
                 if sample > max {
                     max = sample;
                 }
@@ -385,7 +386,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
         // update prev_detector_value for next block
         self.prev_detector_value = prev_detector_value;
         // update reduction shared w/ main thread
-        self.reduction.store(reduction_gain);
+        self.reduction.store(reduction_gain, Ordering::SeqCst);
 
         // store input in delay line
         self.ring_buffer[self.ring_index] = input;

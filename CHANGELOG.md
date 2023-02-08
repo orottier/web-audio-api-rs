@@ -1,32 +1,44 @@
-# Version 0.26.0 (2021-11-13)
+# Version 0.28.0 (2023-01-30)
+
+- Improved AnalyserNode (performance and correctness)
+- Fixed microphone input on Raspberry Pi
+- Fixed overriding channel config for PannerNode
+
+# Version 0.27.0 (2023-01-17)
+
+- Head Related Transfer Function (HRTF) panning mode
+- Implemented event handlers
+- Prepare API for variable render quantum sizes
+
+# Version 0.26.0 (2022-11-13)
 
 - Added the "none" `sinkId`, render audio graph without emitting to speakers
 - Fix `ConvolverNode.set_normalize` to take `&self`, not `&mut self`
 
-# Version 0.25.0 (2021-11-06)
+# Version 0.25.0 (2022-11-06)
 
 - Added AudioRenderCapacity functionality
 - Added sinkId functionality to AudioContext (specify audio output device)
 - Renamed `ChannelConfigOptions.{mode -> count_mode}`
 
-# Version 0.24.0 (2021-09-10)
+# Version 0.24.0 (2022-09-10)
 
 - Added ConvolverNode (mono only)
 - GainNode, BiquadFilterNode, AudioParam performance improvements
 
-# Version 0.23.0 (2021-08-23)
+# Version 0.23.0 (2022-08-23)
 
 - AudioParam computed values array now contains only a single value when k-rate or no automations scheduled
 - DelayNode supports sub-quantum delay
 - IIRFilterNode and BiquadFilterNode can handle multi-channel inputs
 - Various performance improvements
 
-# Version 0.22.0 (2021-07-29)
+# Version 0.22.0 (2022-07-29)
 
 - Added DynamicsCompressorNode
 - Added `cubeb` as an alternative audio backend
 
-# Version 0.21.0 (2021-07-23)
+# Version 0.21.0 (2022-07-23)
 
 - Implemented MediaElement and MediaElementSourceNode
 - Improved performance of AudioBufferSourceNode and DelayNode
@@ -36,14 +48,14 @@
 - Can now change automation rate of an AudioParam on the fly
 - Implemented the concept of 'actively processing' for AudioNodes
 
-# Version 0.20.0 (2021-07-02)
+# Version 0.20.0 (2022-07-02)
 
 - Change sample rate type to plain f32
 - Remove namespacing of buffer, audio\_param and periodic\_wave
 - Reduce AudioRenderQuantum public API surface
 - Remove ConcreteBaseAudioContext from public API docs
 
-# Version 0.19.0 (2021-06-01)
+# Version 0.19.0 (2022-06-01)
 
 - Added baseLatency and outputLatency attributes
 - Audio processor callback now has access to AudioWorkletGlobalScope-like env
@@ -51,7 +63,7 @@
 - Use default sample rate for output devices instead of highest to prevent insane values
 - Fixed incorrect channel mixing for AudioNode input buffers
 
-# Version 0.18.0 (2021-04-12)
+# Version 0.18.0 (2022-04-12)
 
 - Implement BaseAudioContext state
 - AudioContext can now change the number of output channels while running
@@ -59,7 +71,7 @@
 - Microphone can properly pause, resume and close
 - Consistenly use `usize` for channels, inputs, lengths
 
-# Version 0.17.0 (2021-04-03)
+# Version 0.17.0 (2022-04-03)
 
 - Simplify AudioNode's required channel methods
 - Apply all channel count/mode/interpretation constraints
@@ -67,7 +79,7 @@
 - Improve AudioContext constructor
 - Validate more input values for AudioParam events
 
-# Version 0.16.0 (2021-03-20)
+# Version 0.16.0 (2022-03-20)
 
 - AudioBufferSourceNode can now resample
 - Add MediaStreamAudioDestinationNode
@@ -76,7 +88,7 @@
 - Added benchmark program
 - Removed MediaElement and MediaElementSourceNode for now, will reimplement
 
-# Version 0.15.0 (2021-02-10)
+# Version 0.15.0 (2022-02-10)
 
 - Allow method chaining on AudioParams
 - Some fallible methods will now panic instead of returning a Result
@@ -86,7 +98,7 @@
 - Fix spec deviations for node methods and constructor options and defaults
 - Rename some functions to `_sync` to denote they do not return a Promise
 
-# Version 0.14.0 (2021-01-13)
+# Version 0.14.0 (2022-01-13)
 
 - Implemented context.decodeAudioData
 - New media decoder using symphonia crate (with MP3 support)

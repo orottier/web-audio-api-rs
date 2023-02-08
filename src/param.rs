@@ -304,7 +304,7 @@ impl AudioParam {
     //      test_exponential_ramp_a_rate_multiple_blocks
     //      test_exponential_ramp_k_rate_multiple_blocks
     pub fn value(&self) -> f32 {
-        self.current_value.load()
+        self.current_value.load(Ordering::SeqCst)
     }
 
     /// Set the value of the `AudioParam`.
@@ -320,8 +320,8 @@ impl AudioParam {
     // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
     pub fn set_value(&self, value: f32) -> &Self {
         // current_value should always be clamped
-        self.current_value
-            .store(value.clamp(self.min_value, self.max_value));
+        let clamped = value.clamp(self.min_value, self.max_value);
+        self.current_value.store(clamped, Ordering::SeqCst);
 
         // this event is meant to update param intrisic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
@@ -987,7 +987,7 @@ impl AudioParamProcessor {
         // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
         let clamped = self.intrisic_value.clamp(self.min_value, self.max_value);
-        self.current_value.store(clamped);
+        self.current_value.store(clamped, Ordering::SeqCst);
 
         // clear the buffer for this block
         self.buffer.clear();

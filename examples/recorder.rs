@@ -27,6 +27,6 @@ fn main() {
 
         // You could write the samples to a file here.
         samples_recorded += buffer.length();
-        print!("{}\r", samples_recorded);
+        print!("{samples_recorded}\r");
     }
 }

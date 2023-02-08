@@ -27,7 +27,7 @@ use std::net::UdpSocket;
 use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::media::Microphone;
 use web_audio_api::node::AudioNode;
-use web_audio_api::{AudioBuffer, AudioBufferOptions, RENDER_QUANTUM_SIZE};
+use web_audio_api::{AudioBuffer, AudioBufferOptions};
 
 const MAX_UDP_SIZE: usize = 508;
 const SERVER_ADDR: &str = "0.0.0.0:1234";
@@ -127,7 +127,7 @@ impl Iterator for SocketStream {
                 // construct empty buffer
                 let options = AudioBufferOptions {
                     number_of_channels: 1,
-                    length: RENDER_QUANTUM_SIZE,
+                    length: 128,
                     sample_rate: self.sample_rate,
                 };
                 return Some(Ok(AudioBuffer::new(options)));
@@ -146,7 +146,7 @@ fn run_client() -> std::io::Result<()> {
     socket.set_nonblocking(true).unwrap();
     println!("Client listening at {}", socket.local_addr()?);
     socket.connect(SERVER_ADDR)?;
-    println!("Client 'connected' to {}", SERVER_ADDR);
+    println!("Client 'connected' to {SERVER_ADDR}");
 
     // hack, make socket static to avoid `Arc` or similar
     let socket: &'static UdpSocket = Box::leak(Box::new(socket));
