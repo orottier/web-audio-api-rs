@@ -106,10 +106,7 @@ impl AudioProcessor for WhiteNoiseProcessor {
                 })
         });
 
-        // TODO remove before merging
-        panic!("oh my!");
-
-        // true // source node will always be active
+        true // source node will always be active
     }
 }
 
@@ -126,10 +123,6 @@ fn main() {
 
     // connect to speakers
     noise.connect(&context.destination());
-
-    noise.set_onprocessorerror(Box::new(|e| {
-        dbg!(e);
-    }));
 
     // enjoy listening
     std::thread::sleep(std::time::Duration::from_secs(4));
