@@ -4,9 +4,10 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
-use crate::events::EventType;
+use crate::events::{ErrorEvent, EventHandler, EventPayload, EventType};
 use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::Event;
 
 use lazy_static::lazy_static;
 
@@ -47,8 +48,6 @@ pub use panner::*;
 mod stereo_panner;
 pub use stereo_panner::*;
 mod waveshaper;
-use crate::events::EventHandler;
-use crate::Event;
 pub use waveshaper::*;
 
 pub(crate) const TABLE_LENGTH_USIZE: usize = 8192;
@@ -321,6 +320,30 @@ pub trait AudioNode {
     /// Update the `channel_count` attribute
     fn set_channel_count(&self, v: usize) {
         self.channel_config().set_count(v)
+    }
+
+    /// Register callback to run when an unhandled exception occurs in the audio processor.
+    ///
+    /// Note that once a unhandled exception is thrown, the processor will output silence throughout its lifetime.
+    ///
+    /// Only a single event handler is active at any time. Calling this method multiple times will
+    /// override the previous event handler.
+    fn set_onprocessorerror(&self, callback: Box<dyn FnOnce(ErrorEvent) + Send + 'static>) {
+        let callback = move |v| match v {
+            EventPayload::ProcessorError(v) => callback(v),
+            _ => unreachable!(),
+        };
+
+        self.context().set_event_handler(
+            EventType::ProcessorError(self.registration().id()),
+            EventHandler::Once(Box::new(callback)),
+        );
+    }
+
+    /// Unset the callback to run when an unhandled exception occurs in the audio processor.
+    fn clear_onprocessorerror(&self) {
+        self.context()
+            .clear_event_handler(EventType::ProcessorError(self.registration().id()));
     }
 }
 

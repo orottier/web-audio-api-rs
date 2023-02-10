@@ -1,12 +1,14 @@
 use crate::context::AudioNodeId;
 use crate::AudioRenderCapacityEvent;
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 
 use crossbeam_channel::Receiver;
 
+/// The Event interface
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Event {
@@ -18,12 +20,25 @@ pub(crate) enum EventType {
     Ended(AudioNodeId),
     SinkChange,
     RenderCapacity,
-    //
+    ProcessorError(AudioNodeId),
+}
+
+/// The Error Event interface
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct ErrorEvent {
+    /// The error message
+    pub message: String,
+    /// The object with which panic was originally invoked.
+    pub error: Box<dyn Any + Send + 'static>,
+    /// Inherits from this base Event
+    pub event: Event,
 }
 
 pub(crate) enum EventPayload {
     None,
     RenderCapacity(AudioRenderCapacityEvent),
+    ProcessorError(ErrorEvent),
 }
 
 pub(crate) struct EventDispatch {
@@ -50,6 +65,13 @@ impl EventDispatch {
         EventDispatch {
             type_: EventType::RenderCapacity,
             payload: EventPayload::RenderCapacity(value),
+        }
+    }
+
+    pub fn processor_error(id: AudioNodeId, value: ErrorEvent) -> Self {
+        EventDispatch {
+            type_: EventType::ProcessorError(id),
+            payload: EventPayload::ProcessorError(value),
         }
     }
 }

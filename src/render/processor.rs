@@ -1,13 +1,15 @@
 //! Audio processing code that runs on the audio rendering thread
 use crate::context::{AudioNodeId, AudioParamId};
-use crate::events::EventDispatch;
-use crate::RENDER_QUANTUM_SIZE;
+use crate::events::{ErrorEvent, EventDispatch};
+use crate::{Event, RENDER_QUANTUM_SIZE};
 
 use super::{graph::Node, AudioRenderQuantum};
 
 use crossbeam_channel::Sender;
 use rustc_hash::FxHashMap;
 use std::cell::{Cell, RefCell};
+
+use std::any::Any;
 use std::ops::Deref;
 
 #[non_exhaustive] // we may want to add user-provided blobs to this later
@@ -29,6 +31,34 @@ impl RenderScope {
     pub(crate) fn send_ended_event(&self) {
         if let Some(sender) = self.event_sender.as_ref() {
             let _ = sender.try_send(EventDispatch::ended(self.node_id.get()));
+        }
+    }
+
+    pub(crate) fn report_error(&self, error: Box<dyn Any + Send + 'static>) {
+        pub fn type_name_of_val<T: ?Sized>(_val: &T) -> &'static str {
+            std::any::type_name::<T>()
+        }
+        let message = if let Some(v) = error.downcast_ref::<String>() {
+            v.to_string()
+        } else if let Some(v) = error.downcast_ref::<&str>() {
+            v.to_string()
+        } else {
+            type_name_of_val(&error).to_string()
+        };
+        eprintln!(
+            "Panic occured in Audio Processor: '{}'. Removing node from graph.",
+            &message
+        );
+
+        if let Some(sender) = self.event_sender.as_ref() {
+            let event = ErrorEvent {
+                message,
+                error,
+                event: Event {
+                    type_: "ErrorEvent",
+                },
+            };
+            let _ = sender.try_send(EventDispatch::processor_error(self.node_id.get(), event));
         }
     }
 }
