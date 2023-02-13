@@ -504,27 +504,30 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                         let mut start_index = (buffer_time * sample_rate).round() as usize;
                         let mut offset = 0;
 
-                        for (index, o) in output_channel.iter_mut().enumerate() {
-                            let mut buffer_index = start_index + index - offset;
+                        output_channel
+                            .iter_mut()
+                            .enumerate()
+                            .for_each(|(index, o)| {
+                                let mut buffer_index = start_index + index - offset;
 
-                            *o = if buffer_index < end_index {
-                                buffer_channel[buffer_index]
-                            } else {
-                                if loop_ && buffer_index == end_index {
-                                    loop_point_index = Some(index);
-                                    // reset values for the rest of the block
-                                    start_index = 0;
-                                    offset = index;
-                                    buffer_index = 0;
-                                }
-
-                                if loop_ {
+                                *o = if buffer_index < end_index {
                                     buffer_channel[buffer_index]
                                 } else {
-                                    0.
-                                }
-                            };
-                        }
+                                    if loop_ && buffer_index == end_index {
+                                        loop_point_index = Some(index);
+                                        // reset values for the rest of the block
+                                        start_index = 0;
+                                        offset = index;
+                                        buffer_index = 0;
+                                    }
+
+                                    if loop_ {
+                                        buffer_channel[buffer_index]
+                                    } else {
+                                        0.
+                                    }
+                                };
+                            });
                     });
 
                 if let Some(loop_point_index) = loop_point_index {
