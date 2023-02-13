@@ -574,21 +574,24 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // internal buffer used to store playback infos to compute the samples
         // according to the source buffer. (prev_sample_index, k)
         let mut playback_infos = [None; RENDER_QUANTUM_SIZE];
+        let render_state = &mut self.render_state;
 
         // compute position for each sample and store into `self.positions`
-        for playback_info in playback_infos.iter_mut() {
+        // for playback_info in playback_infos.iter_mut() {
+        playback_infos.iter_mut().for_each(|playback_info| {
             if current_time < start_time
                 || current_time >= stop_time
-                || self.render_state.buffer_time_elapsed >= duration
+                || render_state.buffer_time_elapsed >= duration
             {
                 *playback_info = None;
                 current_time += dt;
 
-                continue; // nothing more to do for this sample
+                // continue; // nothing more to do for this sample
+                return;
             }
 
             // we have now reached start time
-            if !self.render_state.started {
+            if !render_state.started {
                 offset += current_time - start_time;
 
                 if loop_ && computed_playback_rate >= 0. && offset >= actual_loop_end {
@@ -599,43 +602,38 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     offset = actual_loop_start;
                 }
 
-                self.render_state.buffer_time = offset;
-                self.render_state.started = true;
+                render_state.buffer_time = offset;
+                render_state.started = true;
             }
 
             if loop_ {
-                if !self.render_state.entered_loop {
+                if !render_state.entered_loop {
                     // playback began before or within loop, and playhead is now past loop start
-                    if offset < actual_loop_end
-                        && self.render_state.buffer_time >= actual_loop_start
-                    {
-                        self.render_state.entered_loop = true;
+                    if offset < actual_loop_end && render_state.buffer_time >= actual_loop_start {
+                        render_state.entered_loop = true;
                     }
 
                     // playback began after loop, and playhead is now prior to the loop end
                     // @note - only possible when playback_rate < 0 (?)
-                    if offset >= actual_loop_end && self.render_state.buffer_time < actual_loop_end
-                    {
-                        self.render_state.entered_loop = true;
+                    if offset >= actual_loop_end && render_state.buffer_time < actual_loop_end {
+                        render_state.entered_loop = true;
                     }
                 }
 
                 // check loop boundaries
-                if self.render_state.entered_loop {
-                    while self.render_state.buffer_time >= actual_loop_end {
-                        self.render_state.buffer_time -= actual_loop_end - actual_loop_start;
+                if render_state.entered_loop {
+                    while render_state.buffer_time >= actual_loop_end {
+                        render_state.buffer_time -= actual_loop_end - actual_loop_start;
                     }
 
-                    while self.render_state.buffer_time < actual_loop_start {
-                        self.render_state.buffer_time += actual_loop_end - actual_loop_start;
+                    while render_state.buffer_time < actual_loop_start {
+                        render_state.buffer_time += actual_loop_end - actual_loop_start;
                     }
                 }
             }
 
-            if self.render_state.buffer_time >= 0.
-                && self.render_state.buffer_time < buffer_duration
-            {
-                let position = self.render_state.buffer_time * sampling_ratio;
+            if render_state.buffer_time >= 0. && render_state.buffer_time < buffer_duration {
+                let position = render_state.buffer_time * sampling_ratio;
                 let playhead = position * sample_rate;
                 let playhead_floored = playhead.floor();
                 let prev_frame_index = playhead_floored as usize; // can't be < 0.
@@ -650,10 +648,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             }
 
             let time_incr = dt * computed_playback_rate;
-            self.render_state.buffer_time += time_incr;
-            self.render_state.buffer_time_elapsed += time_incr;
+            render_state.buffer_time += time_incr;
+            render_state.buffer_time_elapsed += time_incr;
             current_time += dt;
-        }
+        });
 
         // fill output according to computed positions
         buffer
