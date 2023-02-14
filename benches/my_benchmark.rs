@@ -1,4 +1,6 @@
-use iai::black_box;
+// use iai::black_box;
+
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use web_audio_api::context::BaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
@@ -59,6 +61,20 @@ pub fn bench_buffer_src() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
 
     let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
+    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+
+    let src = ctx.create_buffer_source();
+    src.connect(&ctx.destination());
+    src.set_buffer(buffer);
+    src.start();
+
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
+}
+
+pub fn bench_buffer_src_resample(sample_rate: f32) {
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), sample_rate);
+
+    let file = include_bytes!("../samples/think-stereo-48000.wav").as_slice();
     let buffer = ctx.decode_audio_data_sync(file).unwrap();
 
     let src = ctx.create_buffer_source();
@@ -197,6 +213,7 @@ pub fn bench_analyser_node() {
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
+/*
 iai::main!(
     bench_ctor,
     bench_sine,
@@ -210,3 +227,13 @@ iai::main!(
     bench_stereo_panning_automation,
     bench_analyser_node,
 );
+*/
+
+fn criterion_benchmark(c: &mut Criterion) {
+    c.bench_function("buffer src resample", |b| {
+        b.iter(|| bench_buffer_src_resample(black_box(44100.)))
+    });
+}
+
+criterion_group!(benches, criterion_benchmark);
+criterion_main!(benches);
