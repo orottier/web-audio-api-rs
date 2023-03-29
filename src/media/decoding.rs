@@ -49,41 +49,7 @@ impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
 
 /// Media stream decoder (OGG, WAV, FLAC, ..)
 ///
-/// Using the `MediaDecoder` is the preferred way to play large audio files and streams. For small
-/// soundbites, consider using
-/// [`decode_audio_data_sync`](crate::context::BaseAudioContext::decode_audio_data_sync) on the
-/// audio context which will create a single AudioBuffer which can be played/looped with high
-/// precision in an `AudioBufferSourceNode`.
-///
-/// The MediaDecoder implements the [`MediaStream`](crate::media::MediaStream) trait so can be used
-/// inside a `MediaStreamAudioSourceNode`. Please note that this means the decoding will take place
-/// on the render thread which is typically not desired. In a later version of this library, we
-/// will add a buffered version which will decode in a separate thread.
-/// <https://github.com/orottier/web-audio-api-rs/issues/120>
-///
 /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
-///
-/// # Warning
-///
-/// This abstraction is not part of the Web Audio API, it is only provided for
-/// convenience reasons.
-///
-/// # Example
-///
-/// ```no_run
-/// use web_audio_api::context::{AudioContext, BaseAudioContext};
-/// use web_audio_api::media::MediaDecoder;
-/// use web_audio_api::node::AudioNode;
-///
-/// // build a decoded audio stream the decoder
-/// let file = std::fs::File::open("samples/major-scale.ogg").unwrap();
-/// let stream = MediaDecoder::try_new(file).unwrap();
-/// // pipe the media stream into the web audio graph
-/// let context = AudioContext::default();
-/// let node = context.create_media_stream_source(stream);
-/// node.connect(&context.destination());
-/// ```
-///
 pub struct MediaDecoder {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
@@ -95,17 +61,6 @@ impl MediaDecoder {
     /// # Errors
     ///
     /// This method returns an Error in various cases (IO, mime sniffing, decoding).
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use std::io::Cursor;
-    /// use web_audio_api::media::MediaDecoder;
-    ///
-    /// let input = Cursor::new(vec![0; 32]); // or a File, TcpStream, ...
-    /// let media = MediaDecoder::try_new(input);
-    ///
-    /// assert!(media.is_err()); // the input was not a valid MIME type
     pub fn try_new<R: std::io::Read + Send + Sync + 'static>(
         input: R,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
@@ -246,4 +201,18 @@ fn convert_buf(
 
     let channels = data.into_iter().map(ChannelData::from).collect();
     AudioBuffer::from_channels(channels, input_sample_rate)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_media_decoder() {
+        let input = Cursor::new(vec![0; 32]);
+        let media = MediaDecoder::try_new(input);
+
+        assert!(media.is_err()); // the input was not a valid MIME type
+    }
 }
