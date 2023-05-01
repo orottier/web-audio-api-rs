@@ -1,5 +1,5 @@
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::media::{MediaStream, Resampler};
+use crate::media::{AudioBufferIter, Resampler};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
@@ -12,7 +12,7 @@ pub struct MediaStreamAudioSourceOptions<M> {
     pub media_stream: M,
 }
 
-/// An audio source from a [`MediaStream`] (e.g. microphone input)
+/// An audio source from a [`AudioBufferIter`] (e.g. microphone input)
 ///
 /// IMPORTANT: the media stream is polled on the render thread so you must ensure the media stream
 /// iterator never blocks. A later version of the library will allow you to wrap the `MediaStream`
@@ -42,7 +42,7 @@ impl AudioNode for MediaStreamAudioSourceNode {
 }
 
 impl MediaStreamAudioSourceNode {
-    pub fn new<C: BaseAudioContext, M: MediaStream>(
+    pub fn new<C: BaseAudioContext, M: AudioBufferIter>(
         context: &C,
         options: MediaStreamAudioSourceOptions<M>,
     ) -> Self {

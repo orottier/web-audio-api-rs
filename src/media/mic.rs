@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::media::MediaStream;
+use crate::media::AudioBufferIter;
 use crate::RENDER_QUANTUM_SIZE;
 
 use crate::context::AudioContextOptions;
@@ -15,7 +15,7 @@ use crossbeam_channel::{Receiver, TryRecvError};
 
 /// Microphone input stream
 ///
-/// The Microphone can set up a [`MediaStream`](crate::media::MediaStream) value which can be used
+/// The Microphone can set up a [`MediaStream`](crate::media::AudioBufferIter) value which can be used
 /// inside a [`MediaStreamAudioSourceNode`](crate::node::MediaStreamAudioSourceNode).
 ///
 /// It is okay for the Microphone struct to go out of scope, any corresponding stream will still be
@@ -109,12 +109,12 @@ impl Microphone {
         self.backend.close()
     }
 
-    /// A [`MediaStream`] iterator producing audio buffers from the microphone input
+    /// A [`AudioBufferIter`] iterator producing audio buffers from the microphone input
     ///
     /// Note that while you can call this function multiple times and poll all iterators
     /// concurrently, this could lead to unexpected behavior as the buffers will only be offered
     /// once.
-    pub fn stream(&self) -> impl MediaStream {
+    pub fn stream(&self) -> impl AudioBufferIter {
         MicrophoneStream {
             receiver: self.receiver.clone(),
             number_of_channels: self.number_of_channels,

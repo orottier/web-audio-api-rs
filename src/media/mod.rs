@@ -59,11 +59,11 @@ use crate::buffer::AudioBuffer;
 /// let node = context.create_media_stream_source(media);
 /// node.connect(&context.destination());
 /// ```
-pub trait MediaStream:
+pub trait AudioBufferIter:
     Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>> + Send + 'static
 {
 }
 impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>> + Send + 'static>
-    MediaStream for M
+    AudioBufferIter for M
 {
 }

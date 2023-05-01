@@ -4,7 +4,7 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions, MediaStream};
+use super::{AudioBufferIter, AudioNode, ChannelConfig, ChannelConfigOptions};
 
 use crossbeam_channel::{self, Receiver, Sender};
 
@@ -96,12 +96,12 @@ impl MediaStreamAudioDestinationNode {
         })
     }
 
-    /// A [`MediaStream`] iterator producing audio buffers with the same number of channels as the
+    /// A [`AudioBufferIter`] iterator producing audio buffers with the same number of channels as the
     /// node itself
     ///
     /// Note that while you can call this function multiple times and poll all iterators concurrently,
     /// this could lead to unexpected behavior as the buffers will only be offered once.
-    pub fn stream(&self) -> impl MediaStream {
+    pub fn stream(&self) -> impl AudioBufferIter {
         AudioDestinationNodeStream {
             receiver: self.receiver.clone(),
         }

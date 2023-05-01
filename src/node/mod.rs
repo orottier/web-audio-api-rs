@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
 use crate::events::{ErrorEvent, EventHandler, EventPayload, EventType};
-use crate::media::MediaStream;
+use crate::media::AudioBufferIter;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::Event;
 
@@ -419,7 +419,7 @@ impl<R> MediaStreamRenderer<R> {
     }
 }
 
-impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
+impl<R: AudioBufferIter> AudioProcessor for MediaStreamRenderer<R> {
     fn process(
         &mut self,
         _inputs: &[AudioRenderQuantum],

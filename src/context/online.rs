@@ -3,7 +3,7 @@ use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioConte
 use crate::io::{
     self, enumerate_devices, AudioBackendManager, ControlThreadInit, RenderThreadInit,
 };
-use crate::media::{MediaElement, MediaStream};
+use crate::media::{AudioBufferIter, MediaElement};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
 use crate::{AudioRenderCapacity, Event};
@@ -398,9 +398,9 @@ impl AudioContext {
     }
 
     /// Creates a [`MediaStreamAudioSourceNode`](node::MediaStreamAudioSourceNode) from a
-    /// [`MediaStream`]
+    /// [`AudioBufferIter`]
     #[must_use]
-    pub fn create_media_stream_source<M: MediaStream>(
+    pub fn create_media_stream_source<M: AudioBufferIter>(
         &self,
         media: M,
     ) -> node::MediaStreamAudioSourceNode {
