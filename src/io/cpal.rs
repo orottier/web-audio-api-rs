@@ -331,7 +331,7 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        cpal::default_host()
+        let mut outputs: Vec<MediaDeviceInfo> = cpal::default_host()
             .devices()
             .unwrap()
             .filter(|d| d.default_output_config().is_ok())
@@ -345,7 +345,27 @@ impl AudioBackendManager for CpalBackend {
                     Box::new(d),
                 )
             })
-            .collect()
+            .collect();
+
+        let mut inputs: Vec<MediaDeviceInfo> = cpal::default_host()
+            .devices()
+            .unwrap()
+            .filter(|d| d.default_input_config().is_ok())
+            .enumerate()
+            .map(|(i, d)| {
+                MediaDeviceInfo::new(
+                    format!("{}", i + 1),
+                    None,
+                    MediaDeviceInfoKind::AudioInput,
+                    d.name().unwrap(),
+                    Box::new(d),
+                )
+            })
+            .collect();
+
+        inputs.append(&mut outputs);
+
+        inputs
     }
 }
 

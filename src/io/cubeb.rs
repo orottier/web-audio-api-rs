@@ -370,7 +370,7 @@ impl AudioBackendManager for CubebBackend {
     where
         Self: Sized,
     {
-        Context::init(None, None)
+        let mut outputs: Vec<MediaDeviceInfo> = Context::init(None, None)
             .unwrap()
             .enumerate_devices(DeviceType::OUTPUT)
             .unwrap()
@@ -385,6 +385,27 @@ impl AudioBackendManager for CubebBackend {
                     Box::new(d.devid()),
                 )
             })
-            .collect()
+            .collect();
+
+        let mut inputs: Vec<MediaDeviceInfo> = Context::init(None, None)
+            .unwrap()
+            .enumerate_devices(DeviceType::INPUT)
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                MediaDeviceInfo::new(
+                    format!("{}", i + 1),
+                    d.group_id().map(str::to_string),
+                    MediaDeviceInfoKind::AudioInput,
+                    d.friendly_name().unwrap().into(),
+                    Box::new(d.devid()),
+                )
+            })
+            .collect();
+
+        inputs.append(&mut outputs);
+
+        inputs
     }
 }
