@@ -18,11 +18,14 @@ pub(crate) use resampling::Resampler;
 
 use std::error::Error;
 
-use crate::buffer::AudioBuffer;
+use crate::buffer::{AudioBuffer, AudioBufferOptions};
+
+pub(crate) trait AudioBufferIter: Iterator<Item = FallibleBuffer> + Send + 'static {}
+impl<M: Iterator<Item = FallibleBuffer> + Send + 'static> AudioBufferIter for M {}
+
+type FallibleBuffer = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
 /// Interface for media streaming.
-///
-/// This is a trait alias for an [`AudioBuffer`] Iterator, for example the [`Microphone`].
 ///
 /// Below is an example showing how to play the stream directly in the audio context. However, this
 /// is typically not what you should do. The media stream will be polled on the render thread which
@@ -39,6 +42,7 @@ use crate::buffer::AudioBuffer;
 /// use web_audio_api::context::{AudioContext, BaseAudioContext};
 /// use web_audio_api::{AudioBuffer, AudioBufferOptions};
 /// use web_audio_api::node::AudioNode;
+/// use web_audio_api::media::MediaStreamTrack;
 ///
 /// // create a new buffer: 512 samples of silence
 /// let options = AudioBufferOptions {
@@ -52,18 +56,61 @@ use crate::buffer::AudioBuffer;
 /// let sequence = std::iter::repeat(silence).take(5);
 ///
 /// // the sequence should actually yield `Result<AudioBuffer, _>`s
-/// let media = sequence.map(|b| Ok(b));
+/// let sequence = sequence.map(|b| Ok(b));
 ///
-/// // media is now a proper `MediaStream` and can be used in the audio graph
+/// // convert to a media track
+/// let media = MediaStreamTrack::from(sequence);
+///
+/// // use in the web audio context
 /// let context = AudioContext::default();
-/// let node = context.create_media_stream_source(media);
+/// let node = context.create_media_stream_track_source(media);
 /// node.connect(&context.destination());
 /// ```
-pub trait AudioBufferIter:
-    Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>> + Send + 'static
-{
+pub struct MediaStreamTrack {
+    iter: Box<dyn AudioBufferIter>,
+    enabled: bool,
 }
-impl<M: Iterator<Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>> + Send + 'static>
-    AudioBufferIter for M
-{
+
+impl MediaStreamTrack {
+    pub fn from<I: Iterator<Item = FallibleBuffer> + Send + Sync + 'static>(value: I) -> Self {
+        MediaStreamTrack {
+            iter: Box::new(value),
+            enabled: true,
+        }
+    }
+}
+
+impl Iterator for MediaStreamTrack {
+    type Item = FallibleBuffer;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.enabled {
+            self.iter.next()
+        } else {
+            Some(Ok(AudioBuffer::new(AudioBufferOptions {
+                number_of_channels: 1,
+                length: 128,
+                sample_rate: 48000.,
+            })))
+        }
+    }
+}
+
+pub struct MediaStream {
+    tracks: Vec<MediaStreamTrack>,
+}
+
+impl MediaStream {
+    pub(crate) fn from_iter<I: Iterator<Item = FallibleBuffer> + Send + Sync + 'static>(
+        value: I,
+    ) -> Self {
+        let track = MediaStreamTrack::from(value);
+        Self {
+            tracks: vec![track],
+        }
+    }
+
+    pub fn first_audio_track(mut self) -> Option<MediaStreamTrack> {
+        self.tracks.pop()
+    }
 }

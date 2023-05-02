@@ -1,29 +1,29 @@
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::media::{MediaStream, Resampler};
+use crate::media::{MediaStreamTrack, Resampler};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
 
-/// Options for constructing a [`MediaStreamAudioSourceNode`]
+/// Options for constructing a [`MediaStreamTrackAudioSourceNode`]
 // dictionary MediaStreamAudioSourceOptions {
 //   required MediaStream mediaStream;
 // };
-pub struct MediaStreamAudioSourceOptions {
-    pub media_stream: MediaStream,
+pub struct MediaStreamTrackAudioSourceOptions {
+    pub media_stream_track: MediaStreamTrack,
 }
 
-/// An audio source from a [`MediaStream`] (e.g. microphone input)
+/// An audio source from a [`MediaStreamTrack`] (e.g. the audio track of the microphone input)
 ///
 /// IMPORTANT: the media stream is polled on the render thread so you must ensure the media stream
 /// iterator never blocks. Use a
 /// [`MediaElementAudioSourceNode`](crate::node::MediaElementAudioSourceNode) for real time safe
 /// media playback.
-pub struct MediaStreamAudioSourceNode {
+pub struct MediaStreamTrackAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
 }
 
-impl AudioNode for MediaStreamAudioSourceNode {
+impl AudioNode for MediaStreamTrackAudioSourceNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
@@ -41,15 +41,13 @@ impl AudioNode for MediaStreamAudioSourceNode {
     }
 }
 
-impl MediaStreamAudioSourceNode {
-    /// Create a new `MediaStreamAudioSourceNode`
-    ///
-    /// # Panics
-    ///
-    /// This method will panic when the provided `MediaStream` does not contain any audio tracks.
-    pub fn new<C: BaseAudioContext>(context: &C, options: MediaStreamAudioSourceOptions) -> Self {
+impl MediaStreamTrackAudioSourceNode {
+    pub fn new<C: BaseAudioContext>(
+        context: &C,
+        options: MediaStreamTrackAudioSourceOptions,
+    ) -> Self {
         context.register(move |registration| {
-            let node = MediaStreamAudioSourceNode {
+            let node = MediaStreamTrackAudioSourceNode {
                 registration,
                 channel_config: ChannelConfig::default(),
             };
@@ -57,7 +55,7 @@ impl MediaStreamAudioSourceNode {
             let resampler = Resampler::new(
                 context.sample_rate(),
                 RENDER_QUANTUM_SIZE,
-                options.media_stream.first_audio_track().unwrap(),
+                options.media_stream_track,
             );
 
             let render = MediaStreamRenderer::new(resampler);

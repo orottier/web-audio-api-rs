@@ -41,6 +41,8 @@ mod media_stream_destination;
 pub use media_stream_destination::*;
 mod media_stream_source;
 pub use media_stream_source::*;
+mod media_stream_track_source;
+pub use media_stream_track_source::*;
 mod oscillator;
 pub use oscillator::*;
 mod panner;

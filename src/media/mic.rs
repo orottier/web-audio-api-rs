@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::media::AudioBufferIter;
+use crate::media::MediaStream;
 use crate::RENDER_QUANTUM_SIZE;
 
 use crate::context::AudioContextOptions;
@@ -15,7 +15,7 @@ use crossbeam_channel::{Receiver, TryRecvError};
 
 /// Microphone input stream
 ///
-/// The Microphone can set up a [`MediaStream`](crate::media::AudioBufferIter) value which can be used
+/// The Microphone can set up a [`MediaStream`] value which can be used
 /// inside a [`MediaStreamAudioSourceNode`](crate::node::MediaStreamAudioSourceNode).
 ///
 /// It is okay for the Microphone struct to go out of scope, any corresponding stream will still be
@@ -109,18 +109,18 @@ impl Microphone {
         self.backend.close()
     }
 
-    /// A [`AudioBufferIter`] iterator producing audio buffers from the microphone input
+    /// A [`MediaStream`] producing audio buffers from the microphone input
     ///
     /// Note that while you can call this function multiple times and poll all iterators
     /// concurrently, this could lead to unexpected behavior as the buffers will only be offered
     /// once.
-    pub fn stream(&self) -> impl AudioBufferIter {
-        MicrophoneStream {
+    pub fn stream(&self) -> MediaStream {
+        MediaStream::from_iter(MicrophoneStream {
             receiver: self.receiver.clone(),
             number_of_channels: self.number_of_channels,
             sample_rate: self.sample_rate,
             _stream: self.backend.boxed_clone(),
-        }
+        })
     }
 }
 
@@ -130,10 +130,7 @@ impl Default for Microphone {
     }
 }
 
-// no need for public documentation because the concrete type is never returned (an impl
-// MediaStream is returned instead)
-#[doc(hidden)]
-pub struct MicrophoneStream {
+struct MicrophoneStream {
     receiver: Receiver<AudioBuffer>,
     number_of_channels: usize,
     sample_rate: f32,

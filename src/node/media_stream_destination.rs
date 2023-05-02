@@ -4,8 +4,9 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
-use super::{AudioBufferIter, AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
+use crate::media::MediaStream;
 use crossbeam_channel::{self, Receiver, Sender};
 
 /// An audio stream destination (e.g. WebRTC sink)
@@ -40,7 +41,7 @@ use crossbeam_channel::{self, Receiver, Sender};
 /// // Handle recorded buffers
 /// println!("samples recorded:");
 /// let mut samples_recorded = 0;
-/// for item in dest.stream() {
+/// for item in dest.stream().first_audio_track().unwrap() {
 ///     let buffer = item.unwrap();
 ///
 ///     // You could write the samples to a file here.
@@ -96,15 +97,15 @@ impl MediaStreamAudioDestinationNode {
         })
     }
 
-    /// A [`AudioBufferIter`] iterator producing audio buffers with the same number of channels as the
-    /// node itself
+    /// A [`MediaStream`] producing audio buffers with the same number of channels as the node
+    /// itself
     ///
-    /// Note that while you can call this function multiple times and poll all iterators concurrently,
+    /// Note that while you can call this function multiple times and poll all streams concurrently,
     /// this could lead to unexpected behavior as the buffers will only be offered once.
-    pub fn stream(&self) -> impl AudioBufferIter {
-        AudioDestinationNodeStream {
+    pub fn stream(&self) -> MediaStream {
+        MediaStream::from_iter(AudioDestinationNodeStream {
             receiver: self.receiver.clone(),
-        }
+        })
     }
 }
 
@@ -138,10 +139,7 @@ impl AudioProcessor for DestinationRenderer {
     }
 }
 
-// no need for public documentation because the concrete type is never returned (an impl
-// MediaStream is returned instead)
-#[doc(hidden)]
-pub struct AudioDestinationNodeStream {
+struct AudioDestinationNodeStream {
     receiver: Receiver<AudioBuffer>,
 }
 

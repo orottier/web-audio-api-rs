@@ -39,7 +39,7 @@ use crate::media::AudioBufferIter;
 // // no further chunks
 // assert!(resampler.next().is_none());
 // ```
-pub struct Resampler<I> {
+pub(crate) struct Resampler<I> {
     /// desired sample rate
     sample_rate: f32,
     /// desired sample length
