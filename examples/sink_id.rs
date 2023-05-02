@@ -1,6 +1,6 @@
 use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext};
-use web_audio_api::enumerate_devices;
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+use web_audio_api::{enumerate_devices, MediaDeviceInfo, MediaDeviceInfoKind};
 
 fn ask_sink_id() -> String {
     println!("Enter the output 'device_id' and press <Enter>");
@@ -18,7 +18,12 @@ fn main() {
     env_logger::init();
 
     let devices = enumerate_devices();
-    dbg!(devices);
+    let output_devices: Vec<MediaDeviceInfo> = devices
+        .into_iter()
+        .filter(|d| d.kind() == MediaDeviceInfoKind::AudioOutput)
+        .collect();
+
+    dbg!(output_devices);
 
     let sink_id = ask_sink_id();
 

@@ -16,8 +16,9 @@ use float_eq::float_eq;
 use hrtf::{HrirSphere, HrtfContext, HrtfProcessor, Vec3};
 
 /// Spatialization algorithm used to position the audio in 3D space
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum PanningModelType {
+    #[default]
     EqualPower,
     HRTF,
 }
@@ -32,16 +33,11 @@ impl From<u8> for PanningModelType {
     }
 }
 
-impl Default for PanningModelType {
-    fn default() -> Self {
-        PanningModelType::EqualPower
-    }
-}
-
 /// Algorithm to reduce the volume of an audio source as it moves away from the listener
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum DistanceModelType {
     Linear,
+    #[default]
     Inverse,
     Exponential,
 }
@@ -54,12 +50,6 @@ impl From<u8> for DistanceModelType {
             2 => DistanceModelType::Exponential,
             _ => unreachable!(),
         }
-    }
-}
-
-impl Default for DistanceModelType {
-    fn default() -> Self {
-        DistanceModelType::Inverse
     }
 }
 
