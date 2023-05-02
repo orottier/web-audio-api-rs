@@ -370,34 +370,38 @@ impl AudioBackendManager for CubebBackend {
     where
         Self: Sized,
     {
-        let mut outputs: Vec<MediaDeviceInfo> = Context::init(None, None)
-            .unwrap()
-            .enumerate_devices(DeviceType::OUTPUT)
-            .unwrap()
-            .iter()
-            .enumerate()
-            .map(|(i, d)| {
-                MediaDeviceInfo::new(
-                    format!("{}", i + 1),
-                    d.group_id().map(str::to_string),
-                    MediaDeviceInfoKind::AudioOutput,
-                    d.friendly_name().unwrap().into(),
-                    Box::new(d.devid()),
-                )
-            })
-            .collect();
+        let mut index = 0;
 
         let mut inputs: Vec<MediaDeviceInfo> = Context::init(None, None)
             .unwrap()
             .enumerate_devices(DeviceType::INPUT)
             .unwrap()
             .iter()
-            .enumerate()
-            .map(|(i, d)| {
+            .map(|d| {
+                index += 1;
+
                 MediaDeviceInfo::new(
-                    format!("{}", i + 1),
+                    format!("{}", index),
                     d.group_id().map(str::to_string),
                     MediaDeviceInfoKind::AudioInput,
+                    d.friendly_name().unwrap().into(),
+                    Box::new(d.devid()),
+                )
+            })
+            .collect();
+
+        let mut outputs: Vec<MediaDeviceInfo> = Context::init(None, None)
+            .unwrap()
+            .enumerate_devices(DeviceType::OUTPUT)
+            .unwrap()
+            .iter()
+            .map(|d| {
+                index += 1;
+
+                MediaDeviceInfo::new(
+                    format!("{}", index),
+                    d.group_id().map(str::to_string),
+                    MediaDeviceInfoKind::AudioOutput,
                     d.friendly_name().unwrap().into(),
                     Box::new(d.devid()),
                 )
