@@ -56,6 +56,7 @@ pub use capacity::*;
 pub mod context;
 pub(crate) mod control;
 pub mod media;
+pub mod media_streams;
 pub mod node;
 
 mod events;

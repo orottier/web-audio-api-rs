@@ -25,7 +25,8 @@ use std::iter::IntoIterator;
 use std::net::UdpSocket;
 
 use web_audio_api::context::{AudioContext, BaseAudioContext};
-use web_audio_api::media::{MediaStreamTrack, Microphone};
+use web_audio_api::media::Microphone;
+use web_audio_api::media_streams::MediaStreamTrack;
 use web_audio_api::node::AudioNode;
 use web_audio_api::{AudioBuffer, AudioBufferOptions};
 

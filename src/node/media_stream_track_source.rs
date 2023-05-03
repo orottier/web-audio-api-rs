@@ -1,5 +1,6 @@
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::media::{MediaStreamTrack, Resampler};
+use crate::media::Resampler;
+use crate::media_streams::MediaStreamTrack;
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
@@ -26,7 +27,7 @@ pub struct MediaStreamTrackAudioSourceOptions<'a> {
 /// use web_audio_api::context::{AudioContext, BaseAudioContext};
 /// use web_audio_api::{AudioBuffer, AudioBufferOptions};
 /// use web_audio_api::node::AudioNode;
-/// use web_audio_api::media::MediaStreamTrack;
+/// use web_audio_api::media_streams::MediaStreamTrack;
 ///
 /// // create a new buffer: 512 samples of silence
 /// let options = AudioBufferOptions {

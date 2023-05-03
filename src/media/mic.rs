@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::media::{MediaStream, MediaStreamTrack};
+use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::RENDER_QUANTUM_SIZE;
 
 use crate::context::AudioContextOptions;

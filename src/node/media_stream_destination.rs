@@ -6,7 +6,7 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Render
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
-use crate::media::{MediaStream, MediaStreamTrack};
+use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crossbeam_channel::{self, Receiver, Sender};
 
 /// An audio stream destination (e.g. WebRTC sink)

@@ -15,6 +15,3 @@ pub(crate) use mic::MicrophoneRender;
 
 mod resampling;
 pub(crate) use resampling::Resampler;
-
-mod stream;
-pub use stream::{MediaStream, MediaStreamTrack, MediaStreamTrackState};

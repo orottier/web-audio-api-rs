@@ -1,11 +1,28 @@
+//! Primitives of the Media Capture and Streams API
+//!
+//! The Media Capture and Streams API, often called the Media Streams API or MediaStream API, is an
+//! API related to WebRTC which provides support for streaming audio and video data.
+//!
+//! It provides the interfaces and methods for working with the streams and their constituent
+//! tracks, the constraints associated with data formats, the success and error callbacks when
+//! using the data asynchronously, and the events that are fired during the process.
+//!
+//! <https://developer.mozilla.org/en-US/docs/Web/API/Media_Capture_and_Streams_API>
+
 use crate::{AudioBuffer, FallibleBuffer};
 use arc_swap::ArcSwap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+/// Ready-state of a [`MediaStreamTrack`]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum MediaStreamTrackState {
+    /// The track is active (the track's underlying media source is making a best-effort attempt to
+    /// provide data in real time).
     Live,
+    /// The track has ended (the track's underlying media source is no longer providing data, and
+    /// will never provide more data for this track). Once a track enters this state, it never
+    /// exits it.
     Ended,
 }
 

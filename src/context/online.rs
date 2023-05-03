@@ -7,7 +7,8 @@ use crate::events::{EventDispatch, EventHandler, EventType};
 use crate::io::{
     self, enumerate_devices, AudioBackendManager, ControlThreadInit, RenderThreadInit,
 };
-use crate::media::{MediaElement, MediaStream, MediaStreamTrack};
+use crate::media::MediaElement;
+use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
 use crate::{AudioRenderCapacity, Event};
