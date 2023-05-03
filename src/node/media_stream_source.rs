@@ -8,8 +8,8 @@ use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
 // dictionary MediaStreamAudioSourceOptions {
 //   required MediaStream mediaStream;
 // };
-pub struct MediaStreamAudioSourceOptions {
-    pub media_stream: MediaStream,
+pub struct MediaStreamAudioSourceOptions<'a> {
+    pub media_stream: &'a MediaStream,
 }
 
 /// An audio source from a [`MediaStream`] (e.g. microphone input)
@@ -57,7 +57,7 @@ impl MediaStreamAudioSourceNode {
             let resampler = Resampler::new(
                 context.sample_rate(),
                 RENDER_QUANTUM_SIZE,
-                options.media_stream.first_audio_track().unwrap(),
+                options.media_stream.get_tracks()[0].iter(),
             );
 
             let render = MediaStreamRenderer::new(resampler);

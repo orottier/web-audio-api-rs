@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::media::MediaStream;
+use crate::media::{MediaStream, MediaStreamTrack};
 use crate::RENDER_QUANTUM_SIZE;
 
 use crate::context::AudioContextOptions;
@@ -55,10 +55,8 @@ use crossbeam_channel::{Receiver, TryRecvError};
 /// std::thread::sleep(std::time::Duration::from_secs(4));
 /// ```
 pub struct Microphone {
-    receiver: Receiver<AudioBuffer>,
-    number_of_channels: usize,
-    sample_rate: f32,
     backend: Box<dyn AudioBackendManager>,
+    stream: MediaStream,
 }
 
 impl Microphone {
@@ -70,12 +68,16 @@ impl Microphone {
         // select backend based on cargo features
         let (backend, receiver) = io::build_input(options);
 
-        Self {
+        let media_iter = MicrophoneStream {
             receiver,
             number_of_channels: backend.number_of_channels(),
             sample_rate: backend.sample_rate(),
-            backend,
-        }
+            _stream: backend.boxed_clone(),
+        };
+        let track = MediaStreamTrack::lazy(media_iter);
+        let stream = MediaStream::from_tracks(vec![track]);
+
+        Self { backend, stream }
     }
 
     /// Suspends the input stream, temporarily halting audio hardware access and reducing
@@ -110,17 +112,8 @@ impl Microphone {
     }
 
     /// A [`MediaStream`] producing audio buffers from the microphone input
-    ///
-    /// Note that while you can call this function multiple times and poll all iterators
-    /// concurrently, this could lead to unexpected behavior as the buffers will only be offered
-    /// once.
-    pub fn stream(&self) -> MediaStream {
-        MediaStream::from_iter(MicrophoneStream {
-            receiver: self.receiver.clone(),
-            number_of_channels: self.number_of_channels,
-            sample_rate: self.sample_rate,
-            _stream: self.backend.boxed_clone(),
-        })
+    pub fn stream(&self) -> &MediaStream {
+        &self.stream
     }
 }
 

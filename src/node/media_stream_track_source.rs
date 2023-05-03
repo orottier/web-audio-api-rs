@@ -8,8 +8,8 @@ use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
 // dictionary MediaStreamAudioSourceOptions {
 //   required MediaStream mediaStream;
 // };
-pub struct MediaStreamTrackAudioSourceOptions {
-    pub media_stream_track: MediaStreamTrack,
+pub struct MediaStreamTrackAudioSourceOptions<'a> {
+    pub media_stream_track: &'a MediaStreamTrack,
 }
 
 /// An audio source from a [`MediaStreamTrack`] (e.g. the audio track of the microphone input)
@@ -43,11 +43,11 @@ pub struct MediaStreamTrackAudioSourceOptions {
 /// let sequence = sequence.map(|b| Ok(b));
 ///
 /// // convert to a media track
-/// let media = MediaStreamTrack::from(sequence);
+/// let media = MediaStreamTrack::lazy(sequence);
 ///
 /// // use in the web audio context
 /// let context = AudioContext::default();
-/// let node = context.create_media_stream_track_source(media);
+/// let node = context.create_media_stream_track_source(&media);
 /// node.connect(&context.destination());
 ///
 /// loop {}
@@ -89,7 +89,7 @@ impl MediaStreamTrackAudioSourceNode {
             let resampler = Resampler::new(
                 context.sample_rate(),
                 RENDER_QUANTUM_SIZE,
-                options.media_stream_track,
+                options.media_stream_track.iter(),
             );
 
             let render = MediaStreamRenderer::new(resampler);

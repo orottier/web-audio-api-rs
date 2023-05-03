@@ -160,8 +160,8 @@ fn run_client() -> std::io::Result<()> {
         sample_rate: context.sample_rate(),
         byte_buf: vec![0; 512],
     };
-    let track = MediaStreamTrack::from(stream);
-    let stream_in = context.create_media_stream_track_source(track);
+    let track = MediaStreamTrack::lazy(stream);
+    let stream_in = context.create_media_stream_track_source(&track);
     stream_in.connect(&context.destination());
 
     // leg 2: record mic input and ship to server
@@ -172,7 +172,7 @@ fn run_client() -> std::io::Result<()> {
     stream_in.connect(&stream_out);
 
     let mut byte_buf = vec![0; 512];
-    for item in stream_out.stream().first_audio_track().unwrap() {
+    for item in stream_out.stream().get_tracks()[0].iter() {
         let buf = item.unwrap();
         let size = serialize(&buf, &mut byte_buf[..]);
         loop {

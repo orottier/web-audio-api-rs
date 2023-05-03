@@ -402,7 +402,7 @@ impl AudioContext {
     #[must_use]
     pub fn create_media_stream_source(
         &self,
-        media: MediaStream,
+        media: &MediaStream,
     ) -> node::MediaStreamAudioSourceNode {
         let opts = node::MediaStreamAudioSourceOptions {
             media_stream: media,
@@ -422,7 +422,7 @@ impl AudioContext {
     #[must_use]
     pub fn create_media_stream_track_source(
         &self,
-        media: MediaStreamTrack,
+        media: &MediaStreamTrack,
     ) -> node::MediaStreamTrackAudioSourceNode {
         let opts = node::MediaStreamTrackAudioSourceOptions {
             media_stream_track: media,
