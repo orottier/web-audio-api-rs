@@ -17,4 +17,4 @@ mod resampling;
 pub(crate) use resampling::Resampler;
 
 mod stream;
-pub use stream::{MediaStream, MediaStreamTrack};
+pub use stream::{MediaStream, MediaStreamTrack, MediaStreamTrackState};

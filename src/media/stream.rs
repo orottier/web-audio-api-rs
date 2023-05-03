@@ -1,7 +1,13 @@
-use crate::{AudioBuffer, AudioBufferOptions, FallibleBuffer};
+use crate::{AudioBuffer, FallibleBuffer};
 use arc_swap::ArcSwap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum MediaStreamTrackState {
+    Live,
+    Ended,
+}
 
 /// Single media track within a [`MediaStream`]
 #[derive(Clone)]
@@ -12,8 +18,7 @@ pub struct MediaStreamTrack {
 struct MediaStreamTrackInner {
     data: ArcSwap<FallibleBuffer>,
     position: AtomicU64,
-    enabled: AtomicBool,
-    muted: AtomicBool,
+    ended: AtomicBool,
     provider: Mutex<Box<dyn Iterator<Item = FallibleBuffer> + Send + Sync + 'static>>,
 }
 
@@ -26,8 +31,7 @@ impl MediaStreamTrack {
         let inner = MediaStreamTrackInner {
             data: ArcSwap::from_pointee(initial),
             position: AtomicU64::new(0),
-            enabled: AtomicBool::new(true),
-            muted: AtomicBool::new(false),
+            ended: AtomicBool::new(false),
             provider: Mutex::new(Box::new(iter.into_iter())),
         };
         MediaStreamTrack {
@@ -35,12 +39,12 @@ impl MediaStreamTrack {
         }
     }
 
-    pub fn enabled(&self) -> bool {
-        self.inner.enabled.load(Ordering::Relaxed)
-    }
-
-    pub fn set_enabled(&self, value: bool) {
-        self.inner.enabled.store(value, Ordering::Relaxed)
+    pub fn ready_state(&self) -> MediaStreamTrackState {
+        if self.inner.ended.load(Ordering::Relaxed) {
+            MediaStreamTrackState::Ended
+        } else {
+            MediaStreamTrackState::Live
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = FallibleBuffer> {
@@ -60,38 +64,30 @@ impl Iterator for MediaStreamTrackIter {
     type Item = FallibleBuffer;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let stream_position = self.track.inner.position.load(Ordering::Relaxed);
+        if self.track.inner.ended.load(Ordering::Relaxed) {
+            return None;
+        }
+
+        let mut stream_position = self.track.inner.position.load(Ordering::Relaxed);
         if stream_position == self.position {
             match self.track.inner.provider.lock().unwrap().next() {
                 Some(buf) => {
                     let _ = self.track.inner.data.swap(Arc::new(buf));
                 }
                 None => {
-                    self.track.inner.muted.store(true, Ordering::Relaxed);
+                    self.track.inner.ended.store(true, Ordering::Relaxed);
                     return None;
                 }
             }
+            stream_position += 1;
             self.track.inner.position.fetch_add(1, Ordering::Relaxed);
         }
 
-        if self.track.inner.muted.load(Ordering::Relaxed) {
-            return None;
-        }
-
-        if !self.track.inner.enabled.load(Ordering::Relaxed) {
-            Some(Ok(AudioBuffer::new(AudioBufferOptions {
-                number_of_channels: 1,
-                length: 128,
-                sample_rate: 48000.,
-            })))
-        } else {
-            let buf = match &self.track.inner.data.load().as_ref() {
-                Ok(buf) => buf.clone(),
-                Err(_) => panic!(),
-            };
-            self.position = stream_position;
-            Some(Ok(buf))
-        }
+        self.position = stream_position;
+        Some(match &self.track.inner.data.load().as_ref() {
+            Ok(buf) => Ok(buf.clone()),
+            Err(e) => Err(e.to_string().into()),
+        })
     }
 }
 /// Stream of media content.
@@ -110,5 +106,93 @@ impl MediaStream {
 
     pub fn get_tracks(&self) -> &[MediaStreamTrack] {
         &self.tracks
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use float_eq::assert_float_eq;
+
+    use super::*;
+
+    #[test]
+    fn test_lazy() {
+        let iter = vec![
+            Ok(AudioBuffer::from(vec![vec![1.]], 48000.)),
+            Ok(AudioBuffer::from(vec![vec![2.]], 48000.)),
+            Ok(AudioBuffer::from(vec![vec![3.]], 48000.)),
+        ];
+        let track = MediaStreamTrack::lazy(iter);
+
+        assert_eq!(track.ready_state(), MediaStreamTrackState::Live);
+
+        let mut iter = track.iter();
+        assert_float_eq!(
+            iter.next().unwrap().unwrap().get_channel_data(0)[..],
+            [1.][..],
+            abs_all <= 0.
+        );
+        assert_float_eq!(
+            iter.next().unwrap().unwrap().get_channel_data(0)[..],
+            &[2.][..],
+            abs_all <= 0.
+        );
+        assert_float_eq!(
+            iter.next().unwrap().unwrap().get_channel_data(0)[..],
+            &[3.][..],
+            abs_all <= 0.
+        );
+        assert!(iter.next().is_none());
+        assert!(iter.next().is_none());
+
+        assert_eq!(track.ready_state(), MediaStreamTrackState::Ended);
+    }
+
+    #[test]
+    fn test_lazy_multiple_consumers() {
+        let iter = vec![
+            Ok(AudioBuffer::from(vec![vec![1.]], 48000.)),
+            Ok(AudioBuffer::from(vec![vec![2.]], 48000.)),
+            Ok(AudioBuffer::from(vec![vec![3.]], 48000.)),
+        ];
+        let track = MediaStreamTrack::lazy(iter);
+
+        let mut iter1 = track.iter();
+        let mut iter2 = track.iter();
+
+        // first poll iter1 once, then iter2 once
+        assert_float_eq!(
+            iter1.next().unwrap().unwrap().get_channel_data(0)[..],
+            [1.][..],
+            abs_all <= 0.
+        );
+        assert_float_eq!(
+            iter2.next().unwrap().unwrap().get_channel_data(0)[..],
+            &[1.][..],
+            abs_all <= 0.
+        );
+
+        // then poll iter1 twice
+        assert_float_eq!(
+            iter1.next().unwrap().unwrap().get_channel_data(0)[..],
+            &[2.][..],
+            abs_all <= 0.
+        );
+        assert_float_eq!(
+            iter1.next().unwrap().unwrap().get_channel_data(0)[..],
+            &[3.][..],
+            abs_all <= 0.
+        );
+
+        // polling iter2 will now yield the latest buffer
+        assert_float_eq!(
+            iter2.next().unwrap().unwrap().get_channel_data(0)[..],
+            &[3.][..],
+            abs_all <= 0.
+        );
+
+        assert!(iter1.next().is_none());
+        assert!(iter2.next().is_none());
+        assert_eq!(track.ready_state(), MediaStreamTrackState::Ended);
     }
 }
