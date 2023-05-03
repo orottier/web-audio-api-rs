@@ -56,6 +56,7 @@ pub use capacity::*;
 pub mod context;
 pub(crate) mod control;
 pub mod media;
+pub mod media_devices;
 pub mod media_streams;
 pub mod node;
 
@@ -74,7 +75,6 @@ mod spatial;
 pub use spatial::AudioListener;
 
 mod io;
-pub use io::{enumerate_devices, MediaDeviceInfo, MediaDeviceInfoKind};
 
 mod analysis;
 mod message;

@@ -1,6 +1,6 @@
 use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+use web_audio_api::media_devices::{enumerate_devices, MediaDeviceInfo, MediaDeviceInfoKind};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
-use web_audio_api::{enumerate_devices, MediaDeviceInfo, MediaDeviceInfoKind};
 
 fn ask_sink_id() -> String {
     println!("Enter the output 'device_id' and press <Enter>");

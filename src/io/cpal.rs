@@ -8,10 +8,12 @@ use cpal::{
     SupportedBufferSize,
 };
 
-use super::{AudioBackendManager, MediaDeviceInfo, MediaDeviceInfoKind, RenderThreadInit};
+use super::{AudioBackendManager, RenderThreadInit};
+
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::media::MicrophoneRender;
+use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
 use crate::AtomicF64;
 

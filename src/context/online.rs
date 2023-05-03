@@ -4,10 +4,9 @@ use std::sync::Mutex;
 
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::events::{EventDispatch, EventHandler, EventType};
-use crate::io::{
-    self, enumerate_devices, AudioBackendManager, ControlThreadInit, RenderThreadInit,
-};
+use crate::io::{self, AudioBackendManager, ControlThreadInit, RenderThreadInit};
 use crate::media::MediaElement;
+use crate::media_devices::enumerate_devices;
 use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
