@@ -16,14 +16,9 @@ pub(crate) use mic::MicrophoneRender;
 mod resampling;
 pub(crate) use resampling::Resampler;
 
-use std::error::Error;
+use crate::{AudioBufferIter, FallibleBuffer};
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-
-pub(crate) trait AudioBufferIter: Iterator<Item = FallibleBuffer> + Send + 'static {}
-impl<M: Iterator<Item = FallibleBuffer> + Send + 'static> AudioBufferIter for M {}
-
-type FallibleBuffer = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
 /// Single media track within a [`MediaStream`]
 pub struct MediaStreamTrack {

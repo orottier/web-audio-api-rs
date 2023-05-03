@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::media::AudioBufferIter;
+use crate::AudioBufferIter;
 
 /// Sample rate converter and buffer chunk splitter.
 ///

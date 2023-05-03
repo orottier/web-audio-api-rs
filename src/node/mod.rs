@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
 use crate::events::{ErrorEvent, EventHandler, EventPayload, EventType};
-use crate::media::AudioBufferIter;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::AudioBufferIter;
 use crate::Event;
 
 use lazy_static::lazy_static;
