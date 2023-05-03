@@ -41,7 +41,7 @@ use crossbeam_channel::{self, Receiver, Sender};
 /// // Handle recorded buffers
 /// println!("samples recorded:");
 /// let mut samples_recorded = 0;
-/// for item in dest.stream().get_tracks()[0].clone() {
+/// for item in dest.stream().get_tracks()[0].iter() {
 ///     let buffer = item.unwrap();
 ///
 ///     // You could write the samples to a file here.
