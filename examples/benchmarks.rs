@@ -1,13 +1,8 @@
 use rand::Rng;
+use std::convert::TryFrom;
 use std::fs::File;
-use std::io::{stdin, stdout, Write};
+use std::io::{stdin, stdout, BufRead, Write};
 use std::time::{Duration, Instant};
-
-use termion::clear;
-use termion::cursor;
-use termion::event::Key;
-use termion::input::TermRead;
-use termion::raw::IntoRawMode;
 
 use web_audio_api::context::{AudioContext, BaseAudioContext, OfflineAudioContext};
 use web_audio_api::node::{
@@ -21,8 +16,8 @@ use web_audio_api::AudioBuffer;
 // run in release mode
 // `cargo run --release --example benchmarks`
 
-struct BenchResult<'a> {
-    name: &'a str,
+struct BenchResult {
+    name: &'static str,
     duration: Duration,
     buffer: AudioBuffer,
 }
@@ -44,21 +39,9 @@ fn get_buffer(sources: &[AudioBuffer], sample_rate: f32, number_of_channels: usi
     buffer.unwrap().clone()
 }
 
-fn benchmark<'a>(
-    stdout: &mut termion::raw::RawTerminal<std::io::Stdout>,
-    name: &'a str,
-    context: OfflineAudioContext,
-    results: &mut Vec<BenchResult<'a>>,
-) {
-    write!(
-        stdout,
-        "{}{}> Running benchmark: {}",
-        clear::CurrentLine,
-        cursor::Left(200),
-        name
-    )
-    .unwrap();
-    stdout.flush().unwrap();
+fn benchmark(name: &'static str, context: OfflineAudioContext, results: &mut Vec<BenchResult>) {
+    print!("> Running benchmark: {:<70}\r", name);
+    stdout().flush().unwrap();
 
     let start = Instant::now();
     let buffer = context.start_rendering_sync();
@@ -87,19 +70,17 @@ fn main() {
     load_buffer(&mut sources, "samples/think-stereo-44100.wav", 44100.);
     load_buffer(&mut sources, "samples/think-stereo-48000.wav", 48000.);
 
-    let mut stdout = stdout().into_raw_mode().unwrap();
-
     // -------------------------------------------------------
-    // benchamarks
+    // benchmarks
     // -------------------------------------------------------
-    write!(stdout, "\r\n").unwrap();
+    println!();
 
     {
         let name = "Baseline (silence)";
 
         let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -113,7 +94,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -127,11 +108,11 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
-        let name = "Simple source test without resampling (Stereo and positionnal)";
+        let name = "Simple source test without resampling (Stereo and positional)";
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
@@ -152,7 +133,7 @@ fn main() {
         source.set_loop(true);
         source.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -166,7 +147,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -180,11 +161,11 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
-        let name = "Simple source test with resampling (Stereo and positionnal)";
+        let name = "Simple source test with resampling (Stereo and positional)";
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
@@ -205,7 +186,7 @@ fn main() {
         source.set_loop(true);
         source.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -219,7 +200,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -233,7 +214,7 @@ fn main() {
         source.connect(&context.destination());
         source.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -252,7 +233,7 @@ fn main() {
             source.start();
         }
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -275,7 +256,7 @@ fn main() {
             source.start();
         }
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -312,7 +293,7 @@ fn main() {
             }
         }
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -356,7 +337,7 @@ fn main() {
         source.start();
         source.connect(&convolver);
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -395,7 +376,7 @@ fn main() {
             offset += 0.005;
         }
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -425,7 +406,7 @@ fn main() {
             offset += 140. / 60. / 4.;
         }
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -451,7 +432,7 @@ fn main() {
             offset += 140. / 60. / 4.;
         }
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -474,7 +455,7 @@ fn main() {
             offset += 140. / 60. / 4.;
         }
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -511,7 +492,7 @@ fn main() {
             offset += 140. / 60. / 16.;
         }
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -530,7 +511,7 @@ fn main() {
         src.set_loop(true);
         src.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -550,7 +531,7 @@ fn main() {
         src.set_loop(true);
         src.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -565,7 +546,7 @@ fn main() {
         osc.frequency().linear_ramp_to_value_at_time(20., 10.);
         osc.start_at(0.);
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -585,7 +566,7 @@ fn main() {
         source.connect(&delay);
         source.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -613,7 +594,7 @@ fn main() {
         src.set_loop(true);
         src.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
     {
@@ -633,162 +614,71 @@ fn main() {
         src.set_loop(true);
         src.start();
 
-        benchmark(&mut stdout, name, context, &mut results);
+        benchmark(name, context, &mut results);
     }
 
-    write!(
-        stdout,
-        "{}{}> All done!\r\n\r\n",
-        clear::CurrentLine,
-        cursor::Left(200),
-    )
-    .unwrap();
-    stdout.flush().unwrap();
+    println!("> All done! {:<67}\n", "");
 
     // -------------------------------------------------------
     // display results
     // -------------------------------------------------------
-    let stdin = stdin();
-    let stdin = stdin.lock();
-
-    write!(
-        stdout,
-        "{}+ id {}{}| name {}{}| duration (ms) {}{}| Speedup vs. realtime {}{}| buffer.duration (s) {}\r\n",
-        termion::style::Bold,
-        cursor::Left(200),
-        cursor::Right(10),
-        cursor::Left(200),
-        cursor::Right(85),
-        cursor::Left(200),
-        cursor::Right(85 + 16),
-        cursor::Left(200),
-        cursor::Right(85 + 40),
-        termion::style::Reset,
-    )
-    .unwrap();
+    println!(
+        "{0: <3} | {1: <67} | {2: <13} | {3: <20} | {4: <20}",
+        "id", "name", "duration (ms)", "Speedup vs. realtime", "buffer.duration (s)",
+    );
 
     for (index, result) in results.iter().enumerate() {
-        write!(
-            stdout,
-            "- {} {}{}| {} {}{}| {} {}{}| {:.1}x {}{}| {}\r\n",
+        println!(
+            "{0: <3} | {1: <67} | {2: >13} | {3: >20.2} | {4: >20}",
             index + 1,
-            cursor::Left(200),
-            cursor::Right(10),
             result.name,
-            cursor::Left(200),
-            cursor::Right(85),
             result.duration.as_micros() as f64 / 1000.,
-            cursor::Left(200),
-            cursor::Right(85 + 16),
             result.buffer.duration() / (result.duration.as_micros() as f64 / 1_000_000.),
-            cursor::Left(200),
-            cursor::Right(85 + 40),
             result.buffer.duration(),
-        )
-        .unwrap();
+        );
     }
 
-    write!(stdout, "\r\n").unwrap();
-    // @todo - this needs to be reviwed can only play 9 first buffers...
-    write!(stdout, "+ Press \"q\" or \"ctrl + c\" to quit\r\n").unwrap();
-    write!(stdout, "\r\n").unwrap();
-    write!(
-        stdout,
-        "+ Type the id of the result you want to listen and press \"backspace\"\r\n"
-    )
-    .unwrap();
-    write!(stdout, "+ Press \"s\" to stop playback\r\n").unwrap();
-    write!(stdout, "\r\n").unwrap();
-
-    stdout.flush().unwrap();
+    println!();
+    println!("+ Press <Ctrl-C> to quit");
+    println!("+ Type the id of the result you want to listen and press <Enter>");
+    print!("> ");
+    stdout().flush().unwrap();
 
     // -------------------------------------------------------
     // handle input and preview
     // -------------------------------------------------------
     let context = AudioContext::default();
     let mut current_source: Option<AudioBufferSourceNode> = None;
-    let mut inputs = vec![];
 
-    for c in stdin.keys() {
-        match c.unwrap() {
-            Key::Char('q') | Key::Ctrl('c') => {
-                write!(stdout, "\n\r\n\r").unwrap();
-                stdout.flush().unwrap();
-                return;
-            }
-            Key::Char('s') => {
-                if let Some(source) = current_source {
-                    source.stop();
-                    current_source = None;
+    let lines = stdin().lock().lines();
 
-                    write!(
-                        stdout,
-                        "{}{}{}",
-                        cursor::Down(1),
-                        clear::CurrentLine,
-                        cursor::Up(1),
-                    )
-                    .unwrap();
-                }
-            }
-            Key::Char(c) => {
-                if c.is_ascii_digit() {
-                    inputs.push(c);
-                    write!(stdout, "{c}").unwrap();
-                }
-            }
-            Key::Backspace => {
-                if !inputs.is_empty() {
-                    if let Some(source) = current_source {
-                        source.stop();
-                        current_source = None;
-                    }
+    for line in lines {
+        let line = line.unwrap();
+        let id = line.parse::<i64>().unwrap();
+        let id = usize::try_from(id - 1).unwrap();
 
-                    write!(stdout, "{}{}", clear::CurrentLine, cursor::Left(200)).unwrap();
+        let result = &results[id];
+        let name = result.name;
 
-                    let id_str: String = inputs.clone().into_iter().collect();
-                    let id = id_str.parse::<usize>().unwrap();
-                    let index = id - 1;
-
-                    inputs.clear();
-
-                    if id - 1 < results.len() {
-                        let result = &results[index];
-
-                        let buffer = result.buffer.clone();
-                        let source = context.create_buffer_source();
-                        source.set_buffer(buffer);
-                        source.connect(&context.destination());
-                        source.start();
-
-                        current_source = Some(source);
-
-                        write!(
-                            stdout,
-                            "{}{}> playing outout from {}{}{}",
-                            cursor::Down(1),
-                            clear::CurrentLine,
-                            result.name,
-                            cursor::Left(200),
-                            cursor::Up(1),
-                        )
-                        .unwrap();
-                    } else {
-                        write!(
-                            stdout,
-                            "{}{}> undefined id \"{}\"{}{}",
-                            cursor::Down(1),
-                            clear::CurrentLine,
-                            id,
-                            cursor::Left(200),
-                            cursor::Up(1),
-                        )
-                        .unwrap();
-                    }
-                }
-            }
-            _ => {}
+        if let Some(cur) = current_source.take() {
+            cur.stop();
         }
-        stdout.flush().unwrap();
+
+        let buffer = result.buffer.clone();
+        let source = context.create_buffer_source();
+        source.set_buffer(buffer);
+        source.connect(&context.destination());
+        source.start();
+        source.set_onended(move |_| {
+            println!("done playing {}", name);
+            print!("> ");
+            stdout().flush().unwrap();
+        });
+
+        current_source = Some(source);
+
+        println!("+ playing output from {}", result.name);
+        print!("> ");
+        stdout().flush().unwrap();
     }
 }

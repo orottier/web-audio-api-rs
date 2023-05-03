@@ -37,10 +37,6 @@ env_logger = "0.10"
 iai = "0.1.1"
 rand = "0.8"
 
-# used in examples/mic_playback.rs:
-simplelog = "0.12"
-termion = "2.0"
-textplots = "0.8"
 
 # Uncomment the following lines to enable debug symbols
 # during CPU profiling
