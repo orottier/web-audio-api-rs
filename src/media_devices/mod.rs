@@ -4,6 +4,8 @@
 //!
 //! <https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices>
 
+use crate::media_streams::MediaStream;
+
 /// List the available media output devices, such as speakers, headsets, loopbacks, etc
 ///
 /// The media device_id can be used to specify the [`sink_id` of the `AudioContext`](crate::context::AudioContextOptions::sink_id)
@@ -84,4 +86,12 @@ impl MediaDeviceInfo {
     pub(crate) fn device(self) -> Box<dyn std::any::Any> {
         self.device
     }
+}
+
+/// Prompt for permission to use a media input
+///
+/// This produces a [`MediaStream`] with tracks containing the requested types of media.
+// TODO, return Promise? How to provide constraints?
+pub fn get_user_media() -> MediaStream {
+    crate::media::Microphone::default().stream().clone()
 }
