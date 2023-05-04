@@ -5,7 +5,7 @@ use crate::context::{
     AudioContextRegistration, AudioContextState, AudioParamId, ConcreteBaseAudioContext,
     DESTINATION_NODE_ID,
 };
-use crate::media::MediaDecoder;
+use crate::decoding::MediaDecoder;
 use crate::node::{AudioNode, ChannelConfigOptions};
 use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};

@@ -55,8 +55,8 @@ pub use capacity::*;
 
 pub mod context;
 pub(crate) mod control;
-pub mod media;
 pub mod media_devices;
+
 pub mod media_streams;
 pub mod node;
 
@@ -78,6 +78,16 @@ mod io;
 
 mod analysis;
 mod message;
+
+mod decoding;
+
+mod media_element;
+pub use media_element::MediaElement;
+
+#[cfg(any(feature = "cubeb", feature = "cpal"))]
+mod microphone;
+
+mod resampling;
 
 #[derive(Debug)]
 pub(crate) struct AtomicF32 {

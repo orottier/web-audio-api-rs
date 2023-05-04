@@ -4,8 +4,8 @@ use super::{AudioBackendManager, RenderThreadInit};
 
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
-use crate::media::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
+use crate::microphone::MicrophoneRender;
 use crate::render::RenderThread;
 use crate::RENDER_QUANTUM_SIZE;
 

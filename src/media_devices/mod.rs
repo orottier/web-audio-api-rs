@@ -119,5 +119,5 @@ impl MediaDeviceInfo {
 /// ```
 // TODO, return Promise? How to provide constraints?
 pub fn get_user_media() -> MediaStream {
-    crate::media::Microphone::default().stream().clone()
+    crate::microphone::Microphone::default().stream().clone()
 }

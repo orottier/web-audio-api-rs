@@ -1,6 +1,6 @@
 use web_audio_api::context::{AudioContext, BaseAudioContext};
-use web_audio_api::media::MediaElement;
 use web_audio_api::node::AudioNode;
+use web_audio_api::MediaElement;
 
 fn main() {
     let context = AudioContext::default();
