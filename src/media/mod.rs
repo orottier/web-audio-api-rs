@@ -9,7 +9,7 @@ pub use element::MediaElement;
 #[cfg(any(feature = "cubeb", feature = "cpal"))]
 mod mic;
 #[cfg(any(feature = "cubeb", feature = "cpal"))]
-pub use mic::Microphone;
+pub(crate) use mic::Microphone;
 #[cfg(any(feature = "cubeb", feature = "cpal"))]
 pub(crate) use mic::MicrophoneRender;
 

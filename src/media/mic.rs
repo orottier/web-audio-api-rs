@@ -14,46 +14,6 @@ use crate::io::{self, AudioBackendManager};
 use crossbeam_channel::{Receiver, TryRecvError};
 
 /// Microphone input stream
-///
-/// The Microphone can set up a [`MediaStream`] value which can be used
-/// inside a [`MediaStreamAudioSourceNode`](crate::node::MediaStreamAudioSourceNode).
-///
-/// It is okay for the Microphone struct to go out of scope, any corresponding stream will still be
-/// kept alive and emit audio buffers. Call the `close()` method if you want to stop the microphone
-/// input and release all system resources.
-///
-/// # Warning
-///
-/// This abstraction is not part of the Web Audio API and does not aim at implementing
-/// the full MediaDevices API. It is only provided for convenience reasons.
-///
-/// # Example
-///
-/// ```no_run
-/// use web_audio_api::context::{BaseAudioContext, AudioContext};
-/// use web_audio_api::context::{AudioContextLatencyCategory, AudioContextOptions};
-/// use web_audio_api::media::Microphone;
-/// use web_audio_api::node::AudioNode;
-///
-/// let context = AudioContext::default();
-///
-/// // Request an input sample rate of 44.1 kHz and default latency (buffer size 128, if available)
-/// let opts = AudioContextOptions {
-///     sample_rate: Some(44100.),
-///     ..AudioContextOptions::default()
-/// };
-/// let mic = Microphone::new(opts);
-/// // or you can create Microphone with default options
-/// // let stream = Microphone::default();
-///
-/// // register as media element in the audio context
-/// let background = context.create_media_stream_source(mic.stream());
-/// // connect the node directly to the destination node (speakers)
-/// background.connect(&context.destination());
-///
-/// // enjoy listening
-/// std::thread::sleep(std::time::Duration::from_secs(4));
-/// ```
 pub struct Microphone {
     backend: Box<dyn AudioBackendManager>,
     stream: MediaStream,

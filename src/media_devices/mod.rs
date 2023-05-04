@@ -88,9 +88,35 @@ impl MediaDeviceInfo {
     }
 }
 
-/// Prompt for permission to use a media input
+/// Prompt for permission to use a media input (audio only)
 ///
-/// This produces a [`MediaStream`] with tracks containing the requested types of media.
+/// This produces a [`MediaStream`] with tracks containing the requested types of media, which can
+/// be used inside a [`MediaStreamAudioSourceNode`](crate::node::MediaStreamAudioSourceNode).
+///
+/// It is okay for the `MediaStream` struct to go out of scope, any corresponding stream will still be
+/// kept alive and emit audio buffers. Call the `close()` method if you want to stop the media
+/// input and release all system resources.
+///
+/// # Example
+///
+/// ```no_run
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
+/// use web_audio_api::context::{AudioContextLatencyCategory, AudioContextOptions};
+/// use web_audio_api::media_devices;
+/// use web_audio_api::node::AudioNode;
+///
+/// let context = AudioContext::default();
+/// let mic = media_devices::get_user_media();
+///
+/// // register as media element in the audio context
+/// let background = context.create_media_stream_source(&mic);
+///
+/// // connect the node directly to the destination node (speakers)
+/// background.connect(&context.destination());
+///
+/// // enjoy listening
+/// std::thread::sleep(std::time::Duration::from_secs(4));
+/// ```
 // TODO, return Promise? How to provide constraints?
 pub fn get_user_media() -> MediaStream {
     crate::media::Microphone::default().stream().clone()
