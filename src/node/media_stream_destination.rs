@@ -104,9 +104,6 @@ impl MediaStreamAudioDestinationNode {
 
     /// A [`MediaStream`] producing audio buffers with the same number of channels as the node
     /// itself
-    ///
-    /// Note that while you can call this function multiple times and poll all streams concurrently,
-    /// this could lead to unexpected behavior as the buffers will only be offered once.
     pub fn stream(&self) -> &MediaStream {
         &self.stream
     }
