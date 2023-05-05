@@ -70,6 +70,11 @@ impl MediaStreamTrack {
             position: 0,
         }
     }
+
+    pub fn close(&self) {
+        // TODO, close should only close this instance but should leave clones unaltered.
+        *self.inner.provider.lock().unwrap() = Box::new(std::iter::empty());
+    }
 }
 
 struct MediaStreamTrackIter {
@@ -107,6 +112,7 @@ impl Iterator for MediaStreamTrackIter {
         })
     }
 }
+
 /// Stream of media content.
 ///
 /// A stream consists of several tracks, such as video or audio tracks. Each track is specified as
@@ -134,12 +140,12 @@ mod tests {
 
     #[test]
     fn test_lazy() {
-        let iter = vec![
+        let buffers = vec![
             Ok(AudioBuffer::from(vec![vec![1.]], 48000.)),
             Ok(AudioBuffer::from(vec![vec![2.]], 48000.)),
             Ok(AudioBuffer::from(vec![vec![3.]], 48000.)),
         ];
-        let track = MediaStreamTrack::lazy(iter);
+        let track = MediaStreamTrack::lazy(buffers);
 
         assert_eq!(track.ready_state(), MediaStreamTrackState::Live);
 
@@ -167,12 +173,12 @@ mod tests {
 
     #[test]
     fn test_lazy_multiple_consumers() {
-        let iter = vec![
+        let buffers = vec![
             Ok(AudioBuffer::from(vec![vec![1.]], 48000.)),
             Ok(AudioBuffer::from(vec![vec![2.]], 48000.)),
             Ok(AudioBuffer::from(vec![vec![3.]], 48000.)),
         ];
-        let track = MediaStreamTrack::lazy(iter);
+        let track = MediaStreamTrack::lazy(buffers);
 
         let mut iter1 = track.iter();
         let mut iter2 = track.iter();
@@ -211,5 +217,25 @@ mod tests {
         assert!(iter1.next().is_none());
         assert!(iter2.next().is_none());
         assert_eq!(track.ready_state(), MediaStreamTrackState::Ended);
+    }
+
+    #[test]
+    fn test_close() {
+        let buffers = vec![
+            Ok(AudioBuffer::from(vec![vec![1.]], 48000.)),
+            Ok(AudioBuffer::from(vec![vec![2.]], 48000.)),
+            Ok(AudioBuffer::from(vec![vec![3.]], 48000.)),
+        ];
+        let track = MediaStreamTrack::lazy(buffers);
+        let mut iter = track.iter();
+
+        assert_float_eq!(
+            iter.next().unwrap().unwrap().get_channel_data(0)[..],
+            [1.][..],
+            abs_all <= 0.
+        );
+
+        track.close();
+        assert!(iter.next().is_none());
     }
 }
