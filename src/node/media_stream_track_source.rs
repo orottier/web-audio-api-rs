@@ -44,7 +44,7 @@ pub struct MediaStreamTrackAudioSourceOptions<'a> {
 /// let sequence = sequence.map(|b| Ok(b));
 ///
 /// // convert to a media track
-/// let media = MediaStreamTrack::lazy(sequence);
+/// let media = MediaStreamTrack::from_iter(sequence);
 ///
 /// // use in the web audio context
 /// let context = AudioContext::default();

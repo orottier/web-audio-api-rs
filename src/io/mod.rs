@@ -117,7 +117,7 @@ pub(crate) fn build_input(options: AudioContextOptions) -> MediaStream {
         };
 
         let media_iter = microphone::MicrophoneStream::new(receiver, Box::new(backend));
-        let track = MediaStreamTrack::lazy(media_iter);
+        let track = MediaStreamTrack::from_iter(media_iter);
         MediaStream::from_tracks(vec![track])
     }
 }

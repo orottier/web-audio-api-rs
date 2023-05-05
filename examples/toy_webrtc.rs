@@ -161,7 +161,7 @@ fn run_client() -> std::io::Result<()> {
         sample_rate: context.sample_rate(),
         byte_buf: vec![0; 512],
     };
-    let track = MediaStreamTrack::lazy(stream);
+    let track = MediaStreamTrack::from_iter(stream);
     let stream_in = context.create_media_stream_track_source(&track);
     stream_in.connect(&context.destination());
 

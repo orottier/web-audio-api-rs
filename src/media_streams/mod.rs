@@ -40,7 +40,8 @@ struct MediaStreamTrackInner {
 }
 
 impl MediaStreamTrack {
-    pub fn lazy<T: IntoIterator<Item = FallibleBuffer>>(iter: T) -> Self
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_iter<T: IntoIterator<Item = FallibleBuffer>>(iter: T) -> Self
     where
         <T as IntoIterator>::IntoIter: Send + Sync + 'static,
     {
@@ -71,6 +72,7 @@ impl MediaStreamTrack {
         }
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn close(&self) {
         // TODO, close should only close this instance but should leave clones unaltered.
         *self.inner.provider.lock().unwrap() = Box::new(std::iter::empty());
@@ -145,7 +147,7 @@ mod tests {
             Ok(AudioBuffer::from(vec![vec![2.]], 48000.)),
             Ok(AudioBuffer::from(vec![vec![3.]], 48000.)),
         ];
-        let track = MediaStreamTrack::lazy(buffers);
+        let track = MediaStreamTrack::from_iter(buffers);
 
         assert_eq!(track.ready_state(), MediaStreamTrackState::Live);
 
@@ -178,7 +180,7 @@ mod tests {
             Ok(AudioBuffer::from(vec![vec![2.]], 48000.)),
             Ok(AudioBuffer::from(vec![vec![3.]], 48000.)),
         ];
-        let track = MediaStreamTrack::lazy(buffers);
+        let track = MediaStreamTrack::from_iter(buffers);
 
         let mut iter1 = track.iter();
         let mut iter2 = track.iter();
@@ -226,7 +228,7 @@ mod tests {
             Ok(AudioBuffer::from(vec![vec![2.]], 48000.)),
             Ok(AudioBuffer::from(vec![vec![3.]], 48000.)),
         ];
-        let track = MediaStreamTrack::lazy(buffers);
+        let track = MediaStreamTrack::from_iter(buffers);
         let mut iter = track.iter();
 
         assert_float_eq!(

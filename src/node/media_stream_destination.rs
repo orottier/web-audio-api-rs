@@ -87,7 +87,7 @@ impl MediaStreamAudioDestinationNode {
             let iter = AudioDestinationNodeStream {
                 receiver: recv.clone(),
             };
-            let track = MediaStreamTrack::lazy(iter);
+            let track = MediaStreamTrack::from_iter(iter);
             let stream = MediaStream::from_tracks(vec![track]);
 
             let node = MediaStreamAudioDestinationNode {
