@@ -1,94 +1,41 @@
 use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::RENDER_QUANTUM_SIZE;
-
-use crate::context::AudioContextOptions;
 
 use crossbeam_channel::Sender;
 
 use crate::buffer::ChannelData;
-use crate::io::{self, AudioBackendManager};
+use crate::io::AudioBackendManager;
 
 use crossbeam_channel::{Receiver, TryRecvError};
 
-/// Microphone input stream
-pub struct Microphone {
-    backend: Box<dyn AudioBackendManager>,
-    stream: MediaStream,
-}
-
-impl Microphone {
-    /// Setup the default microphone input stream
-    ///
-    /// Note: the specified `latency_hint` is currently ignored, follow our progress at
-    /// <https://github.com/orottier/web-audio-api-rs/issues/51>
-    pub fn new(options: AudioContextOptions) -> Self {
-        // select backend based on cargo features
-        let (backend, receiver) = io::build_input(options);
-
-        let media_iter = MicrophoneStream {
-            receiver,
-            number_of_channels: backend.number_of_channels(),
-            sample_rate: backend.sample_rate(),
-            _stream: backend.boxed_clone(),
-        };
-        let track = MediaStreamTrack::lazy(media_iter);
-        let stream = MediaStream::from_tracks(vec![track]);
-
-        Self { backend, stream }
-    }
-
-    /// Suspends the input stream, temporarily halting audio hardware access and reducing
-    /// CPU/battery usage in the process.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if:
-    ///
-    /// * The input device is not available
-    /// * For a `BackendSpecificError`
-    pub fn suspend(&self) {
-        self.backend.suspend();
-    }
-
-    /// Resumes the input stream that has previously been suspended/paused.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if:
-    ///
-    /// * The input device is not available
-    /// * For a `BackendSpecificError`
-    pub fn resume(&self) {
-        self.backend.resume();
-    }
-
-    /// Closes the microphone input stream, releasing the system resources being used.
-    #[allow(clippy::missing_panics_doc)]
-    pub fn close(self) {
-        self.backend.close()
-    }
-
-    /// A [`MediaStream`] producing audio buffers from the microphone input
-    pub fn stream(&self) -> &MediaStream {
-        &self.stream
-    }
-}
-
-impl Default for Microphone {
-    fn default() -> Self {
-        Self::new(AudioContextOptions::default())
-    }
-}
-
-struct MicrophoneStream {
+pub struct MicrophoneStream {
     receiver: Receiver<AudioBuffer>,
     number_of_channels: usize,
     sample_rate: f32,
+    stream: Box<dyn AudioBackendManager>,
+}
 
-    _stream: Box<dyn AudioBackendManager>,
+impl MicrophoneStream {
+    pub(crate) fn new(
+        receiver: Receiver<AudioBuffer>,
+        backend: Box<dyn AudioBackendManager>,
+    ) -> Self {
+        Self {
+            receiver,
+            number_of_channels: backend.number_of_channels(),
+            sample_rate: backend.sample_rate(),
+            stream: backend,
+        }
+    }
+}
+
+impl Drop for MicrophoneStream {
+    fn drop(&mut self) {
+        log::debug!("Microphone stream has been dropped");
+        self.stream.close()
+    }
 }
 
 impl Iterator for MicrophoneStream {

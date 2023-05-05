@@ -9,6 +9,7 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::events::EventDispatch;
 use crate::media_devices::MediaDeviceInfo;
+use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::ControlMessage;
 use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
@@ -19,6 +20,9 @@ mod cpal;
 
 #[cfg(feature = "cubeb")]
 mod cubeb;
+
+#[cfg(any(feature = "cubeb", feature = "cpal"))]
+mod microphone;
 
 #[derive(Debug)]
 pub(crate) struct ControlThreadInit {
@@ -92,23 +96,29 @@ pub(crate) fn build_output(
 }
 
 /// Set up an input stream (microphone) bases on the selected features (cubeb/cpal/none)
-#[cfg(any(feature = "cubeb", feature = "cpal"))]
-pub(crate) fn build_input(
-    options: AudioContextOptions,
-) -> (Box<dyn AudioBackendManager>, Receiver<AudioBuffer>) {
-    #[cfg(feature = "cubeb")]
-    {
-        let (b, r) = cubeb::CubebBackend::build_input(options);
-        (Box::new(b), r)
-    }
-    #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
-    {
-        let (b, r) = cpal::CpalBackend::build_input(options);
-        (Box::new(b), r)
-    }
+pub(crate) fn build_input(options: AudioContextOptions) -> MediaStream {
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
     {
         panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
+    }
+
+    #[cfg(any(feature = "cubeb", feature = "cpal"))]
+    {
+        let (backend, receiver) = {
+            #[cfg(feature = "cubeb")]
+            {
+                cubeb::CubebBackend::build_input(options)
+            }
+
+            #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
+            {
+                cpal::CpalBackend::build_input(options)
+            }
+        };
+
+        let media_iter = microphone::MicrophoneStream::new(receiver, Box::new(backend));
+        let track = MediaStreamTrack::lazy(media_iter);
+        MediaStream::from_tracks(vec![track])
     }
 }
 

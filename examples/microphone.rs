@@ -16,19 +16,4 @@ fn main() {
     }
 
     // TODO implement controls on the microphone stream
-
-    // println!("Playback for 2 seconds");
-    // std::thread::sleep(std::time::Duration::from_secs(2));
-
-    // println!("Pause mic for 2 seconds");
-    // mic.suspend();
-    // std::thread::sleep(std::time::Duration::from_secs(2));
-
-    // println!("Resume mic for 2 seconds");
-    // mic.resume();
-    // std::thread::sleep(std::time::Duration::from_secs(2));
-
-    // // Closing the mic should halt the media stream source
-    // println!("Close mic - halting stream");
-    // mic.close();
 }

@@ -84,9 +84,6 @@ mod decoding;
 mod media_element;
 pub use media_element::MediaElement;
 
-#[cfg(any(feature = "cubeb", feature = "cpal"))]
-mod microphone;
-
 mod resampling;
 
 #[derive(Debug)]

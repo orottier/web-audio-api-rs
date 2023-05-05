@@ -66,14 +66,14 @@ impl MediaStreamTrack {
 
     pub fn iter(&self) -> impl Iterator<Item = FallibleBuffer> {
         MediaStreamTrackIter {
-            track: self.clone(),
+            track: self.inner.clone(),
             position: 0,
         }
     }
 }
 
 struct MediaStreamTrackIter {
-    track: MediaStreamTrack,
+    track: Arc<MediaStreamTrackInner>,
     position: u64,
 }
 
@@ -81,27 +81,27 @@ impl Iterator for MediaStreamTrackIter {
     type Item = FallibleBuffer;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.track.inner.ended.load(Ordering::Relaxed) {
+        if self.track.ended.load(Ordering::Relaxed) {
             return None;
         }
 
-        let mut stream_position = self.track.inner.position.load(Ordering::Relaxed);
+        let mut stream_position = self.track.position.load(Ordering::Relaxed);
         if stream_position == self.position {
-            match self.track.inner.provider.lock().unwrap().next() {
+            match self.track.provider.lock().unwrap().next() {
                 Some(buf) => {
-                    let _ = self.track.inner.data.swap(Arc::new(buf));
+                    let _ = self.track.data.swap(Arc::new(buf));
                 }
                 None => {
-                    self.track.inner.ended.store(true, Ordering::Relaxed);
+                    self.track.ended.store(true, Ordering::Relaxed);
                     return None;
                 }
             }
             stream_position += 1;
-            self.track.inner.position.fetch_add(1, Ordering::Relaxed);
+            self.track.position.fetch_add(1, Ordering::Relaxed);
         }
 
         self.position = stream_position;
-        Some(match &self.track.inner.data.load().as_ref() {
+        Some(match &self.track.data.load().as_ref() {
             Ok(buf) => Ok(buf.clone()),
             Err(e) => Err(e.to_string().into()),
         })

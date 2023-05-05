@@ -4,6 +4,7 @@
 //!
 //! <https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices>
 
+use crate::context::AudioContextOptions;
 use crate::media_streams::MediaStream;
 
 /// List the available media output devices, such as speakers, headsets, loopbacks, etc
@@ -119,5 +120,5 @@ impl MediaDeviceInfo {
 /// ```
 // TODO, return Promise? How to provide constraints?
 pub fn get_user_media() -> MediaStream {
-    crate::microphone::Microphone::default().stream().clone()
+    crate::io::build_input(AudioContextOptions::default())
 }
