@@ -50,7 +50,7 @@ impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
 /// Media stream decoder (OGG, WAV, FLAC, ..)
 ///
 /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
-pub struct MediaDecoder {
+pub(crate) struct MediaDecoder {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
 }

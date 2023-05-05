@@ -14,7 +14,7 @@ use cubeb::{Context, DeviceId, DeviceType, StereoFrame, Stream, StreamParams};
 use crossbeam_channel::Receiver;
 
 // erase type of `Frame` in cubeb `Stream<Frame>`
-pub struct BoxedStream(Box<dyn CubebStream>);
+struct BoxedStream(Box<dyn CubebStream>);
 
 trait CubebStream {
     fn delegate_start(&self) -> Result<(), cubeb::Error>;
@@ -134,7 +134,7 @@ fn init_output_backend<const N: usize>(
 
 /// Audio backend using the `cubeb` library
 #[derive(Clone)]
-pub struct CubebBackend {
+pub(crate) struct CubebBackend {
     stream: ThreadSafeClosableStream,
     sample_rate: f32,
     number_of_channels: usize,

@@ -68,7 +68,7 @@ use private::ThreadSafeClosableStream;
 
 /// Audio backend using the `cpal` library
 #[derive(Clone)]
-pub struct CpalBackend {
+pub(crate) struct CpalBackend {
     stream: ThreadSafeClosableStream,
     output_latency: Arc<AtomicF64>,
     sample_rate: f32,

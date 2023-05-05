@@ -20,7 +20,7 @@ enum NoneBackendMessage {
 }
 
 #[derive(Clone)]
-pub struct NoneBackend {
+pub(crate) struct NoneBackend {
     sender: Sender<NoneBackendMessage>,
     sample_rate: f32,
 }

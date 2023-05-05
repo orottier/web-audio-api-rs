@@ -10,7 +10,7 @@ use crate::io::AudioBackendManager;
 
 use crossbeam_channel::{Receiver, TryRecvError};
 
-pub struct MicrophoneStream {
+pub(crate) struct MicrophoneStream {
     receiver: Receiver<AudioBuffer>,
     number_of_channels: usize,
     sample_rate: f32,
