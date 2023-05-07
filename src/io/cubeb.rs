@@ -279,13 +279,13 @@ impl AudioBackendManager for CubebBackend {
 
         // TODO support all channel configs
         let _max_channel_count = ctx.max_channel_count().map(|v| v as usize).ok();
-        let number_of_channels = 2;
+        const NUMBER_OF_INPUT_CHANNELS: usize = 2;
         let layout = cubeb::ChannelLayout::STEREO;
 
         let params = cubeb::StreamParamsBuilder::new()
             .format(cubeb::SampleFormat::Float32NE) // use float (native endian)
             .rate(sample_rate as u32)
-            .channels(number_of_channels as u32)
+            .channels(NUMBER_OF_INPUT_CHANNELS as u32)
             .layout(layout)
             .take();
 
@@ -309,7 +309,7 @@ impl AudioBackendManager for CubebBackend {
 
         let smoothing = 3; // todo, use buffering to smooth frame drops
         let (sender, receiver) = crossbeam_channel::bounded(smoothing);
-        let renderer = MicrophoneRender::new(number_of_channels, sample_rate, sender);
+        let renderer = MicrophoneRender::new(NUMBER_OF_INPUT_CHANNELS, sample_rate, sender);
 
         // Microphone input is always assumed STEREO (TODO)
         let mut builder = cubeb::StreamBuilder::<StereoFrame<f32>>::new();
@@ -323,8 +323,8 @@ impl AudioBackendManager for CubebBackend {
             .name("Cubeb web_audio_api (mono)")
             .latency(buffer_size)
             .data_callback(move |input, _output| {
-                let mut tmp = [0.; RENDER_QUANTUM_SIZE * 2];
-                tmp.chunks_mut(number_of_channels)
+                let mut tmp = [0.; RENDER_QUANTUM_SIZE * NUMBER_OF_INPUT_CHANNELS];
+                tmp.chunks_mut(NUMBER_OF_INPUT_CHANNELS)
                     .zip(input)
                     .for_each(|(t, i)| {
                         t[0] = i.l;
@@ -343,7 +343,7 @@ impl AudioBackendManager for CubebBackend {
 
         let backend = CubebBackend {
             stream: ThreadSafeClosableStream::new(stream),
-            number_of_channels,
+            number_of_channels: NUMBER_OF_INPUT_CHANNELS,
             sample_rate,
             sink_id: options.sink_id,
         };
