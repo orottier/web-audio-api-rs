@@ -1,12 +1,13 @@
 use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::media_devices;
+use web_audio_api::media_devices::MediaStreamConstraints;
 use web_audio_api::node::AudioNode;
 
 fn main() {
     env_logger::init();
     let context = AudioContext::default();
 
-    let mic = media_devices::get_user_media();
+    let mic = media_devices::get_user_media(MediaStreamConstraints::Audio);
     // register as media element in the audio context
     let background = context.create_media_stream_source(&mic);
     // connect the node to the destination node (speakers)

@@ -26,6 +26,7 @@ use std::net::UdpSocket;
 
 use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::media_devices;
+use web_audio_api::media_devices::MediaStreamConstraints;
 use web_audio_api::media_streams::MediaStreamTrack;
 use web_audio_api::node::AudioNode;
 use web_audio_api::{AudioBuffer, AudioBufferOptions};
@@ -166,7 +167,7 @@ fn run_client() -> std::io::Result<()> {
     stream_in.connect(&context.destination());
 
     // leg 2: record mic input and ship to server
-    let mic = media_devices::get_user_media();
+    let mic = media_devices::get_user_media(MediaStreamConstraints::Audio);
     let stream_in = context.create_media_stream_source(&mic);
     let stream_out = context.create_media_stream_destination();
     stream_out.set_channel_count(1); // force mono

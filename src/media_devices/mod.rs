@@ -4,7 +4,7 @@
 //!
 //! <https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices>
 
-use crate::context::AudioContextOptions;
+use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::media_streams::MediaStream;
 
 /// List the available media output devices, such as speakers, headsets, loopbacks, etc
@@ -89,6 +89,51 @@ impl MediaDeviceInfo {
     }
 }
 
+/// Dictionary used to instruct what sort of tracks to include in the [`MediaStream`] returned by
+/// [`get_user_media`]
+pub enum MediaStreamConstraints {
+    Audio,
+    AudioWithConstraints(MediaTrackConstraints),
+}
+
+/// Desired media stream track settings for [`MediaTrackConstraints`]
+#[derive(Default)]
+#[non_exhaustive]
+pub struct MediaTrackConstraints {
+    // ConstrainULong width;
+    // ConstrainULong height;
+    // ConstrainDouble aspectRatio;
+    // ConstrainDouble frameRate;
+    // ConstrainDOMString facingMode;
+    // ConstrainDOMString resizeMode;
+    pub sample_rate: Option<f32>,
+    // ConstrainULong sampleSize;
+    // ConstrainBoolean echoCancellation;
+    // ConstrainBoolean autoGainControl;
+    // ConstrainBoolean noiseSuppression;
+    pub latency: Option<f64>,
+    //ConstrainULong channelCount;
+    pub device_id: Option<String>,
+    // ConstrainDOMString groupId;
+}
+
+impl From<MediaTrackConstraints> for AudioContextOptions {
+    fn from(value: MediaTrackConstraints) -> Self {
+        let latency_hint = match value.latency {
+            Some(v) => AudioContextLatencyCategory::Custom(v),
+            None => AudioContextLatencyCategory::Interactive,
+        };
+        let sink_id = value.device_id.unwrap_or(String::from(""));
+
+        AudioContextOptions {
+            latency_hint,
+            sample_rate: value.sample_rate,
+            sink_id,
+            render_size_hint: Default::default(),
+        }
+    }
+}
+
 /// Prompt for permission to use a media input (audio only)
 ///
 /// This produces a [`MediaStream`] with tracks containing the requested types of media, which can
@@ -104,10 +149,11 @@ impl MediaDeviceInfo {
 /// use web_audio_api::context::{BaseAudioContext, AudioContext};
 /// use web_audio_api::context::{AudioContextLatencyCategory, AudioContextOptions};
 /// use web_audio_api::media_devices;
+/// use web_audio_api::media_devices::MediaStreamConstraints;
 /// use web_audio_api::node::AudioNode;
 ///
 /// let context = AudioContext::default();
-/// let mic = media_devices::get_user_media();
+/// let mic = media_devices::get_user_media(MediaStreamConstraints::Audio);
 ///
 /// // register as media element in the audio context
 /// let background = context.create_media_stream_source(&mic);
@@ -118,7 +164,11 @@ impl MediaDeviceInfo {
 /// // enjoy listening
 /// std::thread::sleep(std::time::Duration::from_secs(4));
 /// ```
-// TODO, return Promise? How to provide constraints?
-pub fn get_user_media() -> MediaStream {
-    crate::io::build_input(AudioContextOptions::default())
+// TODO, return Promise?
+pub fn get_user_media(constraints: MediaStreamConstraints) -> MediaStream {
+    let options = match constraints {
+        MediaStreamConstraints::Audio => AudioContextOptions::default(),
+        MediaStreamConstraints::AudioWithConstraints(cs) => cs.into(),
+    };
+    crate::io::build_input(options)
 }
