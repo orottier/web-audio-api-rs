@@ -9,7 +9,7 @@ repository = "https://github.com/orottier/web-audio-api-rs"
 keywords = ["web-audio-api", "audio", "sound", "dsp"]
 license = "MIT"
 categories = ["multimedia::audio"]
-exclude = ["/samples", "/snapshots", "/.github"]
+exclude = ["/samples", "/showcase", "/.github"]
 
 [dependencies]
 arc-swap = "1.6.0"
