@@ -1,9 +1,11 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::{AudioBackendManager, MediaDeviceInfo, RenderThreadInit};
+use super::{AudioBackendManager, RenderThreadInit};
+
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
+use crate::media_devices::MediaDeviceInfo;
 use crate::render::RenderThread;
 use crate::RENDER_QUANTUM_SIZE;
 
@@ -18,7 +20,7 @@ enum NoneBackendMessage {
 }
 
 #[derive(Clone)]
-pub struct NoneBackend {
+pub(crate) struct NoneBackend {
     sender: Sender<NoneBackendMessage>,
     sample_rate: f32,
 }

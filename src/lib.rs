@@ -37,6 +37,7 @@
 #![warn(clippy::missing_panics_doc)]
 #![deny(trivial_numeric_casts)]
 
+use std::error::Error;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// Render quantum size, the audio graph is rendered in blocks of RENDER_QUANTUM_SIZE samples
@@ -54,7 +55,9 @@ pub use capacity::*;
 
 pub mod context;
 pub(crate) mod control;
-pub mod media;
+pub mod media_devices;
+
+pub mod media_streams;
 pub mod node;
 
 mod events;
@@ -72,10 +75,16 @@ mod spatial;
 pub use spatial::AudioListener;
 
 mod io;
-pub use io::{enumerate_devices, MediaDeviceInfo, MediaDeviceInfoKind};
 
 mod analysis;
 mod message;
+
+mod decoding;
+
+mod media_element;
+pub use media_element::MediaElement;
+
+mod resampling;
 
 #[derive(Debug)]
 pub(crate) struct AtomicF32 {
@@ -242,3 +251,9 @@ mod tests {
         assert_valid_number_of_channels(32);
     }
 }
+
+pub(crate) trait AudioBufferIter: Iterator<Item = FallibleBuffer> + Send + 'static {}
+
+impl<M: Iterator<Item = FallibleBuffer> + Send + 'static> AudioBufferIter for M {}
+
+type FallibleBuffer = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;

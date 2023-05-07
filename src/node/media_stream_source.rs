@@ -1,5 +1,6 @@
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::media::{MediaStream, Resampler};
+use crate::media_streams::MediaStream;
+use crate::resampling::Resampler;
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
@@ -8,16 +9,16 @@ use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
 // dictionary MediaStreamAudioSourceOptions {
 //   required MediaStream mediaStream;
 // };
-pub struct MediaStreamAudioSourceOptions<M> {
-    pub media_stream: M,
+pub struct MediaStreamAudioSourceOptions<'a> {
+    pub media_stream: &'a MediaStream,
 }
 
 /// An audio source from a [`MediaStream`] (e.g. microphone input)
 ///
 /// IMPORTANT: the media stream is polled on the render thread so you must ensure the media stream
-/// iterator never blocks. A later version of the library will allow you to wrap the `MediaStream`
-/// in a `MediaElement`, which buffers the stream on another thread so the render thread never
-/// blocks. <https://github.com/orottier/web-audio-api-rs/issues/120>
+/// iterator never blocks. Use a
+/// [`MediaElementAudioSourceNode`](crate::node::MediaElementAudioSourceNode) for real time safe
+/// media playback.
 pub struct MediaStreamAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
@@ -42,10 +43,12 @@ impl AudioNode for MediaStreamAudioSourceNode {
 }
 
 impl MediaStreamAudioSourceNode {
-    pub fn new<C: BaseAudioContext, M: MediaStream>(
-        context: &C,
-        options: MediaStreamAudioSourceOptions<M>,
-    ) -> Self {
+    /// Create a new `MediaStreamAudioSourceNode`
+    ///
+    /// # Panics
+    ///
+    /// This method will panic when the provided `MediaStream` does not contain any audio tracks.
+    pub fn new<C: BaseAudioContext>(context: &C, options: MediaStreamAudioSourceOptions) -> Self {
         context.register(move |registration| {
             let node = MediaStreamAudioSourceNode {
                 registration,
@@ -55,7 +58,7 @@ impl MediaStreamAudioSourceNode {
             let resampler = Resampler::new(
                 context.sample_rate(),
                 RENDER_QUANTUM_SIZE,
-                options.media_stream,
+                options.media_stream.get_tracks()[0].iter(),
             );
 
             let render = MediaStreamRenderer::new(resampler);

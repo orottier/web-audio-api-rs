@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
 use crate::events::{ErrorEvent, EventHandler, EventPayload, EventType};
-use crate::media::MediaStream;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::AudioBufferIter;
 use crate::Event;
 
 use lazy_static::lazy_static;
@@ -41,6 +41,8 @@ mod media_stream_destination;
 pub use media_stream_destination::*;
 mod media_stream_source;
 pub use media_stream_source::*;
+mod media_stream_track_source;
+pub use media_stream_track_source::*;
 mod oscillator;
 pub use oscillator::*;
 mod panner;
@@ -419,7 +421,7 @@ impl<R> MediaStreamRenderer<R> {
     }
 }
 
-impl<R: MediaStream> AudioProcessor for MediaStreamRenderer<R> {
+impl<R: AudioBufferIter> AudioProcessor for MediaStreamRenderer<R> {
     fn process(
         &mut self,
         _inputs: &[AudioRenderQuantum],

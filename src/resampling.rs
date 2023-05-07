@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::media::MediaStream;
+use crate::AudioBufferIter;
 
 /// Sample rate converter and buffer chunk splitter.
 ///
@@ -39,7 +39,7 @@ use crate::media::MediaStream;
 // // no further chunks
 // assert!(resampler.next().is_none());
 // ```
-pub struct Resampler<I> {
+pub(crate) struct Resampler<I> {
     /// desired sample rate
     sample_rate: f32,
     /// desired sample length
@@ -50,7 +50,7 @@ pub struct Resampler<I> {
     buffer: Option<AudioBuffer>,
 }
 
-impl<M: MediaStream> Resampler<M> {
+impl<M: AudioBufferIter> Resampler<M> {
     pub fn new(sample_rate: f32, sample_len: usize, input: M) -> Self {
         Self {
             sample_rate,
@@ -61,7 +61,7 @@ impl<M: MediaStream> Resampler<M> {
     }
 }
 
-impl<M: MediaStream> Iterator for Resampler<M> {
+impl<M: AudioBufferIter> Iterator for Resampler<M> {
     type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
     fn next(&mut self) -> Option<Self::Item> {

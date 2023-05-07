@@ -1,16 +1,16 @@
 //! The `AudioContext` type and constructor options
-use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::io::{
-    self, enumerate_devices, AudioBackendManager, ControlThreadInit, RenderThreadInit,
-};
-use crate::media::{MediaElement, MediaStream};
-use crate::message::ControlMessage;
-use crate::node::{self, ChannelConfigOptions};
-use crate::{AudioRenderCapacity, Event};
-
-use crate::events::{EventDispatch, EventHandler, EventType};
 use std::error::Error;
 use std::sync::Mutex;
+
+use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
+use crate::events::{EventDispatch, EventHandler, EventType};
+use crate::io::{self, AudioBackendManager, ControlThreadInit, RenderThreadInit};
+use crate::media_devices::enumerate_devices;
+use crate::media_streams::{MediaStream, MediaStreamTrack};
+use crate::message::ControlMessage;
+use crate::node::{self, ChannelConfigOptions};
+use crate::MediaElement;
+use crate::{AudioRenderCapacity, Event};
 
 /// Check if the provided sink_id is available for playback
 ///
@@ -400,9 +400,9 @@ impl AudioContext {
     /// Creates a [`MediaStreamAudioSourceNode`](node::MediaStreamAudioSourceNode) from a
     /// [`MediaStream`]
     #[must_use]
-    pub fn create_media_stream_source<M: MediaStream>(
+    pub fn create_media_stream_source(
         &self,
-        media: M,
+        media: &MediaStream,
     ) -> node::MediaStreamAudioSourceNode {
         let opts = node::MediaStreamAudioSourceOptions {
             media_stream: media,
@@ -415,6 +415,19 @@ impl AudioContext {
     pub fn create_media_stream_destination(&self) -> node::MediaStreamAudioDestinationNode {
         let opts = ChannelConfigOptions::default();
         node::MediaStreamAudioDestinationNode::new(self, opts)
+    }
+
+    /// Creates a [`MediaStreamTrackAudioSourceNode`](node::MediaStreamTrackAudioSourceNode) from a
+    /// [`MediaStreamTrack`]
+    #[must_use]
+    pub fn create_media_stream_track_source(
+        &self,
+        media: &MediaStreamTrack,
+    ) -> node::MediaStreamTrackAudioSourceNode {
+        let opts = node::MediaStreamTrackAudioSourceOptions {
+            media_stream_track: media,
+        };
+        node::MediaStreamTrackAudioSourceNode::new(self, opts)
     }
 
     /// Creates a [`MediaElementAudioSourceNode`](node::MediaElementAudioSourceNode) from a

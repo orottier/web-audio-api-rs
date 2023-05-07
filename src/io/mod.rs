@@ -8,6 +8,8 @@ use crossbeam_channel::{Receiver, Sender};
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::events::EventDispatch;
+use crate::media_devices::MediaDeviceInfo;
+use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::ControlMessage;
 use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
@@ -19,33 +21,8 @@ mod cpal;
 #[cfg(feature = "cubeb")]
 mod cubeb;
 
-/// List the available media output devices, such as speakers, headsets, loopbacks, etc
-///
-/// The media device_id can be used to specify the [`sink_id` of the `AudioContext`](AudioContextOptions::sink_id)
-///
-/// ```no_run
-/// use web_audio_api::{enumerate_devices, MediaDeviceInfoKind};
-///
-/// let devices = enumerate_devices();
-/// assert_eq!(devices[0].device_id(), "1");
-/// assert_eq!(devices[0].group_id(), None);
-/// assert_eq!(devices[0].kind(), MediaDeviceInfoKind::AudioOutput);
-/// assert_eq!(devices[0].label(), "Macbook Pro Builtin Speakers");
-/// ```
-pub fn enumerate_devices() -> Vec<MediaDeviceInfo> {
-    #[cfg(feature = "cubeb")]
-    {
-        cubeb::CubebBackend::enumerate_devices()
-    }
-
-    #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
-    {
-        cpal::CpalBackend::enumerate_devices()
-    }
-
-    #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
-    panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
-}
+#[cfg(any(feature = "cubeb", feature = "cpal"))]
+mod microphone;
 
 #[derive(Debug)]
 pub(crate) struct ControlThreadInit {
@@ -119,23 +96,29 @@ pub(crate) fn build_output(
 }
 
 /// Set up an input stream (microphone) bases on the selected features (cubeb/cpal/none)
-#[cfg(any(feature = "cubeb", feature = "cpal"))]
-pub(crate) fn build_input(
-    options: AudioContextOptions,
-) -> (Box<dyn AudioBackendManager>, Receiver<AudioBuffer>) {
-    #[cfg(feature = "cubeb")]
-    {
-        let (b, r) = cubeb::CubebBackend::build_input(options);
-        (Box::new(b), r)
-    }
-    #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
-    {
-        let (b, r) = cpal::CpalBackend::build_input(options);
-        (Box::new(b), r)
-    }
+pub(crate) fn build_input(options: AudioContextOptions) -> MediaStream {
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
     {
         panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
+    }
+
+    #[cfg(any(feature = "cubeb", feature = "cpal"))]
+    {
+        let (backend, receiver) = {
+            #[cfg(feature = "cubeb")]
+            {
+                cubeb::CubebBackend::build_input(options)
+            }
+
+            #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
+            {
+                cpal::CpalBackend::build_input(options)
+            }
+        };
+
+        let media_iter = microphone::MicrophoneStream::new(receiver, Box::new(backend));
+        let track = MediaStreamTrack::from_iter(media_iter);
+        MediaStream::from_tracks(vec![track])
     }
 }
 
@@ -213,67 +196,17 @@ fn buffer_size_for_latency_category(
     }
 }
 
-/// Describes input/output type of a media device
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum MediaDeviceInfoKind {
-    VideoInput,
-    AudioInput,
-    AudioOutput,
-}
-
-/// Describes a single media input or output device
-///
-/// Call [`enumerate_devices`] to obtain a list of devices for your hardware.
-#[derive(Debug)]
-pub struct MediaDeviceInfo {
-    device_id: String,
-    group_id: Option<String>,
-    kind: MediaDeviceInfoKind,
-    label: String,
-    device: Box<dyn std::any::Any>,
-}
-
-impl MediaDeviceInfo {
-    pub(crate) fn new(
-        device_id: String,
-        group_id: Option<String>,
-        kind: MediaDeviceInfoKind,
-        label: String,
-        device: Box<dyn std::any::Any>,
-    ) -> Self {
-        Self {
-            device_id,
-            group_id,
-            kind,
-            label,
-            device,
-        }
+pub(crate) fn enumerate_devices() -> Vec<MediaDeviceInfo> {
+    #[cfg(feature = "cubeb")]
+    {
+        crate::io::cubeb::CubebBackend::enumerate_devices()
     }
 
-    /// Identifier for the represented device
-    ///
-    /// The current implementation is not stable across sessions so you should not persist this
-    /// value
-    pub fn device_id(&self) -> &str {
-        &self.device_id
+    #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
+    {
+        crate::io::cpal::CpalBackend::enumerate_devices()
     }
 
-    /// Two devices have the same group identifier if they belong to the same physical device
-    pub fn group_id(&self) -> Option<&str> {
-        self.group_id.as_deref()
-    }
-
-    /// Enumerated value that is either "videoinput", "audioinput" or "audiooutput".
-    pub fn kind(&self) -> MediaDeviceInfoKind {
-        self.kind
-    }
-
-    /// Friendly label describing this device
-    pub fn label(&self) -> &str {
-        &self.label
-    }
-
-    pub(crate) fn device(self) -> Box<dyn std::any::Any> {
-        self.device
-    }
+    #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
+    panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
 }

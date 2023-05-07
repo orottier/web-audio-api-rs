@@ -25,7 +25,8 @@ use std::iter::IntoIterator;
 use std::net::UdpSocket;
 
 use web_audio_api::context::{AudioContext, BaseAudioContext};
-use web_audio_api::media::Microphone;
+use web_audio_api::media_devices;
+use web_audio_api::media_streams::MediaStreamTrack;
 use web_audio_api::node::AudioNode;
 use web_audio_api::{AudioBuffer, AudioBufferOptions};
 
@@ -160,18 +161,19 @@ fn run_client() -> std::io::Result<()> {
         sample_rate: context.sample_rate(),
         byte_buf: vec![0; 512],
     };
-    let stream_in = context.create_media_stream_source(stream);
+    let track = MediaStreamTrack::from_iter(stream);
+    let stream_in = context.create_media_stream_track_source(&track);
     stream_in.connect(&context.destination());
 
     // leg 2: record mic input and ship to server
-    let mic = Microphone::default();
-    let stream_in = context.create_media_stream_source(mic.stream());
+    let mic = media_devices::get_user_media();
+    let stream_in = context.create_media_stream_source(&mic);
     let stream_out = context.create_media_stream_destination();
     stream_out.set_channel_count(1); // force mono
     stream_in.connect(&stream_out);
 
     let mut byte_buf = vec![0; 512];
-    for item in stream_out.stream() {
+    for item in stream_out.stream().get_tracks()[0].iter() {
         let buf = item.unwrap();
         let size = serialize(&buf, &mut byte_buf[..]);
         loop {

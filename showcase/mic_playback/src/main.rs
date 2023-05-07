@@ -2,7 +2,7 @@
 // `cargo run --release --example mic_playback`
 
 use web_audio_api::context::{AudioContext, AudioContextRegistration, BaseAudioContext};
-use web_audio_api::media::Microphone;
+use web_audio_api::media_devices;
 use web_audio_api::node::BiquadFilterType;
 use web_audio_api::node::{
     AnalyserNode, AudioBufferSourceNode, AudioNode, AudioScheduledSourceNode, BiquadFilterNode,
@@ -287,8 +287,8 @@ impl AudioThread {
     fn new() -> Self {
         let context = AudioContext::default();
 
-        let mic = Microphone::default();
-        let mic_in = context.create_media_stream_source(mic.stream());
+        let mic = media_devices::get_user_media();
+        let mic_in = context.create_media_stream_source(&mic);
 
         let analyser = Arc::new(context.create_analyser());
         let buffer_source = context.create_buffer_source();

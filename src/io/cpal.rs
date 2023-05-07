@@ -8,10 +8,12 @@ use cpal::{
     SupportedBufferSize,
 };
 
-use super::{AudioBackendManager, MediaDeviceInfo, MediaDeviceInfoKind, RenderThreadInit};
+use super::{AudioBackendManager, RenderThreadInit};
+
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
-use crate::media::MicrophoneRender;
+use crate::io::microphone::MicrophoneRender;
+use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
 use crate::AtomicF64;
 
@@ -66,7 +68,7 @@ use private::ThreadSafeClosableStream;
 
 /// Audio backend using the `cpal` library
 #[derive(Clone)]
-pub struct CpalBackend {
+pub(crate) struct CpalBackend {
     stream: ThreadSafeClosableStream,
     output_latency: Arc<AtomicF64>,
     sample_rate: f32,
