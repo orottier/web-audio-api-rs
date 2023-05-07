@@ -30,8 +30,8 @@ fn main() {
     let context = AudioContext::default();
     let mut constraints = MediaTrackConstraints::default();
     constraints.device_id = sink_id;
-    let mic =
-        media_devices::get_user_media(MediaStreamConstraints::AudioWithConstraints(constraints));
+    let stream_constraints = MediaStreamConstraints::AudioWithConstraints(constraints);
+    let mic = media_devices::get_user_media_sync(stream_constraints);
 
     // create media stream source node with mic stream
     let stream_source = context.create_media_stream_source(&mic);

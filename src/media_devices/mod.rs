@@ -90,7 +90,7 @@ impl MediaDeviceInfo {
 }
 
 /// Dictionary used to instruct what sort of tracks to include in the [`MediaStream`] returned by
-/// [`get_user_media`]
+/// [`get_user_media_sync`]
 pub enum MediaStreamConstraints {
     Audio,
     AudioWithConstraints(MediaTrackConstraints),
@@ -143,6 +143,9 @@ impl From<MediaTrackConstraints> for AudioContextOptions {
 /// kept alive and emit audio buffers. Call the `close()` method if you want to stop the media
 /// input and release all system resources.
 ///
+/// This function operates synchronously, which may be undesirable on the control thread. An async
+/// version is currently not implemented.
+///
 /// # Example
 ///
 /// ```no_run
@@ -153,7 +156,7 @@ impl From<MediaTrackConstraints> for AudioContextOptions {
 /// use web_audio_api::node::AudioNode;
 ///
 /// let context = AudioContext::default();
-/// let mic = media_devices::get_user_media(MediaStreamConstraints::Audio);
+/// let mic = media_devices::get_user_media_sync(MediaStreamConstraints::Audio);
 ///
 /// // register as media element in the audio context
 /// let background = context.create_media_stream_source(&mic);
@@ -164,8 +167,7 @@ impl From<MediaTrackConstraints> for AudioContextOptions {
 /// // enjoy listening
 /// std::thread::sleep(std::time::Duration::from_secs(4));
 /// ```
-// TODO, return Promise?
-pub fn get_user_media(constraints: MediaStreamConstraints) -> MediaStream {
+pub fn get_user_media_sync(constraints: MediaStreamConstraints) -> MediaStream {
     let options = match constraints {
         MediaStreamConstraints::Audio => AudioContextOptions::default(),
         MediaStreamConstraints::AudioWithConstraints(cs) => cs.into(),

@@ -167,7 +167,7 @@ fn run_client() -> std::io::Result<()> {
     stream_in.connect(&context.destination());
 
     // leg 2: record mic input and ship to server
-    let mic = media_devices::get_user_media(MediaStreamConstraints::Audio);
+    let mic = media_devices::get_user_media_sync(MediaStreamConstraints::Audio);
     let stream_in = context.create_media_stream_source(&mic);
     let stream_out = context.create_media_stream_destination();
     stream_out.set_channel_count(1); // force mono
