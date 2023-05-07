@@ -82,7 +82,7 @@ impl AudioBackendManager for CpalBackend {
         Self: Sized,
     {
         let host = cpal::default_host();
-        log::info!("Host: {:?}", host.id());
+        log::info!("Audio Output Host: cpal {:?}", host.id());
 
         let RenderThreadInit {
             frames_played,
@@ -206,13 +206,19 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        // @todo - enable device selection, i.e. device_id from enumerate_devices
-        // see https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia
-
         let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .expect("no input device available");
+        log::info!("Audio Input Host: cpal {:?}", host.id());
+
+        let device = if options.sink_id.is_empty() {
+            host.default_input_device()
+                .expect("no input device available")
+        } else {
+            Self::enumerate_devices()
+                .into_iter()
+                .find(|e| e.device_id() == options.sink_id)
+                .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
+                .unwrap()
+        };
 
         log::info!("Input device: {:?}", device.name());
 
@@ -291,7 +297,7 @@ impl AudioBackendManager for CpalBackend {
             output_latency: Arc::new(AtomicF64::new(0.)),
             sample_rate,
             number_of_channels,
-            sink_id: "".into(),
+            sink_id: options.sink_id,
         };
 
         (backend, receiver)

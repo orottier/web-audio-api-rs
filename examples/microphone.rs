@@ -1,12 +1,37 @@
 use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::media_devices;
-use web_audio_api::media_devices::MediaStreamConstraints;
+use web_audio_api::media_devices::{enumerate_devices, MediaDeviceInfo, MediaDeviceInfoKind};
+use web_audio_api::media_devices::{MediaStreamConstraints, MediaTrackConstraints};
 use web_audio_api::node::AudioNode;
+
+fn ask_sink_id() -> Option<String> {
+    println!("Enter the input 'device_id' and press <Enter>");
+    println!("- Use 0 for the default audio input device");
+
+    let input = std::io::stdin().lines().next().unwrap().unwrap();
+    match input.trim() {
+        "0" => None,
+        i => Some(i.to_string()),
+    }
+}
 
 fn main() {
     env_logger::init();
+
+    let devices = enumerate_devices();
+    let input_devices: Vec<MediaDeviceInfo> = devices
+        .into_iter()
+        .filter(|d| d.kind() == MediaDeviceInfoKind::AudioInput)
+        .collect();
+
+    dbg!(input_devices);
+    let sink_id = ask_sink_id();
+
     let context = AudioContext::default();
-    let mic = media_devices::get_user_media(MediaStreamConstraints::Audio);
+    let mut constraints = MediaTrackConstraints::default();
+    constraints.device_id = sink_id;
+    let mic =
+        media_devices::get_user_media(MediaStreamConstraints::AudioWithConstraints(constraints));
 
     // create media stream source node with mic stream
     let stream_source = context.create_media_stream_source(&mic);
