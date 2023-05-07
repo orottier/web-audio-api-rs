@@ -1,3 +1,12 @@
+# Version 0.29.0 (2023-05-07)
+
+- Implement part of the MediaStreams API (MediaStream, MediaStreamTrack)
+- Implement part of the MediaDevices API (getUserMedia, enumerateDevices)
+- Changed enumerateDevices to also include input devices
+- Microphone input can now specify desired deviceId
+- Added MediaStreamTrackAudioSourceNode
+- Fixed windows build by removing termion from dev-dependencies
+
 # Version 0.28.0 (2023-01-30)
 
 - Improved AnalyserNode (performance and correctness)
