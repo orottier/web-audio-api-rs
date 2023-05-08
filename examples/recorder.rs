@@ -31,8 +31,13 @@ fn main() {
     osc.start();
 
     let recorder = MediaRecorder::new(dest.stream());
-    recorder.set_ondataavailable(move |blob| {
-        std::io::stdout().write_all(&blob).unwrap();
+    recorder.set_ondataavailable(move |event| {
+        eprintln!(
+            "timecode {:.6}, data size {}",
+            event.timecode,
+            event.blob.len()
+        );
+        std::io::stdout().write_all(&event.blob).unwrap();
     });
     recorder.start();
 

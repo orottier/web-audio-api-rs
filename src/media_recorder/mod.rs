@@ -6,14 +6,17 @@
 //! <https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder>
 
 use crate::media_streams::MediaStream;
+use crate::Event;
+
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 struct MediaRecorderInner {
     stream: MediaStream,
     active: AtomicBool,
-    data_available_callback: Mutex<Option<Box<dyn FnMut(Vec<u8>) + Send + 'static>>>,
+    data_available_callback: Mutex<Option<Box<dyn FnMut(BlobEvent) + Send + 'static>>>,
     stop_callback: Mutex<Option<Box<dyn FnMut() + Send + 'static>>>,
 }
 
@@ -27,8 +30,8 @@ struct MediaRecorderInner {
 /// let output = context.create_media_stream_destination();
 ///
 /// let recorder = MediaRecorder::new(output.stream());
-/// recorder.set_ondataavailable(|blob| {
-///     println!("Received {} bytes of data", blob.len());
+/// recorder.set_ondataavailable(|event| {
+///     println!("Received {} bytes of data", event.blob.len());
 /// });
 /// recorder.start();
 /// ```
@@ -57,7 +60,7 @@ impl MediaRecorder {
         }
     }
 
-    pub fn set_ondataavailable<F: Fn(Vec<u8>) + Send + 'static>(&self, callback: F) {
+    pub fn set_ondataavailable<F: Fn(BlobEvent) + Send + 'static>(&self, callback: F) {
         *self.inner.data_available_callback.lock().unwrap() = Some(Box::new(callback));
     }
 
@@ -91,6 +94,9 @@ impl MediaRecorder {
                 Some(Ok(first)) => first,
             };
 
+            let start_timecode = Instant::now();
+            let mut now = start_timecode;
+
             let spec = hound::WavSpec {
                 channels: buf.number_of_channels() as u16,
                 sample_rate: buf.sample_rate() as u32,
@@ -117,10 +123,19 @@ impl MediaRecorder {
 
                 let active = inner.active.load(Ordering::Relaxed);
                 if !active || blob.len() > 128 * 1024 {
+                    let timecode = now.duration_since(start_timecode).as_secs_f64();
+
                     let send = std::mem::replace(&mut blob, Vec::with_capacity(128 * 1024));
                     if let Some(f) = inner.data_available_callback.lock().unwrap().as_mut() {
-                        (f)(send)
+                        let event = BlobEvent {
+                            blob: send,
+                            timecode,
+                            event: Event { type_: "BlobEvent" },
+                        };
+                        (f)(event)
                     }
+
+                    now = Instant::now();
                 }
 
                 if !active {
@@ -137,4 +152,17 @@ impl MediaRecorder {
     pub fn stop(&self) {
         self.inner.active.store(false, Ordering::Relaxed);
     }
+}
+
+/// Interface for the `dataavailable` event, containing the recorded data
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct BlobEvent {
+    /// The encoded data
+    pub blob: Vec<u8>,
+    /// The difference between the timestamp of the first chunk in data and the timestamp of the
+    /// first chunk in the first BlobEvent produced by this recorder
+    pub timecode: f64,
+    /// Inherits from this base Event
+    pub event: Event,
 }
