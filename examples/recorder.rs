@@ -45,7 +45,7 @@ fn main() {
 
     // stop and wait for the final blob to flush
     let (send, recv) = crossbeam_channel::bounded(0);
-    recorder.set_onstop(move || {
+    recorder.set_onstop(move |_| {
         let _ = send.send(());
     });
     recorder.stop();
