@@ -28,7 +28,6 @@ struct MediaRecorderInner {
 
 impl MediaRecorderInner {
     fn handle_error(&self, error: Box<dyn Error + Send + Sync>) {
-        self.active.store(false, Ordering::SeqCst);
         if let Some(f) = self.error_callback.lock().unwrap().take() {
             (f)(ErrorEvent {
                 message: error.to_string(),
@@ -38,6 +37,7 @@ impl MediaRecorderInner {
                 },
             })
         }
+        self.stop();
     }
 
     fn flush(&self, blob: &mut Vec<u8>, start_timecode: Instant, now: &mut Instant) {
@@ -54,6 +54,13 @@ impl MediaRecorderInner {
         }
 
         *now = Instant::now();
+    }
+
+    fn stop(&self) {
+        self.active.store(false, Ordering::SeqCst);
+        if let Some(f) = self.stop_callback.lock().unwrap().take() {
+            (f)(Event { type_: "StopEvent" })
+        }
     }
 }
 
@@ -163,10 +170,10 @@ impl MediaRecorder {
                 let buf = match item {
                     Ok(buf) => buf,
                     Err(error) => {
-                        inner.handle_error(error);
                         if !blob.is_empty() {
                             inner.flush(&mut blob, start_timecode, &mut now);
                         }
+                        inner.handle_error(error);
                         return;
                     }
                 };
@@ -181,10 +188,11 @@ impl MediaRecorder {
                     break;
                 }
             }
-
-            if let Some(f) = inner.stop_callback.lock().unwrap().take() {
-                (f)(Event { type_: "StopEvent" })
+            if !blob.is_empty() {
+                inner.flush(&mut blob, start_timecode, &mut now);
             }
+
+            inner.stop();
         });
     }
 
@@ -212,7 +220,7 @@ impl MediaRecorder {
     }
 
     pub fn stop(&self) {
-        self.inner.active.store(false, Ordering::Relaxed);
+        self.inner.stop();
     }
 }
 
@@ -231,12 +239,17 @@ pub struct BlobEvent {
 
 #[cfg(test)]
 mod tests {
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::media_streams::MediaStreamTrack;
+    use float_eq::assert_float_eq;
+    use std::io::Cursor;
 
     use super::*;
 
     #[test]
-    fn test_start_stop() {
+    fn test_record() {
+        let data_received = Arc::new(AtomicBool::new(false));
+
         let buffers = vec![
             Ok(AudioBuffer::from(vec![vec![1.; 1024]], 48000.)),
             Ok(AudioBuffer::from(vec![vec![2.; 1024]], 48000.)),
@@ -245,7 +258,95 @@ mod tests {
         let track = MediaStreamTrack::from_iter(buffers);
         let stream = MediaStream::from_tracks(vec![track]);
         let recorder = MediaRecorder::new(&stream);
+
+        {
+            let data_received = data_received.clone();
+            recorder.set_ondataavailable(move |_| data_received.store(true, Ordering::Relaxed));
+        }
+
+        // setup channel to await recorder completion
+        let (send, recv) = crossbeam_channel::bounded(1);
+        recorder.set_onstop(move |_| {
+            let _ = send.send(());
+        });
+
         recorder.start();
-        recorder.stop();
+
+        let _ = recv.recv();
+        assert!(data_received.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_error() {
+        let data_received = Arc::new(AtomicBool::new(false));
+        let error_received = Arc::new(AtomicBool::new(false));
+
+        let buffers = vec![
+            Ok(AudioBuffer::from(vec![vec![1.; 1024]], 48000.)),
+            Err(String::from("error").into()),
+            Ok(AudioBuffer::from(vec![vec![3.; 1024]], 48000.)),
+        ];
+        let track = MediaStreamTrack::from_iter(buffers);
+        let stream = MediaStream::from_tracks(vec![track]);
+        let recorder = MediaRecorder::new(&stream);
+
+        {
+            let data_received = data_received.clone();
+            recorder.set_ondataavailable(move |_| data_received.store(true, Ordering::Relaxed));
+        }
+        {
+            let error_received = error_received.clone();
+            recorder.set_onerror(move |_| error_received.store(true, Ordering::Relaxed));
+        }
+
+        // setup channel to await recorder completion
+        let (send, recv) = crossbeam_channel::bounded(1);
+        recorder.set_onstop(move |_| {
+            let _ = send.send(());
+        });
+
+        recorder.start();
+
+        let _ = recv.recv();
+        assert!(data_received.load(Ordering::Relaxed));
+        assert!(error_received.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_encode_decode() {
+        let buffers = vec![Ok(AudioBuffer::from(
+            vec![vec![1.; 1024], vec![-1.; 1024]],
+            48000.,
+        ))];
+        let track = MediaStreamTrack::from_iter(buffers);
+        let stream = MediaStream::from_tracks(vec![track]);
+        let recorder = MediaRecorder::new(&stream);
+
+        let samples: Arc<Mutex<Vec<u8>>> = Default::default();
+        {
+            let samples = samples.clone();
+            recorder.set_ondataavailable(move |e| {
+                samples.lock().unwrap().extend_from_slice(&e.blob);
+            });
+        }
+
+        // setup channel to await recorder completion
+        let (send, recv) = crossbeam_channel::bounded(1);
+        recorder.set_onstop(move |_| {
+            let _ = send.send(());
+        });
+
+        recorder.start();
+        let _ = recv.recv();
+
+        drop(recorder); // release the Arc<Mutex<samples>>
+        let samples = Mutex::into_inner(Arc::try_unwrap(samples).unwrap()).unwrap();
+
+        let ctx = OfflineAudioContext::new(1, 128, 48000.);
+        let buf = ctx.decode_audio_data_sync(Cursor::new(samples)).unwrap();
+        assert_eq!(buf.number_of_channels(), 2);
+        assert_eq!(buf.length(), 1024);
+        assert_float_eq!(buf.get_channel_data(0), &[1.; 1024][..], abs_all <= 0.);
+        assert_float_eq!(buf.get_channel_data(1), &[-1.; 1024][..], abs_all <= 0.);
     }
 }
