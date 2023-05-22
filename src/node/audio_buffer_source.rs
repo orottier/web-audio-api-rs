@@ -999,10 +999,9 @@ mod tests {
         let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
-        // 1Hz sine at audio context sample rate
+        // 0.5 Hz sine
         let mut expected = vec![];
 
-        // 0.5 Hz sine
         for i in 0..sample_rate {
             let phase = i as f32 / sample_rate as f32 * PI;
             let sample = phase.sin();
@@ -1038,10 +1037,9 @@ mod tests {
         let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
-        // 1Hz sine at audio context sample rate
+        // 0.5 Hz sine
         let mut expected = vec![];
 
-        // 0.5 Hz sine
         for i in 0..sample_rate {
             let phase = i as f32 / sample_rate as f32 * PI;
             let sample = phase.sin();
