@@ -20,7 +20,6 @@ use crate::media_streams::MediaStream;
 /// assert_eq!(devices[0].kind(), MediaDeviceInfoKind::AudioOutput);
 /// assert_eq!(devices[0].label(), "Macbook Pro Builtin Speakers");
 /// ```
-
 pub fn enumerate_devices() -> Vec<MediaDeviceInfo> {
     crate::io::enumerate_devices()
 }
