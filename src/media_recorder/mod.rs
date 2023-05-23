@@ -339,8 +339,7 @@ mod tests {
         recorder.start();
         let _ = recv.recv();
 
-        drop(recorder); // release the Arc<Mutex<samples>>
-        let samples = Mutex::into_inner(Arc::try_unwrap(samples).unwrap()).unwrap();
+        let samples = samples.lock().unwrap().clone();
 
         let ctx = OfflineAudioContext::new(1, 128, 48000.);
         let buf = ctx.decode_audio_data_sync(Cursor::new(samples)).unwrap();
