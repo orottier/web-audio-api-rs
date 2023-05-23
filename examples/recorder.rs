@@ -44,7 +44,7 @@ fn main() {
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     // stop and wait for the final blob to flush
-    let (send, recv) = crossbeam_channel::bounded(0);
+    let (send, recv) = crossbeam_channel::bounded(1);
     recorder.set_onstop(move |_| {
         let _ = send.send(());
     });
