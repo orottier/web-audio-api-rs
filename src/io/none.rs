@@ -7,11 +7,9 @@ use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::media_devices::MediaDeviceInfo;
 use crate::render::RenderThread;
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
 use crossbeam_channel::{Receiver, Sender};
-
-const NUMBER_OF_CHANNELS: usize = 2;
 
 enum NoneBackendMessage {
     Resume,
@@ -35,7 +33,7 @@ struct Callback {
 impl Callback {
     fn run(mut self) {
         let buffer_size = RENDER_QUANTUM_SIZE; // TODO Latency Category
-        let mut buffer = vec![0.; buffer_size * NUMBER_OF_CHANNELS];
+        let mut buffer = vec![0.; buffer_size * MAX_CHANNELS];
         let interval = Duration::from_secs_f32(buffer_size as f32 / self.sample_rate);
 
         // For an isochronous callback we must calculate the deadline every render quantum
@@ -71,7 +69,6 @@ impl AudioBackendManager for NoneBackend {
         Self: Sized,
     {
         let sample_rate = options.sample_rate.unwrap_or(48000.);
-        let channels = NUMBER_OF_CHANNELS;
 
         let RenderThreadInit {
             frames_played,
@@ -82,7 +79,7 @@ impl AudioBackendManager for NoneBackend {
 
         let render_thread = RenderThread::new(
             sample_rate,
-            channels,
+            MAX_CHANNELS,
             ctrl_msg_recv,
             frames_played,
             Some(load_value_send),
@@ -139,7 +136,7 @@ impl AudioBackendManager for NoneBackend {
 
     /// Number of channels of the stream
     fn number_of_channels(&self) -> usize {
-        NUMBER_OF_CHANNELS
+        MAX_CHANNELS
     }
 
     /// Output latency of the stream in seconds

@@ -152,11 +152,18 @@ impl ConcreteBaseAudioContext {
             inner: Arc::new(base_inner),
         };
 
+        // Online AudioContext should start with stereo channels by default
+        let initial_channel_count = if offline {
+            max_channel_count
+        } else {
+            2.min(max_channel_count)
+        };
+
         let (listener_params, destination_channel_config) = {
             // Register magical nodes. We should not store the nodes inside our context since that
             // will create a cyclic reference, but we can reconstruct a new instance on the fly
             // when requested
-            let dest = AudioDestinationNode::new(&base, max_channel_count);
+            let dest = AudioDestinationNode::new(&base, initial_channel_count);
             let destination_channel_config = dest.into_channel_config();
             let listener = crate::spatial::AudioListenerNode::new(&base);
 
