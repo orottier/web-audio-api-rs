@@ -160,7 +160,7 @@ impl AudioBackendManager for NoneBackend {
         Box::new(self.clone())
     }
 
-    fn enumerate_devices() -> Vec<MediaDeviceInfo>
+    fn enumerate_devices_sync() -> Vec<MediaDeviceInfo>
     where
         Self: Sized,
     {
