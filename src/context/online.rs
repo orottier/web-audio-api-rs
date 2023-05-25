@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::events::{EventDispatch, EventHandler, EventType};
 use crate::io::{self, AudioBackendManager, ControlThreadInit, RenderThreadInit};
-use crate::media_devices::enumerate_devices;
+use crate::media_devices::enumerate_devices_sync;
 use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
@@ -14,12 +14,12 @@ use crate::{AudioRenderCapacity, Event};
 
 /// Check if the provided sink_id is available for playback
 ///
-/// It should be "", "none" or a valid `sinkId` returned from [`enumerate_devices`]
+/// It should be "", "none" or a valid `sinkId` returned from [`enumerate_devices_sync`]
 fn is_valid_sink_id(sink_id: &str) -> bool {
     if sink_id.is_empty() || sink_id == "none" {
         true
     } else {
-        enumerate_devices()
+        enumerate_devices_sync()
             .into_iter()
             .any(|d| d.device_id() == sink_id)
     }
@@ -92,7 +92,7 @@ pub struct AudioContextOptions {
     /// The audio output device
     /// - use `""` for the default audio output device
     /// - use `"none"` to process the audio graph without playing through an audio output device.
-    /// - use `"sinkId"` to use the specified audio sink id, obtained with [`enumerate_devices`]
+    /// - use `"sinkId"` to use the specified audio sink id, obtained with [`enumerate_devices_sync`]
     pub sink_id: String,
 
     /// Option to request a default, optimized or specific render quantum size. It is a hint that might not be honored.
@@ -227,7 +227,7 @@ impl AudioContext {
 
     /// Update the current audio output device.
     ///
-    /// The provided `sink_id` string must match a device name `enumerate_devices`.
+    /// The provided `sink_id` string must match a device name `enumerate_devices_sync`.
     ///
     /// Supplying `"none"` for the `sink_id` will process the audio graph without playing through an
     /// audio output device.

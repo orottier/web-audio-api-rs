@@ -95,7 +95,7 @@ impl AudioBackendManager for CpalBackend {
             host.default_output_device()
                 .expect("no output device available")
         } else {
-            Self::enumerate_devices()
+            Self::enumerate_devices_sync()
                 .into_iter()
                 .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
@@ -213,7 +213,7 @@ impl AudioBackendManager for CpalBackend {
             host.default_input_device()
                 .expect("no input device available")
         } else {
-            Self::enumerate_devices()
+            Self::enumerate_devices_sync()
                 .into_iter()
                 .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
@@ -335,7 +335,7 @@ impl AudioBackendManager for CpalBackend {
         Box::new(self.clone())
     }
 
-    fn enumerate_devices() -> Vec<MediaDeviceInfo>
+    fn enumerate_devices_sync() -> Vec<MediaDeviceInfo>
     where
         Self: Sized,
     {

@@ -12,16 +12,16 @@ use crate::media_streams::MediaStream;
 /// The media device_id can be used to specify the [`sink_id` of the `AudioContext`](crate::context::AudioContextOptions::sink_id)
 ///
 /// ```no_run
-/// use web_audio_api::media_devices::{enumerate_devices, MediaDeviceInfoKind};
+/// use web_audio_api::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 ///
-/// let devices = enumerate_devices();
+/// let devices = enumerate_devices_sync();
 /// assert_eq!(devices[0].device_id(), "1");
 /// assert_eq!(devices[0].group_id(), None);
 /// assert_eq!(devices[0].kind(), MediaDeviceInfoKind::AudioOutput);
 /// assert_eq!(devices[0].label(), "Macbook Pro Builtin Speakers");
 /// ```
-pub fn enumerate_devices() -> Vec<MediaDeviceInfo> {
-    crate::io::enumerate_devices()
+pub fn enumerate_devices_sync() -> Vec<MediaDeviceInfo> {
+    crate::io::enumerate_devices_sync()
 }
 
 /// Describes input/output type of a media device
@@ -34,7 +34,7 @@ pub enum MediaDeviceInfoKind {
 
 /// Describes a single media input or output device
 ///
-/// Call [`enumerate_devices`] to obtain a list of devices for your hardware.
+/// Call [`enumerate_devices_sync`] to obtain a list of devices for your hardware.
 #[derive(Debug)]
 pub struct MediaDeviceInfo {
     device_id: String,

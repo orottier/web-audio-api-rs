@@ -161,7 +161,7 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// Clone the stream reference
     fn boxed_clone(&self) -> Box<dyn AudioBackendManager>;
 
-    fn enumerate_devices() -> Vec<MediaDeviceInfo>
+    fn enumerate_devices_sync() -> Vec<MediaDeviceInfo>
     where
         Self: Sized;
 }
@@ -196,15 +196,15 @@ fn buffer_size_for_latency_category(
     }
 }
 
-pub(crate) fn enumerate_devices() -> Vec<MediaDeviceInfo> {
+pub(crate) fn enumerate_devices_sync() -> Vec<MediaDeviceInfo> {
     #[cfg(feature = "cubeb")]
     {
-        crate::io::cubeb::CubebBackend::enumerate_devices()
+        crate::io::cubeb::CubebBackend::enumerate_devices_sync()
     }
 
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        crate::io::cpal::CpalBackend::enumerate_devices()
+        crate::io::cpal::CpalBackend::enumerate_devices_sync()
     }
 
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]

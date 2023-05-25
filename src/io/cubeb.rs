@@ -203,7 +203,7 @@ impl AudioBackendManager for CubebBackend {
         let device = if options.sink_id.is_empty() {
             None
         } else {
-            Self::enumerate_devices()
+            Self::enumerate_devices_sync()
                 .into_iter()
                 .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<DeviceId>().unwrap())
@@ -301,7 +301,7 @@ impl AudioBackendManager for CubebBackend {
         let device = if options.sink_id.is_empty() {
             None
         } else {
-            Self::enumerate_devices()
+            Self::enumerate_devices_sync()
                 .into_iter()
                 .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<DeviceId>().unwrap())
@@ -383,7 +383,7 @@ impl AudioBackendManager for CubebBackend {
         Box::new(self.clone())
     }
 
-    fn enumerate_devices() -> Vec<MediaDeviceInfo>
+    fn enumerate_devices_sync() -> Vec<MediaDeviceInfo>
     where
         Self: Sized,
     {

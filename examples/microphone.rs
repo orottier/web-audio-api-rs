@@ -1,6 +1,6 @@
 use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::media_devices;
-use web_audio_api::media_devices::{enumerate_devices, MediaDeviceInfo, MediaDeviceInfoKind};
+use web_audio_api::media_devices::{enumerate_devices_sync, MediaDeviceInfo, MediaDeviceInfoKind};
 use web_audio_api::media_devices::{MediaStreamConstraints, MediaTrackConstraints};
 use web_audio_api::node::AudioNode;
 
@@ -18,7 +18,7 @@ fn ask_sink_id() -> Option<String> {
 fn main() {
     env_logger::init();
 
-    let devices = enumerate_devices();
+    let devices = enumerate_devices_sync();
     let input_devices: Vec<MediaDeviceInfo> = devices
         .into_iter()
         .filter(|d| d.kind() == MediaDeviceInfoKind::AudioInput)
