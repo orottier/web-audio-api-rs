@@ -18,16 +18,71 @@ type EventCallback = Box<dyn FnOnce(Event) + Send + 'static>;
 type BlobEventCallback = Box<dyn FnMut(BlobEvent) + Send + 'static>;
 type ErrorEventCallback = Box<dyn FnOnce(ErrorEvent) + Send + 'static>;
 
+struct RecordedData {
+    blob: Vec<u8>,
+    start_timecode: Instant,
+    current_timecode: Instant,
+}
+
+impl RecordedData {
+    fn new(blob: Vec<u8>) -> Self {
+        let now = Instant::now();
+
+        Self {
+            blob,
+            start_timecode: now,
+            current_timecode: now,
+        }
+    }
+
+    /// Start encoding audio into the blob buffer
+    fn encode_first(&mut self, buf: AudioBuffer) {
+        let spec = hound::WavSpec {
+            channels: buf.number_of_channels() as u16,
+            sample_rate: buf.sample_rate() as u32,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let v = spec.into_header_for_infinite_file();
+        self.blob.write_all(&v).unwrap();
+        self.encode_next(buf);
+    }
+
+    /// Encode subsequent buffers into the blob buffer
+    fn encode_next(&mut self, buf: AudioBuffer) {
+        for i in 0..buf.length() {
+            for c in 0..buf.number_of_channels() {
+                let v = buf.get_channel_data(c)[i];
+                hound::Sample::write(v, &mut self.blob, 32).unwrap();
+            }
+        }
+    }
+}
+
 struct MediaRecorderInner {
     stream: MediaStream,
     active: AtomicBool,
+    recorded_data: Mutex<RecordedData>,
     data_available_callback: Mutex<Option<BlobEventCallback>>,
     stop_callback: Mutex<Option<EventCallback>>,
     error_callback: Mutex<Option<ErrorEventCallback>>,
 }
 
 impl MediaRecorderInner {
+    fn record(&self, buf: AudioBuffer) {
+        let mut recorded_data = self.recorded_data.lock().unwrap();
+
+        recorded_data.encode_next(buf);
+
+        if recorded_data.blob.len() > 128 * 1024 {
+            drop(recorded_data);
+            self.flush();
+        }
+    }
+
     fn handle_error(&self, error: Box<dyn Error + Send + Sync>) {
+        self.flush();
+
         if let Some(f) = self.error_callback.lock().unwrap().take() {
             (f)(ErrorEvent {
                 message: error.to_string(),
@@ -37,13 +92,19 @@ impl MediaRecorderInner {
                 },
             })
         }
+
         self.stop();
     }
 
-    fn flush(&self, blob: &mut Vec<u8>, start_timecode: Instant, now: &mut Instant) {
-        let timecode = now.duration_since(start_timecode).as_secs_f64();
+    fn flush(&self) {
+        let mut recorded_data = self.recorded_data.lock().unwrap();
 
-        let send = std::mem::replace(blob, Vec::with_capacity(128 * 1024));
+        let timecode = recorded_data
+            .current_timecode
+            .duration_since(recorded_data.start_timecode)
+            .as_secs_f64();
+
+        let send = std::mem::replace(&mut recorded_data.blob, Vec::with_capacity(128 * 1024));
         if let Some(f) = self.data_available_callback.lock().unwrap().as_mut() {
             let event = BlobEvent {
                 blob: send,
@@ -53,11 +114,12 @@ impl MediaRecorderInner {
             (f)(event)
         }
 
-        *now = Instant::now();
+        recorded_data.current_timecode = Instant::now();
     }
 
     fn stop(&self) {
         self.active.store(false, Ordering::SeqCst);
+
         if let Some(f) = self.stop_callback.lock().unwrap().take() {
             (f)(Event { type_: "StopEvent" })
         }
@@ -95,6 +157,7 @@ impl MediaRecorder {
         let inner = MediaRecorderInner {
             stream: stream.clone(),
             active: AtomicBool::new(false),
+            recorded_data: Mutex::new(RecordedData::new(vec![])),
             data_available_callback: Mutex::new(None),
             stop_callback: Mutex::new(None),
             error_callback: Mutex::new(None),
@@ -141,13 +204,12 @@ impl MediaRecorder {
     ///
     /// Will panic when the recorder has already started
     pub fn start(&self) {
-        let prev_active = self.inner.active.swap(true, Ordering::Relaxed);
-        if prev_active {
+        if self.inner.active.swap(true, Ordering::Relaxed) {
             panic!("InvalidStateError: recorder has already started")
         }
 
         let inner = self.inner.clone();
-        let mut blob = Vec::with_capacity(128 * 1024);
+        let blob = Vec::with_capacity(128 * 1024);
 
         std::thread::spawn(move || {
             // for now, only record single track
@@ -161,65 +223,33 @@ impl MediaRecorder {
                 Some(Ok(first)) => first,
             };
 
-            let start_timecode = Instant::now();
-            let mut now = start_timecode;
-
-            Self::encode_first(&mut blob, buf);
+            let mut recorded_data = RecordedData::new(blob);
+            recorded_data.encode_first(buf);
+            *inner.recorded_data.lock().unwrap() = recorded_data;
 
             for item in stream_iter {
+                if !inner.active.load(Ordering::Relaxed) {
+                    return; // recording has stopped
+                }
+
                 let buf = match item {
                     Ok(buf) => buf,
                     Err(error) => {
-                        if !blob.is_empty() {
-                            inner.flush(&mut blob, start_timecode, &mut now);
-                        }
                         inner.handle_error(error);
                         return;
                     }
                 };
-                Self::encode_next(&mut blob, buf);
 
-                let active = inner.active.load(Ordering::SeqCst);
-                if !active || blob.len() > 128 * 1024 {
-                    inner.flush(&mut blob, start_timecode, &mut now);
-                }
-
-                if !active {
-                    break;
-                }
-            }
-            if !blob.is_empty() {
-                inner.flush(&mut blob, start_timecode, &mut now);
+                inner.record(buf);
             }
 
+            inner.flush();
             inner.stop();
         });
     }
 
-    /// Start encoding audio into the blob buffer
-    fn encode_first(blob: &mut Vec<u8>, buf: AudioBuffer) {
-        let spec = hound::WavSpec {
-            channels: buf.number_of_channels() as u16,
-            sample_rate: buf.sample_rate() as u32,
-            bits_per_sample: 32,
-            sample_format: hound::SampleFormat::Float,
-        };
-        let v = spec.into_header_for_infinite_file();
-        blob.write_all(&v).unwrap();
-        Self::encode_next(blob, buf);
-    }
-
-    /// Encode subsequent buffers into the blob buffer
-    fn encode_next(blob: &mut Vec<u8>, buf: AudioBuffer) {
-        for i in 0..buf.length() {
-            for c in 0..buf.number_of_channels() {
-                let v = buf.get_channel_data(c)[i];
-                hound::Sample::write(v, blob, 32).unwrap();
-            }
-        }
-    }
-
     pub fn stop(&self) {
+        self.inner.flush();
         self.inner.stop();
     }
 }
