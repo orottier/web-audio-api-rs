@@ -9,6 +9,7 @@ use web_audio_api::context::{
 use web_audio_api::node::AudioNode;
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use web_audio_api::MAX_CHANNELS;
 
 fn require_send_sync_static<T: Send + Sync + 'static>(_: T) {}
 
@@ -72,4 +73,19 @@ fn test_none_sink_id() {
     assert_eq!(context.state(), AudioContextState::Closed);
 
     assert!(sink_stable.load(Ordering::SeqCst));
+}
+
+#[test]
+fn test_channels() {
+    let options = AudioContextOptions {
+        sink_id: "none".into(),
+        ..AudioContextOptions::default()
+    };
+
+    let context = AudioContext::new(options);
+    assert_eq!(context.destination().max_channels_count(), MAX_CHANNELS);
+    assert_eq!(context.destination().channel_count(), 2);
+
+    context.destination().set_channel_count(5);
+    assert_eq!(context.destination().channel_count(), 5);
 }
