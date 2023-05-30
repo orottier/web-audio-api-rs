@@ -130,7 +130,9 @@ impl AudioProcessor for DestinationRenderer {
         let buffer = AudioBuffer::from(samples, scope.sample_rate);
 
         // clear previous entry if it was not consumed
-        let _ = self.recv.try_recv();
+        if self.recv.try_recv().is_ok() {
+            log::warn!("MediaStreamDestination buffer dropped");
+        }
 
         // ship out AudioBuffer
         let _ = self.send.send(buffer);
