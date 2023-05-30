@@ -26,7 +26,7 @@ log = "0.4"
 num-complex = "0.4"
 once_cell = "1.10"
 realfft = "3.0"
-rubato = "0.12"
+rubato = "0.13"
 rustc-hash = "1.1.0"
 smallvec = "1.8"
 symphonia = { version = "0.5", default-features = false }
