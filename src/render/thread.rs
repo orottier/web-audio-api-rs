@@ -177,6 +177,7 @@ impl RenderThread {
     }
 
     pub fn render<S: FromSample<f32> + Clone>(&mut self, buffer: &mut [S]) {
+        dbg!("buffer len {}", buffer.len());
         // collect timing information
         let render_start = Instant::now();
 

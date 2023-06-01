@@ -170,7 +170,7 @@ impl AudioContext {
             event_recv,
         } = control_thread_init;
 
-        let graph = crate::render::graph::Graph::new();
+        let graph = crate::render::graph::Graph::new(crate::RENDER_QUANTUM_SIZE);
         let message = crate::message::ControlMessage::Startup { graph };
         ctrl_msg_send.send(message).unwrap();
 

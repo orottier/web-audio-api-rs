@@ -2,10 +2,10 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use crate::assert_valid_sample_rate;
 use crate::buffer::AudioBuffer;
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
+use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
 
 /// The `OfflineAudioContext` doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an `AudioBuffer`.
@@ -66,7 +66,7 @@ impl OfflineAudioContext {
         // communication channel to the render thread
         let (sender, receiver) = crossbeam_channel::unbounded();
 
-        let graph = crate::render::graph::Graph::new();
+        let graph = crate::render::graph::Graph::new(RENDER_QUANTUM_SIZE);
         let message = crate::message::ControlMessage::Startup { graph };
         sender.send(message).unwrap();
 

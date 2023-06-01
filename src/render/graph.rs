@@ -92,7 +92,7 @@ pub(crate) struct Graph {
 }
 
 impl Graph {
-    pub fn new() -> Self {
+    pub fn new(buffer_size: usize) -> Self {
         Graph {
             nodes: FxHashMap::default(),
             ordered: vec![],
@@ -100,7 +100,7 @@ impl Graph {
             marked_temp: vec![],
             in_cycle: vec![],
             cycle_breakers: vec![],
-            alloc: Alloc::with_capacity(64),
+            alloc: Alloc::new(buffer_size, 64),
         }
     }
 
@@ -471,6 +471,7 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RENDER_QUANTUM_SIZE;
 
     #[derive(Debug, Clone)]
     struct TestNode {}
@@ -498,7 +499,7 @@ mod tests {
 
     #[test]
     fn test_add_remove() {
-        let mut graph = Graph::new();
+        let mut graph = Graph::new(RENDER_QUANTUM_SIZE);
 
         let node = Box::new(TestNode {});
         graph.add_node(AudioNodeId(0), node.clone(), 1, 1, config());
@@ -549,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_remove_all() {
-        let mut graph = Graph::new();
+        let mut graph = Graph::new(RENDER_QUANTUM_SIZE);
 
         let node = Box::new(TestNode {});
         graph.add_node(AudioNodeId(0), node.clone(), 1, 1, config());
@@ -588,7 +589,7 @@ mod tests {
 
     #[test]
     fn test_cycle() {
-        let mut graph = Graph::new();
+        let mut graph = Graph::new(RENDER_QUANTUM_SIZE);
 
         let node = Box::new(TestNode {});
         graph.add_node(AudioNodeId(0), node.clone(), 1, 1, config());
