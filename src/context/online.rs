@@ -154,9 +154,10 @@ impl AudioContext {
     /// never panics.
     #[allow(clippy::needless_pass_by_value)]
     #[must_use]
-    pub fn new(options: AudioContextOptions) -> Self {
+    pub fn new(mut options: AudioContextOptions) -> Self {
         if !is_valid_sink_id(&options.sink_id) {
-            panic!("NotFoundError: invalid sinkId {:?}", options.sink_id);
+            log::error!("NotFoundError: invalid sinkId {:?}", options.sink_id);
+            options.sink_id = String::from("");
         }
 
         let (control_thread_init, render_thread_init) = io::thread_init();

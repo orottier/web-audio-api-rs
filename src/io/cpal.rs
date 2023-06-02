@@ -99,7 +99,10 @@ impl AudioBackendManager for CpalBackend {
                 .into_iter()
                 .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
-                .unwrap()
+                .unwrap_or_else(|| {
+                    host.default_output_device()
+                        .expect("no output device available")
+                })
         };
 
         log::info!("Output device: {:?}", device.name());
@@ -217,7 +220,10 @@ impl AudioBackendManager for CpalBackend {
                 .into_iter()
                 .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
-                .unwrap()
+                .unwrap_or_else(|| {
+                    host.default_input_device()
+                        .expect("no input device available")
+                })
         };
 
         log::info!("Input device: {:?}", device.name());
