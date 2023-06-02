@@ -42,6 +42,7 @@ pub(crate) struct AudioNodeId(pub u64);
 /// Unique identifier for audio params.
 ///
 /// Store these in your `AudioProcessor` to get access to `AudioParam` values.
+#[derive(Debug)]
 pub struct AudioParamId(u64);
 
 // bit contrived, but for type safety only the context mod can access the inner u64

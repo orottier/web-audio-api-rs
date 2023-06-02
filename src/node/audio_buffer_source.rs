@@ -384,7 +384,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             Some(b) => b,
         };
 
-        // compute compound parameter at k-rate
+        // compute compound parameter at k-rate, these parameters have constraints
+        // https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints
         let detune = params.get(&self.detune)[0];
         let playback_rate = params.get(&self.playback_rate)[0];
         let computed_playback_rate = (playback_rate * (detune / 1200.).exp2()) as f64;
@@ -460,8 +461,18 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             self.render_state.is_aligned = true;
         }
 
+        // these two case imply resampling
+        if sampling_ratio != 1. || computed_playback_rate != 1. {
+            self.render_state.is_aligned = false;
+        }
+
+        // If loop points are not aligned on sample, they can imply resampling.
+        // For now we just consider that we can go fast track if loop points are
+        // bound to the buffer boundaries.
+        //
         // by default loop_end is 0., see AudioBufferSourceOptions
-        if loop_start != 0. || loop_end != 0. || sampling_ratio != 1. {
+        // but loop_start = 0 && loop_end = buffer.duration should go to fast track
+        if loop_start != 0. || (loop_end != 0. && loop_end != duration) {
             self.render_state.is_aligned = false;
         }
 
@@ -960,6 +971,82 @@ mod tests {
 
             assert_float_eq!(channel[..], expected[..], abs_all <= 1e-6);
         });
+    }
+
+    #[test]
+    fn test_playback_rate() {
+        let sample_rate = 44100;
+        let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+
+        let mut buffer = context.create_buffer(1, sample_rate, sample_rate as f32);
+        let mut sine = vec![];
+
+        // 1 Hz sine
+        for i in 0..sample_rate {
+            let phase = i as f32 / sample_rate as f32 * 2. * PI;
+            let sample = phase.sin();
+            sine.push(sample);
+        }
+
+        buffer.copy_to_channel(&sine[..], 0);
+
+        let src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        src.playback_rate.set_value(0.5);
+        src.start();
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        // 0.5 Hz sine
+        let mut expected = vec![];
+
+        for i in 0..sample_rate {
+            let phase = i as f32 / sample_rate as f32 * PI;
+            let sample = phase.sin();
+            expected.push(sample);
+        }
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 1e-6);
+    }
+
+    #[test]
+    fn test_detune() {
+        let sample_rate = 44100;
+        let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+
+        let mut buffer = context.create_buffer(1, sample_rate, sample_rate as f32);
+        let mut sine = vec![];
+
+        // 1 Hz sine
+        for i in 0..sample_rate {
+            let phase = i as f32 / sample_rate as f32 * 2. * PI;
+            let sample = phase.sin();
+            sine.push(sample);
+        }
+
+        buffer.copy_to_channel(&sine[..], 0);
+
+        let src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        src.detune.set_value(-1200.);
+        src.start();
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        // 0.5 Hz sine
+        let mut expected = vec![];
+
+        for i in 0..sample_rate {
+            let phase = i as f32 / sample_rate as f32 * PI;
+            let sample = phase.sin();
+            expected.push(sample);
+        }
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 1e-6);
     }
 
     #[test]
