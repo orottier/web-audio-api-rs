@@ -17,7 +17,7 @@ fn ask_source_id() -> Option<String> {
 
 fn ask_sink_id() -> String {
     println!("Enter the input 'sink' and press <Enter>");
-    println!("- Use 0 for the default audio input device");
+    println!("- Use 0 for the default audio output device");
 
     let input = std::io::stdin().lines().next().unwrap().unwrap();
     match input.trim() {
