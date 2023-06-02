@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::events::{EventDispatch, EventHandler, EventType};
 use crate::io::{self, AudioBackendManager, ControlThreadInit, RenderThreadInit};
-use crate::media_devices::enumerate_devices_sync;
+use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
@@ -14,13 +14,14 @@ use crate::{AudioRenderCapacity, Event};
 
 /// Check if the provided sink_id is available for playback
 ///
-/// It should be "", "none" or a valid `sinkId` returned from [`enumerate_devices_sync`]
+/// It should be "", "none" or a valid output `sinkId` returned from [`enumerate_devices_sync`]
 fn is_valid_sink_id(sink_id: &str) -> bool {
     if sink_id.is_empty() || sink_id == "none" {
         true
     } else {
         enumerate_devices_sync()
             .into_iter()
+            .filter(|d| d.kind() == MediaDeviceInfoKind::AudioOutput)
             .any(|d| d.device_id() == sink_id)
     }
 }
