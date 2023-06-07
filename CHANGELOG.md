@@ -1,3 +1,11 @@
+# Version 0.30.0 (2023-06-07)
+
+- Implement MediaRecorder API
+- AudioContext now uses default stereo channels
+- Fix issue with AudioBufferSourceNode playback rate and detune
+- Rename `enumerate_devices` to `enumerate_devices_sync`
+- Don't panic on unavailable input/output device selection
+
 # Version 0.29.0 (2023-05-07)
 
 - Implement part of the MediaStreams API (MediaStream, MediaStreamTrack)
