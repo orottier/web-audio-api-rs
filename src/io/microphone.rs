@@ -49,7 +49,7 @@ impl Iterator for MicrophoneStream {
             }
             Err(TryRecvError::Empty) => {
                 // frame not received in time, emit silence
-                // log::debug!("input frame delayed");
+                log::debug!("empty channel: input frame delayed");
 
                 let options = AudioBufferOptions {
                     number_of_channels: self.number_of_channels,
@@ -89,19 +89,29 @@ impl MicrophoneRender {
 
         // copy rendered audio into output slice
         for i in 0..self.number_of_channels {
-            channels.push(ChannelData::from(
-                data.iter()
-                    .skip(i)
-                    .step_by(self.number_of_channels)
-                    .map(|v| v.to_sample_())
-                    .collect(),
-            ));
+            let mut channel = [0.; RENDER_QUANTUM_SIZE];
+
+            data.iter()
+                .skip(i)
+                .step_by(self.number_of_channels)
+                .map(|v| v.to_sample_())
+                .zip(channel.iter_mut())
+                .for_each(|(i, o)| *o = i);
+
+            channels.push(channel.to_vec());
+            // channels.push(ChannelData::from(
+            //     data.iter()
+            //         .skip(i)
+            //         .step_by(self.number_of_channels)
+            //         .map(|v| v.to_sample_())
+            //         .collect(),
+            // ));
         }
 
-        let buffer = AudioBuffer::from_channels(channels, self.sample_rate);
+        let buffer = AudioBuffer::from(channels, self.sample_rate);
         let result = self.sender.try_send(buffer); // can fail (frame dropped)
         if result.is_err() {
-            log::debug!("input frame dropped");
+            log::debug!("channel is full: input frame dropped");
         }
     }
 }
