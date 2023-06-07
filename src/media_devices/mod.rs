@@ -134,6 +134,20 @@ impl From<MediaTrackConstraints> for AudioContextOptions {
     }
 }
 
+/// Check if the provided device_id is available for playback
+///
+/// It should be "" or a valid input `deviceId` returned from [`enumerate_devices_sync`]
+fn is_valid_device_id(device_id: &str) -> bool {
+    if device_id.is_empty() {
+        true
+    } else {
+        enumerate_devices_sync()
+            .into_iter()
+            .filter(|d| d.kind == MediaDeviceInfoKind::AudioInput)
+            .any(|d| d.device_id() == device_id)
+    }
+}
+
 /// Prompt for permission to use a media input (audio only)
 ///
 /// This produces a [`MediaStream`] with tracks containing the requested types of media, which can
@@ -168,9 +182,15 @@ impl From<MediaTrackConstraints> for AudioContextOptions {
 /// std::thread::sleep(std::time::Duration::from_secs(4));
 /// ```
 pub fn get_user_media_sync(constraints: MediaStreamConstraints) -> MediaStream {
-    let options = match constraints {
+    let mut options = match constraints {
         MediaStreamConstraints::Audio => AudioContextOptions::default(),
         MediaStreamConstraints::AudioWithConstraints(cs) => cs.into(),
     };
+
+    if !is_valid_device_id(&options.sink_id) {
+        log::error!("NotFoundError: invalid deviceId {:?}", options.sink_id);
+        options.sink_id = String::from("");
+    }
+
     crate::io::build_input(options)
 }
