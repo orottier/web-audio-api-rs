@@ -130,7 +130,7 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
         Self: Sized;
 
     /// Setup a new input stream (microphone capture)
-    fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
+    fn build_input(options: AudioContextOptions) -> (Self, Receiver<Vec<f32>>)
     where
         Self: Sized;
 

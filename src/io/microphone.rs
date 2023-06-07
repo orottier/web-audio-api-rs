@@ -11,7 +11,7 @@ use crate::io::AudioBackendManager;
 use crossbeam_channel::{Receiver, TryRecvError};
 
 pub(crate) struct MicrophoneStream {
-    receiver: Receiver<AudioBuffer>,
+    receiver: Receiver<Vec<f32>>,
     number_of_channels: usize,
     sample_rate: f32,
     stream: Box<dyn AudioBackendManager>,
@@ -19,7 +19,7 @@ pub(crate) struct MicrophoneStream {
 
 impl MicrophoneStream {
     pub(crate) fn new(
-        receiver: Receiver<AudioBuffer>,
+        receiver: Receiver<Vec<f32>>,
         backend: Box<dyn AudioBackendManager>,
     ) -> Self {
         Self {
@@ -43,9 +43,24 @@ impl Iterator for MicrophoneStream {
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = match self.receiver.try_recv() {
-            Ok(buffer) => {
+            Ok(data) => {
                 // new frame was ready
-                buffer
+                let mut channels = Vec::with_capacity(self.number_of_channels);
+
+                // deinterleave input data
+                for i in 0..self.number_of_channels {
+                    let channel = data
+                        .iter()
+                        .enumerate()
+                        .filter(|(j, _)| j % self.number_of_channels == i)
+                        .map(|(_, v)| *v)
+                        .collect();
+
+                    channels.push(channel);
+                }
+
+                // create audio buffer from channels
+                AudioBuffer::from(channels, self.sample_rate)
             }
             Err(TryRecvError::Empty) => {
                 // frame not received in time, emit silence
@@ -72,11 +87,11 @@ impl Iterator for MicrophoneStream {
 pub(crate) struct MicrophoneRender {
     number_of_channels: usize,
     sample_rate: f32,
-    sender: Sender<AudioBuffer>,
+    sender: Sender<Vec<f32>>,
 }
 
 impl MicrophoneRender {
-    pub fn new(number_of_channels: usize, sample_rate: f32, sender: Sender<AudioBuffer>) -> Self {
+    pub fn new(number_of_channels: usize, sample_rate: f32, sender: Sender<Vec<f32>>) -> Self {
         Self {
             number_of_channels,
             sample_rate,
@@ -85,31 +100,9 @@ impl MicrophoneRender {
     }
 
     pub fn render<S: dasp_sample::ToSample<f32> + Copy>(&self, data: &[S]) {
-        let mut channels = Vec::with_capacity(self.number_of_channels);
-
-        // copy rendered audio into output slice
-        for i in 0..self.number_of_channels {
-            let mut channel = [0.; RENDER_QUANTUM_SIZE];
-
-            data.iter()
-                .skip(i)
-                .step_by(self.number_of_channels)
-                .map(|v| v.to_sample_())
-                .zip(channel.iter_mut())
-                .for_each(|(i, o)| *o = i);
-
-            channels.push(channel.to_vec());
-            // channels.push(ChannelData::from(
-            //     data.iter()
-            //         .skip(i)
-            //         .step_by(self.number_of_channels)
-            //         .map(|v| v.to_sample_())
-            //         .collect(),
-            // ));
-        }
-
-        let buffer = AudioBuffer::from(channels, self.sample_rate);
+        let buffer = data.iter().map(|v| v.to_sample_()).collect();
         let result = self.sender.try_send(buffer); // can fail (frame dropped)
+
         if result.is_err() {
             log::debug!("channel is full: input frame dropped");
         }

@@ -202,7 +202,7 @@ impl AudioBackendManager for CpalBackend {
         }
     }
 
-    fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
+    fn build_input(options: AudioContextOptions) -> (Self, Receiver<Vec<f32>>)
     where
         Self: Sized,
     {
