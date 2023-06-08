@@ -66,6 +66,28 @@ mod private {
 }
 use private::ThreadSafeClosableStream;
 
+fn get_host(sink_id: &String) -> cpal::Host {
+    if !sink_id.is_empty() {
+        let device = CpalBackend::enumerate_devices_sync()
+            .into_iter()
+            .find(|e| e.device_id() == sink_id)
+            .unwrap();
+
+        if device.label() == "jack" {
+            cpal::host_from_id(cpal::available_hosts()
+                .into_iter()
+                .find(|id| *id == cpal::HostId::Jack)
+                .expect(
+                    "make sure --features jack is specified. only works on OSes where jack is available",
+                )).expect("jack host unavailable")
+        } else {
+            cpal::default_host()
+        };
+    }
+
+    cpal::default_host()
+}
+
 /// Audio backend using the `cpal` library
 #[derive(Clone)]
 pub(crate) struct CpalBackend {
@@ -81,7 +103,8 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let host = cpal::default_host();
+        let host = get_host(&options.sink_id);
+        // let host = cpal::default_host();
         log::info!("Audio Output Host: cpal {:?}", host.id());
 
         let RenderThreadInit {

@@ -14,7 +14,8 @@ exclude = ["/samples", "/showcase", "/.github"]
 [dependencies]
 arc-swap = "1.6.0"
 arrayvec = "0.7"
-cpal = { version = "0.15.0", optional = true }
+# cpal = { version = "0.15.0", optional = true }
+cpal = { path = "../cpal", optional = true }
 creek = "0.2.1"
 crossbeam-channel = "0.5"
 cubeb = { version = "0.10.0", optional = true }
