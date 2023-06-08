@@ -66,23 +66,27 @@ mod private {
 }
 use private::ThreadSafeClosableStream;
 
-fn get_host(sink_id: &String) -> cpal::Host {
+fn get_device_label(sink_id: &String) -> String {
     if !sink_id.is_empty() {
         let device = CpalBackend::enumerate_devices_sync()
             .into_iter()
             .find(|e| e.device_id() == sink_id)
             .unwrap();
 
-        if device.label() == "jack" {
-            cpal::host_from_id(cpal::available_hosts()
-                .into_iter()
-                .find(|id| *id == cpal::HostId::Jack)
-                .expect(
-                    "make sure --features jack is specified. only works on OSes where jack is available",
-                )).expect("jack host unavailable")
-        } else {
-            cpal::default_host()
-        };
+        return device.label().to_string();
+    }
+
+    "default".to_string()
+}
+
+fn get_host(label: &String) -> cpal::Host {
+    if label == "jack" {
+        return cpal::host_from_id(cpal::available_hosts()
+            .into_iter()
+            .find(|id| *id == cpal::HostId::Jack)
+            .expect(
+                "make sure --features jack is specified. only works on OSes where jack is available",
+            )).expect("jack host unavailable")
     }
 
     cpal::default_host()
@@ -103,6 +107,7 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
+        let label = get_device_label(&options.sink_id)
         let host = get_host(&options.sink_id);
         // let host = cpal::default_host();
         log::info!("Audio Output Host: cpal {:?}", host.id());
@@ -114,7 +119,8 @@ impl AudioBackendManager for CpalBackend {
             event_send,
         } = render_thread_init;
 
-        let device = if options.sink_id.is_empty() {
+        // use default device for jack host
+        let device = if label == "default" || label == "jack" {
             host.default_output_device()
                 .expect("no output device available")
         } else {
@@ -229,10 +235,13 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let host = cpal::default_host();
+        let label = get_device_label(&options.sink_id)
+        let host = get_host(&options.sink_id);
+
         log::info!("Audio Input Host: cpal {:?}", host.id());
 
-        let device = if options.sink_id.is_empty() {
+        // use default device for jack host
+        let device = if label == "default" || label == "jack" {
             host.default_input_device()
                 .expect("no input device available")
         } else {
