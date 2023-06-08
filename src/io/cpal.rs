@@ -10,7 +10,6 @@ use cpal::{
 
 use super::{AudioBackendManager, RenderThreadInit};
 
-use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
@@ -66,7 +65,7 @@ mod private {
 }
 use private::ThreadSafeClosableStream;
 
-fn get_device_label(sink_id: &String) -> String {
+fn get_device_label(sink_id: &str) -> String {
     if !sink_id.is_empty() {
         let device = CpalBackend::enumerate_devices_sync()
             .into_iter()
@@ -79,14 +78,17 @@ fn get_device_label(sink_id: &String) -> String {
     "default".to_string()
 }
 
-fn get_host(label: &String) -> cpal::Host {
+// label is only used when the cpal-jack feature is activated
+#[allow(unused_variables)]
+fn get_host(label: &str) -> cpal::Host {
+    #[cfg(feature = "cpal-jack")]
     if label == "jack" {
         return cpal::host_from_id(cpal::available_hosts()
             .into_iter()
             .find(|id| *id == cpal::HostId::Jack)
             .expect(
                 "make sure --features jack is specified. only works on OSes where jack is available",
-            )).expect("jack host unavailable")
+            )).expect("jack host unavailable");
     }
 
     cpal::default_host()
@@ -108,8 +110,8 @@ impl AudioBackendManager for CpalBackend {
         Self: Sized,
     {
         let label = get_device_label(&options.sink_id);
-        let host = get_host(&options.sink_id);
-        // let host = cpal::default_host();
+        let host = get_host(&label);
+
         log::info!("Audio Output Host: cpal {:?}", host.id());
 
         let RenderThreadInit {
@@ -236,7 +238,7 @@ impl AudioBackendManager for CpalBackend {
         Self: Sized,
     {
         let label = get_device_label(&options.sink_id);
-        let host = get_host(&options.sink_id);
+        let host = get_host(&label);
 
         log::info!("Audio Input Host: cpal {:?}", host.id());
 
@@ -285,7 +287,7 @@ impl AudioBackendManager for CpalBackend {
 
         let smoothing = 3; // todo, use buffering to smooth frame drops
         let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
-        let renderer = MicrophoneRender::new(number_of_channels, sample_rate, sender);
+        let renderer = MicrophoneRender::new(sender);
 
         let maybe_stream =
             spawn_input_stream(&device, supported.sample_format(), &prefered, renderer);
@@ -309,7 +311,7 @@ impl AudioBackendManager for CpalBackend {
                 let (sender, receiver2) = crossbeam_channel::bounded(smoothing);
                 receiver = receiver2; // overwrite earlier
 
-                let renderer = MicrophoneRender::new(number_of_channels, sample_rate, sender);
+                let renderer = MicrophoneRender::new(sender);
 
                 let spawned = spawn_input_stream(
                     &device,

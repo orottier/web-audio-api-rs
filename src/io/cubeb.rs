@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use super::{AudioBackendManager, RenderThreadInit};
 
-use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
@@ -258,7 +257,7 @@ impl AudioBackendManager for CubebBackend {
         backend
     }
 
-    fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
+    fn build_input(options: AudioContextOptions) -> (Self, Receiver<Vec<f32>>)
     where
         Self: Sized,
     {
@@ -309,7 +308,7 @@ impl AudioBackendManager for CubebBackend {
 
         let smoothing = 3; // todo, use buffering to smooth frame drops
         let (sender, receiver) = crossbeam_channel::bounded(smoothing);
-        let renderer = MicrophoneRender::new(NUMBER_OF_INPUT_CHANNELS, sample_rate, sender);
+        let renderer = MicrophoneRender::new(sender);
 
         // Microphone input is always assumed STEREO (TODO)
         let mut builder = cubeb::StreamBuilder::<StereoFrame<f32>>::new();

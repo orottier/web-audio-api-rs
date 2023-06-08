@@ -3,10 +3,8 @@ use std::error::Error;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::RENDER_QUANTUM_SIZE;
 
-use crossbeam_channel::Sender;
-
-use crate::buffer::ChannelData;
 use crate::io::AudioBackendManager;
+use crossbeam_channel::Sender;
 
 use crossbeam_channel::{Receiver, TryRecvError};
 
@@ -18,10 +16,7 @@ pub(crate) struct MicrophoneStream {
 }
 
 impl MicrophoneStream {
-    pub(crate) fn new(
-        receiver: Receiver<Vec<f32>>,
-        backend: Box<dyn AudioBackendManager>,
-    ) -> Self {
+    pub(crate) fn new(receiver: Receiver<Vec<f32>>, backend: Box<dyn AudioBackendManager>) -> Self {
         Self {
             receiver,
             number_of_channels: backend.number_of_channels(),
@@ -85,18 +80,12 @@ impl Iterator for MicrophoneStream {
 }
 
 pub(crate) struct MicrophoneRender {
-    number_of_channels: usize,
-    sample_rate: f32,
     sender: Sender<Vec<f32>>,
 }
 
 impl MicrophoneRender {
-    pub fn new(number_of_channels: usize, sample_rate: f32, sender: Sender<Vec<f32>>) -> Self {
-        Self {
-            number_of_channels,
-            sample_rate,
-            sender,
-        }
+    pub fn new(sender: Sender<Vec<f32>>) -> Self {
+        Self { sender }
     }
 
     pub fn render<S: dasp_sample::ToSample<f32> + Copy>(&self, data: &[S]) {

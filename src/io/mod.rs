@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender};
 
-use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::events::EventDispatch;
 use crate::media_devices::MediaDeviceInfo;
