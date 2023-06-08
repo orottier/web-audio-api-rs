@@ -107,7 +107,7 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let label = get_device_label(&options.sink_id)
+        let label = get_device_label(&options.sink_id);
         let host = get_host(&options.sink_id);
         // let host = cpal::default_host();
         log::info!("Audio Output Host: cpal {:?}", host.id());
@@ -235,7 +235,7 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let label = get_device_label(&options.sink_id)
+        let label = get_device_label(&options.sink_id);
         let host = get_host(&options.sink_id);
 
         log::info!("Audio Input Host: cpal {:?}", host.id());
