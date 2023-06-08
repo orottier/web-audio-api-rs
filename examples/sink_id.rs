@@ -45,8 +45,12 @@ fn main() {
 
     loop {
         let sink_id = ask_sink_id();
+        let result = context.set_sink_id_sync(sink_id);
 
-        context.set_sink_id_sync(sink_id).unwrap();
+        if let Err(err) = result {
+            println!("Error setting sink id {}", err);
+        }
+
         println!("Playing beep for sink {:?}", context.sink_id());
 
         // with this info we can ensure the progression of time with any backend
