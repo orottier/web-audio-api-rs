@@ -29,13 +29,9 @@ impl AtomicF64 {
     }
 }
 
-/// Audio
 pub struct LatencyTesterNode {
-    /// handle to the audio context, required for all audio nodes
     registration: AudioContextRegistration,
-    /// channel configuration (for up/down-mixing of inputs), required for all audio nodes
     channel_config: ChannelConfig,
-
     calculated_delay: Arc<AtomicF64>,
 }
 
@@ -49,12 +45,10 @@ impl AudioNode for LatencyTesterNode {
         &self.channel_config
     }
 
-    // source nodes take no input
     fn number_of_inputs(&self) -> usize {
         1
     }
 
-    // emit a single output
     fn number_of_outputs(&self) -> usize {
         1
     }
@@ -64,15 +58,13 @@ impl LatencyTesterNode {
     /// Construct a new LatencyTesterNode
     pub fn new<C: BaseAudioContext>(context: &C) -> Self {
         context.register(move |registration| {
-
             let calculated_delay = Arc::new(AtomicF64::new(0.));
-            // setup the processor, this will run in the render thread
+
             let render = LatencyTesterProcessor {
                 calculated_delay: calculated_delay.clone(),
                 send_time: 0.,
             };
 
-            // setup the audio node, this will live in the control thread (user facing)
             let node = LatencyTesterNode {
                 registration,
                 channel_config: ChannelConfig::default(),
@@ -127,7 +119,6 @@ impl AudioProcessor for LatencyTesterProcessor {
             .for_each(|(i, s)| {
                 if !dirac_found {
                     if *s > 0.5 {
-                        // @todo - add smaple count
                         let now = scope.current_time + (i as f64 * sample_duration);
                         let diff = now - self.send_time;
                         self.calculated_delay.store(diff);
