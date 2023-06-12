@@ -15,7 +15,7 @@ exclude = ["/samples", "/showcase", "/.github"]
 arc-swap = "1.6.0"
 arrayvec = "0.7"
 cpal = { version = "0.15.0", optional = true }
-creek = "0.2.1"
+creek = "1.0.0"
 crossbeam-channel = "0.5"
 cubeb = { version = "0.10.0", optional = true }
 dasp_sample = "0.11.0"
