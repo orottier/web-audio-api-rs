@@ -71,12 +71,10 @@ fn get_host() -> cpal::Host {
     {
         // seems to be always Some when jack is installed,
         // even if it's not running
-        let some_jack_id = cpal::available_hosts()
+        if let Some(jack_id) = cpal::available_hosts()
             .into_iter()
-            .find(|id| *id == cpal::HostId::Jack);
-
-        if some_jack_id.is_some() {
-            let jack_id = some_jack_id.unwrap();
+            .find(|id| *id == cpal::HostId::Jack)
+        {
             let jack_host = cpal::host_from_id(jack_id).unwrap();
 
             // if jack is not running, the host can't access devices
@@ -85,7 +83,7 @@ fn get_host() -> cpal::Host {
                 Ok(devices) => {
                     // no jack devices found, jack is not running
                     if devices.count() == 0 {
-                        log::info!("No jack devices found, fallback to default");
+                        log::warn!("No jack devices found, fallback to default host");
                         cpal::default_host()
                     } else {
                         jack_host
@@ -127,7 +125,6 @@ impl AudioBackendManager for CpalBackend {
             event_send,
         } = render_thread_init;
 
-        // use default device for jack host
         let device = if options.sink_id.is_empty() {
             host.default_output_device()
                 .expect("no output device available")
