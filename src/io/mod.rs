@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender};
 
+use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::events::EventDispatch;
 use crate::media_devices::MediaDeviceInfo;
@@ -129,7 +130,7 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
         Self: Sized;
 
     /// Setup a new input stream (microphone capture)
-    fn build_input(options: AudioContextOptions) -> (Self, Receiver<Vec<f32>>)
+    fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
     where
         Self: Sized;
 

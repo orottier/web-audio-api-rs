@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use super::{AudioBackendManager, RenderThreadInit};
 
+use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::media_devices::MediaDeviceInfo;
 use crate::render::RenderThread;
@@ -104,7 +105,7 @@ impl AudioBackendManager for NoneBackend {
     }
 
     /// Setup a new input stream (microphone capture)
-    fn build_input(_options: AudioContextOptions) -> (Self, Receiver<Vec<f32>>)
+    fn build_input(_options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
     where
         Self: Sized,
     {

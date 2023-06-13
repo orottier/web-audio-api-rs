@@ -10,6 +10,7 @@ use cpal::{
 
 use super::{AudioBackendManager, RenderThreadInit};
 
+use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
@@ -236,7 +237,7 @@ impl AudioBackendManager for CpalBackend {
         }
     }
 
-    fn build_input(options: AudioContextOptions) -> (Self, Receiver<Vec<f32>>)
+    fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
     where
         Self: Sized,
     {
@@ -293,7 +294,7 @@ impl AudioBackendManager for CpalBackend {
 
         let smoothing = 3; // todo, use buffering to smooth frame drops
         let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
-        let renderer = MicrophoneRender::new(sender);
+        let renderer = MicrophoneRender::new(number_of_channels, sample_rate, sender);
 
         let maybe_stream =
             spawn_input_stream(&device, supported.sample_format(), &prefered, renderer);
@@ -317,7 +318,7 @@ impl AudioBackendManager for CpalBackend {
                 let (sender, receiver2) = crossbeam_channel::bounded(smoothing);
                 receiver = receiver2; // overwrite earlier
 
-                let renderer = MicrophoneRender::new(sender);
+                let renderer = MicrophoneRender::new(number_of_channels, sample_rate, sender);
 
                 let spawned = spawn_input_stream(
                     &device,
