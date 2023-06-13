@@ -16,7 +16,10 @@ pub(crate) struct MicrophoneStream {
 }
 
 impl MicrophoneStream {
-    pub(crate) fn new(receiver: Receiver<AudioBuffer>, backend: Box<dyn AudioBackendManager>) -> Self {
+    pub(crate) fn new(
+        receiver: Receiver<AudioBuffer>,
+        backend: Box<dyn AudioBackendManager>,
+    ) -> Self {
         Self {
             receiver,
             number_of_channels: backend.number_of_channels(),
@@ -84,11 +87,12 @@ impl MicrophoneRender {
 
         // copy rendered audio into output slice
         for i in 0..self.number_of_channels {
-            channels.push(data.iter()
-                .skip(i)
-                .step_by(self.number_of_channels)
-                .map(|v| v.to_sample_())
-                .collect(),
+            channels.push(
+                data.iter()
+                    .skip(i)
+                    .step_by(self.number_of_channels)
+                    .map(|v| v.to_sample_())
+                    .collect(),
             );
         }
 
