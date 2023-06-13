@@ -66,32 +66,39 @@ mod private {
 }
 use private::ThreadSafeClosableStream;
 
-fn get_device_label(sink_id: &str) -> String {
-    if !sink_id.is_empty() {
-        let device = CpalBackend::enumerate_devices_sync()
-            .into_iter()
-            .find(|e| e.device_id() == sink_id)
-            .unwrap();
-
-        return device.label().to_string();
-    }
-
-    "default".to_string()
-}
-
-// label is only used when the cpal-jack feature is activated
-#[allow(unused_variables)]
-fn get_host(label: &str) -> cpal::Host {
+fn get_host() -> cpal::Host {
     #[cfg(feature = "cpal-jack")]
-    if label == "jack" {
-        return cpal::host_from_id(cpal::available_hosts()
+    {
+        // seems to be always Some when jack is installed,
+        // even if it's not running
+        let some_jack_id = cpal::available_hosts()
             .into_iter()
-            .find(|id| *id == cpal::HostId::Jack)
-            .expect(
-                "make sure --features jack is specified. only works on OSes where jack is available",
-            )).expect("jack host unavailable");
+            .find(|id| *id == cpal::HostId::Jack);
+
+        if some_jack_id.is_some() {
+            let jack_id = some_jack_id.unwrap();
+            let jack_host = cpal::host_from_id(jack_id).unwrap();
+
+            // if jack is not running, the host can't access devices
+            // fallback to default host
+            return match jack_host.devices() {
+                Ok(devices) => {
+                    // no jack devices found, jack is not running
+                    if devices.count() == 0 {
+                        log::info!("No jack devices found, fallback to default");
+                        cpal::default_host()
+                    } else {
+                        jack_host
+                    }
+                }
+                // cpal does not seems to return Err at this point
+                // but just in case, fallback to default host
+                Err(_) => cpal::default_host(),
+            };
+        }
     }
 
+    println!("return default host");
     cpal::default_host()
 }
 
@@ -110,8 +117,7 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let label = get_device_label(&options.sink_id);
-        let host = get_host(&label);
+        let host = get_host();
 
         log::info!("Audio Output Host: cpal {:?}", host.id());
 
@@ -123,7 +129,7 @@ impl AudioBackendManager for CpalBackend {
         } = render_thread_init;
 
         // use default device for jack host
-        let device = if label == "default" || label == "jack" {
+        let device = if options.sink_id.is_empty() {
             host.default_output_device()
                 .expect("no output device available")
         } else {
@@ -241,13 +247,11 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let label = get_device_label(&options.sink_id);
-        let host = get_host(&label);
+        let host = get_host();
 
         log::info!("Audio Input Host: cpal {:?}", host.id());
 
-        // use default device for jack host
-        let device = if label == "default" || label == "jack" {
+        let device = if options.sink_id.is_empty() {
             host.default_input_device()
                 .expect("no input device available")
         } else {
@@ -381,8 +385,9 @@ impl AudioBackendManager for CpalBackend {
         Self: Sized,
     {
         let mut index = 0;
+        let host = get_host();
 
-        let mut inputs: Vec<MediaDeviceInfo> = cpal::default_host()
+        let mut inputs: Vec<MediaDeviceInfo> = host
             .devices()
             .unwrap()
             .filter(|d| d.default_input_config().is_ok())
@@ -399,7 +404,7 @@ impl AudioBackendManager for CpalBackend {
             })
             .collect();
 
-        let mut outputs: Vec<MediaDeviceInfo> = cpal::default_host()
+        let mut outputs: Vec<MediaDeviceInfo> = host
             .devices()
             .unwrap()
             .filter(|d| d.default_output_config().is_ok())
