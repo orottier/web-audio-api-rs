@@ -2,11 +2,9 @@ use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::RENDER_QUANTUM_SIZE;
-
 use crate::io::AudioBackendManager;
-use crossbeam_channel::Sender;
 
-use crossbeam_channel::{Receiver, TryRecvError};
+use crossbeam_channel::{Receiver, Sender, TryRecvError};
 
 pub(crate) struct MicrophoneStream {
     receiver: Receiver<AudioBuffer>,
