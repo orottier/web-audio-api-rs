@@ -98,7 +98,6 @@ fn get_host() -> cpal::Host {
         }
     }
 
-    println!("return default host");
     cpal::default_host()
 }
 
