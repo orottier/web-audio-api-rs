@@ -66,6 +66,39 @@ mod private {
 }
 use private::ThreadSafeClosableStream;
 
+fn get_host() -> cpal::Host {
+    #[cfg(feature = "cpal-jack")]
+    {
+        // seems to be always Some when jack is installed,
+        // even if it's not running
+        if let Some(jack_id) = cpal::available_hosts()
+            .into_iter()
+            .find(|id| *id == cpal::HostId::Jack)
+        {
+            let jack_host = cpal::host_from_id(jack_id).unwrap();
+
+            // if jack is not running, the host can't access devices
+            // fallback to default host
+            return match jack_host.devices() {
+                Ok(devices) => {
+                    // no jack devices found, jack is not running
+                    if devices.count() == 0 {
+                        log::warn!("No jack devices found, fallback to default host");
+                        cpal::default_host()
+                    } else {
+                        jack_host
+                    }
+                }
+                // cpal does not seems to return Err at this point
+                // but just in case, fallback to default host
+                Err(_) => cpal::default_host(),
+            };
+        }
+    }
+
+    cpal::default_host()
+}
+
 /// Audio backend using the `cpal` library
 #[derive(Clone)]
 pub(crate) struct CpalBackend {
@@ -81,7 +114,8 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let host = cpal::default_host();
+        let host = get_host();
+
         log::info!("Audio Output Host: cpal {:?}", host.id());
 
         let RenderThreadInit {
@@ -209,7 +243,8 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let host = cpal::default_host();
+        let host = get_host();
+
         log::info!("Audio Input Host: cpal {:?}", host.id());
 
         let device = if options.sink_id.is_empty() {
@@ -346,8 +381,9 @@ impl AudioBackendManager for CpalBackend {
         Self: Sized,
     {
         let mut index = 0;
+        let host = get_host();
 
-        let mut inputs: Vec<MediaDeviceInfo> = cpal::default_host()
+        let mut inputs: Vec<MediaDeviceInfo> = host
             .devices()
             .unwrap()
             .filter(|d| d.default_input_config().is_ok())
@@ -364,7 +400,7 @@ impl AudioBackendManager for CpalBackend {
             })
             .collect();
 
-        let mut outputs: Vec<MediaDeviceInfo> = cpal::default_host()
+        let mut outputs: Vec<MediaDeviceInfo> = host
             .devices()
             .unwrap()
             .filter(|d| d.default_output_config().is_ok())
