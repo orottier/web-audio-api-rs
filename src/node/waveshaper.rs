@@ -10,6 +10,7 @@ use rubato::{FftFixedInOut, Resampler as _};
 use crate::{
     context::{AudioContextRegistration, BaseAudioContext},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope},
+    RENDER_QUANTUM_SIZE,
 };
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
@@ -256,8 +257,6 @@ struct RendererConfig {
     receiver: Receiver<CurveMessage>,
 }
 
-const DEFAULT_CHUNK_SIZE: usize = 128;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResamplerConfig {
     channels: usize,
@@ -268,7 +267,7 @@ struct ResamplerConfig {
 
 impl ResamplerConfig {
     fn upsample_x2(channels: usize, sample_rate: usize) -> Self {
-        let chunk_size_in = DEFAULT_CHUNK_SIZE * 2;
+        let chunk_size_in = RENDER_QUANTUM_SIZE * 2;
         let sample_rate_in = sample_rate;
         let sample_rate_out = sample_rate * 2;
         Self {
@@ -280,7 +279,7 @@ impl ResamplerConfig {
     }
 
     fn upsample_x4(channels: usize, sample_rate: usize) -> Self {
-        let chunk_size_in = DEFAULT_CHUNK_SIZE * 4;
+        let chunk_size_in = RENDER_QUANTUM_SIZE * 4;
         let sample_rate_in = sample_rate;
         let sample_rate_out = sample_rate * 4;
         Self {
@@ -292,7 +291,7 @@ impl ResamplerConfig {
     }
 
     fn downsample_x2(channels: usize, sample_rate: usize) -> Self {
-        let chunk_size_in = DEFAULT_CHUNK_SIZE;
+        let chunk_size_in = RENDER_QUANTUM_SIZE;
         let sample_rate_in = sample_rate * 2;
         let sample_rate_out = sample_rate;
         Self {
@@ -304,7 +303,7 @@ impl ResamplerConfig {
     }
 
     fn downsample_x4(channels: usize, sample_rate: usize) -> Self {
-        let chunk_size_in = DEFAULT_CHUNK_SIZE;
+        let chunk_size_in = RENDER_QUANTUM_SIZE;
         let sample_rate_in = sample_rate * 4;
         let sample_rate_out = sample_rate;
         Self {
@@ -652,20 +651,20 @@ mod tests {
     #[test]
     fn test_shape_boundaries() {
         let sample_rate = 44100.;
-        let context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
+        let context = OfflineAudioContext::new(1, 3 * RENDER_QUANTUM_SIZE, sample_rate);
 
         let shaper = context.create_wave_shaper();
         let curve = vec![-0.5, 0., 0.5];
         shaper.set_curve(curve);
         shaper.connect(&context.destination());
 
-        let mut data = vec![0.; 3 * 128];
-        let mut expected = vec![0.; 3 * 128];
-        for i in 0..(3 * 128) {
-            if i < 128 {
+        let mut data = vec![0.; 3 * RENDER_QUANTUM_SIZE];
+        let mut expected = vec![0.; 3 * RENDER_QUANTUM_SIZE];
+        for i in 0..(3 * RENDER_QUANTUM_SIZE) {
+            if i < RENDER_QUANTUM_SIZE {
                 data[i] = -1.;
                 expected[i] = -0.5;
-            } else if i < 2 * 128 {
+            } else if i < 2 * RENDER_QUANTUM_SIZE {
                 data[i] = 0.;
                 expected[i] = 0.;
             } else {
@@ -673,7 +672,7 @@ mod tests {
                 expected[i] = 0.5;
             }
         }
-        let mut buffer = context.create_buffer(1, 3 * 128, sample_rate);
+        let mut buffer = context.create_buffer(1, 3 * RENDER_QUANTUM_SIZE, sample_rate);
         buffer.copy_to_channel(&data, 0);
 
         let src = context.create_buffer_source();
@@ -690,23 +689,23 @@ mod tests {
     #[test]
     fn test_shape_interpolation() {
         let sample_rate = 44100.;
-        let context = OfflineAudioContext::new(1, 128, sample_rate);
+        let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
         let shaper = context.create_wave_shaper();
         let curve = vec![-0.5, 0., 0.5];
         shaper.set_curve(curve);
         shaper.connect(&context.destination());
 
-        let mut data = vec![0.; 128];
-        let mut expected = vec![0.; 128];
+        let mut data = vec![0.; RENDER_QUANTUM_SIZE];
+        let mut expected = vec![0.; RENDER_QUANTUM_SIZE];
 
-        for i in 0..128 {
-            let sample = i as f32 / 128. * 2. - 1.;
+        for i in 0..RENDER_QUANTUM_SIZE {
+            let sample = i as f32 / (RENDER_QUANTUM_SIZE as f32) * 2. - 1.;
             data[i] = sample;
             expected[i] = sample / 2.;
         }
 
-        let mut buffer = context.create_buffer(1, 3 * 128, sample_rate);
+        let mut buffer = context.create_buffer(1, 3 * RENDER_QUANTUM_SIZE, sample_rate);
         buffer.copy_to_channel(&data, 0);
 
         let src = context.create_buffer_source();
