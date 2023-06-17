@@ -419,19 +419,15 @@ impl AudioProcessor for WaveShaperRenderer {
 
         *output = input.clone();
 
-        if self.curve.is_some() {
+        if let Some(curve) = &self.curve {
             match self.oversample.load(Ordering::SeqCst).into() {
                 OverSampleType::None => {
                     output.modify_channels(|channel| {
-                        // curve is always set at this point
-                        let curve = self.curve.as_deref().unwrap();
                         channel.iter_mut().for_each(|o| *o = apply_curve(curve, *o));
                     });
                 }
                 OverSampleType::X2 => {
                     let channels = output.channels();
-                    // curve is always set at this point
-                    let curve = self.curve.as_deref().unwrap();
 
                     // recreate up/down sampler if number of channels changed
                     if channels.len() != self.channels_x2 {
@@ -468,8 +464,6 @@ impl AudioProcessor for WaveShaperRenderer {
                 }
                 OverSampleType::X4 => {
                     let channels = output.channels();
-                    // curve is always set at this point
-                    let curve = self.curve.as_deref().unwrap();
 
                     // recreate up/down sampler if number of channels changed
                     if channels.len() != self.channels_x4 {
