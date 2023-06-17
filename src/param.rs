@@ -596,7 +596,7 @@ impl AudioProcessor for AudioParamProcessor {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         let period = 1. / scope.sample_rate as f64;

@@ -79,7 +79,7 @@ impl AudioNode for MediaStreamTrackAudioSourceNode {
 impl MediaStreamTrackAudioSourceNode {
     pub fn new<C: BaseAudioContext>(
         context: &C,
-        options: MediaStreamTrackAudioSourceOptions,
+        options: MediaStreamTrackAudioSourceOptions<'_>,
     ) -> Self {
         context.register(move |registration| {
             let node = MediaStreamTrackAudioSourceNode {

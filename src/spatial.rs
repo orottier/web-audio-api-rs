@@ -172,7 +172,7 @@ impl AudioProcessor for ListenerRenderer {
         &mut self,
         _inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         // do nothing, the Listener is just here to make sure the position/forward/up params render in order
