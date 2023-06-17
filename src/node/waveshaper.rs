@@ -551,6 +551,26 @@ impl WaveShaperRenderer {
     }
 }
 
+#[inline]
+fn apply_curve(curve: &[f32], input: f32) -> f32 {
+    if curve.is_empty() {
+        return 0.;
+    }
+
+    let n = curve.len() as f32;
+    let v = (n - 1.) / 2.0 * (input + 1.);
+
+    if v <= 0. {
+        curve[0]
+    } else if v >= n - 1. {
+        curve[(n - 1.) as usize]
+    } else {
+        let k = v.floor();
+        let f = v - k;
+        (1. - f) * curve[k as usize] + f * curve[(k + 1.) as usize]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
@@ -717,25 +737,5 @@ mod tests {
         let channel = result.get_channel_data(0);
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
-    }
-}
-
-#[inline]
-fn apply_curve(curve: &[f32], input: f32) -> f32 {
-    if curve.is_empty() {
-        return 0.;
-    }
-
-    let n = curve.len() as f32;
-    let v = (n - 1.) / 2.0 * (input + 1.);
-
-    if v <= 0. {
-        curve[0]
-    } else if v >= n - 1. {
-        curve[(n - 1.) as usize]
-    } else {
-        let k = v.floor();
-        let f = v - k;
-        (1. - f) * curve[k as usize] + f * curve[(k + 1.) as usize]
     }
 }
