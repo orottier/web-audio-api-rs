@@ -25,7 +25,7 @@ fn main() {
     // Create a custom periodic wave
     let periodic_wave = context.create_periodic_wave(options);
 
-    // Oscillator needs to be started explicitily
+    // Oscillator needs to be started explicitly
     osc.start();
 
     let interval_time = 2.;

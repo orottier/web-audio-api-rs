@@ -195,7 +195,7 @@ impl StereoPannerNode {
         })
     }
 
-    /// Returns the pan audio paramter
+    /// Returns the pan audio parameter
     #[must_use]
     pub fn pan(&self) -> &AudioParam {
         &self.pan

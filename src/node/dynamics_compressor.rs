@@ -301,7 +301,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
         //     xG + (1/R − 1)(xG − T + W/2)^2 / (2W)   if 2|(xG − T)| ≤ W
         //     T + (xG − T)/R                          if 2(xG − T) > W
         // This is weird, and probably wrong because `knee` and `threshold` are not
-        // independant, but matches the spec.
+        // independent, but matches the spec.
         let threshold = if knee > 0. {
             threshold + knee / 2.
         } else {
@@ -495,7 +495,7 @@ mod tests {
             abs_all <= 0.
         );
 
-        // as some compresssion is applied, we just check the remaining is non zero
+        // as some compression is applied, we just check the remaining is non zero
         for sample in chan.iter().take(128 * 8).skip(non_zero_index) {
             assert!(*sample != 0.);
         }
@@ -519,7 +519,7 @@ mod tests {
         assert_float_eq!(lin_to_db(0.), -1000., abs <= 0.);
     }
 
-    // @note: keep this, is usefull to grab some internal value to be plotted
+    // @note: keep this, is useful to grab some internal value to be plotted
     // #[test]
     // fn test_attenuated_values() {
     //     // threshold: -40.

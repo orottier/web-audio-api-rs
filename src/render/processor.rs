@@ -46,7 +46,7 @@ impl RenderScope {
             type_name_of_val(&error).to_string()
         };
         eprintln!(
-            "Panic occured in Audio Processor: '{}'. Removing node from graph.",
+            "Panic occurred in Audio Processor: '{}'. Removing node from graph.",
             &message
         );
 

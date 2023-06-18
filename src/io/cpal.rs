@@ -145,18 +145,18 @@ impl AudioBackendManager for CpalBackend {
             .default_output_config()
             .expect("error while querying config");
 
-        let mut prefered: StreamConfig = supported.clone().into();
+        let mut preferred: StreamConfig = supported.clone().into();
 
         // set specific sample rate if requested
         if let Some(sample_rate) = options.sample_rate {
             crate::assert_valid_sample_rate(sample_rate);
-            prefered.sample_rate.0 = sample_rate as u32;
+            preferred.sample_rate.0 = sample_rate as u32;
         }
 
         // always try to set a decent buffer size
         let buffer_size = super::buffer_size_for_latency_category(
             options.latency_hint,
-            prefered.sample_rate.0 as f32,
+            preferred.sample_rate.0 as f32,
         ) as u32;
 
         let clamped_buffer_size: u32 = match supported.buffer_size() {
@@ -164,15 +164,15 @@ impl AudioBackendManager for CpalBackend {
             SupportedBufferSize::Range { min, max } => buffer_size.clamp(*min, *max),
         };
 
-        prefered.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
+        preferred.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
 
         let output_latency = Arc::new(AtomicF64::new(0.));
-        let mut number_of_channels = usize::from(prefered.channels);
-        let mut sample_rate = prefered.sample_rate.0 as f32;
+        let mut number_of_channels = usize::from(preferred.channels);
+        let mut sample_rate = preferred.sample_rate.0 as f32;
 
         let renderer = RenderThread::new(
             sample_rate,
-            prefered.channels as usize,
+            preferred.channels as usize,
             ctrl_msg_recv.clone(),
             frames_played.clone(),
             Some(load_value_send.clone()),
@@ -180,13 +180,13 @@ impl AudioBackendManager for CpalBackend {
         );
 
         log::debug!(
-            "Attempt output stream with prefered config: {:?}",
-            &prefered
+            "Attempt output stream with preferred config: {:?}",
+            &preferred
         );
         let spawned = spawn_output_stream(
             &device,
             supported.sample_format(),
-            &prefered,
+            &preferred,
             renderer,
             output_latency.clone(),
         );
@@ -197,7 +197,7 @@ impl AudioBackendManager for CpalBackend {
                 stream
             }
             Err(e) => {
-                log::warn!("Output stream build failed with prefered config: {}", e);
+                log::warn!("Output stream build failed with preferred config: {}", e);
 
                 let supported_config: StreamConfig = supported.clone().into();
                 number_of_channels = usize::from(supported_config.channels);
@@ -268,18 +268,18 @@ impl AudioBackendManager for CpalBackend {
             .expect("error while querying configs");
 
         // clone the config, we may need to fall back on it later
-        let mut prefered: StreamConfig = supported.clone().into();
+        let mut preferred: StreamConfig = supported.clone().into();
 
         // set specific sample rate if requested
         if let Some(sample_rate) = options.sample_rate {
             crate::assert_valid_sample_rate(sample_rate);
-            prefered.sample_rate.0 = sample_rate as u32;
+            preferred.sample_rate.0 = sample_rate as u32;
         }
 
         // always try to set a decent buffer size
         let buffer_size = super::buffer_size_for_latency_category(
             options.latency_hint,
-            prefered.sample_rate.0 as f32,
+            preferred.sample_rate.0 as f32,
         ) as u32;
 
         let clamped_buffer_size: u32 = match supported.buffer_size() {
@@ -287,19 +287,19 @@ impl AudioBackendManager for CpalBackend {
             SupportedBufferSize::Range { min, max } => buffer_size.clamp(*min, *max),
         };
 
-        prefered.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
+        preferred.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
 
-        let mut number_of_channels = usize::from(prefered.channels);
-        let mut sample_rate = prefered.sample_rate.0 as f32;
+        let mut number_of_channels = usize::from(preferred.channels);
+        let mut sample_rate = preferred.sample_rate.0 as f32;
 
         let smoothing = 3; // todo, use buffering to smooth frame drops
         let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
         let renderer = MicrophoneRender::new(number_of_channels, sample_rate, sender);
 
         let maybe_stream =
-            spawn_input_stream(&device, supported.sample_format(), &prefered, renderer);
+            spawn_input_stream(&device, supported.sample_format(), &preferred, renderer);
 
-        // the required block size prefered config may not be supported, in that
+        // the required block size preferred config may not be supported, in that
         // case, fallback the supported config
         let stream = match maybe_stream {
             Ok(stream) => stream,
@@ -307,7 +307,7 @@ impl AudioBackendManager for CpalBackend {
                 log::warn!(
                     "Output stream failed to build: {:?}, retry with default config {:?}",
                     e,
-                    prefered
+                    preferred
                 );
 
                 let supported_config: StreamConfig = supported.clone().into();

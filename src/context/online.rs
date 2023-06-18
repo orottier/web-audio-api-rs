@@ -40,7 +40,7 @@ pub enum AudioContextLatencyCategory {
     Playback,
     /// Specify the number of seconds of latency
     ///
-    /// This latency is not guaranted to be applied, it depends on the audio hardware capabilities
+    /// This latency is not guaranteed to be applied, it depends on the audio hardware capabilities
     Custom(f64),
 }
 
@@ -102,7 +102,7 @@ pub struct AudioContextOptions {
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
 /// output device that produces a signal directed at the user.
-// the naming comes from the web audio specfication
+// the naming comes from the web audio specification
 #[allow(clippy::module_name_repetitions)]
 pub struct AudioContext {
     /// represents the underlying `BaseAudioContext`

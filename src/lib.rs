@@ -112,7 +112,7 @@ impl AtomicF32 {
     }
 }
 
-/// Atomic float 64, only `load` and `store` are supported, no arithmetics
+/// Atomic float 64, only `load` and `store` are supported, no arithmetic
 #[derive(Debug)]
 pub(crate) struct AtomicF64 {
     inner: AtomicU64,

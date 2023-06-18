@@ -675,7 +675,7 @@ impl AudioProcessor for PannerRenderer {
             } = a_rate_params.next().unwrap();
             let new_distance_gain = cone_gain * dist_gain;
 
-            // convert az/el to carthesian coordinates to determine unit direction
+            // convert az/el to cartesian coordinates to determine unit direction
             let az_rad = azimuth * PI / 180.;
             let el_rad = elevation * PI / 180.;
             let x = az_rad.sin() * el_rad.cos();

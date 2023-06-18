@@ -913,7 +913,7 @@ mod tests {
     fn test_max_delay_smaller_than_quantum_size() {
         // regression test that even if the declared max_delay_time is smaller than
         // a quantum duration, the node internally clamps it to quantum duration so
-        // that everything works even if order of processing is not garanteed
+        // that everything works even if order of processing is not guaranteed
         // (i.e. when delay is in a loop)
         for _ in 0..10 {
             let sample_rate = 480000.;

@@ -12,7 +12,7 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Render
 use lazy_static::lazy_static;
 use std::f32::consts::PI;
 
-/// AudioParam settings for the carthesian coordinates
+/// AudioParam settings for the cartesian coordinates
 pub(crate) const PARAM_OPTS: AudioParamDescriptor = AudioParamDescriptor {
     min_value: f32::MIN,
     max_value: f32::MAX,

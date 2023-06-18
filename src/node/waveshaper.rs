@@ -19,7 +19,7 @@ struct CurveMessage(Vec<f32>);
 
 /// enumerates the oversampling rate available for `WaveShaperNode`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// the naming comes from the web audio specfication
+// the naming comes from the web audio specification
 pub enum OverSampleType {
     /// No oversampling is applied
     None,

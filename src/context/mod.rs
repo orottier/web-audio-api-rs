@@ -82,7 +82,7 @@ impl From<u8> for AudioContextState {
 ///
 /// The only way to construct this object is by calling [`BaseAudioContext::register`]
 pub struct AudioContextRegistration {
-    /// the audio context in wich nodes and connections lives
+    /// the audio context in which nodes and connections lives
     context: ConcreteBaseAudioContext,
     /// identify a specific `AudioNode`
     id: AudioNodeId,
