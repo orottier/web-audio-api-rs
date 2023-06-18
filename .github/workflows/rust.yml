@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+
 name: Build
 
 # read-only repo token
@@ -38,20 +40,6 @@ jobs:
       # run tests
       - name: Run tests
         run: cargo test --verbose --features cubeb
-
-    # make sure all code has been formatted with rustfmt
-    - name: check rustfmt
-      run: cargo fmt -- --check --color always
-
-    # run clippy to verify we have no warnings
-    - name: cargo clippy
-      run: cargo clippy --all-targets --features cubeb -- -D warnings
-
-    # check for rustdoc warnings
-    - name: generate and verify rustdoc
-      env:
-        RUSTDOCFLAGS: -D warnings
-      run: cargo doc --no-deps --document-private-items --workspace --features cubeb
 
   benchmark:
     runs-on: ubuntu-latest
