@@ -8,7 +8,7 @@ name: Post benchmark results
 on:
   workflow_run:
     branches-ignore:
-      - 'main'
+      - "main"
     workflows: ["Build"]
     types:
       - completed
@@ -20,7 +20,7 @@ jobs:
       ${{ github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: 'Download artifact'
+      - name: "Download artifact"
         uses: actions/github-script@v3.1.0
         with:
           script: |
@@ -41,8 +41,7 @@ jobs:
             const fs = require('fs');
             fs.writeFileSync('${{github.workspace}}/pr.zip', Buffer.from(download.data));
       - run: unzip pr.zip
-
-      - name: 'Write result in PR'
+      - name: "Write result in PR"
         uses: actions/github-script@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
