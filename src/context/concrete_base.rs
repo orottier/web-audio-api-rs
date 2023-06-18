@@ -229,7 +229,7 @@ impl ConcreteBaseAudioContext {
         }
     }
 
-    pub(crate) fn lock_control_msg_sender(&self) -> RwLockWriteGuard<Sender<ControlMessage>> {
+    pub(crate) fn lock_control_msg_sender(&self) -> RwLockWriteGuard<'_, Sender<ControlMessage>> {
         self.inner.render_channel.write().unwrap()
     }
 

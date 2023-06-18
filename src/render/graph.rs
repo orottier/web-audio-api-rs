@@ -42,7 +42,7 @@ pub struct Node {
 
 impl Node {
     /// Render an audio quantum
-    fn process(&mut self, params: AudioParamValues, scope: &RenderScope) -> bool {
+    fn process(&mut self, params: AudioParamValues<'_>, scope: &RenderScope) -> bool {
         self.processor
             .process(&self.inputs[..], &mut self.outputs[..], params, scope)
     }
@@ -325,8 +325,9 @@ impl Graph {
 
             if cycle_breaker_applied {
                 // clear the outgoing edges of the nodes that have been recognized as cycle breaker
+                let nodes = &mut self.nodes;
                 cycle_breakers.iter().for_each(|node_id| {
-                    let node = self.nodes.get_mut(node_id).unwrap();
+                    let node = nodes.get_mut(node_id).unwrap();
                     node.get_mut().outgoing_edges.clear();
                 });
 
@@ -480,7 +481,7 @@ mod tests {
             &mut self,
             _inputs: &[AudioRenderQuantum],
             _outputs: &mut [AudioRenderQuantum],
-            _params: AudioParamValues,
+            _params: AudioParamValues<'_>,
             _scope: &RenderScope,
         ) -> bool {
             false

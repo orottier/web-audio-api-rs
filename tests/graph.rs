@@ -114,7 +114,7 @@ impl AudioProcessor for DebugProcessor {
         &mut self,
         _inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         self.collect.lock().unwrap().push(self.name);

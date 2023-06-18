@@ -94,7 +94,7 @@ impl AudioProcessor for MediaRecorderProcessor {
         &mut self,
         inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         // single input node

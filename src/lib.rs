@@ -34,6 +34,8 @@
 //! std::thread::sleep(std::time::Duration::from_secs(4));
 //! ```
 
+#![warn(rust_2018_idioms)]
+#![warn(rust_2021_compatibility)]
 #![warn(clippy::missing_panics_doc)]
 #![deny(trivial_numeric_casts)]
 
