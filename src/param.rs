@@ -69,6 +69,15 @@ pub enum AutomationRate {
     K,
 }
 
+impl AutomationRate {
+    fn is_a_rate(self) -> bool {
+        match self {
+            AutomationRate::A => true,
+            AutomationRate::K => false,
+        }
+    }
+}
+
 /// Options for constructing an [`AudioParam`]
 #[derive(Clone, Debug)]
 pub struct AudioParamDescriptor {
@@ -194,24 +203,18 @@ impl AudioParamEventTimeline {
 /// AudioParam controls an individual aspect of an AudioNode's functionality, such as volume.
 pub struct AudioParam {
     registration: AudioContextRegistration,
-    is_a_rate: Arc<AtomicBool>,
-    automation_rate_constrained: bool,
-    default_value: f32, // readonly
-    min_value: f32,     // readonly
-    max_value: f32,     // readonly
-    current_value: Arc<AtomicF32>,
-    sender: Sender<AudioParamEvent>,
+    raw_parts: AudioParamRaw,
 }
 
 // helper struct to attach / detach to context (for borrow reasons)
 #[derive(Clone)]
 pub(crate) struct AudioParamRaw {
-    is_a_rate: Arc<AtomicBool>,
+    default_value: f32, // immutable
+    min_value: f32,     // immutable
+    max_value: f32,     // immutable
     automation_rate_constrained: bool,
-    default_value: f32,
-    min_value: f32,
-    max_value: f32,
-    current_value: Arc<AtomicF32>,
+    // TODO Use `Weak` instead of `Arc`. The `AudioParamProcessor` is the owner.
+    shared_parts: Arc<AudioParamShared>,
     sender: Sender<AudioParamEvent>,
 }
 
@@ -255,41 +258,40 @@ impl AudioNode for AudioParam {
 impl AudioParam {
     /// Current value of the automation rate of the AudioParam
     pub fn automation_rate(&self) -> AutomationRate {
-        if self.is_a_rate.load(Ordering::SeqCst) {
-            AutomationRate::A
-        } else {
-            AutomationRate::K
-        }
+        self.raw_parts
+            .shared_parts
+            .load_automation_rate(Ordering::SeqCst)
     }
 
     /// Update the current value of the automation rate of the AudioParam
     ///
     /// # Panics
     ///
-    /// Some nodes have automation rate constraints and may panic when updating the value
+    /// Some nodes have automation rate constraints and may panic when updating the value.
     pub fn set_automation_rate(&self, value: AutomationRate) {
-        if self.automation_rate_constrained && value != self.automation_rate() {
+        if self.raw_parts.automation_rate_constrained && value != self.automation_rate() {
             panic!("InvalidStateError: automation rate cannot be changed for this param");
         }
 
-        let is_a_rate = value == AutomationRate::A;
-        self.is_a_rate.store(is_a_rate, Ordering::SeqCst);
+        self.raw_parts
+            .shared_parts
+            .store_automation_rate(value, Ordering::SeqCst);
     }
 
     pub(crate) fn set_automation_rate_constrained(&mut self, value: bool) {
-        self.automation_rate_constrained = value;
+        self.raw_parts.automation_rate_constrained = value;
     }
 
     pub fn default_value(&self) -> f32 {
-        self.default_value
+        self.raw_parts.default_value
     }
 
     pub fn min_value(&self) -> f32 {
-        self.min_value
+        self.raw_parts.min_value
     }
 
     pub fn max_value(&self) -> f32 {
-        self.max_value
+        self.raw_parts.max_value
     }
 
     /// Retrieve the current value of the `AudioParam`.
@@ -304,7 +306,10 @@ impl AudioParam {
     //      test_exponential_ramp_a_rate_multiple_blocks
     //      test_exponential_ramp_k_rate_multiple_blocks
     pub fn value(&self) -> f32 {
-        self.current_value.load(Ordering::SeqCst)
+        self.raw_parts
+            .shared_parts
+            .current_value
+            .load(Ordering::SeqCst)
     }
 
     /// Set the value of the `AudioParam`.
@@ -320,8 +325,11 @@ impl AudioParam {
     // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
     pub fn set_value(&self, value: f32) -> &Self {
         // current_value should always be clamped
-        let clamped = value.clamp(self.min_value, self.max_value);
-        self.current_value.store(clamped, Ordering::SeqCst);
+        let clamped = value.clamp(self.raw_parts.min_value, self.raw_parts.max_value);
+        self.raw_parts
+            .shared_parts
+            .current_value
+            .store(clamped, Ordering::SeqCst);
 
         // this event is meant to update param intrinsic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
@@ -539,53 +547,76 @@ impl AudioParam {
 
     // helper function to detach from context (for borrow reasons)
     pub(crate) fn into_raw_parts(self) -> AudioParamRaw {
-        AudioParamRaw {
-            is_a_rate: self.is_a_rate,
-            automation_rate_constrained: self.automation_rate_constrained,
-            default_value: self.default_value,
-            min_value: self.min_value,
-            max_value: self.max_value,
-            current_value: self.current_value,
-            sender: self.sender,
-        }
+        let Self {
+            registration: _,
+            raw_parts,
+        } = self;
+        raw_parts
     }
 
     // helper function to attach to context (for borrow reasons)
     pub(crate) fn from_raw_parts(
         registration: AudioContextRegistration,
-        parts: AudioParamRaw,
+        raw_parts: AudioParamRaw,
     ) -> Self {
         Self {
             registration,
-            is_a_rate: parts.is_a_rate,
-            automation_rate_constrained: parts.automation_rate_constrained,
-            default_value: parts.default_value,
-            min_value: parts.min_value,
-            max_value: parts.max_value,
-            current_value: parts.current_value,
-            sender: parts.sender,
+            raw_parts,
         }
     }
 
     fn send_event(&self, event: AudioParamEvent) {
         if cfg!(test) {
             // bypass audiocontext enveloping of control messages for simpler testing
-            self.sender.send(event).unwrap();
+            self.raw_parts.sender.send(event).unwrap();
         } else {
-            self.context().pass_audio_param_event(&self.sender, event);
+            self.context()
+                .pass_audio_param_event(&self.raw_parts.sender, event);
         }
+    }
+}
+
+// Atomic fields of `AudioParam` that could be safely shared between threads
+// when wrapped into an `Arc`.
+#[derive(Debug)]
+pub(crate) struct AudioParamShared {
+    current_value: AtomicF32,
+    is_a_rate: AtomicBool,
+}
+
+impl AudioParamShared {
+    pub(crate) fn new(current_value: f32, automation_rate: AutomationRate) -> Self {
+        Self {
+            current_value: AtomicF32::new(current_value),
+            is_a_rate: AtomicBool::new(automation_rate.is_a_rate()),
+        }
+    }
+
+    pub(crate) fn load_automation_rate(&self, ordering: Ordering) -> AutomationRate {
+        if self.is_a_rate.load(ordering) {
+            AutomationRate::A
+        } else {
+            AutomationRate::K
+        }
+    }
+
+    pub(crate) fn store_automation_rate(
+        &self,
+        automation_rate: AutomationRate,
+        ordering: Ordering,
+    ) {
+        self.is_a_rate.store(automation_rate.is_a_rate(), ordering);
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct AudioParamProcessor {
+    default_value: f32, // immutable
+    min_value: f32,     // immutable
+    max_value: f32,     // immutable
     intrinsic_value: f32,
-    current_value: Arc<AtomicF32>,
+    shared_parts: Arc<AudioParamShared>,
     receiver: Receiver<AudioParamEvent>,
-    is_a_rate: Arc<AtomicBool>,
-    default_value: f32,
-    min_value: f32,
-    max_value: f32,
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
     buffer: Vec<f32>,
@@ -767,7 +798,7 @@ impl AudioParamProcessor {
                                 // from the value at the beginning of the vent, while
                                 // Chrome just keeps the current intrinsic_value
                                 // The spec is not very clear there, but Firefox
-                                // seems to be the more compliant:
+                                // seems to be more compliant:
                                 // "Any active automations whose automation event
                                 // time is less than cancelTime are also cancelled,
                                 // and such cancellations may cause discontinuities
@@ -987,12 +1018,14 @@ impl AudioParamProcessor {
         // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
         let clamped = self.intrinsic_value.clamp(self.min_value, self.max_value);
-        self.current_value.store(clamped, Ordering::SeqCst);
+        self.shared_parts
+            .current_value
+            .store(clamped, Ordering::SeqCst);
 
         // clear the buffer for this block
         self.buffer.clear();
 
-        let is_a_rate = self.is_a_rate.load(Ordering::SeqCst);
+        let is_a_rate = self.shared_parts.is_a_rate.load(Ordering::SeqCst);
         let is_k_rate = !is_a_rate;
 
         let next_block_time = dt.mul_add(count as f64, block_time);
@@ -1530,38 +1563,45 @@ impl AudioParamProcessor {
 }
 
 pub(crate) fn audio_param_pair(
-    opts: AudioParamDescriptor,
+    descriptor: AudioParamDescriptor,
     registration: AudioContextRegistration,
 ) -> (AudioParam, AudioParamProcessor) {
     let (sender, receiver) = crossbeam_channel::unbounded();
-    let current_value = Arc::new(AtomicF32::new(opts.default_value));
-    let is_a_rate = Arc::new(AtomicBool::new(opts.automation_rate == AutomationRate::A));
+
+    let AudioParamDescriptor {
+        automation_rate,
+        default_value,
+        max_value,
+        min_value,
+    } = descriptor;
+
+    let shared_parts = Arc::new(AudioParamShared::new(default_value, automation_rate));
 
     let param = AudioParam {
         registration,
-        is_a_rate: is_a_rate.clone(),
-        automation_rate_constrained: false,
-        default_value: opts.default_value,
-        min_value: opts.min_value,
-        max_value: opts.max_value,
-        current_value: current_value.clone(),
-        sender,
+        raw_parts: AudioParamRaw {
+            default_value,
+            max_value,
+            min_value,
+            automation_rate_constrained: false,
+            shared_parts: Arc::clone(&shared_parts),
+            sender,
+        },
     };
 
-    let render = AudioParamProcessor {
-        intrinsic_value: opts.default_value,
-        current_value,
+    let processor = AudioParamProcessor {
+        intrinsic_value: default_value,
         receiver,
-        is_a_rate,
-        default_value: opts.default_value,
-        min_value: opts.min_value,
-        max_value: opts.max_value,
+        default_value,
+        min_value,
+        max_value,
+        shared_parts,
         event_timeline: AudioParamEventTimeline::new(),
         last_event: None,
         buffer: Vec::with_capacity(RENDER_QUANTUM_SIZE),
     };
 
-    (param, render)
+    (param, processor)
 }
 
 #[cfg(test)]
