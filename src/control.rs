@@ -23,24 +23,24 @@ impl Scheduler {
 
     /// Retrieve playback start value
     pub fn get_start_at(&self) -> f64 {
-        self.start.load()
+        self.start.load(Ordering::SeqCst)
     }
 
     /// Schedule playback start at this timestamp
     pub fn start_at(&self, start: f64) {
         // todo panic on invalid values, or when already called
-        self.start.store(start);
+        self.start.store(start, Ordering::SeqCst);
     }
 
     /// Retrieve playback stop value
     pub fn get_stop_at(&self) -> f64 {
-        self.stop.load()
+        self.stop.load(Ordering::SeqCst)
     }
 
     /// Stop playback at this timestamp
     pub fn stop_at(&self, stop: f64) {
         // todo panic on invalid values, or when already called
-        self.stop.store(stop);
+        self.stop.store(stop, Ordering::SeqCst);
     }
 }
 
@@ -87,35 +87,35 @@ impl Controller {
     }
 
     pub fn loop_start(&self) -> f64 {
-        self.loop_start.load()
+        self.loop_start.load(Ordering::SeqCst)
     }
 
     pub fn set_loop_start(&self, loop_start: f64) {
-        self.loop_start.store(loop_start);
+        self.loop_start.store(loop_start, Ordering::SeqCst);
     }
 
     pub fn loop_end(&self) -> f64 {
-        self.loop_end.load()
+        self.loop_end.load(Ordering::SeqCst)
     }
 
     pub fn set_loop_end(&self, loop_end: f64) {
-        self.loop_end.store(loop_end);
+        self.loop_end.store(loop_end, Ordering::SeqCst);
     }
 
     pub fn offset(&self) -> f64 {
-        self.offset.load()
+        self.offset.load(Ordering::SeqCst)
     }
 
     pub fn set_offset(&self, offset: f64) {
-        self.offset.store(offset);
+        self.offset.store(offset, Ordering::SeqCst);
     }
 
     pub fn duration(&self) -> f64 {
-        self.duration.load()
+        self.duration.load(Ordering::SeqCst)
     }
 
     pub fn set_duration(&self, duration: f64) {
-        self.duration.store(duration)
+        self.duration.store(duration, Ordering::SeqCst)
     }
 }
 

@@ -91,47 +91,51 @@ pub use media_element::MediaElement;
 mod resampling;
 
 #[derive(Debug)]
+#[repr(transparent)]
 pub(crate) struct AtomicF32 {
-    inner: AtomicU32,
+    bits: AtomicU32,
 }
 
 impl AtomicF32 {
-    pub fn new(v: f32) -> Self {
+    #[must_use]
+    pub fn new(value: f32) -> Self {
         Self {
-            inner: AtomicU32::new(u32::from_ne_bytes(v.to_ne_bytes())),
+            bits: AtomicU32::new(value.to_bits()),
         }
     }
 
+    #[must_use]
     pub fn load(&self, ordering: Ordering) -> f32 {
-        f32::from_ne_bytes(self.inner.load(ordering).to_ne_bytes())
+        f32::from_bits(self.bits.load(ordering))
     }
 
-    pub fn store(&self, v: f32, ordering: Ordering) {
-        self.inner
-            .store(u32::from_ne_bytes(v.to_ne_bytes()), ordering);
+    pub fn store(&self, value: f32, ordering: Ordering) {
+        self.bits.store(value.to_bits(), ordering);
     }
 }
 
 /// Atomic float 64, only `load` and `store` are supported, no arithmetics
 #[derive(Debug)]
+#[repr(transparent)]
 pub(crate) struct AtomicF64 {
-    inner: AtomicU64,
+    bits: AtomicU64,
 }
 
 impl AtomicF64 {
-    pub fn new(v: f64) -> Self {
+    #[must_use]
+    pub fn new(value: f64) -> Self {
         Self {
-            inner: AtomicU64::new(u64::from_ne_bytes(v.to_ne_bytes())),
+            bits: AtomicU64::new(value.to_bits()),
         }
     }
 
-    pub fn load(&self) -> f64 {
-        f64::from_ne_bytes(self.inner.load(Ordering::SeqCst).to_ne_bytes())
+    #[must_use]
+    pub fn load(&self, ordering: Ordering) -> f64 {
+        f64::from_bits(self.bits.load(ordering))
     }
 
-    pub fn store(&self, v: f64) {
-        self.inner
-            .store(u64::from_ne_bytes(v.to_ne_bytes()), Ordering::SeqCst)
+    pub fn store(&self, value: f64, ordering: Ordering) {
+        self.bits.store(value.to_bits(), ordering);
     }
 }
 
@@ -208,10 +212,10 @@ mod tests {
     #[test]
     fn test_atomic_f64() {
         let f = AtomicF64::new(2.0);
-        assert_float_eq!(f.load(), 2.0, abs <= 0.);
+        assert_float_eq!(f.load(Ordering::SeqCst), 2.0, abs <= 0.);
 
-        f.store(3.0);
-        assert_float_eq!(f.load(), 3.0, abs <= 0.);
+        f.store(3.0, Ordering::SeqCst);
+        assert_float_eq!(f.load(Ordering::SeqCst), 3.0, abs <= 0.);
     }
 
     #[test]

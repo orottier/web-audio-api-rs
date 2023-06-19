@@ -98,7 +98,7 @@ impl MediaElement {
     }
 
     pub fn current_time(&self) -> f64 {
-        self.current_time.load()
+        self.current_time.load(Ordering::SeqCst)
     }
 
     pub fn set_current_time(&self, value: f64) {
@@ -126,7 +126,7 @@ impl MediaElement {
     }
 
     pub fn playback_rate(&self) -> f64 {
-        self.playback_rate.load()
+        self.playback_rate.load(Ordering::SeqCst)
     }
 
     pub fn set_playback_rate(&self, value: f64) {
@@ -144,7 +144,7 @@ impl Iterator for RTSStream {
             use MediaElementAction::*;
             match msg {
                 Seek(value) => {
-                    self.current_time.store(value);
+                    self.current_time.store(value, Ordering::SeqCst);
                     let frame = (value * sample_rate as f64) as usize;
                     self.stream.seek(frame, SeekMode::default()).unwrap();
                 }
@@ -153,7 +153,7 @@ impl Iterator for RTSStream {
                 }
                 Play => self.paused.store(false, Ordering::SeqCst),
                 Pause => self.paused.store(true, Ordering::SeqCst),
-                SetPlaybackRate(value) => self.playback_rate.store(value),
+                SetPlaybackRate(value) => self.playback_rate.store(value, Ordering::SeqCst),
             };
         }
 
@@ -162,7 +162,7 @@ impl Iterator for RTSStream {
             return Some(Ok(silence));
         }
 
-        let playback_rate = self.playback_rate.load().abs();
+        let playback_rate = self.playback_rate.load(Ordering::SeqCst).abs();
         let _reverse = playback_rate < 0.; // TODO
         let samples = (RENDER_QUANTUM_SIZE as f64 * playback_rate) as usize;
 
@@ -175,11 +175,13 @@ impl Iterator for RTSStream {
 
                 if self.loop_.load(Ordering::SeqCst) && data.reached_end_of_file() {
                     self.stream.seek(0, SeekMode::default()).unwrap();
-                    self.current_time.store(0.);
+                    self.current_time.store(0., Ordering::SeqCst);
                 } else {
-                    let current_time = self.current_time.load();
-                    self.current_time
-                        .store(current_time + (RENDER_QUANTUM_SIZE as f64 / sample_rate as f64));
+                    let current_time = self.current_time.load(Ordering::SeqCst);
+                    self.current_time.store(
+                        current_time + (RENDER_QUANTUM_SIZE as f64 / sample_rate as f64),
+                        Ordering::SeqCst,
+                    );
                 }
 
                 Ok(buf)
