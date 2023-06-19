@@ -447,7 +447,7 @@ impl Graph {
             }
         });
 
-        // If there were any nodes decomissioned, remove from graph order
+        // If there were any nodes decommissioned, remove from graph order
         if nodes_dropped {
             let mut i = 0;
             while i < self.ordered.len() {
@@ -616,7 +616,7 @@ mod tests {
         // cycle 1<>2 should be removed
         assert_eq!(pos1, None);
         assert_eq!(pos2, None);
-        // detached leg from cycle will still be renderd
+        // detached leg from cycle will still be rendered
         assert!(pos4.is_some());
         // a-cyclic part should be present
         assert!(pos3.unwrap() < pos0.unwrap());

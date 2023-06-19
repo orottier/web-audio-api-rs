@@ -41,7 +41,7 @@ pub fn main() {
         let path = result.0.display();
         let info = result
             .1
-            .map(|buffer| format!("Succes - decoded {} samples", buffer.length()))
+            .map(|buffer| format!("Success - decoded {} samples", buffer.length()))
             .unwrap_or_else(|e| format!("Error - {e:?}"));
 
         println!("{path} - {info}");

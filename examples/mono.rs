@@ -13,7 +13,7 @@ fn main() {
     // Connect osc to the destination node which is the default output device
     osc.connect(&context.destination());
 
-    // Oscillator needs to be started explicitily
+    // Oscillator needs to be started explicitly
     osc.start();
 
     // Play for 2 seconds

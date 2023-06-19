@@ -131,7 +131,7 @@ impl AnalyserRingBuffer {
             .take(len)
             .enumerate()
             .for_each(|(index, value)| {
-                // offset calculation by RING_BUFFER_SIZE so we cant negative values
+                // offset calculation by RING_BUFFER_SIZE so we can't negative values
                 let position = (RING_BUFFER_SIZE + write_index - len + index) % RING_BUFFER_SIZE;
                 *value = self.buffer[position].load(Ordering::Relaxed);
             });
