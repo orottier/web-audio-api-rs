@@ -426,11 +426,11 @@ impl AudioBackendManager for CpalBackend {
 
 fn latency_in_seconds(infos: &OutputCallbackInfo) -> f64 {
     let timestamp = infos.timestamp();
-    let delta = timestamp
+    timestamp
         .playback
         .duration_since(&timestamp.callback)
-        .unwrap();
-    delta.as_secs() as f64 + delta.subsec_nanos() as f64 * 1e-9
+        .map(|delta| delta.as_secs() as f64 + delta.subsec_nanos() as f64 * 1e-9)
+        .unwrap_or(0.0)
 }
 
 /// Creates an output stream
