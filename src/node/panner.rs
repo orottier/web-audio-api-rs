@@ -462,51 +462,51 @@ impl PannerNode {
     }
 
     pub fn ref_distance(&self) -> f64 {
-        self.ref_distance.load()
+        self.ref_distance.load(Ordering::SeqCst)
     }
 
     pub fn set_ref_distance(&self, value: f64) {
-        self.ref_distance.store(value);
+        self.ref_distance.store(value, Ordering::SeqCst);
     }
 
     pub fn max_distance(&self) -> f64 {
-        self.max_distance.load()
+        self.max_distance.load(Ordering::SeqCst)
     }
 
     pub fn set_max_distance(&self, value: f64) {
-        self.max_distance.store(value);
+        self.max_distance.store(value, Ordering::SeqCst);
     }
 
     pub fn rolloff_factor(&self) -> f64 {
-        self.rolloff_factor.load()
+        self.rolloff_factor.load(Ordering::SeqCst)
     }
 
     pub fn set_rolloff_factor(&self, value: f64) {
-        self.rolloff_factor.store(value);
+        self.rolloff_factor.store(value, Ordering::SeqCst);
     }
 
     pub fn cone_inner_angle(&self) -> f64 {
-        self.cone_inner_angle.load()
+        self.cone_inner_angle.load(Ordering::SeqCst)
     }
 
     pub fn set_cone_inner_angle(&self, value: f64) {
-        self.cone_inner_angle.store(value);
+        self.cone_inner_angle.store(value, Ordering::SeqCst);
     }
 
     pub fn cone_outer_angle(&self) -> f64 {
-        self.cone_outer_angle.load()
+        self.cone_outer_angle.load(Ordering::SeqCst)
     }
 
     pub fn set_cone_outer_angle(&self, value: f64) {
-        self.cone_outer_angle.store(value);
+        self.cone_outer_angle.store(value, Ordering::SeqCst);
     }
 
     pub fn cone_outer_gain(&self) -> f64 {
-        self.cone_outer_gain.load()
+        self.cone_outer_gain.load(Ordering::SeqCst)
     }
 
     pub fn set_cone_outer_gain(&self, value: f64) {
-        self.cone_outer_gain.store(value);
+        self.cone_outer_gain.store(value, Ordering::SeqCst);
     }
 
     pub fn panning_model(&self) -> PanningModelType {
@@ -563,7 +563,7 @@ impl AudioProcessor for PannerRenderer {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         // single input/output node
@@ -675,7 +675,7 @@ impl AudioProcessor for PannerRenderer {
             } = a_rate_params.next().unwrap();
             let new_distance_gain = cone_gain * dist_gain;
 
-            // convert az/el to carthesian coordinates to determine unit direction
+            // convert az/el to cartesian coordinates to determine unit direction
             let az_rad = azimuth * PI / 180.;
             let el_rad = elevation * PI / 180.;
             let x = az_rad.sin() * el_rad.cos();
@@ -771,12 +771,12 @@ impl PannerRenderer {
         source_orientation: [f32; 3],
         listener_position: [f32; 3],
     ) -> f32 {
-        let abs_inner_angle = self.cone_inner_angle.load().abs() as f32 / 2.;
-        let abs_outer_angle = self.cone_outer_angle.load().abs() as f32 / 2.;
+        let abs_inner_angle = self.cone_inner_angle.load(Ordering::SeqCst).abs() as f32 / 2.;
+        let abs_outer_angle = self.cone_outer_angle.load(Ordering::SeqCst).abs() as f32 / 2.;
         if abs_inner_angle >= 180. && abs_outer_angle >= 180. {
             1. // no cone specified
         } else {
-            let cone_outer_gain = self.cone_outer_gain.load() as f32;
+            let cone_outer_gain = self.cone_outer_gain.load(Ordering::SeqCst) as f32;
 
             let abs_angle =
                 crate::spatial::angle(source_position, source_orientation, listener_position);
@@ -795,13 +795,13 @@ impl PannerRenderer {
 
     fn dist_gain(&self, source_position: [f32; 3], listener_position: [f32; 3]) -> f32 {
         let distance_model = self.distance_model.load(Ordering::SeqCst).into();
-        let ref_distance = self.ref_distance.load();
-        let rolloff_factor = self.rolloff_factor.load();
+        let ref_distance = self.ref_distance.load(Ordering::SeqCst);
+        let rolloff_factor = self.rolloff_factor.load(Ordering::SeqCst);
         let distance = crate::spatial::distance(source_position, listener_position) as f64;
 
         let dist_gain = match distance_model {
             DistanceModelType::Linear => {
-                let max_distance = self.max_distance.load();
+                let max_distance = self.max_distance.load(Ordering::SeqCst);
                 let d2ref = ref_distance.min(max_distance);
                 let d2max = ref_distance.max(max_distance);
                 let d_clamped = distance.clamp(d2ref, d2max);

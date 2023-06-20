@@ -341,7 +341,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         &mut self,
         _inputs: &[AudioRenderQuantum], // no input...
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         // single output node
@@ -356,7 +356,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             self.buffer = Some(msg.0);
         }
 
-        // grab all timing informations
+        // grab all timing information
         let mut start_time = self.controller.scheduler().get_start_at();
         let stop_time = self.controller.scheduler().get_stop_at();
         let mut offset = self.controller.offset();
@@ -825,7 +825,7 @@ mod tests {
             src.connect(&context.destination());
             src.set_buffer(dirac);
             src.start_at(0. / sample_rate as f64);
-            // stop at time of dirac, shoud not be played
+            // stop at time of dirac, should not be played
             src.stop_at(4. / sample_rate as f64);
 
             let result = context.start_rendering_sync();
@@ -847,7 +847,7 @@ mod tests {
             src.connect(&context.destination());
             src.set_buffer(dirac);
             src.start_at(1. / sample_rate as f64);
-            // stop at time of dirac, shoud not be played
+            // stop at time of dirac, should not be played
             src.stop_at(5. / sample_rate as f64);
 
             let result = context.start_rendering_sync();

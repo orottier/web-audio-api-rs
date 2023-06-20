@@ -42,7 +42,7 @@ pub struct Node {
 
 impl Node {
     /// Render an audio quantum
-    fn process(&mut self, params: AudioParamValues, scope: &RenderScope) -> bool {
+    fn process(&mut self, params: AudioParamValues<'_>, scope: &RenderScope) -> bool {
         self.processor
             .process(&self.inputs[..], &mut self.outputs[..], params, scope)
     }
@@ -325,8 +325,9 @@ impl Graph {
 
             if cycle_breaker_applied {
                 // clear the outgoing edges of the nodes that have been recognized as cycle breaker
+                let nodes = &mut self.nodes;
                 cycle_breakers.iter().for_each(|node_id| {
-                    let node = self.nodes.get_mut(node_id).unwrap();
+                    let node = nodes.get_mut(node_id).unwrap();
                     node.get_mut().outgoing_edges.clear();
                 });
 
@@ -446,7 +447,7 @@ impl Graph {
             }
         });
 
-        // If there were any nodes decomissioned, remove from graph order
+        // If there were any nodes decommissioned, remove from graph order
         if nodes_dropped {
             let mut i = 0;
             while i < self.ordered.len() {
@@ -480,7 +481,7 @@ mod tests {
             &mut self,
             _inputs: &[AudioRenderQuantum],
             _outputs: &mut [AudioRenderQuantum],
-            _params: AudioParamValues,
+            _params: AudioParamValues<'_>,
             _scope: &RenderScope,
         ) -> bool {
             false
@@ -615,7 +616,7 @@ mod tests {
         // cycle 1<>2 should be removed
         assert_eq!(pos1, None);
         assert_eq!(pos2, None);
-        // detached leg from cycle will still be renderd
+        // detached leg from cycle will still be rendered
         assert!(pos4.is_some());
         // a-cyclic part should be present
         assert!(pos3.unwrap() < pos0.unwrap());

@@ -13,7 +13,7 @@ use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 use crossbeam_channel::{Receiver, Sender};
 use lazy_static::lazy_static;
 
-/// For SetTargetAtTime event, that theoreticaly cannot end, if the diff between
+/// For SetTargetAtTime event, that theoretically cannot end, if the diff between
 /// the current value and the target is below this threshold, the value is set
 /// to target value and the event is considered ended.
 const SNAP_TO_TARGET: f32 = 1e-10;
@@ -103,7 +103,7 @@ pub(crate) struct AudioParamEvent {
 
 // Event queue that contains `AudioParamEvent`s, most of the time, events must be
 // ordered (using stable sort), some operation may break this ordering (e.g. `push`)
-// in which cases `sort` must be called explicitely.
+// in which cases `sort` must be called explicitly.
 // In the current implementation of the param rendering, `sort` is called once after
 // all events have been inserted in the queue at each `tick` (with the exception
 // `CancelAndHoldAtTime` which needs a clean queue to find its neighbors, but this
@@ -295,7 +295,7 @@ impl AudioParam {
     /// Retrieve the current value of the `AudioParam`.
     //
     // @note: the choice here is to have this coherent with the first sample of
-    // the last rendered block, which means `intrisic_value` must be calculated
+    // the last rendered block, which means `intrinsic_value` must be calculated
     // for next_block_time at each tick.
     // @note - maybe check with spec editors that it is correct
     //
@@ -323,7 +323,7 @@ impl AudioParam {
         let clamped = value.clamp(self.min_value, self.max_value);
         self.current_value.store(clamped, Ordering::SeqCst);
 
-        // this event is meant to update param intrisic value before any calculation
+        // this event is meant to update param intrinsic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
         let event = AudioParamEvent {
             event_type: AudioParamEventType::SetValue,
@@ -480,7 +480,7 @@ impl AudioParam {
 
     /// Cancels all scheduled parameter changes with times greater than or equal
     /// to `cancel_time` and the automation value that would have happened at
-    /// that time is then proprogated for all future time.
+    /// that time is then propagated for all future time.
     ///
     /// # Panics
     ///
@@ -579,7 +579,7 @@ impl AudioParam {
 
 #[derive(Debug)]
 pub(crate) struct AudioParamProcessor {
-    intrisic_value: f32,
+    intrinsic_value: f32,
     current_value: Arc<AtomicF32>,
     receiver: Receiver<AudioParamEvent>,
     is_a_rate: Arc<AtomicBool>,
@@ -596,7 +596,7 @@ impl AudioProcessor for AudioParamProcessor {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         let period = 1. / scope.sample_rate as f64;
@@ -604,7 +604,7 @@ impl AudioProcessor for AudioParamProcessor {
         let input = &inputs[0]; // single input mode
         let output = &mut outputs[0];
 
-        self.compute_intrisic_values(scope.current_time, period, RENDER_QUANTUM_SIZE);
+        self.compute_intrinsic_values(scope.current_time, period, RENDER_QUANTUM_SIZE);
         self.mix_to_output(input, output);
 
         true // has intrinsic value
@@ -614,7 +614,7 @@ impl AudioProcessor for AudioParamProcessor {
 impl AudioParamProcessor {
     // warning: tick in called directly in the unit tests so everything important
     // for the tests should be done here
-    fn compute_intrisic_values(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
+    fn compute_intrinsic_values(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
         if !self.receiver.is_empty() {
             self.handle_incoming_events();
         }
@@ -763,9 +763,9 @@ impl AudioParamProcessor {
                                 // we are in the middle of a ramp
                                 //
                                 // @note - Firefox and Chrome behave differently
-                                // on this: Firefox actually restore intrisic_value
+                                // on this: Firefox actually restore intrinsic_value
                                 // from the value at the beginning of the vent, while
-                                // Chrome just keeps the current intrisic_value
+                                // Chrome just keeps the current intrinsic_value
                                 // The spec is not very clear there, but Firefox
                                 // seems to be the more compliant:
                                 // "Any active automations whose automation event
@@ -782,7 +782,7 @@ impl AudioParamProcessor {
                                 // already been processed.
                                 if current_event.time >= event.time {
                                     let last_event = self.last_event.as_ref().unwrap();
-                                    self.intrisic_value = last_event.value;
+                                    self.intrinsic_value = last_event.value;
                                 }
                             }
                             _ => (),
@@ -926,14 +926,14 @@ impl AudioParamProcessor {
                 }
             }
 
-            // handle SetValue - param intrisic value must be updated from event value
+            // handle SetValue - param intrinsic value must be updated from event value
             if event.event_type == AudioParamEventType::SetValue {
-                self.intrisic_value = event.value;
+                self.intrinsic_value = event.value;
             }
 
             // If no event in the timeline and event_type is `LinearRampToValueAtTime`
             // or `ExponentialRampToValue` at time, we must insert a `SetValueAtTime`
-            // with intrisic value and calling time.
+            // with intrinsic value and calling time.
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
             // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
             if self.event_timeline.is_empty()
@@ -943,7 +943,7 @@ impl AudioParamProcessor {
             {
                 let set_value_event = AudioParamEvent {
                     event_type: AudioParamEventType::SetValue,
-                    value: self.intrisic_value,
+                    value: self.intrinsic_value,
                     // make sure the event is applied before any other event, time
                     // will be replaced by the block timestamp during event processing
                     time: 0.,
@@ -964,7 +964,7 @@ impl AudioParamProcessor {
             {
                 let set_value_event = AudioParamEvent {
                     event_type: AudioParamEventType::SetValue,
-                    value: self.intrisic_value,
+                    value: self.intrinsic_value,
                     // make sure the event is applied before any other event, time
                     // will be replaced by the block timestamp during event processing
                     time: 0.,
@@ -986,7 +986,7 @@ impl AudioParamProcessor {
     fn compute_buffer(&mut self, block_time: f64, dt: f64, count: usize) {
         // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
-        let clamped = self.intrisic_value.clamp(self.min_value, self.max_value);
+        let clamped = self.intrinsic_value.clamp(self.min_value, self.max_value);
         self.current_value.store(clamped, Ordering::SeqCst);
 
         // clear the buffer for this block
@@ -1008,7 +1008,7 @@ impl AudioParamProcessor {
         //   types, we are in the middle of the ramp.
         //   + For all other event, `event.time` is their start time.
         //   (@note - `SetTargetAtTime` events also uses `last_event` but only for
-        //   its value, not for its timing informations, so no problem there)
+        //   its value, not for its timing information, so no problem there)
         let is_constant_block = match self.event_timeline.peek() {
             None => true,
             Some(event) => {
@@ -1023,7 +1023,7 @@ impl AudioParamProcessor {
         };
 
         if is_k_rate || is_constant_block {
-            self.buffer.push(self.intrisic_value);
+            self.buffer.push(self.intrinsic_value);
             // nothing to compute in timeline, for both k-rate and a-rate
             if is_constant_block {
                 return;
@@ -1036,7 +1036,7 @@ impl AudioParamProcessor {
             match some_event {
                 None => {
                     if is_a_rate {
-                        self.buffer.resize(count, self.intrisic_value);
+                        self.buffer.resize(count, self.intrinsic_value);
                     }
                     break;
                 }
@@ -1046,7 +1046,7 @@ impl AudioParamProcessor {
                             let value = event.value;
                             let mut time = event.time;
 
-                            // `set_value` calls and implicitely inserted events
+                            // `set_value` calls and implicitly inserted events
                             // are inserted with a `time = 0.` to make sure
                             // they are processed first, replacing w/ block_time
                             // allows to conform to the spec:
@@ -1057,20 +1057,20 @@ impl AudioParamProcessor {
                                 time = block_time;
                             }
 
-                            // fill buffer with current intrisic value until `event.time`
+                            // fill buffer with current intrinsic value until `event.time`
                             if is_a_rate {
                                 let end_index = ((time - block_time).max(0.) / dt) as usize;
                                 let end_index_clipped = end_index.min(count);
 
                                 for _ in self.buffer.len()..end_index_clipped {
-                                    self.buffer.push(self.intrisic_value);
+                                    self.buffer.push(self.intrinsic_value);
                                 }
                             }
 
                             if time > next_block_time {
                                 break;
                             } else {
-                                self.intrisic_value = value;
+                                self.intrinsic_value = value;
 
                                 // no computation has been done on `time`
                                 #[allow(clippy::float_cmp)]
@@ -1127,7 +1127,7 @@ impl AudioParamProcessor {
                                         self.buffer.push(value);
 
                                         time += dt;
-                                        self.intrisic_value = value;
+                                        self.intrinsic_value = value;
                                     }
                                 }
                             }
@@ -1144,7 +1144,7 @@ impl AudioParamProcessor {
                                     diff,
                                     next_block_time,
                                 );
-                                self.intrisic_value = value;
+                                self.intrinsic_value = value;
                                 break;
 
                             // Event cancelled during this block
@@ -1157,7 +1157,7 @@ impl AudioParamProcessor {
                                     end_time,
                                 );
 
-                                self.intrisic_value = value;
+                                self.intrinsic_value = value;
 
                                 let mut last_event = self.event_timeline.pop().unwrap();
                                 last_event.time = end_time;
@@ -1166,7 +1166,7 @@ impl AudioParamProcessor {
 
                             // Event ended during this block
                             } else {
-                                self.intrisic_value = end_value;
+                                self.intrinsic_value = end_value;
                                 self.last_event = self.event_timeline.pop();
                             }
                         }
@@ -1230,7 +1230,7 @@ impl AudioParamProcessor {
                                             );
 
                                             self.buffer.push(value);
-                                            self.intrisic_value = value;
+                                            self.intrinsic_value = value;
 
                                             time += dt;
                                         }
@@ -1249,7 +1249,7 @@ impl AudioParamProcessor {
                                         ratio,
                                         next_block_time,
                                     );
-                                    self.intrisic_value = value;
+                                    self.intrinsic_value = value;
                                     break;
 
                                 // Event cancelled during this block
@@ -1262,7 +1262,7 @@ impl AudioParamProcessor {
                                         end_time,
                                     );
 
-                                    self.intrisic_value = value;
+                                    self.intrinsic_value = value;
 
                                     let mut last_event = self.event_timeline.pop().unwrap();
                                     last_event.time = end_time;
@@ -1271,7 +1271,7 @@ impl AudioParamProcessor {
 
                                 // Event ended during this block
                                 } else {
-                                    self.intrisic_value = end_value;
+                                    self.intrinsic_value = end_value;
                                     self.last_event = self.event_timeline.pop();
                                 }
                             }
@@ -1330,7 +1330,7 @@ impl AudioParamProcessor {
                             }
 
                             let start_time = event.time;
-                            // if SetTarget is the first event registered, we implicitely
+                            // if SetTarget is the first event registered, we implicitly
                             // insert a SetValue event just before just as for Ramps.
                             // Therefore we are sure last_event exists
                             let start_value = self.last_event.as_ref().unwrap().value;
@@ -1353,7 +1353,7 @@ impl AudioParamProcessor {
                                     for _ in start_index..end_index_clipped {
                                         // check if we have reached start_time
                                         let value = if time - start_time < 0. {
-                                            self.intrisic_value
+                                            self.intrinsic_value
                                         } else {
                                             self.compute_set_target_sample(
                                                 start_time,
@@ -1365,7 +1365,7 @@ impl AudioParamProcessor {
                                         };
 
                                         self.buffer.push(value);
-                                        self.intrisic_value = value;
+                                        self.intrinsic_value = value;
                                         time += dt;
                                     }
                                 }
@@ -1387,7 +1387,7 @@ impl AudioParamProcessor {
 
                                 // abort event if diff is below SNAP_TO_TARGET
                                 if diff < SNAP_TO_TARGET {
-                                    self.intrisic_value = end_value;
+                                    self.intrinsic_value = end_value;
 
                                     // if end_value is zero, the buffer might contain
                                     // subnormals, we need to check that and flush to zero
@@ -1411,7 +1411,7 @@ impl AudioParamProcessor {
 
                                     self.event_timeline.replace_peek(event);
                                 } else {
-                                    self.intrisic_value = value;
+                                    self.intrinsic_value = value;
                                 }
                                 break;
                             } else {
@@ -1425,7 +1425,7 @@ impl AudioParamProcessor {
                                     end_time,
                                 );
 
-                                self.intrisic_value = value;
+                                self.intrinsic_value = value;
                                 // end_value and end_time must be stored for use
                                 // as start time by next event
                                 let mut event = self.event_timeline.pop().unwrap();
@@ -1462,7 +1462,7 @@ impl AudioParamProcessor {
                                     for _ in start_index..end_index_clipped {
                                         // check if we have reached start_time
                                         let value = if time - start_time < 0. {
-                                            self.intrisic_value
+                                            self.intrinsic_value
                                         } else {
                                             self.compute_set_value_curve_sample(
                                                 start_time, duration, values, time,
@@ -1470,7 +1470,7 @@ impl AudioParamProcessor {
                                         };
 
                                         self.buffer.push(value);
-                                        self.intrisic_value = value;
+                                        self.intrinsic_value = value;
 
                                         time += dt;
                                     }
@@ -1488,7 +1488,7 @@ impl AudioParamProcessor {
                                     values,
                                     next_block_time,
                                 );
-                                self.intrisic_value = value;
+                                self.intrinsic_value = value;
                                 break;
 
                             // handle end of event during this block
@@ -1499,7 +1499,7 @@ impl AudioParamProcessor {
                                         start_time, duration, values, end_time,
                                     );
 
-                                    self.intrisic_value = value;
+                                    self.intrinsic_value = value;
 
                                     let mut last_event = self.event_timeline.pop().unwrap();
                                     last_event.time = end_time;
@@ -1513,7 +1513,7 @@ impl AudioParamProcessor {
                                     last_event.time = end_time;
                                     last_event.value = value;
 
-                                    self.intrisic_value = value;
+                                    self.intrinsic_value = value;
                                     self.last_event = Some(last_event);
                                 }
                             }
@@ -1549,7 +1549,7 @@ pub(crate) fn audio_param_pair(
     };
 
     let render = AudioParamProcessor {
-        intrisic_value: opts.default_value,
+        intrinsic_value: opts.default_value,
         current_value,
         receiver,
         is_a_rate,
@@ -1653,7 +1653,7 @@ mod tests {
             param.set_value(2.);
             assert_float_eq!(param.value(), 2., abs_all <= 0.);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
 
             assert_float_eq!(param.value(), 2., abs_all <= 0.);
             assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
@@ -1674,9 +1674,9 @@ mod tests {
             param.set_value(2.);
             assert_float_eq!(param.value(), 1., abs_all <= 0.);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
 
-            // value should clamped while intrisic value should not
+            // value should clamped while intrinsic value should not
             assert_float_eq!(param.value(), 1., abs_all <= 0.);
             assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
         }
@@ -1699,7 +1699,7 @@ mod tests {
             param.set_value_at_time(12., 8.0); // should clamp
             param.set_value_at_time(8., 10.0); // should not occur 1st run
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 0., 5., 5., 5., 5., 5., 5., 12., 12.][..],
@@ -1707,7 +1707,7 @@ mod tests {
             );
 
             // no event left in timeline, i.e. length is 1
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &[8.; 1][..], abs_all <= 0.);
         }
 
@@ -1724,14 +1724,14 @@ mod tests {
             param.set_value_at_time(5., 2.0);
             param.set_value_at_time(8., 12.0);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 0., 5., 5., 5., 5., 5., 5., 5., 5.][..],
                 abs_all <= 0.
             );
 
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(
                 vs,
                 &[5., 5., 8., 8., 8., 8., 8., 8., 8., 8.][..],
@@ -1756,13 +1756,13 @@ mod tests {
         param.set_value_at_time(8., 10.0); // should not occur 1st run
         param.set_value_at_time(3., 14.0); // should appear in 3rd run
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
 
-        let vs = render.compute_intrisic_values(10., 1., 10);
+        let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(vs, &[8.; 1][..], abs_all <= 0.);
 
-        let vs = render.compute_intrisic_values(20., 1., 10);
+        let vs = render.compute_intrinsic_values(20., 1., 10);
         assert_float_eq!(vs, &[3.; 1][..], abs_all <= 0.);
     }
 
@@ -1785,7 +1785,7 @@ mod tests {
         // ramp to 0 from t = 5 to t = 13
         param.linear_ramp_to_value_at_time(0., 13.0);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 0., 5., 6., 7., 8., 7., 6., 5., 4.][..],
@@ -1810,7 +1810,7 @@ mod tests {
         // ramp to 9 from t = 0 to t = 9
         param.linear_ramp_to_value_at_time(9.0, 9.0);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
@@ -1838,13 +1838,13 @@ mod tests {
         // i.e. setTimeout(() => param.linearRampToValueAtTime(10, now + 10)), 10 * 1000);
 
         // no event in timeline here, i.e. length is 1
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
 
-        // implicitely insert a SetValue event at time 10
+        // implicitly insert a SetValue event at time 10
         param.linear_ramp_to_value_at_time(10.0, 20.0);
 
-        let vs = render.compute_intrisic_values(10., 1., 10);
+        let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
@@ -1852,7 +1852,7 @@ mod tests {
         );
 
         // ramp finishes on first value of this block, i.e. length is 10
-        let vs = render.compute_intrisic_values(20., 1., 10);
+        let vs = render.compute_intrinsic_values(20., 1., 10);
         assert_float_eq!(vs, &[10.; 10][..], abs_all <= 0.);
     }
 
@@ -1873,7 +1873,7 @@ mod tests {
         param.linear_ramp_to_value_at_time(20.0, 20.0);
 
         // first quantum t = 0..10
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
@@ -1882,7 +1882,7 @@ mod tests {
         assert_float_eq!(param.value(), 0., abs <= 0.);
 
         // next quantum t = 10..20
-        let vs = render.compute_intrisic_values(10., 1., 10);
+        let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(
             vs,
             &[10., 11., 12., 13., 14., 15., 16., 17., 18., 19.][..],
@@ -1891,7 +1891,7 @@ mod tests {
         assert_float_eq!(param.value(), 10., abs <= 0.);
 
         // ramp finished t = 20..30
-        let vs = render.compute_intrisic_values(20., 1., 10);
+        let vs = render.compute_intrinsic_values(20., 1., 10);
         assert_float_eq!(vs, &[20.0; 10][..], abs_all <= 0.);
         assert_float_eq!(param.value(), 20., abs <= 0.);
     }
@@ -1913,15 +1913,15 @@ mod tests {
             // ramp to 20 from t = 0 to t = 20
             param.linear_ramp_to_value_at_time(20.0, 20.0);
             // first quantum t = 0..10
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 0., abs <= 0.);
             // next quantum t = 10..20
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &[10.; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 10., abs <= 0.);
             // ramp finished t = 20..30
-            let vs = render.compute_intrisic_values(20., 1., 10);
+            let vs = render.compute_intrinsic_values(20., 1., 10);
             assert_float_eq!(vs, &[20.0; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 20., abs <= 0.);
         }
@@ -1939,15 +1939,15 @@ mod tests {
             // ramp to 20 from t = 0 to t = 20
             param.linear_ramp_to_value_at_time(15.0, 15.0);
             // first quantum t = 0..10
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 0., abs <= 0.);
             // next quantum t = 10..20
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &[10.; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 10., abs <= 0.);
             // ramp finished t = 20..30
-            let vs = render.compute_intrisic_values(20., 1., 10);
+            let vs = render.compute_intrinsic_values(20., 1., 10);
             assert_float_eq!(vs, &[15.0; 1][..], abs_all <= 0.);
             assert_float_eq!(param.value(), 15., abs <= 0.);
         }
@@ -1967,20 +1967,20 @@ mod tests {
 
         param.set_value_at_time(1., 0.);
         param.linear_ramp_to_value_at_time(-1., 10.);
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[1., 0.8, 0.6, 0.4, 0.2, 0., -0.2, -0.4, -0.6, -0.8][..],
             abs_all <= 1e-7
         );
 
-        let vs = render.compute_intrisic_values(10., 1., 10);
+        let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(vs, &[-1.; 10][..], abs_all <= 0.);
 
         // start time should be end time of last event, i.e. 10.
         param.linear_ramp_to_value_at_time(1., 30.);
 
-        let vs = render.compute_intrisic_values(20., 1., 10);
+        let vs = render.compute_intrinsic_values(20., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9][..],
@@ -2016,10 +2016,10 @@ mod tests {
             res.push(value);
         }
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs, &res[..], abs_all <= 0.);
 
-        let vs = render.compute_intrisic_values(10., 1., 10);
+        let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(vs, &[1.0; 10][..], abs_all <= 0.);
     }
 
@@ -2052,11 +2052,11 @@ mod tests {
         // fill remaining with target value
         res.append(&mut vec![1.; 7]);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
         assert_float_eq!(param.value(), res[0], abs <= 0.);
 
-        let vs = render.compute_intrisic_values(10., 1., 10);
+        let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
         assert_float_eq!(param.value(), res[10], abs <= 0.);
     }
@@ -2080,7 +2080,7 @@ mod tests {
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 0., 0., 0., 0., 1., 1., 1., 1., 1.][..],
@@ -2103,7 +2103,7 @@ mod tests {
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[-1., -1., -1., -1., -1., 1., 1., 1., 1., 1.][..],
@@ -2157,13 +2157,13 @@ mod tests {
         res.append(&mut vec![1.; 7]);
 
         // recreate k-rate blocks from computed values
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs, &[res[0]; 1][..], abs_all <= 0.);
 
-        let vs = render.compute_intrisic_values(10., 1., 10);
+        let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(vs, &[res[10]; 1][..], abs_all <= 0.);
 
-        let vs = render.compute_intrisic_values(20., 1., 10);
+        let vs = render.compute_intrinsic_values(20., 1., 10);
         assert_float_eq!(vs, &[1.; 1][..], abs_all <= 0.);
     }
 
@@ -2184,10 +2184,10 @@ mod tests {
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
 
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &[1.; 1][..], abs_all <= 0.);
         }
 
@@ -2204,10 +2204,10 @@ mod tests {
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
             param.exponential_ramp_to_value_at_time(1.0, 5.);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[-1.; 1][..], abs_all <= 0.);
 
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &[1.; 1][..], abs_all <= 0.);
         }
     }
@@ -2227,19 +2227,19 @@ mod tests {
         param.set_value_at_time(0., 0.);
         param.linear_ramp_to_value_at_time(1., 10.);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9][..],
             abs_all <= 1e-7
         );
 
-        let vs = render.compute_intrisic_values(10., 1., 10);
+        let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
 
         // start time should be end time of last event, i.e. 10.
         param.exponential_ramp_to_value_at_time(0.0001, 30.);
-        let vs = render.compute_intrisic_values(20., 1., 10);
+        let vs = render.compute_intrinsic_values(20., 1., 10);
         // compute expected on 20 samples, the 10 last ones should be in vs
         let start: f32 = 1.;
         let end: f32 = 0.0001;
@@ -2271,7 +2271,7 @@ mod tests {
 
             param.set_value_at_time(v0, t0);
             param.set_target_at_time(v1, t0, time_constant);
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
 
             let mut res = Vec::<f32>::with_capacity(10);
             for t in 0..10 {
@@ -2298,7 +2298,7 @@ mod tests {
             let time_constant: f64 = 1.;
 
             param.set_target_at_time(v1, t0, time_constant);
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
 
             let mut res = Vec::<f32>::with_capacity(10);
             for t in 0..10 {
@@ -2335,7 +2335,7 @@ mod tests {
             // start_time is 1.
             res[0] = 0.;
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &res[..], abs_all <= 0.);
         }
 
@@ -2353,7 +2353,7 @@ mod tests {
             let mut res = [1.; 10];
             res[0] = 0.; // start_time is 1.
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &res[..], abs_all <= 0.);
         }
     }
@@ -2385,10 +2385,10 @@ mod tests {
                 res.push(val);
             }
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
 
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
         }
     }
@@ -2424,10 +2424,10 @@ mod tests {
 
             res.resize(20, 0.5);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
 
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
         }
     }
@@ -2446,7 +2446,7 @@ mod tests {
         param.set_value_at_time(1., 0.);
         param.set_target_at_time(0., 1., 0.2);
 
-        let vs = render.compute_intrisic_values(0., 1., 128);
+        let vs = render.compute_intrinsic_values(0., 1., 128);
         for v in vs.iter() {
             assert!(!v.is_subnormal());
         }
@@ -2459,7 +2459,7 @@ mod tests {
         );
 
         // this buffer should be filled with target values
-        let vs = render.compute_intrisic_values(10., 1., 128);
+        let vs = render.compute_intrinsic_values(10., 1., 128);
         assert_float_eq!(vs[..], [0.; 128], abs_all <= 0.);
     }
 
@@ -2477,7 +2477,7 @@ mod tests {
         param.set_value_at_time(1., 0.);
         param.set_target_at_time(0., 5., 1.);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs[0], 1., abs <= 0.);
         assert_float_eq!(vs[1], 1., abs <= 0.);
         assert_float_eq!(vs[2], 1., abs <= 0.);
@@ -2514,7 +2514,7 @@ mod tests {
                 res.push(val);
             }
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
 
             // ramp
@@ -2531,10 +2531,10 @@ mod tests {
                 res.push(value);
             }
 
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &res[10..20], abs_all <= 1.0e-6);
             // ramp ended
-            let vs = render.compute_intrisic_values(20., 1., 10);
+            let vs = render.compute_intrinsic_values(20., 1., 10);
             assert_float_eq!(vs, &[v1; 10][..], abs_all <= 0.);
         }
     }
@@ -2566,10 +2566,10 @@ mod tests {
                 res.push(val);
             }
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[res[0]; 1][..], abs_all <= 0.);
 
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &[res[10]; 1][..], abs_all <= 0.);
         }
     }
@@ -2599,19 +2599,19 @@ mod tests {
             *r = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
         });
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs, &res[..10], abs_all <= 0.);
 
-        let vs = render.compute_intrisic_values(10., 1., 10);
+        let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
 
         // the distance between the target value and the value just after this block
         // is smaller than SNAP_TO_TARGET (i.e. 1e-10)
-        let vs = render.compute_intrisic_values(20., 1., 10);
+        let vs = render.compute_intrinsic_values(20., 1., 10);
         assert_float_eq!(vs, &res[20..30], abs_all <= 0.);
 
         // then this block should be [0.; 10]
-        let vs = render.compute_intrisic_values(30., 1., 10);
+        let vs = render.compute_intrinsic_values(30., 1., 10);
         assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
     }
 
@@ -2632,7 +2632,7 @@ mod tests {
 
         param.cancel_scheduled_values(5.);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 1., 2., 3., 4., 4., 4., 4., 4., 4.][..],
@@ -2658,7 +2658,7 @@ mod tests {
             // cancels the ramp, the set value event is kept in timeline
             param.cancel_scheduled_values(10.);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
         }
 
@@ -2675,7 +2675,7 @@ mod tests {
             param.set_value_at_time(0., 0.);
             param.linear_ramp_to_value_at_time(20., 20.);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
@@ -2686,7 +2686,7 @@ mod tests {
             // is removed from timeline, no event left in timeline (length is 1)
             param.cancel_scheduled_values(10.);
 
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
         }
 
@@ -2707,7 +2707,7 @@ mod tests {
             param.linear_ramp_to_value_at_time(10., 10.);
             param.cancel_scheduled_values(10.); // cancels the ramp
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
         }
 
@@ -2722,7 +2722,7 @@ mod tests {
 
             param.linear_ramp_to_value_at_time(20., 20.);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.][..],
@@ -2732,7 +2732,7 @@ mod tests {
             // ramp is removed from timeline, no event left
             param.cancel_scheduled_values(10.);
 
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
         }
     }
@@ -2755,7 +2755,7 @@ mod tests {
             param.set_value_at_time(4., 4.);
             param.cancel_and_hold_at_time(2.5);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 1., 2., 2., 2., 2., 2., 2., 2., 2.][0..10],
@@ -2797,10 +2797,10 @@ mod tests {
             let hold_value = res.pop().unwrap();
             res.resize(20, hold_value);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &res[0..10], abs_all <= 0.);
 
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &res[10..20], abs_all <= 0.);
         }
     }
@@ -2821,7 +2821,7 @@ mod tests {
             param.linear_ramp_to_value_at_time(10., 10.);
             param.cancel_and_hold_at_time(5.);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 1., 2., 3., 4., 5., 5., 5., 5., 5.][0..10],
@@ -2842,7 +2842,7 @@ mod tests {
             param.linear_ramp_to_value_at_time(10., 10.);
             param.cancel_and_hold_at_time(4.5);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 1., 2., 3., 4., 4.5, 4.5, 4.5, 4.5, 4.5][0..10],
@@ -2883,7 +2883,7 @@ mod tests {
             let hold_value = res.pop().unwrap();
             res.resize(10, hold_value);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &res[..], abs_all <= 0.);
         }
 
@@ -2916,7 +2916,7 @@ mod tests {
             let hold_value = start * (end / start).powf(4.5 / 10.);
             res.resize(10, hold_value);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &res[..], abs_all <= 0.);
         }
     }
@@ -2938,7 +2938,7 @@ mod tests {
             param.set_value_curve_at_time(&curve[..], 0., 10.);
             param.cancel_and_hold_at_time(5.);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 0.2, 0.4, 0.6, 0.8, 1., 1., 1., 1., 1.][..],
@@ -2960,7 +2960,7 @@ mod tests {
             param.set_value_curve_at_time(&curve[..], 0., 10.);
             param.cancel_and_hold_at_time(4.5);
 
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
                 vs,
                 &[0., 0.2, 0.4, 0.6, 0.8, 0.9, 0.9, 0.9, 0.9, 0.9][..],
@@ -2985,14 +2985,14 @@ mod tests {
         let curve = [0., 0.5, 1., 0.5, 0.];
         param.set_value_curve_at_time(&curve[..], 0., 10.);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 0.2, 0.4, 0.6, 0.8, 1., 0.8, 0.6, 0.4, 0.2][..],
             abs_all <= 1e-7
         );
 
-        let vs = render.compute_intrisic_values(10., 1., 10);
+        let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
     }
 
@@ -3012,21 +3012,21 @@ mod tests {
         let curve = [0., 0.5, 1., 0.5, 0.];
         param.set_value_curve_at_time(&curve[..], 0., 20.);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9][..],
             abs_all <= 1e-7
         );
 
-        let vs = render.compute_intrisic_values(10., 1., 10);
+        let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(
             vs,
             &[1., 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1][..],
             abs_all <= 1e-7
         );
 
-        let vs = render.compute_intrisic_values(20., 1., 10);
+        let vs = render.compute_intrinsic_values(20., 1., 10);
         assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
     }
 
@@ -3049,7 +3049,7 @@ mod tests {
         param.set_value_curve_at_time(&curve[..], 0., 10.);
         // this is necessary as the panic is triggered in the audio thread
         // @note - argues in favor of maintaining the queue in control thread
-        let _vs = render.compute_intrisic_values(0., 1., 10);
+        let _vs = render.compute_intrinsic_values(0., 1., 10);
     }
 
     #[test]
@@ -3070,7 +3070,7 @@ mod tests {
         param.set_value_at_time(0.0, 5.);
         // this is necessary as the panic is triggered in the audio thread
         // @note - argues in favor of maintaining the queue in control thread
-        let _vs = render.compute_intrisic_values(0., 1., 10);
+        let _vs = render.compute_intrinsic_values(0., 1., 10);
     }
 
     #[test]
@@ -3089,7 +3089,7 @@ mod tests {
         let curve = [0., 0.5, 1., 0.5, 0.];
         param.set_value_curve_at_time(&curve[..], 5., 10.);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
             vs,
             &[0., 0., 0., 0., 0., 0., 0.2, 0.4, 0.6, 0.8][..],
@@ -3112,7 +3112,7 @@ mod tests {
         param.set_value_at_time(2., 0.000001);
         param.set_automation_rate(AutomationRate::K);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
     }
 
@@ -3131,7 +3131,7 @@ mod tests {
         param.set_value_at_time(2., 0.000001);
         param.set_automation_rate(AutomationRate::A);
 
-        let vs = render.compute_intrisic_values(0., 1., 10);
+        let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
     }
 
@@ -3153,24 +3153,24 @@ mod tests {
             param.linear_ramp_to_value_at_time(9., 9.);
 
             // first block should be length 10 (128 in real world)
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             let expected = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9.];
             assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
             // second block should have length 1
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             let expected = [9.; 1];
             assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
             // insert event in third block, should have length 10
             param.set_value_at_time(1., 25.);
 
-            let vs = render.compute_intrisic_values(20., 1., 10);
+            let vs = render.compute_intrinsic_values(20., 1., 10);
             let expected = [9., 9., 9., 9., 9., 1., 1., 1., 1., 1.];
             assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
             // fourth block should have length 1
-            let vs = render.compute_intrisic_values(30., 1., 10);
+            let vs = render.compute_intrinsic_values(30., 1., 10);
             let expected = [1.; 1];
             assert_float_eq!(vs, &expected[..], abs_all <= 0.);
         }
@@ -3192,22 +3192,22 @@ mod tests {
             param.set_value_at_time(1., 25.);
 
             // first block should be length 10 (128 in real world)
-            let vs = render.compute_intrisic_values(0., 1., 10);
+            let vs = render.compute_intrinsic_values(0., 1., 10);
             let expected = [0., 1., 2., 3., 4., 5., 6., 7., 8., 9.];
             assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
             // second block should have length 1
-            let vs = render.compute_intrisic_values(10., 1., 10);
+            let vs = render.compute_intrinsic_values(10., 1., 10);
             let expected = [9.; 1];
             assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
             // set value event in third block, length should be 10
-            let vs = render.compute_intrisic_values(20., 1., 10);
+            let vs = render.compute_intrinsic_values(20., 1., 10);
             let expected = [9., 9., 9., 9., 9., 1., 1., 1., 1., 1.];
             assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
             // fourth block should have length 1
-            let vs = render.compute_intrisic_values(30., 1., 10);
+            let vs = render.compute_intrinsic_values(30., 1., 10);
             let expected = [1.; 1];
             assert_float_eq!(vs, &expected[..], abs_all <= 0.);
         }
@@ -3230,7 +3230,7 @@ mod tests {
             let (_param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             // no event in timeline, buffer length is 1
-            let vs = render.compute_intrisic_values(0., 1., 128);
+            let vs = render.compute_intrinsic_values(0., 1., 128);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
 
             // mix to output step, input is silence
@@ -3259,7 +3259,7 @@ mod tests {
             let (_param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             // no event in timeline, buffer length is 1
-            let vs = render.compute_intrisic_values(0., 1., 128);
+            let vs = render.compute_intrinsic_values(0., 1., 128);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
 
             // mix to output step, input is not silence
@@ -3301,12 +3301,12 @@ mod tests {
         param.set_value(128.);
         param.linear_ramp_to_value_at_time(0., 128.);
 
-        let intrisic_values = render.compute_intrisic_values(0., 1., 128);
+        let intrinsic_values = render.compute_intrinsic_values(0., 1., 128);
         let mut expected = [0.; 128];
         for (i, v) in expected.iter_mut().enumerate() {
             *v = 128. - i as f32;
         }
-        assert_float_eq!(intrisic_values, &expected[..], abs_all <= 0.);
+        assert_float_eq!(intrinsic_values, &expected[..], abs_all <= 0.);
 
         let signal = alloc.silence();
         let mut input = AudioRenderQuantum::from(signal);

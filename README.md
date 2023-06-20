@@ -56,7 +56,7 @@ Check out the [docs](https://docs.rs/web-audio-api) for more info.
 We have tried to stick to the official W3C spec as close as possible, but some
 deviations could not be avoided:
 
-- naming: snake\_case instead of CamelCase
+- naming: snake_case instead of CamelCase
 - getters/setters methods instead of exposed attributes
 - introduced some namespacing
 - AudioWorklet functionality is provided in a more rust-friendly way
@@ -83,22 +83,23 @@ We offer [experimental support](https://github.com/orottier/web-audio-api-rs/iss
 flag. Please note that `cmake` must be installed locally in order to run
 `cubeb`.
 
-| Feature flag   | Backend        | Notes |
-| -------------- | -------------- | ----- |
-| cpal (default) | ALSA           | |
-| cpal (default) | WASAPI         | |
-| cpal (default) | CoreAudio      | |
-| cpal (default) | Oboe (Android) | |
-| cpal-jack      | JACK           | |
+| Feature flag   | Backend        | Notes                                                   |
+| -------------- | -------------- | ------------------------------------------------------- |
+| cpal (default) | ALSA           |                                                         |
+| cpal (default) | WASAPI         |                                                         |
+| cpal (default) | CoreAudio      |                                                         |
+| cpal (default) | Oboe (Android) |                                                         |
+| cpal-jack      | JACK           |                                                         |
 | cpal-asio      | ASIO           | see <https://github.com/rustaudio/cpal#asio-on-windows> |
-| cubeb          | PulseAudio     | |
-| cubeb          | AudioUnit      | |
-| cubeb          | WASAPI         | |
-| cubeb          | OpenSL         | |
-| cubeb          | AAudio         | |
-| cubeb          | sndio          | |
-| cubeb          | Sun            | |
-| cubeb          | OSS            | |
+
+| cubeb          | PulseAudio     |                                                         |
+| cubeb          | AudioUnit      |                                                         |
+| cubeb          | WASAPI         |                                                         |
+| cubeb          | OpenSL         |                                                         |
+| cubeb          | AAudio         |                                                         |
+| cubeb          | sndio          |                                                         |
+| cubeb          | Sun            |                                                         |
+| cubeb          | OSS            |                                                         |
 
 ### Notes for Linux users
 

@@ -290,7 +290,7 @@ struct DelayWriter {
 unsafe impl Send for DelayWriter {}
 
 trait RingBufferChecker {
-    fn ring_buffer_mut(&self) -> RefMut<Vec<AudioRenderQuantum>>;
+    fn ring_buffer_mut(&self) -> RefMut<'_, Vec<AudioRenderQuantum>>;
 
     // This step guarantees the ring buffer is filled with silence buffers,
     // This allow to simplify the code in both Writer and Reader as we know
@@ -323,7 +323,7 @@ impl Drop for DelayWriter {
 
 impl RingBufferChecker for DelayWriter {
     #[inline(always)]
-    fn ring_buffer_mut(&self) -> RefMut<Vec<AudioRenderQuantum>> {
+    fn ring_buffer_mut(&self) -> RefMut<'_, Vec<AudioRenderQuantum>> {
         self.ring_buffer.borrow_mut()
     }
 }
@@ -333,7 +333,7 @@ impl AudioProcessor for DelayWriter {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         // single input/output node
@@ -407,7 +407,7 @@ unsafe impl Send for DelayReader {}
 
 impl RingBufferChecker for DelayReader {
     #[inline(always)]
-    fn ring_buffer_mut(&self) -> RefMut<Vec<AudioRenderQuantum>> {
+    fn ring_buffer_mut(&self) -> RefMut<'_, Vec<AudioRenderQuantum>> {
         self.ring_buffer.borrow_mut()
     }
 }
@@ -417,7 +417,7 @@ impl AudioProcessor for DelayReader {
         &mut self,
         _inputs: &[AudioRenderQuantum], // cannot be used
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         // single input/output node
@@ -913,7 +913,7 @@ mod tests {
     fn test_max_delay_smaller_than_quantum_size() {
         // regression test that even if the declared max_delay_time is smaller than
         // a quantum duration, the node internally clamps it to quantum duration so
-        // that everything works even if order of processing is not garanteed
+        // that everything works even if order of processing is not guaranteed
         // (i.e. when delay is in a loop)
         for _ in 0..10 {
             let sample_rate = 480000.;

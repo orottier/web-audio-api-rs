@@ -9,7 +9,7 @@ use crate::render::RenderThread;
 
 /// The `OfflineAudioContext` doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an `AudioBuffer`.
-// the naming comes from the web audio specfication
+// the naming comes from the web audio specification
 #[allow(clippy::module_name_repetitions)]
 pub struct OfflineAudioContext {
     /// represents the underlying `BaseAudioContext`

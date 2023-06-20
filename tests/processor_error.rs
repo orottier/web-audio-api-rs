@@ -49,7 +49,7 @@ impl AudioProcessor for PanicProcessor {
         &mut self,
         _inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         panic!("panic message");
