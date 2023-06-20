@@ -101,6 +101,18 @@ flag. Please note that `cmake` must be installed locally in order to run
 | cubeb          | Sun            | |
 | cubeb          | OSS            | |
 
+### Notes for Linux users
+
+Using the library on Linux with the ALSA backend might lead to unexpected cranky sound with the default render size of 128 frames. In such cases, a simple workaround is to pass the `Playback` latency hint when creating the audio context, which will increase the render size to 1024 frames:
+
+```rs
+let audio_context = AudioContext::new(AudioContextOptions {
+    latency_hint: AudioContextLatencyCategory::Playback,
+    ..AudioContextOptions::default()
+});
+```
+
+For real-time and interactive applications where low latency is very important, you should instead rely on the JACK backend provided by `cpal`.
 
 ## Contributing
 
