@@ -426,7 +426,7 @@ impl<R: AudioBufferIter> AudioProcessor for MediaStreamRenderer<R> {
         &mut self,
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         // single output node

@@ -48,7 +48,10 @@ impl MediaStreamAudioSourceNode {
     /// # Panics
     ///
     /// This method will panic when the provided `MediaStream` does not contain any audio tracks.
-    pub fn new<C: BaseAudioContext>(context: &C, options: MediaStreamAudioSourceOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(
+        context: &C,
+        options: MediaStreamAudioSourceOptions<'_>,
+    ) -> Self {
         context.register(move |registration| {
             let node = MediaStreamAudioSourceNode {
                 registration,

@@ -1,0 +1,7 @@
+overrides:
+  - files:
+      - "**/*.yaml"
+    options:
+      tabWidth: 2
+      # in double quotes you can use escapes
+      singleQuote: false

@@ -12,7 +12,7 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Render
 use lazy_static::lazy_static;
 use std::f32::consts::PI;
 
-/// AudioParam settings for the carthesian coordinates
+/// AudioParam settings for the cartesian coordinates
 pub(crate) const PARAM_OPTS: AudioParamDescriptor = AudioParamDescriptor {
     min_value: f32::MIN,
     max_value: f32::MAX,
@@ -172,7 +172,7 @@ impl AudioProcessor for ListenerRenderer {
         &mut self,
         _inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         // do nothing, the Listener is just here to make sure the position/forward/up params render in order

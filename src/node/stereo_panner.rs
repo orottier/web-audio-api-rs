@@ -195,7 +195,7 @@ impl StereoPannerNode {
         })
     }
 
-    /// Returns the pan audio paramter
+    /// Returns the pan audio parameter
     #[must_use]
     pub fn pan(&self) -> &AudioParam {
         &self.pan
@@ -214,7 +214,7 @@ impl AudioProcessor for StereoPannerRenderer {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         // single input/output node

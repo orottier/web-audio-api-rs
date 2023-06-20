@@ -405,25 +405,25 @@ impl BiquadFilterNode {
         })
     }
 
-    /// Returns the gain audio paramter
+    /// Returns the gain audio parameter
     #[must_use]
     pub fn gain(&self) -> &AudioParam {
         &self.gain
     }
 
-    /// Returns the frequency audio paramter
+    /// Returns the frequency audio parameter
     #[must_use]
     pub fn frequency(&self) -> &AudioParam {
         &self.frequency
     }
 
-    /// Returns the detune audio paramter
+    /// Returns the detune audio parameter
     #[must_use]
     pub fn detune(&self) -> &AudioParam {
         &self.detune
     }
 
-    /// Returns the Q audio paramter
+    /// Returns the Q audio parameter
     #[must_use]
     pub fn q(&self) -> &AudioParam {
         &self.q
@@ -533,7 +533,7 @@ struct BiquadFilterRenderer {
     /// boost/attenuation (dB) - its impact on the frequency response of the filter
     /// depends on the `BiquadFilterType`
     gain: AudioParamId,
-    /// `BiquadFilterType` repesented as u32
+    /// `BiquadFilterType` represented as u32
     type_: Arc<AtomicU32>,
     // keep filter state for each channel
     x1: Vec<f64>,
@@ -547,7 +547,7 @@ impl AudioProcessor for BiquadFilterRenderer {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         // single input/output node

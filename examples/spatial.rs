@@ -11,7 +11,7 @@ fn main() {
     };
     let context = AudioContext::new(ctx_opts);
 
-    // Move listener slightly out of carthesian center to prevent numerical artefacts
+    // Move listener slightly out of cartesian center to prevent numerical artefacts
     context.listener().position_x().set_value(0.01);
     context.listener().position_y().set_value(0.01);
     context.listener().position_z().set_value(0.01);

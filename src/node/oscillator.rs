@@ -30,7 +30,7 @@ pub struct OscillatorOptions {
     pub frequency: f32,
     /// A detuning value (in cents) which will offset the frequency by the given amount.
     pub detune: f32,
-    /// Optionnal custom waveform, if specified (set `type` to "custom")
+    /// Optional custom waveform, if specified (set `type` to "custom")
     pub periodic_wave: Option<PeriodicWave>,
     /// channel config options
     pub channel_config: ChannelConfigOptions,
@@ -335,7 +335,7 @@ impl AudioProcessor for OscillatorRenderer {
         &mut self,
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         // single output node
