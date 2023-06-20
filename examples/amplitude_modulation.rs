@@ -1,6 +1,6 @@
 use std::{env, thread, time};
 use web_audio_api::context::{
-    AudioContext, AudioContextOptions, AudioContextLatencyCategory, BaseAudioContext
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
