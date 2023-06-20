@@ -92,14 +92,14 @@ flag. Please note that `cmake` must be installed locally in order to run
 | cpal-jack      | JACK           |                                                         |
 | cpal-asio      | ASIO           | see <https://github.com/rustaudio/cpal#asio-on-windows> |
 
-| cubeb          | PulseAudio     |                                                         |
-| cubeb          | AudioUnit      |                                                         |
-| cubeb          | WASAPI         |                                                         |
-| cubeb          | OpenSL         |                                                         |
-| cubeb          | AAudio         |                                                         |
-| cubeb          | sndio          |                                                         |
-| cubeb          | Sun            |                                                         |
-| cubeb          | OSS            |                                                         |
+| cubeb | PulseAudio | |
+| cubeb | AudioUnit | |
+| cubeb | WASAPI | |
+| cubeb | OpenSL | |
+| cubeb | AAudio | |
+| cubeb | sndio | |
+| cubeb | Sun | |
+| cubeb | OSS | |
 
 ### Notes for Linux users
 
