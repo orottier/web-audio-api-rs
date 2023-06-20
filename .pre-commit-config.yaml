@@ -63,7 +63,8 @@ repos:
           [
             --locked,
             --workspace,
-            --all-features,
+            --features,
+            cpal,
             --all-targets,
             --,
             -D,
