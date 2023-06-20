@@ -1,11 +1,36 @@
-use std::{thread, time};
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use std::{env, thread, time};
+use web_audio_api::context::{
+    AudioContext, AudioContextOptions, AudioContextLatencyCategory, BaseAudioContext
+};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
+// Amplitude Modulation synthesis
+//
+// `cargo run --release --example amplitude_modulation`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `playback` option which will increase the buffer size to 1024
+//
+// `cargo run --release --example amplitude_modulation -- playback`
 fn main() {
     env_logger::init();
 
-    let context = AudioContext::default();
+    let mut playback_option = false;
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() == 2 && args[1] == "playback" {
+        playback_option = true;
+    }
+
+    let context = if playback_option {
+        println!("> Use playback latency hint");
+        AudioContext::new(AudioContextOptions {
+            latency_hint: AudioContextLatencyCategory::Playback,
+            ..AudioContextOptions::default()
+        })
+    } else {
+        AudioContext::default()
+    };
 
     let modulated = context.create_gain();
     modulated.gain().set_value(0.5);
