@@ -78,8 +78,7 @@ and track our spec compliance improvements over time.
 By default, the [`cpal`](https://github.com/rustaudio/cpal) library is used for
 cross platform audio I/O.
 
-We offer [experimental
-support](https://github.com/orottier/web-audio-api-rs/issues/187) for the
+We offer [experimental support](https://github.com/orottier/web-audio-api-rs/issues/187) for the
 [`cubeb`](https://github.com/mozilla/cubeb-rs) backend via the `cubeb` feature
 flag. Please note that `cmake` must be installed locally in order to run
 `cubeb`.
@@ -103,7 +102,7 @@ flag. Please note that `cmake` must be installed locally in order to run
 
 ### Notes for Linux users
 
-Using the library on Linux with the ALSA backend might lead to unexpected cranky sound with the default render size of 128 frames. In such cases, a simple workaround is to pass the `Playback` latency hint when creating the audio context, which will increase the render size to 1024 frames:
+Using the library on Linux with the ALSA backend might lead to unexpected cranky sound with the default render size (i.e. 128 frames). In such cases, a simple workaround is to pass the `AudioContextLatencyCategory::Playback` latency hint when creating the audio context, which will increase the render size to 1024 frames:
 
 ```rs
 let audio_context = AudioContext::new(AudioContextOptions {
@@ -112,7 +111,7 @@ let audio_context = AudioContext::new(AudioContextOptions {
 });
 ```
 
-For real-time and interactive applications where low latency is very important, you should instead rely on the JACK backend provided by `cpal`.
+For real-time and interactive applications where low latency is very important, you should instead rely on the JACK backend provided by `cpal`. To that end you will need to have a running JACK server and build your application with the `cpal-jack` feature, e.g. `cargo run --release --features "cpal-jack" --example microphone`.
 
 ## Contributing
 
