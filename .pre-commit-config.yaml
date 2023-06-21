@@ -64,7 +64,7 @@ repos:
             --locked,
             --workspace,
             --features,
-            cpal,
+            cubeb,
             --all-targets,
             --,
             -D,
@@ -82,7 +82,8 @@ repos:
             doc,
             --locked,
             --workspace,
-            --all-features,
+            --features,
+            cubeb,
             --no-deps,
             --document-private-items,
           ]
