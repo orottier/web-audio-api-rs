@@ -1,22 +1,3 @@
-/*
- * This example features a toy VOIP app
- *
- * Run `cargo run --release --example toy_webrtc -- server` to run the echo server.
- * The echo server simply receives the audio packets and ships them back.
- *
- * Run `cargo run --release --example toy_webrtc -- client` to run the VOIP client.
- * The client starts recording audio, ships the data to the server and plays back what it receives.
- *
- * The client and server us an UDP connection for low latency audio playback over the network.
- * Make sure you either run the server and client on the same machine, or within your local
- * network, because any firewall may block the packets (no NAT traversal / UPnP implemented)
- *
- * Make sure to use headphones to prevent catastrophic feedback cycles, but protect your ears!
- * Start with extremely low volume.
- *
- * Audio data is not encrypted over the wire, anyone in your network could eavesdrop
- */
-
 const DATA_SIZE: usize = 512;
 
 use std::convert::TryInto;
@@ -31,11 +12,30 @@ use web_audio_api::media_streams::MediaStreamTrack;
 use web_audio_api::node::AudioNode;
 use web_audio_api::{AudioBuffer, AudioBufferOptions};
 
+// This example features a toy VOIP app
+//
+// Run `cargo run --release --example toy_webrtc -- server` to run the echo server.
+// The echo server simply receives the audio packets and ships them back.
+//
+// Run `cargo run --release --example toy_webrtc -- client` to run the VOIP client.
+// The client starts recording audio, ships the data to the server and plays back what it receives.
+//
+// The client and server us an UDP connection for low latency audio playback over the network.
+// Make sure you either run the server and client on the same machine, or within your local
+// network, because any firewall may block the packets (no NAT traversal / UPnP implemented)
+//
+// Make sure to use headphones to prevent catastrophic feedback cycles, but protect your ears!
+// Start with extremely low volume.
+//
+// Audio data is not encrypted over the wire, anyone in your network could eavesdrop
+
 const MAX_UDP_SIZE: usize = 508;
 const SERVER_ADDR: &str = "0.0.0.0:1234";
 const CLIENT_ADDR: &str = "0.0.0.0:5555";
 
 fn main() -> std::io::Result<()> {
+    env_logger::init();
+
     let mut args = std::env::args();
     args.next(); // program name
 
@@ -153,7 +153,6 @@ fn run_client() -> std::io::Result<()> {
     // hack, make socket static to avoid `Arc` or similar
     let socket: &'static UdpSocket = Box::leak(Box::new(socket));
 
-    // setup the audio context
     let context = AudioContext::default();
 
     // leg 1: receive server packets and play them

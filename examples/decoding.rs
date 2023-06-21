@@ -1,9 +1,21 @@
 use std::fs::File;
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
+// Decode audio buffer from several format
+//
+// `cargo run --release --example decoding`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example decoding`
 fn main() {
-    // env_logger::init();
+    env_logger::init();
+
     let files = [
         "samples/sample-faulty.wav",
         "samples/sample.wav",
@@ -17,13 +29,26 @@ fn main() {
         "samples/sample.webm", // 48kHz,
     ];
 
-    let audio_context = AudioContext::default();
+    let context = match std::env::var("WEB_AUDIO_LATENCY") {
+        Ok(val) => {
+            if val == "playback" {
+                AudioContext::new(AudioContextOptions {
+                    latency_hint: AudioContextLatencyCategory::Playback,
+                    ..AudioContextOptions::default()
+                })
+            } else {
+                println!("Invalid WEB_AUDIO_LATENCY value, fall back to default");
+                AudioContext::default()
+            }
+        }
+        Err(_e) => AudioContext::default(),
+    };
 
     for filepath in files.iter() {
         println!("> --------------------------------");
 
         let file = File::open(filepath).unwrap();
-        let res = audio_context.decode_audio_data_sync(file);
+        let res = context.decode_audio_data_sync(file);
 
         match res {
             Ok(buffer) => {
@@ -34,8 +59,8 @@ fn main() {
                 println!("> sample rate: {:?}", buffer.sample_rate());
                 println!("> --------------------------------");
 
-                let src = audio_context.create_buffer_source();
-                src.connect(&audio_context.destination());
+                let src = context.create_buffer_source();
+                src.connect(&context.destination());
                 src.set_buffer(buffer);
                 src.start();
 

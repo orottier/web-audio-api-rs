@@ -4,18 +4,24 @@ use std::fs::File;
 use std::io::{stdin, stdout, BufRead, Write};
 use std::time::{Duration, Instant};
 
-use web_audio_api::context::{AudioContext, BaseAudioContext, OfflineAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+    OfflineAudioContext,
+};
 use web_audio_api::node::{
     AudioBufferSourceNode, AudioNode, AudioScheduledSourceNode, OscillatorType,
 };
 use web_audio_api::AudioBuffer;
 
-// benchmark adapted from https://github.com/padenot/webaudio-benchmark
-// missing the "Convolution Reverb" as we don't have the node implemented yet
+// Benchmarks adapted from https://github.com/padenot/webaudio-benchmark
 //
-// run in release mode
 // `cargo run --release --example benchmarks`
-
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example benchmarks`
 struct BenchResult {
     name: &'static str,
     duration: Duration,
@@ -57,6 +63,8 @@ fn benchmark(name: &'static str, context: OfflineAudioContext, results: &mut Vec
 }
 
 fn main() {
+    env_logger::init();
+
     let mut sources = Vec::<AudioBuffer>::new();
     let mut results = Vec::<BenchResult>::new();
 
@@ -647,7 +655,21 @@ fn main() {
     // -------------------------------------------------------
     // handle input and preview
     // -------------------------------------------------------
-    let context = AudioContext::default();
+    let context = match std::env::var("WEB_AUDIO_LATENCY") {
+        Ok(val) => {
+            if val == "playback" {
+                AudioContext::new(AudioContextOptions {
+                    latency_hint: AudioContextLatencyCategory::Playback,
+                    ..AudioContextOptions::default()
+                })
+            } else {
+                println!("Invalid WEB_AUDIO_LATENCY value, fall back to default");
+                AudioContext::default()
+            }
+        }
+        Err(_e) => AudioContext::default(),
+    };
+
     let mut current_source: Option<AudioBufferSourceNode> = None;
 
     let lines = stdin().lock().lines();

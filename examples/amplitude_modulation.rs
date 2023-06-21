@@ -1,35 +1,33 @@
-use std::{env, thread, time};
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
-// Amplitude Modulation synthesis
+// Amplitude Modulation synthesis example
 //
 // `cargo run --release --example amplitude_modulation`
 //
 // If you are on Linux and use ALSA as audio backend backend, you might want to run
-// the example with the `playback` option which will increase the buffer size to 1024
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
 //
-// `cargo run --release --example amplitude_modulation -- playback`
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example amplitude_modulation`
 fn main() {
     env_logger::init();
 
-    let mut playback_option = false;
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() == 2 && args[1] == "playback" {
-        playback_option = true;
-    }
-
-    let context = if playback_option {
-        println!("> Use playback latency hint");
-        AudioContext::new(AudioContextOptions {
-            latency_hint: AudioContextLatencyCategory::Playback,
-            ..AudioContextOptions::default()
-        })
-    } else {
-        AudioContext::default()
+    let context = match std::env::var("WEB_AUDIO_LATENCY") {
+        Ok(val) => {
+            if val == "playback" {
+                AudioContext::new(AudioContextOptions {
+                    latency_hint: AudioContextLatencyCategory::Playback,
+                    ..AudioContextOptions::default()
+                })
+            } else {
+                println!("Invalid WEB_AUDIO_LATENCY value, fall back to default");
+                AudioContext::default()
+            }
+        }
+        Err(_e) => AudioContext::default(),
     };
 
     let modulated = context.create_gain();
@@ -63,6 +61,6 @@ fn main() {
 
         flag = 1. - flag;
 
-        thread::sleep(time::Duration::from_secs(10));
+        std::thread::sleep(std::time::Duration::from_secs(10));
     }
 }

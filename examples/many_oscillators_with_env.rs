@@ -1,12 +1,19 @@
 use rand::rngs::ThreadRng;
 use rand::Rng;
-use std::{thread, time};
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
-// run in release mode
+// Trigger many oscillators with an envelop
+//
 // `cargo run --release --example many_oscillators_with_env`
-
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example many_oscillators_with_env`
 fn trigger_sine(audio_context: &AudioContext, rng: &mut ThreadRng) {
     let env = audio_context.create_gain();
     env.gain().set_value(0.);
@@ -30,13 +37,29 @@ fn trigger_sine(audio_context: &AudioContext, rng: &mut ThreadRng) {
 }
 
 fn main() {
-    let audio_context = AudioContext::default();
+    env_logger::init();
+
+    let audio_context = match std::env::var("WEB_AUDIO_LATENCY") {
+        Ok(val) => {
+            if val == "playback" {
+                AudioContext::new(AudioContextOptions {
+                    latency_hint: AudioContextLatencyCategory::Playback,
+                    ..AudioContextOptions::default()
+                })
+            } else {
+                println!("Invalid WEB_AUDIO_LATENCY value, fall back to default");
+                AudioContext::default()
+            }
+        }
+        Err(_e) => AudioContext::default(),
+    };
+
     let mut rng = rand::thread_rng();
     let period = 50;
 
     // mimic setInterval
     loop {
         trigger_sine(&audio_context, &mut rng);
-        thread::sleep(time::Duration::from_millis(period));
+        std::thread::sleep(std::time::Duration::from_millis(period));
     }
 }

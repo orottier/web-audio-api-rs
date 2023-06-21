@@ -1,10 +1,35 @@
 use std::fs::File;
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
+// Showcase different methods of the AudioBufferSourceNode
+//
+// `cargo run --release --example trigger_soundfile`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example trigger_soundfile`
 fn main() {
-    let context = AudioContext::default();
-    // @note - `context.resume` is not needed for now
+    env_logger::init();
+
+    let context = match std::env::var("WEB_AUDIO_LATENCY") {
+        Ok(val) => {
+            if val == "playback" {
+                AudioContext::new(AudioContextOptions {
+                    latency_hint: AudioContextLatencyCategory::Playback,
+                    ..AudioContextOptions::default()
+                })
+            } else {
+                println!("Invalid WEB_AUDIO_LATENCY value, fall back to default");
+                AudioContext::default()
+            }
+        }
+        Err(_e) => AudioContext::default(),
+    };
 
     // load and decode buffer
     let file = File::open("samples/sample.wav").unwrap();
@@ -143,29 +168,4 @@ fn main() {
     }
 
     std::thread::sleep(std::time::Duration::from_millis(8000));
-
-    // some stress test
-    // let num_sources_by_sec = 100; // one source per 10ms
-    // // 100 is ok
-    // // 200 starts to click
-    // // 1000 is really not ok
-    // // ...let's agree 10ms is ok for descent granular synthesis
-
-    // for i in 0..num_sources_by_sec {
-    //   // let offset = i as f64 / 1000.; // 10ms - look ok in --release
-    //   let offset = i as f64 / num_sources_by_sec as f64;
-
-    //   // this starts to look like home :)
-    //   let gain = if i % 4 == 0 { 1. } else { 0.3 };
-    //   let env = context.create_gain();
-    //   env.gain().set_value(gain);
-    //   env.connect(&context.destination());
-
-    //   let src = context.create_buffer_source();
-    //   src.set_buffer(audio_buffer);
-    //   src.connect(&env);
-    //   src.start_at(context.current_time() + offset);
-    // }
-
-    // std::thread::sleep(std::time::Duration::from_secs(8));
 }

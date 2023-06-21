@@ -1,24 +1,49 @@
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::media_devices;
 use web_audio_api::media_devices::MediaStreamConstraints;
 use web_audio_api::node::AudioNode;
 
+// Changing state of an AudioContext (resume, suspend, close)
+//
+// `cargo run --release --example change_state`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example change_state`
 fn main() {
     env_logger::init();
-    let context = AudioContext::default();
 
-    let mic = media_devices::get_user_media_sync(MediaStreamConstraints::Audio);
+    let context = match std::env::var("WEB_AUDIO_LATENCY") {
+        Ok(val) => {
+            if val == "playback" {
+                AudioContext::new(AudioContextOptions {
+                    latency_hint: AudioContextLatencyCategory::Playback,
+                    ..AudioContextOptions::default()
+                })
+            } else {
+                println!("Invalid WEB_AUDIO_LATENCY value, fall back to default");
+                AudioContext::default()
+            }
+        }
+        Err(_e) => AudioContext::default(),
+    };
+
+    let stream = media_devices::get_user_media_sync(MediaStreamConstraints::Audio);
     // register as media element in the audio context
-    let background = context.create_media_stream_source(&mic);
+    let stream_source = context.create_media_stream_source(&stream);
     // connect the node to the destination node (speakers)
-    background.connect(&context.destination());
+    stream_source.connect(&context.destination());
 
     // The Microphone will continue to run when either,
     // - the struct is still alive in the control thread
     // - the media stream is active in the render thread
     //
     // Let's drop it from the control thread so it's lifetime is bound by the render thread
-    drop(mic);
+    drop(stream);
 
     println!("Playback for 2 seconds");
     std::thread::sleep(std::time::Duration::from_secs(2));

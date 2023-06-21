@@ -1,17 +1,19 @@
+use std::fs::File;
+
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
-// Retrieve the output latency of the audio context
+// AudioBufferSource ended event example
 //
-// `cargo run --release --example latency_attributes`
+// `cargo run --release --example audio_buffer_source_events`
 //
 // If you are on Linux and use ALSA as audio backend backend, you might want to run
 // the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
 // increase the buffer size to 1024
 //
-// `WEB_AUDIO_LATENCY=playback cargo run --release --example latency_attributes`
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example audio_buffer_source_events`
 fn main() {
     env_logger::init();
 
@@ -30,19 +32,20 @@ fn main() {
         Err(_e) => AudioContext::default(),
     };
 
-    let sine = context.create_oscillator();
-    sine.frequency().set_value(200.);
-    sine.connect(&context.destination());
+    let file = File::open("samples/sample.wav").unwrap();
+    let buffer = context.decode_audio_data_sync(file).unwrap();
 
-    sine.start();
+    let src = context.create_buffer_source();
+    src.connect(&context.destination());
+    src.set_buffer(buffer);
 
-    println!("- BaseLatency: {:?}", context.base_latency());
+    src.set_onended(|_| {
+        println!("> Ended event triggered!");
+    });
 
-    loop {
-        println!("-------------------------------------------------");
-        println!("+ currentTime {:?}", context.current_time());
-        println!("+ OutputLatency: {:?}", context.output_latency());
+    let now = context.current_time();
+    src.start_at(now);
+    src.stop_at(now + 1.);
 
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }
+    std::thread::sleep(std::time::Duration::from_secs(4));
 }

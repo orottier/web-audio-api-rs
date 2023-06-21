@@ -1,8 +1,20 @@
-use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::media_devices;
 use web_audio_api::media_devices::{enumerate_devices_sync, MediaDeviceInfo, MediaDeviceInfoKind};
 use web_audio_api::media_devices::{MediaStreamConstraints, MediaTrackConstraints};
 use web_audio_api::node::AudioNode;
+
+// Pipe microphone stream into audio context
+//
+// `cargo run --release --example microphone`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example microphone`
 
 fn ask_source_id() -> Option<String> {
     println!("Enter the input 'device_id' and press <Enter>");
@@ -29,6 +41,7 @@ fn ask_sink_id() -> String {
 fn main() {
     env_logger::init();
 
+    // select input and output devices
     let devices = enumerate_devices_sync();
 
     let input_devices: Vec<MediaDeviceInfo> = devices
@@ -49,10 +62,28 @@ fn main() {
     dbg!(output_devices);
     let sink_id = ask_sink_id();
 
-    let context = AudioContext::new(AudioContextOptions {
-        sink_id,
-        ..AudioContextOptions::default()
-    });
+    // create audio graph
+    let context = match std::env::var("WEB_AUDIO_LATENCY") {
+        Ok(val) => {
+            if val == "playback" {
+                AudioContext::new(AudioContextOptions {
+                    sink_id,
+                    latency_hint: AudioContextLatencyCategory::Playback,
+                    ..AudioContextOptions::default()
+                })
+            } else {
+                println!("Invalid WEB_AUDIO_LATENCY value, fall back to default");
+                AudioContext::new(AudioContextOptions {
+                    sink_id,
+                    ..AudioContextOptions::default()
+                })
+            }
+        }
+        Err(_e) => AudioContext::new(AudioContextOptions {
+            sink_id,
+            ..AudioContextOptions::default()
+        }),
+    };
 
     let mut constraints = MediaTrackConstraints::default();
     constraints.device_id = source_id;

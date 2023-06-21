@@ -1,15 +1,37 @@
 use std::io::BufRead;
-use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, PannerNode, PannerOptions, PanningModelType,
 };
 
+// PannerNode example
+//
+// `cargo run --release --example spatial`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example spatial`
 fn main() {
-    let ctx_opts = AudioContextOptions {
-        sample_rate: Some(44100.),
-        ..AudioContextOptions::default()
+    env_logger::init();
+
+    let context = match std::env::var("WEB_AUDIO_LATENCY") {
+        Ok(val) => {
+            if val == "playback" {
+                AudioContext::new(AudioContextOptions {
+                    latency_hint: AudioContextLatencyCategory::Playback,
+                    ..AudioContextOptions::default()
+                })
+            } else {
+                println!("Invalid WEB_AUDIO_LATENCY value, fall back to default");
+                AudioContext::default()
+            }
+        }
+        Err(_e) => AudioContext::default(),
     };
-    let context = AudioContext::new(ctx_opts);
 
     // Move listener slightly out of cartesian center to prevent numerical artefacts
     context.listener().position_x().set_value(0.01);

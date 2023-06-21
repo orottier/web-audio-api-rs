@@ -112,7 +112,7 @@ let audio_context = AudioContext::new(AudioContextOptions {
 });
 ```
 
-For real-time and interactive applications where low latency is very important, you should instead rely on the JACK backend provided by `cpal`. To that end you will need to have a running JACK server and build your application with the `cpal-jack` feature, e.g. `cargo run --release --features "cpal-jack" --example microphone`.
+For real-time and interactive applications where low latency is crucial, you should instead rely on the JACK backend provided by `cpal`. To that end you will need a running JACK server and build your application with the `cpal-jack` feature, e.g. `cargo run --release --features "cpal-jack" --example microphone`.
 
 ## Contributing
 
