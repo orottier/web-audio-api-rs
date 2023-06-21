@@ -11,7 +11,7 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Render
 use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
 use crossbeam_channel::{Receiver, Sender};
-use lazy_static::lazy_static;
+use once_cell::sync::OnceCell;
 
 /// For SetTargetAtTime event, that theoretically cannot end, if the diff between
 /// the current value and the target is below this threshold, the value is set
@@ -215,22 +215,21 @@ pub(crate) struct AudioParamRaw {
     sender: Sender<AudioParamEvent>,
 }
 
-lazy_static! {
-    static ref AUDIO_PARAM_CHANNEL_CONFIG: ChannelConfig = ChannelConfigOptions {
-        count: 1,
-        count_mode: ChannelCountMode::Explicit,
-        interpretation: ChannelInterpretation::Discrete,
-    }
-    .into();
-}
-
 impl AudioNode for AudioParam {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
 
     fn channel_config(&self) -> &ChannelConfig {
-        &AUDIO_PARAM_CHANNEL_CONFIG
+        static INSTANCE: OnceCell<ChannelConfig> = OnceCell::new();
+        INSTANCE.get_or_init(|| {
+            ChannelConfigOptions {
+                count: 1,
+                count_mode: ChannelCountMode::Explicit,
+                interpretation: ChannelInterpretation::Discrete,
+            }
+            .into()
+        })
     }
 
     fn number_of_inputs(&self) -> usize {
