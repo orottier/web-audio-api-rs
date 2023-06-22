@@ -86,7 +86,7 @@ impl AudioBackendManager for NoneBackend {
             Some(event_send),
         );
 
-        let (sender, receiver) = crossbeam_channel::unbounded();
+        let (sender, receiver) = crossbeam_channel::bounded(32);
 
         // todo: pass buffer size and sample rate
         let callback = Callback {

@@ -42,14 +42,19 @@ pub(crate) struct RenderThreadInit {
 }
 
 pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
-    // track number of frames - synced from render thread to control thread
+    // Track number of frames - synced from render thread to control thread
     let frames_played = Arc::new(AtomicU64::new(0));
-    // communication channel for ctrl msgs to the render thread
-    let (ctrl_msg_send, ctrl_msg_recv) = crossbeam_channel::unbounded();
-    // communication channel for render load values
+
+    // Communication channel for ctrl msgs to the render thread.
+    // A bounded channel is required to avoid (de)allocations
+    let (ctrl_msg_send, ctrl_msg_recv) = crossbeam_channel::bounded(256);
+
+    // Communication channel for render load values
     let (load_value_send, load_value_recv) = crossbeam_channel::bounded(1);
-    // communication channel for events for render thread to control thread
-    let (event_send, event_recv) = crossbeam_channel::unbounded();
+
+    // Communication channel for events for render thread to control thread
+    // A bounded channel is required to avoid (de)allocations
+    let (event_send, event_recv) = crossbeam_channel::bounded(256);
 
     let control_thread_init = ControlThreadInit {
         frames_played: frames_played.clone(),

@@ -1562,7 +1562,7 @@ pub(crate) fn audio_param_pair(
     descriptor: AudioParamDescriptor,
     registration: AudioContextRegistration,
 ) -> (AudioParam, AudioParamProcessor) {
-    let (sender, receiver) = crossbeam_channel::unbounded();
+    let (sender, receiver) = crossbeam_channel::bounded(32);
 
     let AudioParamDescriptor {
         automation_rate,

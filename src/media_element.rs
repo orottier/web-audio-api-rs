@@ -65,8 +65,8 @@ impl MediaElement {
         // Wait until the buffer is filled before sending it to the process thread.
         read_disk_stream.block_until_ready()?;
 
-        // Setup control/render thream message bus
-        let (sender, receiver) = crossbeam_channel::unbounded();
+        // Setup control/render thread message bus
+        let (sender, receiver) = crossbeam_channel::bounded(32);
         // Setup currentTime shared value
         let current_time = Arc::new(AtomicF64::new(0.));
 
