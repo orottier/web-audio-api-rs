@@ -257,9 +257,7 @@ impl AudioNode for AudioParam {
 impl AudioParam {
     /// Current value of the automation rate of the AudioParam
     pub fn automation_rate(&self) -> AutomationRate {
-        self.raw_parts
-            .shared_parts
-            .load_automation_rate(Ordering::SeqCst)
+        self.raw_parts.shared_parts.load_automation_rate()
     }
 
     /// Update the current value of the automation rate of the AudioParam
@@ -272,9 +270,7 @@ impl AudioParam {
             panic!("InvalidStateError: automation rate cannot be changed for this param");
         }
 
-        self.raw_parts
-            .shared_parts
-            .store_automation_rate(value, Ordering::SeqCst);
+        self.raw_parts.shared_parts.store_automation_rate(value);
     }
 
     pub(crate) fn set_automation_rate_constrained(&mut self, value: bool) {
@@ -305,10 +301,7 @@ impl AudioParam {
     //      test_exponential_ramp_a_rate_multiple_blocks
     //      test_exponential_ramp_k_rate_multiple_blocks
     pub fn value(&self) -> f32 {
-        self.raw_parts
-            .shared_parts
-            .current_value
-            .load(Ordering::SeqCst)
+        self.raw_parts.shared_parts.load_current_value()
     }
 
     /// Set the value of the `AudioParam`.
@@ -325,10 +318,7 @@ impl AudioParam {
     pub fn set_value(&self, value: f32) -> &Self {
         // current_value should always be clamped
         let clamped = value.clamp(self.raw_parts.min_value, self.raw_parts.max_value);
-        self.raw_parts
-            .shared_parts
-            .current_value
-            .store(clamped, Ordering::SeqCst);
+        self.raw_parts.shared_parts.store_current_value(clamped);
 
         // this event is meant to update param intrinsic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
@@ -577,6 +567,9 @@ impl AudioParam {
 
 // Atomic fields of `AudioParam` that could be safely shared between threads
 // when wrapped into an `Arc`.
+//
+// Uses the canonical ordering for handover of values, i.e. `Acquire` on load
+// and `Release` on store.
 #[derive(Debug)]
 pub(crate) struct AudioParamShared {
     current_value: AtomicF32,
@@ -591,20 +584,25 @@ impl AudioParamShared {
         }
     }
 
-    pub(crate) fn load_automation_rate(&self, ordering: Ordering) -> AutomationRate {
-        if self.is_a_rate.load(ordering) {
+    pub(crate) fn load_current_value(&self) -> f32 {
+        self.current_value.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn store_current_value(&self, value: f32) {
+        self.current_value.store(value, Ordering::Release);
+    }
+
+    pub(crate) fn load_automation_rate(&self) -> AutomationRate {
+        if self.is_a_rate.load(Ordering::Acquire) {
             AutomationRate::A
         } else {
             AutomationRate::K
         }
     }
 
-    pub(crate) fn store_automation_rate(
-        &self,
-        automation_rate: AutomationRate,
-        ordering: Ordering,
-    ) {
-        self.is_a_rate.store(automation_rate.is_a_rate(), ordering);
+    pub(crate) fn store_automation_rate(&self, automation_rate: AutomationRate) {
+        self.is_a_rate
+            .store(automation_rate.is_a_rate(), Ordering::Release);
     }
 }
 
@@ -1017,14 +1015,13 @@ impl AudioParamProcessor {
         // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
         let clamped = self.intrinsic_value.clamp(self.min_value, self.max_value);
-        self.shared_parts
-            .current_value
-            .store(clamped, Ordering::SeqCst);
+        self.shared_parts.store_current_value(clamped);
 
         // clear the buffer for this block
         self.buffer.clear();
 
-        let is_a_rate = self.shared_parts.is_a_rate.load(Ordering::SeqCst);
+        let automation_rate = self.shared_parts.load_automation_rate();
+        let is_a_rate = automation_rate.is_a_rate();
         let is_k_rate = !is_a_rate;
 
         let next_block_time = dt.mul_add(count as f64, block_time);
