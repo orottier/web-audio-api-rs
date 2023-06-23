@@ -34,20 +34,15 @@ fn main() {
 
     println!("> gradually increase the amount of distortion applied on the sample");
 
-    let context = match std::env::var("WEB_AUDIO_LATENCY") {
-        Ok(val) => {
-            if val == "playback" {
-                AudioContext::new(AudioContextOptions {
-                    latency_hint: AudioContextLatencyCategory::Playback,
-                    ..AudioContextOptions::default()
-                })
-            } else {
-                println!("Invalid WEB_AUDIO_LATENCY value, fall back to default");
-                AudioContext::default()
-            }
-        }
-        Err(_e) => AudioContext::default(),
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
     };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
 
     let file = File::open("samples/sample.wav").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();

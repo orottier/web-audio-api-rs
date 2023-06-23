@@ -62,28 +62,16 @@ fn main() {
     dbg!(output_devices);
     let sink_id = ask_sink_id();
 
-    // create audio graph
-    let context = match std::env::var("WEB_AUDIO_LATENCY") {
-        Ok(val) => {
-            if val == "playback" {
-                AudioContext::new(AudioContextOptions {
-                    sink_id,
-                    latency_hint: AudioContextLatencyCategory::Playback,
-                    ..AudioContextOptions::default()
-                })
-            } else {
-                println!("Invalid WEB_AUDIO_LATENCY value, fall back to default");
-                AudioContext::new(AudioContextOptions {
-                    sink_id,
-                    ..AudioContextOptions::default()
-                })
-            }
-        }
-        Err(_e) => AudioContext::new(AudioContextOptions {
-            sink_id,
-            ..AudioContextOptions::default()
-        }),
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
     };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        sink_id,
+        ..AudioContextOptions::default()
+    });
 
     let mut constraints = MediaTrackConstraints::default();
     constraints.device_id = source_id;

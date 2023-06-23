@@ -15,20 +15,15 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 fn main() {
     env_logger::init();
 
-    let context = match std::env::var("WEB_AUDIO_LATENCY") {
-        Ok(val) => {
-            if val == "playback" {
-                AudioContext::new(AudioContextOptions {
-                    latency_hint: AudioContextLatencyCategory::Playback,
-                    ..AudioContextOptions::default()
-                })
-            } else {
-                println!("Invalid WEB_AUDIO_LATENCY value, fall back to default");
-                AudioContext::default()
-            }
-        }
-        Err(_e) => AudioContext::default(),
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
     };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
 
     // pipe 2 oscillator into two panner, one on each side of the stereo image
     // inverse the direction of the panning every 4 second
