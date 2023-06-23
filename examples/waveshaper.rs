@@ -1,7 +1,19 @@
 use std::f32::consts::PI;
 use std::fs::File;
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, OverSampleType};
+
+// WaveshaperNode example
+//
+// `cargo run --release --example waveshaper`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example waveshaper`
 
 // use part of cosine, between [π, 2π] as shaping cureve
 fn make_distortion_curve(size: usize) -> Vec<f32> {
@@ -22,7 +34,15 @@ fn main() {
 
     println!("> gradually increase the amount of distortion applied on the sample");
 
-    let context = AudioContext::default();
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
 
     let file = File::open("samples/sample.wav").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();

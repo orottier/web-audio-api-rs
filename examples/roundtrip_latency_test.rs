@@ -1,7 +1,8 @@
 use std::env;
 
 use web_audio_api::context::{
-    AudioContext, AudioContextOptions, AudioContextRegistration, BaseAudioContext,
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, AudioContextRegistration,
+    BaseAudioContext,
 };
 use web_audio_api::media_devices::{
     enumerate_devices_sync, get_user_media_sync, MediaDeviceInfo, MediaDeviceInfoKind,
@@ -20,7 +21,14 @@ use std::sync::Arc;
 //
 // For testing purposes, a feedback delay line of 17ms is created to emulate audio
 // feedback, run with:
+//
 // `cargo run --release  --example roundtrip_latency_test -- test`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example roundtrip_latency_test`
 
 fn ask_source_id() -> Option<String> {
     println!("Enter the input 'device_id' and press <Enter>");
@@ -178,7 +186,13 @@ fn main() {
             latency
         );
 
+        let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+            Ok("playback") => AudioContextLatencyCategory::Playback,
+            _ => AudioContextLatencyCategory::default(),
+        };
+
         let context = AudioContext::new(AudioContextOptions {
+            latency_hint,
             sample_rate: Some(48000.),
             ..AudioContextOptions::default()
         });
@@ -215,9 +229,15 @@ fn main() {
         dbg!(output_devices);
         let sink_id = ask_sink_id();
 
+        let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+            Ok("playback") => AudioContextLatencyCategory::Playback,
+            _ => AudioContextLatencyCategory::default(),
+        };
+
         let context = AudioContext::new(AudioContextOptions {
-            sink_id,
+            latency_hint,
             sample_rate: Some(48000.),
+            sink_id,
             ..AudioContextOptions::default()
         });
 

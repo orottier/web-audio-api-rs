@@ -1,11 +1,31 @@
 use std::fs::File;
-use std::{thread, time};
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
+// DelayNode example
+//
+// `cargo run --release --example simple_delay`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example simple_delay`
 fn main() {
-    // create an `AudioContext` and load a sound file
-    let context = AudioContext::default();
+    env_logger::init();
+
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
+
     let file = File::open("samples/sample.wav").unwrap();
     let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
@@ -21,5 +41,5 @@ fn main() {
     src.connect(&context.destination());
     src.start();
 
-    thread::sleep(time::Duration::from_millis(5000));
+    std::thread::sleep(std::time::Duration::from_millis(5000));
 }

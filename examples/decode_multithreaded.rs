@@ -3,7 +3,12 @@ use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
 // Use a pool of 2 threads for decoding
 const THREAD_POOL_SIZE: usize = 2;
 
+// Decode audio buffers in multiple threads
+//
+// `cargo run --release --example decode_multithreaded`
 pub fn main() {
+    env_logger::init();
+
     // Set up the message channels for job submission and result callback
     let (job_sender, job_receiver) = crossbeam_channel::unbounded();
     let (result_sender, result_receiver) = crossbeam_channel::unbounded();

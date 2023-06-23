@@ -5,3 +5,6 @@ Cargo.lock
 *.svg
 *.data
 *.data.old
+
+# file createds by `recorder` example
+rec.wav

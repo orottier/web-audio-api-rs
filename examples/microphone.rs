@@ -1,8 +1,20 @@
-use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::media_devices;
 use web_audio_api::media_devices::{enumerate_devices_sync, MediaDeviceInfo, MediaDeviceInfoKind};
 use web_audio_api::media_devices::{MediaStreamConstraints, MediaTrackConstraints};
 use web_audio_api::node::AudioNode;
+
+// Pipe microphone stream into audio context
+//
+// `cargo run --release --example microphone`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example microphone`
 
 fn ask_source_id() -> Option<String> {
     println!("Enter the input 'device_id' and press <Enter>");
@@ -29,6 +41,7 @@ fn ask_sink_id() -> String {
 fn main() {
     env_logger::init();
 
+    // select input and output devices
     let devices = enumerate_devices_sync();
 
     let input_devices: Vec<MediaDeviceInfo> = devices
@@ -49,7 +62,13 @@ fn main() {
     dbg!(output_devices);
     let sink_id = ask_sink_id();
 
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
     let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
         sink_id,
         ..AudioContextOptions::default()
     });

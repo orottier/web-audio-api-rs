@@ -1,17 +1,19 @@
+use std::fs::File;
+
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
-// AnalyserNode example
+// AudioBufferSource ended event example
 //
-// `cargo run --release --example analyser`
+// `cargo run --release --example audio_buffer_source_events`
 //
 // If you are on Linux and use ALSA as audio backend backend, you might want to run
 // the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
 // increase the buffer size to 1024
 //
-// `WEB_AUDIO_LATENCY=playback cargo run --release --example analyser`
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example audio_buffer_source_events`
 fn main() {
     env_logger::init();
 
@@ -25,19 +27,20 @@ fn main() {
         ..AudioContextOptions::default()
     });
 
-    let analyser = context.create_analyser();
-    analyser.connect(&context.destination());
+    let file = File::open("samples/sample.wav").unwrap();
+    let buffer = context.decode_audio_data_sync(file).unwrap();
 
-    let osc = context.create_oscillator();
-    osc.frequency().set_value(200.);
-    osc.connect(&analyser);
-    osc.start();
+    let src = context.create_buffer_source();
+    src.connect(&context.destination());
+    src.set_buffer(buffer);
 
-    let mut bins = vec![0.; analyser.frequency_bin_count()];
+    src.set_onended(|_| {
+        println!("> Ended event triggered!");
+    });
 
-    loop {
-        analyser.get_float_frequency_data(&mut bins);
-        println!("{:?}", &bins[0..20]); // print 20 first bins
-        std::thread::sleep(std::time::Duration::from_millis(1000));
-    }
+    let now = context.current_time();
+    src.start_at(now);
+    src.stop_at(now + 1.);
+
+    std::thread::sleep(std::time::Duration::from_secs(4));
 }

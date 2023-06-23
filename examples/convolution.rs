@@ -1,13 +1,33 @@
 use std::fs::File;
 use std::{thread, time};
+
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, ConvolverNode, ConvolverOptions};
 use web_audio_api::AudioRenderCapacityOptions;
 
-use web_audio_api::context::{AudioContext, BaseAudioContext};
-use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, ConvolverNode, ConvolverOptions};
-
+// ConvolverNode example
+//
+// `cargo run --release --example convolution`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example convolution`
 fn main() {
-    // create an `AudioContext` and load a sound file
-    let context = AudioContext::default();
+    env_logger::init();
+
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
 
     let cap = context.render_capacity();
     cap.set_onupdate(|e| println!("{e:?}"));
@@ -27,10 +47,10 @@ fn main() {
     let src = context.create_buffer_source();
     src.set_buffer(audio_buffer);
 
-    let convolve = ConvolverNode::new(&context, ConvolverOptions::default());
+    let convolver = ConvolverNode::new(&context, ConvolverOptions::default());
 
-    src.connect(&convolve);
-    convolve.connect(&context.destination());
+    src.connect(&convolver);
+    convolver.connect(&context.destination());
 
     src.start();
 
@@ -38,11 +58,11 @@ fn main() {
     thread::sleep(time::Duration::from_millis(4_000));
 
     println!("Small room");
-    convolve.set_buffer(impulse_buffer1);
+    convolver.set_buffer(impulse_buffer1);
     thread::sleep(time::Duration::from_millis(4_000));
 
     println!("Parking garage");
-    convolve.set_buffer(impulse_buffer2);
+    convolver.set_buffer(impulse_buffer2);
     thread::sleep(time::Duration::from_millis(5_000));
 
     println!("Stop input - flush out remaining impulse response");

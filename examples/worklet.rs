@@ -1,11 +1,22 @@
 use rand::Rng;
 
 use web_audio_api::context::{
-    AudioContext, AudioContextRegistration, AudioParamId, BaseAudioContext,
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, AudioContextRegistration,
+    AudioParamId, BaseAudioContext,
 };
 use web_audio_api::node::{AudioNode, ChannelConfig};
 use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use web_audio_api::{AudioParam, AudioParamDescriptor, AutomationRate};
+
+// Shocase how to create your own audio node
+//
+// `cargo run --release --example worklet`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example worklet`
 
 /// Audio source node emitting white noise (random samples)
 struct WhiteNoiseNode {
@@ -112,7 +123,16 @@ impl AudioProcessor for WhiteNoiseProcessor {
 
 fn main() {
     env_logger::init();
-    let context = AudioContext::default();
+
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
 
     // construct new node in this context
     let noise = WhiteNoiseNode::new(&context);
