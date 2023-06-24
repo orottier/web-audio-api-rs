@@ -153,9 +153,14 @@ impl Default for ChannelConfigOptions {
 /// let _: ChannelConfig = opts.into();
 #[derive(Clone, Debug)]
 pub struct ChannelConfig {
-    count: Arc<AtomicUsize>,
-    count_mode: Arc<AtomicU32>,
-    interpretation: Arc<AtomicU32>,
+    inner: Arc<ChannelConfigInner>,
+}
+
+#[derive(Debug)]
+struct ChannelConfigInner {
+    count: AtomicUsize,
+    count_mode: AtomicU32,
+    interpretation: AtomicU32,
 }
 
 impl Default for ChannelConfig {
@@ -171,38 +176,41 @@ impl ChannelConfig {
     /// Represents an enumerated value describing the way channels must be matched between the
     /// node's inputs and outputs.
     pub(crate) fn count_mode(&self) -> ChannelCountMode {
-        self.count_mode.load(Ordering::SeqCst).into()
+        self.inner.count_mode.load(Ordering::SeqCst).into()
     }
     fn set_count_mode(&self, v: ChannelCountMode) {
-        self.count_mode.store(v as u32, Ordering::SeqCst)
+        self.inner.count_mode.store(v as u32, Ordering::SeqCst)
     }
 
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
     /// will define how audio up-mixing and down-mixing will happen.
     pub(crate) fn interpretation(&self) -> ChannelInterpretation {
-        self.interpretation.load(Ordering::SeqCst).into()
+        self.inner.interpretation.load(Ordering::SeqCst).into()
     }
     fn set_interpretation(&self, v: ChannelInterpretation) {
-        self.interpretation.store(v as u32, Ordering::SeqCst)
+        self.inner.interpretation.store(v as u32, Ordering::SeqCst)
     }
 
     /// Represents an integer used to determine how many channels are used when up-mixing and
     /// down-mixing connections to any inputs to the node.
     pub(crate) fn count(&self) -> usize {
-        self.count.load(Ordering::SeqCst)
+        self.inner.count.load(Ordering::SeqCst)
     }
     fn set_count(&self, v: usize) {
         crate::assert_valid_number_of_channels(v);
-        self.count.store(v, Ordering::SeqCst)
+        self.inner.count.store(v, Ordering::SeqCst)
     }
 }
 
 impl From<ChannelConfigOptions> for ChannelConfig {
     fn from(opts: ChannelConfigOptions) -> Self {
+        let inner = ChannelConfigInner {
+            count: AtomicUsize::from(opts.count),
+            count_mode: AtomicU32::from(opts.count_mode as u32),
+            interpretation: AtomicU32::from(opts.interpretation as u32),
+        };
         Self {
-            count: Arc::new(AtomicUsize::from(opts.count)),
-            count_mode: Arc::new(AtomicU32::from(opts.count_mode as u32)),
-            interpretation: Arc::new(AtomicU32::from(opts.interpretation as u32)),
+            inner: Arc::new(inner),
         }
     }
 }
