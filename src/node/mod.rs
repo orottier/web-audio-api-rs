@@ -169,36 +169,43 @@ impl Default for ChannelConfig {
     }
 }
 
-// All methods on this struct are marked `pub(crate)` because we don't want outside users to be able to change the values directly.
-// These methods are only accessible via the AudioNode interface, so AudioNode's that have channel count/mode constraints
-// should be able to assert those.
+// All methods on this struct are marked `pub(crate)` because we don't want outside users to be
+// able to change the values directly.  These methods are only accessible via the AudioNode
+// interface, so AudioNode's that have channel count/mode constraints should be able to assert
+// those.
+//
+// Uses the canonical ordering for handover of values, i.e. `Acquire` on load and `Release` on
+// store.
 impl ChannelConfig {
     /// Represents an enumerated value describing the way channels must be matched between the
     /// node's inputs and outputs.
     pub(crate) fn count_mode(&self) -> ChannelCountMode {
-        self.inner.count_mode.load(Ordering::SeqCst).into()
+        self.inner.count_mode.load(Ordering::Acquire).into()
     }
+
     fn set_count_mode(&self, v: ChannelCountMode) {
-        self.inner.count_mode.store(v as u32, Ordering::SeqCst)
+        self.inner.count_mode.store(v as u32, Ordering::Release)
     }
 
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
     /// will define how audio up-mixing and down-mixing will happen.
     pub(crate) fn interpretation(&self) -> ChannelInterpretation {
-        self.inner.interpretation.load(Ordering::SeqCst).into()
+        self.inner.interpretation.load(Ordering::Acquire).into()
     }
+
     fn set_interpretation(&self, v: ChannelInterpretation) {
-        self.inner.interpretation.store(v as u32, Ordering::SeqCst)
+        self.inner.interpretation.store(v as u32, Ordering::Release)
     }
 
     /// Represents an integer used to determine how many channels are used when up-mixing and
     /// down-mixing connections to any inputs to the node.
     pub(crate) fn count(&self) -> usize {
-        self.inner.count.load(Ordering::SeqCst)
+        self.inner.count.load(Ordering::Acquire)
     }
+
     fn set_count(&self, v: usize) {
         crate::assert_valid_number_of_channels(v);
-        self.inner.count.store(v, Ordering::SeqCst)
+        self.inner.count.store(v, Ordering::Release)
     }
 }
 
