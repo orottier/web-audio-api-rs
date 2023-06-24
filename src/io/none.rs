@@ -86,6 +86,9 @@ impl AudioBackendManager for NoneBackend {
             Some(event_send),
         );
 
+        // Use a bounded channel for real-time safety. A maximum of 32 control messages (resume,
+        // suspend, ..) will be handled per render quantum. The control thread will block when the
+        // capacity is reached.
         let (sender, receiver) = crossbeam_channel::bounded(32);
 
         // todo: pass buffer size and sample rate

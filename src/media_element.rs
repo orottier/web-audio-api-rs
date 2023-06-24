@@ -66,6 +66,9 @@ impl MediaElement {
         read_disk_stream.block_until_ready()?;
 
         // Setup control/render thread message bus
+        // Use a bounded channel for real-time safety. A maximum of 32 control messages (start,
+        // seek, ..) will be handled per render quantum. The control thread will block when the
+        // capacity is reached.
         let (sender, receiver) = crossbeam_channel::bounded(32);
         // Setup currentTime shared value
         let current_time = Arc::new(AtomicF64::new(0.));
