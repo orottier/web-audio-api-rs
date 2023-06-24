@@ -49,7 +49,7 @@ fn test_event_handler() {
         constant_source.stop_at(0.001);
         constant_source.set_onended(|_| {
             // block the event handler thread
-            thread::sleep(Duration::from_millis(20));
+            thread::sleep(Duration::from_secs(200));
         });
     }
 
