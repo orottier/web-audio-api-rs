@@ -1562,6 +1562,8 @@ pub(crate) fn audio_param_pair(
     descriptor: AudioParamDescriptor,
     registration: AudioContextRegistration,
 ) -> (AudioParam, AudioParamProcessor) {
+    // TODO, use a bounded channel. We can't do this currently because the render thread uses the
+    // `sender` part of this channel when handling the AudioParamEvent control message.
     let (sender, receiver) = crossbeam_channel::unbounded();
 
     let AudioParamDescriptor {

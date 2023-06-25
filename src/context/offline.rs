@@ -63,7 +63,8 @@ impl OfflineAudioContext {
     pub fn new(number_of_channels: usize, length: usize, sample_rate: f32) -> Self {
         assert_valid_sample_rate(sample_rate);
 
-        // communication channel to the render thread
+        // communication channel to the render thread,
+        // unbounded is fine because it does not need to be realtime safe
         let (sender, receiver) = crossbeam_channel::unbounded();
 
         let graph = crate::render::graph::Graph::new();

@@ -30,6 +30,7 @@ pub struct RenderScope {
 impl RenderScope {
     pub(crate) fn send_ended_event(&self) {
         if let Some(sender) = self.event_sender.as_ref() {
+            // sending could fail if the channel is saturated or the main thread is shutting down
             let _ = sender.try_send(EventDispatch::ended(self.node_id.get()));
         }
     }
