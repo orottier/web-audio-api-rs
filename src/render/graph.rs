@@ -354,7 +354,7 @@ impl Graph {
     }
 
     /// Render a single audio quantum by traversing the node list
-    pub fn render(&mut self, scope: &RenderScope) -> AudioRenderQuantum {
+    pub fn render(&mut self, scope: &RenderScope) -> &AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
             self.order_nodes();
@@ -460,12 +460,12 @@ impl Graph {
         }
 
         // Return the output buffer of destination node
-        self.nodes
+        &self
+            .nodes
             .get_mut(&AudioNodeId(0))
             .unwrap()
             .get_mut()
             .outputs[0]
-            .clone()
     }
 }
 
