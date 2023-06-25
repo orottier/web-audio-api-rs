@@ -1,5 +1,14 @@
 # Version History
 
+## Version 0.31.0 (2023-06-25)
+
+- Avoid allocations in Waveshaper node for real-time safety
+- Improvements for the JACK audio host
+- Document ALSA limitations for low latencies, and add fallback to examples
+- Improve real-time safety of the render thread by using bounded channels
+- Improve our usage of atomics
+- Update to Rust edition 2021
+
 ## Version 0.30.0 (2023-06-07)
 
 - Implement MediaRecorder API
