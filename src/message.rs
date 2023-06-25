@@ -1,11 +1,10 @@
 //! Message passing from control to render node
 
+use crate::context::AudioNodeId;
 use crate::node::ChannelConfig;
-use crate::param::AudioParamEvent;
 use crate::render::graph::Graph;
 use crate::render::AudioProcessor;
 
-use crate::context::AudioNodeId;
 use crossbeam_channel::Sender;
 
 /// Commands from the control thread to the render thread
@@ -36,12 +35,6 @@ pub(crate) enum ControlMessage {
     /// Notify the render thread this node is dropped in the control thread
     FreeWhenFinished { id: AudioNodeId },
 
-    /// Pass an AudioParam AutomationEvent to the relevant node
-    AudioParamEvent {
-        to: Sender<AudioParamEvent>,
-        event: AudioParamEvent,
-    },
-
     /// Mark node as a cycle breaker (DelayNode only)
     MarkCycleBreaker { id: AudioNodeId },
 
@@ -50,4 +43,10 @@ pub(crate) enum ControlMessage {
 
     /// Start rendering with given audio graph
     Startup { graph: Graph },
+
+    /// Generic message to be handled by AudioProcessor
+    NodeMessage {
+        id: AudioNodeId,
+        msg: Box<dyn std::any::Any + Send + 'static>,
+    },
 }

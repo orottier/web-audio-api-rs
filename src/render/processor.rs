@@ -98,6 +98,17 @@ pub trait AudioProcessor: Send {
         params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool;
+
+    /// Handle incoming messages from the linked AudioNode
+    ///
+    /// By overriding this method you can add a handler for messages sent from the control thread
+    /// via
+    /// [`AudioContextRegistration::send_message`](crate::context::AudioContextRegistration::send_message).
+    /// This will not be necessary for most processors.
+    #[allow(unused_variables)]
+    fn handle_message(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
+        log::warn!("Ignoring incoming message");
+    }
 }
 
 struct DerefAudioRenderQuantumChannel<'a>(std::cell::Ref<'a, Node>);

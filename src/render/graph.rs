@@ -190,6 +190,19 @@ impl Graph {
         self.nodes.get_mut(&index).unwrap().get_mut().cycle_breaker = true;
     }
 
+    pub fn route_message(
+        &mut self,
+        index: AudioNodeId,
+        msg: Box<dyn std::any::Any + Send + 'static>,
+    ) {
+        self.nodes
+            .get_mut(&index)
+            .unwrap()
+            .get_mut()
+            .processor
+            .handle_message(msg);
+    }
+
     /// Helper function for `order_nodes` - traverse node and outgoing edges
     ///
     /// The return value indicates `cycle_breaker_applied`:

@@ -10,7 +10,6 @@ use crate::node::{
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
-use crossbeam_channel::{Receiver, Sender};
 use once_cell::sync::OnceCell;
 
 /// For SetTargetAtTime event, that theoretically cannot end, if the diff between
@@ -215,7 +214,6 @@ pub(crate) struct AudioParamRaw {
     automation_rate_constrained: bool,
     // TODO Use `Weak` instead of `Arc`. The `AudioParamProcessor` is the owner.
     shared_parts: Arc<AudioParamShared>,
-    sender: Sender<AudioParamEvent>,
 }
 
 impl AudioNode for AudioParam {
@@ -555,13 +553,7 @@ impl AudioParam {
     }
 
     fn send_event(&self, event: AudioParamEvent) {
-        if cfg!(test) {
-            // bypass audiocontext enveloping of control messages for simpler testing
-            self.raw_parts.sender.send(event).unwrap();
-        } else {
-            self.context()
-                .pass_audio_param_event(&self.raw_parts.sender, event);
-        }
+        self.registration().send_message(Box::new(event));
     }
 }
 
@@ -613,7 +605,6 @@ pub(crate) struct AudioParamProcessor {
     max_value: f32,     // immutable
     intrinsic_value: f32,
     shared_parts: Arc<AudioParamShared>,
-    receiver: Receiver<AudioParamEvent>,
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
     buffer: Vec<f32>,
@@ -637,16 +628,19 @@ impl AudioProcessor for AudioParamProcessor {
 
         true // has intrinsic value
     }
+
+    fn handle_message(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
+        match msg.downcast::<AudioParamEvent>() {
+            Ok(event) => self.handle_incoming_event(*event),
+            _ => log::warn!("AudioParamProcessor: Ignoring incoming message"),
+        }
+    }
 }
 
 impl AudioParamProcessor {
     // warning: tick in called directly in the unit tests so everything important
     // for the tests should be done here
     fn compute_intrinsic_values(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
-        if !self.receiver.is_empty() {
-            self.handle_incoming_events();
-        }
-
         self.compute_buffer(block_time, dt, count);
 
         self.buffer.as_slice()
@@ -754,7 +748,7 @@ impl AudioParamProcessor {
         }
     }
 
-    fn handle_incoming_events(&mut self) {
+    fn handle_incoming_event(&mut self, event: AudioParamEvent) {
         // cf. https://www.w3.org/TR/webaudio/#computation-of-value
         // 1. paramIntrinsicValue will be calculated at each time, which is either the
         // value set directly to the value attribute, or, if there are any automation
@@ -763,251 +757,249 @@ impl AudioParamProcessor {
         // then the paramIntrinsicValue value will remain unchanged and stay at its
         // previous value until either the value attribute is directly set, or
         // automation events are added for the time range.
-        for event in self.receiver.try_iter() {
-            // handle CancelScheduledValues events
-            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-cancelscheduledvalues
-            if event.event_type == AudioParamEventType::CancelScheduledValues {
-                // peek current event before inserting new events, and possibly sort
-                // the queue, we need that for checking that we are (or not) in the middle
-                // of a ramp when handling `CancelScheduledValues`
-                // @note - probably not robust enough in some edge cases where the
-                // event is not the first received at this tick (`SetValueCurveAtTime`
-                // and `CancelAndHold` need to sort the queue)
-                let some_current_event = self.event_timeline.unsorted_peek();
 
-                match some_current_event {
-                    None => (),
-                    Some(current_event) => {
-                        // @note - The spec is not particularly clear about what to do
-                        // with on-going SetTarget events, but both Chrome and Firefox
-                        // ignore the Cancel event if at same time nor if startTime is
-                        // equal to cancelTime, this can makes sens as the event time
-                        // (which is a `startTime` for `SetTarget`) is before the `cancelTime`
-                        // (maybe this should be clarified w/ spec editors)
+        // handle CancelScheduledValues events
+        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-cancelscheduledvalues
+        if event.event_type == AudioParamEventType::CancelScheduledValues {
+            // peek current event before inserting new events, and possibly sort
+            // the queue, we need that for checking that we are (or not) in the middle
+            // of a ramp when handling `CancelScheduledValues`
+            // @note - probably not robust enough in some edge cases where the
+            // event is not the first received at this tick (`SetValueCurveAtTime`
+            // and `CancelAndHold` need to sort the queue)
+            let some_current_event = self.event_timeline.unsorted_peek();
 
-                        match current_event.event_type {
-                            AudioParamEventType::LinearRampToValueAtTime
-                            | AudioParamEventType::ExponentialRampToValueAtTime => {
-                                // we are in the middle of a ramp
-                                //
-                                // @note - Firefox and Chrome behave differently
-                                // on this: Firefox actually restore intrinsic_value
-                                // from the value at the beginning of the vent, while
-                                // Chrome just keeps the current intrinsic_value
-                                // The spec is not very clear there, but Firefox
-                                // seems to be more compliant:
-                                // "Any active automations whose automation event
-                                // time is less than cancelTime are also cancelled,
-                                // and such cancellations may cause discontinuities
-                                // because the original value (**from before such
-                                // automation**) is restored immediately."
-                                //
-                                // @note - last_event cannot be `None` here, because
-                                // linear or exponential ramps are always preceded
-                                // by another event (even a set_value_at_time
-                                // inserted implicitly), so if the ramp is the next
-                                // event that means that at least one event has
-                                // already been processed.
-                                if current_event.time >= event.time {
-                                    let last_event = self.last_event.as_ref().unwrap();
-                                    self.intrinsic_value = last_event.value;
-                                }
+            match some_current_event {
+                None => (),
+                Some(current_event) => {
+                    // @note - The spec is not particularly clear about what to do
+                    // with on-going SetTarget events, but both Chrome and Firefox
+                    // ignore the Cancel event if at same time nor if startTime is
+                    // equal to cancelTime, this can makes sens as the event time
+                    // (which is a `startTime` for `SetTarget`) is before the `cancelTime`
+                    // (maybe this should be clarified w/ spec editors)
+
+                    match current_event.event_type {
+                        AudioParamEventType::LinearRampToValueAtTime
+                        | AudioParamEventType::ExponentialRampToValueAtTime => {
+                            // we are in the middle of a ramp
+                            //
+                            // @note - Firefox and Chrome behave differently
+                            // on this: Firefox actually restore intrinsic_value
+                            // from the value at the beginning of the vent, while
+                            // Chrome just keeps the current intrinsic_value
+                            // The spec is not very clear there, but Firefox
+                            // seems to be more compliant:
+                            // "Any active automations whose automation event
+                            // time is less than cancelTime are also cancelled,
+                            // and such cancellations may cause discontinuities
+                            // because the original value (**from before such
+                            // automation**) is restored immediately."
+                            //
+                            // @note - last_event cannot be `None` here, because
+                            // linear or exponential ramps are always preceded
+                            // by another event (even a set_value_at_time
+                            // inserted implicitly), so if the ramp is the next
+                            // event that means that at least one event has
+                            // already been processed.
+                            if current_event.time >= event.time {
+                                let last_event = self.last_event.as_ref().unwrap();
+                                self.intrinsic_value = last_event.value;
                             }
-                            _ => (),
                         }
+                        _ => (),
                     }
                 }
-
-                // remove all events in queue where event.time >= cancel_time
-                // i.e. keep all events where event.time < cancel_time
-                self.event_timeline
-                    .retain(|queued| queued.time < event.time);
-                continue; // cancel_values events are not inserted in queue
             }
 
-            if event.event_type == AudioParamEventType::CancelAndHoldAtTime {
-                // 1. Let 𝐸1 be the event (if any) at time 𝑡1 where 𝑡1 is the
-                // largest number satisfying 𝑡1 ≤ 𝑡𝑐.
-                // 2. Let 𝐸2 be the event (if any) at time 𝑡2 where 𝑡2 is the
-                // smallest number satisfying 𝑡𝑐 < 𝑡2.
-                let mut e1: Option<&mut AudioParamEvent> = None;
-                let mut e2: Option<&mut AudioParamEvent> = None;
-                let mut t1 = f64::MIN;
-                let mut t2 = f64::MAX;
-                // we need a sorted timeline here to find siblings
-                self.event_timeline.sort();
+            // remove all events in queue where event.time >= cancel_time
+            // i.e. keep all events where event.time < cancel_time
+            self.event_timeline
+                .retain(|queued| queued.time < event.time);
+            return; // cancel_values events are not inserted in queue
+        }
 
-                for queued in self.event_timeline.iter_mut() {
-                    // closest before cancel time: if several events at same time,
-                    // we want the last one
-                    if queued.time >= t1 && queued.time <= event.time {
-                        t1 = queued.time;
-                        e1 = Some(queued);
+        if event.event_type == AudioParamEventType::CancelAndHoldAtTime {
+            // 1. Let 𝐸1 be the event (if any) at time 𝑡1 where 𝑡1 is the
+            // largest number satisfying 𝑡1 ≤ 𝑡𝑐.
+            // 2. Let 𝐸2 be the event (if any) at time 𝑡2 where 𝑡2 is the
+            // smallest number satisfying 𝑡𝑐 < 𝑡2.
+            let mut e1: Option<&mut AudioParamEvent> = None;
+            let mut e2: Option<&mut AudioParamEvent> = None;
+            let mut t1 = f64::MIN;
+            let mut t2 = f64::MAX;
+            // we need a sorted timeline here to find siblings
+            self.event_timeline.sort();
+
+            for queued in self.event_timeline.iter_mut() {
+                // closest before cancel time: if several events at same time,
+                // we want the last one
+                if queued.time >= t1 && queued.time <= event.time {
+                    t1 = queued.time;
+                    e1 = Some(queued);
                     // closest after cancel time: if several events at same time,
                     // we want the first one
-                    } else if queued.time < t2 && queued.time > event.time {
-                        t2 = queued.time;
-                        e2 = Some(queued);
-                    }
+                } else if queued.time < t2 && queued.time > event.time {
+                    t2 = queued.time;
+                    e2 = Some(queued);
                 }
-
-                // If 𝐸2 exists:
-                if let Some(matched) = e2 {
-                    // If 𝐸2 is a linear or exponential ramp,
-                    // Effectively rewrite 𝐸2 to be the same kind of ramp ending
-                    // at time 𝑡𝑐 with an end value that would be the value of the
-                    // original ramp at time 𝑡𝑐.
-                    // @note - this is done during the actual computation of the
-                    //  ramp using the cancel_time
-                    if matched.event_type == AudioParamEventType::LinearRampToValueAtTime
-                        || matched.event_type == AudioParamEventType::ExponentialRampToValueAtTime
-                    {
-                        matched.cancel_time = Some(event.time);
-                    }
-                } else if let Some(matched) = e1 {
-                    if matched.event_type == AudioParamEventType::SetTargetAtTime {
-                        // Implicitly insert a setValueAtTime event at time 𝑡𝑐 with
-                        // the value that the setTarget would
-                        // @note - same strategy as for ramps
-                        matched.cancel_time = Some(event.time);
-                    } else if matched.event_type == AudioParamEventType::SetValueCurveAtTime {
-                        // If 𝐸1 is a setValueCurve with a start time of 𝑡3 and a duration of 𝑑
-                        // If 𝑡𝑐 <= 𝑡3 + 𝑑 :
-                        // Effectively replace this event with a setValueCurve event
-                        // with a start time of 𝑡3 and a new duration of 𝑡𝑐−𝑡3. However,
-                        // this is not a true replacement; this automation MUST take
-                        // care to produce the same output as the original, and not
-                        // one computed using a different duration. (That would cause
-                        // sampling of the value curve in a slightly different way,
-                        // producing different results.)
-                        let start_time = matched.time;
-                        let duration = matched.duration.unwrap();
-
-                        if event.time <= start_time + duration {
-                            matched.cancel_time = Some(event.time);
-                        }
-                    }
-                }
-
-                // [spec] Remove all events with time greater than 𝑡𝑐.
-                self.event_timeline.retain(|queued| {
-                    let mut time = queued.time;
-                    // if the event has a `cancel_time` we use it instead of `time`
-                    if let Some(cancel_time) = queued.cancel_time {
-                        time = cancel_time;
-                    }
-
-                    time <= event.time
-                });
-                continue; // cancel_and_hold events are not inserted timeline
             }
 
-            // handle SetValueCurveAtTime
-            // @note - These rules argue in favor of having events inserted in
-            // the control thread, let's panic for now
-            //
-            // [spec] If setValueCurveAtTime() is called for time 𝑇 and duration 𝐷
-            // and there are any events having a time strictly greater than 𝑇, but
-            // strictly less than 𝑇+𝐷, then a NotSupportedError exception MUST be thrown.
-            // In other words, it’s not ok to schedule a value curve during a time period
-            // containing other events, but it’s ok to schedule a value curve exactly
-            // at the time of another event.
-            if event.event_type == AudioParamEventType::SetValueCurveAtTime {
-                // check if we don't try to insert at the time of another event
-                let start_time = event.time;
-                let end_time = start_time + event.duration.unwrap();
+            // If 𝐸2 exists:
+            if let Some(matched) = e2 {
+                // If 𝐸2 is a linear or exponential ramp,
+                // Effectively rewrite 𝐸2 to be the same kind of ramp ending
+                // at time 𝑡𝑐 with an end value that would be the value of the
+                // original ramp at time 𝑡𝑐.
+                // @note - this is done during the actual computation of the
+                //  ramp using the cancel_time
+                if matched.event_type == AudioParamEventType::LinearRampToValueAtTime
+                    || matched.event_type == AudioParamEventType::ExponentialRampToValueAtTime
+                {
+                    matched.cancel_time = Some(event.time);
+                }
+            } else if let Some(matched) = e1 {
+                if matched.event_type == AudioParamEventType::SetTargetAtTime {
+                    // Implicitly insert a setValueAtTime event at time 𝑡𝑐 with
+                    // the value that the setTarget would
+                    // @note - same strategy as for ramps
+                    matched.cancel_time = Some(event.time);
+                } else if matched.event_type == AudioParamEventType::SetValueCurveAtTime {
+                    // If 𝐸1 is a setValueCurve with a start time of 𝑡3 and a duration of 𝑑
+                    // If 𝑡𝑐 <= 𝑡3 + 𝑑 :
+                    // Effectively replace this event with a setValueCurve event
+                    // with a start time of 𝑡3 and a new duration of 𝑡𝑐−𝑡3. However,
+                    // this is not a true replacement; this automation MUST take
+                    // care to produce the same output as the original, and not
+                    // one computed using a different duration. (That would cause
+                    // sampling of the value curve in a slightly different way,
+                    // producing different results.)
+                    let start_time = matched.time;
+                    let duration = matched.duration.unwrap();
 
-                for queued in self.event_timeline.iter() {
-                    if queued.time > start_time && queued.time < end_time {
-                        panic!(
-                            "NotSupportedError: scheduling SetValueCurveAtTime ({:?}) at
+                    if event.time <= start_time + duration {
+                        matched.cancel_time = Some(event.time);
+                    }
+                }
+            }
+
+            // [spec] Remove all events with time greater than 𝑡𝑐.
+            self.event_timeline.retain(|queued| {
+                let mut time = queued.time;
+                // if the event has a `cancel_time` we use it instead of `time`
+                if let Some(cancel_time) = queued.cancel_time {
+                    time = cancel_time;
+                }
+
+                time <= event.time
+            });
+            return; // cancel_and_hold events are not inserted timeline
+        }
+
+        // handle SetValueCurveAtTime
+        // @note - These rules argue in favor of having events inserted in
+        // the control thread, let's panic for now
+        //
+        // [spec] If setValueCurveAtTime() is called for time 𝑇 and duration 𝐷
+        // and there are any events having a time strictly greater than 𝑇, but
+        // strictly less than 𝑇+𝐷, then a NotSupportedError exception MUST be thrown.
+        // In other words, it’s not ok to schedule a value curve during a time period
+        // containing other events, but it’s ok to schedule a value curve exactly
+        // at the time of another event.
+        if event.event_type == AudioParamEventType::SetValueCurveAtTime {
+            // check if we don't try to insert at the time of another event
+            let start_time = event.time;
+            let end_time = start_time + event.duration.unwrap();
+
+            for queued in self.event_timeline.iter() {
+                if queued.time > start_time && queued.time < end_time {
+                    panic!(
+                        "NotSupportedError: scheduling SetValueCurveAtTime ({:?}) at
                             time of another automation event ({:?})",
+                        event, queued,
+                    );
+                }
+            }
+        }
+
+        // [spec] Similarly a NotSupportedError exception MUST be thrown if any
+        // automation method is called at a time which is contained in [𝑇,𝑇+𝐷), 𝑇
+        // being the time of the curve and 𝐷 its duration.
+        // @note - Cancel methods are not automation methods
+        if event.event_type == AudioParamEventType::SetValueAtTime
+            || event.event_type == AudioParamEventType::SetValue
+            || event.event_type == AudioParamEventType::LinearRampToValueAtTime
+            || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime
+            || event.event_type == AudioParamEventType::SetTargetAtTime
+        {
+            for queued in self.event_timeline.iter() {
+                if queued.event_type == AudioParamEventType::SetValueCurveAtTime {
+                    let start_time = queued.time;
+                    let end_time = start_time + queued.duration.unwrap();
+
+                    if event.time > start_time && event.time < end_time {
+                        panic!(
+                            "NotSupportedError: scheduling automation event ({:?})
+                                during SetValueCurveAtTime ({:?})",
                             event, queued,
                         );
                     }
                 }
             }
-
-            // [spec] Similarly a NotSupportedError exception MUST be thrown if any
-            // automation method is called at a time which is contained in [𝑇,𝑇+𝐷), 𝑇
-            // being the time of the curve and 𝐷 its duration.
-            // @note - Cancel methods are not automation methods
-            if event.event_type == AudioParamEventType::SetValueAtTime
-                || event.event_type == AudioParamEventType::SetValue
-                || event.event_type == AudioParamEventType::LinearRampToValueAtTime
-                || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime
-                || event.event_type == AudioParamEventType::SetTargetAtTime
-            {
-                for queued in self.event_timeline.iter() {
-                    if queued.event_type == AudioParamEventType::SetValueCurveAtTime {
-                        let start_time = queued.time;
-                        let end_time = start_time + queued.duration.unwrap();
-
-                        if event.time > start_time && event.time < end_time {
-                            panic!(
-                                "NotSupportedError: scheduling automation event ({:?})
-                                during SetValueCurveAtTime ({:?})",
-                                event, queued,
-                            );
-                        }
-                    }
-                }
-            }
-
-            // handle SetValue - param intrinsic value must be updated from event value
-            if event.event_type == AudioParamEventType::SetValue {
-                self.intrinsic_value = event.value;
-            }
-
-            // If no event in the timeline and event_type is `LinearRampToValueAtTime`
-            // or `ExponentialRampToValue` at time, we must insert a `SetValueAtTime`
-            // with intrinsic value and calling time.
-            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
-            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
-            if self.event_timeline.is_empty()
-                && self.last_event.is_none()
-                && (event.event_type == AudioParamEventType::LinearRampToValueAtTime
-                    || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime)
-            {
-                let set_value_event = AudioParamEvent {
-                    event_type: AudioParamEventType::SetValue,
-                    value: self.intrinsic_value,
-                    // make sure the event is applied before any other event, time
-                    // will be replaced by the block timestamp during event processing
-                    time: 0.,
-                    time_constant: None,
-                    cancel_time: None,
-                    duration: None,
-                    values: None,
-                };
-
-                self.event_timeline.push(set_value_event);
-            }
-
-            // for SetTarget, this behavior is not per se specified, but it allows
-            // to make sure we have a stable start_value available without having
-            // to store it elsewhere.
-            if self.event_timeline.is_empty()
-                && event.event_type == AudioParamEventType::SetTargetAtTime
-            {
-                let set_value_event = AudioParamEvent {
-                    event_type: AudioParamEventType::SetValue,
-                    value: self.intrinsic_value,
-                    // make sure the event is applied before any other event, time
-                    // will be replaced by the block timestamp during event processing
-                    time: 0.,
-                    time_constant: None,
-                    cancel_time: None,
-                    duration: None,
-                    values: None,
-                };
-
-                self.event_timeline.push(set_value_event);
-            }
-
-            self.event_timeline.push(event);
         }
 
+        // handle SetValue - param intrinsic value must be updated from event value
+        if event.event_type == AudioParamEventType::SetValue {
+            self.intrinsic_value = event.value;
+        }
+
+        // If no event in the timeline and event_type is `LinearRampToValueAtTime`
+        // or `ExponentialRampToValue` at time, we must insert a `SetValueAtTime`
+        // with intrinsic value and calling time.
+        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
+        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
+        if self.event_timeline.is_empty()
+            && self.last_event.is_none()
+            && (event.event_type == AudioParamEventType::LinearRampToValueAtTime
+                || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime)
+        {
+            let set_value_event = AudioParamEvent {
+                event_type: AudioParamEventType::SetValue,
+                value: self.intrinsic_value,
+                // make sure the event is applied before any other event, time
+                // will be replaced by the block timestamp during event processing
+                time: 0.,
+                time_constant: None,
+                cancel_time: None,
+                duration: None,
+                values: None,
+            };
+
+            self.event_timeline.push(set_value_event);
+        }
+
+        // for SetTarget, this behavior is not per se specified, but it allows
+        // to make sure we have a stable start_value available without having
+        // to store it elsewhere.
+        if self.event_timeline.is_empty()
+            && event.event_type == AudioParamEventType::SetTargetAtTime
+        {
+            let set_value_event = AudioParamEvent {
+                event_type: AudioParamEventType::SetValue,
+                value: self.intrinsic_value,
+                // make sure the event is applied before any other event, time
+                // will be replaced by the block timestamp during event processing
+                time: 0.,
+                time_constant: None,
+                cancel_time: None,
+                duration: None,
+                values: None,
+            };
+
+            self.event_timeline.push(set_value_event);
+        }
+
+        self.event_timeline.push(event);
         self.event_timeline.sort();
     }
 
@@ -1562,10 +1554,6 @@ pub(crate) fn audio_param_pair(
     descriptor: AudioParamDescriptor,
     registration: AudioContextRegistration,
 ) -> (AudioParam, AudioParamProcessor) {
-    // TODO, use a bounded channel. We can't do this currently because the render thread uses the
-    // `sender` part of this channel when handling the AudioParamEvent control message.
-    let (sender, receiver) = crossbeam_channel::unbounded();
-
     let AudioParamDescriptor {
         automation_rate,
         default_value,
@@ -1583,13 +1571,11 @@ pub(crate) fn audio_param_pair(
             min_value,
             automation_rate_constrained: false,
             shared_parts: Arc::clone(&shared_parts),
-            sender,
         },
     };
 
     let processor = AudioParamProcessor {
         intrinsic_value: default_value,
-        receiver,
         default_value,
         min_value,
         max_value,

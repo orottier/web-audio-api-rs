@@ -108,9 +108,6 @@ impl RenderThread {
                 FreeWhenFinished { id } => {
                     self.graph.as_mut().unwrap().mark_free_when_finished(id);
                 }
-                AudioParamEvent { to, event } => {
-                    to.send(event).expect("Audioparam disappeared unexpectedly")
-                }
                 MarkCycleBreaker { id } => {
                     self.graph.as_mut().unwrap().mark_cycle_breaker(id);
                 }
@@ -121,6 +118,9 @@ impl RenderThread {
                 }
                 Startup { graph } => {
                     self.graph = Some(graph);
+                }
+                NodeMessage { id, msg } => {
+                    self.graph.as_mut().unwrap().route_message(id, msg);
                 }
             }
         }
