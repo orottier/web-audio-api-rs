@@ -1,4 +1,3 @@
-use crossbeam_channel::{self, Receiver, Sender};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -121,11 +120,9 @@ pub struct OscillatorNode {
     /// A detuning value (in cents) which will offset the frequency by the given amount.
     detune: AudioParam,
     /// Waveform of an oscillator
-    type_: Arc<AtomicU32>,
+    shared_type_: Arc<AtomicU32>,
     /// starts and stops Oscillator audio streams
     scheduler: Scheduler,
-    /// channel between control and renderer parts (sender part)
-    sender: Sender<PeriodicWave>,
 }
 
 impl AudioNode for OscillatorNode {
@@ -208,17 +205,16 @@ impl OscillatorNode {
             let (det_param, det_proc) = context.create_audio_param(det_param_opts, &registration);
             det_param.set_value(detune);
 
-            let type_ = Arc::new(AtomicU32::new(type_ as u32));
+            let shared_type_ = Arc::new(AtomicU32::new(type_ as u32));
 
             let scheduler = Scheduler::new();
-            let (sender, receiver) = crossbeam_channel::bounded(1);
 
             let renderer = OscillatorRenderer {
-                type_: type_.clone(),
+                type_,
+                shared_type_: shared_type_.clone(),
                 frequency: f_proc,
                 detune: det_proc,
                 scheduler: scheduler.clone(),
-                receiver,
                 phase: 0.,
                 started: false,
                 periodic_wave: None,
@@ -230,9 +226,8 @@ impl OscillatorNode {
                 channel_config: channel_config.into(),
                 frequency: f_param,
                 detune: det_param,
-                type_,
+                shared_type_,
                 scheduler,
-                sender,
             };
 
             // if periodic wave has been given, init it
@@ -267,7 +262,7 @@ impl OscillatorNode {
     /// Returns the oscillator type
     #[must_use]
     pub fn type_(&self) -> OscillatorType {
-        self.type_.load(Ordering::SeqCst).into()
+        self.shared_type_.load(Ordering::Acquire).into()
     }
 
     /// Set the oscillator type
@@ -287,11 +282,11 @@ impl OscillatorNode {
         );
 
         // if periodic wave has been set specified, type_ changes are ignored
-        if self.type_.load(Ordering::SeqCst) == OscillatorType::Custom as u32 {
+        if self.shared_type_.load(Ordering::Acquire) == OscillatorType::Custom as u32 {
             return;
         }
 
-        self.type_.store(type_ as u32, Ordering::SeqCst);
+        self.registration.send_message(Box::new(type_));
     }
 
     /// Sets a `PeriodicWave` which describes a waveform to be used by the oscillator.
@@ -299,27 +294,27 @@ impl OscillatorNode {
     /// Calling this sets the oscillator type to `custom`, once set to `custom`
     /// the oscillator cannot be reverted back to a standard waveform.
     pub fn set_periodic_wave(&self, periodic_wave: PeriodicWave) {
-        self.type_
-            .store(OscillatorType::Custom as u32, Ordering::SeqCst);
+        // Already store the oscillator type, so you can't call set_type with conflicting settings
+        // immediately after this call.
+        self.shared_type_
+            .store(OscillatorType::Custom as u32, Ordering::Release);
 
-        self.sender
-            .send(periodic_wave)
-            .expect("Sending periodic wave to the node renderer failed");
+        self.registration.send_message(Box::new(periodic_wave));
     }
 }
 
 /// Rendering component of the oscillator node
 struct OscillatorRenderer {
     /// The shape of the periodic waveform
-    type_: Arc<AtomicU32>,
+    type_: OscillatorType,
+    /// The shape of the periodic waveform (shared with control thread)
+    shared_type_: Arc<AtomicU32>,
     /// The frequency of the fundamental frequency.
     frequency: AudioParamId,
     /// A detuning value (in cents) which will offset the frequency by the given amount.
     detune: AudioParamId,
     /// starts and stops oscillator audio streams
     scheduler: Scheduler,
-    /// channel between control and renderer parts (receiver part)
-    receiver: Receiver<PeriodicWave>,
     /// current phase of the oscillator
     phase: f64,
     /// defines if the oscillator has started
@@ -342,11 +337,6 @@ impl AudioProcessor for OscillatorRenderer {
         let output = &mut outputs[0];
         // 1 channel output
         output.set_number_of_channels(1);
-
-        // check if any message was send from the control thread
-        if let Ok(periodic_wave) = self.receiver.try_recv() {
-            self.periodic_wave = Some(periodic_wave);
-        }
 
         let sample_rate = scope.sample_rate as f64;
         let dt = 1. / sample_rate;
@@ -372,7 +362,6 @@ impl AudioProcessor for OscillatorRenderer {
             return false;
         }
 
-        let type_ = self.type_.load(Ordering::SeqCst).into();
         let channel_data = output.channel_data_mut(0);
         let frequency_values = params.get(&self.frequency);
         let detune_values = params.get(&self.detune);
@@ -422,7 +411,7 @@ impl AudioProcessor for OscillatorRenderer {
                 // wavetable, define if it worth the assle...
                 // e.g. for now `generate_sine` and `generate_custom` are almost the sames
                 // cf. https://webaudio.github.io/web-audio-api/#oscillator-coefficients
-                *o = match type_ {
+                *o = match self.type_ {
                     OscillatorType::Sine => self.generate_sine(),
                     OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
                     OscillatorType::Square => self.generate_square(phase_incr),
@@ -436,6 +425,22 @@ impl AudioProcessor for OscillatorRenderer {
             });
 
         true
+    }
+
+    fn handle_message(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
+        if let Some(type_) = msg.downcast_ref::<OscillatorType>() {
+            self.shared_type_.store(*type_ as u32, Ordering::Release);
+            self.type_ = *type_;
+            return;
+        }
+
+        if let Ok(periodic_wave) = msg.downcast::<PeriodicWave>() {
+            self.periodic_wave = Some(*periodic_wave);
+            self.type_ = OscillatorType::Custom; // shared type is already updated by control
+            return;
+        }
+
+        log::warn!("OscillatorRenderer: Ignoring incoming message");
     }
 }
 
@@ -566,8 +571,7 @@ mod tests {
         let det = osc.detune.value();
         assert_float_eq!(det, default_det, abs_all <= 0.);
 
-        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(type_, default_type as u32);
+        assert_eq!(osc.type_(), default_type);
     }
 
     #[test]
@@ -586,8 +590,7 @@ mod tests {
         let det = osc.detune.value();
         assert_float_eq!(det, default_det, abs_all <= 0.);
 
-        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(type_, default_type as u32);
+        assert_eq!(osc.type_(), default_type);
     }
 
     #[test]
@@ -613,8 +616,7 @@ mod tests {
 
         let osc = OscillatorNode::new(&context, options);
 
-        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(type_, expected_type as u32);
+        assert_eq!(osc.type_(), expected_type);
     }
 
     #[test]
@@ -633,9 +635,7 @@ mod tests {
         let osc = OscillatorNode::new(&context, options);
 
         osc.set_type(OscillatorType::Sine);
-
-        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(type_, expected_type as u32);
+        assert_eq!(osc.type_(), expected_type);
     }
 
     // # Test waveforms
@@ -914,7 +914,6 @@ mod tests {
             osc.connect(&context.destination());
             osc.set_periodic_wave(periodic_wave);
             osc.frequency().set_value(freq);
-            osc.set_type(OscillatorType::Sawtooth);
             osc.start_at(0.);
 
             let output = context.start_rendering_sync();
