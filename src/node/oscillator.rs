@@ -286,7 +286,7 @@ impl OscillatorNode {
             return;
         }
 
-        self.registration.send_message(Box::new(type_));
+        self.registration.post_message(Box::new(type_));
     }
 
     /// Sets a `PeriodicWave` which describes a waveform to be used by the oscillator.
@@ -299,7 +299,7 @@ impl OscillatorNode {
         self.shared_type_
             .store(OscillatorType::Custom as u32, Ordering::Release);
 
-        self.registration.send_message(Box::new(periodic_wave));
+        self.registration.post_message(Box::new(periodic_wave));
     }
 }
 
@@ -427,7 +427,7 @@ impl AudioProcessor for OscillatorRenderer {
         true
     }
 
-    fn handle_message(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
+    fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
         if let Some(type_) = msg.downcast_ref::<OscillatorType>() {
             self.shared_type_.store(*type_ as u32, Ordering::Release);
             self.type_ = *type_;

@@ -103,10 +103,10 @@ pub trait AudioProcessor: Send {
     ///
     /// By overriding this method you can add a handler for messages sent from the control thread
     /// via
-    /// [`AudioContextRegistration::send_message`](crate::context::AudioContextRegistration::send_message).
+    /// [`AudioContextRegistration::post_message`](crate::context::AudioContextRegistration::post_message).
     /// This will not be necessary for most processors.
     #[allow(unused_variables)]
-    fn handle_message(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
+    fn onmessage(&mut self, msg: Box<dyn Any + Send + 'static>) {
         log::warn!("Ignoring incoming message");
     }
 }

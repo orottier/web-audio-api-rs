@@ -200,7 +200,7 @@ impl Graph {
             .unwrap()
             .get_mut()
             .processor
-            .handle_message(msg);
+            .onmessage(msg);
     }
 
     /// Helper function for `order_nodes` - traverse node and outgoing edges

@@ -553,7 +553,7 @@ impl AudioParam {
     }
 
     fn send_event(&self, event: AudioParamEvent) {
-        self.registration().send_message(Box::new(event));
+        self.registration().post_message(Box::new(event));
     }
 }
 
@@ -629,7 +629,7 @@ impl AudioProcessor for AudioParamProcessor {
         true // has intrinsic value
     }
 
-    fn handle_message(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
+    fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
         match msg.downcast::<AudioParamEvent>() {
             Ok(event) => self.handle_incoming_event(*event),
             _ => log::warn!("AudioParamProcessor: Ignoring incoming message"),
