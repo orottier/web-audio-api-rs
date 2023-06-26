@@ -1,5 +1,4 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::RENDER_QUANTUM_SIZE;
@@ -19,6 +18,13 @@ impl Default for ConstantSourceOptions {
     fn default() -> Self {
         Self { offset: 1. }
     }
+}
+
+/// Instructions to start or stop processing
+#[derive(Debug, Copy, Clone)]
+enum Schedule {
+    Start(f64),
+    Stop(f64),
 }
 
 /// Audio source whose output is nominally a constant value. A `ConstantSourceNode`
@@ -59,7 +65,6 @@ pub struct ConstantSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     offset: AudioParam,
-    scheduler: Scheduler,
 }
 
 impl AudioNode for ConstantSourceNode {
@@ -87,7 +92,8 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
     }
 
     fn start_at(&self, when: f64) {
-        self.scheduler.start_at(when);
+        self.registration
+            .post_message(Box::new(Schedule::Start(when)));
     }
 
     fn stop(&self) {
@@ -96,7 +102,8 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
     }
 
     fn stop_at(&self, when: f64) {
-        self.scheduler.stop_at(when);
+        self.registration
+            .post_message(Box::new(Schedule::Stop(when)));
     }
 }
 
@@ -112,11 +119,10 @@ impl ConstantSourceNode {
             let (param, proc) = context.create_audio_param(param_opts, &registration);
             param.set_value(options.offset);
 
-            let scheduler = Scheduler::new();
-
             let render = ConstantSourceRenderer {
                 offset: proc,
-                scheduler: scheduler.clone(),
+                start_time: f64::MAX,
+                stop_time: f64::MAX,
                 ended_triggered: false,
             };
 
@@ -124,7 +130,6 @@ impl ConstantSourceNode {
                 registration,
                 channel_config: ChannelConfig::default(),
                 offset: param,
-                scheduler,
             };
 
             (node, Box::new(render))
@@ -138,7 +143,8 @@ impl ConstantSourceNode {
 
 struct ConstantSourceRenderer {
     offset: AudioParamId,
-    scheduler: Scheduler,
+    start_time: f64,
+    stop_time: f64,
     ended_triggered: bool,
 }
 
@@ -156,10 +162,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         let dt = 1. / scope.sample_rate as f64;
         let next_block_time = scope.current_time + dt * RENDER_QUANTUM_SIZE as f64;
 
-        let start_time = self.scheduler.get_start_at();
-        let stop_time = self.scheduler.get_stop_at();
-
-        if start_time >= next_block_time {
+        if self.start_time >= next_block_time {
             output.make_silent();
             return true;
         }
@@ -174,7 +177,7 @@ impl AudioProcessor for ConstantSourceRenderer {
             .iter_mut()
             .zip(offset.iter().cycle())
             .for_each(|(o, &value)| {
-                if current_time < start_time || current_time >= stop_time {
+                if current_time < self.start_time || current_time >= self.stop_time {
                     *o = 0.;
                 } else {
                     // as we pick values directly from the offset param which is already
@@ -187,7 +190,7 @@ impl AudioProcessor for ConstantSourceRenderer {
             });
 
         // tail_time false when output has ended this quantum
-        let still_running = stop_time >= next_block_time;
+        let still_running = self.stop_time >= next_block_time;
 
         if !still_running {
             // @note: we need this check because this is called a until the program
@@ -199,6 +202,17 @@ impl AudioProcessor for ConstantSourceRenderer {
         }
 
         still_running
+    }
+
+    fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
+        if let Ok(schedule) = msg.downcast::<Schedule>() {
+            match *schedule {
+                Schedule::Start(v) => self.start_time = v,
+                Schedule::Stop(v) => self.stop_time = v,
+            }
+        }
+
+        log::warn!("ConstantSourceRenderer: Ignoring incoming message");
     }
 }
 
