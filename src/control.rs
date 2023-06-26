@@ -8,39 +8,49 @@ use crate::AtomicF64;
 /// Helper struct to start and stop audio streams
 #[derive(Clone, Debug)]
 pub(crate) struct Scheduler {
-    start: Arc<AtomicF64>,
-    stop: Arc<AtomicF64>,
+    inner: Arc<SchedulerInner>,
 }
 
+#[derive(Debug)]
+struct SchedulerInner {
+    start: AtomicF64,
+    stop: AtomicF64,
+}
+
+// Uses the canonical ordering for handover of values, i.e. `Acquire` on load and `Release` on
+// store.
 impl Scheduler {
     /// Create a new Scheduler. Initial playback state will be: inactive.
     pub fn new() -> Self {
+        let inner = SchedulerInner {
+            start: AtomicF64::new(f64::MAX),
+            stop: AtomicF64::new(f64::MAX),
+        };
         Self {
-            start: Arc::new(AtomicF64::new(f64::MAX)),
-            stop: Arc::new(AtomicF64::new(f64::MAX)),
+            inner: Arc::new(inner),
         }
     }
 
     /// Retrieve playback start value
     pub fn get_start_at(&self) -> f64 {
-        self.start.load(Ordering::SeqCst)
+        self.inner.start.load(Ordering::Acquire)
     }
 
     /// Schedule playback start at this timestamp
     pub fn start_at(&self, start: f64) {
         // todo panic on invalid values, or when already called
-        self.start.store(start, Ordering::SeqCst);
+        self.inner.start.store(start, Ordering::Release);
     }
 
     /// Retrieve playback stop value
     pub fn get_stop_at(&self) -> f64 {
-        self.stop.load(Ordering::SeqCst)
+        self.inner.stop.load(Ordering::Acquire)
     }
 
     /// Stop playback at this timestamp
     pub fn stop_at(&self, stop: f64) {
         // todo panic on invalid values, or when already called
-        self.stop.store(stop, Ordering::SeqCst);
+        self.inner.stop.store(stop, Ordering::Release);
     }
 }
 
@@ -53,69 +63,80 @@ impl Default for Scheduler {
 /// Helper struct to control audio streams
 #[derive(Clone, Debug)]
 pub(crate) struct Controller {
-    scheduler: Arc<Scheduler>,
-    loop_: Arc<AtomicBool>,
-    loop_start: Arc<AtomicF64>,
-    loop_end: Arc<AtomicF64>,
-    offset: Arc<AtomicF64>,
-    duration: Arc<AtomicF64>,
+    inner: Arc<ControllerInner>,
 }
 
+#[derive(Debug)]
+struct ControllerInner {
+    scheduler: Scheduler,
+    loop_: AtomicBool,
+    loop_start: AtomicF64,
+    loop_end: AtomicF64,
+    offset: AtomicF64,
+    duration: AtomicF64,
+}
+
+// Uses the canonical ordering for handover of values, i.e. `Acquire` on load and `Release` on
+// store.
 impl Controller {
     /// Create a new Controller. It will not be active
     pub fn new() -> Self {
+        let inner = ControllerInner {
+            scheduler: Scheduler::new(),
+            loop_: AtomicBool::new(false),
+            loop_start: AtomicF64::new(0.),
+            loop_end: AtomicF64::new(f64::MAX),
+            offset: AtomicF64::new(f64::MAX),
+            duration: AtomicF64::new(f64::MAX),
+        };
+
         Self {
-            scheduler: Arc::new(Scheduler::new()),
-            loop_: Arc::new(AtomicBool::new(false)),
-            loop_start: Arc::new(AtomicF64::new(0.)),
-            loop_end: Arc::new(AtomicF64::new(f64::MAX)),
-            offset: Arc::new(AtomicF64::new(f64::MAX)),
-            duration: Arc::new(AtomicF64::new(f64::MAX)),
+            inner: Arc::new(inner),
         }
     }
 
     pub fn scheduler(&self) -> &Scheduler {
-        &self.scheduler
+        &self.inner.scheduler
     }
 
     pub fn loop_(&self) -> bool {
-        self.loop_.load(Ordering::SeqCst)
+        self.inner.loop_.load(Ordering::Acquire)
     }
 
     pub fn set_loop(&self, loop_: bool) {
-        self.loop_.store(loop_, Ordering::SeqCst);
+        self.inner.loop_.store(loop_, Ordering::Release);
     }
 
     pub fn loop_start(&self) -> f64 {
-        self.loop_start.load(Ordering::SeqCst)
+        self.inner.loop_start.load(Ordering::Acquire)
     }
 
     pub fn set_loop_start(&self, loop_start: f64) {
-        self.loop_start.store(loop_start, Ordering::SeqCst);
+        self.inner.loop_start.store(loop_start, Ordering::Release);
     }
 
     pub fn loop_end(&self) -> f64 {
-        self.loop_end.load(Ordering::SeqCst)
+        self.inner.loop_end.load(Ordering::Acquire)
     }
 
     pub fn set_loop_end(&self, loop_end: f64) {
-        self.loop_end.store(loop_end, Ordering::SeqCst);
+        self.inner.loop_end.store(loop_end, Ordering::Release);
     }
 
     pub fn offset(&self) -> f64 {
-        self.offset.load(Ordering::SeqCst)
+        self.inner.offset.load(Ordering::Acquire)
     }
 
     pub fn set_offset(&self, offset: f64) {
-        self.offset.store(offset, Ordering::SeqCst);
+        self.inner.offset.store(offset, Ordering::Release);
     }
 
     pub fn duration(&self) -> f64 {
-        self.duration.load(Ordering::SeqCst)
+        self.inner.duration.load(Ordering::Acquire)
     }
 
     pub fn set_duration(&self, duration: f64) {
-        self.duration.store(duration, Ordering::SeqCst)
+        self.inner.duration.store(duration, Ordering::Release)
     }
 }
 
