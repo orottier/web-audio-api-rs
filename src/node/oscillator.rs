@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::periodic_wave::PeriodicWave;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
@@ -81,6 +80,13 @@ impl From<u32> for OscillatorType {
     }
 }
 
+/// Instructions to start or stop processing
+#[derive(Debug, Copy, Clone)]
+enum Schedule {
+    Start(f64),
+    Stop(f64),
+}
+
 /// `OscillatorNode` represents an audio source generating a periodic waveform.
 /// It can generate a few common waveforms (i.e. sine, square, sawtooth, triangle),
 /// or can be set to an arbitrary periodic waveform using a [`PeriodicWave`] object.
@@ -121,8 +127,6 @@ pub struct OscillatorNode {
     detune: AudioParam,
     /// Waveform of an oscillator
     shared_type_: Arc<AtomicU32>,
-    /// starts and stops Oscillator audio streams
-    scheduler: Scheduler,
 }
 
 impl AudioNode for OscillatorNode {
@@ -152,7 +156,8 @@ impl AudioScheduledSourceNode for OscillatorNode {
     }
 
     fn start_at(&self, when: f64) {
-        self.scheduler.start_at(when);
+        self.registration
+            .post_message(Box::new(Schedule::Start(when)));
     }
 
     fn stop(&self) {
@@ -161,7 +166,8 @@ impl AudioScheduledSourceNode for OscillatorNode {
     }
 
     fn stop_at(&self, when: f64) {
-        self.scheduler.stop_at(when);
+        self.registration
+            .post_message(Box::new(Schedule::Stop(when)));
     }
 }
 
@@ -207,15 +213,14 @@ impl OscillatorNode {
 
             let shared_type_ = Arc::new(AtomicU32::new(type_ as u32));
 
-            let scheduler = Scheduler::new();
-
             let renderer = OscillatorRenderer {
                 type_,
                 shared_type_: shared_type_.clone(),
                 frequency: f_proc,
                 detune: det_proc,
-                scheduler: scheduler.clone(),
                 phase: 0.,
+                start_time: f64::MAX,
+                stop_time: f64::MAX,
                 started: false,
                 periodic_wave: None,
                 ended_triggered: false,
@@ -227,7 +232,6 @@ impl OscillatorNode {
                 frequency: f_param,
                 detune: det_param,
                 shared_type_,
-                scheduler,
             };
 
             // if periodic wave has been given, init it
@@ -313,10 +317,12 @@ struct OscillatorRenderer {
     frequency: AudioParamId,
     /// A detuning value (in cents) which will offset the frequency by the given amount.
     detune: AudioParamId,
-    /// starts and stops oscillator audio streams
-    scheduler: Scheduler,
     /// current phase of the oscillator
     phase: f64,
+    /// start time
+    start_time: f64,
+    /// end time
+    stop_time: f64,
     /// defines if the oscillator has started
     started: bool,
     /// wavetable placeholder for custom oscillators
@@ -343,13 +349,10 @@ impl AudioProcessor for OscillatorRenderer {
         let num_frames = RENDER_QUANTUM_SIZE;
         let next_block_time = scope.current_time + dt * num_frames as f64;
 
-        let mut start_time = self.scheduler.get_start_at();
-        let stop_time = self.scheduler.get_stop_at();
-
-        if start_time >= next_block_time {
+        if self.start_time >= next_block_time {
             output.make_silent();
             return true;
-        } else if stop_time < scope.current_time {
+        } else if self.stop_time < scope.current_time {
             output.make_silent();
 
             // @note: we need this check because this is called a until the program
@@ -373,8 +376,8 @@ impl AudioProcessor for OscillatorRenderer {
         // [spec] If 0 is passed in for this value or if the value is less than
         // currentTime, then the sound will start playing immediately
         // cf. https://webaudio.github.io/web-audio-api/#dom-audioscheduledsourcenode-start-when-when
-        if !self.started && start_time < current_time {
-            start_time = current_time;
+        if !self.started && self.start_time < current_time {
+            self.start_time = current_time;
         }
 
         channel_data
@@ -382,7 +385,7 @@ impl AudioProcessor for OscillatorRenderer {
             .zip(frequency_values.iter().cycle())
             .zip(detune_values.iter().cycle())
             .for_each(|((o, &frequency), &detune)| {
-                if current_time < start_time || current_time >= stop_time {
+                if current_time < self.start_time || current_time >= self.stop_time {
                     *o = 0.;
                     current_time += dt;
 
@@ -396,9 +399,9 @@ impl AudioProcessor for OscillatorRenderer {
                 if !self.started {
                     // if start time was between last frame and current frame
                     // we need to adjust the phase first
-                    if current_time > start_time {
+                    if current_time > self.start_time {
                         let phase_incr = computed_frequency as f64 / sample_rate;
-                        let ratio = (current_time - start_time) / dt;
+                        let ratio = (current_time - self.start_time) / dt;
                         self.phase = Self::unroll_phase(phase_incr * ratio);
                     }
 
@@ -431,6 +434,14 @@ impl AudioProcessor for OscillatorRenderer {
         if let Some(&type_) = msg.downcast_ref::<OscillatorType>() {
             self.shared_type_.store(type_ as u32, Ordering::Release);
             self.type_ = type_;
+            return;
+        }
+
+        if let Some(&schedule) = msg.downcast_ref::<Schedule>() {
+            match schedule {
+                Schedule::Start(v) => self.start_time = v,
+                Schedule::Stop(v) => self.stop_time = v,
+            }
             return;
         }
 
