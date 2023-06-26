@@ -268,7 +268,7 @@ impl AudioParam {
             panic!("InvalidStateError: automation rate cannot be changed for this param");
         }
 
-        self.raw_parts.shared_parts.store_automation_rate(value);
+        self.registration().post_message(Box::new(value));
     }
 
     pub(crate) fn set_automation_rate_constrained(&mut self, value: bool) {
@@ -604,6 +604,7 @@ pub(crate) struct AudioParamProcessor {
     min_value: f32,     // immutable
     max_value: f32,     // immutable
     intrinsic_value: f32,
+    automation_rate: AutomationRate,
     shared_parts: Arc<AudioParamShared>,
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
@@ -630,6 +631,12 @@ impl AudioProcessor for AudioParamProcessor {
     }
 
     fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
+        if let Some(&automation_rate) = msg.downcast_ref::<AutomationRate>() {
+            self.automation_rate = automation_rate;
+            self.shared_parts.store_automation_rate(automation_rate);
+            return;
+        }
+
         match msg.downcast::<AudioParamEvent>() {
             Ok(event) => self.handle_incoming_event(*event),
             _ => log::warn!("AudioParamProcessor: Ignoring incoming message"),
@@ -1012,8 +1019,7 @@ impl AudioParamProcessor {
         // clear the buffer for this block
         self.buffer.clear();
 
-        let automation_rate = self.shared_parts.load_automation_rate();
-        let is_a_rate = automation_rate.is_a_rate();
+        let is_a_rate = self.automation_rate.is_a_rate();
         let is_k_rate = !is_a_rate;
 
         let next_block_time = dt.mul_add(count as f64, block_time);
@@ -1579,6 +1585,7 @@ pub(crate) fn audio_param_pair(
         default_value,
         min_value,
         max_value,
+        automation_rate,
         shared_parts,
         event_timeline: AudioParamEventTimeline::new(),
         last_event: None,
