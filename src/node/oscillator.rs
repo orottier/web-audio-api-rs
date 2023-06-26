@@ -428,9 +428,9 @@ impl AudioProcessor for OscillatorRenderer {
     }
 
     fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        if let Some(type_) = msg.downcast_ref::<OscillatorType>() {
-            self.shared_type_.store(*type_ as u32, Ordering::Release);
-            self.type_ = *type_;
+        if let Some(&type_) = msg.downcast_ref::<OscillatorType>() {
+            self.shared_type_.store(type_ as u32, Ordering::Release);
+            self.type_ = type_;
             return;
         }
 
