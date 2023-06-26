@@ -1,10 +1,11 @@
 use crossbeam_channel::{Receiver, Sender};
 use once_cell::sync::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::control::Controller;
+use crate::control::{Controller, ControllerShared};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::RENDER_QUANTUM_SIZE;
@@ -51,6 +52,16 @@ struct PlaybackInfo {
     k: f32,
 }
 
+/// Instructions to start or stop processing
+#[derive(Debug, Copy, Clone)]
+enum Control {
+    StartWithOffsetAndDuration(f64, f64, f64),
+    Stop(f64),
+    Loop(bool),
+    LoopStart(f64),
+    LoopEnd(f64),
+}
+
 /// `AudioBufferSourceNode` represents an audio source that consists of an
 /// in-memory audio source (i.e. an audio file completely loaded in memory),
 /// stored in an [`AudioBuffer`].
@@ -85,7 +96,7 @@ struct PlaybackInfo {
 ///
 pub struct AudioBufferSourceNode {
     registration: AudioContextRegistration,
-    controller: Controller,
+    controller_shared: Arc<ControllerShared>,
     channel_config: ChannelConfig,
     sender: Sender<AudioBufferMessage>,
     detune: AudioParam,        // has constraints, no a-rate
@@ -132,7 +143,8 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
             panic!("InvalidStateError cannot stop before start");
         }
 
-        self.controller.scheduler().stop_at(when);
+        self.registration
+            .post_message(Box::new(Control::Stop(when)));
     }
 }
 
@@ -178,10 +190,18 @@ impl AudioBufferSourceNode {
             // A capacity of 1 suffices since it is not allowed to set the value multiple times
             let (sender, receiver) = crossbeam_channel::bounded(1);
 
-            let controller = Controller::new();
+            let mut controller = Controller::default();
+            controller.set_loop(loop_);
+            controller.set_loop_start(loop_start);
+            controller.set_loop_end(loop_end);
+            let controller_shared = controller.shared();
 
             let renderer = AudioBufferSourceRenderer {
-                controller: controller.clone(),
+                start_time: f64::MAX,
+                stop_time: f64::MAX,
+                duration: f64::MAX,
+                offset: 0.,
+                controller,
                 receiver,
                 buffer: None,
                 detune: d_proc,
@@ -192,7 +212,7 @@ impl AudioBufferSourceNode {
 
             let node = Self {
                 registration,
-                controller,
+                controller_shared,
                 channel_config: ChannelConfig::default(),
                 sender,
                 detune: d_param,
@@ -200,10 +220,6 @@ impl AudioBufferSourceNode {
                 buffer: OnceCell::new(),
                 source_started: AtomicBool::new(false),
             };
-
-            node.controller.set_loop(loop_);
-            node.controller.set_loop_start(loop_start);
-            node.controller.set_loop_end(loop_end);
 
             if let Some(buf) = buffer {
                 node.set_buffer(buf);
@@ -232,9 +248,8 @@ impl AudioBufferSourceNode {
             panic!("InvalidStateError: Cannot call `start` twice");
         }
 
-        self.controller.set_offset(offset);
-        self.controller.set_duration(duration);
-        self.controller.scheduler().start_at(start);
+        let control = Control::StartWithOffsetAndDuration(start, offset, duration);
+        self.registration.post_message(Box::new(control));
     }
 
     /// Current buffer value (nullable)
@@ -280,29 +295,32 @@ impl AudioBufferSourceNode {
 
     /// Defines if the playback the [`AudioBuffer`] should be looped
     pub fn loop_(&self) -> bool {
-        self.controller.loop_()
+        self.controller_shared.loop_()
     }
 
     pub fn set_loop(&self, value: bool) {
-        self.controller.set_loop(value);
+        self.registration
+            .post_message(Box::new(Control::Loop(value)));
     }
 
     /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
     pub fn loop_start(&self) -> f64 {
-        self.controller.loop_start()
+        self.controller_shared.loop_start()
     }
 
     pub fn set_loop_start(&self, value: f64) {
-        self.controller.set_loop_start(value);
+        self.registration
+            .post_message(Box::new(Control::LoopStart(value)));
     }
 
     /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
     pub fn loop_end(&self) -> f64 {
-        self.controller.loop_end()
+        self.controller_shared.loop_end()
     }
 
     pub fn set_loop_end(&self, value: f64) {
-        self.controller.set_loop_end(value);
+        self.registration
+            .post_message(Box::new(Control::LoopEnd(value)));
     }
 }
 
@@ -327,6 +345,10 @@ impl Default for AudioBufferRendererState {
 }
 
 struct AudioBufferSourceRenderer {
+    start_time: f64,
+    stop_time: f64,
+    offset: f64,
+    duration: f64,
     controller: Controller,
     receiver: Receiver<AudioBufferMessage>,
     buffer: Option<AudioBuffer>,
@@ -357,10 +379,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         }
 
         // grab all timing information
-        let mut start_time = self.controller.scheduler().get_start_at();
-        let stop_time = self.controller.scheduler().get_stop_at();
-        let mut offset = self.controller.offset();
-        let duration = self.controller.duration();
         let loop_ = self.controller.loop_();
         let loop_start = self.controller.loop_start();
         let loop_end = self.controller.loop_end();
@@ -370,7 +388,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let mut actual_loop_end = 0.;
 
         // return early if start_time is beyond this block
-        if start_time >= next_block_time {
+        if self.start_time >= next_block_time {
             output.make_silent();
             return true;
         }
@@ -403,7 +421,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         // 1. the stop time has been reached.
         // 2. the duration has been reached.
-        if scope.current_time >= stop_time || self.render_state.buffer_time_elapsed >= duration {
+        if scope.current_time >= self.stop_time
+            || self.render_state.buffer_time_elapsed >= self.duration
+        {
             output.make_silent(); // also converts to mono
 
             // @note: we need this check because this is called a until the program
@@ -446,8 +466,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // If 0 is passed in for this value or if the value is less than
         // currentTime, then the sound will start playing immediately
         // cf. https://webaudio.github.io/web-audio-api/#dom-audioscheduledsourcenode-start-when-when
-        if !self.render_state.started && start_time < current_time {
-            start_time = current_time;
+        if !self.render_state.started && self.start_time < current_time {
+            self.start_time = current_time;
         }
 
         // Define if we can avoid the resampling interpolation in some common cases,
@@ -457,7 +477,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // - the AudioBuffer was decoded w/ the right sample rate
         // - no detune or playback_rate changes are made
         // - loop boundaries have not been changed
-        if start_time == current_time && offset == 0. {
+        if self.start_time == current_time && self.offset == 0. {
             self.render_state.is_aligned = true;
         }
 
@@ -472,7 +492,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         //
         // by default loop_end is 0., see AudioBufferSourceOptions
         // but loop_start = 0 && loop_end = buffer.duration should go to fast track
-        if loop_start != 0. || (loop_end != 0. && loop_end != duration) {
+        if loop_start != 0. || (loop_end != 0. && loop_end != self.duration) {
             self.render_state.is_aligned = false;
         }
 
@@ -480,21 +500,21 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // Fast track
         // ---------------------------------------------------------------
         if self.render_state.is_aligned {
-            if start_time == current_time {
+            if self.start_time == current_time {
                 self.render_state.started = true;
             }
 
             // check if buffer ends within this block
             if self.render_state.buffer_time + block_duration > buffer_duration
-                || self.render_state.buffer_time + block_duration > duration
-                || current_time + block_duration > stop_time
+                || self.render_state.buffer_time + block_duration > self.duration
+                || current_time + block_duration > self.stop_time
             {
                 let buffer_time = self.render_state.buffer_time;
-                let end_index = if current_time + block_duration > stop_time
-                    || self.render_state.buffer_time + block_duration > duration
+                let end_index = if current_time + block_duration > self.stop_time
+                    || self.render_state.buffer_time + block_duration > self.duration
                 {
-                    let dt =
-                        (stop_time - current_time).min(duration - self.render_state.buffer_time);
+                    let dt = (self.stop_time - current_time)
+                        .min(self.duration - self.render_state.buffer_time);
                     let end_buffer_time = self.render_state.buffer_time + dt;
                     (end_buffer_time * sample_rate).round() as usize
                 } else {
@@ -588,9 +608,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         // compute position for each sample and store into `self.positions`
         for playback_info in playback_infos.iter_mut() {
-            if current_time < start_time
-                || current_time >= stop_time
-                || self.render_state.buffer_time_elapsed >= duration
+            if current_time < self.start_time
+                || current_time >= self.stop_time
+                || self.render_state.buffer_time_elapsed >= self.duration
             {
                 *playback_info = None;
                 current_time += dt;
@@ -600,24 +620,24 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
             // we have now reached start time
             if !self.render_state.started {
-                offset += current_time - start_time;
+                self.offset += current_time - self.start_time;
 
-                if loop_ && computed_playback_rate >= 0. && offset >= actual_loop_end {
-                    offset = actual_loop_end;
+                if loop_ && computed_playback_rate >= 0. && self.offset >= actual_loop_end {
+                    self.offset = actual_loop_end;
                 }
 
-                if loop_ && computed_playback_rate < 0. && offset < actual_loop_start {
-                    offset = actual_loop_start;
+                if loop_ && computed_playback_rate < 0. && self.offset < actual_loop_start {
+                    self.offset = actual_loop_start;
                 }
 
-                self.render_state.buffer_time = offset;
+                self.render_state.buffer_time = self.offset;
                 self.render_state.started = true;
             }
 
             if loop_ {
                 if !self.render_state.entered_loop {
                     // playback began before or within loop, and playhead is now past loop start
-                    if offset < actual_loop_end
+                    if self.offset < actual_loop_end
                         && self.render_state.buffer_time >= actual_loop_start
                     {
                         self.render_state.entered_loop = true;
@@ -625,7 +645,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
                     // playback began after loop, and playhead is now prior to the loop end
                     // @note - only possible when playback_rate < 0 (?)
-                    if offset >= actual_loop_end && self.render_state.buffer_time < actual_loop_end
+                    if self.offset >= actual_loop_end
+                        && self.render_state.buffer_time < actual_loop_end
                     {
                         self.render_state.entered_loop = true;
                     }
@@ -698,6 +719,24 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             });
 
         true
+    }
+
+    fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
+        if let Ok(control) = msg.downcast::<Control>() {
+            match *control {
+                Control::StartWithOffsetAndDuration(start, offset, duration) => {
+                    self.start_time = start;
+                    self.offset = offset;
+                    self.duration = duration;
+                }
+                Control::Stop(v) => self.stop_time = v,
+                Control::Loop(v) => self.controller.set_loop(v),
+                Control::LoopStart(v) => self.controller.set_loop_start(v),
+                Control::LoopEnd(v) => self.controller.set_loop_end(v),
+            }
+        }
+
+        log::warn!("AudioBufferSourceRenderer: Ignoring incoming message");
     }
 }
 
