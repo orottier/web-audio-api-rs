@@ -17,6 +17,8 @@ struct SchedulerInner {
     stop: AtomicF64,
 }
 
+// Uses the canonical ordering for handover of values, i.e. `Acquire` on load and `Release` on
+// store.
 impl Scheduler {
     /// Create a new Scheduler. Initial playback state will be: inactive.
     pub fn new() -> Self {
@@ -31,24 +33,24 @@ impl Scheduler {
 
     /// Retrieve playback start value
     pub fn get_start_at(&self) -> f64 {
-        self.inner.start.load(Ordering::SeqCst)
+        self.inner.start.load(Ordering::Acquire)
     }
 
     /// Schedule playback start at this timestamp
     pub fn start_at(&self, start: f64) {
         // todo panic on invalid values, or when already called
-        self.inner.start.store(start, Ordering::SeqCst);
+        self.inner.start.store(start, Ordering::Release);
     }
 
     /// Retrieve playback stop value
     pub fn get_stop_at(&self) -> f64 {
-        self.inner.stop.load(Ordering::SeqCst)
+        self.inner.stop.load(Ordering::Acquire)
     }
 
     /// Stop playback at this timestamp
     pub fn stop_at(&self, stop: f64) {
         // todo panic on invalid values, or when already called
-        self.inner.stop.store(stop, Ordering::SeqCst);
+        self.inner.stop.store(stop, Ordering::Release);
     }
 }
 
@@ -74,6 +76,8 @@ struct ControllerInner {
     duration: AtomicF64,
 }
 
+// Uses the canonical ordering for handover of values, i.e. `Acquire` on load and `Release` on
+// store.
 impl Controller {
     /// Create a new Controller. It will not be active
     pub fn new() -> Self {
@@ -96,43 +100,43 @@ impl Controller {
     }
 
     pub fn loop_(&self) -> bool {
-        self.inner.loop_.load(Ordering::SeqCst)
+        self.inner.loop_.load(Ordering::Acquire)
     }
 
     pub fn set_loop(&self, loop_: bool) {
-        self.inner.loop_.store(loop_, Ordering::SeqCst);
+        self.inner.loop_.store(loop_, Ordering::Release);
     }
 
     pub fn loop_start(&self) -> f64 {
-        self.inner.loop_start.load(Ordering::SeqCst)
+        self.inner.loop_start.load(Ordering::Acquire)
     }
 
     pub fn set_loop_start(&self, loop_start: f64) {
-        self.inner.loop_start.store(loop_start, Ordering::SeqCst);
+        self.inner.loop_start.store(loop_start, Ordering::Release);
     }
 
     pub fn loop_end(&self) -> f64 {
-        self.inner.loop_end.load(Ordering::SeqCst)
+        self.inner.loop_end.load(Ordering::Acquire)
     }
 
     pub fn set_loop_end(&self, loop_end: f64) {
-        self.inner.loop_end.store(loop_end, Ordering::SeqCst);
+        self.inner.loop_end.store(loop_end, Ordering::Release);
     }
 
     pub fn offset(&self) -> f64 {
-        self.inner.offset.load(Ordering::SeqCst)
+        self.inner.offset.load(Ordering::Acquire)
     }
 
     pub fn set_offset(&self, offset: f64) {
-        self.inner.offset.store(offset, Ordering::SeqCst);
+        self.inner.offset.store(offset, Ordering::Release);
     }
 
     pub fn duration(&self) -> f64 {
-        self.inner.duration.load(Ordering::SeqCst)
+        self.inner.duration.load(Ordering::Acquire)
     }
 
     pub fn set_duration(&self, duration: f64) {
-        self.inner.duration.store(duration, Ordering::SeqCst)
+        self.inner.duration.store(duration, Ordering::Release)
     }
 }
 
