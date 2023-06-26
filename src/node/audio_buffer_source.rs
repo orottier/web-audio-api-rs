@@ -1,4 +1,3 @@
-use crossbeam_channel::{Receiver, Sender};
 use once_cell::sync::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -43,8 +42,6 @@ impl Default for AudioBufferSourceOptions {
         }
     }
 }
-
-struct AudioBufferMessage(AudioBuffer);
 
 #[derive(Copy, Clone)]
 struct PlaybackInfo {
@@ -98,7 +95,6 @@ pub struct AudioBufferSourceNode {
     registration: AudioContextRegistration,
     controller_shared: Arc<ControllerShared>,
     channel_config: ChannelConfig,
-    sender: Sender<AudioBufferMessage>,
     detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
     buffer: OnceCell<AudioBuffer>,
@@ -186,10 +182,6 @@ impl AudioBufferSourceNode {
             pr_param.set_automation_rate_constrained(true);
             pr_param.set_value(playback_rate);
 
-            // Channel to send buffer channels references to the renderer.
-            // A capacity of 1 suffices since it is not allowed to set the value multiple times
-            let (sender, receiver) = crossbeam_channel::bounded(1);
-
             let mut controller = Controller::default();
             controller.set_loop(loop_);
             controller.set_loop_start(loop_start);
@@ -202,7 +194,6 @@ impl AudioBufferSourceNode {
                 duration: f64::MAX,
                 offset: 0.,
                 controller,
-                receiver,
                 buffer: None,
                 detune: d_proc,
                 playback_rate: pr_proc,
@@ -214,7 +205,6 @@ impl AudioBufferSourceNode {
                 registration,
                 controller_shared,
                 channel_config: ChannelConfig::default(),
-                sender,
                 detune: d_param,
                 playback_rate: pr_param,
                 buffer: OnceCell::new(),
@@ -270,9 +260,7 @@ impl AudioBufferSourceNode {
             panic!("InvalidStateError - cannot assign buffer twice");
         }
 
-        self.sender
-            .send(AudioBufferMessage(clone))
-            .expect("Sending AudioBufferMessage failed");
+        self.registration.post_message(Box::new(clone));
     }
 
     /// K-rate [`AudioParam`] that defines the speed at which the [`AudioBuffer`]
@@ -350,7 +338,6 @@ struct AudioBufferSourceRenderer {
     offset: f64,
     duration: f64,
     controller: Controller,
-    receiver: Receiver<AudioBufferMessage>,
     buffer: Option<AudioBuffer>,
     detune: AudioParamId,
     playback_rate: AudioParamId,
@@ -373,10 +360,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let dt = 1. / sample_rate;
         let block_duration = dt * RENDER_QUANTUM_SIZE as f64;
         let next_block_time = scope.current_time + block_duration;
-
-        if let Ok(msg) = self.receiver.try_recv() {
-            self.buffer = Some(msg.0);
-        }
 
         // grab all timing information
         let loop_ = self.controller.loop_();
@@ -722,8 +705,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
     }
 
     fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        if let Ok(control) = msg.downcast::<Control>() {
-            match *control {
+        if let Some(&control) = msg.downcast_ref::<Control>() {
+            match control {
                 Control::StartWithOffsetAndDuration(start, offset, duration) => {
                     self.start_time = start;
                     self.offset = offset;
@@ -734,6 +717,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 Control::LoopStart(v) => self.controller.set_loop_start(v),
                 Control::LoopEnd(v) => self.controller.set_loop_end(v),
             }
+        }
+
+        if let Ok(buffer) = msg.downcast::<AudioBuffer>() {
+            self.buffer = Some(*buffer);
+            return;
         }
 
         log::warn!("AudioBufferSourceRenderer: Ignoring incoming message");
