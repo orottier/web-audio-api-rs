@@ -257,8 +257,8 @@ impl RenderThread {
                 node_id: Cell::new(AudioNodeId(0)), // placeholder value
             };
 
-            // render audio graph
-            let mut rendered = self.graph.as_mut().unwrap().render(&scope);
+            // render audio graph, clone it in case we need to mutate/store the value later
+            let mut rendered = self.graph.as_mut().unwrap().render(&scope).clone();
 
             // online AudioContext allows channel count to be less than no of hardware channels
             if rendered.number_of_channels() != self.number_of_channels {
