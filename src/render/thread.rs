@@ -1,6 +1,5 @@
 //! Communicates with the control thread and ships audio samples to the hardware
 
-use std::borrow::Cow;
 use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -258,14 +257,12 @@ impl RenderThread {
                 node_id: Cell::new(AudioNodeId(0)), // placeholder value
             };
 
-            // render audio graph, and use a Cow in case we need to mutate/store the value later
-            let mut rendered = Cow::Borrowed(self.graph.as_mut().unwrap().render(&scope));
+            // render audio graph, clone it in case we need to mutate/store the value later
+            let mut rendered = self.graph.as_mut().unwrap().render(&scope).clone();
 
             // online AudioContext allows channel count to be less than no of hardware channels
             if rendered.number_of_channels() != self.number_of_channels {
-                rendered
-                    .to_mut()
-                    .mix(self.number_of_channels, ChannelInterpretation::Discrete);
+                rendered.mix(self.number_of_channels, ChannelInterpretation::Discrete);
             }
 
             // copy rendered audio into output slice
@@ -282,7 +279,7 @@ impl RenderThread {
                 // this is the last chunk, and it contained less than RENDER_QUANTUM_SIZE samples
                 let channel_offset = data.len() / self.number_of_channels;
                 debug_assert!(channel_offset < RENDER_QUANTUM_SIZE);
-                self.buffer_offset = Some((channel_offset, rendered.into_owned()));
+                self.buffer_offset = Some((channel_offset, rendered));
             }
 
             // handle addition/removal of nodes/edges
