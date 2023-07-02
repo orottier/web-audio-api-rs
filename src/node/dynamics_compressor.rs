@@ -199,7 +199,7 @@ impl DynamicsCompressorNode {
                 ratio: ratio_proc,
                 release: release_proc,
                 threshold: threshold_proc,
-                reduction: reduction.clone(),
+                reduction: Arc::clone(&reduction),
                 ring_buffer,
                 ring_index: 0,
                 prev_detector_value: 0.,

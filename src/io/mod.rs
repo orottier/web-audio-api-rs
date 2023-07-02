@@ -61,7 +61,7 @@ pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
     let (event_send, event_recv) = crossbeam_channel::bounded(256);
 
     let control_thread_init = ControlThreadInit {
-        frames_played: frames_played.clone(),
+        frames_played: Arc::clone(&frames_played),
         ctrl_msg_send,
         load_value_recv,
         event_send: event_send.clone(),

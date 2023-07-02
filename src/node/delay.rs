@@ -206,16 +206,16 @@ impl DelayNode {
         let ring_buffer = Vec::with_capacity(num_quanta);
 
         let shared_ring_buffer = Rc::new(RefCell::new(ring_buffer));
-        let shared_ring_buffer_clone = shared_ring_buffer.clone();
+        let shared_ring_buffer_clone = Rc::clone(&shared_ring_buffer);
 
         // shared value set by the writer when it is dropped
         let last_written_index = Rc::new(Cell::<Option<usize>>::new(None));
-        let last_written_index_clone = last_written_index.clone();
+        let last_written_index_clone = Rc::clone(&last_written_index);
 
         // shared value for reader/writer to determine who was rendered first,
         // this will indicate if the delay node acts as a cycle breaker
         let latest_frame_written = Rc::new(AtomicU64::new(u64::MAX));
-        let latest_frame_written_clone = latest_frame_written.clone();
+        let latest_frame_written_clone = Rc::clone(&latest_frame_written);
 
         let node = context.register(move |writer_registration| {
             let node = context.register(move |reader_registration| {

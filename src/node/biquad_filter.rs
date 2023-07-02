@@ -384,7 +384,7 @@ impl BiquadFilterNode {
                 detune: d_proc,
                 frequency: f_proc,
                 q: q_proc,
-                type_: type_.clone(),
+                type_: Arc::clone(&type_),
                 x1: Vec::with_capacity(MAX_CHANNELS),
                 x2: Vec::with_capacity(MAX_CHANNELS),
                 y1: Vec::with_capacity(MAX_CHANNELS),

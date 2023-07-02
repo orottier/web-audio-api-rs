@@ -181,7 +181,7 @@ impl WaveShaperNode {
 
             let config = RendererConfig {
                 sample_rate,
-                oversample: oversample.clone(),
+                oversample: Arc::clone(&oversample),
                 receiver,
             };
 
