@@ -67,7 +67,7 @@ impl MediaStreamTrack {
 
     pub fn iter(&self) -> impl Iterator<Item = FallibleBuffer> {
         MediaStreamTrackIter {
-            track: self.inner.clone(),
+            track: Arc::clone(&self.inner),
             position: 0,
         }
     }

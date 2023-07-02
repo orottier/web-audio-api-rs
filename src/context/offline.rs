@@ -73,7 +73,7 @@ impl OfflineAudioContext {
 
         // track number of frames - synced from render thread to control thread
         let frames_played = Arc::new(AtomicU64::new(0));
-        let frames_played_clone = frames_played.clone();
+        let frames_played_clone = Arc::clone(&frames_played);
 
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(

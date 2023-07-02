@@ -79,11 +79,11 @@ impl MediaElement {
 
         let rts_stream = RTSStream {
             stream: read_disk_stream,
-            current_time: current_time.clone(),
+            current_time: Arc::clone(&current_time),
             receiver,
-            loop_: loop_.clone(),
-            paused: paused.clone(),
-            playback_rate: playback_rate.clone(),
+            loop_: Arc::clone(&loop_),
+            paused: Arc::clone(&paused),
+            playback_rate: Arc::clone(&playback_rate),
         };
 
         Ok(Self {

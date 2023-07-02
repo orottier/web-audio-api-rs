@@ -214,7 +214,7 @@ impl OscillatorNode {
             let (sender, receiver) = crossbeam_channel::bounded(1);
 
             let renderer = OscillatorRenderer {
-                type_: type_.clone(),
+                type_: Arc::clone(&type_),
                 frequency: f_proc,
                 detune: det_proc,
                 scheduler: scheduler.clone(),

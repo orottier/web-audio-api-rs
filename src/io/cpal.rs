@@ -175,7 +175,7 @@ impl AudioBackendManager for CpalBackend {
             sample_rate,
             preferred.channels as usize,
             ctrl_msg_recv.clone(),
-            frames_played.clone(),
+            Arc::clone(&frames_played),
             Some(load_value_send.clone()),
             Some(event_send.clone()),
         );
@@ -189,7 +189,7 @@ impl AudioBackendManager for CpalBackend {
             supported.sample_format(),
             &preferred,
             renderer,
-            output_latency.clone(),
+            Arc::clone(&output_latency),
         );
 
         let stream = match spawned {
@@ -223,7 +223,7 @@ impl AudioBackendManager for CpalBackend {
                     supported.sample_format(),
                     &supported_config,
                     renderer,
-                    output_latency.clone(),
+                    Arc::clone(&output_latency),
                 );
                 spawned.expect("OutputStream build failed with default config")
             }
