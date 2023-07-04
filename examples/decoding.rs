@@ -29,7 +29,14 @@ fn main() {
         "samples/sample.webm", // 48kHz,
     ];
 
-    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY")
+        .as_deref()
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Ok("interactive") => AudioContextLatencyCategory::Interactive,
+        Ok("balanced") => AudioContextLatencyCategory::Balanced,
         Ok("playback") => AudioContextLatencyCategory::Playback,
         _ => AudioContextLatencyCategory::default(),
     };
