@@ -22,6 +22,8 @@ fn main() {
         "samples/sample.flac",
         "samples/sample.ogg",
         "samples/sample.mp3",
+        "samples/sample-aac.m4a",
+        "samples/sample-alac.m4a",
         // cannot decode, format not supported or file corrupted
         "samples/empty_2c.wav",
         "samples/corrupt.wav",

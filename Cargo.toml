@@ -50,11 +50,17 @@ name = "my_benchmark"
 harness = false
 
 [features]
-default = ["mp3", "ogg", "flac", "wav", "cpal"]
+default = ["mp3", "ogg", "flac", "wav", "m4a", "alac", "cpal"]
 mp3 = ["symphonia/mp3", "creek/decode-mp3"]
 ogg = ["symphonia/ogg", "symphonia/vorbis", "creek/decode-ogg", "creek/decode-vorbis"]
 flac = ["symphonia/flac", "creek/decode-flac"]
 wav = ["symphonia/wav", "symphonia/pcm", "creek/decode-wav", "creek/decode-pcm"]
+# TODO(m4a): Add "creek/decode-aac" after <https://github.com/MeadowlarkDAW/creek/pull/22> has been merged
+aac = ["symphonia/aac"]
+# TODO(m4a): Add "creek/decode-isomp4" after <https://github.com/MeadowlarkDAW/creek/pull/22> has been merged
+m4a = ["aac", "symphonia/isomp4"]
+# TODO(alac): Add "creek/decode-alac" and "creek/decode-isomp4" after <https://github.com/MeadowlarkDAW/creek/pull/22> has been merged
+alac = ["symphonia/alac", "symphonia/isomp4"]
 cpal = ["dep:cpal"]
 cubeb = ["dep:cubeb"]
 cpal-jack = ["cpal", "cpal/jack"]

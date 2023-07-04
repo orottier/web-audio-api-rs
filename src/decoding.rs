@@ -126,8 +126,6 @@ impl Iterator for MediaDecoder {
         // Get the track.
         let track = format.tracks().get(*track_index)?;
         let track_id = track.id;
-        let number_of_channels = track.codec_params.channels?.count();
-        let input_sample_rate = track.codec_params.sample_rate? as f32;
 
         loop {
             // Get the next packet from the format reader.
@@ -166,8 +164,8 @@ impl Iterator for MediaDecoder {
 
             // Decode the packet into audio samples.
             match decoder.decode(&packet) {
-                Ok(audio_buf) => {
-                    let output = convert_buf(audio_buf, number_of_channels, input_sample_rate);
+                Ok(input) => {
+                    let output = convert_buf(input);
                     return Some(Ok(output));
                 }
                 Err(SymphoniaError::DecodeError(err)) => {
@@ -188,52 +186,49 @@ impl Iterator for MediaDecoder {
 }
 
 /// Convert a Symphonia AudioBufferRef to our own AudioBuffer
-fn convert_buf(
-    input: AudioBufferRef<'_>,
-    number_of_channels: usize,
-    input_sample_rate: f32,
-) -> AudioBuffer {
-    let chans = 0..number_of_channels;
+fn convert_buf(input: AudioBufferRef<'_>) -> AudioBuffer {
+    let channels = 0..input.spec().channels.count();
+    let sample_rate = input.spec().rate as f32;
 
     // This looks a bit awkward but this may be the only way to get the f32 samples
     // out without making double copies.
     use symphonia::core::audio::AudioBufferRef::*;
 
     let data: Vec<Vec<f32>> = match input {
-        U8(buf) => chans
+        U8(buf) => channels
             .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
             .collect(),
-        U16(buf) => chans
+        U16(buf) => channels
             .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
             .collect(),
-        U24(buf) => chans
+        U24(buf) => channels
             .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
             .collect(),
-        U32(buf) => chans
+        U32(buf) => channels
             .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
             .collect(),
-        S8(buf) => chans
+        S8(buf) => channels
             .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
             .collect(),
-        S16(buf) => chans
+        S16(buf) => channels
             .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
             .collect(),
-        S24(buf) => chans
+        S24(buf) => channels
             .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
             .collect(),
-        S32(buf) => chans
+        S32(buf) => channels
             .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
             .collect(),
-        F32(buf) => chans
+        F32(buf) => channels
             .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
             .collect(),
-        F64(buf) => chans
+        F64(buf) => channels
             .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
             .collect(),
     };
 
     let channels = data.into_iter().map(ChannelData::from).collect();
-    AudioBuffer::from_channels(channels, input_sample_rate)
+    AudioBuffer::from_channels(channels, sample_rate)
 }
 
 #[cfg(test)]
