@@ -5,7 +5,7 @@ use crate::buffer::{AudioBuffer, ChannelData};
 
 use symphonia::core::audio::AudioBufferRef;
 use symphonia::core::audio::Signal;
-use symphonia::core::codecs::{Decoder, DecoderOptions};
+use symphonia::core::codecs::{Decoder, DecoderOptions, FinalizeResult};
 use symphonia::core::conv::FromSample;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, FormatReader};
@@ -53,6 +53,8 @@ impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
 pub(crate) struct MediaDecoder {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
+    track_id: u32,
+    packet_count: usize,
 }
 
 impl MediaDecoder {
@@ -74,10 +76,13 @@ impl MediaDecoder {
         // function we'll leave it empty.
         let hint = Hint::new();
 
-        // Use the default options when reading and decoding.
+        // TODO: Allow to customize some options.
         let format_opts: FormatOptions = Default::default();
         let metadata_opts: MetadataOptions = Default::default();
-        let decoder_opts: DecoderOptions = Default::default();
+        let decoder_opts = DecoderOptions {
+            // Opt-in to verify the decoded data against the checksums in the container.
+            verify: true,
+        };
 
         // Probe the media source stream for a format.
         let probed =
@@ -90,11 +95,17 @@ impl MediaDecoder {
         let track = format.default_track().ok_or(SymphoniaError::Unsupported(
             "no default media track available",
         ))?;
+        let track_id = track.id;
 
         // Create a (stateful) decoder for the track.
         let decoder = symphonia::default::get_codecs().make(&track.codec_params, &decoder_opts)?;
 
-        Ok(Self { format, decoder })
+        Ok(Self {
+            format,
+            decoder,
+            track_id,
+            packet_count: 0,
+        })
     }
 }
 
@@ -102,52 +113,70 @@ impl Iterator for MediaDecoder {
     type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let format = &mut self.format;
-        let decoder = &mut self.decoder;
+        let Self {
+            format,
+            decoder,
+            track_id,
+            packet_count,
+        } = self;
 
         // Get the default track.
         let track = format.default_track()?;
         let number_of_channels = track.codec_params.channels?.count();
         let input_sample_rate = track.codec_params.sample_rate? as f32;
 
-        // Store the track identifier, we'll use it to filter packets.
-        let track_id = track.id;
-
         loop {
             // Get the next packet from the format reader.
             let packet = match format.next_packet() {
-                Err(e) => {
-                    log::error!("next packet err {:?}", e);
-                    return None;
+                Err(err) => {
+                    if let SymphoniaError::IoError(err) = &err {
+                        if err.kind() == std::io::ErrorKind::UnexpectedEof {
+                            // End of stream
+                            log::debug!("Decoding finished after {packet_count} packet(s)");
+                            let FinalizeResult { verify_ok } = decoder.finalize();
+                            if verify_ok == Some(false) {
+                                log::warn!("Verification of decoded data failed");
+                            }
+                            return None;
+                        }
+                    }
+                    log::warn!(
+                        "Failed to fetch next packet following packet #{packet_count}: {err}"
+                    );
+                    return Some(Err(Box::new(err)));
                 }
-                Ok(p) => p,
+                Ok(packet) => {
+                    *packet_count += 1;
+                    packet
+                }
             };
 
             // If the packet does not belong to the selected track, skip it.
-            if packet.track_id() != track_id {
+            let packet_track_id = packet.track_id();
+            if packet_track_id != *track_id {
+                log::debug!(
+                    "Skipping packet from other track {packet_track_id} while decoding track {track_id}"
+                );
                 continue;
             }
 
-            // Decode the packet into audio samples, ignoring any decode errors.
+            // Decode the packet into audio samples.
             match decoder.decode(&packet) {
                 Ok(audio_buf) => {
                     let output = convert_buf(audio_buf, number_of_channels, input_sample_rate);
                     return Some(Ok(output));
                 }
-                Err(SymphoniaError::DecodeError(e)) => {
-                    // Todo: treat decoding errors as fatal or move to next packet? Context:
-                    // https://github.com/RustAudio/rodio/issues/401#issuecomment-974747404
-                    log::error!("Symphonia DecodeError {:?} - abort stream", e);
-                    return Some(Err(Box::new(SymphoniaError::DecodeError(e))));
+                Err(SymphoniaError::DecodeError(err)) => {
+                    // Recoverable error, continue with the next packet.
+                    log::warn!("Failed to decode packet #{packet_count}: {err}");
                 }
-                Err(SymphoniaError::IoError(e))
-                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
-                {
-                    // this happens for Wav-files, running into EOF is expected
+                Err(SymphoniaError::IoError(err)) => {
+                    // Recoverable error, continue with the next packet.
+                    log::warn!("I/O error while decoding packet #{packet_count}: {err}");
                 }
-                Err(e) => {
-                    // do not continue processing, return error result
-                    return Some(Err(Box::new(e)));
+                Err(err) => {
+                    // All other errors are considered fatal and decoding must be aborted.
+                    return Some(Err(Box::new(err)));
                 }
             };
         }
