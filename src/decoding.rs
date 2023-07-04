@@ -53,7 +53,7 @@ impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
 pub(crate) struct MediaDecoder {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
-    track_id: u32,
+    track_index: usize,
     packet_count: usize,
 }
 
@@ -95,15 +95,18 @@ impl MediaDecoder {
         let track = format.default_track().ok_or(SymphoniaError::Unsupported(
             "no default media track available",
         ))?;
-        let track_id = track.id;
-
+        let track_index = format
+            .tracks()
+            .iter()
+            .position(|t| t.id == track.id)
+            .unwrap();
         // Create a (stateful) decoder for the track.
         let decoder = symphonia::default::get_codecs().make(&track.codec_params, &decoder_opts)?;
 
         Ok(Self {
             format,
             decoder,
-            track_id,
+            track_index,
             packet_count: 0,
         })
     }
@@ -116,12 +119,13 @@ impl Iterator for MediaDecoder {
         let Self {
             format,
             decoder,
-            track_id,
+            track_index,
             packet_count,
         } = self;
 
-        // Get the default track.
-        let track = format.default_track()?;
+        // Get the track.
+        let track = format.tracks().get(*track_index)?;
+        let track_id = track.id;
         let number_of_channels = track.codec_params.channels?.count();
         let input_sample_rate = track.codec_params.sample_rate? as f32;
 
@@ -153,7 +157,7 @@ impl Iterator for MediaDecoder {
 
             // If the packet does not belong to the selected track, skip it.
             let packet_track_id = packet.track_id();
-            if packet_track_id != *track_id {
+            if packet_track_id != track_id {
                 log::debug!(
                     "Skipping packet from other track {packet_track_id} while decoding track {track_id}"
                 );
