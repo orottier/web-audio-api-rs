@@ -66,11 +66,11 @@ impl MediaDecoder {
     pub fn try_new<R: std::io::Read + Send + Sync + 'static>(
         input: R,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        // Symfonia lib needs a Box<dyn MediaSource> - use our own MediaInput
+        // Symphonia lib needs a Box<dyn MediaSource> - use our own MediaInput
         let input = Box::new(MediaInput::new(input));
 
         // Create the media source stream using the boxed media source from above.
-        let mss = symphonia::core::io::MediaSourceStream::new(input, Default::default());
+        let stream = symphonia::core::io::MediaSourceStream::new(input, Default::default());
 
         // Create a hint to help the format registry guess what format reader is appropriate. In this
         // function we'll leave it empty.
@@ -86,7 +86,7 @@ impl MediaDecoder {
 
         // Probe the media source stream for a format.
         let probed =
-            symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts)?;
+            symphonia::default::get_probe().format(&hint, stream, &format_opts, &metadata_opts)?;
 
         // Get the format reader yielded by the probe operation.
         let format = probed.format;
