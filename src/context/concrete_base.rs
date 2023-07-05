@@ -267,6 +267,9 @@ impl ConcreteBaseAudioContext {
 
     /// Returns the `AudioListener` which is used for 3D spatialization
     pub(super) fn listener(&self) -> AudioListener {
+        // instruct to BaseContext to add the AudioListener if it has not already
+        self.base().ensure_audio_listener_present();
+
         let mut ids = LISTENER_PARAM_IDS.map(|i| AudioContextRegistration {
             id: AudioNodeId(i),
             context: self.clone(),
