@@ -314,13 +314,17 @@ impl AudioParam {
     // thrown by setting this attribute.
     // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
     pub fn set_value(&self, value: f32) -> &Self {
+        self.send_event(self.set_value_raw(value))
+    }
+
+    fn set_value_raw(&self, value: f32) -> AudioParamEvent {
         // current_value should always be clamped
         let clamped = value.clamp(self.raw_parts.min_value, self.raw_parts.max_value);
         self.raw_parts.shared_parts.store_current_value(clamped);
 
         // this event is meant to update param intrinsic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
-        let event = AudioParamEvent {
+        AudioParamEvent {
             event_type: AudioParamEventType::SetValue,
             value,
             time: 0.,
@@ -328,11 +332,7 @@ impl AudioParam {
             cancel_time: None,
             duration: None,
             values: None,
-        };
-
-        self.send_event(event);
-
-        self
+        }
     }
 
     /// Schedules a parameter value change at the given time.
@@ -341,9 +341,13 @@ impl AudioParam {
     ///
     /// Will panic if `start_time` is negative
     pub fn set_value_at_time(&self, value: f32, start_time: f64) -> &Self {
+        self.send_event(self.set_value_at_time_raw(value, start_time))
+    }
+
+    fn set_value_at_time_raw(&self, value: f32, start_time: f64) -> AudioParamEvent {
         assert_non_negative(start_time);
 
-        let event = AudioParamEvent {
+        AudioParamEvent {
             event_type: AudioParamEventType::SetValueAtTime,
             value,
             time: start_time,
@@ -351,11 +355,7 @@ impl AudioParam {
             cancel_time: None,
             duration: None,
             values: None,
-        };
-
-        self.send_event(event);
-
-        self
+        }
     }
 
     /// Schedules a linear continuous change in parameter value from the
@@ -365,9 +365,13 @@ impl AudioParam {
     ///
     /// Will panic if `end_time` is negative
     pub fn linear_ramp_to_value_at_time(&self, value: f32, end_time: f64) -> &Self {
+        self.send_event(self.linear_ramp_to_value_at_time_raw(value, end_time))
+    }
+
+    fn linear_ramp_to_value_at_time_raw(&self, value: f32, end_time: f64) -> AudioParamEvent {
         assert_non_negative(end_time);
 
-        let event = AudioParamEvent {
+        AudioParamEvent {
             event_type: AudioParamEventType::LinearRampToValueAtTime,
             value,
             time: end_time,
@@ -375,11 +379,7 @@ impl AudioParam {
             cancel_time: None,
             duration: None,
             values: None,
-        };
-
-        self.send_event(event);
-
-        self
+        }
     }
 
     /// Schedules an exponential continuous change in parameter value from the
@@ -391,10 +391,14 @@ impl AudioParam {
     /// - `value` is zero
     /// - `end_time` is negative
     pub fn exponential_ramp_to_value_at_time(&self, value: f32, end_time: f64) -> &Self {
+        self.send_event(self.exponential_ramp_to_value_at_time_raw(value, end_time))
+    }
+
+    fn exponential_ramp_to_value_at_time_raw(&self, value: f32, end_time: f64) -> AudioParamEvent {
         assert_not_zero(value);
         assert_non_negative(end_time);
 
-        let event = AudioParamEvent {
+        AudioParamEvent {
             event_type: AudioParamEventType::ExponentialRampToValueAtTime,
             value,
             time: end_time,
@@ -402,11 +406,7 @@ impl AudioParam {
             cancel_time: None,
             duration: None,
             values: None,
-        };
-
-        self.send_event(event);
-
-        self
+        }
     }
 
     /// Start exponentially approaching the target value at the given time with
@@ -418,11 +418,20 @@ impl AudioParam {
     /// - `start_time` is negative
     /// - `time_constant` is negative
     pub fn set_target_at_time(&self, value: f32, start_time: f64, time_constant: f64) -> &Self {
+        self.send_event(self.set_target_at_time_raw(value, start_time, time_constant))
+    }
+
+    fn set_target_at_time_raw(
+        &self,
+        value: f32,
+        start_time: f64,
+        time_constant: f64,
+    ) -> AudioParamEvent {
         assert_non_negative(start_time);
         assert_non_negative(time_constant);
 
         // [spec] If timeConstant is zero, the output value jumps immediately to the final value.
-        let event = if time_constant == 0. {
+        if time_constant == 0. {
             AudioParamEvent {
                 event_type: AudioParamEventType::SetValueAtTime,
                 value,
@@ -442,11 +451,7 @@ impl AudioParam {
                 duration: None,
                 values: None,
             }
-        };
-
-        self.send_event(event);
-
-        self
+        }
     }
 
     /// Cancels all scheduled parameter changes with times greater than or equal
@@ -456,9 +461,13 @@ impl AudioParam {
     ///
     /// Will panic if `cancel_time` is negative
     pub fn cancel_scheduled_values(&self, cancel_time: f64) -> &Self {
+        self.send_event(self.cancel_scheduled_values_raw(cancel_time))
+    }
+
+    fn cancel_scheduled_values_raw(&self, cancel_time: f64) -> AudioParamEvent {
         assert_non_negative(cancel_time);
 
-        let event = AudioParamEvent {
+        AudioParamEvent {
             event_type: AudioParamEventType::CancelScheduledValues,
             value: 0., // no value
             time: cancel_time,
@@ -466,11 +475,7 @@ impl AudioParam {
             cancel_time: None,
             duration: None,
             values: None,
-        };
-
-        self.send_event(event);
-
-        self
+        }
     }
 
     /// Cancels all scheduled parameter changes with times greater than or equal
@@ -481,9 +486,13 @@ impl AudioParam {
     ///
     /// Will panic if `cancel_time` is negative
     pub fn cancel_and_hold_at_time(&self, cancel_time: f64) -> &Self {
+        self.send_event(self.cancel_and_hold_at_time_raw(cancel_time))
+    }
+
+    fn cancel_and_hold_at_time_raw(&self, cancel_time: f64) -> AudioParamEvent {
         assert_non_negative(cancel_time);
 
-        let event = AudioParamEvent {
+        AudioParamEvent {
             event_type: AudioParamEventType::CancelAndHoldAtTime,
             value: 0., // value will be defined by cancel event
             time: cancel_time,
@@ -491,11 +500,7 @@ impl AudioParam {
             cancel_time: None,
             duration: None,
             values: None,
-        };
-
-        self.send_event(event);
-
-        self
+        }
     }
 
     /// Sets an array of arbitrary parameter values starting at the given time
@@ -508,6 +513,15 @@ impl AudioParam {
     /// - `start_time` is negative
     /// - `duration` is negative or equal to zero
     pub fn set_value_curve_at_time(&self, values: &[f32], start_time: f64, duration: f64) -> &Self {
+        self.send_event(self.set_value_curve_at_time_raw(values, start_time, duration))
+    }
+
+    fn set_value_curve_at_time_raw(
+        &self,
+        values: &[f32],
+        start_time: f64,
+        duration: f64,
+    ) -> AudioParamEvent {
         assert_sequence_length(values);
         assert_non_negative(start_time);
         assert_strictly_positive(duration);
@@ -517,7 +531,7 @@ impl AudioParam {
         let copy = values.to_vec();
         let boxed_copy = copy.into_boxed_slice();
 
-        let event = AudioParamEvent {
+        AudioParamEvent {
             event_type: AudioParamEventType::SetValueCurveAtTime,
             value: 0., // value will be defined at the end of the event
             time: start_time,
@@ -525,11 +539,7 @@ impl AudioParam {
             cancel_time: None,
             duration: Some(duration),
             values: Some(boxed_copy),
-        };
-
-        self.send_event(event);
-
-        self
+        }
     }
 
     // helper function to detach from context (for borrow reasons)
@@ -552,8 +562,9 @@ impl AudioParam {
         }
     }
 
-    fn send_event(&self, event: AudioParamEvent) {
+    fn send_event(&self, event: AudioParamEvent) -> &Self {
         self.registration().post_message(Box::new(event));
+        self
     }
 }
 
@@ -1681,7 +1692,8 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.set_value(2.);
+            render.onmessage(Box::new(param.set_value_raw(2.)));
+
             assert_float_eq!(param.value(), 2., abs_all <= 0.);
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
@@ -1702,7 +1714,8 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.set_value(2.);
+            render.onmessage(Box::new(param.set_value_raw(2.)));
+
             assert_float_eq!(param.value(), 1., abs_all <= 0.);
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
@@ -1726,9 +1739,9 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.set_value_at_time(5., 2.0);
-            param.set_value_at_time(12., 8.0); // should clamp
-            param.set_value_at_time(8., 10.0); // should not occur 1st run
+            render.onmessage(Box::new(param.set_value_at_time_raw(5., 2.0)));
+            render.onmessage(Box::new(param.set_value_at_time_raw(12., 8.0))); // should clamp
+            render.onmessage(Box::new(param.set_value_at_time_raw(8., 10.0))); // should not occur 1st run
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
@@ -1752,8 +1765,8 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.set_value_at_time(5., 2.0);
-            param.set_value_at_time(8., 12.0);
+            render.onmessage(Box::new(param.set_value_at_time_raw(5., 2.0)));
+            render.onmessage(Box::new(param.set_value_at_time_raw(8., 12.0)));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
@@ -1782,10 +1795,10 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(5., 2.0);
-        param.set_value_at_time(12., 8.0); // should not appear in results
-        param.set_value_at_time(8., 10.0); // should not occur 1st run
-        param.set_value_at_time(3., 14.0); // should appear in 3rd run
+        render.onmessage(Box::new(param.set_value_at_time_raw(5., 2.0)));
+        render.onmessage(Box::new(param.set_value_at_time_raw(12., 8.0))); // should not appear in results
+        render.onmessage(Box::new(param.set_value_at_time_raw(8., 10.0))); // should not occur 1st run
+        render.onmessage(Box::new(param.set_value_at_time_raw(3., 14.0))); // should appear in 3rd run
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
@@ -1810,11 +1823,11 @@ mod tests {
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
         // set to 5 at t = 2
-        param.set_value_at_time(5., 2.0);
+        render.onmessage(Box::new(param.set_value_at_time_raw(5., 2.0)));
         // ramp to 8 from t = 2 to t = 5
-        param.linear_ramp_to_value_at_time(8.0, 5.0);
+        render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(8.0, 5.0)));
         // ramp to 0 from t = 5 to t = 13
-        param.linear_ramp_to_value_at_time(0., 13.0);
+        render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(0., 13.0)));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
@@ -1837,9 +1850,9 @@ mod tests {
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
         // set to 0 at t = 0
-        param.set_value_at_time(0., 0.);
+        render.onmessage(Box::new(param.set_value_at_time_raw(0., 0.)));
         // ramp to 9 from t = 0 to t = 9
-        param.linear_ramp_to_value_at_time(9.0, 9.0);
+        render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(9.0, 9.0)));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
@@ -1873,7 +1886,7 @@ mod tests {
         assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
 
         // implicitly insert a SetValue event at time 10
-        param.linear_ramp_to_value_at_time(10.0, 20.0);
+        render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(10.0, 20.0)));
 
         let vs = render.compute_intrinsic_values(10., 1., 10);
         assert_float_eq!(
@@ -1901,7 +1914,7 @@ mod tests {
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
         // ramp to 20 from t = 0 to t = 20
-        param.linear_ramp_to_value_at_time(20.0, 20.0);
+        render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(20.0, 20.0)));
 
         // first quantum t = 0..10
         let vs = render.compute_intrinsic_values(0., 1., 10);
@@ -1942,7 +1955,7 @@ mod tests {
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             // ramp to 20 from t = 0 to t = 20
-            param.linear_ramp_to_value_at_time(20.0, 20.0);
+            render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(20.0, 20.0)));
             // first quantum t = 0..10
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
@@ -1968,7 +1981,7 @@ mod tests {
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             // ramp to 20 from t = 0 to t = 20
-            param.linear_ramp_to_value_at_time(15.0, 15.0);
+            render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(15.0, 15.0)));
             // first quantum t = 0..10
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
@@ -1996,8 +2009,8 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(1., 0.);
-        param.linear_ramp_to_value_at_time(-1., 10.);
+        render.onmessage(Box::new(param.set_value_at_time_raw(1., 0.)));
+        render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(-1., 10.)));
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
             vs,
@@ -2009,7 +2022,7 @@ mod tests {
         assert_float_eq!(vs, &[-1.; 10][..], abs_all <= 0.);
 
         // start time should be end time of last event, i.e. 10.
-        param.linear_ramp_to_value_at_time(1., 30.);
+        render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(1., 30.)));
 
         let vs = render.compute_intrinsic_values(20., 1., 10);
         assert_float_eq!(
@@ -2032,9 +2045,11 @@ mod tests {
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
         // set to 0.0001 at t=0 (0. is a special case)
-        param.set_value_at_time(0.0001, 0.);
+        render.onmessage(Box::new(param.set_value_at_time_raw(0.0001, 0.)));
         // ramp to 1 from t = 0 to t = 10
-        param.exponential_ramp_to_value_at_time(1.0, 10.);
+        render.onmessage(Box::new(
+            param.exponential_ramp_to_value_at_time_raw(1.0, 10.),
+        ));
 
         // compute resulting buffer:
         // v(t) = v1*(v2/v1)^((t-t1)/(t2-t1))
@@ -2068,9 +2083,11 @@ mod tests {
 
         let start: f32 = 0.0001; // use 0.0001 as 0. is a special case
         let end: f32 = 1.;
-        param.set_value_at_time(start, 3.);
+        render.onmessage(Box::new(param.set_value_at_time_raw(start, 3.)));
         // ramp to 1 from t = 3. to t = 13.
-        param.exponential_ramp_to_value_at_time(end, 13.);
+        render.onmessage(Box::new(
+            param.exponential_ramp_to_value_at_time_raw(end, 13.),
+        ));
 
         // compute resulting buffer:
         let mut res = vec![0.; 3];
@@ -2107,9 +2124,11 @@ mod tests {
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             // set v=0. at t=0 (0. is a special case)
-            param.set_value_at_time(0., 0.);
+            render.onmessage(Box::new(param.set_value_at_time_raw(0., 0.)));
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
-            param.exponential_ramp_to_value_at_time(1.0, 5.);
+            render.onmessage(Box::new(
+                param.exponential_ramp_to_value_at_time_raw(1.0, 5.),
+            ));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
@@ -2130,9 +2149,11 @@ mod tests {
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             // set v=-1. at t=0
-            param.set_value_at_time(-1., 0.);
+            render.onmessage(Box::new(param.set_value_at_time_raw(-1., 0.)));
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
-            param.exponential_ramp_to_value_at_time(1.0, 5.);
+            render.onmessage(Box::new(
+                param.exponential_ramp_to_value_at_time_raw(1.0, 5.),
+            ));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
@@ -2154,8 +2175,10 @@ mod tests {
             min_value: 0.,
             max_value: 1.,
         };
-        let (param, mut _render) = audio_param_pair(opts, context.mock_registration());
-        param.exponential_ramp_to_value_at_time(0.0, 10.);
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+        render.onmessage(Box::new(
+            param.exponential_ramp_to_value_at_time_raw(0.0, 10.),
+        ));
     }
 
     #[test]
@@ -2172,9 +2195,11 @@ mod tests {
 
         let start: f32 = 0.0001; // use 0.0001 as 0. is a special case
         let end: f32 = 1.;
-        param.set_value_at_time(start, 3.);
+        render.onmessage(Box::new(param.set_value_at_time_raw(start, 3.)));
         // ramp to 1 from t = 3. to t = 13.
-        param.exponential_ramp_to_value_at_time(end, 13.);
+        render.onmessage(Box::new(
+            param.exponential_ramp_to_value_at_time_raw(end, 13.),
+        ));
 
         // compute resulting buffer:
         let mut res = vec![0.; 3];
@@ -2213,7 +2238,9 @@ mod tests {
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
-            param.exponential_ramp_to_value_at_time(1.0, 5.);
+            render.onmessage(Box::new(
+                param.exponential_ramp_to_value_at_time_raw(1.0, 5.),
+            ));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
@@ -2233,7 +2260,9 @@ mod tests {
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
-            param.exponential_ramp_to_value_at_time(1.0, 5.);
+            render.onmessage(Box::new(
+                param.exponential_ramp_to_value_at_time_raw(1.0, 5.),
+            ));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[-1.; 1][..], abs_all <= 0.);
@@ -2255,8 +2284,8 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(0., 0.);
-        param.linear_ramp_to_value_at_time(1., 10.);
+        render.onmessage(Box::new(param.set_value_at_time_raw(0., 0.)));
+        render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(1., 10.)));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
@@ -2269,7 +2298,9 @@ mod tests {
         assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
 
         // start time should be end time of last event, i.e. 10.
-        param.exponential_ramp_to_value_at_time(0.0001, 30.);
+        render.onmessage(Box::new(
+            param.exponential_ramp_to_value_at_time_raw(0.0001, 30.),
+        ));
         let vs = render.compute_intrinsic_values(20., 1., 10);
         // compute expected on 20 samples, the 10 last ones should be in vs
         let start: f32 = 1.;
@@ -2300,8 +2331,12 @@ mod tests {
             let t0: f64 = 0.;
             let time_constant: f64 = 1.;
 
-            param.set_value_at_time(v0, t0);
-            param.set_target_at_time(v1, t0, time_constant);
+            render.onmessage(Box::new(param.set_value_at_time_raw(v0, t0)));
+            render.onmessage(Box::new(param.set_target_at_time_raw(
+                v1,
+                t0,
+                time_constant,
+            )));
             let vs = render.compute_intrinsic_values(0., 1., 10);
 
             let mut res = Vec::<f32>::with_capacity(10);
@@ -2328,7 +2363,11 @@ mod tests {
             let t0: f64 = 0.;
             let time_constant: f64 = 1.;
 
-            param.set_target_at_time(v1, t0, time_constant);
+            render.onmessage(Box::new(param.set_target_at_time_raw(
+                v1,
+                t0,
+                time_constant,
+            )));
             let vs = render.compute_intrinsic_values(0., 1., 10);
 
             let mut res = Vec::<f32>::with_capacity(10);
@@ -2355,8 +2394,12 @@ mod tests {
             let t0: f64 = 1.;
             let time_constant: f64 = 2.1;
 
-            param.set_value_at_time(v0, t0);
-            param.set_target_at_time(v1, t0, time_constant);
+            render.onmessage(Box::new(param.set_value_at_time_raw(v0, t0)));
+            render.onmessage(Box::new(param.set_target_at_time_raw(
+                v1,
+                t0,
+                time_constant,
+            )));
 
             let mut res = Vec::<f32>::with_capacity(10);
             for t in 0..10 {
@@ -2379,7 +2422,7 @@ mod tests {
                 max_value: 100.,
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
-            param.set_target_at_time(1., 1., 0.);
+            render.onmessage(Box::new(param.set_target_at_time_raw(1., 1., 0.)));
 
             let mut res = [1.; 10];
             res[0] = 0.; // start_time is 1.
@@ -2407,8 +2450,12 @@ mod tests {
             let t0: f64 = 0.;
             let time_constant: f64 = 1.;
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
-            param.set_value_at_time(v0, t0);
-            param.set_target_at_time(v1, t0, time_constant);
+            render.onmessage(Box::new(param.set_value_at_time_raw(v0, t0)));
+            render.onmessage(Box::new(param.set_target_at_time_raw(
+                v1,
+                t0,
+                time_constant,
+            )));
 
             let mut res = Vec::<f32>::with_capacity(20);
             for t in 0..20 {
@@ -2442,9 +2489,13 @@ mod tests {
             let t0: f64 = 0.;
             let time_constant: f64 = 1.;
 
-            param.set_value_at_time(v0, t0);
-            param.set_target_at_time(v1, t0, time_constant);
-            param.set_value_at_time(0.5, 15.);
+            render.onmessage(Box::new(param.set_value_at_time_raw(v0, t0)));
+            render.onmessage(Box::new(param.set_target_at_time_raw(
+                v1,
+                t0,
+                time_constant,
+            )));
+            render.onmessage(Box::new(param.set_value_at_time_raw(0.5, 15.)));
 
             let mut res = Vec::<f32>::with_capacity(20);
 
@@ -2474,8 +2525,8 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(1., 0.);
-        param.set_target_at_time(0., 1., 0.2);
+        render.onmessage(Box::new(param.set_value_at_time_raw(1., 0.)));
+        render.onmessage(Box::new(param.set_target_at_time_raw(0., 1., 0.2)));
 
         let vs = render.compute_intrinsic_values(0., 1., 128);
         for v in vs.iter() {
@@ -2505,8 +2556,8 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(1., 0.);
-        param.set_target_at_time(0., 5., 1.);
+        render.onmessage(Box::new(param.set_value_at_time_raw(1., 0.)));
+        render.onmessage(Box::new(param.set_target_at_time_raw(0., 5., 1.)));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs[0], 1., abs <= 0.);
@@ -2534,8 +2585,12 @@ mod tests {
             let t0: f64 = 0.;
             let time_constant: f64 = 10.;
 
-            param.set_value_at_time(v0, t0);
-            param.set_target_at_time(v1, t0, time_constant);
+            render.onmessage(Box::new(param.set_value_at_time_raw(v0, t0)));
+            render.onmessage(Box::new(param.set_target_at_time_raw(
+                v1,
+                t0,
+                time_constant,
+            )));
 
             let mut res = Vec::<f32>::with_capacity(20);
 
@@ -2554,7 +2609,7 @@ mod tests {
             let t0 = 10.;
             let t1 = 20.;
 
-            param.linear_ramp_to_value_at_time(v1, t1);
+            render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(v1, t1)));
 
             for t in 10..20 {
                 let time = t as f64;
@@ -2588,8 +2643,12 @@ mod tests {
             let t0: f64 = 0.;
             let time_constant: f64 = 1.;
             // ramp to 1 from t=0 to t=5 -> should behave as a set target at t=5
-            param.set_value_at_time(v0, t0);
-            param.set_target_at_time(v1, t0, time_constant);
+            render.onmessage(Box::new(param.set_value_at_time_raw(v0, t0)));
+            render.onmessage(Box::new(param.set_target_at_time_raw(
+                v1,
+                t0,
+                time_constant,
+            )));
 
             let mut res = Vec::<f32>::with_capacity(20);
             for t in 0..20 {
@@ -2621,8 +2680,12 @@ mod tests {
         let t0: f64 = 0.;
         let time_constant: f64 = 1.;
 
-        param.set_value_at_time(v0, t0);
-        param.set_target_at_time(v1, t0, time_constant);
+        render.onmessage(Box::new(param.set_value_at_time_raw(v0, t0)));
+        render.onmessage(Box::new(param.set_target_at_time_raw(
+            v1,
+            t0,
+            time_constant,
+        )));
 
         let mut res = [0.; 30];
         // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
@@ -2658,10 +2721,10 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
         for t in 0..10 {
-            param.set_value_at_time(t as f32, t as f64);
+            render.onmessage(Box::new(param.set_value_at_time_raw(t as f32, t as f64)));
         }
 
-        param.cancel_scheduled_values(5.);
+        render.onmessage(Box::new(param.cancel_scheduled_values_raw(5.)));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
@@ -2684,10 +2747,10 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.set_value_at_time(0., 0.);
-            param.linear_ramp_to_value_at_time(10., 10.);
+            render.onmessage(Box::new(param.set_value_at_time_raw(0., 0.)));
+            render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(10., 10.)));
             // cancels the ramp, the set value event is kept in timeline
-            param.cancel_scheduled_values(10.);
+            render.onmessage(Box::new(param.cancel_scheduled_values_raw(10.)));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
@@ -2703,8 +2766,8 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.set_value_at_time(0., 0.);
-            param.linear_ramp_to_value_at_time(20., 20.);
+            render.onmessage(Box::new(param.set_value_at_time_raw(0., 0.)));
+            render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(20., 20.)));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
@@ -2715,7 +2778,7 @@ mod tests {
 
             // the SetValue event has been consumed in first tick and the ramp
             // is removed from timeline, no event left in timeline (length is 1)
-            param.cancel_scheduled_values(10.);
+            render.onmessage(Box::new(param.cancel_scheduled_values_raw(10.)));
 
             let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
@@ -2735,8 +2798,8 @@ mod tests {
 
             // the SetValue from param inserted by the Ramp is left in timeline
             // i.e. length is 10
-            param.linear_ramp_to_value_at_time(10., 10.);
-            param.cancel_scheduled_values(10.); // cancels the ramp
+            render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(10., 10.)));
+            render.onmessage(Box::new(param.cancel_scheduled_values_raw(10.))); // cancels the ramp
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
@@ -2751,7 +2814,7 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.linear_ramp_to_value_at_time(20., 20.);
+            render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(20., 20.)));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
@@ -2761,7 +2824,7 @@ mod tests {
             );
 
             // ramp is removed from timeline, no event left
-            param.cancel_scheduled_values(10.);
+            render.onmessage(Box::new(param.cancel_scheduled_values_raw(10.)));
 
             let vs = render.compute_intrinsic_values(10., 1., 10);
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
@@ -2780,11 +2843,11 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.set_value_at_time(1., 1.);
-            param.set_value_at_time(2., 2.);
-            param.set_value_at_time(3., 3.);
-            param.set_value_at_time(4., 4.);
-            param.cancel_and_hold_at_time(2.5);
+            render.onmessage(Box::new(param.set_value_at_time_raw(1., 1.)));
+            render.onmessage(Box::new(param.set_value_at_time_raw(2., 2.)));
+            render.onmessage(Box::new(param.set_value_at_time_raw(3., 3.)));
+            render.onmessage(Box::new(param.set_value_at_time_raw(4., 4.)));
+            render.onmessage(Box::new(param.cancel_and_hold_at_time_raw(2.5)));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
@@ -2813,9 +2876,13 @@ mod tests {
             let t0: f64 = 0.;
             let time_constant: f64 = 1.;
 
-            param.set_value_at_time(v0, t0);
-            param.set_target_at_time(v1, t0, time_constant);
-            param.cancel_and_hold_at_time(15.);
+            render.onmessage(Box::new(param.set_value_at_time_raw(v0, t0)));
+            render.onmessage(Box::new(param.set_target_at_time_raw(
+                v1,
+                t0,
+                time_constant,
+            )));
+            render.onmessage(Box::new(param.cancel_and_hold_at_time_raw(15.)));
 
             let mut res = Vec::<f32>::with_capacity(20);
 
@@ -2849,8 +2916,8 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.linear_ramp_to_value_at_time(10., 10.);
-            param.cancel_and_hold_at_time(5.);
+            render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(10., 10.)));
+            render.onmessage(Box::new(param.cancel_and_hold_at_time_raw(5.)));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
@@ -2870,8 +2937,8 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.linear_ramp_to_value_at_time(10., 10.);
-            param.cancel_and_hold_at_time(4.5);
+            render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(10., 10.)));
+            render.onmessage(Box::new(param.cancel_and_hold_at_time_raw(4.5)));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
@@ -2896,9 +2963,11 @@ mod tests {
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             // set to 0.0001 at t=0 (0. is a special case)
-            param.set_value_at_time(0.0001, 0.);
-            param.exponential_ramp_to_value_at_time(1.0, 10.);
-            param.cancel_and_hold_at_time(5.);
+            render.onmessage(Box::new(param.set_value_at_time_raw(0.0001, 0.)));
+            render.onmessage(Box::new(
+                param.exponential_ramp_to_value_at_time_raw(1.0, 10.),
+            ));
+            render.onmessage(Box::new(param.cancel_and_hold_at_time_raw(5.)));
 
             // compute resulting buffer:
             // v(t) = v1*(v2/v1)^((t-t1)/(t2-t1))
@@ -2929,9 +2998,11 @@ mod tests {
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             // set to 0.0001 at t=0 (0. is a special case)
-            param.set_value_at_time(0.0001, 0.);
-            param.exponential_ramp_to_value_at_time(1.0, 10.);
-            param.cancel_and_hold_at_time(4.5);
+            render.onmessage(Box::new(param.set_value_at_time_raw(0.0001, 0.)));
+            render.onmessage(Box::new(
+                param.exponential_ramp_to_value_at_time_raw(1.0, 10.),
+            ));
+            render.onmessage(Box::new(param.cancel_and_hold_at_time_raw(4.5)));
 
             // compute resulting buffer:
             // v(t) = v1*(v2/v1)^((t-t1)/(t2-t1))
@@ -2966,8 +3037,12 @@ mod tests {
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             let curve = [0., 0.5, 1., 0.5, 0.];
-            param.set_value_curve_at_time(&curve[..], 0., 10.);
-            param.cancel_and_hold_at_time(5.);
+            render.onmessage(Box::new(param.set_value_curve_at_time_raw(
+                &curve[..],
+                0.,
+                10.,
+            )));
+            render.onmessage(Box::new(param.cancel_and_hold_at_time_raw(5.)));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
@@ -2988,8 +3063,12 @@ mod tests {
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
             let curve = [0., 0.5, 1., 0.5, 0.];
-            param.set_value_curve_at_time(&curve[..], 0., 10.);
-            param.cancel_and_hold_at_time(4.5);
+            render.onmessage(Box::new(param.set_value_curve_at_time_raw(
+                &curve[..],
+                0.,
+                10.,
+            )));
+            render.onmessage(Box::new(param.cancel_and_hold_at_time_raw(4.5)));
 
             let vs = render.compute_intrinsic_values(0., 1., 10);
             assert_float_eq!(
@@ -3014,7 +3093,11 @@ mod tests {
 
         // set to 0.0001 at t=0 (0. is a special case)
         let curve = [0., 0.5, 1., 0.5, 0.];
-        param.set_value_curve_at_time(&curve[..], 0., 10.);
+        render.onmessage(Box::new(param.set_value_curve_at_time_raw(
+            &curve[..],
+            0.,
+            10.,
+        )));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
@@ -3041,7 +3124,11 @@ mod tests {
 
         // set to 0.0001 at t=0 (0. is a special case)
         let curve = [0., 0.5, 1., 0.5, 0.];
-        param.set_value_curve_at_time(&curve[..], 0., 20.);
+        render.onmessage(Box::new(param.set_value_curve_at_time_raw(
+            &curve[..],
+            0.,
+            20.,
+        )));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
@@ -3074,10 +3161,14 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(0.0, 5.);
+        render.onmessage(Box::new(param.set_value_at_time_raw(0.0, 5.)));
 
         let curve = [0., 0.5, 1., 0.5, 0.];
-        param.set_value_curve_at_time(&curve[..], 0., 10.);
+        render.onmessage(Box::new(param.set_value_curve_at_time_raw(
+            &curve[..],
+            0.,
+            10.,
+        )));
         // this is necessary as the panic is triggered in the audio thread
         // @note - argues in favor of maintaining the queue in control thread
         let _vs = render.compute_intrinsic_values(0., 1., 10);
@@ -3097,8 +3188,12 @@ mod tests {
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
         let curve = [0., 0.5, 1., 0.5, 0.];
-        param.set_value_curve_at_time(&curve[..], 0., 10.);
-        param.set_value_at_time(0.0, 5.);
+        render.onmessage(Box::new(param.set_value_curve_at_time_raw(
+            &curve[..],
+            0.,
+            10.,
+        )));
+        render.onmessage(Box::new(param.set_value_at_time_raw(0.0, 5.)));
         // this is necessary as the panic is triggered in the audio thread
         // @note - argues in favor of maintaining the queue in control thread
         let _vs = render.compute_intrinsic_values(0., 1., 10);
@@ -3118,7 +3213,11 @@ mod tests {
 
         // set to 0.0001 at t=0 (0. is a special case)
         let curve = [0., 0.5, 1., 0.5, 0.];
-        param.set_value_curve_at_time(&curve[..], 5., 10.);
+        render.onmessage(Box::new(param.set_value_curve_at_time_raw(
+            &curve[..],
+            5.,
+            10.,
+        )));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(
@@ -3140,8 +3239,8 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(2., 0.000001);
-        param.set_automation_rate(AutomationRate::K);
+        render.onmessage(Box::new(AutomationRate::K));
+        render.onmessage(Box::new(param.set_value_at_time_raw(2., 0.000001)));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
@@ -3159,8 +3258,8 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value_at_time(2., 0.000001);
-        param.set_automation_rate(AutomationRate::A);
+        render.onmessage(Box::new(AutomationRate::A));
+        render.onmessage(Box::new(param.set_value_at_time_raw(2., 0.000001)));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
         assert_float_eq!(vs, &[2.; 10][..], abs_all <= 0.);
@@ -3180,8 +3279,8 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.set_value_at_time(0., 0.);
-            param.linear_ramp_to_value_at_time(9., 9.);
+            render.onmessage(Box::new(param.set_value_at_time_raw(0., 0.)));
+            render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(9., 9.)));
 
             // first block should be length 10 (128 in real world)
             let vs = render.compute_intrinsic_values(0., 1., 10);
@@ -3194,7 +3293,7 @@ mod tests {
             assert_float_eq!(vs, &expected[..], abs_all <= 0.);
 
             // insert event in third block, should have length 10
-            param.set_value_at_time(1., 25.);
+            render.onmessage(Box::new(param.set_value_at_time_raw(1., 25.)));
 
             let vs = render.compute_intrinsic_values(20., 1., 10);
             let expected = [9., 9., 9., 9., 9., 1., 1., 1., 1., 1.];
@@ -3218,9 +3317,9 @@ mod tests {
             };
             let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-            param.set_value_at_time(0., 0.);
-            param.linear_ramp_to_value_at_time(9., 9.);
-            param.set_value_at_time(1., 25.);
+            render.onmessage(Box::new(param.set_value_at_time_raw(0., 0.)));
+            render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(9., 9.)));
+            render.onmessage(Box::new(param.set_value_at_time_raw(1., 25.)));
 
             // first block should be length 10 (128 in real world)
             let vs = render.compute_intrinsic_values(0., 1., 10);
@@ -3329,8 +3428,8 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        param.set_value(128.);
-        param.linear_ramp_to_value_at_time(0., 128.);
+        render.onmessage(Box::new(param.set_value_raw(128.)));
+        render.onmessage(Box::new(param.linear_ramp_to_value_at_time_raw(0., 128.)));
 
         let intrinsic_values = render.compute_intrinsic_values(0., 1., 128);
         let mut expected = [0.; 128];
