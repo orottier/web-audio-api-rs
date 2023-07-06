@@ -208,7 +208,7 @@ impl MediaRecorder {
             panic!("InvalidStateError: recorder has already started")
         }
 
-        let inner = self.inner.clone();
+        let inner = Arc::clone(&self.inner);
         let blob = Vec::with_capacity(128 * 1024);
 
         std::thread::spawn(move || {
@@ -290,7 +290,7 @@ mod tests {
         let recorder = MediaRecorder::new(&stream);
 
         {
-            let data_received = data_received.clone();
+            let data_received = Arc::clone(&data_received);
             recorder.set_ondataavailable(move |_| data_received.store(true, Ordering::Relaxed));
         }
 
@@ -321,11 +321,11 @@ mod tests {
         let recorder = MediaRecorder::new(&stream);
 
         {
-            let data_received = data_received.clone();
+            let data_received = Arc::clone(&data_received);
             recorder.set_ondataavailable(move |_| data_received.store(true, Ordering::Relaxed));
         }
         {
-            let error_received = error_received.clone();
+            let error_received = Arc::clone(&error_received);
             recorder.set_onerror(move |_| error_received.store(true, Ordering::Relaxed));
         }
 
@@ -354,7 +354,7 @@ mod tests {
 
         let samples: Arc<Mutex<Vec<u8>>> = Default::default();
         {
-            let samples = samples.clone();
+            let samples = Arc::clone(&samples);
             recorder.set_ondataavailable(move |e| {
                 samples.lock().unwrap().extend_from_slice(&e.blob);
             });

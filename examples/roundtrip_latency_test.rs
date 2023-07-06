@@ -105,7 +105,7 @@ impl LatencyTesterNode {
             let estimated_latency = Arc::new(AtomicF64::new(0.));
 
             let render = LatencyTesterProcessor {
-                estimated_latency: estimated_latency.clone(),
+                estimated_latency: Arc::clone(&estimated_latency),
                 send_time: 0.,
             };
 

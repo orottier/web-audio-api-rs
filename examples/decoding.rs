@@ -22,6 +22,8 @@ fn main() {
         "samples/sample.flac",
         "samples/sample.ogg",
         "samples/sample.mp3",
+        "samples/sample-aac.m4a",
+        "samples/sample-alac.m4a",
         // cannot decode, format not supported or file corrupted
         "samples/empty_2c.wav",
         "samples/corrupt.wav",
@@ -29,7 +31,14 @@ fn main() {
         "samples/sample.webm", // 48kHz,
     ];
 
-    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY")
+        .as_deref()
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Ok("interactive") => AudioContextLatencyCategory::Interactive,
+        Ok("balanced") => AudioContextLatencyCategory::Balanced,
         Ok("playback") => AudioContextLatencyCategory::Playback,
         _ => AudioContextLatencyCategory::default(),
     };
