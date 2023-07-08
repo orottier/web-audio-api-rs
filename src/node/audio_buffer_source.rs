@@ -139,8 +139,7 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
             panic!("InvalidStateError cannot stop before start");
         }
 
-        self.registration
-            .post_message(Box::new(Control::Stop(when)));
+        self.registration.post_message(Control::Stop(when));
     }
 }
 
@@ -239,7 +238,7 @@ impl AudioBufferSourceNode {
         }
 
         let control = Control::StartWithOffsetAndDuration(start, offset, duration);
-        self.registration.post_message(Box::new(control));
+        self.registration.post_message(control);
     }
 
     /// Current buffer value (nullable)
@@ -260,7 +259,7 @@ impl AudioBufferSourceNode {
             panic!("InvalidStateError - cannot assign buffer twice");
         }
 
-        self.registration.post_message(Box::new(clone));
+        self.registration.post_message(clone);
     }
 
     /// K-rate [`AudioParam`] that defines the speed at which the [`AudioBuffer`]
@@ -287,8 +286,7 @@ impl AudioBufferSourceNode {
     }
 
     pub fn set_loop(&self, value: bool) {
-        self.registration
-            .post_message(Box::new(Control::Loop(value)));
+        self.registration.post_message(Control::Loop(value));
     }
 
     /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
@@ -297,8 +295,7 @@ impl AudioBufferSourceNode {
     }
 
     pub fn set_loop_start(&self, value: f64) {
-        self.registration
-            .post_message(Box::new(Control::LoopStart(value)));
+        self.registration.post_message(Control::LoopStart(value));
     }
 
     /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
@@ -307,8 +304,7 @@ impl AudioBufferSourceNode {
     }
 
     pub fn set_loop_end(&self, value: f64) {
-        self.registration
-            .post_message(Box::new(Control::LoopEnd(value)));
+        self.registration.post_message(Control::LoopEnd(value));
     }
 }
 

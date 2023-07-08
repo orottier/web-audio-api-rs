@@ -156,8 +156,7 @@ impl AudioScheduledSourceNode for OscillatorNode {
     }
 
     fn start_at(&self, when: f64) {
-        self.registration
-            .post_message(Box::new(Schedule::Start(when)));
+        self.registration.post_message(Schedule::Start(when));
     }
 
     fn stop(&self) {
@@ -166,8 +165,7 @@ impl AudioScheduledSourceNode for OscillatorNode {
     }
 
     fn stop_at(&self, when: f64) {
-        self.registration
-            .post_message(Box::new(Schedule::Stop(when)));
+        self.registration.post_message(Schedule::Stop(when));
     }
 }
 
@@ -290,7 +288,7 @@ impl OscillatorNode {
             return;
         }
 
-        self.registration.post_message(Box::new(type_));
+        self.registration.post_message(type_);
     }
 
     /// Sets a `PeriodicWave` which describes a waveform to be used by the oscillator.
@@ -303,7 +301,7 @@ impl OscillatorNode {
         self.shared_type
             .store(OscillatorType::Custom as u32, Ordering::Release);
 
-        self.registration.post_message(Box::new(periodic_wave));
+        self.registration.post_message(periodic_wave);
     }
 }
 

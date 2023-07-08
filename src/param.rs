@@ -268,7 +268,7 @@ impl AudioParam {
             panic!("InvalidStateError: automation rate cannot be changed for this param");
         }
 
-        self.registration().post_message(Box::new(value));
+        self.registration().post_message(value);
     }
 
     pub(crate) fn set_automation_rate_constrained(&mut self, value: bool) {
@@ -563,7 +563,7 @@ impl AudioParam {
     }
 
     fn send_event(&self, event: AudioParamEvent) -> &Self {
-        self.registration().post_message(Box::new(event));
+        self.registration().post_message(event);
         self
     }
 }

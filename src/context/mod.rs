@@ -105,8 +105,11 @@ impl AudioContextRegistration {
     ///
     /// The message will be handled by
     /// [`AudioProcessor::onmessage`](crate::render::AudioProcessor::onmessage).
-    pub fn post_message(&self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        let wrapped = crate::message::ControlMessage::NodeMessage { id: self.id, msg };
+    pub fn post_message<M: std::any::Any + Send + 'static>(&self, msg: M) {
+        let wrapped = crate::message::ControlMessage::NodeMessage {
+            id: self.id,
+            msg: Box::new(msg),
+        };
         let _ = self.context.send_control_msg(wrapped);
     }
 }

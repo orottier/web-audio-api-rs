@@ -92,8 +92,7 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
     }
 
     fn start_at(&self, when: f64) {
-        self.registration
-            .post_message(Box::new(Schedule::Start(when)));
+        self.registration.post_message(Schedule::Start(when));
     }
 
     fn stop(&self) {
@@ -102,8 +101,7 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
     }
 
     fn stop_at(&self, when: f64) {
-        self.registration
-            .post_message(Box::new(Schedule::Stop(when)));
+        self.registration.post_message(Schedule::Stop(when));
     }
 }
 
