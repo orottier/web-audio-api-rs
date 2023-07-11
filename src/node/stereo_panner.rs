@@ -4,8 +4,8 @@ use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
 use super::{
-    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
-    SINETABLE, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE,
+    sine_table, AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode,
+    ChannelInterpretation, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE,
 };
 
 /// Options for constructing a [`StereoPannerOptions`]
@@ -71,8 +71,10 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
 #[inline(always)]
 fn get_stereo_gains(x: f32) -> [f32; 2] {
     let idx = (x * TABLE_LENGTH_BY_4_F32) as usize;
-    let gain_left = SINETABLE[idx + TABLE_LENGTH_BY_4_USIZE];
-    let gain_right = SINETABLE[idx];
+
+    let sine_table = sine_table();
+    let gain_left = sine_table[idx + TABLE_LENGTH_BY_4_USIZE];
+    let gain_right = sine_table[idx];
 
     [gain_left, gain_right]
 }

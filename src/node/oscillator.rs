@@ -9,7 +9,7 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Render
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
-    AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions, SINETABLE,
+    sine_table, AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions,
     TABLE_LENGTH_USIZE,
 };
 
@@ -467,7 +467,8 @@ impl OscillatorRenderer {
 
         // linear interpolation into lookup table
         let k = (position - floored) as f32;
-        SINETABLE[prev_index].mul_add(1. - k, SINETABLE[next_index] * k)
+        let sine_table = sine_table();
+        sine_table[prev_index].mul_add(1. - k, sine_table[next_index] * k)
     }
 
     #[inline]

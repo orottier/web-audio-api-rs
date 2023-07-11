@@ -1,15 +1,13 @@
 //! The AudioNode interface and concrete types
 use std::f32::consts::PI;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
 use crate::events::{ErrorEvent, EventHandler, EventPayload, EventType};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::AudioBufferIter;
 use crate::Event;
-
-use lazy_static::lazy_static;
 
 mod analyser;
 pub use analyser::*;
@@ -58,14 +56,14 @@ pub(crate) const TABLE_LENGTH_BY_4_USIZE: usize = TABLE_LENGTH_USIZE / 4;
 pub(crate) const TABLE_LENGTH_F32: f32 = TABLE_LENGTH_USIZE as f32;
 pub(crate) const TABLE_LENGTH_BY_4_F32: f32 = TABLE_LENGTH_BY_4_USIZE as f32;
 
-// Compute one period sine wavetable of size TABLE_LENGTH
-lazy_static! {
-    pub(crate) static ref SINETABLE: Vec<f32> = {
-        let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
+pub(crate) fn sine_table() -> &'static [f32] {
+    static INSTANCE: OnceLock<Vec<f32>> = OnceLock::new();
+    INSTANCE.get_or_init(|| {
+        // Compute one period sine wavetable of size TABLE_LENGTH
+        (0..TABLE_LENGTH_USIZE)
             .map(|x| ((x as f32) * 2.0 * PI * (1. / (TABLE_LENGTH_F32))).sin())
-            .collect();
-        table
-    };
+            .collect()
+    })
 }
 
 /// How channels must be matched between the node's inputs and outputs.

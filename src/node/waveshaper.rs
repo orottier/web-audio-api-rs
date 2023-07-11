@@ -1,10 +1,12 @@
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc,
+use std::{
+    cell::OnceCell,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
 };
 
 use crossbeam_channel::{Receiver, Sender};
-use once_cell::sync::OnceCell;
 use rubato::{FftFixedInOut, Resampler as _};
 
 use crate::{
