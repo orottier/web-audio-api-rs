@@ -7,7 +7,7 @@ use crate::context::{
 use crate::events::{EventDispatch, EventHandler, EventLoop, EventType};
 use crate::message::ControlMessage;
 use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig, ChannelConfigOptions};
-use crate::param::{AudioParam, AudioParamEvent};
+use crate::param::AudioParam;
 use crate::render::AudioProcessor;
 use crate::spatial::AudioListenerParams;
 
@@ -267,6 +267,9 @@ impl ConcreteBaseAudioContext {
 
     /// Returns the `AudioListener` which is used for 3D spatialization
     pub(super) fn listener(&self) -> AudioListener {
+        // instruct to BaseContext to add the AudioListener if it has not already
+        self.base().ensure_audio_listener_present();
+
         let mut ids = LISTENER_PARAM_IDS.map(|i| AudioContextRegistration {
             id: AudioNodeId(i),
             context: self.clone(),
@@ -369,22 +372,6 @@ impl ConcreteBaseAudioContext {
     /// Disconnects all outgoing connections from the audio node.
     pub(crate) fn disconnect(&self, from: AudioNodeId) {
         let message = ControlMessage::DisconnectAll { from };
-        self.send_control_msg(message).unwrap();
-    }
-
-    /// Pass an `AudioParam::AudioParamEvent` to the render thread
-    ///
-    /// This clunky setup (wrapping a Sender in a message sent by another Sender) ensures
-    /// automation events will never be handled out of order.
-    pub(crate) fn pass_audio_param_event(
-        &self,
-        to: &Sender<AudioParamEvent>,
-        event: AudioParamEvent,
-    ) {
-        let message = ControlMessage::AudioParamEvent {
-            to: to.clone(),
-            event,
-        };
         self.send_control_msg(message).unwrap();
     }
 

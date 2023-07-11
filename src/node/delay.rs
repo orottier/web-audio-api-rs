@@ -7,7 +7,6 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretatio
 
 use std::cell::{Cell, RefCell, RefMut};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Options for constructing a [`DelayNode`]
 // dictionary DelayOptions : AudioNodeOptions {
@@ -214,7 +213,7 @@ impl DelayNode {
 
         // shared value for reader/writer to determine who was rendered first,
         // this will indicate if the delay node acts as a cycle breaker
-        let latest_frame_written = Rc::new(AtomicU64::new(u64::MAX));
+        let latest_frame_written = Rc::new(Cell::new(u64::MAX));
         let latest_frame_written_clone = Rc::clone(&latest_frame_written);
 
         let node = context.register(move |writer_registration| {
@@ -279,7 +278,7 @@ impl DelayNode {
 struct DelayWriter {
     ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
-    latest_frame_written: Rc<AtomicU64>,
+    latest_frame_written: Rc<Cell<u64>>,
     last_written_index: Rc<Cell<Option<usize>>>,
 }
 
@@ -353,8 +352,7 @@ impl AudioProcessor for DelayWriter {
 
         // increment cursor and last written frame
         self.index = (self.index + 1) % buffer.capacity();
-        self.latest_frame_written
-            .store(scope.current_frame, Ordering::SeqCst);
+        self.latest_frame_written.set(scope.current_frame);
 
         // The writer end does not produce output,
         // clear the buffer so that it can be re-used
@@ -392,7 +390,7 @@ struct DelayReader {
     delay_time: AudioParamId,
     ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
-    latest_frame_written: Rc<AtomicU64>,
+    latest_frame_written: Rc<Cell<u64>>,
     in_cycle: bool,
     last_written_index: Rc<Cell<Option<usize>>>,
     // local copy of shared `last_written_index` so as to avoid render ordering issues
@@ -434,7 +432,7 @@ impl AudioProcessor for DelayReader {
 
         if !self.in_cycle {
             // check the latest written frame by the delay writer
-            let latest_frame_written = self.latest_frame_written.load(Ordering::SeqCst);
+            let latest_frame_written = self.latest_frame_written.get();
             // if the delay writer has not rendered before us, the cycle breaker has been applied
             self.in_cycle = latest_frame_written != scope.current_frame;
             // once we store in_cycle = true, we do not want to go back to false

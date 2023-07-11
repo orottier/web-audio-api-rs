@@ -241,7 +241,7 @@ impl DynamicsCompressorNode {
     }
 
     pub fn reduction(&self) -> f32 {
-        self.reduction.load(Ordering::SeqCst)
+        self.reduction.load(Ordering::Relaxed)
     }
 }
 
@@ -386,7 +386,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
         // update prev_detector_value for next block
         self.prev_detector_value = prev_detector_value;
         // update reduction shared w/ main thread
-        self.reduction.store(reduction_gain, Ordering::SeqCst);
+        self.reduction.store(reduction_gain, Ordering::Relaxed);
 
         // store input in delay line
         self.ring_buffer[self.ring_index] = input;
