@@ -25,6 +25,8 @@ pub trait BaseAudioContext {
     /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]
     ///
     /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.
+    ///
+    /// Check the `examples/worklet.rs` file for example usage of this method.
     fn register<
         T: AudioNode,
         F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),

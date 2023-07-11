@@ -105,6 +105,10 @@ pub trait AudioProcessor: Send {
     /// via
     /// [`AudioContextRegistration::post_message`](crate::context::AudioContextRegistration::post_message).
     /// This will not be necessary for most processors.
+    ///
+    /// This method is just a shim of the full
+    /// [`MessagePort`](https://webaudio.github.io/web-audio-api/#dom-audioworkletprocessor-port)
+    /// `onmessage` functionality of the AudioWorkletProcessor.
     #[allow(unused_variables)]
     fn onmessage(&mut self, msg: Box<dyn Any + Send + 'static>) {
         log::warn!("Ignoring incoming message");
