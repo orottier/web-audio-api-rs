@@ -22,8 +22,8 @@ impl Default for Controller {
 }
 
 impl Controller {
-    pub fn shared(&self) -> Arc<ControllerShared> {
-        Arc::clone(&self.shared)
+    pub fn shared(&self) -> &Arc<ControllerShared> {
+        &self.shared
     }
 
     pub fn loop_(&self) -> bool {

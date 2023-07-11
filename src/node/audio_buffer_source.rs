@@ -185,7 +185,7 @@ impl AudioBufferSourceNode {
             controller.set_loop(loop_);
             controller.set_loop_start(loop_start);
             controller.set_loop_end(loop_end);
-            let controller_shared = controller.shared();
+            let controller_shared = Arc::clone(controller.shared());
 
             let renderer = AudioBufferSourceRenderer {
                 start_time: f64::MAX,
