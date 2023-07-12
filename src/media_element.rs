@@ -11,6 +11,7 @@ use crate::{AtomicF64, AudioBuffer, RENDER_QUANTUM_SIZE};
 /// Real time safe audio stream
 pub(crate) struct RTSStream {
     stream: ReadDiskStream<SymphoniaDecoder>,
+    number_of_channels: usize,
     current_time: Arc<AtomicF64>,
     receiver: Receiver<MediaElementAction>,
     loop_: Arc<AtomicBool>,
@@ -54,6 +55,7 @@ impl MediaElement {
             0,                  // The frame in the file to start reading from.
             Default::default(), // Use default read stream options.
         )?;
+        let number_of_channels = read_disk_stream.info().num_channels as usize;
 
         // Cache the start of the file into cache with index `0`.
         let _ = read_disk_stream.cache(0, 0);
@@ -79,6 +81,7 @@ impl MediaElement {
 
         let rts_stream = RTSStream {
             stream: read_disk_stream,
+            number_of_channels,
             current_time: Arc::clone(&current_time),
             receiver,
             loop_: Arc::clone(&loop_),
@@ -161,7 +164,10 @@ impl Iterator for RTSStream {
         }
 
         if self.paused.load(Ordering::SeqCst) {
-            let silence = AudioBuffer::from(vec![vec![0.; RENDER_QUANTUM_SIZE]], sample_rate);
+            let silence = AudioBuffer::from(
+                vec![vec![0.; RENDER_QUANTUM_SIZE]; self.number_of_channels],
+                sample_rate,
+            );
             return Some(Ok(silence));
         }
 
