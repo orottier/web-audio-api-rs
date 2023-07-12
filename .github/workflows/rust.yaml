@@ -2,7 +2,10 @@
 
 name: Build
 
-# read-only repo token
+# read-only repo token, no access to secrets
+permissions:
+  contents: read
+
 # no access to secrets
 on:
   push:

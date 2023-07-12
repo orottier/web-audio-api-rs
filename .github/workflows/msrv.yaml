@@ -2,8 +2,10 @@
 
 name: msrv
 
-# read-only repo token
-# no access to secrets
+# read-only repo token, no access to secrets
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
