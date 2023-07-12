@@ -69,10 +69,9 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
 /// - `gain_left = (x * PI / 2.).cos()`
 /// - `gain_right = (x * PI / 2.).sin()`
 #[inline(always)]
-fn get_stereo_gains(x: f32) -> [f32; 2] {
+fn get_stereo_gains(sine_table: &[f32], x: f32) -> [f32; 2] {
     let idx = (x * TABLE_LENGTH_BY_4_F32) as usize;
 
-    let sine_table = sine_table();
     let gain_left = sine_table[idx + TABLE_LENGTH_BY_4_USIZE];
     let gain_right = sine_table[idx];
 
@@ -185,7 +184,7 @@ impl StereoPannerNode {
 
             pan_param.set_value(options.pan);
 
-            let renderer = StereoPannerRenderer { pan: pan_proc };
+            let renderer = StereoPannerRenderer::new(pan_proc);
 
             let node = Self {
                 registration,
@@ -209,6 +208,16 @@ struct StereoPannerRenderer {
     /// Position of the input in the output’s stereo image.
     /// -1 represents full left, +1 represents full right.
     pan: AudioParamId,
+    sine_table: &'static [f32],
+}
+
+impl StereoPannerRenderer {
+    fn new(pan: AudioParamId) -> Self {
+        Self {
+            pan,
+            sine_table: sine_table(),
+        }
+    }
 }
 
 impl AudioProcessor for StereoPannerRenderer {
@@ -241,7 +250,7 @@ impl AudioProcessor for StereoPannerRenderer {
                 if pan_values.len() == 1 {
                     let pan = pan_values[0];
                     let x = (pan + 1.) * 0.5;
-                    let [gain_left, gain_right] = get_stereo_gains(x);
+                    let [gain_left, gain_right] = get_stereo_gains(self.sine_table, x);
 
                     left.iter_mut()
                         .zip(right.iter_mut())
@@ -257,7 +266,7 @@ impl AudioProcessor for StereoPannerRenderer {
                         .zip(input.channel_data(0).iter())
                         .for_each(|(((l, r), pan), input)| {
                             let x = (pan + 1.) * 0.5;
-                            let [gain_left, gain_right] = get_stereo_gains(x);
+                            let [gain_left, gain_right] = get_stereo_gains(self.sine_table, x);
 
                             *l = input * gain_left;
                             *r = input * gain_right;
@@ -268,7 +277,7 @@ impl AudioProcessor for StereoPannerRenderer {
                 if pan_values.len() == 1 {
                     let pan = pan_values[0];
                     let x = if pan <= 0. { pan + 1. } else { pan };
-                    let [gain_left, gain_right] = get_stereo_gains(x);
+                    let [gain_left, gain_right] = get_stereo_gains(self.sine_table, x);
 
                     left.iter_mut()
                         .zip(right.iter_mut())
@@ -292,13 +301,13 @@ impl AudioProcessor for StereoPannerRenderer {
                         .for_each(|((((l, r), &pan), &input_left), &input_right)| {
                             if pan <= 0. {
                                 let x = pan + 1.;
-                                let [gain_left, gain_right] = get_stereo_gains(x);
+                                let [gain_left, gain_right] = get_stereo_gains(self.sine_table, x);
 
                                 *l = input_right.mul_add(gain_left, input_left);
                                 *r = input_right * gain_right;
                             } else {
                                 let x = pan;
-                                let [gain_left, gain_right] = get_stereo_gains(x);
+                                let [gain_left, gain_right] = get_stereo_gains(self.sine_table, x);
 
                                 *l = input_left * gain_left;
                                 *r = input_left.mul_add(gain_right, input_right);
@@ -347,11 +356,13 @@ mod tests {
 
     #[test]
     fn test_get_stereo_gains() {
+        let sine_table = sine_table();
+
         // check correctness of wavetable lookup
         for i in 0..1001 {
             let x = i as f32 / 1000.;
 
-            let [gain_left, gain_right] = get_stereo_gains(x);
+            let [gain_left, gain_right] = get_stereo_gains(sine_table, x);
 
             assert_float_eq!(
                 gain_left,
