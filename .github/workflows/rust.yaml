@@ -35,6 +35,9 @@ jobs:
       # restore cargo cache from previous runs
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # Distinguished by the action name to avoid sharing!
+          shared-key: "rust"
 
       # check it builds
       - name: Build
