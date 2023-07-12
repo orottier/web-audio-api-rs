@@ -15,7 +15,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  verify-build:
+  check-workspace:
     runs-on: ubuntu-latest
 
     steps:
@@ -36,11 +36,11 @@ jobs:
       - name: Generate Cargo.lock
         run: cargo generate-lockfile
 
-      - name: Rust Cache
+      - name: Cache Rust toolchain and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
           # Distinguished by the action name to avoid sharing!
           shared-key: "msrv"
 
-      - name: Check
-        run: cargo check --verbose --all-targets --all-features
+      - name: Check workspace
+        run: cargo check --locked --workspace --verbose --all-targets --all-features
