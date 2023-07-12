@@ -9,8 +9,8 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Render
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
-    sine_table, AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions,
-    TABLE_LENGTH_USIZE,
+    precomputed_sine_table, AudioNode, AudioScheduledSourceNode, ChannelConfig,
+    ChannelConfigOptions, TABLE_LENGTH_USIZE,
 };
 
 /// Options for constructing an [`OscillatorNode`]
@@ -222,7 +222,7 @@ impl OscillatorNode {
                 started: false,
                 periodic_wave: None,
                 ended_triggered: false,
-                sine_table: sine_table(),
+                sine_table: precomputed_sine_table(),
             };
 
             let node = Self {

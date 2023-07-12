@@ -4,7 +4,7 @@ use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
 use super::{
-    sine_table, AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode,
+    precomputed_sine_table, AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode,
     ChannelInterpretation, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE,
 };
 
@@ -215,7 +215,7 @@ impl StereoPannerRenderer {
     fn new(pan: AudioParamId) -> Self {
         Self {
             pan,
-            sine_table: sine_table(),
+            sine_table: precomputed_sine_table(),
         }
     }
 }
@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn test_get_stereo_gains() {
-        let sine_table = sine_table();
+        let sine_table = precomputed_sine_table();
 
         // check correctness of wavetable lookup
         for i in 0..1001 {
