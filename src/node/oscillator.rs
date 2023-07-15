@@ -9,8 +9,8 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Render
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
-    AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions, SINETABLE,
-    TABLE_LENGTH_USIZE,
+    precomputed_sine_table, AudioNode, AudioScheduledSourceNode, ChannelConfig,
+    ChannelConfigOptions, TABLE_LENGTH_USIZE,
 };
 
 /// Options for constructing an [`OscillatorNode`]
@@ -222,6 +222,7 @@ impl OscillatorNode {
                 started: false,
                 periodic_wave: None,
                 ended_triggered: false,
+                sine_table: precomputed_sine_table(),
             };
 
             let node = Self {
@@ -327,6 +328,8 @@ struct OscillatorRenderer {
     periodic_wave: Option<PeriodicWave>,
     /// defines if the `ended` events was already dispatched
     ended_triggered: bool,
+    /// Precomputed sine table
+    sine_table: &'static [f32],
 }
 
 impl AudioProcessor for OscillatorRenderer {
@@ -467,7 +470,7 @@ impl OscillatorRenderer {
 
         // linear interpolation into lookup table
         let k = (position - floored) as f32;
-        SINETABLE[prev_index].mul_add(1. - k, SINETABLE[next_index] * k)
+        self.sine_table[prev_index].mul_add(1. - k, self.sine_table[next_index] * k)
     }
 
     #[inline]

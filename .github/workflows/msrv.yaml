@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+
+name: msrv
+
+# read-only repo token, no access to secrets
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-workspace:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install ALSA and Jack dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev cmake
+
+      - name: Install Rust toolchain
+        # Aligned with `rust-version` in `Cargo.toml`
+        uses: dtolnay/rust-toolchain@1.70
+
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Generate Cargo.lock
+        run: cargo generate-lockfile
+
+      - name: Cache Rust toolchain and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Distinguished by the action name to avoid sharing!
+          shared-key: "msrv"
+
+      - name: Check workspace
+        run: cargo check --locked --workspace --verbose --all-targets --all-features

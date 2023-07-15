@@ -2,7 +2,10 @@
 
 name: Build
 
-# read-only repo token
+# read-only repo token, no access to secrets
+permissions:
+  contents: read
+
 # no access to secrets
 on:
   push:
@@ -35,6 +38,9 @@ jobs:
       # restore cargo cache from previous runs
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # Distinguished by the action name to avoid sharing!
+          shared-key: "rust"
 
       # check it builds
       - name: Build

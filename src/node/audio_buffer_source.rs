@@ -1,4 +1,4 @@
-use once_cell::sync::OnceCell;
+use std::cell::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 

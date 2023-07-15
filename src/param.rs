@@ -10,7 +10,7 @@ use crate::node::{
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 
 /// For SetTargetAtTime event, that theoretically cannot end, if the diff between
 /// the current value and the target is below this threshold, the value is set
@@ -221,8 +221,8 @@ impl AudioNode for AudioParam {
         &self.registration
     }
 
-    fn channel_config(&self) -> &ChannelConfig {
-        static INSTANCE: OnceCell<ChannelConfig> = OnceCell::new();
+    fn channel_config(&self) -> &'static ChannelConfig {
+        static INSTANCE: OnceLock<ChannelConfig> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             ChannelConfigOptions {
                 count: 1,

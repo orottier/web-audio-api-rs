@@ -3,6 +3,7 @@
 # Same name as the file for consistent identification
 name: pre-commit
 
+# read-only repo token, no access to secrets
 permissions:
   contents: read
 
