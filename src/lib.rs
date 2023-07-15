@@ -204,6 +204,12 @@ pub(crate) fn assert_valid_channel_number(channel_number: usize, number_of_chann
     }
 }
 
+pub(crate) trait AudioBufferIter: Iterator<Item = FallibleBuffer> + Send + 'static {}
+
+impl<M: Iterator<Item = FallibleBuffer> + Send + 'static> AudioBufferIter for M {}
+
+type FallibleBuffer = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
+
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
@@ -260,9 +266,3 @@ mod tests {
         assert_valid_number_of_channels(32);
     }
 }
-
-pub(crate) trait AudioBufferIter: Iterator<Item = FallibleBuffer> + Send + 'static {}
-
-impl<M: Iterator<Item = FallibleBuffer> + Send + 'static> AudioBufferIter for M {}
-
-type FallibleBuffer = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;

@@ -196,7 +196,7 @@ impl ConcreteBaseAudioContext {
         }; // nodes will drop now, so base.inner has no copies anymore
 
         let mut base = base;
-        let mut inner_mut = Arc::get_mut(&mut base.inner).unwrap();
+        let inner_mut = Arc::get_mut(&mut base.inner).unwrap();
         inner_mut.listener_params = Some(listener_params);
         inner_mut.destination_channel_config = destination_channel_config;
 
