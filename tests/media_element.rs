@@ -17,7 +17,9 @@ fn test_media_element_source_progress() {
     src.connect(&context.destination());
     media.play();
 
-    // sleep for a bit, make sure the audio thread has started
+    // TODO improve test setup of online AudioContext
+    // <https://github.com/orottier/web-audio-api-rs/issues/323>
+    // Sleep for a bit, make sure the audio thread has started
     std::thread::sleep(std::time::Duration::from_millis(100));
 
     // assert the media has progressed
