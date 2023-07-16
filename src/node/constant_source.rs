@@ -203,15 +203,18 @@ impl AudioProcessor for ConstantSourceRenderer {
     }
 
     fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        if let Ok(schedule) = msg.downcast::<Schedule>() {
-            match *schedule {
-                Schedule::Start(v) => self.start_time = v,
-                Schedule::Stop(v) => self.stop_time = v,
+        let msg = match msg.downcast::<Schedule>() {
+            Ok(schedule) => {
+                match *schedule {
+                    Schedule::Start(v) => self.start_time = v,
+                    Schedule::Stop(v) => self.stop_time = v,
+                }
+                return;
             }
-            return;
-        }
+            Err(msg) => msg,
+        };
 
-        log::warn!("ConstantSourceRenderer: Ignoring incoming message");
+        log::warn!("ConstantSourceRenderer: Dropping incoming message {msg:?}");
     }
 }
 
