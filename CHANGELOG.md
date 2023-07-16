@@ -1,5 +1,13 @@
 # Version History
 
+## Version 0.32.0 (2023-07-16)
+
+- Fix for some audio node settings being applied out of order
+- Fix setting the ChannelCountMode for the OfflineAudioContext destination node
+- Fix and extend AAC/M4A/ALAC decoding
+- Fix broken MediaElementSourceNode for multi-channel output
+- Updated Minimum Supported Rust Version (MSRV) to 1.70
+
 ## Version 0.31.0 (2023-06-25)
 
 - Avoid allocations in Waveshaper node for real-time safety
