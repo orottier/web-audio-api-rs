@@ -126,12 +126,12 @@ impl RenderThread {
         }
     }
 
-    // Render method of the `OfflineAudioContext::start_redering_sync`
+    // Render method of the `OfflineAudioContext::start_rendering_sync`
     // This method is not spec compliant and obviously marked as synchronous, so we
     // don't launch a thread.
     //
     // cf. https://webaudio.github.io/web-audio-api/#dom-offlineaudiocontext-startrendering
-    pub fn render_audiobuffer(mut self, length: usize) -> AudioBuffer {
+    pub fn render_audiobuffer_sync(mut self, length: usize) -> AudioBuffer {
         let options = AudioBufferOptions {
             number_of_channels: self.number_of_channels,
             length,
