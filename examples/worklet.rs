@@ -18,6 +18,12 @@ use web_audio_api::{AudioParam, AudioParamDescriptor, AutomationRate};
 //
 // `WEB_AUDIO_LATENCY=playback cargo run --release --example worklet`
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum NoiseColor {
+    White, // zero mean, constant variance, uncorrelated in time
+    Red,   // zero mean, constant variance, serially correlated in time
+}
+
 /// Audio source node emitting white noise (random samples)
 struct WhiteNoiseNode {
     /// handle to the audio context, required for all audio nodes
@@ -63,7 +69,10 @@ impl WhiteNoiseNode {
             let (param, proc) = context.create_audio_param(param_opts, &registration);
 
             // setup the processor, this will run in the render thread
-            let render = WhiteNoiseProcessor { amplitude: proc };
+            let render = WhiteNoiseProcessor {
+                amplitude: proc,
+                color: NoiseColor::White,
+            };
 
             // setup the audio node, this will live in the control thread (user facing)
             let node = WhiteNoiseNode {
@@ -80,10 +89,15 @@ impl WhiteNoiseNode {
     fn amplitude(&self) -> &AudioParam {
         &self.amplitude
     }
+
+    fn set_noise_color(&self, color: NoiseColor) {
+        self.registration.post_message(color);
+    }
 }
 
 struct WhiteNoiseProcessor {
     amplitude: AudioParamId,
+    color: NoiseColor,
 }
 
 impl AudioProcessor for WhiteNoiseProcessor {
@@ -109,15 +123,33 @@ impl AudioProcessor for WhiteNoiseProcessor {
             // 128 (a-rate), so use `cycle` to be able to zip it with the output buffer
             let amplitude_values_cycled = amplitude_values.iter().cycle();
 
+            let mut prev_sample = 0.; // TODO, inherit from previous render quantum
+
             buf.iter_mut()
                 .zip(amplitude_values_cycled)
                 .for_each(|(output_sample, amplitude)| {
-                    let rand: f32 = rng.gen_range(-1.0..1.0);
-                    *output_sample = *amplitude * rand
+                    let mut value: f32 = rng.gen_range(-1.0..1.0);
+                    if self.color == NoiseColor::Red {
+                        // red noise samples correlate with their previous value
+                        value = value * 0.2 + prev_sample * 0.8;
+                        prev_sample = value;
+                    }
+                    *output_sample = *amplitude * value
                 })
         });
 
         true // source node will always be active
+    }
+
+    fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
+        // handle incoming signals requesting for change of color
+        if let Some(&color) = msg.downcast_ref::<NoiseColor>() {
+            self.color = color;
+            return;
+        }
+
+        // ignore other incoming messages
+        log::warn!("WhiteNoiseProcessor: Ignoring incoming message");
     }
 }
 
@@ -145,5 +177,12 @@ fn main() {
     noise.connect(&context.destination());
 
     // enjoy listening
+    println!("Low volume");
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    println!("High volume");
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    println!("Switch to red noise");
+    noise.set_noise_color(NoiseColor::Red);
     std::thread::sleep(std::time::Duration::from_secs(4));
 }
