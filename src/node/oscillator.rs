@@ -432,27 +432,36 @@ impl AudioProcessor for OscillatorRenderer {
     }
 
     fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        if let Some(&type_) = msg.downcast_ref::<OscillatorType>() {
-            self.shared_type.store(type_ as u32, Ordering::Release);
-            self.type_ = type_;
-            return;
-        }
-
-        if let Some(&schedule) = msg.downcast_ref::<Schedule>() {
-            match schedule {
-                Schedule::Start(v) => self.start_time = v,
-                Schedule::Stop(v) => self.stop_time = v,
+        let msg = match msg.downcast::<OscillatorType>() {
+            Ok(type_) => {
+                self.shared_type.store(*type_ as u32, Ordering::Release);
+                self.type_ = *type_;
+                return;
             }
-            return;
-        }
+            Err(msg) => msg,
+        };
 
-        if let Ok(periodic_wave) = msg.downcast::<PeriodicWave>() {
-            self.periodic_wave = Some(*periodic_wave);
-            self.type_ = OscillatorType::Custom; // shared type is already updated by control
-            return;
-        }
+        let msg = match msg.downcast::<Schedule>() {
+            Ok(schedule) => {
+                match *schedule {
+                    Schedule::Start(v) => self.start_time = v,
+                    Schedule::Stop(v) => self.stop_time = v,
+                }
+                return;
+            }
+            Err(msg) => msg,
+        };
 
-        log::warn!("OscillatorRenderer: Ignoring incoming message");
+        let msg = match msg.downcast::<PeriodicWave>() {
+            Ok(periodic_wave) => {
+                self.periodic_wave = Some(*periodic_wave);
+                self.type_ = OscillatorType::Custom; // shared type is already updated by control
+                return;
+            }
+            Err(msg) => msg,
+        };
+
+        log::warn!("OscillatorRenderer: Dropping incoming message {msg:?}");
     }
 }
 
