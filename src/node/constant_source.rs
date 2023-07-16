@@ -208,6 +208,7 @@ impl AudioProcessor for ConstantSourceRenderer {
                 Schedule::Start(v) => self.start_time = v,
                 Schedule::Stop(v) => self.stop_time = v,
             }
+            return;
         }
 
         log::warn!("ConstantSourceRenderer: Ignoring incoming message");
