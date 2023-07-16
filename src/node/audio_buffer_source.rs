@@ -341,6 +341,22 @@ struct AudioBufferSourceRenderer {
     ended_triggered: bool,
 }
 
+impl AudioBufferSourceRenderer {
+    fn handle_control_message(&mut self, control: Control) {
+        match control {
+            Control::StartWithOffsetAndDuration(start, offset, duration) => {
+                self.start_time = start;
+                self.offset = offset;
+                self.duration = duration;
+            }
+            Control::Stop(v) => self.stop_time = v,
+            Control::Loop(v) => self.controller.set_loop(v),
+            Control::LoopStart(v) => self.controller.set_loop_start(v),
+            Control::LoopEnd(v) => self.controller.set_loop_end(v),
+        }
+    }
+}
+
 impl AudioProcessor for AudioBufferSourceRenderer {
     fn process(
         &mut self,
@@ -701,26 +717,23 @@ impl AudioProcessor for AudioBufferSourceRenderer {
     }
 
     fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        if let Some(&control) = msg.downcast_ref::<Control>() {
-            match control {
-                Control::StartWithOffsetAndDuration(start, offset, duration) => {
-                    self.start_time = start;
-                    self.offset = offset;
-                    self.duration = duration;
-                }
-                Control::Stop(v) => self.stop_time = v,
-                Control::Loop(v) => self.controller.set_loop(v),
-                Control::LoopStart(v) => self.controller.set_loop_start(v),
-                Control::LoopEnd(v) => self.controller.set_loop_end(v),
+        let msg = match msg.downcast::<Control>() {
+            Ok(control) => {
+                self.handle_control_message(*control);
+                return;
             }
-        }
+            Err(msg) => msg,
+        };
 
-        if let Ok(buffer) = msg.downcast::<AudioBuffer>() {
-            self.buffer = Some(*buffer);
-            return;
-        }
+        let msg = match msg.downcast::<AudioBuffer>() {
+            Ok(buffer) => {
+                self.buffer = Some(*buffer);
+                return;
+            }
+            Err(msg) => msg,
+        };
 
-        log::warn!("AudioBufferSourceRenderer: Ignoring incoming message");
+        log::warn!("AudioBufferSourceRenderer: Dropping incoming message {msg:?}");
     }
 }
 

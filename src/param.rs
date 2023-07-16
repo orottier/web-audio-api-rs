@@ -642,16 +642,24 @@ impl AudioProcessor for AudioParamProcessor {
     }
 
     fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        if let Some(&automation_rate) = msg.downcast_ref::<AutomationRate>() {
-            self.automation_rate = automation_rate;
-            self.shared_parts.store_automation_rate(automation_rate);
-            return;
-        }
+        let msg = match msg.downcast::<AutomationRate>() {
+            Ok(automation_rate) => {
+                self.automation_rate = *automation_rate;
+                self.shared_parts.store_automation_rate(*automation_rate);
+                return;
+            }
+            Err(msg) => msg,
+        };
 
-        match msg.downcast::<AudioParamEvent>() {
-            Ok(event) => self.handle_incoming_event(*event),
-            _ => log::warn!("AudioParamProcessor: Ignoring incoming message"),
-        }
+        let msg = match msg.downcast::<AudioParamEvent>() {
+            Ok(event) => {
+                self.handle_incoming_event(*event);
+                return;
+            }
+            Err(msg) => msg,
+        };
+
+        log::warn!("AudioParamProcessor: Dropping incoming message {msg:?}");
     }
 }
 

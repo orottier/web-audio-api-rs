@@ -143,13 +143,17 @@ impl AudioProcessor for WhiteNoiseProcessor {
 
     fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
         // handle incoming signals requesting for change of color
-        if let Some(&color) = msg.downcast_ref::<NoiseColor>() {
-            self.color = color;
-            return;
-        }
+        let msg = match msg.downcast::<NoiseColor>() {
+            Ok(color) => {
+                self.color = *color;
+                return;
+            }
+            Err(msg) => msg,
+        };
 
-        // ignore other incoming messages
-        log::warn!("WhiteNoiseProcessor: Ignoring incoming message");
+        // ...add more message handlers here...
+
+        log::warn!("WhiteNoiseProcessor: Dropping incoming message {msg:?}");
     }
 }
 
