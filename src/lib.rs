@@ -48,7 +48,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 pub(crate) const RENDER_QUANTUM_SIZE: usize = 128;
 
 /// Maximum number of channels for audio processing
-pub const MAX_CHANNELS: usize = 32;
+pub const MAX_CHANNELS: usize = 256;
 
 mod buffer;
 pub use buffer::*;
