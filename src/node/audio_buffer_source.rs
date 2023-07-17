@@ -50,13 +50,13 @@ struct PlaybackInfo {
 }
 
 // The strategy for loop parameters is as follow: store the given values
-// in the loop_parameter thread safe instance which only lives in control
+// in the `loop_parameters` thread safe instance which only lives in control
 // thread(s) and send a message to the render thread which stores the raw values.
-// Values between control and render side might be desynchronized for while
+// Values between control and render side might be desynchronised for little while
 // but the developer experience will appear more logical, i.e.
 // ```no_run
 // node.set_loop(true);
-// node._loop_
+// println!("{:?}", node.loop_());
 // > true // is guaranteed
 // ```
 // Note that this seems to be the strategy used by Firefox
