@@ -382,7 +382,7 @@ impl AudioBackendManager for CpalBackend {
     }
 
     fn output_latency(&self) -> f64 {
-        self.output_latency.load(Ordering::SeqCst)
+        self.output_latency.load(Ordering::Relaxed)
     }
 
     fn sink_id(&self) -> &str {
@@ -471,7 +471,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [f32], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::SeqCst);
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -480,7 +480,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [f64], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::SeqCst);
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -489,7 +489,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u8], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::SeqCst);
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -498,7 +498,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u16], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::SeqCst);
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -507,7 +507,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u32], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::SeqCst);
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -516,7 +516,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u64], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::SeqCst);
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -525,7 +525,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i8], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::SeqCst);
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -534,7 +534,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i16], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::SeqCst);
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -543,7 +543,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i32], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::SeqCst);
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -552,7 +552,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i64], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::SeqCst);
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
