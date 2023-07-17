@@ -9,6 +9,7 @@ use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
+use crate::render::graph::Graph;
 use crate::MediaElement;
 use crate::{AudioRenderCapacity, Event};
 
@@ -172,8 +173,8 @@ impl AudioContext {
             event_recv,
         } = control_thread_init;
 
-        let graph = crate::render::graph::Graph::new();
-        let message = crate::message::ControlMessage::Startup { graph };
+        let graph = Graph::new();
+        let message = ControlMessage::Startup { graph };
         ctrl_msg_send.send(message).unwrap();
 
         let base = ConcreteBaseAudioContext::new(

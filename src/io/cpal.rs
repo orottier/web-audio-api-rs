@@ -16,7 +16,7 @@ use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
-use crate::AtomicF64;
+use crate::{AtomicF64, MAX_CHANNELS};
 
 use crossbeam_channel::Receiver;
 
@@ -142,38 +142,50 @@ impl AudioBackendManager for CpalBackend {
 
         log::info!("Output device: {:?}", device.name());
 
-        let supported = device
+        let default_device_config = device
             .default_output_config()
             .expect("error while querying config");
 
-        let mut preferred: StreamConfig = supported.clone().into();
+        // we grab the largest number of channels provided by the soundcard
+        // clamped to MAX_CHANNELS, this value cannot be changed by the user
+        let number_of_channels = usize::from(default_device_config.channels()).min(MAX_CHANNELS);
+
+        // override default device configuration with the options provided by
+        // the user when creating the `AudioContext`
+        let mut preferred_config: StreamConfig = default_device_config.clone().into();
+        // make sure the number of channels is clamped to MAX_CHANNELS
+        preferred_config.channels = number_of_channels as u16;
 
         // set specific sample rate if requested
         if let Some(sample_rate) = options.sample_rate {
             crate::assert_valid_sample_rate(sample_rate);
-            preferred.sample_rate.0 = sample_rate as u32;
+            preferred_config.sample_rate.0 = sample_rate as u32;
         }
 
         // always try to set a decent buffer size
         let buffer_size = super::buffer_size_for_latency_category(
             options.latency_hint,
-            preferred.sample_rate.0 as f32,
+            preferred_config.sample_rate.0 as f32,
         ) as u32;
 
-        let clamped_buffer_size: u32 = match supported.buffer_size() {
+        let clamped_buffer_size: u32 = match default_device_config.buffer_size() {
             SupportedBufferSize::Unknown => buffer_size,
             SupportedBufferSize::Range { min, max } => buffer_size.clamp(*min, *max),
         };
 
-        preferred.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
+        preferred_config.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
 
+        // report the picked sample rate to the render thread, i.e. if the requested
+        // sample rate is not supported by the hardware, it will fallback to the
+        // default device sample rate
+        let mut sample_rate = preferred_config.sample_rate.0 as f32;
+
+        // shared atomic to report output latency to the control thread
         let output_latency = Arc::new(AtomicF64::new(0.));
-        let mut number_of_channels = usize::from(preferred.channels);
-        let mut sample_rate = preferred.sample_rate.0 as f32;
 
         let renderer = RenderThread::new(
             sample_rate,
-            preferred.channels as usize,
+            preferred_config.channels as usize,
             ctrl_msg_recv.clone(),
             Arc::clone(&frames_played),
             Some(load_value_send.clone()),
@@ -182,12 +194,13 @@ impl AudioBackendManager for CpalBackend {
 
         log::debug!(
             "Attempt output stream with preferred config: {:?}",
-            &preferred
+            &preferred_config
         );
+
         let spawned = spawn_output_stream(
             &device,
-            supported.sample_format(),
-            &preferred,
+            default_device_config.sample_format(),
+            &preferred_config,
             renderer,
             Arc::clone(&output_latency),
         );
@@ -200,8 +213,10 @@ impl AudioBackendManager for CpalBackend {
             Err(e) => {
                 log::warn!("Output stream build failed with preferred config: {}", e);
 
-                let supported_config: StreamConfig = supported.clone().into();
-                number_of_channels = usize::from(supported_config.channels);
+                let mut supported_config: StreamConfig = default_device_config.clone().into();
+                // make sure number of channels is clamped to MAX_CHANNELS
+                supported_config.channels = number_of_channels as u16;
+                // fallback to device default sample rate
                 sample_rate = supported_config.sample_rate.0 as f32;
 
                 log::debug!(
@@ -220,11 +235,12 @@ impl AudioBackendManager for CpalBackend {
 
                 let spawned = spawn_output_stream(
                     &device,
-                    supported.sample_format(),
+                    default_device_config.sample_format(),
                     &supported_config,
                     renderer,
                     Arc::clone(&output_latency),
                 );
+
                 spawned.expect("OutputStream build failed with default config")
             }
         };
