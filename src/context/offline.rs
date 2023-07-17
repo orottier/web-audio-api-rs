@@ -31,7 +31,7 @@ mod private {
         }
 
         pub fn render_audiobuffer(self, buffer_size: usize) -> AudioBuffer {
-            self.0.render_audiobuffer(buffer_size)
+            self.0.render_audiobuffer_sync(buffer_size)
         }
     }
 

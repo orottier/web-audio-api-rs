@@ -23,6 +23,8 @@ use super::graph::Graph;
 pub(crate) struct RenderThread {
     graph: Option<Graph>,
     sample_rate: f32,
+    /// number of channels of the backend stream, i.e. sound card number of
+    /// channels clamped to MAX_CHANNELS
     number_of_channels: usize,
     frames_played: Arc<AtomicU64>,
     receiver: Option<Receiver<ControlMessage>>,
@@ -126,12 +128,12 @@ impl RenderThread {
         }
     }
 
-    // Render method of the `OfflineAudioContext::start_redering_sync`
+    // Render method of the `OfflineAudioContext::start_rendering_sync`
     // This method is not spec compliant and obviously marked as synchronous, so we
     // don't launch a thread.
     //
     // cf. https://webaudio.github.io/web-audio-api/#dom-offlineaudiocontext-startrendering
-    pub fn render_audiobuffer(mut self, length: usize) -> AudioBuffer {
+    pub fn render_audiobuffer_sync(mut self, length: usize) -> AudioBuffer {
         let options = AudioBufferOptions {
             number_of_channels: self.number_of_channels,
             length,
@@ -176,12 +178,12 @@ impl RenderThread {
         buffer
     }
 
-    pub fn render<S: FromSample<f32> + Clone>(&mut self, buffer: &mut [S]) {
+    pub fn render<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
         // collect timing information
         let render_start = Instant::now();
 
         // perform actual rendering
-        self.render_inner(buffer);
+        self.render_inner(output_buffer);
 
         // calculate load value and ship to control thread
         if let Some(load_value_sender) = &self.load_value_sender {
@@ -198,13 +200,13 @@ impl RenderThread {
         }
     }
 
-    fn render_inner<S: FromSample<f32> + Clone>(&mut self, mut buffer: &mut [S]) {
+    fn render_inner<S: FromSample<f32> + Clone>(&mut self, mut output_buffer: &mut [S]) {
         // There may be audio frames left over from the previous render call,
         // if the cpal buffer size did not align with our internal RENDER_QUANTUM_SIZE
         if let Some((offset, prev_rendered)) = self.buffer_offset.take() {
             let leftover_len = (RENDER_QUANTUM_SIZE - offset) * self.number_of_channels;
             // split the leftover frames slice, to fit in `buffer`
-            let (first, next) = buffer.split_at_mut(leftover_len.min(buffer.len()));
+            let (first, next) = output_buffer.split_at_mut(leftover_len.min(output_buffer.len()));
 
             // copy rendered audio into output slice
             for i in 0..self.number_of_channels {
@@ -226,7 +228,7 @@ impl RenderThread {
             }
 
             // if there's still space left in the buffer, continue rendering
-            buffer = next;
+            output_buffer = next;
         }
 
         // handle addition/removal of nodes/edges
@@ -234,7 +236,7 @@ impl RenderThread {
 
         // if the thread is still booting, or shutting down, fill with silence
         if self.graph.is_none() {
-            buffer.fill(S::from_sample_(0.));
+            output_buffer.fill(S::from_sample_(0.));
             return;
         }
 
@@ -242,7 +244,7 @@ impl RenderThread {
         // may not be able to emit chunks of this size.
         let chunk_size = RENDER_QUANTUM_SIZE * self.number_of_channels;
 
-        for data in buffer.chunks_mut(chunk_size) {
+        for data in output_buffer.chunks_mut(chunk_size) {
             // update time
             let current_frame = self
                 .frames_played
@@ -258,17 +260,19 @@ impl RenderThread {
             };
 
             // render audio graph, clone it in case we need to mutate/store the value later
-            let mut rendered = self.graph.as_mut().unwrap().render(&scope).clone();
+            let mut destination_buffer = self.graph.as_mut().unwrap().render(&scope).clone();
 
-            // online AudioContext allows channel count to be less than no of hardware channels
-            if rendered.number_of_channels() != self.number_of_channels {
-                rendered.mix(self.number_of_channels, ChannelInterpretation::Discrete);
+            // online AudioContext allows channel count to be less than the number
+            // of channels of the backend stream, i.e. number of channels of the
+            // soundcard clamped to MAX_CHANNELS.
+            if destination_buffer.number_of_channels() < self.number_of_channels {
+                destination_buffer.mix(self.number_of_channels, ChannelInterpretation::Discrete);
             }
 
             // copy rendered audio into output slice
             for i in 0..self.number_of_channels {
                 let output = data.iter_mut().skip(i).step_by(self.number_of_channels);
-                let channel = rendered.channel_data(i).iter();
+                let channel = destination_buffer.channel_data(i).iter();
                 for (sample, input) in output.zip(channel) {
                     let value = S::from_sample_(*input);
                     *sample = value;
@@ -279,7 +283,7 @@ impl RenderThread {
                 // this is the last chunk, and it contained less than RENDER_QUANTUM_SIZE samples
                 let channel_offset = data.len() / self.number_of_channels;
                 debug_assert!(channel_offset < RENDER_QUANTUM_SIZE);
-                self.buffer_offset = Some((channel_offset, rendered));
+                self.buffer_offset = Some((channel_offset, destination_buffer));
             }
 
             // handle addition/removal of nodes/edges
