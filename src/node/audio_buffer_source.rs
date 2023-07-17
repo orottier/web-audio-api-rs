@@ -1,6 +1,5 @@
 use std::cell::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
@@ -139,7 +138,7 @@ enum ControlMessage {
 ///
 pub struct AudioBufferSourceNode {
     registration: AudioContextRegistration,
-    loop_control: Arc<LoopControl>,
+    loop_control: LoopControl,
     channel_config: ChannelConfig,
     detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
@@ -226,11 +225,11 @@ impl AudioBufferSourceNode {
             pr_param.set_automation_rate_constrained(true);
             pr_param.set_value(playback_rate);
 
-            let loop_control = Arc::new(LoopControl {
+            let loop_control = LoopControl {
                 loop_: AtomicBool::new(loop_),
                 loop_start: AtomicF64::new(loop_start),
                 loop_end: AtomicF64::new(loop_end),
-            });
+            };
 
             let renderer = AudioBufferSourceRenderer {
                 start_time: f64::MAX,
