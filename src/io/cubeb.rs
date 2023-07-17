@@ -7,7 +7,7 @@ use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
 use cubeb::{Context, DeviceId, DeviceType, StereoFrame, Stream, StreamParams};
 
@@ -166,7 +166,10 @@ impl AudioBackendManager for CubebBackend {
             .map(|v| v as usize)
             .ok()
             .unwrap_or(2);
-        crate::assert_valid_number_of_channels(number_of_channels);
+
+        // clamp the requested stream number of channels to MAX_CHANNELS even if
+        // the soundcard can provide more channels
+        let number_of_channels = number_of_channels.min(MAX_CHANNELS);
 
         let layout = match number_of_channels {
             1 => cubeb::ChannelLayout::MONO,
