@@ -50,7 +50,7 @@ struct PlaybackInfo {
 }
 
 // The strategy for loop parameters is as follow: store the given values
-// in the `loop_parameters` thread safe instance which only lives in control
+// in the `loop_control` thread safe instance which only lives in control
 // thread(s) and send a message to the render thread which stores the raw values.
 // Values between control and render side might be desynchronised for little while
 // but the developer experience will appear more logical, i.e.
@@ -61,7 +61,7 @@ struct PlaybackInfo {
 // ```
 // Note that this seems to be the strategy used by Firefox
 #[derive(Debug)]
-struct LoopParameters {
+struct LoopControl {
     loop_: AtomicBool,
     loop_start: AtomicF64,
     loop_end: AtomicF64,
@@ -69,7 +69,7 @@ struct LoopParameters {
 
 // Uses the canonical ordering for handover of values,
 // i.e. `Acquire` on load and `Release` on store.
-impl LoopParameters {
+impl LoopControl {
     fn loop_(&self) -> bool {
         self.loop_.load(Ordering::Acquire)
     }
@@ -139,7 +139,7 @@ enum ControlMessage {
 ///
 pub struct AudioBufferSourceNode {
     registration: AudioContextRegistration,
-    loop_parameters: Arc<LoopParameters>,
+    loop_control: Arc<LoopControl>,
     channel_config: ChannelConfig,
     detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
@@ -226,7 +226,7 @@ impl AudioBufferSourceNode {
             pr_param.set_automation_rate_constrained(true);
             pr_param.set_value(playback_rate);
 
-            let loop_parameters = Arc::new(LoopParameters {
+            let loop_control = Arc::new(LoopControl {
                 loop_: AtomicBool::new(loop_),
                 loop_start: AtomicF64::new(loop_start),
                 loop_end: AtomicF64::new(loop_end),
@@ -249,7 +249,7 @@ impl AudioBufferSourceNode {
 
             let node = Self {
                 registration,
-                loop_parameters,
+                loop_control,
                 channel_config: ChannelConfig::default(),
                 detune: d_param,
                 playback_rate: pr_param,
@@ -329,32 +329,32 @@ impl AudioBufferSourceNode {
 
     /// Defines if the playback the [`AudioBuffer`] should be looped
     pub fn loop_(&self) -> bool {
-        self.loop_parameters.loop_()
+        self.loop_control.loop_()
     }
 
     pub fn set_loop(&self, value: bool) {
-        self.loop_parameters.set_loop(value);
+        self.loop_control.set_loop(value);
         self.registration.post_message(ControlMessage::Loop(value));
     }
 
     /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
     pub fn loop_start(&self) -> f64 {
-        self.loop_parameters.loop_start()
+        self.loop_control.loop_start()
     }
 
     pub fn set_loop_start(&self, value: f64) {
-        self.loop_parameters.set_loop_start(value);
+        self.loop_control.set_loop_start(value);
         self.registration
             .post_message(ControlMessage::LoopStart(value));
     }
 
     /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
     pub fn loop_end(&self) -> f64 {
-        self.loop_parameters.loop_end()
+        self.loop_control.loop_end()
     }
 
     pub fn set_loop_end(&self, value: f64) {
-        self.loop_parameters.set_loop_end(value);
+        self.loop_control.set_loop_end(value);
         self.registration
             .post_message(ControlMessage::LoopEnd(value));
     }
