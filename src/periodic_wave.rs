@@ -9,7 +9,7 @@ use crate::node::TABLE_LENGTH_USIZE;
 /// Options for constructing a [`PeriodicWave`]
 #[derive(Debug, Default, Clone)]
 pub struct PeriodicWaveOptions {
-    /// The real parameter represents an array of cosine terms of Fourrier series.
+    /// The real parameter represents an array of cosine terms of Fourier series.
     ///
     /// The first element (index 0) represents the DC-offset.
     /// This offset has to be given but will not be taken into account
@@ -18,7 +18,7 @@ pub struct PeriodicWaveOptions {
     /// The following elements (index 1 and more) represent the fundamental and
     /// harmonics of the periodic waveform.
     pub real: Option<Vec<f32>>,
-    /// The imag parameter represents an array of sine terms of Fourrier series.
+    /// The imag parameter represents an array of sine terms of Fourier series.
     ///
     /// The first element (index 0) will not be taken into account
     /// to build the custom periodic waveform.
@@ -79,8 +79,8 @@ impl PeriodicWave {
     ///
     /// # Arguments
     ///
-    /// * `real` - The real parameter represents an array of cosine terms of Fourrier series.
-    /// * `imag` - The imag parameter represents an array of sine terms of Fourrier series.
+    /// * `real` - The real parameter represents an array of cosine terms of Fourier series.
+    /// * `imag` - The imag parameter represents an array of sine terms of Fourier series.
     /// * `constraints` - The constraints parameter specifies the normalization mode of the `PeriodicWave`
     ///
     /// # Panics
