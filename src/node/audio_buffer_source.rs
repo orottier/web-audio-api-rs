@@ -226,7 +226,6 @@ impl AudioBufferSourceNode {
             pr_param.set_automation_rate_constrained(true);
             pr_param.set_value(playback_rate);
 
-            // loop parameters
             let loop_parameters = Arc::new(LoopParameters {
                 loop_: AtomicBool::new(loop_),
                 loop_start: AtomicF64::new(loop_start),
