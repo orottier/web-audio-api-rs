@@ -57,7 +57,6 @@ mod capacity;
 pub use capacity::*;
 
 pub mod context;
-pub(crate) mod control;
 
 pub mod media_devices;
 pub mod media_recorder;
