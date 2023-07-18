@@ -64,10 +64,10 @@ pub struct AudioBufferOptions {
 ///
 /// - `cargo run --release --example audio_buffer`
 ///
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct AudioBuffer {
-    channels: Vec<ChannelData>,
-    sample_rate: f32,
+    pub(crate) channels: Vec<ChannelData>,
+    pub(crate) sample_rate: f32,
 }
 
 impl AudioBuffer {

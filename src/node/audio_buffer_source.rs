@@ -781,8 +781,12 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 // Avoid deallocation in the render thread by swapping the buffers.
                 std::mem::swap(current_buffer, buffer);
             } else {
-                // The default buffer is empty and does not cause allocations.
-                self.buffer = Some(std::mem::take(buffer));
+                // Creating the tombstone buffer does not cause allocations.
+                let tombstone_buffer = AudioBuffer {
+                    channels: Default::default(),
+                    sample_rate: Default::default(),
+                };
+                self.buffer = Some(std::mem::replace(buffer, tombstone_buffer));
             }
             return;
         };
