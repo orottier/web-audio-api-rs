@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use rand::Rng;
 
 use web_audio_api::context::{
@@ -141,15 +143,12 @@ impl AudioProcessor for WhiteNoiseProcessor {
         true // source node will always be active
     }
 
-    fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
+    fn onmessage(&mut self, msg: &mut Box<dyn Any + Send + 'static>) {
         // handle incoming signals requesting for change of color
-        let msg = match msg.downcast::<NoiseColor>() {
-            Ok(color) => {
-                self.color = *color;
-                return;
-            }
-            Err(msg) => msg,
-        };
+        if let Some(color) = msg.downcast_ref::<NoiseColor>() {
+            self.color = *color;
+            return;
+        }
 
         // ...add more message handlers here...
 

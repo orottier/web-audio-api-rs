@@ -69,7 +69,7 @@ pub struct PeriodicWaveOptions {
 /// - `cargo run --release --example oscillators`
 ///
 // Basically a wrapper around Arc<Vec<f32>>, so `PeriodicWave`s are cheap to clone
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PeriodicWave {
     wavetable: Arc<Vec<f32>>,
 }

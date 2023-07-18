@@ -1,5 +1,7 @@
 //! Message passing from control to render node
 
+use std::any::Any;
+
 use crate::context::AudioNodeId;
 use crate::node::ChannelConfig;
 use crate::render::graph::Graph;
@@ -47,6 +49,6 @@ pub(crate) enum ControlMessage {
     /// Generic message to be handled by AudioProcessor
     NodeMessage {
         id: AudioNodeId,
-        msg: Box<dyn std::any::Any + Send + 'static>,
+        msg: Box<dyn Any + Send + 'static>,
     },
 }

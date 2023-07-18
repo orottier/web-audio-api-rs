@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::cell::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -769,21 +770,21 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         true
     }
 
-    fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        let msg = match msg.downcast::<ControlMessage>() {
-            Ok(control) => {
-                self.handle_control_message(*control);
-                return;
-            }
-            Err(msg) => msg,
+    fn onmessage(&mut self, msg: &mut Box<dyn Any + Send + 'static>) {
+        if let Some(control) = msg.downcast_ref::<ControlMessage>() {
+            self.handle_control_message(*control);
+            return;
         };
 
-        let msg = match msg.downcast::<AudioBuffer>() {
-            Ok(buffer) => {
-                self.buffer = Some(*buffer);
-                return;
+        if let Some(buffer) = msg.downcast_mut::<AudioBuffer>() {
+            if let Some(current_buffer) = &mut self.buffer {
+                // Avoid deallocation in the render thread by swapping the buffers.
+                std::mem::swap(current_buffer, buffer);
+            } else {
+                // The default buffer is empty and does not cause allocations.
+                self.buffer = Some(std::mem::take(buffer));
             }
-            Err(msg) => msg,
+            return;
         };
 
         log::warn!("AudioBufferSourceRenderer: Dropping incoming message {msg:?}");

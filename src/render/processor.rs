@@ -106,11 +106,15 @@ pub trait AudioProcessor: Send {
     /// [`AudioContextRegistration::post_message`](crate::context::AudioContextRegistration::post_message).
     /// This will not be necessary for most processors.
     ///
+    /// Receivers are supposed to consume the content of `msg`. The content of `msg` might
+    /// also be replaced by cruft that needs to be deallocated outside of the render thread
+    /// afterwards, e.g. when replacing an internal buffer.
+    ///
     /// This method is just a shim of the full
     /// [`MessagePort`](https://webaudio.github.io/web-audio-api/#dom-audioworkletprocessor-port)
     /// `onmessage` functionality of the AudioWorkletProcessor.
     #[allow(unused_variables)]
-    fn onmessage(&mut self, msg: Box<dyn Any + Send + 'static>) {
+    fn onmessage(&mut self, msg: &mut Box<dyn Any + Send + 'static>) {
         log::warn!("Ignoring incoming message");
     }
 }

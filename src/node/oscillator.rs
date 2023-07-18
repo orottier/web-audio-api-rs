@@ -1,11 +1,12 @@
+use std::any::Any;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
-use crate::periodic_wave::PeriodicWave;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::PeriodicWave;
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
@@ -431,35 +432,32 @@ impl AudioProcessor for OscillatorRenderer {
         true
     }
 
-    fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        let msg = match msg.downcast::<OscillatorType>() {
-            Ok(type_) => {
-                self.shared_type.store(*type_ as u32, Ordering::Release);
-                self.type_ = *type_;
-                return;
-            }
-            Err(msg) => msg,
-        };
+    fn onmessage(&mut self, msg: &mut Box<dyn Any + Send + 'static>) {
+        if let Some(&type_) = msg.downcast_ref::<OscillatorType>() {
+            self.shared_type.store(type_ as u32, Ordering::Release);
+            self.type_ = type_;
+            return;
+        }
 
-        let msg = match msg.downcast::<Schedule>() {
-            Ok(schedule) => {
-                match *schedule {
-                    Schedule::Start(v) => self.start_time = v,
-                    Schedule::Stop(v) => self.stop_time = v,
-                }
-                return;
+        if let Some(&schedule) = msg.downcast_ref::<Schedule>() {
+            match schedule {
+                Schedule::Start(v) => self.start_time = v,
+                Schedule::Stop(v) => self.stop_time = v,
             }
-            Err(msg) => msg,
-        };
+            return;
+        }
 
-        let msg = match msg.downcast::<PeriodicWave>() {
-            Ok(periodic_wave) => {
-                self.periodic_wave = Some(*periodic_wave);
-                self.type_ = OscillatorType::Custom; // shared type is already updated by control
-                return;
+        if let Some(periodic_wave) = msg.downcast_mut::<PeriodicWave>() {
+            if let Some(current_periodic_wave) = &mut self.periodic_wave {
+                // Avoid deallocation in the render thread by swapping the wavetable buffers.
+                std::mem::swap(current_periodic_wave, periodic_wave)
+            } else {
+                // The default wavetable buffer is empty and does not cause allocations.
+                self.periodic_wave = Some(std::mem::take(periodic_wave));
             }
-            Err(msg) => msg,
-        };
+            self.type_ = OscillatorType::Custom; // shared type is already updated by control
+            return;
+        }
 
         log::warn!("OscillatorRenderer: Dropping incoming message {msg:?}");
     }
