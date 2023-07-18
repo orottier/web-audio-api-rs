@@ -57,13 +57,16 @@ pub(crate) const TABLE_LENGTH_F32: f32 = TABLE_LENGTH_USIZE as f32;
 pub(crate) const TABLE_LENGTH_BY_4_F32: f32 = TABLE_LENGTH_BY_4_USIZE as f32;
 
 /// Precomputed sine table
-pub(crate) fn precomputed_sine_table() -> &'static [f32] {
-    static INSTANCE: OnceLock<Vec<f32>> = OnceLock::new();
+pub(crate) fn precomputed_sine_table() -> &'static [f32; TABLE_LENGTH_USIZE] {
+    static INSTANCE: OnceLock<[f32; TABLE_LENGTH_USIZE]> = OnceLock::new();
     INSTANCE.get_or_init(|| {
         // Compute one period sine wavetable of size TABLE_LENGTH
-        (0..TABLE_LENGTH_USIZE)
-            .map(|x| ((x as f32) * 2.0 * PI * (1. / (TABLE_LENGTH_F32))).sin())
-            .collect()
+        let mut i = 0;
+        [0; TABLE_LENGTH_USIZE].map(|_| {
+            let v = ((i as f32) * 2.0 * PI / TABLE_LENGTH_F32).sin();
+            i += 1;
+            v
+        })
     })
 }
 
