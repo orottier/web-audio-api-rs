@@ -1,12 +1,11 @@
 use std::cell::OnceCell;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::control::{Controller, ControllerShared};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::AtomicF64;
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
@@ -49,9 +48,55 @@ struct PlaybackInfo {
     k: f32,
 }
 
+// The strategy for loop parameters is as follow: store the given values
+// in the `loop_control` thread safe instance which only lives in control
+// thread(s) and send a message to the render thread which stores the raw values.
+// Values between control and render side might be desynchronised for little while
+// but the developer experience will appear more logical, i.e.
+// ```no_run
+// node.set_loop(true);
+// println!("{:?}", node.loop_());
+// > true // is guaranteed
+// ```
+// Note that this seems to be the strategy used by Firefox
+#[derive(Debug)]
+struct LoopControl {
+    loop_: AtomicBool,
+    loop_start: AtomicF64,
+    loop_end: AtomicF64,
+}
+
+// Uses the canonical ordering for handover of values,
+// i.e. `Acquire` on load and `Release` on store.
+impl LoopControl {
+    fn loop_(&self) -> bool {
+        self.loop_.load(Ordering::Acquire)
+    }
+
+    fn set_loop(&self, loop_: bool) {
+        self.loop_.store(loop_, Ordering::Release);
+    }
+
+    fn loop_start(&self) -> f64 {
+        self.loop_start.load(Ordering::Acquire)
+    }
+
+    fn set_loop_start(&self, loop_start: f64) {
+        self.loop_start.store(loop_start, Ordering::Release);
+    }
+
+    fn loop_end(&self) -> f64 {
+        self.loop_end.load(Ordering::Acquire)
+    }
+
+    fn set_loop_end(&self, loop_end: f64) {
+        self.loop_end.store(loop_end, Ordering::Release);
+    }
+}
+
 /// Instructions to start or stop processing
 #[derive(Debug, Copy, Clone)]
-enum Control {
+enum ControlMessage {
     StartWithOffsetAndDuration(f64, f64, f64),
     Stop(f64),
     Loop(bool),
@@ -93,7 +138,7 @@ enum Control {
 ///
 pub struct AudioBufferSourceNode {
     registration: AudioContextRegistration,
-    controller_shared: Arc<ControllerShared>,
+    loop_control: LoopControl,
     channel_config: ChannelConfig,
     detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
@@ -139,7 +184,7 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
             panic!("InvalidStateError cannot stop before start");
         }
 
-        self.registration.post_message(Control::Stop(when));
+        self.registration.post_message(ControlMessage::Stop(when));
     }
 }
 
@@ -156,9 +201,8 @@ impl AudioBufferSourceNode {
                 playback_rate,
             } = options;
 
-            // @todo - these parameters can't be changed to a-rate
+            // these parameters can't be changed to a-rate
             // @see - <https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints>
-            // @see - https://github.com/orottier/web-audio-api-rs/issues/29
             let detune_param_options = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
@@ -181,18 +225,20 @@ impl AudioBufferSourceNode {
             pr_param.set_automation_rate_constrained(true);
             pr_param.set_value(playback_rate);
 
-            let mut controller = Controller::default();
-            controller.set_loop(loop_);
-            controller.set_loop_start(loop_start);
-            controller.set_loop_end(loop_end);
-            let controller_shared = Arc::clone(controller.shared());
+            let loop_control = LoopControl {
+                loop_: AtomicBool::new(loop_),
+                loop_start: AtomicF64::new(loop_start),
+                loop_end: AtomicF64::new(loop_end),
+            };
 
             let renderer = AudioBufferSourceRenderer {
                 start_time: f64::MAX,
                 stop_time: f64::MAX,
                 duration: f64::MAX,
                 offset: 0.,
-                controller,
+                loop_,
+                loop_start,
+                loop_end,
                 buffer: None,
                 detune: d_proc,
                 playback_rate: pr_proc,
@@ -202,7 +248,7 @@ impl AudioBufferSourceNode {
 
             let node = Self {
                 registration,
-                controller_shared,
+                loop_control,
                 channel_config: ChannelConfig::default(),
                 detune: d_param,
                 playback_rate: pr_param,
@@ -237,7 +283,7 @@ impl AudioBufferSourceNode {
             panic!("InvalidStateError: Cannot call `start` twice");
         }
 
-        let control = Control::StartWithOffsetAndDuration(start, offset, duration);
+        let control = ControlMessage::StartWithOffsetAndDuration(start, offset, duration);
         self.registration.post_message(control);
     }
 
@@ -282,29 +328,34 @@ impl AudioBufferSourceNode {
 
     /// Defines if the playback the [`AudioBuffer`] should be looped
     pub fn loop_(&self) -> bool {
-        self.controller_shared.loop_()
+        self.loop_control.loop_()
     }
 
     pub fn set_loop(&self, value: bool) {
-        self.registration.post_message(Control::Loop(value));
+        self.loop_control.set_loop(value);
+        self.registration.post_message(ControlMessage::Loop(value));
     }
 
     /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
     pub fn loop_start(&self) -> f64 {
-        self.controller_shared.loop_start()
+        self.loop_control.loop_start()
     }
 
     pub fn set_loop_start(&self, value: f64) {
-        self.registration.post_message(Control::LoopStart(value));
+        self.loop_control.set_loop_start(value);
+        self.registration
+            .post_message(ControlMessage::LoopStart(value));
     }
 
     /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
     pub fn loop_end(&self) -> f64 {
-        self.controller_shared.loop_end()
+        self.loop_control.loop_end()
     }
 
     pub fn set_loop_end(&self, value: f64) {
-        self.registration.post_message(Control::LoopEnd(value));
+        self.loop_control.set_loop_end(value);
+        self.registration
+            .post_message(ControlMessage::LoopEnd(value));
     }
 }
 
@@ -333,7 +384,9 @@ struct AudioBufferSourceRenderer {
     stop_time: f64,
     offset: f64,
     duration: f64,
-    controller: Controller,
+    loop_: bool,
+    loop_start: f64,
+    loop_end: f64,
     buffer: Option<AudioBuffer>,
     detune: AudioParamId,
     playback_rate: AudioParamId,
@@ -342,17 +395,17 @@ struct AudioBufferSourceRenderer {
 }
 
 impl AudioBufferSourceRenderer {
-    fn handle_control_message(&mut self, control: Control) {
+    fn handle_control_message(&mut self, control: ControlMessage) {
         match control {
-            Control::StartWithOffsetAndDuration(start, offset, duration) => {
-                self.start_time = start;
+            ControlMessage::StartWithOffsetAndDuration(when, offset, duration) => {
+                self.start_time = when;
                 self.offset = offset;
                 self.duration = duration;
             }
-            Control::Stop(v) => self.stop_time = v,
-            Control::Loop(v) => self.controller.set_loop(v),
-            Control::LoopStart(v) => self.controller.set_loop_start(v),
-            Control::LoopEnd(v) => self.controller.set_loop_end(v),
+            ControlMessage::Stop(when) => self.stop_time = when,
+            ControlMessage::Loop(loop_) => self.loop_ = loop_,
+            ControlMessage::LoopStart(loop_start) => self.loop_start = loop_start,
+            ControlMessage::LoopEnd(loop_end) => self.loop_end = loop_end,
         }
     }
 }
@@ -374,9 +427,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let next_block_time = scope.current_time + block_duration;
 
         // grab all timing information
-        let loop_ = self.controller.loop_();
-        let loop_start = self.controller.loop_start();
-        let loop_end = self.controller.loop_end();
+        let loop_ = self.loop_;
+        let loop_start = self.loop_start;
+        let loop_end = self.loop_end;
 
         // these will only be used if `loop_` is true, so no need for `Option`
         let mut actual_loop_start = 0.;
@@ -717,7 +770,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
     }
 
     fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        let msg = match msg.downcast::<Control>() {
+        let msg = match msg.downcast::<ControlMessage>() {
             Ok(control) => {
                 self.handle_control_message(*control);
                 return;
