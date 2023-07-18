@@ -642,7 +642,7 @@ impl AudioProcessor for AudioParamProcessor {
         true // has intrinsic value
     }
 
-    fn onmessage(&mut self, msg: &mut Box<dyn Any + Send + 'static>) {
+    fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(automation_rate) = msg.downcast_ref::<AutomationRate>() {
             self.automation_rate = *automation_rate;
             self.shared_parts.store_automation_rate(*automation_rate);
@@ -3167,7 +3167,7 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        render.onmessage(&mut (Box::new(AutomationRate::K) as _));
+        render.onmessage(&mut AutomationRate::K);
         render.handle_incoming_event(param.set_value_at_time_raw(2., 0.000001));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
@@ -3186,7 +3186,7 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        render.onmessage(&mut (Box::new(AutomationRate::A) as _));
+        render.onmessage(&mut AutomationRate::A);
         render.handle_incoming_event(param.set_value_at_time_raw(2., 0.000001));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);

@@ -204,7 +204,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         still_running
     }
 
-    fn onmessage(&mut self, msg: &mut Box<dyn Any + Send + 'static>) {
+    fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(schedule) = msg.downcast_ref::<Schedule>() {
             match *schedule {
                 Schedule::Start(v) => self.start_time = v,

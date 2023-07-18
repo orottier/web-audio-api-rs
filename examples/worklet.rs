@@ -143,7 +143,7 @@ impl AudioProcessor for WhiteNoiseProcessor {
         true // source node will always be active
     }
 
-    fn onmessage(&mut self, msg: &mut Box<dyn Any + Send + 'static>) {
+    fn onmessage(&mut self, msg: &mut dyn Any) {
         // handle incoming signals requesting for change of color
         if let Some(color) = msg.downcast_ref::<NoiseColor>() {
             self.color = *color;

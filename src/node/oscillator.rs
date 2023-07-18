@@ -432,7 +432,7 @@ impl AudioProcessor for OscillatorRenderer {
         true
     }
 
-    fn onmessage(&mut self, msg: &mut Box<dyn Any + Send + 'static>) {
+    fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(&type_) = msg.downcast_ref::<OscillatorType>() {
             self.shared_type.store(type_ as u32, Ordering::Release);
             self.type_ = type_;

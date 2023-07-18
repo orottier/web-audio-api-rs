@@ -114,7 +114,7 @@ pub trait AudioProcessor: Send {
     /// [`MessagePort`](https://webaudio.github.io/web-audio-api/#dom-audioworkletprocessor-port)
     /// `onmessage` functionality of the AudioWorkletProcessor.
     #[allow(unused_variables)]
-    fn onmessage(&mut self, msg: &mut Box<dyn Any + Send + 'static>) {
+    fn onmessage(&mut self, msg: &mut dyn Any) {
         log::warn!("Ignoring incoming message");
     }
 }

@@ -770,7 +770,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         true
     }
 
-    fn onmessage(&mut self, msg: &mut Box<dyn Any + Send + 'static>) {
+    fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(control) = msg.downcast_ref::<ControlMessage>() {
             self.handle_control_message(*control);
             return;

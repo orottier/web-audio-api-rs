@@ -123,7 +123,7 @@ impl RenderThread {
                     self.graph = Some(graph);
                 }
                 NodeMessage { id, mut msg } => {
-                    self.graph.as_mut().unwrap().route_message(id, &mut msg);
+                    self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
                     // FIXME: Drop the remains of the handled message outside of the render thread.
                 }
             }

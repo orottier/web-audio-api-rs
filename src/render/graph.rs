@@ -191,7 +191,7 @@ impl Graph {
         self.nodes.get_mut(&index).unwrap().get_mut().cycle_breaker = true;
     }
 
-    pub fn route_message(&mut self, index: AudioNodeId, msg: &mut Box<dyn Any + Send + 'static>) {
+    pub fn route_message(&mut self, index: AudioNodeId, msg: &mut dyn Any) {
         self.nodes
             .get_mut(&index)
             .unwrap()
