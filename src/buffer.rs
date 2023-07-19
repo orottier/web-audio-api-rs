@@ -66,8 +66,8 @@ pub struct AudioBufferOptions {
 ///
 #[derive(Clone, Debug)]
 pub struct AudioBuffer {
-    channels: Vec<ChannelData>,
-    sample_rate: f32,
+    pub(crate) channels: Vec<ChannelData>,
+    pub(crate) sample_rate: f32,
 }
 
 impl AudioBuffer {

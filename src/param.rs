@@ -1,4 +1,5 @@
 //! AudioParam interface
+use std::any::Any;
 use std::slice::{Iter, IterMut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -641,22 +642,27 @@ impl AudioProcessor for AudioParamProcessor {
         true // has intrinsic value
     }
 
-    fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        let msg = match msg.downcast::<AutomationRate>() {
-            Ok(automation_rate) => {
-                self.automation_rate = *automation_rate;
-                self.shared_parts.store_automation_rate(*automation_rate);
-                return;
-            }
-            Err(msg) => msg,
-        };
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        if let Some(automation_rate) = msg.downcast_ref::<AutomationRate>() {
+            self.automation_rate = *automation_rate;
+            self.shared_parts.store_automation_rate(*automation_rate);
+            return;
+        }
 
-        let msg = match msg.downcast::<AudioParamEvent>() {
-            Ok(event) => {
-                self.handle_incoming_event(*event);
-                return;
-            }
-            Err(msg) => msg,
+        if let Some(event) = msg.downcast_mut::<AudioParamEvent>() {
+            // Avoid deallocation of the event by replacing it with a tombstone.
+            let tombstone_event = AudioParamEvent {
+                event_type: AudioParamEventType::SetValue,
+                value: Default::default(),
+                time: Default::default(),
+                time_constant: None,
+                cancel_time: None,
+                duration: None,
+                values: None,
+            };
+            let event = std::mem::replace(event, tombstone_event);
+            self.handle_incoming_event(event);
+            return;
         };
 
         log::warn!("AudioParamProcessor: Dropping incoming message {msg:?}");
@@ -3161,7 +3167,7 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        render.onmessage(Box::new(AutomationRate::K));
+        render.onmessage(&mut AutomationRate::K);
         render.handle_incoming_event(param.set_value_at_time_raw(2., 0.000001));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
@@ -3180,7 +3186,7 @@ mod tests {
         };
         let (param, mut render) = audio_param_pair(opts, context.mock_registration());
 
-        render.onmessage(Box::new(AutomationRate::A));
+        render.onmessage(&mut AutomationRate::A);
         render.handle_incoming_event(param.set_value_at_time_raw(2., 0.000001));
 
         let vs = render.compute_intrinsic_values(0., 1., 10);

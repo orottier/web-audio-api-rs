@@ -1,5 +1,5 @@
 //! The `BaseAudioContext` interface and the `AudioContext` and `OfflineAudioContext` types
-use std::ops::Range;
+use std::{any::Any, ops::Range};
 
 mod base;
 pub use base::*;
@@ -105,7 +105,7 @@ impl AudioContextRegistration {
     ///
     /// The message will be handled by
     /// [`AudioProcessor::onmessage`](crate::render::AudioProcessor::onmessage).
-    pub fn post_message<M: std::any::Any + Send + 'static>(&self, msg: M) {
+    pub fn post_message<M: Any + Send + 'static>(&self, msg: M) {
         let wrapped = crate::message::ControlMessage::NodeMessage {
             id: self.id,
             msg: Box::new(msg),

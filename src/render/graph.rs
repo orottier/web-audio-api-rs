@@ -1,4 +1,5 @@
 //! The audio graph topology and render algorithm
+use std::any::Any;
 use std::cell::RefCell;
 use std::panic::{self, AssertUnwindSafe};
 
@@ -190,11 +191,7 @@ impl Graph {
         self.nodes.get_mut(&index).unwrap().get_mut().cycle_breaker = true;
     }
 
-    pub fn route_message(
-        &mut self,
-        index: AudioNodeId,
-        msg: Box<dyn std::any::Any + Send + 'static>,
-    ) {
+    pub fn route_message(&mut self, index: AudioNodeId, msg: &mut dyn Any) {
         self.nodes
             .get_mut(&index)
             .unwrap()

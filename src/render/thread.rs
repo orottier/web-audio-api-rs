@@ -119,10 +119,12 @@ impl RenderThread {
                     return; // no further handling of ctrl msgs
                 }
                 Startup { graph } => {
+                    debug_assert!(self.graph.is_none());
                     self.graph = Some(graph);
                 }
-                NodeMessage { id, msg } => {
-                    self.graph.as_mut().unwrap().route_message(id, msg);
+                NodeMessage { id, mut msg } => {
+                    self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
+                    // FIXME: Drop the remains of the handled message outside of the render thread.
                 }
             }
         }

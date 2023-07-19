@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
@@ -202,17 +204,14 @@ impl AudioProcessor for ConstantSourceRenderer {
         still_running
     }
 
-    fn onmessage(&mut self, msg: Box<dyn std::any::Any + Send + 'static>) {
-        let msg = match msg.downcast::<Schedule>() {
-            Ok(schedule) => {
-                match *schedule {
-                    Schedule::Start(v) => self.start_time = v,
-                    Schedule::Stop(v) => self.stop_time = v,
-                }
-                return;
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        if let Some(schedule) = msg.downcast_ref::<Schedule>() {
+            match *schedule {
+                Schedule::Start(v) => self.start_time = v,
+                Schedule::Stop(v) => self.stop_time = v,
             }
-            Err(msg) => msg,
-        };
+            return;
+        }
 
         log::warn!("ConstantSourceRenderer: Dropping incoming message {msg:?}");
     }
