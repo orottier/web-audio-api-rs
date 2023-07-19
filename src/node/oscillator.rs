@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
@@ -132,7 +131,7 @@ pub struct OscillatorNode {
     /// A detuning value (in cents) which will offset the frequency by the given amount.
     detune: AudioParam,
     /// Waveform of an oscillator
-    shared_type: Arc<AtomicU32>,
+    type_: AtomicU32,
 }
 
 impl AudioNode for OscillatorNode {
@@ -215,11 +214,8 @@ impl OscillatorNode {
             let (det_param, det_proc) = context.create_audio_param(det_param_opts, &registration);
             det_param.set_value(detune);
 
-            let shared_type = Arc::new(AtomicU32::new(type_ as u32));
-
             let renderer = OscillatorRenderer {
                 type_,
-                shared_type: Arc::clone(&shared_type),
                 frequency: f_proc,
                 detune: det_proc,
                 phase: 0.,
@@ -236,7 +232,7 @@ impl OscillatorNode {
                 channel_config: channel_config.into(),
                 frequency: f_param,
                 detune: det_param,
-                shared_type,
+                type_: AtomicU32::new(type_ as u32),
             };
 
             // if periodic wave has been given, init it
@@ -271,7 +267,7 @@ impl OscillatorNode {
     /// Returns the oscillator type
     #[must_use]
     pub fn type_(&self) -> OscillatorType {
-        self.shared_type.load(Ordering::Acquire).into()
+        self.type_.load(Ordering::Acquire).into()
     }
 
     /// Set the oscillator type
@@ -291,10 +287,11 @@ impl OscillatorNode {
         );
 
         // if periodic wave has been set specified, type_ changes are ignored
-        if self.shared_type.load(Ordering::Acquire) == OscillatorType::Custom as u32 {
+        if self.type_.load(Ordering::Acquire) == OscillatorType::Custom as u32 {
             return;
         }
 
+        self.type_.store(type_ as u32, Ordering::Release);
         self.registration.post_message(type_);
     }
 
@@ -303,11 +300,8 @@ impl OscillatorNode {
     /// Calling this sets the oscillator type to `custom`, once set to `custom`
     /// the oscillator cannot be reverted back to a standard waveform.
     pub fn set_periodic_wave(&self, periodic_wave: PeriodicWave) {
-        // Already store the oscillator type, so you can't call set_type with conflicting settings
-        // immediately after this call.
-        self.shared_type
+        self.type_
             .store(OscillatorType::Custom as u32, Ordering::Release);
-
         self.registration.post_message(periodic_wave);
     }
 }
@@ -316,8 +310,6 @@ impl OscillatorNode {
 struct OscillatorRenderer {
     /// The shape of the periodic waveform
     type_: OscillatorType,
-    /// The shape of the periodic waveform (shared with control thread)
-    shared_type: Arc<AtomicU32>,
     /// The frequency of the fundamental frequency.
     frequency: AudioParamId,
     /// A detuning value (in cents) which will offset the frequency by the given amount.
@@ -439,7 +431,6 @@ impl AudioProcessor for OscillatorRenderer {
 
     fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(&type_) = msg.downcast_ref::<OscillatorType>() {
-            self.shared_type.store(type_ as u32, Ordering::Release);
             self.type_ = type_;
             return;
         }
