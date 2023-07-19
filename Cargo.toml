@@ -26,10 +26,10 @@ hrtf = "0.8"
 llq = "0.1.1"
 log = "0.4"
 num-complex = "0.4"
-realfft = "3.0"
+realfft = "3.3"
 rubato = "0.14"
 rustc-hash = "1.1"
-smallvec = "1.8"
+smallvec = "1.11"
 symphonia = { version = "0.5", default-features = false }
 vecmath = "1.0"
 
