@@ -1,8 +1,9 @@
 //! The biquad filter control and renderer parts
-use num_complex::Complex;
+use std::any::Any;
 use std::f64::consts::{PI, SQRT_2};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+
+use num_complex::Complex;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
@@ -309,7 +310,7 @@ pub struct BiquadFilterNode {
     /// filter, depends on the `BiquadFilterType`
     gain: AudioParam,
     /// `BiquadFilterType` represented as u32
-    type_: Arc<AtomicU32>,
+    type_: AtomicU32,
 }
 
 impl AudioNode for BiquadFilterNode {
@@ -341,23 +342,32 @@ impl BiquadFilterNode {
         context.register(move |registration| {
             let sample_rate = context.sample_rate();
 
-            let q_options = AudioParamDescriptor {
+            let BiquadFilterOptions {
+                q,
+                detune,
+                frequency,
+                gain,
+                type_,
+                channel_config,
+            } = options;
+
+            let q_param_options = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (q_param, q_proc) = context.create_audio_param(q_options, &registration);
-            q_param.set_value(options.q);
+            let (q_param, q_proc) = context.create_audio_param(q_param_options, &registration);
+            q_param.set_value(q);
 
-            let detune_options = AudioParamDescriptor {
+            let detune_param_options = AudioParamDescriptor {
                 min_value: -153_600.,
                 max_value: 153_600.,
                 default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (d_param, d_proc) = context.create_audio_param(detune_options, &registration);
-            d_param.set_value(options.detune);
+            let (d_param, d_proc) = context.create_audio_param(detune_param_options, &registration);
+            d_param.set_value(detune);
 
             let freq_options = AudioParamDescriptor {
                 min_value: 0.,
@@ -366,7 +376,7 @@ impl BiquadFilterNode {
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (f_param, f_proc) = context.create_audio_param(freq_options, &registration);
-            f_param.set_value(options.frequency);
+            f_param.set_value(frequency);
 
             let gain_options = AudioParamDescriptor {
                 min_value: f32::MIN,
@@ -375,16 +385,14 @@ impl BiquadFilterNode {
                 automation_rate: crate::param::AutomationRate::A,
             };
             let (g_param, g_proc) = context.create_audio_param(gain_options, &registration);
-            g_param.set_value(options.gain);
-
-            let type_ = Arc::new(AtomicU32::new(options.type_ as u32));
+            g_param.set_value(gain);
 
             let renderer = BiquadFilterRenderer {
                 gain: g_proc,
                 detune: d_proc,
                 frequency: f_proc,
                 q: q_proc,
-                type_: Arc::clone(&type_),
+                type_,
                 x1: Vec::with_capacity(MAX_CHANNELS),
                 x2: Vec::with_capacity(MAX_CHANNELS),
                 y1: Vec::with_capacity(MAX_CHANNELS),
@@ -393,8 +401,8 @@ impl BiquadFilterNode {
 
             let node = Self {
                 registration,
-                channel_config: options.channel_config.into(),
-                type_,
+                channel_config: channel_config.into(),
+                type_: AtomicU32::new(type_ as u32),
                 q: q_param,
                 detune: d_param,
                 frequency: f_param,
@@ -432,7 +440,7 @@ impl BiquadFilterNode {
     /// Returns the biquad filter type
     #[must_use]
     pub fn type_(&self) -> BiquadFilterType {
-        self.type_.load(Ordering::SeqCst).into()
+        self.type_.load(Ordering::Acquire).into()
     }
 
     /// biquad filter type setter
@@ -441,7 +449,8 @@ impl BiquadFilterNode {
     ///
     /// * `type_` - the biquad filter type (lowpass, highpass,...)
     pub fn set_type(&self, type_: BiquadFilterType) {
-        self.type_.store(type_ as u32, Ordering::SeqCst);
+        self.type_.store(type_ as u32, Ordering::Release);
+        self.registration.post_message(type_);
     }
 
     /// Returns the frequency response for the specified frequencies
@@ -533,8 +542,8 @@ struct BiquadFilterRenderer {
     /// boost/attenuation (dB) - its impact on the frequency response of the filter
     /// depends on the `BiquadFilterType`
     gain: AudioParamId,
-    /// `BiquadFilterType` represented as u32
-    type_: Arc<AtomicU32>,
+    /// `BiquadFilterType`
+    type_: BiquadFilterType,
     // keep filter state for each channel
     x1: Vec<f64>,
     x2: Vec<f64>,
@@ -596,7 +605,7 @@ impl AudioProcessor for BiquadFilterRenderer {
         }
 
         // get a-rate parameters
-        let type_: BiquadFilterType = self.type_.load(Ordering::SeqCst).into();
+        let type_ = self.type_;
         let frequency = params.get(&self.frequency);
         let detune = params.get(&self.detune);
         let q = params.get(&self.q);
@@ -670,6 +679,15 @@ impl AudioProcessor for BiquadFilterRenderer {
         }
 
         true
+    }
+
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        if let Some(&type_) = msg.downcast_ref::<BiquadFilterType>() {
+            self.type_ = type_;
+            return;
+        }
+
+        log::warn!("BiquadFilterRenderer: Dropping incoming message {msg:?}");
     }
 }
 
