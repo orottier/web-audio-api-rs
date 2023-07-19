@@ -1,9 +1,10 @@
 //! Communicates with the control thread and ships audio samples to the hardware
 
+use std::any::Any;
 use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
 use dasp_sample::FromSample;
@@ -31,6 +32,7 @@ pub(crate) struct RenderThread {
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
     event_sender: Option<Sender<EventDispatch>>,
+    garbage_collector: llq::Producer<Box<dyn Any + Send + 'static>>,
 }
 
 // SAFETY:
@@ -53,6 +55,8 @@ impl RenderThread {
         load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
         event_sender: Option<Sender<EventDispatch>>,
     ) -> Self {
+        let (gc_producer, gc_consumer) = llq::Queue::new().split();
+        spawn_garbage_collector_thread(gc_consumer);
         Self {
             graph: None,
             sample_rate,
@@ -62,6 +66,7 @@ impl RenderThread {
             buffer_offset: None,
             load_value_sender,
             event_sender,
+            garbage_collector: gc_producer,
         }
     }
 
@@ -124,7 +129,7 @@ impl RenderThread {
                 }
                 NodeMessage { id, mut msg } => {
                     self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
-                    // FIXME: Drop the remains of the handled message outside of the render thread.
+                    self.garbage_collector.push(msg);
                 }
             }
         }
@@ -296,6 +301,40 @@ impl RenderThread {
 
 impl Drop for RenderThread {
     fn drop(&mut self) {
+        self.garbage_collector
+            .push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)));
         log::info!("Audio render thread has been dropped");
     }
+}
+
+// Controls the polling frequency of the garbage collector thread.
+const GARBAGE_COLLECTOR_THREAD_TIMEOUT: Duration = Duration::from_millis(100);
+
+// Poison pill that terminates the garbage collector thread.
+#[derive(Debug)]
+struct TerminateGarbageCollectorThread;
+
+// Spawns a sidecar thread of the `RenderThread` for dropping resources.
+fn spawn_garbage_collector_thread(consumer: llq::Consumer<Box<dyn Any + Send + 'static>>) {
+    let _join_handle = std::thread::spawn(move || run_garbage_collector_thread(consumer));
+}
+
+fn run_garbage_collector_thread(mut consumer: llq::Consumer<Box<dyn Any + Send + 'static>>) {
+    log::info!("Entering garbage collector thread");
+    loop {
+        if let Some(node) = consumer.pop() {
+            if node
+                .as_ref()
+                .downcast_ref::<TerminateGarbageCollectorThread>()
+                .is_some()
+            {
+                log::info!("Terminating garbage collector thread");
+                break;
+            }
+            // Implicitly drop the received node.
+        } else {
+            std::thread::sleep(GARBAGE_COLLECTOR_THREAD_TIMEOUT);
+        }
+    }
+    log::info!("Exiting garbage collector thread");
 }

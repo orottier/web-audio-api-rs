@@ -108,7 +108,7 @@ impl AudioContextRegistration {
     pub fn post_message<M: Any + Send + 'static>(&self, msg: M) {
         let wrapped = crate::message::ControlMessage::NodeMessage {
             id: self.id,
-            msg: Box::new(msg),
+            msg: llq::Node::new(Box::new(msg)),
         };
         let _ = self.context.send_control_msg(wrapped);
     }
