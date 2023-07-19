@@ -235,7 +235,7 @@ impl RenderThread {
         self.handle_control_messages();
 
         // if the thread is still booting, or shutting down, fill with silence
-        if self.graph.is_none() {
+        if !self.graph.as_ref().is_some_and(Graph::is_active) {
             output_buffer.fill(S::from_sample_(0.));
             return;
         }
