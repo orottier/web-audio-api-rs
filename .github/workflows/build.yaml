@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+
+name: Build
+
+# read-only repo token, no access to secrets
+permissions:
+  contents: read
+
+# no access to secrets
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install ALSA and Jack dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev cmake
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Generate Cargo.lock
+        run: cargo generate-lockfile
+
+      # restore cargo cache from previous runs
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Distinguished by the action name to avoid sharing!
+          shared-key: "rust"
+
+      # check it builds
+      - name: Build
+        run: cargo build --verbose --all-targets --all-features
+
+      # run tests
+      - name: Run tests
+        run: cargo test --verbose --all-features
