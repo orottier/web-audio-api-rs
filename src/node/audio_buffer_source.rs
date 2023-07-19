@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::buffer::AudioBuffer;
@@ -102,7 +102,7 @@ pub struct AudioBufferSourceNode {
     channel_config: ChannelConfig,
     detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
-    loop_state: LoopState,
+    loop_state: RefCell<LoopState>,
     buffer: OnceCell<AudioBuffer>,
     source_started: AtomicBool,
 }
@@ -210,7 +210,7 @@ impl AudioBufferSourceNode {
                 channel_config: ChannelConfig::default(),
                 detune: d_param,
                 playback_rate: pr_param,
-                loop_state,
+                loop_state: RefCell::new(loop_state),
                 buffer: OnceCell::new(),
                 source_started: AtomicBool::new(false),
             };
@@ -287,32 +287,32 @@ impl AudioBufferSourceNode {
 
     /// Defines if the playback the [`AudioBuffer`] should be looped
     pub fn loop_(&self) -> bool {
-        self.loop_state.is_looping
+        self.loop_state.borrow().is_looping
     }
 
-    pub fn set_loop(&mut self, value: bool) {
-        self.loop_state.is_looping = value;
+    pub fn set_loop(&self, value: bool) {
+        self.loop_state.borrow_mut().is_looping = value;
         self.registration.post_message(ControlMessage::Loop(value));
     }
 
     /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
     pub fn loop_start(&self) -> f64 {
-        self.loop_state.start
+        self.loop_state.borrow().start
     }
 
-    pub fn set_loop_start(&mut self, value: f64) {
-        self.loop_state.start = value;
+    pub fn set_loop_start(&self, value: f64) {
+        self.loop_state.borrow_mut().start = value;
         self.registration
             .post_message(ControlMessage::LoopStart(value));
     }
 
     /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
     pub fn loop_end(&self) -> f64 {
-        self.loop_state.end
+        self.loop_state.borrow().end
     }
 
-    pub fn set_loop_end(&mut self, value: f64) {
-        self.loop_state.end = value;
+    pub fn set_loop_end(&self, value: f64) {
+        self.loop_state.borrow_mut().end = value;
         self.registration
             .post_message(ControlMessage::LoopEnd(value));
     }
@@ -1252,7 +1252,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE / 2, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
+            let src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_loop(true);
             src.set_buffer(dirac);
@@ -1279,7 +1279,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, 129, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
+            let src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_loop(true);
             src.set_buffer(dirac);
@@ -1307,7 +1307,7 @@ mod tests {
             dirac.copy_to_channel(&[1.], 0);
             dirac.copy_to_channel(&[0., 1.], 1);
 
-            let mut src = context.create_buffer_source();
+            let src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_loop(true);
             src.set_buffer(dirac);

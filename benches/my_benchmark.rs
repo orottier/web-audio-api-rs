@@ -168,7 +168,7 @@ pub fn bench_stereo_panning_automation() {
     panner.pan().set_value_at_time(-1., 0.);
     panner.pan().set_value_at_time(0.2, 0.5);
 
-    let mut src = ctx.create_buffer_source();
+    let src = ctx.create_buffer_source();
     src.connect(&panner);
     src.set_buffer(buffer);
     src.set_loop(true);
@@ -188,7 +188,7 @@ pub fn bench_analyser_node() {
     let analyser = ctx.create_analyser();
     analyser.connect(&ctx.destination());
 
-    let mut src = ctx.create_buffer_source();
+    let src = ctx.create_buffer_source();
     src.connect(&analyser);
     src.set_buffer(buffer);
     src.set_loop(true);

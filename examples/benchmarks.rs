@@ -95,7 +95,7 @@ fn main() {
         let name = "Simple source test without resampling (Mono)";
 
         let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let mut source = context.create_buffer_source();
+        let source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate, 1);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -109,7 +109,7 @@ fn main() {
         let name = "Simple source test without resampling (Stereo)";
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
-        let mut source = context.create_buffer_source();
+        let source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate, 2);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -133,7 +133,7 @@ fn main() {
         panner.orientation_y().set_value(2.);
         panner.orientation_z().set_value(3.);
 
-        let mut source = context.create_buffer_source();
+        let source = context.create_buffer_source();
         source.connect(&panner);
 
         let buf = get_buffer(&sources, sample_rate, 2);
@@ -148,7 +148,7 @@ fn main() {
         let name = "Simple source test with resampling (Mono)";
 
         let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let mut source = context.create_buffer_source();
+        let source = context.create_buffer_source();
         let buf = get_buffer(&sources, 38000., 1);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -162,7 +162,7 @@ fn main() {
         let name = "Simple source test with resampling (Stereo)";
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
-        let mut source = context.create_buffer_source();
+        let source = context.create_buffer_source();
         let buf = get_buffer(&sources, 38000., 2);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -186,7 +186,7 @@ fn main() {
         panner.orientation_y().set_value(2.);
         panner.orientation_z().set_value(3.);
 
-        let mut source = context.create_buffer_source();
+        let source = context.create_buffer_source();
         source.connect(&panner);
 
         let buf = get_buffer(&sources, 38000., 2);
@@ -201,7 +201,7 @@ fn main() {
         let name = "Upmix without resampling (Mono -> Stereo)";
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
-        let mut source = context.create_buffer_source();
+        let source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate, 1);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -215,7 +215,7 @@ fn main() {
         let name = "Downmix without resampling (Stereo -> Mono)";
 
         let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let mut source = context.create_buffer_source();
+        let source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate, 2);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -233,7 +233,7 @@ fn main() {
             OfflineAudioContext::new(2, adjusted_duration * sample_rate as usize, sample_rate);
 
         for _ in 0..100 {
-            let mut source = context.create_buffer_source();
+            let source = context.create_buffer_source();
             let buf = get_buffer(&sources, 38000., 1);
             source.set_buffer(buf);
             source.set_loop(true);
@@ -257,7 +257,7 @@ fn main() {
             let mut buffer = context.create_buffer(1, reference.length(), 38000.);
             buffer.copy_to_channel(channel_data, 0);
 
-            let mut source = context.create_buffer_source();
+            let source = context.create_buffer_source();
             source.set_buffer(buffer);
             source.set_loop(true);
             source.connect(&context.destination());
@@ -288,7 +288,7 @@ fn main() {
         for _ in 0..2 {
             let buf = get_buffer(&sources, 38000., 1);
 
-            let mut source = context.create_buffer_source();
+            let source = context.create_buffer_source();
             source.set_buffer(buf);
             source.set_loop(true);
             source.start();
@@ -339,7 +339,7 @@ fn main() {
         convolver.set_buffer(buffer);
         convolver.connect(&context.destination());
 
-        let mut source = context.create_buffer_source();
+        let source = context.create_buffer_source();
         source.set_buffer(buf);
         source.set_loop(true);
         source.start();
@@ -512,7 +512,7 @@ fn main() {
         panner.connect(&context.destination());
         panner.pan().set_value(0.1);
 
-        let mut src = context.create_buffer_source();
+        let src = context.create_buffer_source();
         let buffer = get_buffer(&sources, sample_rate, 2);
         src.connect(&panner);
         src.set_buffer(buffer);
@@ -532,7 +532,7 @@ fn main() {
         panner.pan().set_value_at_time(-1., 0.);
         panner.pan().set_value_at_time(0.2, 0.5);
 
-        let mut src = context.create_buffer_source();
+        let src = context.create_buffer_source();
         let buffer = get_buffer(&sources, sample_rate, 2);
         src.connect(&panner);
         src.set_buffer(buffer);
@@ -567,7 +567,7 @@ fn main() {
         delay.delay_time().set_value(1.);
         delay.connect(&context.destination());
 
-        let mut source = context.create_buffer_source();
+        let source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate, 2);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -595,7 +595,7 @@ fn main() {
         let iir = context.create_iir_filter(feedforward, feedback);
         iir.connect(&context.destination());
 
-        let mut src = context.create_buffer_source();
+        let src = context.create_buffer_source();
         let buffer = get_buffer(&sources, sample_rate, 2);
         src.connect(&iir);
         src.set_buffer(buffer);
@@ -615,7 +615,7 @@ fn main() {
         biquad.connect(&context.destination());
         biquad.frequency().set_value(200.);
 
-        let mut src = context.create_buffer_source();
+        let src = context.create_buffer_source();
         let buffer = get_buffer(&sources, sample_rate, 2);
         src.connect(&biquad);
         src.set_buffer(buffer);

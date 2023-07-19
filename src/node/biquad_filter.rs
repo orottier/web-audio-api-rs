@@ -280,7 +280,7 @@ impl Default for BiquadFilterOptions {
 ///     .exponential_ramp_to_value_at_time(10000., context.current_time() + 10.);
 ///
 /// // pipe the audio buffer source into the lowpass filter
-/// let mut src = context.create_buffer_source();
+/// let src = context.create_buffer_source();
 /// src.connect(&biquad);
 /// src.set_buffer(buffer);
 /// src.set_loop(true);

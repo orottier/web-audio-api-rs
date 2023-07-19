@@ -41,7 +41,7 @@ fn main() {
     let file = File::open("samples/siren.mp3").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();
 
-    let mut src = context.create_buffer_source();
+    let src = context.create_buffer_source();
     src.set_buffer(buffer);
     src.set_loop(true);
 
