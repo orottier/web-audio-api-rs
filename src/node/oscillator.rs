@@ -212,6 +212,10 @@ impl OscillatorNode {
 
             let shared_type = Arc::new(AtomicU32::new(type_ as u32));
 
+            // Ensure the precomputed sine table is initialized so the render thread does not have
+            // to (which will possibly block)
+            let sine_table = precomputed_sine_table();
+
             let renderer = OscillatorRenderer {
                 type_,
                 shared_type: Arc::clone(&shared_type),
@@ -223,7 +227,7 @@ impl OscillatorNode {
                 started: false,
                 periodic_wave: None,
                 ended_triggered: false,
-                sine_table: precomputed_sine_table(),
+                sine_table,
             };
 
             let node = Self {
@@ -330,7 +334,7 @@ struct OscillatorRenderer {
     /// defines if the `ended` events was already dispatched
     ended_triggered: bool,
     /// Precomputed sine table
-    sine_table: &'static [f32],
+    sine_table: &'static [f32; TABLE_LENGTH_USIZE],
 }
 
 impl AudioProcessor for OscillatorRenderer {

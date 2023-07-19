@@ -5,7 +5,7 @@ use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, Render
 
 use super::{
     precomputed_sine_table, AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode,
-    ChannelInterpretation, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE,
+    ChannelInterpretation, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE, TABLE_LENGTH_USIZE,
 };
 
 /// Options for constructing a [`StereoPannerOptions`]
@@ -69,7 +69,7 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
 /// - `gain_left = (x * PI / 2.).cos()`
 /// - `gain_right = (x * PI / 2.).sin()`
 #[inline(always)]
-fn get_stereo_gains(sine_table: &[f32], x: f32) -> [f32; 2] {
+fn get_stereo_gains(sine_table: &[f32; TABLE_LENGTH_USIZE], x: f32) -> [f32; 2] {
     let idx = (x * TABLE_LENGTH_BY_4_F32) as usize;
 
     let gain_left = sine_table[idx + TABLE_LENGTH_BY_4_USIZE];
@@ -208,15 +208,16 @@ struct StereoPannerRenderer {
     /// Position of the input in the output’s stereo image.
     /// -1 represents full left, +1 represents full right.
     pan: AudioParamId,
-    sine_table: &'static [f32],
+    sine_table: &'static [f32; TABLE_LENGTH_USIZE],
 }
 
 impl StereoPannerRenderer {
     fn new(pan: AudioParamId) -> Self {
-        Self {
-            pan,
-            sine_table: precomputed_sine_table(),
-        }
+        // Ensure the precomputed sine table is initialized so the render thread does not have to
+        // (which will possibly block)
+        let sine_table = precomputed_sine_table();
+
+        Self { pan, sine_table }
     }
 }
 
