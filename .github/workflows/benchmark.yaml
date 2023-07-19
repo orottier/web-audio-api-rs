@@ -20,11 +20,18 @@ jobs:
     if: ${{ github.event.issue.pull_request }} && contains(github.event.comment.body, '/bench')
 
     steps:
-      # checkout repo, install dependencies
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+      # the workflow is triggered from main branch
+      # cf. https://github.com/actions/checkout/issues/331
+      # need this first step to init the git repo
+      - name: Checkout
+        uses: actions/checkout@v3
 
+      - name: Checkout Pull Request
+        run: hub pr checkout ${{ github.event.issue.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # install dependencies
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
