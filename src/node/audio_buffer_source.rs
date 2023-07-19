@@ -49,7 +49,7 @@ struct PlaybackInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct LoopState {
+struct LoopState {
     pub is_looping: bool,
     pub start: f64,
     pub end: f64,
@@ -63,7 +63,6 @@ enum ControlMessage {
     Loop(bool),
     LoopStart(f64),
     LoopEnd(f64),
-    LoopState(LoopState),
 }
 
 /// `AudioBufferSourceNode` represents an audio source that consists of an
@@ -286,16 +285,6 @@ impl AudioBufferSourceNode {
         &self.detune
     }
 
-    pub fn loop_state(&self) -> &LoopState {
-        &self.loop_state
-    }
-
-    pub fn set_loop_state(&mut self, value: LoopState) {
-        self.loop_state = value.clone();
-        self.registration
-            .post_message(ControlMessage::LoopState(value));
-    }
-
     /// Defines if the playback the [`AudioBuffer`] should be looped
     pub fn loop_(&self) -> bool {
         self.loop_state.is_looping
@@ -374,7 +363,6 @@ impl AudioBufferSourceRenderer {
             ControlMessage::Loop(is_looping) => self.loop_state.is_looping = *is_looping,
             ControlMessage::LoopStart(loop_start) => self.loop_state.start = *loop_start,
             ControlMessage::LoopEnd(loop_end) => self.loop_state.end = *loop_end,
-            ControlMessage::LoopState(loop_state) => self.loop_state = loop_state.clone(),
         }
     }
 }
