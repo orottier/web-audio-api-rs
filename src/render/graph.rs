@@ -105,6 +105,12 @@ impl Graph {
         }
     }
 
+    /// Check if the graph is fully initialized and can start rendering
+    pub fn is_active(&self) -> bool {
+        // currently we only require the destination node to be present
+        !self.nodes.is_empty()
+    }
+
     pub fn add_node(
         &mut self,
         index: AudioNodeId,
