@@ -103,7 +103,7 @@ fn main() {
 
     {
         println!("++ simple loop (x2)");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.set_loop(true);
@@ -115,7 +115,7 @@ fn main() {
 
     {
         println!("++ loop between 1 and 2 starting from 0");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.set_loop(true);
@@ -131,7 +131,7 @@ fn main() {
 
     {
         println!("++ loop backward between 1 and 2 starting from end");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.playback_rate().set_value(-1.);

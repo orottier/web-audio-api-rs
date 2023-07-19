@@ -36,7 +36,7 @@ fn main() {
     // Create looping 'siren' sound
     let file = std::fs::File::open("samples/siren.mp3").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();
-    let tone = context.create_buffer_source();
+    let mut tone = context.create_buffer_source();
     tone.set_buffer(buffer);
     tone.set_loop(true);
     tone.start();

@@ -6,7 +6,6 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
-use crate::AtomicF64;
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
@@ -49,60 +48,22 @@ struct PlaybackInfo {
     k: f32,
 }
 
-// The strategy for loop parameters is as follow: store the given values
-// in the `loop_control` thread safe instance which only lives in control
-// thread(s) and send a message to the render thread which stores the raw values.
-// Values between control and render side might be desynchronised for little while
-// but the developer experience will appear more logical, i.e.
-// ```no_run
-// node.set_loop(true);
-// println!("{:?}", node.loop_());
-// > true // is guaranteed
-// ```
-// Note that this seems to be the strategy used by Firefox
-#[derive(Debug)]
-struct LoopControl {
-    loop_: AtomicBool,
-    loop_start: AtomicF64,
-    loop_end: AtomicF64,
-}
-
-// Uses the canonical ordering for handover of values,
-// i.e. `Acquire` on load and `Release` on store.
-impl LoopControl {
-    fn loop_(&self) -> bool {
-        self.loop_.load(Ordering::Acquire)
-    }
-
-    fn set_loop(&self, loop_: bool) {
-        self.loop_.store(loop_, Ordering::Release);
-    }
-
-    fn loop_start(&self) -> f64 {
-        self.loop_start.load(Ordering::Acquire)
-    }
-
-    fn set_loop_start(&self, loop_start: f64) {
-        self.loop_start.store(loop_start, Ordering::Release);
-    }
-
-    fn loop_end(&self) -> f64 {
-        self.loop_end.load(Ordering::Acquire)
-    }
-
-    fn set_loop_end(&self, loop_end: f64) {
-        self.loop_end.store(loop_end, Ordering::Release);
-    }
+#[derive(Debug, Clone)]
+pub struct LoopState {
+    pub is_looping: bool,
+    pub start: f64,
+    pub end: f64,
 }
 
 /// Instructions to start or stop processing
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 enum ControlMessage {
     StartWithOffsetAndDuration(f64, f64, f64),
     Stop(f64),
     Loop(bool),
     LoopStart(f64),
     LoopEnd(f64),
+    LoopState(LoopState),
 }
 
 /// `AudioBufferSourceNode` represents an audio source that consists of an
@@ -139,10 +100,10 @@ enum ControlMessage {
 ///
 pub struct AudioBufferSourceNode {
     registration: AudioContextRegistration,
-    loop_control: LoopControl,
     channel_config: ChannelConfig,
     detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
+    loop_state: LoopState,
     buffer: OnceCell<AudioBuffer>,
     source_started: AtomicBool,
 }
@@ -226,10 +187,10 @@ impl AudioBufferSourceNode {
             pr_param.set_automation_rate_constrained(true);
             pr_param.set_value(playback_rate);
 
-            let loop_control = LoopControl {
-                loop_: AtomicBool::new(loop_),
-                loop_start: AtomicF64::new(loop_start),
-                loop_end: AtomicF64::new(loop_end),
+            let loop_state = LoopState {
+                is_looping: loop_,
+                start: loop_start,
+                end: loop_end,
             };
 
             let renderer = AudioBufferSourceRenderer {
@@ -237,22 +198,20 @@ impl AudioBufferSourceNode {
                 stop_time: f64::MAX,
                 duration: f64::MAX,
                 offset: 0.,
-                loop_,
-                loop_start,
-                loop_end,
                 buffer: None,
                 detune: d_proc,
                 playback_rate: pr_proc,
+                loop_state: loop_state.clone(),
                 render_state: AudioBufferRendererState::default(),
                 ended_triggered: false,
             };
 
             let node = Self {
                 registration,
-                loop_control,
                 channel_config: ChannelConfig::default(),
                 detune: d_param,
                 playback_rate: pr_param,
+                loop_state,
                 buffer: OnceCell::new(),
                 source_started: AtomicBool::new(false),
             };
@@ -327,34 +286,44 @@ impl AudioBufferSourceNode {
         &self.detune
     }
 
-    /// Defines if the playback the [`AudioBuffer`] should be looped
-    pub fn loop_(&self) -> bool {
-        self.loop_control.loop_()
+    pub fn loop_state(&self) -> &LoopState {
+        &self.loop_state
     }
 
-    pub fn set_loop(&self, value: bool) {
-        self.loop_control.set_loop(value);
+    pub fn set_loop_state(&mut self, value: LoopState) {
+        self.loop_state = value.clone();
+        self.registration
+            .post_message(ControlMessage::LoopState(value));
+    }
+
+    /// Defines if the playback the [`AudioBuffer`] should be looped
+    pub fn loop_(&self) -> bool {
+        self.loop_state.is_looping
+    }
+
+    pub fn set_loop(&mut self, value: bool) {
+        self.loop_state.is_looping = value;
         self.registration.post_message(ControlMessage::Loop(value));
     }
 
     /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
     pub fn loop_start(&self) -> f64 {
-        self.loop_control.loop_start()
+        self.loop_state.start
     }
 
-    pub fn set_loop_start(&self, value: f64) {
-        self.loop_control.set_loop_start(value);
+    pub fn set_loop_start(&mut self, value: f64) {
+        self.loop_state.start = value;
         self.registration
             .post_message(ControlMessage::LoopStart(value));
     }
 
     /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
     pub fn loop_end(&self) -> f64 {
-        self.loop_control.loop_end()
+        self.loop_state.end
     }
 
-    pub fn set_loop_end(&self, value: f64) {
-        self.loop_control.set_loop_end(value);
+    pub fn set_loop_end(&mut self, value: f64) {
+        self.loop_state.end = value;
         self.registration
             .post_message(ControlMessage::LoopEnd(value));
     }
@@ -385,28 +354,27 @@ struct AudioBufferSourceRenderer {
     stop_time: f64,
     offset: f64,
     duration: f64,
-    loop_: bool,
-    loop_start: f64,
-    loop_end: f64,
     buffer: Option<AudioBuffer>,
     detune: AudioParamId,
     playback_rate: AudioParamId,
+    loop_state: LoopState,
     render_state: AudioBufferRendererState,
     ended_triggered: bool,
 }
 
 impl AudioBufferSourceRenderer {
-    fn handle_control_message(&mut self, control: ControlMessage) {
+    fn handle_control_message(&mut self, control: &ControlMessage) {
         match control {
             ControlMessage::StartWithOffsetAndDuration(when, offset, duration) => {
-                self.start_time = when;
-                self.offset = offset;
-                self.duration = duration;
+                self.start_time = *when;
+                self.offset = *offset;
+                self.duration = *duration;
             }
-            ControlMessage::Stop(when) => self.stop_time = when,
-            ControlMessage::Loop(loop_) => self.loop_ = loop_,
-            ControlMessage::LoopStart(loop_start) => self.loop_start = loop_start,
-            ControlMessage::LoopEnd(loop_end) => self.loop_end = loop_end,
+            ControlMessage::Stop(when) => self.stop_time = *when,
+            ControlMessage::Loop(is_looping) => self.loop_state.is_looping = *is_looping,
+            ControlMessage::LoopStart(loop_start) => self.loop_state.start = *loop_start,
+            ControlMessage::LoopEnd(loop_end) => self.loop_state.end = *loop_end,
+            ControlMessage::LoopState(loop_state) => self.loop_state = loop_state.clone(),
         }
     }
 }
@@ -427,10 +395,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let block_duration = dt * RENDER_QUANTUM_SIZE as f64;
         let next_block_time = scope.current_time + block_duration;
 
-        // grab all timing information
-        let loop_ = self.loop_;
-        let loop_start = self.loop_start;
-        let loop_end = self.loop_end;
+        let LoopState {
+            is_looping,
+            start: loop_start,
+            end: loop_end,
+        } = self.loop_state.clone();
 
         // these will only be used if `loop_` is true, so no need for `Option`
         let mut actual_loop_start = 0.;
@@ -485,7 +454,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         }
 
         // 3. the end of the buffer has been reached.
-        if !loop_ {
+        if !is_looping {
             if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
                 output.make_silent(); // also converts to mono
                 if !self.ended_triggered {
@@ -590,7 +559,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                             *o = if buffer_index < end_index {
                                 buffer_channel[buffer_index]
                             } else {
-                                if loop_ && buffer_index == end_index {
+                                if is_looping && buffer_index == end_index {
                                     loop_point_index = Some(index);
                                     // reset values for the rest of the block
                                     start_index = 0;
@@ -598,7 +567,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                     buffer_index = 0;
                                 }
 
-                                if loop_ {
+                                if is_looping {
                                     buffer_channel[buffer_index]
                                 } else {
                                     0.
@@ -639,7 +608,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // ---------------------------------------------------------------
         // Slow track
         // ---------------------------------------------------------------
-        if loop_ {
+        if is_looping {
             if loop_start >= 0. && loop_end > 0. && loop_start < loop_end {
                 actual_loop_start = loop_start;
                 actual_loop_end = loop_end.min(buffer_duration);
@@ -671,11 +640,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             if !self.render_state.started {
                 self.offset += current_time - self.start_time;
 
-                if loop_ && computed_playback_rate >= 0. && self.offset >= actual_loop_end {
+                if is_looping && computed_playback_rate >= 0. && self.offset >= actual_loop_end {
                     self.offset = actual_loop_end;
                 }
 
-                if loop_ && computed_playback_rate < 0. && self.offset < actual_loop_start {
+                if is_looping && computed_playback_rate < 0. && self.offset < actual_loop_start {
                     self.offset = actual_loop_start;
                 }
 
@@ -683,7 +652,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 self.render_state.started = true;
             }
 
-            if loop_ {
+            if is_looping {
                 if !self.render_state.entered_loop {
                     // playback began before or within loop, and playhead is now past loop start
                     if self.offset < actual_loop_end
@@ -772,7 +741,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
     fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(control) = msg.downcast_ref::<ControlMessage>() {
-            self.handle_control_message(*control);
+            self.handle_control_message(control);
             return;
         };
 
@@ -1295,7 +1264,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE / 2, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_loop(true);
             src.set_buffer(dirac);
@@ -1322,7 +1291,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, 129, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_loop(true);
             src.set_buffer(dirac);
@@ -1350,7 +1319,7 @@ mod tests {
             dirac.copy_to_channel(&[1.], 0);
             dirac.copy_to_channel(&[0., 1.], 1);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_loop(true);
             src.set_buffer(dirac);

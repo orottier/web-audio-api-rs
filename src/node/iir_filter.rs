@@ -115,7 +115,7 @@ pub struct IIRFilterOptions {
 /// iir.connect(&context.destination());
 ///
 /// // play the buffer and pipe it into the filter
-/// let src = context.create_buffer_source();
+/// let mut src = context.create_buffer_source();
 /// src.connect(&iir);
 /// src.set_buffer(buffer);
 /// src.set_loop(true);
