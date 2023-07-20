@@ -188,6 +188,8 @@ impl WaveShaperNode {
 
             (node, Box::new(renderer))
         })
+
+        // @todo - use node.set_curve(curve) here
     }
 
     /// Returns the distortion curve
