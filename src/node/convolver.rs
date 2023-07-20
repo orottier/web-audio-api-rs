@@ -176,7 +176,7 @@ impl ConvolverNode {
             (node, Box::new(renderer))
         });
 
-        // audio node has been sent to render thread, we can sent it messages
+        // renderer has been sent to render thread, we can sent it messages
         if let Some(buffer) = buffer {
             node.set_buffer(buffer);
         }
