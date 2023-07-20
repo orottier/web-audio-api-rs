@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::cell::{Cell, OnceCell, RefCell};
+use std::cell::{OnceCell, RefCell};
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
@@ -101,9 +101,14 @@ pub struct AudioBufferSourceNode {
     channel_config: ChannelConfig,
     detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
-    loop_state: RefCell<LoopState>,
     buffer: OnceCell<AudioBuffer>,
-    source_started: Cell<bool>,
+    inner_state: RefCell<InnerState>,
+}
+
+#[derive(Debug, Clone)]
+struct InnerState {
+    loop_state: LoopState,
+    source_started: bool,
 }
 
 impl AudioNode for AudioBufferSourceNode {
@@ -141,7 +146,7 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
 
     fn stop_at(&self, when: f64) {
         assert!(
-            self.source_started.get(),
+            self.inner_state.borrow().source_started,
             "InvalidStateError cannot stop before start"
         );
 
@@ -205,14 +210,17 @@ impl AudioBufferSourceNode {
                 ended_triggered: false,
             };
 
+            let inner_state = InnerState {
+                loop_state,
+                source_started: false,
+            };
             let node = Self {
                 registration,
                 channel_config: ChannelConfig::default(),
                 detune: d_param,
                 playback_rate: pr_param,
-                loop_state: RefCell::new(loop_state),
                 buffer: OnceCell::new(),
-                source_started: Cell::new(false),
+                inner_state: RefCell::new(inner_state),
             };
 
             if let Some(buf) = buffer {
@@ -238,11 +246,15 @@ impl AudioBufferSourceNode {
     ///
     /// Panics if the source was already started
     pub fn start_at_with_offset_and_duration(&self, start: f64, offset: f64, duration: f64) {
-        assert!(
-            !self.source_started.get(),
-            "InvalidStateError: Cannot call `start` twice"
-        );
-        self.source_started.set(true);
+        {
+            let source_started = &mut self.inner_state.borrow_mut().source_started;
+            assert!(
+                !*source_started,
+                "InvalidStateError: Cannot call `start` twice"
+            );
+            *source_started = true;
+            // Drop the mutable borrow
+        }
 
         let control = ControlMessage::StartWithOffsetAndDuration(start, offset, duration);
         self.registration.post_message(control);
@@ -289,32 +301,32 @@ impl AudioBufferSourceNode {
 
     /// Defines if the playback the [`AudioBuffer`] should be looped
     pub fn loop_(&self) -> bool {
-        self.loop_state.borrow().is_looping
+        self.inner_state.borrow().loop_state.is_looping
     }
 
     pub fn set_loop(&self, value: bool) {
-        self.loop_state.borrow_mut().is_looping = value;
+        self.inner_state.borrow_mut().loop_state.is_looping = value;
         self.registration.post_message(ControlMessage::Loop(value));
     }
 
     /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
     pub fn loop_start(&self) -> f64 {
-        self.loop_state.borrow().start
+        self.inner_state.borrow().loop_state.start
     }
 
     pub fn set_loop_start(&self, value: f64) {
-        self.loop_state.borrow_mut().start = value;
+        self.inner_state.borrow_mut().loop_state.start = value;
         self.registration
             .post_message(ControlMessage::LoopStart(value));
     }
 
     /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
     pub fn loop_end(&self) -> f64 {
-        self.loop_state.borrow().end
+        self.inner_state.borrow().loop_state.end
     }
 
     pub fn set_loop_end(&self, value: f64) {
-        self.loop_state.borrow_mut().end = value;
+        self.inner_state.borrow_mut().loop_state.end = value;
         self.registration
             .post_message(ControlMessage::LoopEnd(value));
     }
