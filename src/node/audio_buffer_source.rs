@@ -1,6 +1,5 @@
 use std::any::Any;
-use std::cell::{OnceCell, RefCell};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::cell::{Cell, OnceCell, RefCell};
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
@@ -104,7 +103,7 @@ pub struct AudioBufferSourceNode {
     playback_rate: AudioParam, // has constraints, no a-rate
     loop_state: RefCell<LoopState>,
     buffer: OnceCell<AudioBuffer>,
-    source_started: AtomicBool,
+    source_started: Cell<bool>,
 }
 
 impl AudioNode for AudioBufferSourceNode {
@@ -141,9 +140,10 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
     }
 
     fn stop_at(&self, when: f64) {
-        if !self.source_started.load(Ordering::SeqCst) {
-            panic!("InvalidStateError cannot stop before start");
-        }
+        assert!(
+            self.source_started.get(),
+            "InvalidStateError cannot stop before start"
+        );
 
         self.registration.post_message(ControlMessage::Stop(when));
     }
@@ -212,7 +212,7 @@ impl AudioBufferSourceNode {
                 playback_rate: pr_param,
                 loop_state: RefCell::new(loop_state),
                 buffer: OnceCell::new(),
-                source_started: AtomicBool::new(false),
+                source_started: Cell::new(false),
             };
 
             if let Some(buf) = buffer {
@@ -238,9 +238,11 @@ impl AudioBufferSourceNode {
     ///
     /// Panics if the source was already started
     pub fn start_at_with_offset_and_duration(&self, start: f64, offset: f64, duration: f64) {
-        if self.source_started.swap(true, Ordering::SeqCst) {
-            panic!("InvalidStateError: Cannot call `start` twice");
-        }
+        assert!(
+            !self.source_started.get(),
+            "InvalidStateError: Cannot call `start` twice"
+        );
+        self.source_started.set(true);
 
         let control = ControlMessage::StartWithOffsetAndDuration(start, offset, duration);
         self.registration.post_message(control);
