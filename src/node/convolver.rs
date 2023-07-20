@@ -149,13 +149,13 @@ impl ConvolverNode {
     /// Panics when an AudioBuffer is provided via the `ConvolverOptions` with a sample rate
     /// different from the audio context sample rate.
     pub fn new<C: BaseAudioContext>(context: &C, options: ConvolverOptions) -> Self {
-        let node = context.base().register(move |registration| {
-            let ConvolverOptions {
-                buffer,
-                disable_normalization,
-                channel_config,
-            } = options;
+        let ConvolverOptions {
+            buffer,
+            disable_normalization,
+            channel_config,
+        } = options;
 
+        let node = context.base().register(move |registration| {
             // create a dummy convolver to be replaced by a real one without deallocation
             let sample_rate = context.base().sample_rate();
             let padded_buffer = AudioBuffer::from(vec![vec![0.; 0]; 1], sample_rate);
@@ -170,14 +170,14 @@ impl ConvolverNode {
                 registration,
                 channel_config: channel_config.into(),
                 normalize: AtomicBool::new(!disable_normalization),
-                buffer: Mutex::new(buffer),
+                buffer: Mutex::new(None),
             };
 
             (node, Box::new(renderer))
         });
 
         // audio node has been sent to render thread, we can sent it messages
-        if let Some(buffer) = node.buffer() {
+        if let Some(buffer) = buffer {
             node.set_buffer(buffer);
         }
 
@@ -447,7 +447,6 @@ impl AudioProcessor for ConvolverRenderer {
 
     fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(convolver) = msg.downcast_mut::<ConvolverRendererInner>() {
-            println!("convolver set");
             // Avoid deallocation in the render thread by swapping the convolver.
             std::mem::swap(&mut self.convolver, convolver);
             self.convolver_set = true;
