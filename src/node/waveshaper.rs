@@ -157,19 +157,18 @@ impl WaveShaperNode {
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - waveshaper options
     pub fn new<C: BaseAudioContext>(context: &C, options: WaveShaperOptions) -> Self {
-        context.register(move |registration| {
-            let WaveShaperOptions {
-                oversample,
-                curve,
-                channel_config,
-            } = options;
+        let WaveShaperOptions {
+            oversample,
+            curve,
+            channel_config,
+        } = options;
 
+        let node = context.register(move |registration| {
             let sample_rate = context.sample_rate() as usize;
             let channel_config = channel_config.into();
 
             let config = RendererConfig {
                 oversample,
-                curve: curve.clone(),
                 sample_rate,
             };
 
@@ -181,15 +180,15 @@ impl WaveShaperNode {
                 oversample: AtomicU32::new(oversample as u32),
             };
 
-            if let Some(c) = curve {
-                // we are sure the OnceCell is empty, cannot fail
-                let _ = node.curve.set(c);
-            }
-
             (node, Box::new(renderer))
-        })
+        });
 
-        // @todo - use node.set_curve(curve) here
+        // renderer has been sent to render thread, we can sent it messages
+        if let Some(curve) = curve {
+            node.set_curve(curve);
+        }
+
+        node
     }
 
     /// Returns the distortion curve
@@ -233,17 +232,6 @@ impl WaveShaperNode {
         self.oversample.store(oversample as u32, Ordering::Release);
         self.registration.post_message(oversample);
     }
-}
-
-/// Helper struct which regroups all parameters
-/// required to build `WaveShaperRenderer`
-struct RendererConfig {
-    /// oversample factor
-    oversample: OverSampleType,
-    /// oversample factor
-    curve: Option<Vec<f32>>,
-    /// Sample rate (equals to audio context sample rate)
-    sample_rate: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -361,6 +349,15 @@ impl Resampler {
     fn samples_out_mut(&mut self) -> &mut [Vec<f32>] {
         &mut self.samples_out[..]
     }
+}
+
+/// Helper struct which regroups all parameters
+/// required to build `WaveShaperRenderer`
+struct RendererConfig {
+    /// oversample factor
+    oversample: OverSampleType,
+    /// Sample rate (equals to audio context sample rate)
+    sample_rate: usize,
 }
 
 /// `WaveShaperRenderer` represents the rendering part of `WaveShaperNode`
@@ -519,11 +516,7 @@ impl WaveShaperRenderer {
         let RendererConfig {
             sample_rate,
             oversample,
-            curve,
         } = config;
-
-        let curve_set = curve.is_some();
-        let curve = curve.unwrap_or(Vec::with_capacity(0));
 
         let channels_x2 = 1;
         let channels_x4 = 1;
@@ -540,8 +533,8 @@ impl WaveShaperRenderer {
 
         Self {
             oversample,
-            curve,
-            curve_set,
+            curve: Vec::with_capacity(0),
+            curve_set: false,
             sample_rate,
             channels_x2,
             channels_x4,
