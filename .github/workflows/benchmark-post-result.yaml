@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow
 
-name: Post benchmark results
+name: benchmark post results
 
 # read-write repo token
 # access to secrets
@@ -9,42 +9,37 @@ name: Post benchmark results
 # see https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
 on:
   workflow_run:
-    branches-ignore:
-      - "main"
-    workflows: ["Build"]
+    workflows: ["benchmark"]
     types:
       - completed
 
 jobs:
   upload:
     runs-on: ubuntu-latest
-    if: >
-      ${{ github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: "Download artifact"
-        uses: actions/github-script@v3.1.0
+        uses: actions/github-script@v6
         with:
           script: |
-            const artifacts = await github.actions.listWorkflowRunArtifacts({
+            const fs = require('fs');
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
                owner: context.repo.owner,
                repo: context.repo.repo,
                run_id: ${{github.event.workflow_run.id }},
             });
-            const matchArtifact = artifacts.data.artifacts.filter((artifact) => {
+            const matchArtifact = artifacts.data.artifacts.find((artifact) => {
               return artifact.name == "pr"
-            })[0];
-            const download = await github.actions.downloadArtifact({
+            });
+            const download = await github.rest.actions.downloadArtifact({
                owner: context.repo.owner,
                repo: context.repo.repo,
                artifact_id: matchArtifact.id,
                archive_format: 'zip',
             });
-            const fs = require('fs');
             fs.writeFileSync('${{github.workspace}}/pr.zip', Buffer.from(download.data));
       - run: unzip pr.zip
       - name: "Write result in PR"
-        uses: actions/github-script@v3
+        uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -54,7 +49,7 @@ jobs:
 
             const message = '```\nBenchmark result:\n\n' + iai_feature + '\n```\n';
 
-            await github.issues.createComment({
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issue_number,

@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow
 
-name: Build
+name: benchmark
 
 # read-only repo token, no access to secrets
 permissions:
@@ -8,58 +8,30 @@ permissions:
 
 # no access to secrets
 on:
-  push:
-    branches: [main]
-  pull_request:
+  issue_comment:
+    types: [created, edited]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  verify-build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Install ALSA and Jack dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev cmake
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Check out repository
-        uses: actions/checkout@v3
-
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile
-
-      # restore cargo cache from previous runs
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Distinguished by the action name to avoid sharing!
-          shared-key: "rust"
-
-      # check it builds
-      - name: Build
-        run: cargo build --verbose --all-targets --all-features
-
-      # run tests
-      - name: Run tests
-        run: cargo test --verbose --all-features
-
   benchmark:
     runs-on: ubuntu-latest
-    if: github.ref != 'refs/heads/main'
+    if: ${{ github.event.issue.pull_request }} && contains(github.event.comment.body, '/bench')
 
     steps:
-      # checkout repo, install dependencies
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+      # the workflow is triggered from main branch
+      # cf. https://github.com/actions/checkout/issues/331
+      # need this first step to init the git repo
+      - name: Checkout
+        uses: actions/checkout@v3
 
+      - name: Checkout Pull Request
+        run: hub pr checkout ${{ github.event.issue.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # install dependencies
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -83,12 +55,16 @@ jobs:
       - name: Run bench against baseline
         run: cargo bench --no-default-features | sed '0,/^test result:/d' | tee bench.txt
 
+      # for testing
+      # - name: create mock results
+      #   run: echo "my bench results" > bench.txt
+
       ## Save results
       ## see https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
       - name: Save PR number and bench results
         run: |
           mkdir -p ./pr
-          echo ${{ github.event.number }} > ./pr/pr_number.txt
+          echo ${{ github.event.issue.number }} > ./pr/pr_number.txt
           mv bench.txt ./pr/bench.txt
       - uses: actions/upload-artifact@v2
         with:
