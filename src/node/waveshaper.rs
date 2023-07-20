@@ -1,12 +1,7 @@
-use std::{
-    cell::OnceCell,
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
-    },
-};
+use std::any::Any;
+use std::cell::OnceCell;
+use std::sync::atomic::{AtomicU32, Ordering};
 
-use crossbeam_channel::{Receiver, Sender};
 use rubato::{FftFixedInOut, Resampler as _};
 
 use crate::{
@@ -16,8 +11,6 @@ use crate::{
 };
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
-
-struct CurveMessage(Vec<f32>);
 
 /// enumerates the oversampling rate available for `WaveShaperNode`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,8 +59,8 @@ pub struct WaveShaperOptions {
 impl Default for WaveShaperOptions {
     fn default() -> Self {
         Self {
-            curve: None,
             oversample: OverSampleType::None,
+            curve: None,
             channel_config: ChannelConfigOptions::default(),
         }
     }
@@ -135,9 +128,7 @@ pub struct WaveShaperNode {
     /// distortion curve
     curve: OnceCell<Vec<f32>>,
     /// oversample type
-    oversample: Arc<AtomicU32>,
-    /// Channel between node and renderer (sender part)
-    sender: Sender<CurveMessage>,
+    oversample: AtomicU32,
 }
 
 impl AudioNode for WaveShaperNode {
@@ -168,23 +159,18 @@ impl WaveShaperNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: WaveShaperOptions) -> Self {
         context.register(move |registration| {
             let WaveShaperOptions {
-                curve,
                 oversample,
+                curve,
                 channel_config,
             } = options;
 
             let sample_rate = context.sample_rate() as usize;
             let channel_config = channel_config.into();
-            let oversample = Arc::new(AtomicU32::new(oversample as u32));
-
-            // Channel to send the `curve` to the renderer
-            // A capacity of 1 suffices since it is not allowed to set the value multiple times
-            let (sender, receiver) = crossbeam_channel::bounded(1);
 
             let config = RendererConfig {
+                oversample,
+                curve: curve.clone(),
                 sample_rate,
-                oversample: Arc::clone(&oversample),
-                receiver,
             };
 
             let renderer = WaveShaperRenderer::new(config);
@@ -192,12 +178,12 @@ impl WaveShaperNode {
                 registration,
                 channel_config,
                 curve: OnceCell::new(),
-                oversample,
-                sender,
+                oversample: AtomicU32::new(oversample as u32),
             };
 
             if let Some(c) = curve {
-                node.set_curve(c);
+                // we are sure the OnceCell is empty, cannot fail
+                let _ = node.curve.set(c);
             }
 
             (node, Box::new(renderer))
@@ -227,15 +213,13 @@ impl WaveShaperNode {
             panic!("InvalidStateError - cannot assign curve twice");
         }
 
-        self.sender
-            .send(CurveMessage(clone))
-            .expect("Sending CurveMessage failed");
+        self.registration.post_message(clone);
     }
 
     /// Returns the `oversample` faactor of this node
     #[must_use]
     pub fn oversample(&self) -> OverSampleType {
-        self.oversample.load(Ordering::SeqCst).into()
+        self.oversample.load(Ordering::Acquire).into()
     }
 
     /// set the `oversample` factor of this node
@@ -244,19 +228,20 @@ impl WaveShaperNode {
     ///
     /// * `oversample` - the desired `OversampleType` variant
     pub fn set_oversample(&self, oversample: OverSampleType) {
-        self.oversample.store(oversample as u32, Ordering::SeqCst);
+        self.oversample.store(oversample as u32, Ordering::Release);
+        self.registration.post_message(oversample);
     }
 }
 
 /// Helper struct which regroups all parameters
 /// required to build `WaveShaperRenderer`
 struct RendererConfig {
+    /// oversample factor
+    oversample: OverSampleType,
+    /// oversample factor
+    curve: Option<Vec<f32>>,
     /// Sample rate (equals to audio context sample rate)
     sample_rate: usize,
-    /// oversample factor
-    oversample: Arc<AtomicU32>,
-    /// Channel between node and renderer (receiver part)
-    receiver: Receiver<CurveMessage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -331,10 +316,13 @@ impl Resampler {
             sample_rate_in,
             sample_rate_out,
         } = &config;
+
         let processor =
             FftFixedInOut::new(*sample_rate_in, *sample_rate_out, *chunk_size_in, *channels)
                 .unwrap();
+
         let samples_out = processor.output_buffer_allocate(true);
+
         Self {
             config,
             processor,
@@ -375,10 +363,14 @@ impl Resampler {
 
 /// `WaveShaperRenderer` represents the rendering part of `WaveShaperNode`
 struct WaveShaperRenderer {
+    /// oversample factor
+    oversample: OverSampleType,
+    /// distortion curve
+    curve: Vec<f32>,
+    /// whether the distortion curve has been set
+    curve_set: bool,
     /// Sample rate (equals to audio context sample rate)
     sample_rate: usize,
-    /// oversample factor
-    oversample: Arc<AtomicU32>,
     /// Number of channels used to build the up/down sampler X2
     channels_x2: usize,
     /// Number of channels used to build the up/down sampler X4
@@ -391,10 +383,6 @@ struct WaveShaperRenderer {
     downsampler_x2: Resampler,
     // down sampler configured to divide by 4 the upsampled signal
     downsampler_x4: Resampler,
-    /// distortion curve
-    curve: Option<Vec<f32>>,
-    /// Channel between node and renderer (receiver part)
-    receiver: Receiver<CurveMessage>,
 }
 
 impl AudioProcessor for WaveShaperRenderer {
@@ -414,15 +402,12 @@ impl AudioProcessor for WaveShaperRenderer {
             return false;
         }
 
-        // Check if a curve have been set at k-rate
-        if let Ok(msg) = self.receiver.try_recv() {
-            self.curve = Some(msg.0);
-        }
-
         *output = input.clone();
 
-        if let Some(curve) = &self.curve {
-            match self.oversample.load(Ordering::SeqCst).into() {
+        if self.curve_set {
+            let curve = &self.curve;
+
+            match self.oversample {
                 OverSampleType::None => {
                     output.modify_channels(|channel| {
                         channel.iter_mut().for_each(|o| *o = apply_curve(curve, *o));
@@ -507,6 +492,22 @@ impl AudioProcessor for WaveShaperRenderer {
         // @tbc - rubato::FftFixedInOut doesn't seem to introduce any latency
         false
     }
+
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        if let Some(&oversample) = msg.downcast_ref::<OverSampleType>() {
+            self.oversample = oversample;
+            return;
+        }
+
+        if let Some(curve) = msg.downcast_mut::<Vec<f32>>() {
+            std::mem::swap(&mut self.curve, curve);
+            self.curve_set = true;
+
+            return;
+        }
+
+        log::warn!("WaveShaperRenderer: Dropping incoming message {msg:?}");
+    }
 }
 
 impl WaveShaperRenderer {
@@ -516,8 +517,11 @@ impl WaveShaperRenderer {
         let RendererConfig {
             sample_rate,
             oversample,
-            receiver,
+            curve,
         } = config;
+
+        let curve_set = curve.is_some();
+        let curve = curve.unwrap_or(Vec::with_capacity(0));
 
         let channels_x2 = 1;
         let channels_x4 = 1;
@@ -533,16 +537,16 @@ impl WaveShaperRenderer {
             Resampler::new(ResamplerConfig::downsample_x4(channels_x2, sample_rate));
 
         Self {
-            sample_rate,
             oversample,
+            curve,
+            curve_set,
+            sample_rate,
             channels_x2,
             channels_x4,
             upsampler_x2,
             upsampler_x4,
             downsampler_x2,
             downsampler_x4,
-            curve: None,
-            receiver,
         }
     }
 }
