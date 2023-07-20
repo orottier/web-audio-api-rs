@@ -246,15 +246,12 @@ impl AudioBufferSourceNode {
     ///
     /// Panics if the source was already started
     pub fn start_at_with_offset_and_duration(&self, start: f64, offset: f64, duration: f64) {
-        {
-            let source_started = &mut self.inner_state.borrow_mut().source_started;
-            assert!(
-                !*source_started,
-                "InvalidStateError: Cannot call `start` twice"
-            );
-            *source_started = true;
-            // Drop the mutable borrow
-        }
+        let source_started = &mut self.inner_state.borrow_mut().source_started;
+        assert!(
+            !*source_started,
+            "InvalidStateError: Cannot call `start` twice"
+        );
+        *source_started = true;
 
         let control = ControlMessage::StartWithOffsetAndDuration(start, offset, duration);
         self.registration.post_message(control);
