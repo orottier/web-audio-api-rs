@@ -35,7 +35,7 @@ impl RenderScope {
         }
     }
 
-    pub(crate) fn report_error(&self, error: Box<dyn Any + Send + 'static>) {
+    pub(crate) fn report_error(&self, error: Box<dyn Any + Send>) {
         pub fn type_name_of_val<T: ?Sized>(_val: &T) -> &'static str {
             std::any::type_name::<T>()
         }
