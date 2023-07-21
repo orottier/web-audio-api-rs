@@ -1,6 +1,10 @@
+use std::any::Any;
 use std::f32::consts::PI;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Arc;
+
+use crossbeam_channel::{Receiver, Sender};
+use float_eq::float_eq;
+use hrtf::{HrirSphere, HrtfContext, HrtfProcessor, Vec3};
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
@@ -10,10 +14,6 @@ use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
-
-use crossbeam_channel::{Receiver, Sender};
-use float_eq::float_eq;
-use hrtf::{HrirSphere, HrtfContext, HrtfProcessor, Vec3};
 
 /// Spatialization algorithm used to position the audio in 3D space
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -113,6 +113,18 @@ impl Default for PannerOptions {
             },
         }
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+enum ControlMessage {
+    DistanceModel(u8),
+    RefDistance(f64),
+    MaxDistance(f64),
+    RollOffFactor(f64),
+    ConeInnerAngle(f64),
+    ConeOuterAngle(f64),
+    ConeOuterGain(f64),
+    // Panning // @todo
 }
 
 /// Assert that the channel count is valid for the PannerNode
@@ -271,13 +283,13 @@ pub struct PannerNode {
     orientation_x: AudioParam,
     orientation_y: AudioParam,
     orientation_z: AudioParam,
-    cone_inner_angle: Arc<AtomicF64>,
-    cone_outer_angle: Arc<AtomicF64>,
-    cone_outer_gain: Arc<AtomicF64>,
-    distance_model: Arc<AtomicU8>,
-    ref_distance: Arc<AtomicF64>,
-    max_distance: Arc<AtomicF64>,
-    rolloff_factor: Arc<AtomicF64>,
+    cone_inner_angle: AtomicF64,
+    cone_outer_angle: AtomicF64,
+    cone_outer_gain: AtomicF64,
+    distance_model: AtomicU8,
+    ref_distance: AtomicF64,
+    max_distance: AtomicF64,
+    rolloff_factor: AtomicF64,
     panning_model: AtomicU8,
     /// HRTF message bus to the renderer
     sender: Sender<Option<HrtfState>>,
@@ -333,69 +345,8 @@ impl PannerNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: PannerOptions) -> Self {
         let node = context.register(move |registration| {
             use crate::spatial::PARAM_OPTS;
-            // position params
-            let (position_x, render_px) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (position_y, render_py) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (position_z, render_pz) = context.create_audio_param(PARAM_OPTS, &registration);
-            position_x.set_value_at_time(options.position_x, 0.);
-            position_y.set_value_at_time(options.position_y, 0.);
-            position_z.set_value_at_time(options.position_z, 0.);
 
-            // orientation params
-            let orientation_x_opts = AudioParamDescriptor {
-                default_value: 1.0,
-                ..PARAM_OPTS
-            };
-            let (orientation_x, render_ox) =
-                context.create_audio_param(orientation_x_opts, &registration);
-            let (orientation_y, render_oy) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (orientation_z, render_oz) = context.create_audio_param(PARAM_OPTS, &registration);
-            orientation_x.set_value_at_time(options.orientation_x, 0.);
-            orientation_y.set_value_at_time(options.orientation_y, 0.);
-            orientation_z.set_value_at_time(options.orientation_z, 0.);
-
-            // distance attributes
-            let distance_model = Arc::new(AtomicU8::new(options.distance_model as u8));
-            let ref_distance = Arc::new(AtomicF64::new(options.ref_distance));
-            let max_distance = Arc::new(AtomicF64::new(options.max_distance));
-            let rolloff_factor = Arc::new(AtomicF64::new(options.rolloff_factor));
-
-            // cone attributes
-            let cone_inner_angle = Arc::new(AtomicF64::new(options.cone_inner_angle));
-            let cone_outer_angle = Arc::new(AtomicF64::new(options.cone_outer_angle));
-            let cone_outer_gain = Arc::new(AtomicF64::new(options.cone_outer_gain));
-
-            // Channel to send a HRTF processor to the renderer.  A capacity of 1 suffices, it will
-            // simply block the control thread when used concurrently
-            let (sender, receiver) = crossbeam_channel::bounded(1);
-
-            let render = PannerRenderer {
-                position_x: render_px,
-                position_y: render_py,
-                position_z: render_pz,
-                orientation_x: render_ox,
-                orientation_y: render_oy,
-                orientation_z: render_oz,
-                distance_model: Arc::clone(&distance_model),
-                ref_distance: Arc::clone(&ref_distance),
-                max_distance: Arc::clone(&max_distance),
-                rolloff_factor: Arc::clone(&rolloff_factor),
-                cone_inner_angle: Arc::clone(&cone_inner_angle),
-                cone_outer_angle: Arc::clone(&cone_outer_angle),
-                cone_outer_gain: Arc::clone(&cone_outer_gain),
-                hrtf_state: None,
-                receiver,
-                tail_time_counter: 0,
-            };
-
-            let node = PannerNode {
-                registration,
-                channel_config: ChannelConfigOptions {
-                    count: 2,
-                    count_mode: ChannelCountMode::ClampedMax,
-                    interpretation: ChannelInterpretation::Speakers,
-                }
-                .into(),
+            let PannerOptions {
                 position_x,
                 position_y,
                 position_z,
@@ -409,11 +360,75 @@ impl PannerNode {
                 cone_inner_angle,
                 cone_outer_angle,
                 cone_outer_gain,
+                channel_config,
+                panning_model,
+            } = options;
+
+            // position params
+            let (param_px, render_px) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (param_py, render_py) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (param_pz, render_pz) = context.create_audio_param(PARAM_OPTS, &registration);
+            param_px.set_value_at_time(position_x, 0.);
+            param_py.set_value_at_time(position_y, 0.);
+            param_pz.set_value_at_time(position_z, 0.);
+
+            // orientation params
+            let orientation_x_opts = AudioParamDescriptor {
+                default_value: 1.0,
+                ..PARAM_OPTS
+            };
+            let (param_ox, render_ox) =
+                context.create_audio_param(orientation_x_opts, &registration);
+            let (param_oy, render_oy) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (param_oz, render_oz) = context.create_audio_param(PARAM_OPTS, &registration);
+            param_ox.set_value_at_time(orientation_x, 0.);
+            param_oy.set_value_at_time(orientation_y, 0.);
+            param_oz.set_value_at_time(orientation_z, 0.);
+
+            // Channel to send a HRTF processor to the renderer.  A capacity of 1 suffices, it will
+            // simply block the control thread when used concurrently
+            let (sender, receiver) = crossbeam_channel::bounded(1);
+
+            let render = PannerRenderer {
+                position_x: render_px,
+                position_y: render_py,
+                position_z: render_pz,
+                orientation_x: render_ox,
+                orientation_y: render_oy,
+                orientation_z: render_oz,
+                distance_model,
+                ref_distance,
+                max_distance,
+                rolloff_factor,
+                cone_inner_angle,
+                cone_outer_angle,
+                cone_outer_gain,
+                hrtf_state: None,
+                receiver,
+                tail_time_counter: 0,
+            };
+
+            let node = PannerNode {
+                registration,
+                channel_config: channel_config.into(),
+                position_x: param_px,
+                position_y: param_py,
+                position_z: param_pz,
+                orientation_x: param_ox,
+                orientation_y: param_oy,
+                orientation_z: param_oz,
+                distance_model: AtomicU8::new(distance_model as u8),
+                ref_distance: AtomicF64::new(ref_distance),
+                max_distance: AtomicF64::new(max_distance),
+                rolloff_factor: AtomicF64::new(rolloff_factor),
+                cone_inner_angle: AtomicF64::new(cone_inner_angle),
+                cone_outer_angle: AtomicF64::new(cone_outer_angle),
+                cone_outer_gain: AtomicF64::new(cone_outer_gain),
                 sender,
                 panning_model: AtomicU8::new(0),
             };
 
-            node.set_panning_model(options.panning_model);
+            node.set_panning_model(panning_model);
 
             // instruct to BaseContext to add the AudioListener if it has not already
             context.base().ensure_audio_listener_present();
@@ -454,63 +469,78 @@ impl PannerNode {
     }
 
     pub fn distance_model(&self) -> DistanceModelType {
-        self.distance_model.load(Ordering::SeqCst).into()
+        self.distance_model.load(Ordering::Acquire).into()
     }
 
     pub fn set_distance_model(&self, value: DistanceModelType) {
-        self.distance_model.store(value as u8, Ordering::SeqCst);
+        let value = value as u8;
+        self.distance_model.store(value, Ordering::Release);
+        self.registration
+            .post_message(ControlMessage::DistanceModel(value));
     }
 
     pub fn ref_distance(&self) -> f64 {
-        self.ref_distance.load(Ordering::SeqCst)
+        self.ref_distance.load(Ordering::Acquire)
     }
 
     pub fn set_ref_distance(&self, value: f64) {
-        self.ref_distance.store(value, Ordering::SeqCst);
+        self.ref_distance.store(value, Ordering::Release);
+        self.registration
+            .post_message(ControlMessage::RefDistance(value));
     }
 
     pub fn max_distance(&self) -> f64 {
-        self.max_distance.load(Ordering::SeqCst)
+        self.max_distance.load(Ordering::Acquire)
     }
 
     pub fn set_max_distance(&self, value: f64) {
-        self.max_distance.store(value, Ordering::SeqCst);
+        self.max_distance.store(value, Ordering::Release);
+        self.registration
+            .post_message(ControlMessage::MaxDistance(value));
     }
 
     pub fn rolloff_factor(&self) -> f64 {
-        self.rolloff_factor.load(Ordering::SeqCst)
+        self.rolloff_factor.load(Ordering::Acquire)
     }
 
     pub fn set_rolloff_factor(&self, value: f64) {
-        self.rolloff_factor.store(value, Ordering::SeqCst);
+        self.rolloff_factor.store(value, Ordering::Release);
+        self.registration
+            .post_message(ControlMessage::RollOffFactor(value));
     }
 
     pub fn cone_inner_angle(&self) -> f64 {
-        self.cone_inner_angle.load(Ordering::SeqCst)
+        self.cone_inner_angle.load(Ordering::Acquire)
     }
 
     pub fn set_cone_inner_angle(&self, value: f64) {
-        self.cone_inner_angle.store(value, Ordering::SeqCst);
+        self.cone_inner_angle.store(value, Ordering::Release);
+        self.registration
+            .post_message(ControlMessage::ConeInnerAngle(value));
     }
 
     pub fn cone_outer_angle(&self) -> f64 {
-        self.cone_outer_angle.load(Ordering::SeqCst)
+        self.cone_outer_angle.load(Ordering::Acquire)
     }
 
     pub fn set_cone_outer_angle(&self, value: f64) {
-        self.cone_outer_angle.store(value, Ordering::SeqCst);
+        self.cone_outer_angle.store(value, Ordering::Release);
+        self.registration
+            .post_message(ControlMessage::ConeOuterAngle(value));
     }
 
     pub fn cone_outer_gain(&self) -> f64 {
-        self.cone_outer_gain.load(Ordering::SeqCst)
+        self.cone_outer_gain.load(Ordering::Acquire)
     }
 
     pub fn set_cone_outer_gain(&self, value: f64) {
-        self.cone_outer_gain.store(value, Ordering::SeqCst);
+        self.cone_outer_gain.store(value, Ordering::Release);
+        self.registration
+            .post_message(ControlMessage::ConeOuterGain(value));
     }
 
     pub fn panning_model(&self) -> PanningModelType {
-        self.panning_model.load(Ordering::SeqCst).into()
+        self.panning_model.load(Ordering::Acquire).into()
     }
 
     // can panic when loading HRIR-sphere
@@ -527,7 +557,7 @@ impl PannerNode {
         };
 
         let _ = self.sender.send(hrtf_option); // can fail when render thread shut down
-        self.panning_model.store(value as u8, Ordering::SeqCst);
+        self.panning_model.store(value as u8, Ordering::Release);
     }
 }
 
@@ -546,13 +576,13 @@ struct PannerRenderer {
     orientation_x: AudioParamId,
     orientation_y: AudioParamId,
     orientation_z: AudioParamId,
-    distance_model: Arc<AtomicU8>,
-    ref_distance: Arc<AtomicF64>,
-    max_distance: Arc<AtomicF64>,
-    rolloff_factor: Arc<AtomicF64>,
-    cone_inner_angle: Arc<AtomicF64>,
-    cone_outer_angle: Arc<AtomicF64>,
-    cone_outer_gain: Arc<AtomicF64>,
+    distance_model: DistanceModelType,
+    ref_distance: f64,
+    max_distance: f64,
+    rolloff_factor: f64,
+    cone_inner_angle: f64,
+    cone_outer_angle: f64,
+    cone_outer_gain: f64,
     receiver: Receiver<Option<HrtfState>>,
     hrtf_state: Option<HrtfState>,
     tail_time_counter: usize,
@@ -762,6 +792,24 @@ impl AudioProcessor for PannerRenderer {
         // tail time only for HRTF panning
         self.hrtf_state.is_some()
     }
+
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        if let Some(control) = msg.downcast_ref::<ControlMessage>() {
+            match control {
+                ControlMessage::DistanceModel(value) => self.distance_model = (*value).into(),
+                ControlMessage::RefDistance(value) => self.ref_distance = *value,
+                ControlMessage::MaxDistance(value) => self.max_distance = *value,
+                ControlMessage::RollOffFactor(value) => self.rolloff_factor = *value,
+                ControlMessage::ConeInnerAngle(value) => self.cone_inner_angle = *value,
+                ControlMessage::ConeOuterAngle(value) => self.cone_outer_angle = *value,
+                ControlMessage::ConeOuterGain(value) => self.cone_outer_gain = *value,
+            }
+
+            return;
+        }
+
+        log::warn!("PannerRenderer: Dropping incoming message {msg:?}");
+    }
 }
 
 impl PannerRenderer {
@@ -771,12 +819,12 @@ impl PannerRenderer {
         source_orientation: [f32; 3],
         listener_position: [f32; 3],
     ) -> f32 {
-        let abs_inner_angle = self.cone_inner_angle.load(Ordering::SeqCst).abs() as f32 / 2.;
-        let abs_outer_angle = self.cone_outer_angle.load(Ordering::SeqCst).abs() as f32 / 2.;
+        let abs_inner_angle = self.cone_inner_angle.abs() as f32 / 2.;
+        let abs_outer_angle = self.cone_outer_angle.abs() as f32 / 2.;
         if abs_inner_angle >= 180. && abs_outer_angle >= 180. {
             1. // no cone specified
         } else {
-            let cone_outer_gain = self.cone_outer_gain.load(Ordering::SeqCst) as f32;
+            let cone_outer_gain = self.cone_outer_gain as f32;
 
             let abs_angle =
                 crate::spatial::angle(source_position, source_orientation, listener_position);
@@ -794,14 +842,14 @@ impl PannerRenderer {
     }
 
     fn dist_gain(&self, source_position: [f32; 3], listener_position: [f32; 3]) -> f32 {
-        let distance_model = self.distance_model.load(Ordering::SeqCst).into();
-        let ref_distance = self.ref_distance.load(Ordering::SeqCst);
-        let rolloff_factor = self.rolloff_factor.load(Ordering::SeqCst);
+        let distance_model = self.distance_model;
+        let ref_distance = self.ref_distance;
+        let rolloff_factor = self.rolloff_factor;
         let distance = crate::spatial::distance(source_position, listener_position) as f64;
 
         let dist_gain = match distance_model {
             DistanceModelType::Linear => {
-                let max_distance = self.max_distance.load(Ordering::SeqCst);
+                let max_distance = self.max_distance;
                 let d2ref = ref_distance.min(max_distance);
                 let d2max = ref_distance.max(max_distance);
                 let d_clamped = distance.clamp(d2ref, d2max);
