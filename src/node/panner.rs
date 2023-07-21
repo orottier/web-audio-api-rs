@@ -454,6 +454,12 @@ impl PannerNode {
         &self.position_z
     }
 
+    pub fn set_position(&self, x: f32, y: f32, z: f32) {
+        self.position_x.set_value(x);
+        self.position_y.set_value(y);
+        self.position_z.set_value(z);
+    }
+
     pub fn orientation_x(&self) -> &AudioParam {
         &self.orientation_x
     }
@@ -464,6 +470,12 @@ impl PannerNode {
 
     pub fn orientation_z(&self) -> &AudioParam {
         &self.orientation_z
+    }
+
+    pub fn set_orientation(&self, x: f32, y: f32, z: f32) {
+        self.orientation_x.set_value(x);
+        self.orientation_y.set_value(y);
+        self.orientation_z.set_value(z);
     }
 
     pub fn distance_model(&self) -> DistanceModelType {
