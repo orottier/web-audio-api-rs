@@ -165,17 +165,15 @@ impl WaveShaperNode {
 
         let node = context.register(move |registration| {
             let sample_rate = context.sample_rate() as usize;
-            let channel_config = channel_config.into();
 
-            let config = RendererConfig {
+            let renderer = WaveShaperRenderer::new(RendererConfig {
                 oversample,
                 sample_rate,
-            };
+            });
 
-            let renderer = WaveShaperRenderer::new(config);
             let node = Self {
                 registration,
-                channel_config,
+                channel_config: channel_config.into(),
                 curve: OnceCell::new(),
                 oversample: AtomicU32::new(oversample as u32),
             };
