@@ -83,7 +83,7 @@ fn test_channels() {
     };
 
     let context = AudioContext::new(options);
-    assert_eq!(context.destination().max_channels_count(), MAX_CHANNELS);
+    assert_eq!(context.destination().max_channel_count(), MAX_CHANNELS);
     assert_eq!(context.destination().channel_count(), 2);
 
     context.destination().set_channel_count(5);

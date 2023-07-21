@@ -28,7 +28,7 @@ fn main() {
     println!("Sample rate: {:?}", context.sample_rate());
     println!(
         "Available channels: {}",
-        context.destination().max_channels_count()
+        context.destination().max_channel_count()
     );
 
     println!("Force output to two channels");
