@@ -156,13 +156,8 @@ impl ConvolverNode {
         } = options;
 
         let node = context.base().register(move |registration| {
-            // create a dummy convolver to be replaced by a real one without deallocation
-            let sample_rate = context.base().sample_rate();
-            let padded_buffer = AudioBuffer::from(vec![vec![0.; 0]; 1], sample_rate);
-            let convolver = ConvolverRendererInner::new(padded_buffer);
-
             let renderer = ConvolverRenderer {
-                convolver,
+                convolver: ConvolverRendererInner::tombstone(),
                 convolver_set: false,
             };
 
@@ -347,6 +342,13 @@ impl ConvolverRendererInner {
             out,
             fft2,
         }
+    }
+
+    // dummy convolver used to init renderer
+    fn tombstone() -> Self {
+        // just use arbitrary common sample rate
+        let padded_buffer = AudioBuffer::from(vec![vec![0.; 0]; 1], 48000.);
+        Self::new(padded_buffer)
     }
 
     fn process(&mut self, input: &[f32], output: &mut [f32]) {
