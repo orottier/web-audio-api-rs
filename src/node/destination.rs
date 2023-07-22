@@ -104,6 +104,7 @@ impl AudioDestinationNode {
     }
     /// The maximum number of channels that the channelCount attribute can be set to (the max
     /// number of channels that the hardware is capable of supporting).
+    /// <https://www.w3.org/TR/webaudio/#dom-audiodestinationnode-maxchannelcount>
     pub fn max_channel_count(&self) -> usize {
         self.registration.context().base().max_channel_count()
     }
