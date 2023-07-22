@@ -32,7 +32,7 @@ pub(crate) struct RenderThread {
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
     event_sender: Option<Sender<EventDispatch>>,
-    garbage_collector: llq::Producer<Box<dyn Any + Send + 'static>>,
+    garbage_collector: llq::Producer<Box<dyn Any + Send>>,
 }
 
 // SAFETY:
@@ -315,11 +315,11 @@ const GARBAGE_COLLECTOR_THREAD_TIMEOUT: Duration = Duration::from_millis(100);
 struct TerminateGarbageCollectorThread;
 
 // Spawns a sidecar thread of the `RenderThread` for dropping resources.
-fn spawn_garbage_collector_thread(consumer: llq::Consumer<Box<dyn Any + Send + 'static>>) {
+fn spawn_garbage_collector_thread(consumer: llq::Consumer<Box<dyn Any + Send>>) {
     let _join_handle = std::thread::spawn(move || run_garbage_collector_thread(consumer));
 }
 
-fn run_garbage_collector_thread(mut consumer: llq::Consumer<Box<dyn Any + Send + 'static>>) {
+fn run_garbage_collector_thread(mut consumer: llq::Consumer<Box<dyn Any + Send>>) {
     log::info!("Entering garbage collector thread");
     loop {
         if let Some(node) = consumer.pop() {

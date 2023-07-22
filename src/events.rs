@@ -30,7 +30,7 @@ pub struct ErrorEvent {
     /// The error message
     pub message: String,
     /// The object with which panic was originally invoked.
-    pub error: Box<dyn Any + Send + 'static>,
+    pub error: Box<dyn Any + Send>,
     /// Inherits from this base Event
     pub event: Event,
 }
