@@ -35,10 +35,10 @@ fn main() {
     // this should be clamped to MAX_CHANNELS (32), even if the soundcard can provide more channels
     println!(
         "> Max channel count: {:?}",
-        context.destination().max_channels_count()
+        context.destination().max_channel_count()
     );
 
-    let num_channels = 8;
+    let num_channels = context.destination().max_channel_count();
 
     context.destination().set_channel_count(num_channels);
     context
