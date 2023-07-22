@@ -14,16 +14,47 @@ use web_audio_api::MAX_CHANNELS;
 fn require_send_sync_static<T: Send + Sync + 'static>(_: T) {}
 
 #[allow(dead_code)]
-fn test_audio_context_send_sync() {
-    let context = AudioContext::default();
-    require_send_sync_static(context);
-}
+fn ensure_send_sync_static() {
+    require_send_sync_static(AudioContext::default());
 
-#[allow(dead_code)]
-fn ensure_audio_node_send_sync() {
     let context = AudioContext::default();
-    let node = context.create_constant_source();
-    require_send_sync_static(node);
+
+    // All available nodes for BaseAudioContext
+    require_send_sync_static(context.create_analyser());
+    require_send_sync_static(context.create_biquad_filter());
+    require_send_sync_static(context.create_buffer_source());
+    require_send_sync_static(context.create_channel_merger(2));
+    require_send_sync_static(context.create_channel_splitter(2));
+    require_send_sync_static(context.create_constant_source());
+    require_send_sync_static(context.create_convolver());
+    require_send_sync_static(context.create_delay(1.));
+    require_send_sync_static(context.create_dynamics_compressor());
+    require_send_sync_static(context.create_gain());
+    require_send_sync_static(context.create_iir_filter(vec![], vec![]));
+    require_send_sync_static(context.create_oscillator());
+    require_send_sync_static(context.create_panner());
+    require_send_sync_static(
+        context.create_periodic_wave(web_audio_api::PeriodicWaveOptions::default()),
+    );
+    require_send_sync_static(context.create_stereo_panner());
+
+    // Available nodes for online AudioContext
+    let media_track = web_audio_api::media_streams::MediaStreamTrack::from_iter(vec![]);
+    let media_stream = web_audio_api::media_streams::MediaStream::from_tracks(vec![media_track]);
+    require_send_sync_static(context.create_media_stream_source(&media_stream));
+    require_send_sync_static(context.create_media_stream_destination());
+    require_send_sync_static(
+        context.create_media_stream_track_source(&media_stream.get_tracks()[0]),
+    );
+    let mut media_element = web_audio_api::MediaElement::new("").unwrap();
+    require_send_sync_static(context.create_media_element_source(&mut media_element));
+
+    // Provided nodes
+    require_send_sync_static(context.destination());
+    require_send_sync_static(context.listener());
+
+    // AudioParams (borrow from their node, so do not test for 'static)
+    let _: &(dyn Send + Sync) = context.listener().position_x();
 }
 
 #[allow(dead_code)]
