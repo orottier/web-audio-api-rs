@@ -11,10 +11,11 @@ use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 // dictionary ConstantSourceOptions {
 //   float offset = 1;
 // };
+// https://webaudio.github.io/web-audio-api/#ConstantSourceOptions
+//
 // @note - Does not extend AudioNodeOptions because AudioNodeOptions are
-// useless for source nodes as they instruct how to upmix the inputs.
-// This is a common source of confusion, see e.g. https://github.com/mdn/content/pull/18472
->>>>>>> 83a0107 (refactor: renaming variables)
+// useless for source nodes, because they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. mdn/content#18472
 #[derive(Clone, Debug)]
 pub struct ConstantSourceOptions {
     /// Initial parameter value of the constant signal

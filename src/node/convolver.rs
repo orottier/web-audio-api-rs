@@ -12,7 +12,8 @@ use crate::RENDER_QUANTUM_SIZE;
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
 
 /// Scale buffer by an equal-power normalization
-fn normalization(buffer: &AudioBuffer) -> f32 {
+// see - <https://webaudio.github.io/web-audio-api/#dom-convolvernode-normalize>
+fn normalize_buffer(buffer: &AudioBuffer) -> f32 {
     let gain_calibration = 0.00125;
     let gain_calibration_sample_rate = 44100.;
     let min_power = 0.000125;
@@ -198,7 +199,7 @@ impl ConvolverNode {
 
         // normalize before padding because the length of the buffer affects the scale
         let scale = if self.normalize() {
-            normalization(&buffer)
+            normalize_buffer(&buffer)
         } else {
             1.
         };
@@ -346,9 +347,13 @@ impl ConvolverRendererInner {
 
     // dummy convolver used to init renderer
     fn tombstone() -> Self {
-        // just use arbitrary common sample rate
-        let padded_buffer = AudioBuffer::from(vec![vec![0.; 0]; 1], 48000.);
-        Self::new(padded_buffer)
+        Self {
+            num_ir_blocks: Default::default(),
+            h: Default::default(),
+            fdl: Default::default(),
+            out: Default::default(),
+            fft2: Fft::new(0),
+        }
     }
 
     fn process(&mut self, input: &[f32], output: &mut [f32]) {
