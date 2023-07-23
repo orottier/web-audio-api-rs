@@ -5,31 +5,34 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
-/// Representing the final audio destination and is what the user will ultimately hear.
+/// The AudioDestinationNode interface represents the terminal node of an audio
+/// graph in a given context. usually the speakers of your device, or the node that
+/// will "record" the audio data with an OfflineAudioContext.
+///
+/// AudioDestinationNode has no output (no AudioNode can be linked after it in the
+/// audio graph) and one input. The number of channels of its input must be between
+/// 0 and the maxChannelCount value.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioDestinationNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#AudioDestinationNode>
+/// - see also: [`BaseAudioContext::destination`](crate::context::BaseAudioContext::destination)
+///
+/// # Usage
+///
+/// ```no_run
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+///
+/// let context = AudioContext::default();
+///
+/// let osc = context.create_oscillator();
+/// osc.connect(&context.destination());
+/// osc.start();
+/// ```
+///
 pub struct AudioDestinationNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
-}
-
-struct DestinationRenderer {}
-
-impl AudioProcessor for DestinationRenderer {
-    fn process(
-        &mut self,
-        inputs: &[AudioRenderQuantum],
-        outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
-    ) -> bool {
-        // single input/output node
-        let input = &inputs[0];
-        let output = &mut outputs[0];
-
-        // just move input to output
-        *output = input.clone();
-
-        true
-    }
 }
 
 impl AudioNode for AudioDestinationNode {
@@ -107,5 +110,26 @@ impl AudioDestinationNode {
     /// <https://www.w3.org/TR/webaudio/#dom-audiodestinationnode-maxchannelcount>
     pub fn max_channel_count(&self) -> usize {
         self.registration.context().base().max_channel_count()
+    }
+}
+
+struct DestinationRenderer {}
+
+impl AudioProcessor for DestinationRenderer {
+    fn process(
+        &mut self,
+        inputs: &[AudioRenderQuantum],
+        outputs: &mut [AudioRenderQuantum],
+        _params: AudioParamValues<'_>,
+        _scope: &RenderScope,
+    ) -> bool {
+        // single input/output node
+        let input = &inputs[0];
+        let output = &mut outputs[0];
+
+        // just move input to output
+        *output = input.clone();
+
+        true
     }
 }
