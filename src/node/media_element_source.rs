@@ -6,6 +6,13 @@ use crate::RENDER_QUANTUM_SIZE;
 use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
 
 /// Options for constructing a [`MediaElementAudioSourceNode`]
+// dictionary MediaElementAudioSourceOptions {
+//     required HTMLMediaElement mediaElement;
+// };
+//
+// @note - Does not extend AudioNodeOptions because AudioNodeOptions are
+// useless for source nodes as they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. https://github.com/mdn/content/pull/18472
 pub struct MediaElementAudioSourceOptions<'a> {
     pub media_element: &'a mut MediaElement,
 }
