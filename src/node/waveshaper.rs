@@ -212,7 +212,7 @@ impl WaveShaperNode {
             panic!("InvalidStateError - cannot assign curve twice");
         }
 
-        self.registration.post_message(clone);
+        self.registration.post_message(Some(clone));
     }
 
     /// Returns the `oversample` faactor of this node
@@ -363,9 +363,7 @@ struct WaveShaperRenderer {
     /// oversample factor
     oversample: OverSampleType,
     /// distortion curve
-    curve: Vec<f32>,
-    /// whether the distortion curve has been set
-    curve_set: bool,
+    curve: Option<Vec<f32>>,
     /// Sample rate (equals to audio context sample rate)
     sample_rate: usize,
     /// Number of channels used to build the up/down sampler X2
@@ -401,9 +399,7 @@ impl AudioProcessor for WaveShaperRenderer {
 
         *output = input.clone();
 
-        if self.curve_set {
-            let curve = &self.curve;
-
+        if let Some(curve) = &self.curve {
             match self.oversample {
                 OverSampleType::None => {
                     output.modify_channels(|channel| {
@@ -496,10 +492,8 @@ impl AudioProcessor for WaveShaperRenderer {
             return;
         }
 
-        if let Some(curve) = msg.downcast_mut::<Vec<f32>>() {
+        if let Some(curve) = msg.downcast_mut::<Option<Vec<f32>>>() {
             std::mem::swap(&mut self.curve, curve);
-            self.curve_set = true;
-
             return;
         }
 
@@ -531,8 +525,7 @@ impl WaveShaperRenderer {
 
         Self {
             oversample,
-            curve: Vec::with_capacity(0),
-            curve_set: false,
+            curve: None,
             sample_rate,
             channels_x2,
             channels_x4,
