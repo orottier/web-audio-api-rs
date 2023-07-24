@@ -18,6 +18,11 @@ use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 //   double loopStart = 0;
 //   float playbackRate = 1;
 // };
+//
+// @note - Does extend AudioNodeOptions but they are useless for source nodes as
+// they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. https://github.com/mdn/content/pull/18472, and
+// an issue in the spec, see discussion in https://github.com/WebAudio/web-audio-api/issues/2496
 #[derive(Clone, Debug)]
 pub struct AudioBufferSourceOptions {
     pub buffer: Option<AudioBuffer>,

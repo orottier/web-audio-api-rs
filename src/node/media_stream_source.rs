@@ -9,6 +9,10 @@ use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
 // dictionary MediaStreamAudioSourceOptions {
 //   required MediaStream mediaStream;
 // };
+//
+// @note - Does not extend AudioNodeOptions because AudioNodeOptions are
+// useless for source nodes as they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. https://github.com/mdn/content/pull/18472
 pub struct MediaStreamAudioSourceOptions<'a> {
     pub media_stream: &'a MediaStream,
 }

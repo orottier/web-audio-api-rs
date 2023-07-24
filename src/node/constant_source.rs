@@ -11,6 +11,10 @@ use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 // dictionary ConstantSourceOptions {
 //   float offset = 1;
 // };
+//
+// @note - Does not extend AudioNodeOptions because AudioNodeOptions are
+// useless for source nodes as they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. https://github.com/mdn/content/pull/18472
 #[derive(Clone, Debug)]
 pub struct ConstantSourceOptions {
     pub offset: f32,
