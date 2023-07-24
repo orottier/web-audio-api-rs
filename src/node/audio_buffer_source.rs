@@ -1251,43 +1251,24 @@ mod tests {
     }
 
     #[test]
-    // just to make things more readable when populating expected values
-    #[allow(clippy::erasing_op)]
-    #[allow(clippy::identity_op)]
-    fn test_fast_track_loop() {
-        // buffer smaller than block
-        {
-            let sample_rate = 480000.;
-            let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 2, sample_rate);
+    fn test_fast_track_loop_mono() {
+        let sample_rate = 480000.;
+        let len = RENDER_QUANTUM_SIZE * 4;
 
-            let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE / 2, sample_rate);
-            dirac.copy_to_channel(&[1.], 0);
-
-            let src = context.create_buffer_source();
-            src.connect(&context.destination());
-            src.set_loop(true);
-            src.set_buffer(dirac);
-            src.start();
-
-            let result = context.start_rendering_sync();
-            let channel = result.get_channel_data(0);
-
-            let mut expected = vec![0.; 256];
-            expected[64 * 0] = 1.;
-            expected[64 * 1] = 1.;
-            expected[64 * 2] = 1.;
-            expected[64 * 3] = 1.;
-
-            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
-        }
-
-        // buffer larger than block
-        {
-            let sample_rate = 480000.;
-            let len = RENDER_QUANTUM_SIZE * 4;
+        for buffer_len in [
+            RENDER_QUANTUM_SIZE / 2 - 1,
+            RENDER_QUANTUM_SIZE / 2,
+            RENDER_QUANTUM_SIZE / 2 + 1,
+            RENDER_QUANTUM_SIZE - 1,
+            RENDER_QUANTUM_SIZE,
+            RENDER_QUANTUM_SIZE + 1,
+            RENDER_QUANTUM_SIZE * 2 - 1,
+            RENDER_QUANTUM_SIZE * 2,
+            RENDER_QUANTUM_SIZE * 2 + 1,
+        ] {
             let context = OfflineAudioContext::new(1, len, sample_rate);
 
-            let mut dirac = context.create_buffer(1, 129, sample_rate);
+            let mut dirac = context.create_buffer(1, buffer_len, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
             let src = context.create_buffer_source();
@@ -1300,21 +1281,32 @@ mod tests {
             let channel = result.get_channel_data(0);
 
             let mut expected = vec![0.; len];
-            expected[129 * 0] = 1.;
-            expected[129 * 1] = 1.;
-            expected[129 * 2] = 1.;
-            expected[129 * 3] = 1.;
+            for i in (0..len).step_by(buffer_len) {
+                expected[i] = 1.;
+            }
 
             assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
         }
+    }
 
-        // stereo
-        {
-            let sample_rate = 480000.;
-            let len = RENDER_QUANTUM_SIZE * 4;
+    #[test]
+    fn test_fast_track_loop_stereo() {
+        let sample_rate = 480000.;
+        let len = RENDER_QUANTUM_SIZE * 4;
+
+        for buffer_len in [
+            RENDER_QUANTUM_SIZE / 2 - 1,
+            RENDER_QUANTUM_SIZE / 2,
+            RENDER_QUANTUM_SIZE / 2 + 1,
+            RENDER_QUANTUM_SIZE - 1,
+            RENDER_QUANTUM_SIZE,
+            RENDER_QUANTUM_SIZE + 1,
+            RENDER_QUANTUM_SIZE * 2 - 1,
+            RENDER_QUANTUM_SIZE * 2,
+            RENDER_QUANTUM_SIZE * 2 + 1,
+        ] {
             let context = OfflineAudioContext::new(2, len, sample_rate);
-
-            let mut dirac = context.create_buffer(2, 129, sample_rate);
+            let mut dirac = context.create_buffer(2, buffer_len, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
             dirac.copy_to_channel(&[0., 1.], 1);
 
@@ -1326,17 +1318,12 @@ mod tests {
 
             let result = context.start_rendering_sync();
 
-            let mut expected_left = vec![0.; len];
-            expected_left[129 * 0] = 1.;
-            expected_left[129 * 1] = 1.;
-            expected_left[129 * 2] = 1.;
-            expected_left[129 * 3] = 1.;
-
+            let mut expected_left: Vec<f32> = vec![0.; len];
             let mut expected_right = vec![0.; len];
-            expected_right[129 * 0 + 1] = 1.;
-            expected_right[129 * 1 + 1] = 1.;
-            expected_right[129 * 2 + 1] = 1.;
-            expected_right[129 * 3 + 1] = 1.;
+            for i in (0..len - 1).step_by(buffer_len) {
+                expected_left[i] = 1.;
+                expected_right[i + 1] = 1.;
+            }
 
             assert_float_eq!(
                 result.get_channel_data(0)[..],
