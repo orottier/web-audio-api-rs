@@ -9,9 +9,9 @@ use super::{
 /// graph in a given context. usually the speakers of your device, or the node that
 /// will "record" the audio data with an OfflineAudioContext.
 ///
-/// AudioDestinationNode has no output (no AudioNode can be linked after it in the
-/// audio graph) and one input. The number of channels of its input must be between
-/// 0 and the maxChannelCount value.
+/// The output of a AudioDestinationNode is produced by summing its input, allowing to capture
+/// the output of an AudioContext into, for example, a MediaStreamAudioDestinationNode, or a
+/// MediaRecorder.
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioDestinationNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#AudioDestinationNode>
