@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::cell::{OnceCell, RefCell};
+use std::sync::{Mutex, OnceLock};
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
@@ -101,8 +101,8 @@ pub struct AudioBufferSourceNode {
     channel_config: ChannelConfig,
     detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
-    buffer: OnceCell<AudioBuffer>,
-    inner_state: RefCell<InnerState>,
+    buffer: OnceLock<AudioBuffer>,
+    inner_state: Mutex<InnerState>,
 }
 
 #[derive(Debug, Clone)]
@@ -146,7 +146,7 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
 
     fn stop_at(&self, when: f64) {
         assert!(
-            self.inner_state.borrow().source_started,
+            self.inner_state.lock().unwrap().source_started,
             "InvalidStateError cannot stop before start"
         );
 
@@ -219,8 +219,8 @@ impl AudioBufferSourceNode {
                 channel_config: ChannelConfig::default(),
                 detune: d_param,
                 playback_rate: pr_param,
-                buffer: OnceCell::new(),
-                inner_state: RefCell::new(inner_state),
+                buffer: OnceLock::new(),
+                inner_state: Mutex::new(inner_state),
             };
 
             if let Some(buf) = buffer {
@@ -246,12 +246,12 @@ impl AudioBufferSourceNode {
     ///
     /// Panics if the source was already started
     pub fn start_at_with_offset_and_duration(&self, start: f64, offset: f64, duration: f64) {
-        let source_started = &mut self.inner_state.borrow_mut().source_started;
+        let inner_state = &mut self.inner_state.lock().unwrap();
         assert!(
-            !*source_started,
+            !inner_state.source_started,
             "InvalidStateError: Cannot call `start` twice"
         );
-        *source_started = true;
+        inner_state.source_started = true;
 
         let control = ControlMessage::StartWithOffsetAndDuration(start, offset, duration);
         self.registration.post_message(control);
@@ -297,33 +297,39 @@ impl AudioBufferSourceNode {
     }
 
     /// Defines if the playback the [`AudioBuffer`] should be looped
+    #[allow(clippy::missing_panics_doc)]
     pub fn loop_(&self) -> bool {
-        self.inner_state.borrow().loop_state.is_looping
+        self.inner_state.lock().unwrap().loop_state.is_looping
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn set_loop(&self, value: bool) {
-        self.inner_state.borrow_mut().loop_state.is_looping = value;
+        self.inner_state.lock().unwrap().loop_state.is_looping = value;
         self.registration.post_message(ControlMessage::Loop(value));
     }
 
     /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
+    #[allow(clippy::missing_panics_doc)]
     pub fn loop_start(&self) -> f64 {
-        self.inner_state.borrow().loop_state.start
+        self.inner_state.lock().unwrap().loop_state.start
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn set_loop_start(&self, value: f64) {
-        self.inner_state.borrow_mut().loop_state.start = value;
+        self.inner_state.lock().unwrap().loop_state.start = value;
         self.registration
             .post_message(ControlMessage::LoopStart(value));
     }
 
     /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
+    #[allow(clippy::missing_panics_doc)]
     pub fn loop_end(&self) -> f64 {
-        self.inner_state.borrow().loop_state.end
+        self.inner_state.lock().unwrap().loop_state.end
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn set_loop_end(&self, value: f64) {
-        self.inner_state.borrow_mut().loop_state.end = value;
+        self.inner_state.lock().unwrap().loop_state.end = value;
         self.registration
             .post_message(ControlMessage::LoopEnd(value));
     }
