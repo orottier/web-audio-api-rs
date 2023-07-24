@@ -1,6 +1,6 @@
 use std::any::Any;
-use std::cell::OnceCell;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::OnceLock;
 
 use rubato::{FftFixedInOut, Resampler as _};
 
@@ -126,7 +126,7 @@ pub struct WaveShaperNode {
     /// Infos about audio node channel configuration
     channel_config: ChannelConfig,
     /// distortion curve
-    curve: OnceCell<Vec<f32>>,
+    curve: OnceLock<Vec<f32>>,
     /// oversample type
     oversample: AtomicU32,
 }
@@ -174,7 +174,7 @@ impl WaveShaperNode {
             let node = Self {
                 registration,
                 channel_config: channel_config.into(),
-                curve: OnceCell::new(),
+                curve: OnceLock::new(),
                 oversample: AtomicU32::new(oversample as u32),
             };
 
