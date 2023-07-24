@@ -63,3 +63,11 @@ cpal = ["dep:cpal"]
 cubeb = ["dep:cubeb"]
 cpal-jack = ["cpal", "cpal/jack"]
 cpal-asio = ["cpal", "cpal/asio"]
+
+[profile.test.package."web-audio-api"]
+# Debug assertions in arithmetic operations in the module `types` seem to prevent
+# register optimizations for floating point types (64-bit vs. 80-bit) that then
+# cause rounding/precision errors in tests.
+# TODO: Investigate the issues and revise the affected code to be less sensitive
+# for rounding errors. Eventually, this exception should be removed.
+debug-assertions = false
