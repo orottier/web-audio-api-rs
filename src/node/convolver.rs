@@ -157,10 +157,7 @@ impl ConvolverNode {
         } = options;
 
         let node = context.base().register(move |registration| {
-            let renderer = ConvolverRenderer {
-                convolver: ConvolverRendererInner::tombstone(),
-                convolver_set: false,
-            };
+            let renderer = ConvolverRenderer { inner: None };
 
             let node = Self {
                 registration,
@@ -221,7 +218,7 @@ impl ConvolverNode {
         let padded_buffer = AudioBuffer::from(samples, sample_rate);
         let convolve = ConvolverRendererInner::new(padded_buffer);
 
-        self.registration.post_message(convolve);
+        self.registration.post_message(Some(convolve));
 
         *self.buffer.lock().unwrap() = Some(buffer);
     }
@@ -345,17 +342,6 @@ impl ConvolverRendererInner {
         }
     }
 
-    // dummy convolver used to init renderer
-    fn tombstone() -> Self {
-        Self {
-            num_ir_blocks: Default::default(),
-            h: Default::default(),
-            fdl: Default::default(),
-            out: Default::default(),
-            fft2: Fft::new(0),
-        }
-    }
-
     fn process(&mut self, input: &[f32], output: &mut [f32]) {
         self.fft2.real()[..RENDER_QUANTUM_SIZE].copy_from_slice(input);
         self.fft2.real()[RENDER_QUANTUM_SIZE..].fill(0.);
@@ -412,8 +398,7 @@ impl ConvolverRendererInner {
 }
 
 struct ConvolverRenderer {
-    convolver: ConvolverRendererInner,
-    convolver_set: bool,
+    inner: Option<ConvolverRendererInner>,
 }
 
 impl AudioProcessor for ConvolverRenderer {
@@ -429,13 +414,14 @@ impl AudioProcessor for ConvolverRenderer {
         let output = &mut outputs[0];
         output.force_mono();
 
-        // no convolution buffer set, passthrough
-        if !self.convolver_set {
-            *output = input.clone();
-            return !input.is_silent();
-        }
-
-        let convolver = &mut self.convolver;
+        let convolver = match &mut self.inner {
+            None => {
+                // no convolution buffer set, passthrough
+                *output = input.clone();
+                return !input.is_silent();
+            }
+            Some(convolver) => convolver,
+        };
 
         // handle tail time
         if input.is_silent() {
@@ -453,10 +439,9 @@ impl AudioProcessor for ConvolverRenderer {
     }
 
     fn onmessage(&mut self, msg: &mut dyn Any) {
-        if let Some(convolver) = msg.downcast_mut::<ConvolverRendererInner>() {
+        if let Some(convolver) = msg.downcast_mut::<Option<ConvolverRendererInner>>() {
             // Avoid deallocation in the render thread by swapping the convolver.
-            std::mem::swap(&mut self.convolver, convolver);
-            self.convolver_set = true;
+            std::mem::swap(&mut self.inner, convolver);
             return;
         }
 
