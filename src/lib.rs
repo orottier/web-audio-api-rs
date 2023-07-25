@@ -56,6 +56,9 @@ pub use buffer::*;
 mod capacity;
 pub use capacity::*;
 
+mod types;
+pub use types::*;
+
 pub mod context;
 
 pub mod media_devices;

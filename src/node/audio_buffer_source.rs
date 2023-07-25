@@ -5,7 +5,9 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{
+    DurationSecs, DurationSecsValue, OffsetSamples, OffsetSecs, SampleRateHz, RENDER_QUANTUM_SIZE,
+};
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 
@@ -55,18 +57,18 @@ struct PlaybackInfo {
 #[derive(Debug, Clone)]
 struct LoopState {
     pub is_looping: bool,
-    pub start: f64,
-    pub end: f64,
+    pub start: OffsetSecs,
+    pub end: OffsetSecs,
 }
 
 /// Instructions to start or stop processing
 #[derive(Debug, Clone)]
 enum ControlMessage {
-    StartWithOffsetAndDuration(f64, f64, f64),
-    Stop(f64),
+    StartWithOffsetAndDuration(OffsetSecs, OffsetSecs, DurationSecs),
+    Stop(OffsetSecs),
     Loop(bool),
-    LoopStart(f64),
-    LoopEnd(f64),
+    LoopStart(OffsetSecs),
+    LoopEnd(OffsetSecs),
 }
 
 /// `AudioBufferSourceNode` represents an audio source that consists of an
@@ -155,7 +157,8 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
             "InvalidStateError cannot stop before start"
         );
 
-        self.registration.post_message(ControlMessage::Stop(when));
+        self.registration
+            .post_message(ControlMessage::Stop(OffsetSecs::new(when)));
     }
 }
 
@@ -198,15 +201,15 @@ impl AudioBufferSourceNode {
 
             let loop_state = LoopState {
                 is_looping: loop_,
-                start: loop_start,
-                end: loop_end,
+                start: OffsetSecs::new(loop_start),
+                end: OffsetSecs::new(loop_end),
             };
 
             let renderer = AudioBufferSourceRenderer {
-                start_time: f64::MAX,
-                stop_time: f64::MAX,
-                duration: f64::MAX,
-                offset: 0.,
+                start_time: OffsetSecs::MAX,
+                stop_time: OffsetSecs::MAX,
+                offset: OffsetSecs::ZERO,
+                duration: DurationSecs::MAX,
                 buffer: None,
                 detune: d_proc,
                 playback_rate: pr_proc,
@@ -242,7 +245,7 @@ impl AudioBufferSourceNode {
     ///
     /// Panics if the source was already started
     pub fn start_at_with_offset(&self, start: f64, offset: f64) {
-        self.start_at_with_offset_and_duration(start, offset, f64::MAX);
+        self.start_at_with_offset_and_duration(start, offset, DurationSecs::MAX.value());
     }
 
     /// Start the playback at the given time, with a given offset, for a given duration
@@ -258,7 +261,11 @@ impl AudioBufferSourceNode {
         );
         inner_state.source_started = true;
 
-        let control = ControlMessage::StartWithOffsetAndDuration(start, offset, duration);
+        let control = ControlMessage::StartWithOffsetAndDuration(
+            OffsetSecs::new(start),
+            OffsetSecs::new(offset),
+            DurationSecs::new(duration),
+        );
         self.registration.post_message(control);
     }
 
@@ -316,55 +323,57 @@ impl AudioBufferSourceNode {
     /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
     #[allow(clippy::missing_panics_doc)]
     pub fn loop_start(&self) -> f64 {
-        self.inner_state.lock().unwrap().loop_state.start
+        self.inner_state.lock().unwrap().loop_state.start.value()
     }
 
     #[allow(clippy::missing_panics_doc)]
     pub fn set_loop_start(&self, value: f64) {
-        self.inner_state.lock().unwrap().loop_state.start = value;
+        let loop_start = OffsetSecs::new(value);
+        self.inner_state.lock().unwrap().loop_state.start = loop_start;
         self.registration
-            .post_message(ControlMessage::LoopStart(value));
+            .post_message(ControlMessage::LoopStart(loop_start));
     }
 
     /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
     #[allow(clippy::missing_panics_doc)]
     pub fn loop_end(&self) -> f64 {
-        self.inner_state.lock().unwrap().loop_state.end
+        self.inner_state.lock().unwrap().loop_state.end.value()
     }
 
     #[allow(clippy::missing_panics_doc)]
     pub fn set_loop_end(&self, value: f64) {
-        self.inner_state.lock().unwrap().loop_state.end = value;
+        let loop_end = OffsetSecs::new(value);
+        self.inner_state.lock().unwrap().loop_state.end = loop_end;
         self.registration
-            .post_message(ControlMessage::LoopEnd(value));
+            .post_message(ControlMessage::LoopEnd(loop_end));
     }
 }
 
 struct AudioBufferRendererState {
-    buffer_time: f64,
+    buffer_time: OffsetSecs,
     started: bool,
     entered_loop: bool,
-    buffer_time_elapsed: f64,
+    buffer_time_elapsed: DurationSecs,
     is_aligned: bool,
 }
 
 impl Default for AudioBufferRendererState {
     fn default() -> Self {
         Self {
-            buffer_time: 0.,
+            buffer_time: OffsetSecs::ZERO,
             started: false,
             entered_loop: false,
-            buffer_time_elapsed: 0.,
+            buffer_time_elapsed: DurationSecs::ZERO,
             is_aligned: false,
         }
     }
 }
 
 struct AudioBufferSourceRenderer {
-    start_time: f64,
-    stop_time: f64,
-    offset: f64,
-    duration: f64,
+    start_time: OffsetSecs,
+    stop_time: OffsetSecs,
+    offset: OffsetSecs,
+    duration: DurationSecs,
     buffer: Option<AudioBuffer>,
     detune: AudioParamId,
     playback_rate: AudioParamId,
@@ -400,10 +409,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // single output node
         let output = &mut outputs[0];
 
-        let sample_rate = scope.sample_rate as f64;
-        let dt = 1. / sample_rate;
-        let block_duration = dt * RENDER_QUANTUM_SIZE as f64;
-        let next_block_time = scope.current_time + block_duration;
+        let sample_rate = SampleRateHz::new(scope.sample_rate);
+        let dt = sample_rate.period();
+        let block_duration = dt * RENDER_QUANTUM_SIZE as DurationSecsValue;
+        let next_block_time = OffsetSecs::new(scope.current_time) + block_duration;
 
         let LoopState {
             is_looping,
@@ -412,8 +421,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         } = self.loop_state.clone();
 
         // these will only be used if `loop_` is true, so no need for `Option`
-        let mut actual_loop_start = 0.;
-        let mut actual_loop_end = 0.;
+        let mut actual_loop_start = OffsetSecs::ZERO;
+        let mut actual_loop_end = OffsetSecs::ZERO;
 
         // return early if start_time is beyond this block
         if self.start_time >= next_block_time {
@@ -436,11 +445,14 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let playback_rate = params.get(&self.playback_rate)[0];
         let computed_playback_rate = (playback_rate * (detune / 1200.).exp2()) as f64;
 
-        let buffer_duration = buffer.duration();
+        let buffer_duration = DurationSecs::new(buffer.duration());
+        let buffer_time_end = OffsetSecs::ZERO + buffer_duration;
         // multiplier to be applied on `position` to tackle possible difference
         // between the context and buffer sample rates. As this is an edge case,
         // we just linearly interpolate, thus favoring performance vs quality
-        let sampling_ratio = buffer.sample_rate() as f64 / sample_rate;
+        let sampling_ratio = SampleRateHz::new(buffer.sample_rate()) / sample_rate;
+
+        let render_buffer_time_end = OffsetSecs::ZERO + self.duration;
 
         // In addition, if the buffer has more than one channel, then the
         // AudioBufferSourceNode output must change to a single channel of silence
@@ -449,7 +461,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         // 1. the stop time has been reached.
         // 2. the duration has been reached.
-        if scope.current_time >= self.stop_time
+        if OffsetSecs::new(scope.current_time) >= self.stop_time
             || self.render_state.buffer_time_elapsed >= self.duration
         {
             output.make_silent(); // also converts to mono
@@ -465,7 +477,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         // 3. the end of the buffer has been reached.
         if !is_looping {
-            if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
+            if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_time_end {
                 output.make_silent(); // also converts to mono
                 if !self.ended_triggered {
                     scope.send_ended_event();
@@ -474,7 +486,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 return false;
             }
 
-            if computed_playback_rate < 0. && self.render_state.buffer_time < 0. {
+            if computed_playback_rate < 0. && self.render_state.buffer_time < OffsetSecs::ZERO {
                 output.make_silent(); // also converts to mono
                 if !self.ended_triggered {
                     scope.send_ended_event();
@@ -488,7 +500,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         // go through the algorithm described in the spec
         // @see <https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode>
-        let mut current_time = scope.current_time;
+        let mut current_time = OffsetSecs::new(scope.current_time);
 
         // prevent scheduling in the past
         // If 0 is passed in for this value or if the value is less than
@@ -505,7 +517,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // - the AudioBuffer was decoded w/ the right sample rate
         // - no detune or playback_rate changes are made
         // - loop boundaries have not been changed
-        if self.start_time == current_time && self.offset == 0. {
+        if self.start_time == current_time && self.offset == OffsetSecs::ZERO {
             self.render_state.is_aligned = true;
         }
 
@@ -520,7 +532,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         //
         // by default loop_end is 0., see AudioBufferSourceOptions
         // but loop_start = 0 && loop_end = buffer.duration should go to fast track
-        if loop_start != 0. || (loop_end != 0. && loop_end != self.duration) {
+        if loop_start != OffsetSecs::ZERO
+            || (loop_end != OffsetSecs::ZERO && loop_end != loop_start + self.duration)
+        {
             self.render_state.is_aligned = false;
         }
 
@@ -533,18 +547,18 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             }
 
             // check if buffer ends within this block
-            if self.render_state.buffer_time + block_duration > buffer_duration
-                || self.render_state.buffer_time + block_duration > self.duration
+            if self.render_state.buffer_time + block_duration > buffer_time_end
+                || self.render_state.buffer_time + block_duration > render_buffer_time_end
                 || current_time + block_duration > self.stop_time
             {
                 let buffer_time = self.render_state.buffer_time;
                 let end_index = if current_time + block_duration > self.stop_time
-                    || self.render_state.buffer_time + block_duration > self.duration
+                    || self.render_state.buffer_time + block_duration > render_buffer_time_end
                 {
-                    let dt = (self.stop_time - current_time)
-                        .min(self.duration - self.render_state.buffer_time);
-                    let end_buffer_time = self.render_state.buffer_time + dt;
-                    (end_buffer_time * sample_rate).round() as usize
+                    let duration_until_stopped = (self.stop_time - current_time)
+                        .min(render_buffer_time_end - self.render_state.buffer_time);
+                    let buffer_time_stop = self.render_state.buffer_time + duration_until_stopped;
+                    (buffer_time_stop * sample_rate).value().round() as usize
                 } else {
                     buffer.length()
                 };
@@ -560,7 +574,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     .for_each(|(buffer_channel, output_channel)| {
                         // we need to recompute that for each channel
                         let buffer_channel = buffer_channel.as_slice();
-                        let mut start_index = (buffer_time * sample_rate).round() as usize;
+                        let mut start_index = (buffer_time * sample_rate).value().round() as usize;
                         let mut offset = 0;
 
                         for (index, o) in output_channel.iter_mut().enumerate() {
@@ -587,14 +601,20 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     });
 
                 if let Some(loop_point_index) = loop_point_index {
+                    debug_assert!(loop_point_index > 0);
+                    debug_assert!(loop_point_index < RENDER_QUANTUM_SIZE);
+                    debug_assert!(loop_point_index < buffer.length());
+                    let buffer_time_index =
+                        (RENDER_QUANTUM_SIZE - loop_point_index) % buffer.length();
                     self.render_state.buffer_time =
-                        ((RENDER_QUANTUM_SIZE - loop_point_index) as f64 / sample_rate)
-                            % buffer_duration;
+                        OffsetSamples::new(buffer_time_index as _) / sample_rate;
                 } else {
                     self.render_state.buffer_time += block_duration;
                 }
             } else {
-                let start_index = (self.render_state.buffer_time * sample_rate).round() as usize;
+                let start_index = (self.render_state.buffer_time * sample_rate)
+                    .value()
+                    .round() as usize;
                 let end_index = start_index + RENDER_QUANTUM_SIZE;
                 // we can do memcopy
                 buffer
@@ -619,12 +639,15 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // Slow track
         // ---------------------------------------------------------------
         if is_looping {
-            if loop_start >= 0. && loop_end > 0. && loop_start < loop_end {
+            if loop_start >= OffsetSecs::ZERO
+                && loop_end > OffsetSecs::ZERO
+                && loop_start < loop_end
+            {
                 actual_loop_start = loop_start;
-                actual_loop_end = loop_end.min(buffer_duration);
+                actual_loop_end = loop_end.min(buffer_time_end);
             } else {
-                actual_loop_start = 0.;
-                actual_loop_end = buffer_duration;
+                actual_loop_start = OffsetSecs::ZERO;
+                actual_loop_end = buffer_time_end;
             }
         } else {
             self.render_state.entered_loop = false;
@@ -692,14 +715,15 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 }
             }
 
-            if self.render_state.buffer_time >= 0.
-                && self.render_state.buffer_time < buffer_duration
+            if self.render_state.buffer_time >= OffsetSecs::ZERO
+                && self.render_state.buffer_time < buffer_time_end
             {
                 let position = self.render_state.buffer_time * sampling_ratio;
                 let playhead = position * sample_rate;
                 let playhead_floored = playhead.floor();
-                let prev_frame_index = playhead_floored as usize; // can't be < 0.
-                let k = (playhead - playhead_floored) as f32;
+                debug_assert!(playhead_floored >= OffsetSamples::ZERO);
+                let prev_frame_index = playhead_floored.value() as usize;
+                let k = (playhead - playhead_floored).value() as _;
 
                 *playback_info = Some(PlaybackInfo {
                     prev_frame_index,
