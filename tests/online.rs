@@ -37,6 +37,7 @@ fn ensure_send_sync_static() {
         context.create_periodic_wave(web_audio_api::PeriodicWaveOptions::default()),
     );
     require_send_sync_static(context.create_stereo_panner());
+    require_send_sync_static(context.create_wave_shaper());
 
     // Available nodes for online AudioContext
     let media_track = web_audio_api::media_streams::MediaStreamTrack::from_iter(vec![]);

@@ -11,12 +11,14 @@ use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 // dictionary ConstantSourceOptions {
 //   float offset = 1;
 // };
+// https://webaudio.github.io/web-audio-api/#ConstantSourceOptions
 //
 // @note - Does not extend AudioNodeOptions because AudioNodeOptions are
-// useless for source nodes as they instruct how to upmix the inputs.
-// This is a common source of confusion, see e.g. https://github.com/mdn/content/pull/18472
+// useless for source nodes, because they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. mdn/content#18472
 #[derive(Clone, Debug)]
 pub struct ConstantSourceOptions {
+    /// Initial parameter value of the constant signal
     pub offset: f32,
 }
 
@@ -114,14 +116,16 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 impl ConstantSourceNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
         context.register(move |registration| {
-            let param_opts = AudioParamDescriptor {
+            let ConstantSourceOptions { offset } = options;
+
+            let param_options = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,
                 automation_rate: AutomationRate::A,
             };
-            let (param, proc) = context.create_audio_param(param_opts, &registration);
-            param.set_value(options.offset);
+            let (param, proc) = context.create_audio_param(param_options, &registration);
+            param.set_value(offset);
 
             let render = ConstantSourceRenderer {
                 offset: proc,
