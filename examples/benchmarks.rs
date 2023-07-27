@@ -400,7 +400,7 @@ fn main() {
             let env = context.create_gain();
             env.connect(&context.destination());
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&env);
             osc.set_type(OscillatorType::Sawtooth);
             osc.frequency().set_value(110.);
@@ -430,7 +430,7 @@ fn main() {
             let env = context.create_gain();
             env.connect(&context.destination());
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&env);
             osc.set_type(OscillatorType::Sawtooth);
             osc.frequency().set_value(110.);
@@ -453,7 +453,7 @@ fn main() {
         let duration = DURATION as f64;
 
         while offset < duration {
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.set_type(OscillatorType::Sawtooth);
             osc.frequency().set_value(110.);
@@ -482,7 +482,7 @@ fn main() {
         env.connect(&filter);
         env.gain().set_value_at_time(0., 0.);
 
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&env);
         osc.set_type(OscillatorType::Sawtooth);
         osc.frequency().set_value(110.);
@@ -547,7 +547,7 @@ fn main() {
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.set_type(OscillatorType::Sawtooth);
         osc.frequency().set_value(2000.);

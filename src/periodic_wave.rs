@@ -59,7 +59,7 @@ pub struct PeriodicWaveOptions {
 ///
 /// let periodic_wave = PeriodicWave::new(&context, options);
 ///
-/// let osc = context.create_oscillator();
+/// let mut osc = context.create_oscillator();
 /// osc.set_periodic_wave(periodic_wave);
 /// osc.connect(&context.destination());
 /// osc.start();
