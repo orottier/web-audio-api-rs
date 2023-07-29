@@ -415,6 +415,12 @@ impl AudioProcessor for DynamicsCompressorRenderer {
 
         true
     }
+
+    // Clear the ring buffer so that the processor can be safely sent back
+    // to the control thread.
+    fn release_resources(&mut self) {
+        self.ring_buffer.clear();
+    }
 }
 
 #[cfg(test)]

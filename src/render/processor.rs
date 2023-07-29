@@ -117,6 +117,12 @@ pub trait AudioProcessor: Send {
     fn onmessage(&mut self, msg: &mut dyn Any) {
         log::warn!("Ignoring incoming message");
     }
+
+    /// Method called before the AudioProcessor is recycled, i.e. when sent back
+    /// to the control thread when its rendering has finished.
+    fn release_resources(&mut self) {
+        // nothing to do
+    }
 }
 
 struct DerefAudioRenderQuantumChannel<'a>(std::cell::Ref<'a, Node>);

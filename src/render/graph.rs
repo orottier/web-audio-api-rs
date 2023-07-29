@@ -8,6 +8,7 @@ use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
 
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum};
+use crate::events::EventDispatch;
 use crate::node::ChannelConfig;
 use crate::render::RenderScope;
 
@@ -24,7 +25,7 @@ struct OutgoingEdge {
 /// Renderer Node in the Audio Graph
 pub struct Node {
     /// Renderer: converts inputs to outputs
-    processor: Box<dyn AudioProcessor>,
+    processor: Option<Box<dyn AudioProcessor>>,
     /// Reusable input buffers
     inputs: Vec<AudioRenderQuantum>,
     /// Reusable output buffers, consumed by subsequent Nodes in this graph
@@ -45,6 +46,8 @@ impl Node {
     /// Render an audio quantum
     fn process(&mut self, params: AudioParamValues<'_>, scope: &RenderScope) -> bool {
         self.processor
+            .as_mut()
+            .expect("A Node should always have a processor")
             .process(&self.inputs[..], &mut self.outputs[..], params, scope)
     }
 
@@ -129,7 +132,9 @@ impl Graph {
         self.nodes.insert(
             index,
             RefCell::new(Node {
-                processor,
+                // we need to take back the processor when the node is freed
+                // to send it back to the control thread for garbage collection
+                processor: Some(processor),
                 inputs,
                 outputs,
                 channel_config,
@@ -203,6 +208,8 @@ impl Graph {
             .unwrap()
             .get_mut()
             .processor
+            .as_mut()
+            .expect("A Node should always have a processor")
             .onmessage(msg);
     }
 
@@ -440,11 +447,32 @@ impl Graph {
                 node.has_inputs_connected = false;
             }
 
-            drop(node); // release borrow of self.nodes
-
             // Check if we can decommission this node (end of life)
             if can_free {
-                // Node is dropped, remove it from the node list
+                // ask the processor to release its owned resources that are not thread safe
+                // i.e. AudioRenderQuantum for buffering in delay and compressor nodes
+                let mut processor = node
+                    .processor
+                    .take()
+                    .expect("A Node should always have a processor");
+
+                processor.release_resources();
+
+                // Send processor back to control thread so that it can freed
+                // or even recycled in a pool later
+                // Note that the event sender only exists for online contexts
+                //
+                // @note - we are abusing the event dispatch system here for
+                // prototyping, this should probably be cleaned out
+                if let Some(sender) = &scope.event_sender {
+                    // we don't want to block the thread, just do the best we can
+                    let _ = sender.try_send(EventDispatch::drop_processor(processor));
+                } else {
+                    drop(processor);
+                }
+
+                // release borrow of self.nodes and remove it from the node list
+                drop(node);
                 nodes.remove(index);
 
                 // And remove it from the ordering after we have processed all nodes
@@ -460,6 +488,8 @@ impl Graph {
                             .iter()
                             .any(|e| e.other_id == *index)
                 });
+            } else {
+                drop(node); // release borrow of self.nodes
             }
         });
 

@@ -1,4 +1,5 @@
 use crate::context::AudioNodeId;
+use crate::render::AudioProcessor;
 use crate::AudioRenderCapacityEvent;
 
 use std::any::Any;
@@ -21,6 +22,7 @@ pub(crate) enum EventType {
     SinkChange,
     RenderCapacity,
     ProcessorError(AudioNodeId),
+    DropProcessor,
 }
 
 /// The Error Event interface
@@ -39,6 +41,7 @@ pub(crate) enum EventPayload {
     None,
     RenderCapacity(AudioRenderCapacityEvent),
     ProcessorError(ErrorEvent),
+    DropProcessor(Box<dyn AudioProcessor>),
 }
 
 pub(crate) struct EventDispatch {
@@ -72,6 +75,13 @@ impl EventDispatch {
         EventDispatch {
             type_: EventType::ProcessorError(id),
             payload: EventPayload::ProcessorError(value),
+        }
+    }
+
+    pub fn drop_processor(processor: Box<dyn AudioProcessor>) -> Self {
+        EventDispatch {
+            type_: EventType::DropProcessor,
+            payload: EventPayload::DropProcessor(processor),
         }
     }
 }
