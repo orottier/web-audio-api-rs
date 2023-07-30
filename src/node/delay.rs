@@ -583,7 +583,7 @@ impl AudioProcessor for DelayReader {
     // Clear the ring buffer so that the processor can be safely sent back
     // to the control thread.
     //
-    // Note this is only implemented on the reader side
+    // @note - only implement on the reader side as it may outlive the writer
     fn release_resources(&mut self) {
         let mut ring_buffer = self.ring_buffer_mut();
         ring_buffer.clear();

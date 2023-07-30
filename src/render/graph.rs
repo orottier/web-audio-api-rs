@@ -434,6 +434,7 @@ impl Graph {
                     output_node.inputs[edge.other_index].add(signal, channel_config);
                 });
 
+            // Check if we can decommission this node (end of life)
             let can_free = !success || node.can_free(tail_time);
 
             // Node is not dropped.
@@ -447,7 +448,7 @@ impl Graph {
                 node.has_inputs_connected = false;
             }
 
-            // Check if we can decommission this node (end of life)
+            // Node is dropped.
             if can_free {
                 // ask the processor to release its owned resources that are not thread safe
                 // i.e. AudioRenderQuantum for buffering in delay and compressor nodes
@@ -470,26 +471,46 @@ impl Graph {
                 } else {
                     drop(processor);
                 }
+            }
 
-                // release borrow of self.nodes and remove it from the node list
-                drop(node);
+            // release borrow of self.nodes
+            drop(node);
+
+            if can_free {
+                //  remove node from the node list
                 nodes.remove(index);
 
-                // And remove it from the ordering after we have processed all nodes
+                // flag that we need to clean the ordering after we have processed all nodes
                 nodes_dropped = true;
 
                 // Nodes are only dropped when they do not have incoming connections.
                 // But they may have AudioParams feeding into them, these can de dropped too.
-                nodes.retain(|id, n| {
-                    id.0 < 2 // never drop Listener and Destination node
-                        || !n
+                nodes.retain(|id, node| {
+                    let retain_node = id.0 < 2 // never drop Listener and Destination node
+                        || !node
                             .borrow()
                             .outgoing_edges
                             .iter()
-                            .any(|e| e.other_id == *index)
+                            .any(|e| e.other_id == *index);
+
+                    if !retain_node {
+                        let mut processor = node
+                            .borrow_mut()
+                            .processor
+                            .take()
+                            .expect("A Node should always have a processor");
+
+                        processor.release_resources();
+
+                        if let Some(sender) = &scope.event_sender {
+                            let _ = sender.try_send(EventDispatch::drop_processor(processor));
+                        } else {
+                            drop(processor);
+                        }
+                    }
+
+                    retain_node
                 });
-            } else {
-                drop(node); // release borrow of self.nodes
             }
         });
 
