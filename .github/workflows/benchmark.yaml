@@ -37,7 +37,10 @@ jobs:
 
       # restore cargo cache from previous runs
       - name: Rust Cache
-        uses: Swatinem/rust-cache@v2.0.0
+        uses: Swatinem/rust-cache@v2
+        with:
+          # The cache should not be shared between different workflows and jobs.
+          shared-key: ${{ github.workflow }}-${{ github.job }}
 
       ## Benchmarks
       - name: install valgrind for benchmarks
