@@ -36,8 +36,8 @@ jobs:
       - name: Cache Rust toolchain and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          # Distinguished by the action name to avoid sharing!
-          shared-key: "msrv"
+          # The cache should not be shared between different workflows and jobs.
+          shared-key: ${{ github.workflow }}-${{ github.job }}
 
       - name: Check workspace
         run: cargo check --locked --workspace --verbose --all-targets --all-features

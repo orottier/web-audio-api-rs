@@ -39,8 +39,8 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          # Distinguished by the action name to avoid sharing!
-          shared-key: "rust"
+          # The cache should not be shared between different workflows and jobs.
+          shared-key: ${{ github.workflow }}-${{ github.job }}
 
       # check it builds
       - name: Build
