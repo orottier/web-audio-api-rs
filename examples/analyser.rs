@@ -25,7 +25,7 @@ fn main() {
         ..AudioContextOptions::default()
     });
 
-    let analyser = context.create_analyser();
+    let mut analyser = context.create_analyser();
     analyser.connect(&context.destination());
 
     let osc = context.create_oscillator();

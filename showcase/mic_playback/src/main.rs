@@ -2,7 +2,7 @@
 // `cargo run --release --example mic_playback`
 
 use web_audio_api::context::{AudioContext, AudioContextRegistration, BaseAudioContext};
-use web_audio_api::media_devices;
+use web_audio_api::media_devices::{self, MediaStreamConstraints};
 use web_audio_api::node::BiquadFilterType;
 use web_audio_api::node::{
     AnalyserNode, AudioBufferSourceNode, AudioNode, AudioScheduledSourceNode, BiquadFilterNode,
@@ -12,7 +12,7 @@ use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum
 use web_audio_api::AudioBuffer;
 
 use std::io::{stdin, stdout, Write};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crossbeam_channel::{self, Receiver, Sender};
 
@@ -223,12 +223,12 @@ fn draw_plot(stdout: &mut termion::raw::RawTerminal<std::io::Stdout>, plot: Stri
 }
 
 fn poll_frequency_graph(
-    analyser: Arc<AnalyserNode>,
+    analyser: Arc<Mutex<AnalyserNode>>,
     plot_send: Sender<UiEvent>,
     width: u16,
     height: u16,
 ) -> ! {
-    let bin_count = analyser.frequency_bin_count();
+    let bin_count = analyser.lock().unwrap().frequency_bin_count();
     let mut freq_buffer = vec![0.; bin_count];
 
     loop {
@@ -237,7 +237,7 @@ fn poll_frequency_graph(
 
         // todo, check BaseAudioContext.state if it is still running
 
-        analyser.get_float_frequency_data(&mut freq_buffer);
+        analyser.lock().unwrap().get_float_frequency_data(&mut freq_buffer);
 
         let points: Vec<_> = freq_buffer
             .iter()
@@ -264,7 +264,7 @@ fn poll_frequency_graph(
 struct AudioThread {
     context: AudioContext,
     mic_in: MediaStreamAudioSourceNode,
-    analyser: Arc<AnalyserNode>,
+    analyser: Arc<Mutex<AnalyserNode>>,
     recorder: Option<MediaRecorder>,
     buffer_source: AudioBufferSourceNode,
     gain_node: Option<GainNode>,
@@ -287,10 +287,10 @@ impl AudioThread {
     fn new() -> Self {
         let context = AudioContext::default();
 
-        let mic = media_devices::get_user_media();
+        let mic = media_devices::get_user_media_sync(MediaStreamConstraints::Audio);
         let mic_in = context.create_media_stream_source(&mic);
 
-        let analyser = Arc::new(context.create_analyser());
+        let analyser = Arc::new(Mutex::new(context.create_analyser()));
         let buffer_source = context.create_buffer_source();
 
         let mut instance = Self {
@@ -311,7 +311,7 @@ impl AudioThread {
         instance
     }
 
-    fn analyser(&self) -> Arc<AnalyserNode> {
+    fn analyser(&self) -> Arc<Mutex<AnalyserNode>> {
         self.analyser.clone()
     }
 
@@ -380,7 +380,7 @@ impl AudioThread {
         buffer_source.connect(&biquad);
         biquad.connect(&gain);
         gain.connect(&self.context.destination());
-        gain.connect(&*self.analyser);
+        gain.connect(&*self.analyser.lock().unwrap());
 
         buffer_source.start();
 
@@ -400,7 +400,7 @@ impl AudioThread {
 
         let recorder = MediaRecorder::new(&self.context);
         self.mic_in.connect(&recorder);
-        self.mic_in.connect(&*self.analyser);
+        self.mic_in.connect(&*self.analyser.lock().unwrap());
 
         self.recorder = Some(recorder);
     }
