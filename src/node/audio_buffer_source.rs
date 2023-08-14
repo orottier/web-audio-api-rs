@@ -537,7 +537,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 || self.render_state.buffer_time + block_duration > self.duration
                 || current_time + block_duration > self.stop_time
             {
-                let buffer_time = self.render_state.buffer_time;
                 let end_index = if current_time + block_duration > self.stop_time
                     || self.render_state.buffer_time + block_duration > self.duration
                 {
@@ -560,7 +559,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     .for_each(|(buffer_channel, output_channel)| {
                         // we need to recompute that for each channel
                         let buffer_channel = buffer_channel.as_slice();
-                        let mut start_index = (buffer_time * sample_rate).round() as usize;
+                        let mut start_index = (self.render_state.buffer_time * sample_rate).round() as usize;
                         let mut offset = 0;
 
                         for (index, o) in output_channel.iter_mut().enumerate() {
