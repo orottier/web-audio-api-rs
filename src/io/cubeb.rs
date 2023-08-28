@@ -34,6 +34,9 @@ impl<F> CubebStream for Stream<F> {
     }
 }
 
+// I doubt this construct is entirely safe. Stream is not Send/Sync (probably for a good reason) so
+// it should be managed from a single thread instead.
+// <https://github.com/orottier/web-audio-api-rs/issues/357>
 mod private {
     use super::*;
     use std::sync::Mutex;
@@ -44,6 +47,7 @@ mod private {
     impl ThreadSafeClosableStream {
         pub fn new<F: 'static>(stream: Stream<F>) -> Self {
             let boxed_stream = BoxedStream(Box::new(stream));
+            #[allow(clippy::arc_with_non_send_sync)]
             Self(Arc::new(Mutex::new(Some(boxed_stream))))
         }
 

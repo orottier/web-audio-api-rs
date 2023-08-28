@@ -781,7 +781,7 @@ mod tests {
         analyser.set_fft_size(RENDER_QUANTUM_SIZE);
 
         // get data, should be zero (negative infinity decibel)
-        let mut bins = vec![255; RENDER_QUANTUM_SIZE];
+        let mut bins = [255; RENDER_QUANTUM_SIZE];
         analyser.get_byte_frequency_data(&mut bins[..], 0.);
 
         // only N / 2 values should contain frequency data, rest is unaltered

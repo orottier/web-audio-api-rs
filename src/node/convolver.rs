@@ -473,7 +473,7 @@ mod tests {
         let ir = vec![1.];
         let calibration = 0.00125;
         let channel_data = vec![0., 1., 0., -1., 0.];
-        let expected = vec![0., calibration, 0., -calibration, 0., 0., 0., 0., 0., 0.];
+        let expected = [0., calibration, 0., -calibration, 0., 0., 0., 0., 0., 0.];
 
         // identity ir
         let ir = AudioBuffer::from(vec![ir; 1], sample_rate);
@@ -518,7 +518,7 @@ mod tests {
     #[test]
     fn test_passthrough() {
         let output = test_convolve(&[0., 1., 0., -1., 0.], None, 10);
-        let expected = vec![0., 1., 0., -1., 0., 0., 0., 0., 0., 0.];
+        let expected = [0., 1., 0., -1., 0., 0., 0., 0., 0., 0.];
         assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
     }
 
@@ -526,7 +526,7 @@ mod tests {
     fn test_empty() {
         let ir = vec![];
         let output = test_convolve(&[0., 1., 0., -1., 0.], Some(ir), 10);
-        let expected = vec![0.; 10];
+        let expected = [0.; 10];
         assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
     }
 
@@ -534,7 +534,7 @@ mod tests {
     fn test_zeroed() {
         let ir = vec![0., 0., 0., 0., 0., 0.];
         let output = test_convolve(&[0., 1., 0., -1., 0.], Some(ir), 10);
-        let expected = vec![0.; 10];
+        let expected = [0.; 10];
         assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
     }
 
@@ -543,7 +543,7 @@ mod tests {
         let ir = vec![1.];
         let calibration = 0.00125;
         let output = test_convolve(&[0., 1., 0., -1., 0.], Some(ir), 10);
-        let expected = vec![0., calibration, 0., -calibration, 0., 0., 0., 0., 0., 0.];
+        let expected = [0., calibration, 0., -calibration, 0., 0., 0., 0., 0., 0.];
         assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
     }
 
@@ -552,7 +552,7 @@ mod tests {
         let ir = vec![1., 1.];
         let calibration = 0.00125;
         let output = test_convolve(&[0., 1., 0., -1., 0.], Some(ir), 10);
-        let expected = vec![
+        let expected = [
             0.,
             calibration,
             calibration,
