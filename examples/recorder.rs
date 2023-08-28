@@ -30,7 +30,7 @@ fn main() {
     });
 
     // Create an oscillator node with sine (default) type
-    let osc = context.create_oscillator();
+    let mut osc = context.create_oscillator();
 
     // Connect oscillator to speakers
     osc.connect(&context.destination());

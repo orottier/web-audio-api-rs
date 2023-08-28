@@ -110,7 +110,7 @@ impl Default for WaveShaperOptions {
 /// pre_gain.connect(&shaper);
 /// pre_gain.gain().set_value(drive);
 ///
-/// let src = context.create_buffer_source();
+/// let mut src = context.create_buffer_source();
 /// src.connect(&pre_gain);
 /// src.set_buffer(buffer);
 ///
@@ -681,7 +681,7 @@ mod tests {
         let mut buffer = context.create_buffer(1, 3 * RENDER_QUANTUM_SIZE, sample_rate);
         buffer.copy_to_channel(&data, 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&shaper);
         src.set_buffer(buffer);
         src.start_at(0.);
@@ -714,7 +714,7 @@ mod tests {
         let mut buffer = context.create_buffer(1, 3 * RENDER_QUANTUM_SIZE, sample_rate);
         buffer.copy_to_channel(&data, 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&shaper);
         src.set_buffer(buffer);
         src.start_at(0.);

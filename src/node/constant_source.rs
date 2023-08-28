@@ -94,21 +94,21 @@ impl AudioNode for ConstantSourceNode {
 }
 
 impl AudioScheduledSourceNode for ConstantSourceNode {
-    fn start(&self) {
+    fn start(&mut self) {
         let when = self.registration.context().current_time();
         self.start_at(when);
     }
 
-    fn start_at(&self, when: f64) {
+    fn start_at(&mut self, when: f64) {
         self.registration.post_message(Schedule::Start(when));
     }
 
-    fn stop(&self) {
+    fn stop(&mut self) {
         let when = self.registration.context().current_time();
         self.stop_at(when);
     }
 
-    fn stop_at(&self, when: f64) {
+    fn stop_at(&mut self, when: f64) {
         self.registration.post_message(Schedule::Stop(when));
     }
 }
@@ -239,7 +239,7 @@ mod tests {
         let stop_in_samples = (256 + 1) as f64; // stop rendering of 3rd block
         let context = OfflineAudioContext::new(1, 128 * 4, sample_rate);
 
-        let src = context.create_constant_source();
+        let mut src = context.create_constant_source();
         src.connect(&context.destination());
 
         src.start_at(start_in_samples / sample_rate as f64);
@@ -269,7 +269,7 @@ mod tests {
     fn test_start_in_the_past() {
         let context = OfflineAudioContext::new(1, 128, 48000.);
 
-        let src = context.create_constant_source();
+        let mut src = context.create_constant_source();
         src.connect(&context.destination());
         src.start_at(-1.);
 

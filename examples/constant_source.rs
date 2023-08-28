@@ -35,7 +35,7 @@ fn main() {
     gain_left.gain().set_value(0.);
     gain_left.connect_at(&merger, 0, 0);
 
-    let src_left = context.create_oscillator();
+    let mut src_left = context.create_oscillator();
     src_left.frequency().set_value(200.);
     src_left.connect(&gain_left);
     src_left.start();
@@ -45,13 +45,13 @@ fn main() {
     gain_right.gain().set_value(0.);
     gain_right.connect_at(&merger, 0, 1);
 
-    let src_right = context.create_oscillator();
+    let mut src_right = context.create_oscillator();
     src_right.frequency().set_value(300.);
     src_right.connect(&gain_right);
     src_right.start();
 
     // control both left and right gains with constant source
-    let constant_source = context.create_constant_source();
+    let mut constant_source = context.create_constant_source();
     constant_source.offset().set_value(0.);
     constant_source.connect(gain_left.gain());
     constant_source.connect(gain_right.gain());

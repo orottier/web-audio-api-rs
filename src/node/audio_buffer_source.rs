@@ -1,6 +1,6 @@
 use std::any::Any;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
@@ -91,7 +91,7 @@ enum ControlMessage {
 /// let file = File::open("samples/sample.wav").unwrap();
 /// let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 /// // play the sound file
-/// let src = context.create_buffer_source();
+/// let mut src = context.create_buffer_source();
 /// src.set_buffer(audio_buffer);
 /// src.connect(&context.destination());
 /// src.start();
@@ -108,8 +108,8 @@ pub struct AudioBufferSourceNode {
     detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
     buffer_time: Arc<AtomicF64>,
-    buffer: OnceLock<AudioBuffer>,
-    inner_state: Mutex<InnerState>,
+    buffer: Option<AudioBuffer>,
+    inner_state: InnerState,
 }
 
 #[derive(Debug, Clone)]
@@ -137,23 +137,23 @@ impl AudioNode for AudioBufferSourceNode {
 }
 
 impl AudioScheduledSourceNode for AudioBufferSourceNode {
-    fn start(&self) {
+    fn start(&mut self) {
         let start = self.registration.context().current_time();
         self.start_at_with_offset_and_duration(start, 0., f64::MAX);
     }
 
-    fn start_at(&self, when: f64) {
+    fn start_at(&mut self, when: f64) {
         self.start_at_with_offset_and_duration(when, 0., f64::MAX);
     }
 
-    fn stop(&self) {
+    fn stop(&mut self) {
         let stop = self.registration.context().current_time();
         self.stop_at(stop);
     }
 
-    fn stop_at(&self, when: f64) {
+    fn stop_at(&mut self, when: f64) {
         assert!(
-            self.inner_state.lock().unwrap().source_started,
+            self.inner_state.source_started,
             "InvalidStateError cannot stop before start"
         );
 
@@ -221,14 +221,14 @@ impl AudioBufferSourceNode {
                 loop_state,
                 source_started: false,
             };
-            let node = Self {
+            let mut node = Self {
                 registration,
                 channel_config: ChannelConfig::default(),
                 detune: d_param,
                 playback_rate: pr_param,
                 buffer_time: Arc::clone(&renderer.render_state.buffer_time),
-                buffer: OnceLock::new(),
-                inner_state: Mutex::new(inner_state),
+                buffer: None,
+                inner_state,
             };
 
             if let Some(buf) = buffer {
@@ -244,7 +244,7 @@ impl AudioBufferSourceNode {
     /// # Panics
     ///
     /// Panics if the source was already started
-    pub fn start_at_with_offset(&self, start: f64, offset: f64) {
+    pub fn start_at_with_offset(&mut self, start: f64, offset: f64) {
         self.start_at_with_offset_and_duration(start, offset, f64::MAX);
     }
 
@@ -253,13 +253,12 @@ impl AudioBufferSourceNode {
     /// # Panics
     ///
     /// Panics if the source was already started
-    pub fn start_at_with_offset_and_duration(&self, start: f64, offset: f64, duration: f64) {
-        let inner_state = &mut self.inner_state.lock().unwrap();
+    pub fn start_at_with_offset_and_duration(&mut self, start: f64, offset: f64, duration: f64) {
         assert!(
-            !inner_state.source_started,
+            !self.inner_state.source_started,
             "InvalidStateError: Cannot call `start` twice"
         );
-        inner_state.source_started = true;
+        self.inner_state.source_started = true;
 
         let control = ControlMessage::StartWithOffsetAndDuration(start, offset, duration);
         self.registration.post_message(control);
@@ -267,7 +266,7 @@ impl AudioBufferSourceNode {
 
     /// Current buffer value (nullable)
     pub fn buffer(&self) -> Option<&AudioBuffer> {
-        self.buffer.get()
+        self.buffer.as_ref()
     }
 
     /// Provide an [`AudioBuffer`] as the source of data to be played bask
@@ -276,12 +275,13 @@ impl AudioBufferSourceNode {
     ///
     /// Panics if a buffer has already been given to the source (though `new` or through
     /// `set_buffer`)
-    pub fn set_buffer(&self, audio_buffer: AudioBuffer) {
+    pub fn set_buffer(&mut self, audio_buffer: AudioBuffer) {
         let clone = audio_buffer.clone();
 
-        if self.buffer.set(audio_buffer).is_err() {
+        if self.buffer.is_some() {
             panic!("InvalidStateError - cannot assign buffer twice");
         }
+        self.buffer = Some(audio_buffer);
 
         self.registration.post_message(clone);
     }
@@ -317,37 +317,32 @@ impl AudioBufferSourceNode {
     /// Defines if the playback the [`AudioBuffer`] should be looped
     #[allow(clippy::missing_panics_doc)]
     pub fn loop_(&self) -> bool {
-        self.inner_state.lock().unwrap().loop_state.is_looping
+        self.inner_state.loop_state.is_looping
     }
 
-    #[allow(clippy::missing_panics_doc)]
-    pub fn set_loop(&self, value: bool) {
-        self.inner_state.lock().unwrap().loop_state.is_looping = value;
+    pub fn set_loop(&mut self, value: bool) {
+        self.inner_state.loop_state.is_looping = value;
         self.registration.post_message(ControlMessage::Loop(value));
     }
 
     /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
-    #[allow(clippy::missing_panics_doc)]
     pub fn loop_start(&self) -> f64 {
-        self.inner_state.lock().unwrap().loop_state.start
+        self.inner_state.loop_state.start
     }
 
-    #[allow(clippy::missing_panics_doc)]
-    pub fn set_loop_start(&self, value: f64) {
-        self.inner_state.lock().unwrap().loop_state.start = value;
+    pub fn set_loop_start(&mut self, value: f64) {
+        self.inner_state.loop_state.start = value;
         self.registration
             .post_message(ControlMessage::LoopStart(value));
     }
 
     /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
-    #[allow(clippy::missing_panics_doc)]
     pub fn loop_end(&self) -> f64 {
-        self.inner_state.lock().unwrap().loop_state.end
+        self.inner_state.loop_state.end
     }
 
-    #[allow(clippy::missing_panics_doc)]
-    pub fn set_loop_end(&self, value: f64) {
-        self.inner_state.lock().unwrap().loop_state.end = value;
+    pub fn set_loop_end(&mut self, value: f64) {
+        self.inner_state.loop_state.end = value;
         self.registration
             .post_message(ControlMessage::LoopEnd(value));
     }
@@ -823,7 +818,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, 44_100.);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.set_buffer(audio_buffer);
             src.connect(&context.destination());
             src.start_at(context.current_time());
@@ -863,7 +858,7 @@ mod tests {
         let mut dirac = context.create_buffer(1, 1, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&context.destination());
         src.set_buffer(dirac);
         src.start_at(1. / sample_rate as f64);
@@ -886,7 +881,7 @@ mod tests {
         let mut dirac = context.create_buffer(1, 1, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&context.destination());
         src.set_buffer(dirac);
         src.start_at(1.5 / sample_rate as f64);
@@ -910,7 +905,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_buffer(dirac);
             src.start_at(0. / sample_rate as f64);
@@ -932,7 +927,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_buffer(dirac);
             src.start_at(1. / sample_rate as f64);
@@ -957,7 +952,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_buffer(dirac);
             src.start_at(0. / sample_rate as f64);
@@ -981,7 +976,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_buffer(dirac);
             src.start_at(1. / sample_rate as f64);
@@ -1006,7 +1001,7 @@ mod tests {
         let mut dirac = context.create_buffer(1, 1, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&context.destination());
         src.set_buffer(dirac);
         src.start_at(-1.);
@@ -1041,7 +1036,7 @@ mod tests {
 
             buffer.copy_to_channel(&sine[..], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_buffer(buffer);
             src.start_at(0. / sample_rate as f64);
@@ -1079,7 +1074,7 @@ mod tests {
 
         buffer.copy_to_channel(&sine[..], 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&context.destination());
         src.set_buffer(buffer);
         src.playback_rate.set_value(0.5);
@@ -1117,7 +1112,7 @@ mod tests {
 
         buffer.copy_to_channel(&sine[..], 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&context.destination());
         src.set_buffer(buffer);
         src.detune.set_value(-1200.);
@@ -1151,7 +1146,7 @@ mod tests {
             data[128] = 1.;
             buffer.copy_to_channel(&data, 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_buffer(buffer);
             src.start_at(0. / sample_rate as f64);
@@ -1177,7 +1172,7 @@ mod tests {
             data[128] = 1.;
             buffer.copy_to_channel(&data, 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_buffer(buffer);
             src.start_at(1. / sample_rate as f64);
@@ -1203,7 +1198,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_buffer(dirac);
             // duration is between two diracs, only first one should be played
@@ -1225,7 +1220,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_buffer(dirac);
             // duration is between two diracs, only first one should be played
@@ -1256,7 +1251,7 @@ mod tests {
         let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
         dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&context.destination());
         src.set_buffer(dirac);
         // duration is between two diracs, only first one should be played
@@ -1298,7 +1293,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, buffer_len, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_loop(true);
             src.set_buffer(dirac);
@@ -1337,7 +1332,7 @@ mod tests {
             dirac.copy_to_channel(&[1.], 0);
             dirac.copy_to_channel(&[0., 1.], 1);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&context.destination());
             src.set_loop(true);
             src.set_buffer(dirac);

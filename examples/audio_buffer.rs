@@ -43,7 +43,7 @@ fn main() {
     buffer.copy_to_channel(&sine, 0);
 
     // play the buffer in a loop
-    let src = context.create_buffer_source();
+    let mut src = context.create_buffer_source();
     src.set_buffer(buffer.clone());
     src.set_loop(true);
     src.connect(&context.destination());
@@ -55,7 +55,7 @@ fn main() {
     // play a sine at 200Hz
     println!("> Play sine at 200Hz from an OscillatorNode");
 
-    let osc = context.create_oscillator();
+    let mut osc = context.create_oscillator();
     osc.frequency().set_value(200.);
     osc.connect(&context.destination());
     osc.start_at(context.current_time());

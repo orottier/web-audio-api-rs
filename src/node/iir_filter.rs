@@ -115,7 +115,7 @@ pub struct IIRFilterOptions {
 /// iir.connect(&context.destination());
 ///
 /// // play the buffer and pipe it into the filter
-/// let src = context.create_buffer_source();
+/// let mut src = context.create_buffer_source();
 /// src.connect(&iir);
 /// src.set_buffer(buffer);
 /// src.set_loop(true);
@@ -517,7 +517,7 @@ mod tests {
                 biquad.q().set_value(q);
                 biquad.gain().set_value(gain);
 
-                let src = context.create_buffer_source();
+                let mut src = context.create_buffer_source();
                 src.connect(&biquad);
                 src.set_buffer(noise.clone());
                 src.start();
@@ -531,7 +531,7 @@ mod tests {
                 let iir = context.create_iir_filter(feedforward, feedback);
                 iir.connect(&context.destination());
 
-                let src = context.create_buffer_source();
+                let mut src = context.create_buffer_source();
                 src.connect(&iir);
                 src.set_buffer(noise.clone());
                 src.start();

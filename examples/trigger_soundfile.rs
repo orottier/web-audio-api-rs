@@ -33,13 +33,13 @@ fn main() {
     // @fixme - if only one node in the graph it is never removed even when returning
     // false, se we put this dummy node in the graph so that other ones are properly
     // removed
-    let src = context.create_buffer_source();
+    let mut src = context.create_buffer_source();
     src.set_buffer(audio_buffer.clone());
     src.connect(&context.destination());
 
     {
         println!("++ play until end");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.start_at(context.current_time());
@@ -49,7 +49,7 @@ fn main() {
 
     {
         println!("++ play / stop 1sec");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.start_at(context.current_time());
@@ -60,7 +60,7 @@ fn main() {
 
     {
         println!("++ play / stop 1sec with offset");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.start_at_with_offset(context.current_time(), 1.);
@@ -71,7 +71,7 @@ fn main() {
 
     {
         println!("++ play 1sec with offset and duration");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.start_at_with_offset_and_duration(context.current_time(), 1., 1.);
@@ -81,7 +81,7 @@ fn main() {
 
     {
         println!("++ play backward from offset 1.");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.playback_rate().set_value(-1.);
@@ -92,7 +92,7 @@ fn main() {
 
     {
         println!("++ play backward full buffer");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.playback_rate().set_value(-1.);
@@ -103,7 +103,7 @@ fn main() {
 
     {
         println!("++ simple loop (x2)");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.set_loop(true);
@@ -115,7 +115,7 @@ fn main() {
 
     {
         println!("++ loop between 1 and 2 starting from 0");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.set_loop(true);
@@ -131,7 +131,7 @@ fn main() {
 
     {
         println!("++ loop backward between 1 and 2 starting from end");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.playback_rate().set_value(-1.);
@@ -156,7 +156,7 @@ fn main() {
         env.gain().set_value(gain);
         env.connect(&context.destination());
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&env);
         src.start_at(context.current_time() + offset);

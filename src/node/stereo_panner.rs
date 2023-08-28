@@ -405,7 +405,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -433,7 +433,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -461,7 +461,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -504,7 +504,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -528,7 +528,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -552,7 +552,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();

@@ -14,7 +14,7 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 //
 // `WEB_AUDIO_LATENCY=playback cargo run --release --example many_oscillators`
 fn trigger_sine(context: &AudioContext) {
-    let osc = context.create_oscillator();
+    let mut osc = context.create_oscillator();
     osc.connect(&context.destination());
 
     let now = context.current_time();

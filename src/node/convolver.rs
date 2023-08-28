@@ -92,7 +92,7 @@ pub struct ConvolverOptions {
 /// let impulse_file = File::open("samples/small-room-response.wav").unwrap();
 /// let impulse_buffer = context.decode_audio_data_sync(impulse_file).unwrap();
 ///
-/// let src = context.create_buffer_source();
+/// let mut src = context.create_buffer_source();
 /// src.set_buffer(audio_buffer);
 ///
 /// let convolve = ConvolverNode::new(&context, ConvolverOptions::default());
@@ -485,7 +485,7 @@ mod tests {
         conv.connect(&context.destination());
 
         let buffer = AudioBuffer::from(vec![channel_data; 1], sample_rate);
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&conv);
         src.set_buffer(buffer);
         src.start();
@@ -500,7 +500,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, length, sample_rate);
 
         let input = AudioBuffer::from(vec![signal.to_vec()], sample_rate);
-        let src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        let mut src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
         src.set_buffer(input);
         src.start();
 

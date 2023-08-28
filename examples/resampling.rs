@@ -50,7 +50,7 @@ fn main() {
         "+ playing sample-38000.wav - decoded sample rate: {:?}",
         buffer_38000.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_38000);
     src.start();
@@ -61,7 +61,7 @@ fn main() {
         "+ playing sample-44100.wav - decoded sample rate: {:?}",
         buffer_44100.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_44100);
     src.start();
@@ -72,7 +72,7 @@ fn main() {
         "+ playing sample-48000.wav - decoded sample rate: {:?}",
         buffer_48000.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_48000);
     src.start();
@@ -116,7 +116,7 @@ fn main() {
         "+ playing sample-38000.wav - decoded sample rate: {:?}",
         buffer_38000.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_38000);
     src.start();
@@ -127,7 +127,7 @@ fn main() {
         "+ playing sample-44100.wav - decoded sample rate: {:?}",
         buffer_44100.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_44100);
     src.start();
@@ -138,7 +138,7 @@ fn main() {
         "+ playing sample-48000.wav - decoded sample rate: {:?}",
         buffer_48000.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_48000);
     src.start();

@@ -154,21 +154,21 @@ impl AudioNode for OscillatorNode {
 }
 
 impl AudioScheduledSourceNode for OscillatorNode {
-    fn start(&self) {
+    fn start(&mut self) {
         let when = self.registration.context().current_time();
         self.start_at(when);
     }
 
-    fn start_at(&self, when: f64) {
+    fn start_at(&mut self, when: f64) {
         self.registration.post_message(Schedule::Start(when));
     }
 
-    fn stop(&self) {
+    fn stop(&mut self) {
         let when = self.registration.context().current_time();
         self.stop_at(when);
     }
 
-    fn stop_at(&self, when: f64) {
+    fn stop_at(&mut self, when: f64) {
         self.registration.post_message(Schedule::Stop(when));
     }
 }
@@ -674,7 +674,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.start_at(0.);
@@ -710,7 +710,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.start_at(0.);
@@ -1000,7 +1000,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(2. / sample_rate as f64);
@@ -1032,7 +1032,7 @@ mod tests {
         let sample_rate = 96000;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         // start between second and third sample
@@ -1064,7 +1064,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(0.);
@@ -1096,7 +1096,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(0.);
@@ -1128,7 +1128,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(-1.);

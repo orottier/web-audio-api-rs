@@ -892,7 +892,7 @@ mod tests {
 
         // 128 input samples of value 1.
         let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
-        let src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        let mut src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
         src.set_buffer(input);
         src.start();
 
@@ -944,7 +944,7 @@ mod tests {
 
         // 128 input samples of value 1.
         let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
-        let src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        let mut src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
         src.set_buffer(input);
         src.start();
 

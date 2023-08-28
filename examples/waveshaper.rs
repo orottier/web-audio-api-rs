@@ -70,7 +70,7 @@ fn main() {
         pre_gain.gain().set_value(gain);
         post_gain.gain().set_value(1. / gain);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&pre_gain);
         src.set_buffer(buffer.clone());
         src.start();

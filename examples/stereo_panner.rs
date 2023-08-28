@@ -35,7 +35,7 @@ fn main() {
     panner_1.connect(&context.destination());
     panner_1.pan().set_value(pan_1);
     // create an oscillator
-    let osc_1 = context.create_oscillator();
+    let mut osc_1 = context.create_oscillator();
     osc_1.connect(&panner_1);
     osc_1.frequency().set_value(200.);
     osc_1.start();
@@ -47,7 +47,7 @@ fn main() {
     panner_2.connect(&context.destination());
     panner_2.pan().set_value(pan_2);
     // create an oscillator
-    let osc_2 = context.create_oscillator();
+    let mut osc_2 = context.create_oscillator();
     osc_2.connect(&panner_2);
     osc_2.frequency().set_value(300.);
     osc_2.start();

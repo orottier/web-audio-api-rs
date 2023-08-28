@@ -44,7 +44,7 @@ fn main() {
     let impulse_file2 = File::open("samples/parking-garage-response.wav").unwrap();
     let impulse_buffer2 = context.decode_audio_data_sync(impulse_file2).unwrap();
 
-    let src = context.create_buffer_source();
+    let mut src = context.create_buffer_source();
     src.set_buffer(audio_buffer);
 
     let convolver = ConvolverNode::new(&context, ConvolverOptions::default());
