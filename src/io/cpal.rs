@@ -20,6 +20,9 @@ use crate::{AtomicF64, MAX_CHANNELS};
 
 use crossbeam_channel::Receiver;
 
+// I doubt this construct is entirely safe. Stream is not Send/Sync (probably for a good reason) so
+// it should be managed from a single thread instead.
+// <https://github.com/orottier/web-audio-api-rs/issues/357>
 mod private {
     use super::*;
 
@@ -28,6 +31,7 @@ mod private {
 
     impl ThreadSafeClosableStream {
         pub fn new(stream: Stream) -> Self {
+            #[allow(clippy::arc_with_non_send_sync)]
             Self(Arc::new(Mutex::new(Some(stream))))
         }
 
