@@ -1,11 +1,12 @@
 use std::any::Any;
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 
@@ -106,6 +107,7 @@ pub struct AudioBufferSourceNode {
     channel_config: ChannelConfig,
     detune: AudioParam,        // has constraints, no a-rate
     playback_rate: AudioParam, // has constraints, no a-rate
+    buffer_time: Arc<AtomicF64>,
     buffer: OnceLock<AudioBuffer>,
     inner_state: Mutex<InnerState>,
 }
@@ -224,6 +226,7 @@ impl AudioBufferSourceNode {
                 channel_config: ChannelConfig::default(),
                 detune: d_param,
                 playback_rate: pr_param,
+                buffer_time: Arc::clone(&renderer.render_state.buffer_time),
                 buffer: OnceLock::new(),
                 inner_state: Mutex::new(inner_state),
             };
@@ -293,6 +296,16 @@ impl AudioBufferSourceNode {
         &self.playback_rate
     }
 
+    /// Current playhead position in seconds within the [`AudioBuffer`].
+    ///
+    /// This value is updated at the end of each render quantum.
+    ///
+    /// Unofficial v2 API extension, not part of the spec yet.
+    /// See also: <https://github.com/WebAudio/web-audio-api/issues/2397#issuecomment-709478405>
+    pub fn position(&self) -> f64 {
+        self.buffer_time.load(Ordering::Relaxed)
+    }
+
     /// K-rate [`AudioParam`] that defines a pitch transposition of the file,
     /// expressed in cents
     ///
@@ -341,7 +354,7 @@ impl AudioBufferSourceNode {
 }
 
 struct AudioBufferRendererState {
-    buffer_time: f64,
+    buffer_time: Arc<AtomicF64>,
     started: bool,
     entered_loop: bool,
     buffer_time_elapsed: f64,
@@ -351,7 +364,7 @@ struct AudioBufferRendererState {
 impl Default for AudioBufferRendererState {
     fn default() -> Self {
         Self {
-            buffer_time: 0.,
+            buffer_time: Arc::new(AtomicF64::new(0.)),
             started: false,
             entered_loop: false,
             buffer_time_elapsed: 0.,
@@ -463,9 +476,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             return false;
         }
 
+        // Load the buffer time from the render state.
+        // The render state has to be updated before leaving this method!
+        let mut buffer_time = self.render_state.buffer_time.load(Ordering::Relaxed);
+
         // 3. the end of the buffer has been reached.
         if !is_looping {
-            if computed_playback_rate > 0. && self.render_state.buffer_time >= buffer_duration {
+            if computed_playback_rate > 0. && buffer_time >= buffer_duration {
                 output.make_silent(); // also converts to mono
                 if !self.ended_triggered {
                     scope.send_ended_event();
@@ -474,7 +491,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 return false;
             }
 
-            if computed_playback_rate < 0. && self.render_state.buffer_time < 0. {
+            if computed_playback_rate < 0. && buffer_time < 0. {
                 output.make_silent(); // also converts to mono
                 if !self.ended_triggered {
                     scope.send_ended_event();
@@ -533,23 +550,21 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             }
 
             // check if buffer ends within this block
-            if self.render_state.buffer_time + block_duration > buffer_duration
-                || self.render_state.buffer_time + block_duration > self.duration
+            if buffer_time + block_duration > buffer_duration
+                || buffer_time + block_duration > self.duration
                 || current_time + block_duration > self.stop_time
             {
-                let buffer_time = self.render_state.buffer_time;
                 let end_index = if current_time + block_duration > self.stop_time
-                    || self.render_state.buffer_time + block_duration > self.duration
+                    || buffer_time + block_duration > self.duration
                 {
-                    let dt = (self.stop_time - current_time)
-                        .min(self.duration - self.render_state.buffer_time);
-                    let end_buffer_time = self.render_state.buffer_time + dt;
+                    let dt = (self.stop_time - current_time).min(self.duration - buffer_time);
+                    let end_buffer_time = buffer_time + dt;
                     (end_buffer_time * sample_rate).round() as usize
                 } else {
                     buffer.length()
                 };
                 // in case of a loop point in the middle of the block, this value
-                // will be used to recompute `self.render_state.buffer_time` according
+                // will be used to recompute `buffer_time` according
                 // to the actual loop point.
                 let mut loop_point_index: Option<usize> = None;
 
@@ -587,14 +602,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     });
 
                 if let Some(loop_point_index) = loop_point_index {
-                    self.render_state.buffer_time =
-                        ((RENDER_QUANTUM_SIZE - loop_point_index) as f64 / sample_rate)
-                            % buffer_duration;
+                    buffer_time = ((RENDER_QUANTUM_SIZE - loop_point_index) as f64 / sample_rate)
+                        % buffer_duration;
                 } else {
-                    self.render_state.buffer_time += block_duration;
+                    buffer_time += block_duration;
                 }
             } else {
-                let start_index = (self.render_state.buffer_time * sample_rate).round() as usize;
+                let start_index = (buffer_time * sample_rate).round() as usize;
                 let end_index = start_index + RENDER_QUANTUM_SIZE;
                 // we can do memcopy
                 buffer
@@ -606,10 +620,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                         output_channel.copy_from_slice(&buffer_channel[start_index..end_index]);
                     });
 
-                self.render_state.buffer_time += block_duration;
+                buffer_time += block_duration;
             }
 
             // update render state
+            self.render_state
+                .buffer_time
+                .store(buffer_time, Ordering::Relaxed);
             self.render_state.buffer_time_elapsed += block_duration;
 
             return true;
@@ -658,44 +675,38 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     self.offset = actual_loop_start;
                 }
 
-                self.render_state.buffer_time = self.offset;
+                buffer_time = self.offset;
                 self.render_state.started = true;
             }
 
             if is_looping {
                 if !self.render_state.entered_loop {
                     // playback began before or within loop, and playhead is now past loop start
-                    if self.offset < actual_loop_end
-                        && self.render_state.buffer_time >= actual_loop_start
-                    {
+                    if self.offset < actual_loop_end && buffer_time >= actual_loop_start {
                         self.render_state.entered_loop = true;
                     }
 
                     // playback began after loop, and playhead is now prior to the loop end
                     // @note - only possible when playback_rate < 0 (?)
-                    if self.offset >= actual_loop_end
-                        && self.render_state.buffer_time < actual_loop_end
-                    {
+                    if self.offset >= actual_loop_end && buffer_time < actual_loop_end {
                         self.render_state.entered_loop = true;
                     }
                 }
 
                 // check loop boundaries
                 if self.render_state.entered_loop {
-                    while self.render_state.buffer_time >= actual_loop_end {
-                        self.render_state.buffer_time -= actual_loop_end - actual_loop_start;
+                    while buffer_time >= actual_loop_end {
+                        buffer_time -= actual_loop_end - actual_loop_start;
                     }
 
-                    while self.render_state.buffer_time < actual_loop_start {
-                        self.render_state.buffer_time += actual_loop_end - actual_loop_start;
+                    while buffer_time < actual_loop_start {
+                        buffer_time += actual_loop_end - actual_loop_start;
                     }
                 }
             }
 
-            if self.render_state.buffer_time >= 0.
-                && self.render_state.buffer_time < buffer_duration
-            {
-                let position = self.render_state.buffer_time * sampling_ratio;
+            if buffer_time >= 0. && buffer_time < buffer_duration {
+                let position = buffer_time * sampling_ratio;
                 let playhead = position * sample_rate;
                 let playhead_floored = playhead.floor();
                 let prev_frame_index = playhead_floored as usize; // can't be < 0.
@@ -710,7 +721,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             }
 
             let time_incr = dt * computed_playback_rate;
-            self.render_state.buffer_time += time_incr;
+            buffer_time += time_incr;
             self.render_state.buffer_time_elapsed += time_incr;
             current_time += dt;
         }
@@ -745,6 +756,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                         };
                     });
             });
+
+        // update render state
+        self.render_state
+            .buffer_time
+            .store(buffer_time, Ordering::Relaxed);
 
         true
     }
