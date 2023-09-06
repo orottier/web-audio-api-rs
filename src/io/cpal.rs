@@ -8,17 +8,16 @@ use cpal::{
     BuildStreamError, Device, OutputCallbackInfo, SampleFormat, Stream, StreamConfig,
     SupportedBufferSize,
 };
+use crossbeam_channel::Receiver;
 
 use super::{AudioBackendManager, RenderThreadInit};
 
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
-use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
+use crate::media_devices::{create_device_id, MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
 use crate::{AtomicF64, MAX_CHANNELS};
-
-use crossbeam_channel::Receiver;
 
 // I doubt this construct is entirely safe. Stream is not Send/Sync (probably for a good reason) so
 // it should be managed from a single thread instead.
@@ -403,29 +402,49 @@ impl AudioBackendManager for CpalBackend {
     {
         let host = get_host();
 
-        let input_devices = host
-            .input_devices()
-            .unwrap()
-            .map(|d| (d, MediaDeviceInfoKind::AudioInput));
+        let input_devices = host.input_devices().unwrap().map(|d| {
+            let num_channels = d.default_input_config().unwrap().channels();
+            (d, MediaDeviceInfoKind::AudioInput, num_channels)
+        });
 
-        let output_devices = host
-            .output_devices()
-            .unwrap()
-            .map(|d| (d, MediaDeviceInfoKind::AudioOutput));
+        let output_devices = host.output_devices().unwrap().map(|d| {
+            let num_channels = d.default_output_config().unwrap().channels();
+            (d, MediaDeviceInfoKind::AudioOutput, num_channels)
+        });
 
-        input_devices
-            .chain(output_devices)
-            .enumerate()
-            .map(|(index, (device, kind))| {
-                MediaDeviceInfo::new(
-                    (index + 1).to_string(),
-                    None,
-                    kind,
+        // cf. https://github.com/orottier/web-audio-api-rs/issues/356
+        let mut list = Vec::<MediaDeviceInfo>::new();
+
+        for (device, kind, num_channels) in input_devices.chain(output_devices) {
+            let mut index = 0;
+
+            loop {
+                let device_id = create_device_id(
+                    kind as u8,
+                    "cpal".to_string(),
                     device.name().unwrap(),
-                    Box::new(device),
-                )
-            })
-            .collect()
+                    num_channels,
+                    index,
+                );
+
+                if !list.iter().any(|d| d.device_id() == device_id) {
+                    let device = MediaDeviceInfo::new(
+                        device_id,
+                        None,
+                        kind,
+                        device.name().unwrap(),
+                        Box::new(device),
+                    );
+
+                    list.push(device);
+                    break;
+                } else {
+                    index += 1;
+                }
+            }
+        }
+
+        list
     }
 }
 

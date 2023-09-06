@@ -5,7 +5,7 @@ use super::{AudioBackendManager, RenderThreadInit};
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
-use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
+use crate::media_devices::{create_device_id, MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
 use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
@@ -394,46 +394,47 @@ impl AudioBackendManager for CubebBackend {
     where
         Self: Sized,
     {
-        let mut index = 0;
+        let context = Context::init(None, None).unwrap();
 
-        let mut inputs: Vec<MediaDeviceInfo> = Context::init(None, None)
-            .unwrap()
-            .enumerate_devices(DeviceType::INPUT)
-            .unwrap()
+        let inputs = context.enumerate_devices(DeviceType::INPUT).unwrap();
+        let input_devices = inputs.iter().map(|d| (d, MediaDeviceInfoKind::AudioInput));
+
+        let outputs = context.enumerate_devices(DeviceType::OUTPUT).unwrap();
+        let output_devices = outputs
             .iter()
-            .map(|d| {
-                index += 1;
+            .map(|d| (d, MediaDeviceInfoKind::AudioOutput));
 
-                MediaDeviceInfo::new(
-                    format!("{}", index),
-                    d.group_id().map(str::to_string),
-                    MediaDeviceInfoKind::AudioInput,
-                    d.friendly_name().unwrap().into(),
-                    Box::new(d.devid()),
-                )
-            })
-            .collect();
+        let mut list = Vec::<MediaDeviceInfo>::new();
 
-        let mut outputs: Vec<MediaDeviceInfo> = Context::init(None, None)
-            .unwrap()
-            .enumerate_devices(DeviceType::OUTPUT)
-            .unwrap()
-            .iter()
-            .map(|d| {
-                index += 1;
+        for (device, kind) in input_devices.chain(output_devices) {
+            let mut index = 0;
 
-                MediaDeviceInfo::new(
-                    format!("{}", index),
-                    d.group_id().map(str::to_string),
-                    MediaDeviceInfoKind::AudioOutput,
-                    d.friendly_name().unwrap().into(),
-                    Box::new(d.devid()),
-                )
-            })
-            .collect();
+            loop {
+                let device_id = create_device_id(
+                    kind as u8,
+                    "cubeb".to_string(),
+                    device.friendly_name().unwrap().into(),
+                    device.max_channels().try_into().unwrap(),
+                    index,
+                );
 
-        inputs.append(&mut outputs);
+                if !list.iter().any(|d| d.device_id() == device_id) {
+                    let device = MediaDeviceInfo::new(
+                        device_id,
+                        device.group_id().map(str::to_string),
+                        kind,
+                        device.friendly_name().unwrap().into(),
+                        Box::new(device.devid()),
+                    );
 
-        inputs
+                    list.push(device);
+                    break;
+                } else {
+                    index += 1;
+                }
+            }
+        }
+
+        list
     }
 }
