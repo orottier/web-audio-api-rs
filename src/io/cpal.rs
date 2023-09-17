@@ -420,7 +420,7 @@ impl AudioBackendManager for CpalBackend {
 
             loop {
                 let device_id = crate::media_devices::DeviceId::as_string(
-                    kind as u8,
+                    kind,
                     "cpal".to_string(),
                     device.name().unwrap(),
                     num_channels,

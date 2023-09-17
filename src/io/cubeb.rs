@@ -411,7 +411,7 @@ impl AudioBackendManager for CubebBackend {
 
             loop {
                 let device_id = crate::media_devices::DeviceId::as_string(
-                    kind as u8,
+                    kind,
                     "cubeb".to_string(),
                     device.friendly_name().unwrap().into(),
                     device.max_channels().try_into().unwrap(),

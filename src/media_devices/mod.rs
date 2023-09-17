@@ -31,7 +31,7 @@ pub fn enumerate_devices_sync() -> Vec<MediaDeviceInfo> {
 // cf. https://github.com/orottier/web-audio-api-rs/issues/356
 #[derive(Hash)]
 pub(crate) struct DeviceId {
-    kind: u8,
+    kind: MediaDeviceInfoKind,
     host: String,
     device_name: String,
     num_channels: u16,
@@ -40,7 +40,7 @@ pub(crate) struct DeviceId {
 
 impl DeviceId {
     pub(crate) fn as_string(
-        kind: u8,
+        kind: MediaDeviceInfoKind,
         host: String,
         device_name: String,
         num_channels: u16,
@@ -61,7 +61,7 @@ impl DeviceId {
 }
 
 /// Describes input/output type of a media device
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum MediaDeviceInfoKind {
     VideoInput,
     AudioInput,
