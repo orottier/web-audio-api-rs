@@ -4,9 +4,8 @@
 //!
 //! <https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices>
 
-use std::hash::Hasher;
-
 use rustc_hash::FxHasher;
+use std::hash::{Hash, Hasher};
 
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::media_streams::MediaStream;
@@ -36,6 +35,15 @@ pub enum MediaDeviceInfoKind {
     AudioOutput,
 }
 
+#[derive(Hash)]
+struct DeviceIdInfo {
+    kind: u8,
+    host: String,
+    device_name: String,
+    num_channels: u16,
+    index: u8,
+}
+
 pub(crate) fn create_device_id(
     kind: u8,
     host: String,
@@ -43,9 +51,16 @@ pub(crate) fn create_device_id(
     num_channels: u16,
     index: u8,
 ) -> String {
+    let device_info = DeviceIdInfo {
+        kind,
+        host,
+        device_name,
+        num_channels,
+        index,
+    };
+
     let mut hasher = FxHasher::default();
-    let id_string = format!("{}{}{}{}{}", kind, host, device_name, num_channels, index);
-    hasher.write(id_string.as_bytes());
+    device_info.hash(&mut hasher);
     format!("{}", hasher.finish())
 }
 
