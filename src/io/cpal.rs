@@ -15,7 +15,7 @@ use super::{AudioBackendManager, RenderThreadInit};
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
-use crate::media_devices::{create_device_id, MediaDeviceInfo, MediaDeviceInfoKind};
+use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
 use crate::{AtomicF64, MAX_CHANNELS};
 
@@ -419,7 +419,7 @@ impl AudioBackendManager for CpalBackend {
             let mut index = 0;
 
             loop {
-                let device_id = create_device_id(
+                let device_id = crate::media_devices::DeviceId::as_string(
                     kind as u8,
                     "cpal".to_string(),
                     device.name().unwrap(),

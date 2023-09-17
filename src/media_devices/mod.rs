@@ -27,41 +27,45 @@ pub fn enumerate_devices_sync() -> Vec<MediaDeviceInfo> {
     crate::io::enumerate_devices_sync()
 }
 
+// Internal struct to derive a stable id for a given input / output device
+// cf. https://github.com/orottier/web-audio-api-rs/issues/356
+#[derive(Hash)]
+pub(crate) struct DeviceId {
+    kind: u8,
+    host: String,
+    device_name: String,
+    num_channels: u16,
+    index: u8,
+}
+
+impl DeviceId {
+    pub(crate) fn as_string(
+        kind: u8,
+        host: String,
+        device_name: String,
+        num_channels: u16,
+        index: u8,
+    ) -> String {
+        let device_info = Self {
+            kind,
+            host,
+            device_name,
+            num_channels,
+            index,
+        };
+
+        let mut hasher = FxHasher::default();
+        device_info.hash(&mut hasher);
+        format!("{}", hasher.finish())
+    }
+}
+
 /// Describes input/output type of a media device
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum MediaDeviceInfoKind {
     VideoInput,
     AudioInput,
     AudioOutput,
-}
-
-#[derive(Hash)]
-struct DeviceIdInfo {
-    kind: u8,
-    host: String,
-    device_name: String,
-    num_channels: u16,
-    index: u8,
-}
-
-pub(crate) fn create_device_id(
-    kind: u8,
-    host: String,
-    device_name: String,
-    num_channels: u16,
-    index: u8,
-) -> String {
-    let device_info = DeviceIdInfo {
-        kind,
-        host,
-        device_name,
-        num_channels,
-        index,
-    };
-
-    let mut hasher = FxHasher::default();
-    device_info.hash(&mut hasher);
-    format!("{}", hasher.finish())
 }
 
 /// Describes a single media input or output device

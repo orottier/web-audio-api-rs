@@ -5,7 +5,7 @@ use super::{AudioBackendManager, RenderThreadInit};
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
-use crate::media_devices::{create_device_id, MediaDeviceInfo, MediaDeviceInfoKind};
+use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
 use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
@@ -410,7 +410,7 @@ impl AudioBackendManager for CubebBackend {
             let mut index = 0;
 
             loop {
-                let device_id = create_device_id(
+                let device_id = crate::media_devices::DeviceId::as_string(
                     kind as u8,
                     "cubeb".to_string(),
                     device.friendly_name().unwrap().into(),
