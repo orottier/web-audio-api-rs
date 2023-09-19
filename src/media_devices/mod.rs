@@ -4,6 +4,9 @@
 //!
 //! <https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices>
 
+use rustc_hash::FxHasher;
+use std::hash::{Hash, Hasher};
+
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::media_streams::MediaStream;
 
@@ -24,8 +27,41 @@ pub fn enumerate_devices_sync() -> Vec<MediaDeviceInfo> {
     crate::io::enumerate_devices_sync()
 }
 
+// Internal struct to derive a stable id for a given input / output device
+// cf. https://github.com/orottier/web-audio-api-rs/issues/356
+#[derive(Hash)]
+pub(crate) struct DeviceId {
+    kind: MediaDeviceInfoKind,
+    host: String,
+    device_name: String,
+    num_channels: u16,
+    index: u8,
+}
+
+impl DeviceId {
+    pub(crate) fn as_string(
+        kind: MediaDeviceInfoKind,
+        host: String,
+        device_name: String,
+        num_channels: u16,
+        index: u8,
+    ) -> String {
+        let device_info = Self {
+            kind,
+            host,
+            device_name,
+            num_channels,
+            index,
+        };
+
+        let mut hasher = FxHasher::default();
+        device_info.hash(&mut hasher);
+        format!("{}", hasher.finish())
+    }
+}
+
 /// Describes input/output type of a media device
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum MediaDeviceInfoKind {
     VideoInput,
     AudioInput,

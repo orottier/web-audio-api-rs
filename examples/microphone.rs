@@ -33,7 +33,7 @@ fn ask_sink_id() -> String {
 
     let input = std::io::stdin().lines().next().unwrap().unwrap();
     match input.trim() {
-        "0" => "none".to_string(),
+        "0" => "".to_string(),
         i => i.to_string(),
     }
 }
