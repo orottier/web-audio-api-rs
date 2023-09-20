@@ -16,7 +16,7 @@ pub fn bench_ctor() {
 
 pub fn bench_sine() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
-    let osc = ctx.create_oscillator();
+    let mut osc = ctx.create_oscillator();
 
     osc.connect(&ctx.destination());
     osc.start();
@@ -26,7 +26,7 @@ pub fn bench_sine() {
 
 pub fn bench_sine_gain() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
-    let osc = ctx.create_oscillator();
+    let mut osc = ctx.create_oscillator();
     let gain = ctx.create_gain();
 
     osc.connect(&gain);
@@ -40,7 +40,7 @@ pub fn bench_sine_gain() {
 pub fn bench_sine_gain_delay() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
 
-    let osc = ctx.create_oscillator();
+    let mut osc = ctx.create_oscillator();
     let gain = ctx.create_gain();
 
     let delay = ctx.create_delay(0.3);
@@ -61,7 +61,7 @@ pub fn bench_buffer_src() {
     let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
     let buffer = ctx.decode_audio_data_sync(file).unwrap();
 
-    let src = ctx.create_buffer_source();
+    let mut src = ctx.create_buffer_source();
     src.connect(&ctx.destination());
     src.set_buffer(buffer);
     src.start();
@@ -78,7 +78,7 @@ pub fn bench_buffer_src_delay() {
     let delay = ctx.create_delay(0.3);
     delay.delay_time().set_value(0.2);
 
-    let src = ctx.create_buffer_source();
+    let mut src = ctx.create_buffer_source();
     src.set_buffer(buffer);
     src.start();
 
@@ -107,7 +107,7 @@ pub fn bench_buffer_src_iir() {
     iir.connect(&ctx.destination());
 
     // Play buffer and pipe to filter
-    let src = ctx.create_buffer_source();
+    let mut src = ctx.create_buffer_source();
     src.connect(&iir);
     src.set_buffer(buffer);
     src.start();
@@ -126,7 +126,7 @@ pub fn bench_buffer_src_biquad() {
     biquad.frequency().set_value(200.);
 
     // Play buffer and pipe to filter
-    let src = ctx.create_buffer_source();
+    let mut src = ctx.create_buffer_source();
     src.connect(&biquad);
     src.set_buffer(buffer);
     src.start();
@@ -150,7 +150,7 @@ pub fn bench_stereo_positional() {
     panner.orientation_z().set_value(3.);
 
     // Play buffer and pipe to filter
-    let src = ctx.create_buffer_source();
+    let mut src = ctx.create_buffer_source();
     src.connect(&panner);
     src.set_buffer(buffer);
     src.start();
@@ -168,7 +168,7 @@ pub fn bench_stereo_panning_automation() {
     panner.pan().set_value_at_time(-1., 0.);
     panner.pan().set_value_at_time(0.2, 0.5);
 
-    let src = ctx.create_buffer_source();
+    let mut src = ctx.create_buffer_source();
     src.connect(&panner);
     src.set_buffer(buffer);
     src.set_loop(true);
@@ -188,7 +188,7 @@ pub fn bench_analyser_node() {
     let analyser = ctx.create_analyser();
     analyser.connect(&ctx.destination());
 
-    let src = ctx.create_buffer_source();
+    let mut src = ctx.create_buffer_source();
     src.connect(&analyser);
     src.set_buffer(buffer);
     src.set_loop(true);
