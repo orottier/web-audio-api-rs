@@ -35,7 +35,7 @@ pub struct MediaElementAudioSourceOptions<'a> {
 /// let context = AudioContext::default();
 /// let mut media = MediaElement::new("samples/major-scale.ogg").unwrap();
 ///
-/// let src = context.create_media_element_source(&mut media);
+/// let mut src = context.create_media_element_source(&mut media);
 /// src.connect(&context.destination());
 ///
 /// media.set_loop(true); // continuously loop

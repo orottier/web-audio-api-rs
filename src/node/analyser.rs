@@ -57,7 +57,7 @@ impl Default for AnalyserOptions {
 /// let mut analyser = context.create_analyser();
 /// analyser.connect(&context.destination());
 ///
-/// let osc = context.create_oscillator();
+/// let mut osc = context.create_oscillator();
 /// osc.frequency().set_value(200.);
 /// osc.connect(&analyser);
 /// osc.start();

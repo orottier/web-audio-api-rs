@@ -244,7 +244,7 @@ impl HrtfState {
 /// let context = AudioContext::default();
 ///
 /// // Create a friendly tone
-/// let tone = context.create_oscillator();
+/// let mut tone = context.create_oscillator();
 /// tone.frequency().set_value_at_time(300.0f32, 0.);
 /// tone.start();
 ///
@@ -257,7 +257,7 @@ impl HrtfState {
 /// panner.position_z().set_value_at_time(1., 0.);
 ///
 /// // And sweeps 10 units left to right, every second
-/// let moving = context.create_oscillator();
+/// let mut moving = context.create_oscillator();
 /// moving.start();
 /// moving.frequency().set_value_at_time(1., 0.);
 /// let gain = context.create_gain();
