@@ -32,24 +32,21 @@ use std::sync::Arc;
 
 fn ask_source_id() -> Option<String> {
     println!("Enter the input 'device_id' and press <Enter>");
-    println!("- Use 0 for the default audio input device");
+    println!("- Leave empty ('') for the default audio input device");
 
     let input = std::io::stdin().lines().next().unwrap().unwrap();
     match input.trim() {
-        "0" => None,
+        "" => None,
         i => Some(i.to_string()),
     }
 }
 
 fn ask_sink_id() -> String {
-    println!("Enter the output 'sink' and press <Enter>");
-    println!("- Use 0 for the default audio output device");
+    println!("Enter the output 'device_id' and press <Enter>");
+    println!("- type 'none' to disable the output");
+    println!("- Leave empty ('') for the default audio output device");
 
-    let input = std::io::stdin().lines().next().unwrap().unwrap();
-    match input.trim() {
-        "0" => "none".to_string(),
-        i => i.to_string(),
-    }
+    std::io::stdin().lines().next().unwrap().unwrap()
 }
 
 struct AtomicF64 {
