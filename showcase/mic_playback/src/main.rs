@@ -237,7 +237,10 @@ fn poll_frequency_graph(
 
         // todo, check BaseAudioContext.state if it is still running
 
-        analyser.lock().unwrap().get_float_frequency_data(&mut freq_buffer);
+        analyser
+            .lock()
+            .unwrap()
+            .get_float_frequency_data(&mut freq_buffer);
 
         let points: Vec<_> = freq_buffer
             .iter()

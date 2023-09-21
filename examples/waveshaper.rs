@@ -52,7 +52,7 @@ fn main() {
     post_gain.connect(&context.destination());
     post_gain.gain().set_value(0.);
 
-    let shaper = context.create_wave_shaper();
+    let mut shaper = context.create_wave_shaper();
     shaper.set_oversample(OverSampleType::None);
     // shaper.set_oversample(OverSampleType::X2);
     // shaper.set_oversample(OverSampleType::X4);
