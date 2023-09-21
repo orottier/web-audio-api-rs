@@ -47,7 +47,7 @@ fn main() {
         ..PannerOptions::default()
     };
 
-    let panner = PannerNode::new(&context, opts);
+    let mut panner = PannerNode::new(&context, opts);
     tone.connect(&panner);
     panner.connect(&context.destination());
 

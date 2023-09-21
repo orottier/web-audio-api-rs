@@ -32,7 +32,7 @@ fn main() {
     tone.start();
 
     // Connect tone > panner node > destination node
-    let panner = context.create_panner();
+    let mut panner = context.create_panner();
     tone.connect(&panner);
     panner.connect(&context.destination());
 
