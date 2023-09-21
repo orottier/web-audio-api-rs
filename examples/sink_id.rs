@@ -16,14 +16,10 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 fn ask_sink_id() -> String {
     println!("Enter the output 'device_id' and press <Enter>");
-    println!("- Leave empty for AudioSinkType 'none'");
-    println!("- Use 0 for the default audio output device");
+    println!("- type 'none' to disable the output");
+    println!("- Leave empty ('') for the default audio output device");
 
-    let input = std::io::stdin().lines().next().unwrap().unwrap();
-    match input.trim() {
-        "0" => "none".to_string(),
-        i => i.to_string(),
-    }
+    std::io::stdin().lines().next().unwrap().unwrap()
 }
 
 fn main() {
