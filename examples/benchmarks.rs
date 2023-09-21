@@ -335,7 +335,7 @@ fn main() {
                 *b = (rng.gen_range(0.0..2.) - 1.) * (1. - i as f32 / len).powf(decay)
             });
 
-        let convolver = context.create_convolver();
+        let mut convolver = context.create_convolver();
         convolver.set_buffer(buffer);
         convolver.connect(&context.destination());
 
