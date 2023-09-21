@@ -510,7 +510,7 @@ mod tests {
             let biquad_res = {
                 let context = OfflineAudioContext::new(1, 1000, 44_100.);
 
-                let biquad = context.create_biquad_filter();
+                let mut biquad = context.create_biquad_filter();
                 biquad.connect(&context.destination());
                 biquad.set_type(filter_type);
                 biquad.frequency().set_value(frequency);
@@ -753,7 +753,7 @@ mod tests {
                 let mut mags = [0.; 10];
                 let mut phases = [0.; 10];
 
-                let biquad = context.create_biquad_filter();
+                let mut biquad = context.create_biquad_filter();
                 biquad.set_type(filter_type);
                 biquad.frequency().set_value(frequency);
                 biquad.q().set_value(q);

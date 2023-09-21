@@ -1,7 +1,6 @@
 //! The biquad filter control and renderer parts
 use std::any::Any;
 use std::f64::consts::{PI, SQRT_2};
-use std::sync::atomic::{AtomicU32, Ordering};
 
 use num_complex::Complex;
 
@@ -309,8 +308,8 @@ pub struct BiquadFilterNode {
     /// boost/attenuation (dB) - its impact on the frequency response of the
     /// filter, depends on the `BiquadFilterType`
     gain: AudioParam,
-    /// `BiquadFilterType` represented as u32
-    type_: AtomicU32,
+    /// Current biquad filter type
+    type_: BiquadFilterType,
 }
 
 impl AudioNode for BiquadFilterNode {
@@ -402,7 +401,7 @@ impl BiquadFilterNode {
             let node = Self {
                 registration,
                 channel_config: channel_config.into(),
-                type_: AtomicU32::new(type_ as u32),
+                type_,
                 q: q_param,
                 detune: d_param,
                 frequency: f_param,
@@ -440,7 +439,7 @@ impl BiquadFilterNode {
     /// Returns the biquad filter type
     #[must_use]
     pub fn type_(&self) -> BiquadFilterType {
-        self.type_.load(Ordering::Acquire).into()
+        self.type_
     }
 
     /// biquad filter type setter
@@ -448,8 +447,8 @@ impl BiquadFilterNode {
     /// # Arguments
     ///
     /// * `type_` - the biquad filter type (lowpass, highpass,...)
-    pub fn set_type(&self, type_: BiquadFilterType) {
-        self.type_.store(type_ as u32, Ordering::Release);
+    pub fn set_type(&mut self, type_: BiquadFilterType) {
+        self.type_ = type_;
         self.registration.post_message(type_);
     }
 
@@ -820,7 +819,7 @@ mod tests {
                 -2.6204006671905518,
             ];
 
-            let filter = context.create_biquad_filter();
+            let mut filter = context.create_biquad_filter();
             filter.set_type(type_);
             filter.frequency().set_value(frequency);
             filter.q().set_value(q);
@@ -862,7 +861,7 @@ mod tests {
                 0.5211920142173767,
             ];
 
-            let filter = context.create_biquad_filter();
+            let mut filter = context.create_biquad_filter();
             filter.set_type(type_);
             filter.frequency().set_value(frequency);
             filter.q().set_value(q);
@@ -904,7 +903,7 @@ mod tests {
                 -0.9985077977180481,
             ];
 
-            let filter = context.create_biquad_filter();
+            let mut filter = context.create_biquad_filter();
             filter.set_type(type_);
             filter.frequency().set_value(frequency);
             filter.q().set_value(q);
@@ -946,7 +945,7 @@ mod tests {
                 0.5722885727882385,
             ];
 
-            let filter = context.create_biquad_filter();
+            let mut filter = context.create_biquad_filter();
             filter.set_type(type_);
             filter.frequency().set_value(frequency);
             filter.q().set_value(q);
@@ -977,7 +976,7 @@ mod tests {
                 1.144577145576477,
             ];
 
-            let filter = context.create_biquad_filter();
+            let mut filter = context.create_biquad_filter();
             filter.set_type(type_);
             filter.frequency().set_value(frequency);
             filter.q().set_value(q);
@@ -1019,7 +1018,7 @@ mod tests {
                 -0.1567305326461792,
             ];
 
-            let filter = context.create_biquad_filter();
+            let mut filter = context.create_biquad_filter();
             filter.set_type(type_);
             filter.frequency().set_value(frequency);
             filter.q().set_value(q);
@@ -1061,7 +1060,7 @@ mod tests {
                 -0.1404205560684204,
             ];
 
-            let filter = context.create_biquad_filter();
+            let mut filter = context.create_biquad_filter();
             filter.set_type(type_);
             filter.frequency().set_value(frequency);
             filter.q().set_value(q);
@@ -1103,7 +1102,7 @@ mod tests {
                 0.1404205560684204,
             ];
 
-            let filter = context.create_biquad_filter();
+            let mut filter = context.create_biquad_filter();
             filter.set_type(type_);
             filter.frequency().set_value(frequency);
             filter.q().set_value(q);
