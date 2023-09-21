@@ -43,7 +43,7 @@ fn test_event_handler() {
     let context = AudioContext::new(options);
 
     for _ in 0..512 {
-        let constant_source = context.create_constant_source();
+        let mut constant_source = context.create_constant_source();
         constant_source.connect(&context.destination());
         constant_source.start();
         constant_source.stop_at(0.001);

@@ -115,7 +115,7 @@ pub struct IIRFilterOptions {
 /// iir.connect(&context.destination());
 ///
 /// // play the buffer and pipe it into the filter
-/// let src = context.create_buffer_source();
+/// let mut src = context.create_buffer_source();
 /// src.connect(&iir);
 /// src.set_buffer(buffer);
 /// src.set_loop(true);
@@ -510,14 +510,14 @@ mod tests {
             let biquad_res = {
                 let context = OfflineAudioContext::new(1, 1000, 44_100.);
 
-                let biquad = context.create_biquad_filter();
+                let mut biquad = context.create_biquad_filter();
                 biquad.connect(&context.destination());
                 biquad.set_type(filter_type);
                 biquad.frequency().set_value(frequency);
                 biquad.q().set_value(q);
                 biquad.gain().set_value(gain);
 
-                let src = context.create_buffer_source();
+                let mut src = context.create_buffer_source();
                 src.connect(&biquad);
                 src.set_buffer(noise.clone());
                 src.start();
@@ -531,7 +531,7 @@ mod tests {
                 let iir = context.create_iir_filter(feedforward, feedback);
                 iir.connect(&context.destination());
 
-                let src = context.create_buffer_source();
+                let mut src = context.create_buffer_source();
                 src.connect(&iir);
                 src.set_buffer(noise.clone());
                 src.start();
@@ -753,7 +753,7 @@ mod tests {
                 let mut mags = [0.; 10];
                 let mut phases = [0.; 10];
 
-                let biquad = context.create_biquad_filter();
+                let mut biquad = context.create_biquad_filter();
                 biquad.set_type(filter_type);
                 biquad.frequency().set_value(frequency);
                 biquad.q().set_value(q);

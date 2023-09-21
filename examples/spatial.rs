@@ -36,7 +36,7 @@ fn main() {
     // Create looping 'siren' sound
     let file = std::fs::File::open("samples/siren.mp3").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();
-    let tone = context.create_buffer_source();
+    let mut tone = context.create_buffer_source();
     tone.set_buffer(buffer);
     tone.set_loop(true);
     tone.start();
@@ -47,7 +47,7 @@ fn main() {
         ..PannerOptions::default()
     };
 
-    let panner = PannerNode::new(&context, opts);
+    let mut panner = PannerNode::new(&context, opts);
     tone.connect(&panner);
     panner.connect(&context.destination());
 
@@ -57,7 +57,7 @@ fn main() {
     // will be audible (ref distance = 1.)
     //
     // Make x-value a periodic wave
-    let moving = context.create_oscillator();
+    let mut moving = context.create_oscillator();
     moving.frequency().set_value_at_time(0.25, 0.);
     let gain = context.create_gain();
     gain.gain().set_value_at_time(10., 0.);
@@ -66,7 +66,7 @@ fn main() {
     moving.start();
 
     // Make y-value a periodic wave, delayed so it forms a circle with the x-value
-    let moving = context.create_oscillator();
+    let mut moving = context.create_oscillator();
     moving.frequency().set_value_at_time(0.25, 0.);
     let delay = context.create_delay(1.);
     delay

@@ -25,7 +25,7 @@ use super::{
 ///
 /// let context = AudioContext::default();
 ///
-/// let osc = context.create_oscillator();
+/// let mut osc = context.create_oscillator();
 /// osc.connect(&context.destination());
 /// osc.start();
 /// ```

@@ -43,7 +43,7 @@ fn main() {
     buffer.copy_to_channel(&sine, 0);
 
     // play the buffer in a loop
-    let src = context.create_buffer_source();
+    let mut src = context.create_buffer_source();
     src.set_buffer(buffer.clone());
     src.connect(&context.destination());
     src.start();
@@ -52,7 +52,7 @@ fn main() {
 
     println!("> Play sine at 440Hz w/ playback rate at 0.5");
 
-    let src = context.create_buffer_source();
+    let mut src = context.create_buffer_source();
     src.set_buffer(buffer.clone());
     src.playback_rate().set_value(0.5);
     src.connect(&context.destination());
@@ -62,7 +62,7 @@ fn main() {
 
     println!("> Play sine at 440Hz w/ detune at -1200.");
 
-    let src = context.create_buffer_source();
+    let mut src = context.create_buffer_source();
     src.set_buffer(buffer.clone());
     src.detune().set_value(-1200.);
     src.connect(&context.destination());

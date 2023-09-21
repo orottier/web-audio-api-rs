@@ -29,7 +29,7 @@ fn main() {
     modulated.gain().set_value(0.5);
     modulated.connect(&context.destination());
 
-    let carrier = context.create_oscillator();
+    let mut carrier = context.create_oscillator();
     carrier.connect(&modulated);
     carrier.frequency().set_value(300.);
 
@@ -38,7 +38,7 @@ fn main() {
     depth.gain().set_value(0.5);
     depth.connect(modulated.gain());
 
-    let modulator = context.create_oscillator();
+    let mut modulator = context.create_oscillator();
     modulator.connect(&depth);
     modulator.frequency().set_value(1.);
 

@@ -56,7 +56,7 @@ fn main() {
 
         let now = context.current_time();
 
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect_at(&merger, 0, output_channel);
         osc.frequency().set_value(200.);
         osc.start_at(now);

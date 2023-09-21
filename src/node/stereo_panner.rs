@@ -102,7 +102,7 @@ fn get_stereo_gains(sine_table: &[f32], x: f32) -> [f32; 2] {
 /// panner.pan().set_value(-1.);
 ///
 /// // pipe an oscillator into the stereo panner
-/// let osc = context.create_oscillator();
+/// let mut osc = context.create_oscillator();
 /// osc.frequency().set_value(200.);
 /// osc.connect(&panner);
 /// osc.start();
@@ -405,7 +405,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -433,7 +433,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -461,7 +461,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -504,7 +504,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -528,7 +528,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -552,7 +552,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();

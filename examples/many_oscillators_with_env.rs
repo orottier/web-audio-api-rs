@@ -19,7 +19,7 @@ fn trigger_sine(audio_context: &AudioContext, rng: &mut ThreadRng) {
     env.gain().set_value(0.);
     env.connect(&audio_context.destination());
 
-    let osc = audio_context.create_oscillator();
+    let mut osc = audio_context.create_oscillator();
     osc.connect(&env);
 
     let now = audio_context.current_time();

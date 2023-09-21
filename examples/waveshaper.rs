@@ -52,7 +52,7 @@ fn main() {
     post_gain.connect(&context.destination());
     post_gain.gain().set_value(0.);
 
-    let shaper = context.create_wave_shaper();
+    let mut shaper = context.create_wave_shaper();
     shaper.set_oversample(OverSampleType::None);
     // shaper.set_oversample(OverSampleType::X2);
     // shaper.set_oversample(OverSampleType::X4);
@@ -70,7 +70,7 @@ fn main() {
         pre_gain.gain().set_value(gain);
         post_gain.gain().set_value(1. / gain);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&pre_gain);
         src.set_buffer(buffer.clone());
         src.start();

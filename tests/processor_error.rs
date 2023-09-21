@@ -62,13 +62,13 @@ fn test_processor_error() {
 
     {
         // create constant source with value 1, connect to destination
-        let source1 = context.create_constant_source();
+        let mut source1 = context.create_constant_source();
         source1.offset().set_value(1.);
         source1.connect(&context.destination());
         source1.start();
 
         // create constant source with value 2, connect to error processor
-        let source2 = context.create_constant_source();
+        let mut source2 = context.create_constant_source();
         source2.offset().set_value(2.);
         let panic = PanicNode::new(&context);
         source2.connect(&panic);

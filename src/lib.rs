@@ -18,12 +18,12 @@
 //! volume.connect(&context.destination());
 //! volume.gain().set_value(0.5);
 //!
-//! let buffer_source = context.create_buffer_source();
+//! let mut buffer_source = context.create_buffer_source();
 //! buffer_source.connect(&volume);
 //! buffer_source.set_buffer(buffer);
 //!
 //! // create oscillator branch
-//! let osc = context.create_oscillator();
+//! let mut osc = context.create_oscillator();
 //! osc.connect(&context.destination());
 //!
 //! // start the sources
