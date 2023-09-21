@@ -30,7 +30,7 @@ let file = std::fs::File::open("samples/major-scale.ogg").unwrap();
 let buffer = context.decode_audio_data_sync(file).unwrap();
 
 // setup an AudioBufferSourceNode
-let src = context.create_buffer_source();
+let mut src = context.create_buffer_source();
 src.set_buffer(buffer);
 src.set_loop(true);
 
