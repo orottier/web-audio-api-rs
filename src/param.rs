@@ -672,7 +672,7 @@ impl AudioProcessor for AudioParamProcessor {
 impl AudioParamProcessor {
     // Warning: compute_intrinsic_values in called directly in the unit tests so
     // everything important for the tests should be done here
-    // The returned value is used in tests is only used in tests
+    // The returned value is only used in tests
     fn compute_intrinsic_values(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
         self.compute_buffer(block_time, dt, count);
         self.buffer.as_slice()
