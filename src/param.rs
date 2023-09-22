@@ -2,7 +2,9 @@
 use std::any::Any;
 use std::slice::{Iter, IterMut};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+
+use arrayvec::ArrayVec;
 
 use crate::context::AudioContextRegistration;
 use crate::node::{
@@ -10,8 +12,6 @@ use crate::node::{
 };
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
-
-use std::sync::OnceLock;
 
 /// For SetTargetAtTime event, that theoretically cannot end, if the diff between
 /// the current value and the target is below this threshold, the value is set
@@ -620,7 +620,7 @@ pub(crate) struct AudioParamProcessor {
     shared_parts: Arc<AudioParamShared>,
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
-    buffer: Vec<f32>,
+    buffer: ArrayVec<f32, RENDER_QUANTUM_SIZE>,
 }
 
 impl AudioProcessor for AudioParamProcessor {
@@ -670,11 +670,11 @@ impl AudioProcessor for AudioParamProcessor {
 }
 
 impl AudioParamProcessor {
-    // warning: tick in called directly in the unit tests so everything important
-    // for the tests should be done here
+    // Warning: compute_intrinsic_values in called directly in the unit tests so
+    // everything important for the tests should be done here
+    // The returned value is used in tests is only used in tests
     fn compute_intrinsic_values(&mut self, block_time: f64, dt: f64, count: usize) -> &[f32] {
         self.compute_buffer(block_time, dt, count);
-
         self.buffer.as_slice()
     }
 
@@ -1088,7 +1088,11 @@ impl AudioParamProcessor {
             match some_event {
                 None => {
                     if is_a_rate {
-                        self.buffer.resize(count, self.intrinsic_value);
+                        let buffer = [self.intrinsic_value; RENDER_QUANTUM_SIZE];
+                        // we don't use `buffer.remaining_capacity` to correctly handle
+                        // the tests where `count` is lower than RENDER_QUANTUM_SIZE
+                        let remaining = count - self.buffer.len();
+                        let _ = self.buffer.try_extend_from_slice(&buffer[..remaining]);
                     }
                     break;
                 }
@@ -1614,7 +1618,7 @@ pub(crate) fn audio_param_pair(
         shared_parts,
         event_timeline: AudioParamEventTimeline::new(),
         last_event: None,
-        buffer: Vec::with_capacity(RENDER_QUANTUM_SIZE),
+        buffer: ArrayVec::new(),
     };
 
     (param, processor)
