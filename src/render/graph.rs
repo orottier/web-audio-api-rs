@@ -422,9 +422,12 @@ impl Graph {
                     let mut output_node = nodes.get(&edge.other_id).unwrap().borrow_mut();
                     output_node.has_inputs_connected = true;
                     let signal = &node.outputs[edge.self_index];
-                    let channel_config = &output_node.channel_config.clone();
 
-                    output_node.inputs[edge.other_index].add(signal, channel_config);
+                    let interpretation = output_node.channel_config.interpretation();
+                    let mode = output_node.channel_config.count_mode();
+                    let count = output_node.channel_config.count();
+
+                    output_node.inputs[edge.other_index].add(signal, count, mode, interpretation);
                 });
 
             let can_free = !success || node.can_free(tail_time);
