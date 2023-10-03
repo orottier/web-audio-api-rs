@@ -1088,6 +1088,9 @@ impl AudioParamProcessor {
             match some_event {
                 None => {
                     if is_a_rate {
+                        // @note - we use `count` rather then `buffer.remaining_capacity`
+                        // to correctly unit tests where `count` is lower than RENDER_QUANTUM_SIZE
+                        //
                         // @todo(perf) - consider using try_extend_from_slice
                         // which internally uses ptr::copy_nonoverlapping
                         for _ in self.buffer.len()..count {
