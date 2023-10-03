@@ -1088,11 +1088,11 @@ impl AudioParamProcessor {
             match some_event {
                 None => {
                     if is_a_rate {
-                        let buffer = [self.intrinsic_value; RENDER_QUANTUM_SIZE];
-                        // we don't use `buffer.remaining_capacity` to correctly handle
-                        // the tests where `count` is lower than RENDER_QUANTUM_SIZE
-                        let remaining = count - self.buffer.len();
-                        let _ = self.buffer.try_extend_from_slice(&buffer[..remaining]);
+                        // @todo(perf) - consider using try_extend_from_slice
+                        // which internally uses ptr::copy_nonoverlapping
+                        for _ in self.buffer.len()..count {
+                            self.buffer.push(self.intrinsic_value);
+                        }
                     }
                     break;
                 }
