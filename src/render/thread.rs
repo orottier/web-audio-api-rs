@@ -1,7 +1,8 @@
 //! Communicates with the control thread and ships audio samples to the hardware
 
 use std::any::Any;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -32,7 +33,7 @@ pub(crate) struct RenderThread {
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
     event_sender: Option<Sender<EventDispatch>>,
-    garbage_collector: llq::Producer<Box<dyn Any + Send>>,
+    garbage_collector: Rc<RefCell<llq::Producer<Box<dyn Any + Send>>>>,
 }
 
 // SAFETY:
@@ -66,7 +67,7 @@ impl RenderThread {
             buffer_offset: None,
             load_value_sender,
             event_sender,
-            garbage_collector: gc_producer,
+            garbage_collector: Rc::new(RefCell::new(gc_producer)),
         }
     }
 
@@ -129,7 +130,7 @@ impl RenderThread {
                 }
                 NodeMessage { id, mut msg } => {
                     self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
-                    self.garbage_collector.push(msg);
+                    self.garbage_collector.borrow_mut().push(msg);
                 }
             }
         }
@@ -166,6 +167,7 @@ impl RenderThread {
                 sample_rate: self.sample_rate,
                 event_sender: self.event_sender.clone(),
                 node_id: Cell::new(AudioNodeId(0)), // placeholder value
+                garbage_collector: Rc::clone(&self.garbage_collector),
             };
 
             // render audio graph
@@ -264,6 +266,7 @@ impl RenderThread {
                 sample_rate: self.sample_rate,
                 event_sender: self.event_sender.clone(),
                 node_id: Cell::new(AudioNodeId(0)), // placeholder value
+                garbage_collector: Rc::clone(&self.garbage_collector),
             };
 
             // render audio graph, clone it in case we need to mutate/store the value later
@@ -302,6 +305,7 @@ impl RenderThread {
 impl Drop for RenderThread {
     fn drop(&mut self) {
         self.garbage_collector
+            .borrow_mut()
             .push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)));
         log::info!("Audio render thread has been dropped");
     }
@@ -320,7 +324,7 @@ fn spawn_garbage_collector_thread(consumer: llq::Consumer<Box<dyn Any + Send>>) 
 }
 
 fn run_garbage_collector_thread(mut consumer: llq::Consumer<Box<dyn Any + Send>>) {
-    log::info!("Entering garbage collector thread");
+    log::debug!("Entering garbage collector thread");
     loop {
         if let Some(node) = consumer.pop() {
             if node
