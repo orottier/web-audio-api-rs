@@ -66,8 +66,8 @@ pub struct AudioBufferOptions {
 ///
 #[derive(Clone, Debug)]
 pub struct AudioBuffer {
-    pub(crate) channels: Vec<ChannelData>,
-    pub(crate) sample_rate: f32,
+    channels: Vec<ChannelData>,
+    sample_rate: f32,
 }
 
 impl AudioBuffer {
@@ -88,6 +88,14 @@ impl AudioBuffer {
         Self {
             channels: vec![silence; options.number_of_channels],
             sample_rate: options.sample_rate,
+        }
+    }
+
+    /// Creates an invalid, but non-allocating AudioBuffer to be used as placeholder
+    pub(crate) fn tombstone() -> Self {
+        Self {
+            channels: Default::default(),
+            sample_rate: Default::default(),
         }
     }
 

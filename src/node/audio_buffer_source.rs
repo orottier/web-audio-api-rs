@@ -215,6 +215,7 @@ impl AudioBufferSourceNode {
                 loop_state: loop_state.clone(),
                 render_state: AudioBufferRendererState::default(),
                 ended_triggered: false,
+                buffer_deallocator: Some(llq::Node::new(Box::new(AudioBuffer::tombstone()))),
             };
 
             let inner_state = InnerState {
@@ -379,6 +380,7 @@ struct AudioBufferSourceRenderer {
     loop_state: LoopState,
     render_state: AudioBufferRendererState,
     ended_triggered: bool,
+    buffer_deallocator: Option<llq::Node<Box<dyn Any + Send>>>,
 }
 
 impl AudioBufferSourceRenderer {
@@ -393,6 +395,26 @@ impl AudioBufferSourceRenderer {
             ControlMessage::Loop(is_looping) => self.loop_state.is_looping = *is_looping,
             ControlMessage::LoopStart(loop_start) => self.loop_state.start = *loop_start,
             ControlMessage::LoopEnd(loop_end) => self.loop_state.end = *loop_end,
+        }
+    }
+
+    fn on_end(&mut self, scope: &RenderScope) {
+        if self.ended_triggered {
+            return; // only run once
+        }
+        self.ended_triggered = true;
+
+        // notify the control thread
+        scope.send_ended_event();
+
+        // deallocate the AudioBuffer asynchronously - not in the render thread
+        if let Some(buffer) = self.buffer.take() {
+            // the holder contains a tombstone AudioBuffer that can be dropped without deallocation
+            let mut holder = self.buffer_deallocator.take().unwrap();
+            // replace the contents of the holder with the actual buffer
+            *holder.downcast_mut().unwrap() = buffer;
+            // ship the buffer to the deallocator thread
+            scope.deallocate_async(holder);
         }
     }
 }
@@ -461,13 +483,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             || self.render_state.buffer_time_elapsed >= self.duration
         {
             output.make_silent(); // also converts to mono
-
-            // @note: we need this check because this is called a until the program
-            // ends, such as if the node was never removed from the graph
-            if !self.ended_triggered {
-                scope.send_ended_event();
-                self.ended_triggered = true;
-            }
+            self.on_end(scope);
             return false;
         }
 
@@ -479,19 +495,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         if !is_looping {
             if computed_playback_rate > 0. && buffer_time >= buffer_duration {
                 output.make_silent(); // also converts to mono
-                if !self.ended_triggered {
-                    scope.send_ended_event();
-                    self.ended_triggered = true;
-                }
+                self.on_end(scope);
                 return false;
             }
 
             if computed_playback_rate < 0. && buffer_time < 0. {
                 output.make_silent(); // also converts to mono
-                if !self.ended_triggered {
-                    scope.send_ended_event();
-                    self.ended_triggered = true;
-                }
+                self.on_end(scope);
                 return false;
             }
         }
@@ -772,11 +782,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 std::mem::swap(current_buffer, buffer);
             } else {
                 // Creating the tombstone buffer does not cause allocations.
-                let tombstone_buffer = AudioBuffer {
-                    channels: Default::default(),
-                    sample_rate: Default::default(),
-                };
-                self.buffer = Some(std::mem::replace(buffer, tombstone_buffer));
+                self.buffer = Some(std::mem::replace(buffer, AudioBuffer::tombstone()));
             }
             return;
         };
