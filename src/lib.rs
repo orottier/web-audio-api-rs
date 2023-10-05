@@ -40,6 +40,9 @@
 #![warn(clippy::clone_on_ref_ptr)]
 #![deny(trivial_numeric_casts)]
 
+#[global_allocator]
+static A: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
+
 use std::error::Error;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 

@@ -125,6 +125,10 @@ impl RenderThread {
                     return; // no further handling of ctrl msgs
                 }
                 Startup { graph } => {
+                    // Obtaining the current thread id invokes an allocation (on OSX) so let's take
+                    // this hit on audio graph startup, so subsequent calls (needed for crossbeam)
+                    // don't need to.
+                    assert_no_alloc::permit_alloc(|| std::thread::current().id());
                     debug_assert!(self.graph.is_none());
                     self.graph = Some(graph);
                 }
@@ -192,7 +196,9 @@ impl RenderThread {
         let render_start = Instant::now();
 
         // perform actual rendering
-        self.render_inner(output_buffer);
+        assert_no_alloc::assert_no_alloc(|| {
+            self.render_inner(output_buffer);
+        });
 
         // calculate load value and ship to control thread
         if let Some(load_value_sender) = &self.load_value_sender {
