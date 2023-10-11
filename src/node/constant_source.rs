@@ -40,7 +40,7 @@ enum Schedule {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/ConstantSourceNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#ConstantSourceNode>
-/// - see also: [`BaseAudioContext::create_constant_source`](crate::context::BaseAudioContext::create_constant_source)
+/// - see also: [`BaseAudioContext::create_constant_source`]
 ///
 /// # Usage
 ///

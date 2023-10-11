@@ -85,7 +85,7 @@ fn get_stereo_gains(sine_table: &[f32], x: f32) -> [f32; 2] {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/StereoPannerNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#stereopannernode>
-/// - see also: [`BaseAudioContext::create_stereo_panner`](crate::context::BaseAudioContext::create_stereo_panner)
+/// - see also: [`BaseAudioContext::create_stereo_panner`]
 ///
 /// # Usage
 ///

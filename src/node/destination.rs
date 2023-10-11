@@ -15,7 +15,7 @@ use super::{
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioDestinationNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#AudioDestinationNode>
-/// - see also: [`BaseAudioContext::destination`](crate::context::BaseAudioContext::destination)
+/// - see also: [`BaseAudioContext::destination`]
 ///
 /// # Usage
 ///

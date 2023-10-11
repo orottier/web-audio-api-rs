@@ -185,7 +185,7 @@ pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
 }
 
 /// Assert that the given channel number is valid according the number of channel
-/// of an Audio asset (e.g. [`AudioBuffer`](crate::buffer::AudioBuffer))
+/// of an Audio asset (e.g. [`AudioBuffer`])
 ///
 /// # Panics
 ///

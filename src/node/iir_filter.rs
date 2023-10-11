@@ -83,7 +83,7 @@ pub struct IIRFilterOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/IIRFilterNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#IIRFilterNode>
-/// - see also: [`BaseAudioContext::create_iir_filter`](crate::context::BaseAudioContext::create_iir_filter)
+/// - see also: [`BaseAudioContext::create_iir_filter`]
 ///
 /// # Usage
 ///

@@ -44,7 +44,7 @@ struct PlaybackInfo {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/DelayNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#DelayNode>
-/// - see also: [`BaseAudioContext::create_delay`](crate::context::BaseAudioContext::create_delay)
+/// - see also: [`BaseAudioContext::create_delay`]
 ///
 /// # Usage
 ///

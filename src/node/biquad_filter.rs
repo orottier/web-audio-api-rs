@@ -257,7 +257,7 @@ impl Default for BiquadFilterOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/BiquadFilterNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#BiquadFilterNode>
-/// - see also: [`BaseAudioContext::create_biquad_filter`](crate::context::BaseAudioContext::create_biquad_filter)
+/// - see also: [`BaseAudioContext::create_biquad_filter`]
 ///
 /// # Usage
 ///

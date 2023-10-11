@@ -70,8 +70,7 @@ pub struct ConvolverOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/ConvolverNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#ConvolverNode>
-/// - see also:
-/// [`BaseAudioContext::create_convolver`](crate::context::BaseAudioContext::create_convolver)
+/// - see also: [`BaseAudioContext::create_convolver`]
 ///
 /// The current implementation only handles mono-to-mono convolutions. The provided impulse
 /// response buffer and the input signal will be downmixed appropriately.

@@ -76,7 +76,7 @@ enum ControlMessage {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioBufferSourceNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#AudioBufferSourceNode>
-/// - see also: [`BaseAudioContext::create_buffer_source`](crate::context::BaseAudioContext::create_buffer_source)
+/// - see also: [`BaseAudioContext::create_buffer_source`]
 ///
 /// # Usage
 ///

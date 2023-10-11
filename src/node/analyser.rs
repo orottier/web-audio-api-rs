@@ -44,7 +44,7 @@ impl Default for AnalyserOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AnalyserNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#AnalyserNode>
-/// - see also: [`BaseAudioContext::create_analyser`](crate::context::BaseAudioContext::create_analyser)
+/// - see also: [`BaseAudioContext::create_analyser`]
 ///
 /// # Usage
 ///

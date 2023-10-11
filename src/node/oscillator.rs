@@ -97,8 +97,8 @@ enum Schedule {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/OscillatorNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#OscillatorNode>
-/// - see also: [`BaseAudioContext::create_oscillator`](crate::context::BaseAudioContext::create_oscillator)
-/// - see also: [`PeriodicWave`](crate::periodic_wave::PeriodicWave)
+/// - see also: [`BaseAudioContext::create_oscillator`]
+/// - see also: [`PeriodicWave`]
 ///
 /// # Usage
 ///

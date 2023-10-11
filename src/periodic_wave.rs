@@ -38,7 +38,7 @@ pub struct PeriodicWaveOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/PeriodicWave>
 /// - specification: <https://webaudio.github.io/web-audio-api/#PeriodicWave>
-/// - see also: [`BaseAudioContext::create_periodic_wave`](crate::context::BaseAudioContext::create_periodic_wave)
+/// - see also: [`BaseAudioContext::create_periodic_wave`]
 /// - see also: [`OscillatorNode`](crate::node::OscillatorNode)
 ///
 /// # Usage
