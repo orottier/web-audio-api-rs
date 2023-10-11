@@ -26,6 +26,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: install hub git wrapper to checkout PR
+        run: sudo apt-get install hub
+
       - name: Checkout Pull Request
         run: hub pr checkout ${{ github.event.issue.number }}
         env:
