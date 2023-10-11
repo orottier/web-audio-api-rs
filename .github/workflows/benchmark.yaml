@@ -26,8 +26,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: install hub git wrapper to checkout PR
-        run: sudo apt-get install hub
+      - name: Install valgrind and hub
+        run: sudo apt-get update && sudo apt-get install hub valgrind
 
       - name: Checkout Pull Request
         run: hub pr checkout ${{ github.event.issue.number }}
@@ -46,8 +46,6 @@ jobs:
           shared-key: ${{ github.workflow }}-${{ github.job }}
 
       ## Benchmarks
-      - name: install valgrind for benchmarks
-        run: sudo apt-get install valgrind
       - name: Checkout main branch
         run: git checkout main
       - name: Copy over benchmarks from PR branch
