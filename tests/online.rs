@@ -121,3 +121,15 @@ fn test_channels() {
     context.destination().set_channel_count(5);
     assert_eq!(context.destination().channel_count(), 5);
 }
+
+#[test]
+fn test_panner_node_drop_panic() {
+    // https://github.com/orottier/web-audio-api-rs/issues/369
+    let context = AudioContext::default();
+
+    let panner = context.create_panner();
+    drop(panner);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let mut _panner = context.create_panner();
+    std::thread::sleep(std::time::Duration::from_millis(100));
+}
