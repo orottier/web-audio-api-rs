@@ -1,5 +1,13 @@
 # Version History
 
+## Version 0.34.0 (2023-10-12)
+
+- Breaking: many AudioNode setter methods now require `&mut self` instead of `&self`
+- Fix: all audio node settings are now applied in order in the audio graph
+- Fix: render thread would crash when a PannerNode is removed
+- Fixed and improved device ids for audio input/output devices
+- Added current playhead position for AudioBufferSourceNode
+
 ## Version 0.33.0 (2023-07-27)
 
 - Fix: clamp to number of output channels to 32 even if the hardware supports more to prevent runtime panics
