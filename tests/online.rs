@@ -121,3 +121,30 @@ fn test_channels() {
     context.destination().set_channel_count(5);
     assert_eq!(context.destination().channel_count(), 5);
 }
+
+#[test]
+fn test_panner_node_drop_panic() {
+    // https://github.com/orottier/web-audio-api-rs/issues/369
+    let options = AudioContextOptions {
+        sink_id: "none".into(),
+        ..AudioContextOptions::default()
+    };
+    let context = AudioContext::new(options);
+
+    // create a new panner and drop it
+    let panner = context.create_panner();
+    drop(panner);
+
+    // allow the audio render thread to boot and handle adding and dropping the panner
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    // creating a new panner node should not crash the render thread
+    let mut _panner = context.create_panner();
+
+    // A crashed thread will not fail the test (only if the main thread panics).
+    // Instead inspect if there is progression of time in the audio context.
+
+    let time = context.current_time();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(context.current_time() >= time + 0.15);
+}
