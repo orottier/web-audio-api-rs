@@ -5,7 +5,7 @@ default_stages:
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
       - id: check-case-conflict
       - id: check-json
@@ -28,26 +28,26 @@ repos:
         stages:
           - commit-msg
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.8.1
+    rev: v0.10.0
     hooks:
       - id: markdownlint-cli2
         exclude: ^LICENSE\.md$
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.9.0.5
+    rev: v0.9.0.6
     hooks:
       - id: shellcheck
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.5
+    rev: v2.2.6
     hooks:
       - id: codespell
         args: [--ignore-words=.codespellignore]
   - repo: https://github.com/sirosen/check-jsonschema
-    rev: 0.23.3
+    rev: 0.27.0
     hooks:
       - id: check-github-actions
       - id: check-github-workflows
   - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v3.0.0
+    rev: v3.0.3
     hooks:
       - id: prettier
         types_or:

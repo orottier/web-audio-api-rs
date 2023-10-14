@@ -13,7 +13,7 @@ pub(crate) struct AudioRenderCapacityLoad {
 
 /// Options for constructing an `AudioRenderCapacity`
 pub struct AudioRenderCapacityOptions {
-    /// An update interval (in seconds) for dispaching [`AudioRenderCapacityEvent`]s
+    /// An update interval (in seconds) for dispatching [`AudioRenderCapacityEvent`]s
     pub update_interval: f64,
 }
 
