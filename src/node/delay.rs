@@ -355,7 +355,7 @@ impl AudioProcessor for DelayWriter {
         self.latest_frame_written.set(scope.current_frame);
 
         // The writer end does not produce output,
-        // clear the buffer so that it can be re-used
+        // clear the buffer so that it can be reused
         output.make_silent();
 
         // let the node be decommisioned if it has no input left

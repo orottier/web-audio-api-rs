@@ -244,7 +244,7 @@ impl OscillatorNode {
         })
     }
 
-    /// A-rate [`AudioParam`] that defines the fondamental frequency of the
+    /// A-rate [`AudioParam`] that defines the fundamental frequency of the
     /// oscillator, expressed in Hz
     ///
     /// The final frequency is calculated as follow: frequency * 2^(detune/1200)
