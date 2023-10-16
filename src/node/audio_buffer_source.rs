@@ -109,11 +109,6 @@ pub struct AudioBufferSourceNode {
     playback_rate: AudioParam, // has constraints, no a-rate
     buffer_time: Arc<AtomicF64>,
     buffer: Option<AudioBuffer>,
-    inner_state: InnerState,
-}
-
-#[derive(Debug, Clone)]
-struct InnerState {
     loop_state: LoopState,
     source_started: bool,
 }
@@ -153,7 +148,7 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
 
     fn stop_at(&mut self, when: f64) {
         assert!(
-            self.inner_state.source_started,
+            self.source_started,
             "InvalidStateError cannot stop before start"
         );
 
@@ -217,10 +212,6 @@ impl AudioBufferSourceNode {
                 ended_triggered: false,
             };
 
-            let inner_state = InnerState {
-                loop_state,
-                source_started: false,
-            };
             let mut node = Self {
                 registration,
                 channel_config: ChannelConfig::default(),
@@ -228,7 +219,8 @@ impl AudioBufferSourceNode {
                 playback_rate: pr_param,
                 buffer_time: Arc::clone(&renderer.render_state.buffer_time),
                 buffer: None,
-                inner_state,
+                loop_state,
+                source_started: false,
             };
 
             if let Some(buf) = buffer {
@@ -255,10 +247,10 @@ impl AudioBufferSourceNode {
     /// Panics if the source was already started
     pub fn start_at_with_offset_and_duration(&mut self, start: f64, offset: f64, duration: f64) {
         assert!(
-            !self.inner_state.source_started,
+            !self.source_started,
             "InvalidStateError: Cannot call `start` twice"
         );
-        self.inner_state.source_started = true;
+        self.source_started = true;
 
         let control = ControlMessage::StartWithOffsetAndDuration(start, offset, duration);
         self.registration.post_message(control);
@@ -317,32 +309,32 @@ impl AudioBufferSourceNode {
     /// Defines if the playback the [`AudioBuffer`] should be looped
     #[allow(clippy::missing_panics_doc)]
     pub fn loop_(&self) -> bool {
-        self.inner_state.loop_state.is_looping
+        self.loop_state.is_looping
     }
 
     pub fn set_loop(&mut self, value: bool) {
-        self.inner_state.loop_state.is_looping = value;
+        self.loop_state.is_looping = value;
         self.registration.post_message(ControlMessage::Loop(value));
     }
 
     /// Defines the loop start point, in the time reference of the [`AudioBuffer`]
     pub fn loop_start(&self) -> f64 {
-        self.inner_state.loop_state.start
+        self.loop_state.start
     }
 
     pub fn set_loop_start(&mut self, value: f64) {
-        self.inner_state.loop_state.start = value;
+        self.loop_state.start = value;
         self.registration
             .post_message(ControlMessage::LoopStart(value));
     }
 
     /// Defines the loop end point, in the time reference of the [`AudioBuffer`]
     pub fn loop_end(&self) -> f64 {
-        self.inner_state.loop_state.end
+        self.loop_state.end
     }
 
     pub fn set_loop_end(&mut self, value: f64) {
-        self.inner_state.loop_state.end = value;
+        self.loop_state.end = value;
         self.registration
             .post_message(ControlMessage::LoopEnd(value));
     }
