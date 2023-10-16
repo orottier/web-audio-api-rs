@@ -1,5 +1,7 @@
 use std::any::Any;
+use std::collections::HashMap;
 use std::f32::consts::PI;
+use std::sync::{Mutex, OnceLock};
 
 use float_eq::float_eq;
 use hrtf::{HrirSphere, HrtfContext, HrtfProcessor, Vec3};
@@ -12,6 +14,24 @@ use crate::RENDER_QUANTUM_SIZE;
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
+
+/// Load the HRIR sphere for the given sample_rate
+///
+/// The included data contains the impulse responses at 44100 Hertz, so it needs to be resampled
+/// for other values (which can easily take 100s of milliseconds). Therefore cache the result (per
+/// sample rate) in a global variable and clone it every time a new panner is created.
+fn load_hrir_sphere(sample_rate: u32) -> HrirSphere {
+    static INSTANCE: OnceLock<Mutex<HashMap<u32, HrirSphere>>> = OnceLock::new();
+    let cache = INSTANCE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = cache.lock().unwrap();
+    guard
+        .entry(sample_rate)
+        .or_insert_with(|| {
+            let resource = include_bytes!("../../resources/IRC_1003_C.bin");
+            HrirSphere::new(&resource[..], sample_rate).unwrap()
+        })
+        .clone()
+}
 
 /// Spatialization algorithm used to position the audio in 3D space
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -549,9 +569,8 @@ impl PannerNode {
         let hrtf_option = match value {
             PanningModelType::EqualPower => None,
             PanningModelType::HRTF => {
-                let resource = include_bytes!("../../resources/IRC_1003_C.bin");
                 let sample_rate = self.context().sample_rate() as u32;
-                let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
+                let hrir_sphere = load_hrir_sphere(sample_rate);
                 Some(HrtfState::new(hrir_sphere))
             }
         };
