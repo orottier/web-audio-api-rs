@@ -2,8 +2,7 @@ use iai::black_box;
 
 use web_audio_api::context::BaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
-use web_audio_api::node::AudioNode;
-use web_audio_api::node::AudioScheduledSourceNode;
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, PanningModelType};
 
 const SAMPLE_RATE: f32 = 48000.;
 const DURATION: usize = 10;
@@ -197,6 +196,27 @@ pub fn bench_analyser_node() {
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
+pub fn bench_hrtf_panners() {
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+
+    let mut panner1 = ctx.create_panner();
+    panner1.set_panning_model(PanningModelType::HRTF);
+    panner1.position_x().set_value(10.0);
+    panner1.connect(&ctx.destination());
+
+    let mut panner2 = ctx.create_panner();
+    panner2.set_panning_model(PanningModelType::HRTF);
+    panner2.position_x().set_value(-10.0);
+    panner2.connect(&ctx.destination());
+
+    let mut osc = ctx.create_oscillator();
+    osc.connect(&panner1);
+    osc.connect(&panner2);
+    osc.start();
+
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
+}
+
 iai::main!(
     bench_ctor,
     bench_sine,
@@ -209,4 +229,5 @@ iai::main!(
     bench_stereo_positional,
     bench_stereo_panning_automation,
     bench_analyser_node,
+    bench_hrtf_panners,
 );
