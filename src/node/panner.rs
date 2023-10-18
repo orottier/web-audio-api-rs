@@ -1,5 +1,7 @@
 use std::any::Any;
+use std::collections::HashMap;
 use std::f32::consts::PI;
+use std::sync::{Mutex, OnceLock};
 
 use float_eq::float_eq;
 use hrtf::{HrirSphere, HrtfContext, HrtfProcessor, Vec3};
@@ -12,6 +14,31 @@ use crate::RENDER_QUANTUM_SIZE;
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
+
+/// Load the HRTF processor for the given sample_rate
+///
+/// The included data contains the impulse responses at 44100 Hertz, so it needs to be resampled
+/// for other values (which can easily take 100s of milliseconds). Therefore cache the result (per
+/// sample rate) in a global variable and clone it every time a new panner is created.
+pub(crate) fn load_hrtf_processor(sample_rate: u32) -> (HrtfProcessor, usize) {
+    static INSTANCE: OnceLock<Mutex<HashMap<u32, (HrtfProcessor, usize)>>> = OnceLock::new();
+    let cache = INSTANCE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = cache.lock().unwrap();
+    guard
+        .entry(sample_rate)
+        .or_insert_with(|| {
+            let resource = include_bytes!("../../resources/IRC_1003_C.bin");
+            let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
+            let len = hrir_sphere.len();
+
+            let interpolation_steps = 1; // TODO?
+            let samples_per_step = RENDER_QUANTUM_SIZE / interpolation_steps;
+            let processor = HrtfProcessor::new(hrir_sphere, interpolation_steps, samples_per_step);
+
+            (processor, len)
+        })
+        .clone()
+}
 
 /// Spatialization algorithm used to position the audio in 3D space
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -167,14 +194,7 @@ struct HrtfState {
 }
 
 impl HrtfState {
-    fn new(hrir_sphere: HrirSphere) -> Self {
-        let len = hrir_sphere.len();
-
-        let interpolation_steps = 1;
-        let samples_per_step = RENDER_QUANTUM_SIZE / interpolation_steps;
-
-        let processor = HrtfProcessor::new(hrir_sphere, interpolation_steps, samples_per_step);
-
+    fn new(processor: HrtfProcessor, len: usize) -> Self {
         Self {
             len,
             processor,
@@ -549,10 +569,9 @@ impl PannerNode {
         let hrtf_option = match value {
             PanningModelType::EqualPower => None,
             PanningModelType::HRTF => {
-                let resource = include_bytes!("../../resources/IRC_1003_C.bin");
                 let sample_rate = self.context().sample_rate() as u32;
-                let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
-                Some(HrtfState::new(hrir_sphere))
+                let (processor, len) = load_hrtf_processor(sample_rate);
+                Some(HrtfState::new(processor, len))
             }
         };
 
