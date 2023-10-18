@@ -20,7 +20,7 @@ use super::{
 /// The included data contains the impulse responses at 44100 Hertz, so it needs to be resampled
 /// for other values (which can easily take 100s of milliseconds). Therefore cache the result (per
 /// sample rate) in a global variable and clone it every time a new panner is created.
-fn load_hrtf_processor(sample_rate: u32) -> (HrtfProcessor, usize) {
+pub(crate) fn load_hrtf_processor(sample_rate: u32) -> (HrtfProcessor, usize) {
     static INSTANCE: OnceLock<Mutex<HashMap<u32, (HrtfProcessor, usize)>>> = OnceLock::new();
     let cache = INSTANCE.get_or_init(|| Mutex::new(HashMap::new()));
     let mut guard = cache.lock().unwrap();
