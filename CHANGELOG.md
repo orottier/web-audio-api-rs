@@ -1,5 +1,10 @@
 # Version History
 
+## Version 0.35.0 (2023-10-18)
+
+- Fix: panic when creating and dropping PannerNodes
+- Improved performance of setting panning mode to HRTF
+
 ## Version 0.34.0 (2023-10-12)
 
 - Breaking: many AudioNode setter methods now require `&mut self` instead of `&self`
