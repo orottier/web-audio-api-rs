@@ -77,14 +77,10 @@ impl AudioBackendManager for NoneBackend {
             event_send,
         } = render_thread_init;
 
-        let render_thread = RenderThread::new(
-            sample_rate,
-            MAX_CHANNELS,
-            ctrl_msg_recv,
-            frames_played,
-            Some(load_value_send),
-            Some(event_send),
-        );
+        let mut render_thread =
+            RenderThread::new(sample_rate, MAX_CHANNELS, ctrl_msg_recv, frames_played);
+        render_thread.set_event_channels(load_value_send, event_send);
+        render_thread.spawn_garbage_collector_thread();
 
         // Use a bounded channel for real-time safety. A maximum of 32 control messages (resume,
         // suspend, ..) will be handled per render quantum. The control thread will block when the

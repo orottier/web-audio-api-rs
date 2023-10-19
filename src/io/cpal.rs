@@ -186,14 +186,14 @@ impl AudioBackendManager for CpalBackend {
         // shared atomic to report output latency to the control thread
         let output_latency = Arc::new(AtomicF64::new(0.));
 
-        let renderer = RenderThread::new(
+        let mut renderer = RenderThread::new(
             sample_rate,
             preferred_config.channels as usize,
             ctrl_msg_recv.clone(),
             Arc::clone(&frames_played),
-            Some(load_value_send.clone()),
-            Some(event_send.clone()),
         );
+        renderer.set_event_channels(load_value_send.clone(), event_send.clone());
+        renderer.spawn_garbage_collector_thread();
 
         log::debug!(
             "Attempt output stream with preferred config: {:?}",
@@ -227,14 +227,14 @@ impl AudioBackendManager for CpalBackend {
                     &supported_config
                 );
 
-                let renderer = RenderThread::new(
+                let mut renderer = RenderThread::new(
                     sample_rate,
                     supported_config.channels as usize,
                     ctrl_msg_recv,
                     frames_played,
-                    Some(load_value_send),
-                    Some(event_send),
                 );
+                renderer.set_event_channels(load_value_send, event_send);
+                renderer.spawn_garbage_collector_thread();
 
                 let spawned = spawn_output_stream(
                     &device,

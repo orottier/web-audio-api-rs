@@ -182,14 +182,14 @@ impl AudioBackendManager for CubebBackend {
             _ => cubeb::ChannelLayout::UNDEFINED, // TODO, does this work?
         };
 
-        let renderer = RenderThread::new(
+        let mut renderer = RenderThread::new(
             sample_rate,
             number_of_channels,
             ctrl_msg_recv,
             frames_played,
-            Some(load_value_send),
-            Some(event_send),
         );
+        renderer.set_event_channels(load_value_send, event_send);
+        renderer.spawn_garbage_collector_thread();
 
         let params = cubeb::StreamParamsBuilder::new()
             .format(cubeb::SampleFormat::Float32NE) // use float (native endian)
