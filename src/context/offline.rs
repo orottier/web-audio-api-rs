@@ -17,32 +17,8 @@ pub struct OfflineAudioContext {
     /// the size of the buffer in sample-frames
     length: usize,
     /// the rendering 'thread', fully controlled by the offline context
-    renderer: SingleUseRenderThread,
+    renderer: RenderThread,
 }
-
-mod private {
-    use super::*;
-
-    pub(crate) struct SingleUseRenderThread(RenderThread);
-
-    impl SingleUseRenderThread {
-        pub fn new(rt: RenderThread) -> Self {
-            Self(rt)
-        }
-
-        pub fn render_audiobuffer(self, buffer_size: usize) -> AudioBuffer {
-            self.0.render_audiobuffer_sync(buffer_size)
-        }
-    }
-
-    // SAFETY:
-    // The RenderThread is not Sync since it contains `AudioRenderQuantum`s (which use Rc) and `dyn
-    // AudioProcessor` which may not allow sharing between threads. However we mark the
-    // SingleUseRenderThread as Sync because it can only run once (and thus on a single thread)
-    // NB: the render thread should never hand out the contained `Rc` and `AudioProcessor`s
-    unsafe impl Sync for SingleUseRenderThread {}
-}
-use private::SingleUseRenderThread;
 
 impl BaseAudioContext for OfflineAudioContext {
     fn base(&self) -> &ConcreteBaseAudioContext {
@@ -98,7 +74,7 @@ impl OfflineAudioContext {
         Self {
             base,
             length,
-            renderer: SingleUseRenderThread::new(renderer),
+            renderer,
         }
     }
 
@@ -107,7 +83,7 @@ impl OfflineAudioContext {
     /// This function will block the current thread and returns the rendered `AudioBuffer`
     /// synchronously. An async version is currently not implemented.
     pub fn start_rendering_sync(self) -> AudioBuffer {
-        self.renderer.render_audiobuffer(self.length)
+        self.renderer.render_audiobuffer_sync(self.length)
     }
 
     /// get the length of rendering audio buffer
