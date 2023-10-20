@@ -32,7 +32,7 @@ pub(crate) struct RenderThread {
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
     event_sender: Option<Sender<EventDispatch>>,
-    garbage_collector: llq::Producer<Box<dyn Any + Send>>,
+    garbage_collector: Option<llq::Producer<Box<dyn Any + Send>>>,
 }
 
 // SAFETY:
@@ -52,11 +52,7 @@ impl RenderThread {
         number_of_channels: usize,
         receiver: Receiver<ControlMessage>,
         frames_played: Arc<AtomicU64>,
-        load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
-        event_sender: Option<Sender<EventDispatch>>,
     ) -> Self {
-        let (gc_producer, gc_consumer) = llq::Queue::new().split();
-        spawn_garbage_collector_thread(gc_consumer);
         Self {
             graph: None,
             sample_rate,
@@ -64,9 +60,26 @@ impl RenderThread {
             frames_played,
             receiver: Some(receiver),
             buffer_offset: None,
-            load_value_sender,
-            event_sender,
-            garbage_collector: gc_producer,
+            load_value_sender: None,
+            event_sender: None,
+            garbage_collector: None,
+        }
+    }
+
+    pub(crate) fn set_event_channels(
+        &mut self,
+        load_value_sender: Sender<AudioRenderCapacityLoad>,
+        event_sender: Sender<EventDispatch>,
+    ) {
+        self.load_value_sender = Some(load_value_sender);
+        self.event_sender = Some(event_sender);
+    }
+
+    pub(crate) fn spawn_garbage_collector_thread(&mut self) {
+        if self.garbage_collector.is_none() {
+            let (gc_producer, gc_consumer) = llq::Queue::new().split();
+            spawn_garbage_collector_thread(gc_consumer);
+            self.garbage_collector = Some(gc_producer);
         }
     }
 
@@ -129,7 +142,9 @@ impl RenderThread {
                 }
                 NodeMessage { id, mut msg } => {
                     self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
-                    self.garbage_collector.push(msg);
+                    if let Some(gc) = self.garbage_collector.as_mut() {
+                        gc.push(msg)
+                    }
                 }
             }
         }
@@ -312,8 +327,9 @@ impl RenderThread {
 
 impl Drop for RenderThread {
     fn drop(&mut self) {
-        self.garbage_collector
-            .push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)));
+        if let Some(gc) = self.garbage_collector.as_mut() {
+            gc.push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)))
+        }
         log::info!("Audio render thread has been dropped");
     }
 }
