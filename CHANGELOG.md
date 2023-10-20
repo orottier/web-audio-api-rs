@@ -1,5 +1,11 @@
 # Version History
 
+## Version 0.36.0 (2023-10-20)
+
+- Disable floating point denormals in audio processing via processor flags
+- Do not spawn a garbage collector thread for an OfflineAudioContext
+- AudioParam now derives `Clone`
+
 ## Version 0.35.0 (2023-10-18)
 
 - Fix: panic when creating and dropping PannerNodes
