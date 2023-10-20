@@ -16,10 +16,6 @@ fn test_flush_denormals() {
     gain2.gain().set_value(f32::MIN_POSITIVE);
     gain1.connect(&gain2);
 
-    let gain2 = context.create_gain();
-    gain2.gain().set_value(f32::MIN_POSITIVE);
-    gain1.connect(&gain2);
-
     let gain3 = context.create_gain();
     gain3.gain().set_value(f32::MAX);
     gain2.connect(&gain3);
