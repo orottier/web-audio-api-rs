@@ -201,7 +201,7 @@ impl AudioParamEventTimeline {
 }
 
 /// AudioParam controls an individual aspect of an AudioNode's functionality, such as volume.
-#[derive(Clone)]
+#[derive(Clone)] // for the node bindings, see #378
 pub struct AudioParam {
     registration: Arc<AudioContextRegistration>,
     raw_parts: AudioParamRaw,
