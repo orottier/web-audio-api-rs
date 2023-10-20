@@ -201,8 +201,9 @@ impl AudioParamEventTimeline {
 }
 
 /// AudioParam controls an individual aspect of an AudioNode's functionality, such as volume.
+#[derive(Clone)] // for the node bindings, see #378
 pub struct AudioParam {
-    registration: AudioContextRegistration,
+    registration: Arc<AudioContextRegistration>,
     raw_parts: AudioParamRaw,
 }
 
@@ -558,7 +559,7 @@ impl AudioParam {
         raw_parts: AudioParamRaw,
     ) -> Self {
         Self {
-            registration,
+            registration: registration.into(),
             raw_parts,
         }
     }
@@ -1602,7 +1603,7 @@ pub(crate) fn audio_param_pair(
     let shared_parts = Arc::new(AudioParamShared::new(default_value, automation_rate));
 
     let param = AudioParam {
-        registration,
+        registration: registration.into(),
         raw_parts: AudioParamRaw {
             default_value,
             max_value,
