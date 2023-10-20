@@ -403,6 +403,7 @@ impl Graph {
                 // This may lead to logic bugs later on, but it is the best that we can do.
                 // The alternative is to crash and reboot the render thread.
                 let catch_me = AssertUnwindSafe(|| node.process(params, scope));
+
                 match panic::catch_unwind(catch_me) {
                     Ok(tail_time) => (true, tail_time),
                     Err(e) => {
