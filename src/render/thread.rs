@@ -151,10 +151,10 @@ impl RenderThread {
         let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
 
         for _ in 0..num_frames {
-            // handle addition/removal of nodes/edges
+            // Handle addition/removal of nodes/edges
             self.handle_control_messages();
 
-            // update time
+            // Update time
             let current_frame = self
                 .frames_played
                 .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
@@ -168,8 +168,14 @@ impl RenderThread {
                 node_id: Cell::new(AudioNodeId(0)), // placeholder value
             };
 
-            // render audio graph
-            let rendered = self.graph.as_mut().unwrap().render(&scope);
+            // Render audio graph
+            let graph = self.graph.as_mut().unwrap();
+
+            // For x64 and aarch, process with denormal floats disabled (for performance, #194)
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
+            let rendered = no_denormals::no_denormals(|| graph.render(&scope));
+            #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+            let rendered = graph.render(&scope);
 
             rendered.channels().iter().enumerate().for_each(
                 |(channel_number, rendered_channel)| {
@@ -186,10 +192,15 @@ impl RenderThread {
     }
 
     pub fn render<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
-        // collect timing information
+        // Collect timing information
         let render_start = Instant::now();
 
-        // perform actual rendering
+        // Perform actual rendering
+
+        // For x64 and aarch, process with denormal floats disabled (for performance, #194)
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
+        no_denormals::no_denormals(|| self.render_inner(output_buffer));
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
         self.render_inner(output_buffer);
 
         // calculate load value and ship to control thread

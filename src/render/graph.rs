@@ -399,20 +399,10 @@ impl Graph {
             let params = AudioParamValues::from(&*nodes);
             scope.node_id.set(*index);
             let (success, tail_time) = {
-                // for x64 and aarch, process with denormal floats disabled (for performance, #194)
-                #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
-                let process_fn = || no_denormals::no_denormals(|| node.process(params, scope));
-                #[cfg(not(any(
-                    target_arch = "x86",
-                    target_arch = "x86_64",
-                    target_arch = "aarch64"
-                )))]
-                let process_fn = node.process(params, scope);
-
                 // We are abusing AssertUnwindSafe here, we cannot guarantee it upholds.
                 // This may lead to logic bugs later on, but it is the best that we can do.
                 // The alternative is to crash and reboot the render thread.
-                let catch_me = AssertUnwindSafe(process_fn);
+                let catch_me = AssertUnwindSafe(|| node.process(params, scope));
 
                 match panic::catch_unwind(catch_me) {
                     Ok(tail_time) => (true, tail_time),
