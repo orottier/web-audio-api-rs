@@ -25,7 +25,7 @@ fn main() {
         ..AudioContextOptions::default()
     });
 
-    let sine = context.create_oscillator();
+    let mut sine = context.create_oscillator();
     sine.frequency().set_value(200.);
     sine.connect(&context.destination());
 

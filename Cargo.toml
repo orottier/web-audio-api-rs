@@ -1,6 +1,6 @@
 [package]
 name = "web-audio-api"
-version = "0.32.0"
+version = "0.35.0"
 authors = ["Otto <otto@ot-to.nl>"]
 edition = "2021"
 description = "A pure Rust implementation of the Web Audio API, for use in non-browser contexts"
@@ -22,7 +22,7 @@ cubeb = { version = "0.10", optional = true }
 dasp_sample = "0.11"
 float_eq = "1.0"
 hound = "3.5"
-hrtf = "0.8"
+hrtf = "0.8.1"
 llq = "0.1.1"
 log = "0.4"
 num-complex = "0.4"

@@ -27,12 +27,12 @@ fn main() {
     });
 
     // Create a friendly tone
-    let tone = context.create_oscillator();
+    let mut tone = context.create_oscillator();
     tone.frequency().set_value_at_time(300.0f32, 0.);
     tone.start();
 
     // Connect tone > panner node > destination node
-    let panner = context.create_panner();
+    let mut panner = context.create_panner();
     tone.connect(&panner);
     panner.connect(&context.destination());
 
@@ -42,7 +42,7 @@ fn main() {
     panner.orientation_x().set_value(0.);
 
     // Panner rotates around their axis, every second
-    let moving = context.create_oscillator();
+    let mut moving = context.create_oscillator();
     moving.start();
     moving.frequency().set_value_at_time(1., 0.);
     // Connect to x-orientation

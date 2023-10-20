@@ -49,6 +49,6 @@ pub(crate) enum ControlMessage {
     /// Generic message to be handled by AudioProcessor
     NodeMessage {
         id: AudioNodeId,
-        msg: llq::Node<Box<dyn Any + Send + 'static>>,
+        msg: llq::Node<Box<dyn Any + Send>>,
     },
 }

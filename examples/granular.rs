@@ -113,7 +113,7 @@ impl ScrubEngine {
         env.gain().set_value(0.);
         env.connect(&audio_context.destination());
 
-        let src = audio_context.create_buffer_source();
+        let mut src = audio_context.create_buffer_source();
         src.set_buffer(self.audio_buffer.clone());
         src.connect(&env);
 

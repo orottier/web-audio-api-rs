@@ -193,22 +193,28 @@ impl ConcreteBaseAudioContext {
             };
 
             (listener_params, destination_channel_config)
-        }; // nodes will drop now, so base.inner has no copies anymore
+        }; // Nodes will drop now, so base.inner has no copies anymore
 
         let mut base = base;
         let inner_mut = Arc::get_mut(&mut base.inner).unwrap();
         inner_mut.listener_params = Some(listener_params);
         inner_mut.destination_channel_config = destination_channel_config;
 
-        // validate if the hardcoded node IDs line up
+        // Validate if the hardcoded node IDs line up
         debug_assert_eq!(
             base.inner.node_id_inc.load(Ordering::Relaxed),
             LISTENER_PARAM_IDS.end,
         );
 
-        // (?) only for online context
+        // For an online AudioContext, pre-create the HRTF-database for panner nodes
+        if !offline {
+            crate::node::load_hrtf_processor(sample_rate as u32);
+        }
+
+        // Boot the event loop thread that handles the events spawned by the render thread
+        // (we don't do this for offline rendering because it makes little sense, the graph cannot
+        // be mutated once rendering has started anyway)
         if let Some(event_channel) = event_recv {
-            // init event loop
             event_loop.run(event_channel);
         }
 

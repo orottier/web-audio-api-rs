@@ -453,12 +453,16 @@ impl Graph {
                 // Nodes are only dropped when they do not have incoming connections.
                 // But they may have AudioParams feeding into them, these can de dropped too.
                 nodes.retain(|id, n| {
-                    id.0 < 2 // never drop Listener and Destination node
-                        || !n
-                            .borrow()
-                            .outgoing_edges
-                            .iter()
-                            .any(|e| e.other_id == *index)
+                    // Check if this node was connected to the dropped node. In that case, it is
+                    // either an AudioParam (which can be dropped), or the AudioListener that feeds
+                    // into a PannerNode (which can be disconnected).
+                    let outgoing_edges = &mut n.borrow_mut().outgoing_edges;
+                    let prev_len = outgoing_edges.len();
+                    outgoing_edges.retain(|e| e.other_id != *index);
+                    let was_connected = outgoing_edges.len() != prev_len;
+
+                    let special = id.0 < 2; // never drop Listener and Destination node
+                    special || !was_connected
                 });
             }
         });

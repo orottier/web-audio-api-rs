@@ -66,7 +66,7 @@ impl Default for DynamicsCompressorOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/DynamicsCompressorNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#DynamicsCompressorNode>
-/// - see also: [`BaseAudioContext::create_dynamics_compressor`](crate::context::BaseAudioContext::create_dynamics_compressor)
+/// - see also: [`BaseAudioContext::create_dynamics_compressor`]
 ///
 /// # Usage
 ///
@@ -86,7 +86,7 @@ impl Default for DynamicsCompressorOptions {
 /// compressor.connect(&context.destination());
 ///
 /// // pipe the audio source in the compressor
-/// let src = context.create_buffer_source();
+/// let mut src = context.create_buffer_source();
 /// src.connect(&compressor);
 /// src.set_buffer(buffer.clone());
 /// src.start();
@@ -480,7 +480,7 @@ mod tests {
         let signal = [1.; 128 * 5];
         buffer.copy_to_channel(&signal, 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(buffer);
         src.connect(&compressor);
         src.start();
@@ -545,7 +545,7 @@ mod tests {
     //     // println!("{:?}", signal);
     //     buffer.copy_to_channel(&signal, 0);
 
-    //     let src = context.create_buffer_source();
+    //     let mut src = context.create_buffer_source();
     //     src.set_buffer(buffer);
     //     src.connect(&compressor);
     //     src.start();

@@ -11,8 +11,14 @@ use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 // dictionary ConstantSourceOptions {
 //   float offset = 1;
 // };
+// https://webaudio.github.io/web-audio-api/#ConstantSourceOptions
+//
+// @note - Does not extend AudioNodeOptions because AudioNodeOptions are
+// useless for source nodes, because they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. mdn/content#18472
 #[derive(Clone, Debug)]
 pub struct ConstantSourceOptions {
+    /// Initial parameter value of the constant signal
     pub offset: f32,
 }
 
@@ -34,7 +40,7 @@ enum Schedule {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/ConstantSourceNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#ConstantSourceNode>
-/// - see also: [`BaseAudioContext::create_constant_source`](crate::context::BaseAudioContext::create_constant_source)
+/// - see also: [`BaseAudioContext::create_constant_source`]
 ///
 /// # Usage
 ///
@@ -88,21 +94,21 @@ impl AudioNode for ConstantSourceNode {
 }
 
 impl AudioScheduledSourceNode for ConstantSourceNode {
-    fn start(&self) {
+    fn start(&mut self) {
         let when = self.registration.context().current_time();
         self.start_at(when);
     }
 
-    fn start_at(&self, when: f64) {
+    fn start_at(&mut self, when: f64) {
         self.registration.post_message(Schedule::Start(when));
     }
 
-    fn stop(&self) {
+    fn stop(&mut self) {
         let when = self.registration.context().current_time();
         self.stop_at(when);
     }
 
-    fn stop_at(&self, when: f64) {
+    fn stop_at(&mut self, when: f64) {
         self.registration.post_message(Schedule::Stop(when));
     }
 }
@@ -110,14 +116,16 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 impl ConstantSourceNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
         context.register(move |registration| {
-            let param_opts = AudioParamDescriptor {
+            let ConstantSourceOptions { offset } = options;
+
+            let param_options = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,
                 automation_rate: AutomationRate::A,
             };
-            let (param, proc) = context.create_audio_param(param_opts, &registration);
-            param.set_value(options.offset);
+            let (param, proc) = context.create_audio_param(param_options, &registration);
+            param.set_value(offset);
 
             let render = ConstantSourceRenderer {
                 offset: proc,
@@ -231,7 +239,7 @@ mod tests {
         let stop_in_samples = (256 + 1) as f64; // stop rendering of 3rd block
         let context = OfflineAudioContext::new(1, 128 * 4, sample_rate);
 
-        let src = context.create_constant_source();
+        let mut src = context.create_constant_source();
         src.connect(&context.destination());
 
         src.start_at(start_in_samples / sample_rate as f64);
@@ -261,7 +269,7 @@ mod tests {
     fn test_start_in_the_past() {
         let context = OfflineAudioContext::new(1, 128, 48000.);
 
-        let src = context.create_constant_source();
+        let mut src = context.create_constant_source();
         src.connect(&context.destination());
         src.start_at(-1.);
 

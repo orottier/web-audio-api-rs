@@ -374,28 +374,28 @@ pub trait AudioScheduledSourceNode: AudioNode {
     /// # Panics
     ///
     /// Panics if the source was already started
-    fn start(&self);
+    fn start(&mut self);
 
     /// Schedule playback start at given timestamp
     ///
     /// # Panics
     ///
     /// Panics if the source was already started
-    fn start_at(&self, when: f64);
+    fn start_at(&mut self, when: f64);
 
     /// Stop immediately
     ///
     /// # Panics
     ///
     /// Panics if the source was already stopped
-    fn stop(&self);
+    fn stop(&mut self);
 
     /// Schedule playback stop at given timestamp
     ///
     /// # Panics
     ///
     /// Panics if the source was already stopped
-    fn stop_at(&self, when: f64);
+    fn stop_at(&mut self, when: f64);
 
     /// Register callback to run when the source node has stopped playing
     ///

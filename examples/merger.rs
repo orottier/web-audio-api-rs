@@ -28,17 +28,17 @@ fn main() {
     println!("Sample rate: {:?}", context.sample_rate());
     println!(
         "Available channels: {}",
-        context.destination().max_channels_count()
+        context.destination().max_channel_count()
     );
 
     println!("Force output to two channels");
     context.destination().set_channel_count(2);
 
     // Create an oscillator
-    let left = context.create_oscillator();
+    let mut left = context.create_oscillator();
 
     //Create an oscillator
-    let right = context.create_oscillator();
+    let mut right = context.create_oscillator();
     // set a different frequency to distinguish left from right osc
     right.frequency().set_value(1000.);
 

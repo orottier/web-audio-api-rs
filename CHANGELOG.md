@@ -1,5 +1,27 @@
 # Version History
 
+## Version 0.35.0 (2023-10-18)
+
+- Fix: panic when creating and dropping PannerNodes
+- Improved performance of setting panning mode to HRTF
+
+## Version 0.34.0 (2023-10-12)
+
+- Breaking: many AudioNode setter methods now require `&mut self` instead of `&self`
+- Fix: all audio node settings are now applied in order in the audio graph
+- Fix: render thread would crash when a PannerNode is removed
+- Fixed and improved device ids for audio input/output devices
+- Added current playhead position for AudioBufferSourceNode
+
+## Version 0.33.0 (2023-07-27)
+
+- Fix: clamp to number of output channels to 32 even if the hardware supports more to prevent runtime panics
+- Fix: prevent a render thread panic if the audio graph is not fully initialized yet
+- Fix: rename AudioDestination max_channels_count to max_channel_count
+- Fix: AudioBufferSourceNode is now Send + Sync
+- Change AudioProcessor::onmessage signature to prevent deallocations
+- Add garbage collector thread as sidecar of the render thread to handle some deallocations
+
 ## Version 0.32.0 (2023-07-16)
 
 - Fix for some audio node settings being applied out of order

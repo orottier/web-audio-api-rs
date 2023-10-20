@@ -85,7 +85,7 @@ fn get_stereo_gains(sine_table: &[f32; TABLE_LENGTH_USIZE], x: f32) -> [f32; 2] 
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/StereoPannerNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#stereopannernode>
-/// - see also: [`BaseAudioContext::create_stereo_panner`](crate::context::BaseAudioContext::create_stereo_panner)
+/// - see also: [`BaseAudioContext::create_stereo_panner`]
 ///
 /// # Usage
 ///
@@ -102,7 +102,7 @@ fn get_stereo_gains(sine_table: &[f32; TABLE_LENGTH_USIZE], x: f32) -> [f32; 2] 
 /// panner.pan().set_value(-1.);
 ///
 /// // pipe an oscillator into the stereo panner
-/// let osc = context.create_oscillator();
+/// let mut osc = context.create_oscillator();
 /// osc.frequency().set_value(200.);
 /// osc.connect(&panner);
 /// osc.start();
@@ -406,7 +406,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -434,7 +434,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -462,7 +462,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -505,7 +505,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -529,7 +529,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -553,7 +553,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();

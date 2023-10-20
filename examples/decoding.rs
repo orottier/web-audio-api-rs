@@ -63,7 +63,7 @@ fn main() {
                 println!("> sample rate: {:?}", buffer.sample_rate());
                 println!("> --------------------------------");
 
-                let src = context.create_buffer_source();
+                let mut src = context.create_buffer_source();
                 src.connect(&context.destination());
                 src.set_buffer(buffer);
                 src.start();

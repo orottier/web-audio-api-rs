@@ -30,7 +30,7 @@ fn main() {
     let buffer = context.decode_audio_data_sync(file).unwrap();
 
     println!("> no compression");
-    let src = context.create_buffer_source();
+    let mut src = context.create_buffer_source();
     src.connect(&context.destination());
     src.set_buffer(buffer.clone());
     src.start();
@@ -53,7 +53,7 @@ fn main() {
         compressor.attack().set_value(0.03);
         compressor.release().set_value(0.1);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&compressor);
         src.set_buffer(buffer.clone());
         src.start();

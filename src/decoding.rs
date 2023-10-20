@@ -12,7 +12,7 @@ use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-/// Wrapper for `Read` implementors to be used in Symphonia decoding
+/// Wrapper for `Read` implementers to be used in Symphonia decoding
 ///
 /// Symphonia requires its input to impl `Seek` - but allows non-seekable sources. Hence we
 /// implement Seek but return false for `is_seekable()`.
@@ -58,7 +58,7 @@ pub(crate) struct MediaDecoder {
 }
 
 impl MediaDecoder {
-    /// Try to construct a new instance from a `Read` implementor
+    /// Try to construct a new instance from a `Read` implementer
     ///
     /// # Errors
     ///

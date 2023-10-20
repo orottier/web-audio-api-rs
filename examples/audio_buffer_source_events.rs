@@ -30,7 +30,7 @@ fn main() {
     let file = File::open("samples/sample.wav").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();
 
-    let src = context.create_buffer_source();
+    let mut src = context.create_buffer_source();
     src.connect(&context.destination());
     src.set_buffer(buffer);
 

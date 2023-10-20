@@ -1,7 +1,5 @@
 use std::any::Any;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
@@ -21,6 +19,11 @@ use super::{
 //   float detune = 0;
 //   PeriodicWave periodicWave;
 // };
+//
+// @note - Does extend AudioNodeOptions but they are useless for source nodes as
+// they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. https://github.com/mdn/content/pull/18472, and
+// an issue in the spec, see discussion in https://github.com/WebAudio/web-audio-api/issues/2496
 #[derive(Clone, Debug)]
 pub struct OscillatorOptions {
     /// The shape of the periodic waveform
@@ -94,8 +97,8 @@ enum Schedule {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/OscillatorNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#OscillatorNode>
-/// - see also: [`BaseAudioContext::create_oscillator`](crate::context::BaseAudioContext::create_oscillator)
-/// - see also: [`PeriodicWave`](crate::periodic_wave::PeriodicWave)
+/// - see also: [`BaseAudioContext::create_oscillator`]
+/// - see also: [`PeriodicWave`]
 ///
 /// # Usage
 ///
@@ -105,7 +108,7 @@ enum Schedule {
 ///
 /// let context = AudioContext::default();
 ///
-/// let osc = context.create_oscillator();
+/// let mut osc = context.create_oscillator();
 /// osc.frequency().set_value(200.);
 /// osc.connect(&context.destination());
 /// osc.start();
@@ -127,7 +130,7 @@ pub struct OscillatorNode {
     /// A detuning value (in cents) which will offset the frequency by the given amount.
     detune: AudioParam,
     /// Waveform of an oscillator
-    shared_type: Arc<AtomicU32>,
+    type_: OscillatorType,
 }
 
 impl AudioNode for OscillatorNode {
@@ -151,21 +154,21 @@ impl AudioNode for OscillatorNode {
 }
 
 impl AudioScheduledSourceNode for OscillatorNode {
-    fn start(&self) {
+    fn start(&mut self) {
         let when = self.registration.context().current_time();
         self.start_at(when);
     }
 
-    fn start_at(&self, when: f64) {
+    fn start_at(&mut self, when: f64) {
         self.registration.post_message(Schedule::Start(when));
     }
 
-    fn stop(&self) {
+    fn stop(&mut self) {
         let when = self.registration.context().current_time();
         self.stop_at(when);
     }
 
-    fn stop_at(&self, when: f64) {
+    fn stop_at(&mut self, when: f64) {
         self.registration.post_message(Schedule::Stop(when));
     }
 }
@@ -191,26 +194,25 @@ impl OscillatorNode {
             } = options;
 
             // frequency audio parameter
-            let freq_param_opts = AudioParamDescriptor {
+            let freq_param_options = AudioParamDescriptor {
                 min_value: -nyquist,
                 max_value: nyquist,
                 default_value: 440.,
                 automation_rate: AutomationRate::A,
             };
-            let (f_param, f_proc) = context.create_audio_param(freq_param_opts, &registration);
+            let (f_param, f_proc) = context.create_audio_param(freq_param_options, &registration);
             f_param.set_value(frequency);
 
             // detune audio parameter
-            let det_param_opts = AudioParamDescriptor {
+            let det_param_options = AudioParamDescriptor {
                 min_value: -153_600.,
                 max_value: 153_600.,
                 default_value: 0.,
                 automation_rate: AutomationRate::A,
             };
-            let (det_param, det_proc) = context.create_audio_param(det_param_opts, &registration);
+            let (det_param, det_proc) =
+                context.create_audio_param(det_param_options, &registration);
             det_param.set_value(detune);
-
-            let shared_type = Arc::new(AtomicU32::new(type_ as u32));
 
             // Ensure the precomputed sine table is initialized so the render thread does not have
             // to (which will possibly block)
@@ -218,7 +220,6 @@ impl OscillatorNode {
 
             let renderer = OscillatorRenderer {
                 type_,
-                shared_type: Arc::clone(&shared_type),
                 frequency: f_proc,
                 detune: det_proc,
                 phase: 0.,
@@ -230,12 +231,12 @@ impl OscillatorNode {
                 sine_table,
             };
 
-            let node = Self {
+            let mut node = Self {
                 registration,
                 channel_config: channel_config.into(),
                 frequency: f_param,
                 detune: det_param,
-                shared_type,
+                type_,
             };
 
             // if periodic wave has been given, init it
@@ -247,7 +248,7 @@ impl OscillatorNode {
         })
     }
 
-    /// A-rate [`AudioParam`] that defines the fondamental frequency of the
+    /// A-rate [`AudioParam`] that defines the fundamental frequency of the
     /// oscillator, expressed in Hz
     ///
     /// The final frequency is calculated as follow: frequency * 2^(detune/1200)
@@ -270,7 +271,7 @@ impl OscillatorNode {
     /// Returns the oscillator type
     #[must_use]
     pub fn type_(&self) -> OscillatorType {
-        self.shared_type.load(Ordering::Acquire).into()
+        self.type_
     }
 
     /// Set the oscillator type
@@ -282,7 +283,7 @@ impl OscillatorNode {
     /// # Panics
     ///
     /// if `type_` is `OscillatorType::Custom`
-    pub fn set_type(&self, type_: OscillatorType) {
+    pub fn set_type(&mut self, type_: OscillatorType) {
         assert_ne!(
             type_,
             OscillatorType::Custom,
@@ -290,10 +291,11 @@ impl OscillatorNode {
         );
 
         // if periodic wave has been set specified, type_ changes are ignored
-        if self.shared_type.load(Ordering::Acquire) == OscillatorType::Custom as u32 {
+        if self.type_ == OscillatorType::Custom {
             return;
         }
 
+        self.type_ = type_;
         self.registration.post_message(type_);
     }
 
@@ -301,12 +303,8 @@ impl OscillatorNode {
     ///
     /// Calling this sets the oscillator type to `custom`, once set to `custom`
     /// the oscillator cannot be reverted back to a standard waveform.
-    pub fn set_periodic_wave(&self, periodic_wave: PeriodicWave) {
-        // Already store the oscillator type, so you can't call set_type with conflicting settings
-        // immediately after this call.
-        self.shared_type
-            .store(OscillatorType::Custom as u32, Ordering::Release);
-
+    pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
+        self.type_ = OscillatorType::Custom;
         self.registration.post_message(periodic_wave);
     }
 }
@@ -315,8 +313,6 @@ impl OscillatorNode {
 struct OscillatorRenderer {
     /// The shape of the periodic waveform
     type_: OscillatorType,
-    /// The shape of the periodic waveform (shared with control thread)
-    shared_type: Arc<AtomicU32>,
     /// The frequency of the fundamental frequency.
     frequency: AudioParamId,
     /// A detuning value (in cents) which will offset the frequency by the given amount.
@@ -438,7 +434,6 @@ impl AudioProcessor for OscillatorRenderer {
 
     fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(&type_) = msg.downcast_ref::<OscillatorType>() {
-            self.shared_type.store(type_ as u32, Ordering::Release);
             self.type_ = type_;
             return;
         }
@@ -620,7 +615,7 @@ mod tests {
     #[should_panic]
     fn set_type_to_custom_should_panic() {
         let context = OfflineAudioContext::new(2, 1, 44_100.);
-        let osc = OscillatorNode::new(&context, OscillatorOptions::default());
+        let mut osc = OscillatorNode::new(&context, OscillatorOptions::default());
         osc.set_type(OscillatorType::Custom);
     }
 
@@ -655,7 +650,7 @@ mod tests {
             ..OscillatorOptions::default()
         };
 
-        let osc = OscillatorNode::new(&context, options);
+        let mut osc = OscillatorNode::new(&context, options);
 
         osc.set_type(OscillatorType::Sine);
         assert_eq!(osc.type_(), expected_type);
@@ -683,7 +678,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.start_at(0.);
@@ -719,7 +714,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.start_at(0.);
@@ -748,7 +743,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.set_type(OscillatorType::Square);
@@ -786,7 +781,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.set_type(OscillatorType::Triangle);
@@ -833,7 +828,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.set_type(OscillatorType::Sawtooth);
@@ -886,7 +881,7 @@ mod tests {
 
             let periodic_wave = context.create_periodic_wave(options);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.set_periodic_wave(periodic_wave);
             osc.frequency().set_value(freq);
@@ -933,7 +928,7 @@ mod tests {
 
             let periodic_wave = context.create_periodic_wave(options);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.set_periodic_wave(periodic_wave);
             osc.frequency().set_value(freq);
@@ -1009,7 +1004,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(2. / sample_rate as f64);
@@ -1041,7 +1036,7 @@ mod tests {
         let sample_rate = 96000;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         // start between second and third sample
@@ -1073,7 +1068,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(0.);
@@ -1105,7 +1100,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(0.);
@@ -1137,7 +1132,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(-1.);

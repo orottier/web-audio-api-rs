@@ -58,7 +58,7 @@ impl Alloc {
 impl AllocInner {
     fn allocate(&self) -> Rc<[f32; RENDER_QUANTUM_SIZE]> {
         if let Some(rc) = self.pool.borrow_mut().pop() {
-            // re-use from pool
+            // reuse from pool
             rc
         } else {
             // allocate

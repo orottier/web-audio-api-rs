@@ -1,34 +1,28 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow
 
-# Same name as the file for consistent identification
-name: pre-commit
+name: build
 
 # read-only repo token, no access to secrets
 permissions:
   contents: read
 
+# no access to secrets
 on:
-  pull_request:
   push:
-    branches:
-      - "*"
+    branches: [main]
+  pull_request:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  pre-commit:
-    name: Detecting code style issues
+  verify-build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Install ALSA and Jack dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.x"
+          sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev cmake
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -41,18 +35,17 @@ jobs:
       - name: Generate Cargo.lock
         run: cargo generate-lockfile
 
-      - name: Cache Rust toolchain and build artifacts
+      # restore cargo cache from previous runs
+      - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
           # The cache should not be shared between different workflows and jobs.
           shared-key: ${{ github.workflow }}-${{ github.job }}
 
-      - name: Detect code style issues (push)
-        uses: pre-commit/action@v3.0.0
-        if: github.event_name == 'push'
+      # check it builds
+      - name: Build
+        run: cargo build --verbose --all-targets --all-features
 
-      - name: Detect code style issues (pull_request)
-        uses: pre-commit/action@v3.0.0
-        if: github.event_name == 'pull_request'
-        env:
-          SKIP: no-commit-to-branch
+      # run tests
+      - name: Run tests
+        run: cargo test --verbose --all-features

@@ -28,7 +28,7 @@ fn trigger_sine(context: &AudioContext, delay_input: &dyn AudioNode, rng: &mut T
     env.gain()
         .exponential_ramp_to_value_at_time(0.0001, now + 1.);
 
-    let osc = context.create_oscillator();
+    let mut osc = context.create_oscillator();
     osc.connect(&env);
     osc.frequency().set_value(base_freq * num_partial);
     osc.start_at(now);
