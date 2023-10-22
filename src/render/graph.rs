@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::panic::{self, AssertUnwindSafe};
 
 use crate::context::AudioNodeId;
-use rustc_hash::FxHashMap;
 use smallvec::{smallvec, SmallVec};
 
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum};
@@ -76,7 +75,7 @@ impl Node {
 /// The audio graph
 pub(crate) struct Graph {
     /// Processing Nodes
-    nodes: FxHashMap<AudioNodeId, RefCell<Node>>,
+    nodes: Vec<Option<RefCell<Node>>>,
     /// Allocator for audio buffers
     alloc: Alloc,
 
@@ -95,7 +94,7 @@ pub(crate) struct Graph {
 impl Graph {
     pub fn new() -> Self {
         Graph {
-            nodes: FxHashMap::default(),
+            nodes: Vec::with_capacity(64),
             ordered: vec![],
             marked: vec![],
             marked_temp: vec![],
@@ -126,25 +125,28 @@ impl Graph {
         let inputs = vec![AudioRenderQuantum::from(self.alloc.silence()); number_of_inputs];
         let outputs = vec![AudioRenderQuantum::from(self.alloc.silence()); number_of_outputs];
 
-        self.nodes.insert(
-            index,
-            RefCell::new(Node {
-                processor,
-                inputs,
-                outputs,
-                channel_config,
-                outgoing_edges: smallvec![],
-                free_when_finished: false,
-                has_inputs_connected: false,
-                cycle_breaker: false,
-            }),
-        );
+        let index = index.0 as usize;
+        if index >= self.nodes.len() {
+            self.nodes.resize_with(index + 1, || None);
+        }
+        self.nodes[index] = Some(RefCell::new(Node {
+            processor,
+            inputs,
+            outputs,
+            channel_config,
+            outgoing_edges: smallvec![],
+            free_when_finished: false,
+            has_inputs_connected: false,
+            cycle_breaker: false,
+        }));
     }
 
     pub fn add_edge(&mut self, source: (AudioNodeId, usize), dest: (AudioNodeId, usize)) {
         self.nodes
-            .get_mut(&source.0)
+            .get_mut(source.0 .0 as usize)
             .unwrap_or_else(|| panic!("cannot connect {:?} to {:?}", source, dest))
+            .as_mut()
+            .unwrap()
             .get_mut()
             .outgoing_edges
             .push(OutgoingEdge {
@@ -158,8 +160,10 @@ impl Graph {
 
     pub fn remove_edge(&mut self, source: AudioNodeId, dest: AudioNodeId) {
         self.nodes
-            .get_mut(&source)
+            .get_mut(source.0 as usize)
             .unwrap_or_else(|| panic!("cannot remove the edge from {:?} to {:?}", source, dest))
+            .as_mut()
+            .unwrap()
             .get_mut()
             .outgoing_edges
             .retain(|edge| edge.other_id != dest);
@@ -169,13 +173,15 @@ impl Graph {
 
     pub fn remove_edges_from(&mut self, source: AudioNodeId) {
         self.nodes
-            .get_mut(&source)
+            .get_mut(source.0 as usize)
             .unwrap_or_else(|| panic!("cannot remove edges from {:?}", source))
+            .as_mut()
+            .unwrap()
             .get_mut()
             .outgoing_edges
             .clear();
 
-        self.nodes.values_mut().for_each(|node| {
+        self.nodes.iter_mut().flatten().for_each(|node| {
             node.get_mut()
                 .outgoing_edges
                 .retain(|edge| edge.other_id != source);
@@ -188,18 +194,26 @@ impl Graph {
         // Issue #92, a race condition can occur for AudioParams. They may have already been
         // removed from the audio graph if the node they feed into was dropped.
         // Therefore, do not assume this node still exists:
-        if let Some(node) = self.nodes.get_mut(&index) {
+        if let Some(node) = self.nodes.get_mut(index.0 as usize).unwrap().as_mut() {
             node.get_mut().free_when_finished = true;
         }
     }
 
     pub fn mark_cycle_breaker(&mut self, index: AudioNodeId) {
-        self.nodes.get_mut(&index).unwrap().get_mut().cycle_breaker = true;
+        self.nodes
+            .get_mut(index.0 as usize)
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .get_mut()
+            .cycle_breaker = true;
     }
 
     pub fn route_message(&mut self, index: AudioNodeId, msg: &mut dyn Any) {
         self.nodes
-            .get_mut(&index)
+            .get_mut(index.0 as usize)
+            .unwrap()
+            .as_mut()
             .unwrap()
             .get_mut()
             .processor
@@ -223,10 +237,15 @@ impl Graph {
         // If this node is in the cycle detection list, it is part of a cycle!
         if let Some(pos) = marked_temp.iter().position(|&m| m == node_id) {
             // check if we can find some node that can break the cycle
-            let cycle_breaker_node = marked_temp
-                .iter()
-                .skip(pos)
-                .find(|node_id| self.nodes.get(node_id).unwrap().borrow().cycle_breaker);
+            let cycle_breaker_node = marked_temp.iter().skip(pos).find(|node_id| {
+                self.nodes
+                    .get(node_id.0 as usize)
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .borrow()
+                    .cycle_breaker
+            });
 
             match cycle_breaker_node {
                 Some(&node_id) => {
@@ -257,7 +276,9 @@ impl Graph {
         // Visit outgoing nodes, and call `visit` on them recursively
         for edge in self
             .nodes
-            .get(&node_id)
+            .get(node_id.0 as usize)
+            .unwrap()
+            .as_ref()
             .unwrap()
             .borrow()
             .outgoing_edges
@@ -324,7 +345,13 @@ impl Graph {
             // since the audio graph could contain legs detached from the destination and those should
             // still be rendered.
             let mut cycle_breaker_applied = false;
-            for &node_id in self.nodes.keys() {
+            for node_id in self
+                .nodes
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| v.is_some())
+                .map(|(i, _)| AudioNodeId(i as u64))
+            {
                 cycle_breaker_applied = self.visit(
                     node_id,
                     &mut marked,
@@ -343,7 +370,7 @@ impl Graph {
                 // clear the outgoing edges of the nodes that have been recognized as cycle breaker
                 let nodes = &mut self.nodes;
                 cycle_breakers.iter().for_each(|node_id| {
-                    let node = nodes.get_mut(node_id).unwrap();
+                    let node = nodes.get_mut(node_id.0 as usize).unwrap().as_mut().unwrap();
                     node.get_mut().outgoing_edges.clear();
                 });
 
@@ -385,7 +412,12 @@ impl Graph {
         // process every node, in topological sorted order
         self.ordered.iter().for_each(|index| {
             // acquire a mutable borrow of the current processing node
-            let mut node = nodes.get(index).unwrap().borrow_mut();
+            let mut node = nodes
+                .get(index.0 as usize)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .borrow_mut();
 
             // make sure all input buffers have the correct number of channels, this might not be
             // the case if the node has no inputs connected or the channel count has just changed
@@ -396,7 +428,7 @@ impl Graph {
                 .for_each(|i| i.mix(count, interpretation));
 
             // let the current node process (catch any panics that may occur)
-            let params = AudioParamValues::from(&*nodes);
+            let params = AudioParamValues::from(nodes.as_slice());
             scope.node_id.set(*index);
             let (success, tail_time) = {
                 // We are abusing AssertUnwindSafe here, we cannot guarantee it upholds.
@@ -420,7 +452,12 @@ impl Graph {
                 // audio params are connected to the 'hidden' usize::MAX output, ignore them here
                 .filter(|edge| edge.other_index != usize::MAX)
                 .for_each(|edge| {
-                    let mut output_node = nodes.get(&edge.other_id).unwrap().borrow_mut();
+                    let mut output_node = nodes
+                        .get(edge.other_id.0 as usize)
+                        .unwrap()
+                        .as_ref()
+                        .unwrap()
+                        .borrow_mut();
                     output_node.has_inputs_connected = true;
                     let signal = &node.outputs[edge.self_index];
                     let channel_config = &output_node.channel_config.clone();
@@ -446,25 +483,36 @@ impl Graph {
             // Check if we can decommission this node (end of life)
             if can_free {
                 // Node is dropped, remove it from the node list
-                nodes.remove(index);
+                nodes[index.0 as usize] = None;
 
                 // And remove it from the ordering after we have processed all nodes
                 nodes_dropped = true;
 
                 // Nodes are only dropped when they do not have incoming connections.
                 // But they may have AudioParams feeding into them, these can de dropped too.
-                nodes.retain(|id, n| {
+                for (id, node) in nodes.iter_mut().enumerate() {
+                    if node.is_none() {
+                        continue;
+                    }
                     // Check if this node was connected to the dropped node. In that case, it is
                     // either an AudioParam (which can be dropped), or the AudioListener that feeds
                     // into a PannerNode (which can be disconnected).
-                    let outgoing_edges = &mut n.borrow_mut().outgoing_edges;
-                    let prev_len = outgoing_edges.len();
-                    outgoing_edges.retain(|e| e.other_id != *index);
-                    let was_connected = outgoing_edges.len() != prev_len;
+                    let was_connected = {
+                        let outgoing_edges =
+                            &mut node.as_mut().unwrap().borrow_mut().outgoing_edges;
+                        let prev_len = outgoing_edges.len();
+                        outgoing_edges.retain(|e| e.other_id != *index);
+                        outgoing_edges.len() != prev_len
+                    };
 
-                    let special = id.0 < 2; // never drop Listener and Destination node
-                    special || !was_connected
-                });
+                    let special = id < 2; // never drop Listener and Destination node
+
+                    if special || !was_connected {
+                        // retain
+                    } else {
+                        *node = None;
+                    }
+                }
             }
         });
 
@@ -472,7 +520,7 @@ impl Graph {
         if nodes_dropped {
             let mut i = 0;
             while i < self.ordered.len() {
-                if !nodes.contains_key(&self.ordered[i]) {
+                if nodes[self.ordered[i].0 as usize].is_none() {
                     self.ordered.remove(i);
                 } else {
                     i += 1;
@@ -483,7 +531,9 @@ impl Graph {
         // Return the output buffer of destination node
         &self
             .nodes
-            .get_mut(&AudioNodeId(0))
+            .get_mut(0)
+            .unwrap()
+            .as_mut()
             .unwrap()
             .get_mut()
             .outputs[0]
