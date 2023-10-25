@@ -3,10 +3,10 @@ use crate::context::{AudioNodeId, AudioParamId};
 use crate::events::{ErrorEvent, EventDispatch};
 use crate::{Event, RENDER_QUANTUM_SIZE};
 
-use super::{graph::Node, AudioRenderQuantum};
+use super::{graph::Node, AudioRenderQuantum, NodeCollection};
 
 use crossbeam_channel::Sender;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 
 use std::any::Any;
 use std::ops::Deref;
@@ -139,11 +139,11 @@ impl Deref for DerefAudioRenderQuantumChannel<'_> {
 ///
 /// Provided to implementations of [`AudioProcessor`] in the render thread
 pub struct AudioParamValues<'a> {
-    nodes: &'a [Option<RefCell<Node>>],
+    nodes: &'a NodeCollection,
 }
 
 impl<'a> AudioParamValues<'a> {
-    pub(crate) fn from(nodes: &'a [Option<RefCell<Node>>]) -> Self {
+    pub(crate) fn from(nodes: &'a NodeCollection) -> Self {
         Self { nodes }
     }
 
@@ -154,14 +154,7 @@ impl<'a> AudioParamValues<'a> {
     /// provide a slice of length equal to the render quantum size (default: 128)
     #[allow(clippy::missing_panics_doc)]
     pub fn get(&self, index: &AudioParamId) -> impl Deref<Target = [f32]> + '_ {
-        DerefAudioRenderQuantumChannel(
-            self.nodes
-                .get(index.0 as usize)
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .borrow(),
-        )
+        DerefAudioRenderQuantumChannel(self.nodes[index.0 as usize].borrow())
     }
 
     pub(crate) fn listener_params(&self) -> [impl Deref<Target = [f32]> + '_; 9] {
