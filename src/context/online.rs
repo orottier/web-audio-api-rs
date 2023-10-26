@@ -173,7 +173,8 @@ impl AudioContext {
             event_recv,
         } = control_thread_init;
 
-        let graph = Graph::new();
+        let (node_id_producer, node_id_consumer) = llq::Queue::new().split();
+        let graph = Graph::new(node_id_producer);
         let message = ControlMessage::Startup { graph };
         ctrl_msg_send.send(message).unwrap();
 
@@ -184,6 +185,7 @@ impl AudioContext {
             ctrl_msg_send,
             Some((event_send, event_recv)),
             false,
+            node_id_consumer,
         );
         base.set_state(AudioContextState::Running);
 

@@ -14,6 +14,7 @@ pub(crate) enum ControlMessage {
     /// Register a new node in the audio graph
     RegisterNode {
         id: AudioNodeId,
+        reclaim_id: llq::Node<AudioNodeId>,
         node: Box<dyn AudioProcessor>,
         inputs: usize,
         outputs: usize,

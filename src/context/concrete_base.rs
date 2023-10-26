@@ -49,6 +49,8 @@ struct ConcreteBaseAudioContextInner {
     max_channel_count: usize,
     /// incrementing id to assign to audio nodes
     node_id_inc: AtomicU64,
+    /// receiver for decommissioned AudioNodeIds, which can be reused
+    node_id_consumer: Mutex<llq::Consumer<AudioNodeId>>,
     /// destination node's current channel count
     destination_channel_config: ChannelConfig,
     /// message channel from control to render thread
@@ -84,8 +86,12 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
         f: F,
     ) -> T {
         // create unique identifier for this node
-        let id = self.inner.node_id_inc.fetch_add(1, Ordering::SeqCst);
-        let id = AudioNodeId(id);
+        let id = if let Some(available_id) = self.inner.node_id_consumer.lock().unwrap().pop() {
+            llq::Node::into_inner(available_id)
+        } else {
+            AudioNodeId(self.inner.node_id_inc.fetch_add(1, Ordering::Relaxed))
+        };
+
         let registration = AudioContextRegistration {
             id,
             context: self.clone(),
@@ -97,6 +103,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
         // pass the renderer to the audio graph
         let message = ControlMessage::RegisterNode {
             id,
+            reclaim_id: llq::Node::new(id),
             node: render,
             inputs: node.number_of_inputs(),
             outputs: node.number_of_outputs(),
@@ -126,6 +133,7 @@ impl ConcreteBaseAudioContext {
         render_channel: Sender<ControlMessage>,
         event_channel: Option<(Sender<EventDispatch>, Receiver<EventDispatch>)>,
         offline: bool,
+        node_id_consumer: llq::Consumer<AudioNodeId>,
     ) -> Self {
         let event_loop = EventLoop::new();
         let (event_send, event_recv) = match event_channel {
@@ -139,6 +147,7 @@ impl ConcreteBaseAudioContext {
             render_channel: RwLock::new(render_channel),
             queued_messages: Mutex::new(Vec::new()),
             node_id_inc: AtomicU64::new(0),
+            node_id_consumer: Mutex::new(node_id_consumer),
             destination_channel_config: ChannelConfigOptions::default().into(),
             frames_played,
             queued_audio_listener_msgs: Mutex::new(Vec::new()),

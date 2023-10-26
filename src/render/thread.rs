@@ -95,6 +95,7 @@ impl RenderThread {
             match msg {
                 RegisterNode {
                     id: node_id,
+                    reclaim_id,
                     node,
                     inputs,
                     outputs,
@@ -102,6 +103,7 @@ impl RenderThread {
                 } => {
                     self.graph.as_mut().unwrap().add_node(
                         node_id,
+                        reclaim_id,
                         node,
                         inputs,
                         outputs,
