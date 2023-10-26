@@ -54,7 +54,7 @@ impl NodeCollection {
     }
 
     #[inline(always)]
-    pub fn get(&mut self, index: usize) -> Option<&RefCell<Node>> {
+    pub fn get(&self, index: usize) -> Option<&RefCell<Node>> {
         self.nodes[index].as_ref()
     }
 
