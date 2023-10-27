@@ -519,21 +519,29 @@ mod tests {
         .into()
     }
 
-    /*
+    fn add_node(graph: &mut Graph, id: u64, node: Box<dyn AudioProcessor>) {
+        let id = AudioNodeId(id);
+        let reclaim_id = llq::Node::new(id);
+        graph.add_node(id, reclaim_id, node, 1, 1, config());
+    }
+
+    fn add_edge(graph: &mut Graph, from: u64, to: u64) {
+        graph.add_edge((AudioNodeId(from), 0), (AudioNodeId(to), 0));
+    }
 
     #[test]
     fn test_add_remove() {
-        let mut graph = Graph::new();
+        let mut graph = Graph::new(llq::Queue::new().split().0);
 
         let node = Box::new(TestNode {});
-        graph.add_node(AudioNodeId(0), node.clone(), 1, 1, config());
-        graph.add_node(AudioNodeId(1), node.clone(), 1, 1, config());
-        graph.add_node(AudioNodeId(2), node.clone(), 1, 1, config());
-        graph.add_node(AudioNodeId(3), node, 1, 1, config());
+        add_node(&mut graph, 0, node.clone());
+        add_node(&mut graph, 1, node.clone());
+        add_node(&mut graph, 2, node.clone());
+        add_node(&mut graph, 3, node);
 
-        graph.add_edge((AudioNodeId(1), 0), (AudioNodeId(0), 0));
-        graph.add_edge((AudioNodeId(2), 0), (AudioNodeId(1), 0));
-        graph.add_edge((AudioNodeId(3), 0), (AudioNodeId(0), 0));
+        add_edge(&mut graph, 1, 0);
+        add_edge(&mut graph, 2, 1);
+        add_edge(&mut graph, 3, 0);
 
         graph.order_nodes();
 
@@ -574,17 +582,17 @@ mod tests {
 
     #[test]
     fn test_remove_all() {
-        let mut graph = Graph::new();
+        let mut graph = Graph::new(llq::Queue::new().split().0);
 
         let node = Box::new(TestNode {});
-        graph.add_node(AudioNodeId(0), node.clone(), 1, 1, config());
-        graph.add_node(AudioNodeId(1), node.clone(), 1, 1, config());
-        graph.add_node(AudioNodeId(2), node, 1, 1, config());
+        add_node(&mut graph, 0, node.clone());
+        add_node(&mut graph, 1, node.clone());
+        add_node(&mut graph, 2, node);
 
         // link 1->0, 1->2 and 2->0
-        graph.add_edge((AudioNodeId(1), 0), (AudioNodeId(0), 0));
-        graph.add_edge((AudioNodeId(1), 0), (AudioNodeId(2), 0));
-        graph.add_edge((AudioNodeId(2), 0), (AudioNodeId(0), 0));
+        add_edge(&mut graph, 1, 0);
+        add_edge(&mut graph, 1, 2);
+        add_edge(&mut graph, 2, 0);
 
         graph.order_nodes();
 
@@ -613,21 +621,21 @@ mod tests {
 
     #[test]
     fn test_cycle() {
-        let mut graph = Graph::new();
+        let mut graph = Graph::new(llq::Queue::new().split().0);
 
         let node = Box::new(TestNode {});
-        graph.add_node(AudioNodeId(0), node.clone(), 1, 1, config());
-        graph.add_node(AudioNodeId(1), node.clone(), 1, 1, config());
-        graph.add_node(AudioNodeId(2), node.clone(), 1, 1, config());
-        graph.add_node(AudioNodeId(3), node.clone(), 1, 1, config());
-        graph.add_node(AudioNodeId(4), node, 1, 1, config());
+        add_node(&mut graph, 0, node.clone());
+        add_node(&mut graph, 1, node.clone());
+        add_node(&mut graph, 2, node.clone());
+        add_node(&mut graph, 3, node.clone());
+        add_node(&mut graph, 4, node);
 
         // link 4->2, 2->1, 1->0, 1->2, 3->0
-        graph.add_edge((AudioNodeId(4), 0), (AudioNodeId(2), 0));
-        graph.add_edge((AudioNodeId(2), 0), (AudioNodeId(1), 0));
-        graph.add_edge((AudioNodeId(1), 0), (AudioNodeId(0), 0));
-        graph.add_edge((AudioNodeId(1), 0), (AudioNodeId(2), 0));
-        graph.add_edge((AudioNodeId(3), 0), (AudioNodeId(0), 0));
+        add_edge(&mut graph, 4, 2);
+        add_edge(&mut graph, 2, 1);
+        add_edge(&mut graph, 1, 0);
+        add_edge(&mut graph, 1, 2);
+        add_edge(&mut graph, 3, 0);
 
         graph.order_nodes();
 
@@ -646,5 +654,42 @@ mod tests {
         assert!(pos3.unwrap() < pos0.unwrap());
     }
 
-    */
+    #[test]
+    fn test_lifecycle_and_reclaim() {
+        let (node_id_producer, mut node_id_consumer) = llq::Queue::new().split();
+        let mut graph = Graph::new(node_id_producer);
+
+        let node = Box::new(TestNode {});
+
+        // Destination Node is always node id 0, and should never drop
+        add_node(&mut graph, 0, node.clone());
+
+        // AudioListener Node is always node id 1, and should never drop
+        add_node(&mut graph, 1, node.clone());
+
+        // Add a regular node at id 3, it has tail time false so after rendering it should be
+        // dropped and the AudioNodeId(3) should be reclaimed
+        add_node(&mut graph, 2, node.clone());
+        // Mark the node as 'detached from the control thread', so it is allowed to drop
+        graph.nodes[2].get_mut().free_when_finished = true;
+
+        // Connect the regular node to the AudioDestinationNode
+        add_edge(&mut graph, 2, 0);
+
+        // Render a single quantum
+        let scope = RenderScope {
+            current_frame: 0,
+            current_time: 0.,
+            sample_rate: 48000.,
+            node_id: std::cell::Cell::new(AudioNodeId(0)),
+            event_sender: None,
+        };
+        graph.render(&scope);
+
+        // The dropped node should be our regular node, not the AudioListener
+        let reclaimed = node_id_consumer
+            .pop()
+            .expect("should have decommisioned node");
+        assert_eq!(reclaimed.0, 2);
+    }
 }
