@@ -501,6 +501,7 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::GarbageCollector;
 
     #[derive(Debug, Clone)]
     struct TestNode {
@@ -696,7 +697,7 @@ mod tests {
             sample_rate: 48000.,
             node_id: std::cell::Cell::new(AudioNodeId(0)),
             event_sender: None,
-            garbage_collector: None,
+            garbage_collector: GarbageCollector::default(),
         };
         graph.render(&scope);
 
@@ -748,7 +749,7 @@ mod tests {
             sample_rate: 48000.,
             node_id: std::cell::Cell::new(AudioNodeId(0)),
             event_sender: None,
-            garbage_collector: None,
+            garbage_collector: GarbageCollector::default(),
         };
         graph.render(&scope);
 

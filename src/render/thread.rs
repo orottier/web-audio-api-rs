@@ -1,22 +1,19 @@
 //! Communicates with the control thread and ships audio samples to the hardware
 
-use std::any::Any;
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crossbeam_channel::{Receiver, Sender};
 use dasp_sample::FromSample;
 
-use super::AudioRenderQuantum;
+use super::{AudioRenderQuantum, GarbageCollector, RenderScope};
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::context::AudioNodeId;
 use crate::events::EventDispatch;
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
-use crate::render::RenderScope;
 use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
 use super::graph::Graph;
@@ -33,7 +30,7 @@ pub(crate) struct RenderThread {
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
     event_sender: Option<Sender<EventDispatch>>,
-    garbage_collector: Option<Rc<RefCell<llq::Producer<Box<dyn Any + Send>>>>>,
+    garbage_collector: GarbageCollector,
 }
 
 // SAFETY:
@@ -63,7 +60,7 @@ impl RenderThread {
             buffer_offset: None,
             load_value_sender: None,
             event_sender: None,
-            garbage_collector: None,
+            garbage_collector: GarbageCollector::default(),
         }
     }
 
@@ -77,11 +74,7 @@ impl RenderThread {
     }
 
     pub(crate) fn spawn_garbage_collector_thread(&mut self) {
-        if self.garbage_collector.is_none() {
-            let (gc_producer, gc_consumer) = llq::Queue::new().split();
-            spawn_garbage_collector_thread(gc_consumer);
-            self.garbage_collector = Some(Rc::new(RefCell::new(gc_producer)));
-        }
+        self.garbage_collector.spawn_garbage_collector_thread()
     }
 
     fn handle_control_messages(&mut self) {
@@ -149,9 +142,7 @@ impl RenderThread {
                 }
                 NodeMessage { id, mut msg } => {
                     self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
-                    if let Some(gc) = self.garbage_collector.as_ref() {
-                        gc.borrow_mut().push(msg)
-                    }
+                    self.garbage_collector.deallocate_async(msg);
                 }
             }
         }
@@ -341,42 +332,10 @@ impl RenderThread {
 
 impl Drop for RenderThread {
     fn drop(&mut self) {
-        if let Some(gc) = self.garbage_collector.as_mut() {
-            gc.borrow_mut()
-                .push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)))
-        }
+        self.garbage_collector
+            .deallocate_async(llq::Node::new(Box::new(
+                super::TerminateGarbageCollectorThread,
+            )));
         log::info!("Audio render thread has been dropped");
     }
-}
-
-// Controls the polling frequency of the garbage collector thread.
-const GARBAGE_COLLECTOR_THREAD_TIMEOUT: Duration = Duration::from_millis(100);
-
-// Poison pill that terminates the garbage collector thread.
-#[derive(Debug)]
-struct TerminateGarbageCollectorThread;
-
-// Spawns a sidecar thread of the `RenderThread` for dropping resources.
-fn spawn_garbage_collector_thread(consumer: llq::Consumer<Box<dyn Any + Send>>) {
-    let _join_handle = std::thread::spawn(move || run_garbage_collector_thread(consumer));
-}
-
-fn run_garbage_collector_thread(mut consumer: llq::Consumer<Box<dyn Any + Send>>) {
-    log::debug!("Entering garbage collector thread");
-    loop {
-        if let Some(node) = consumer.pop() {
-            if node
-                .as_ref()
-                .downcast_ref::<TerminateGarbageCollectorThread>()
-                .is_some()
-            {
-                log::info!("Terminating garbage collector thread");
-                break;
-            }
-            // Implicitly drop the received node.
-        } else {
-            std::thread::sleep(GARBAGE_COLLECTOR_THREAD_TIMEOUT);
-        }
-    }
-    log::info!("Exiting garbage collector thread");
 }
