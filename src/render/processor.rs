@@ -6,7 +6,8 @@ use crate::{Event, RENDER_QUANTUM_SIZE};
 use super::{graph::Node, AudioRenderQuantum, NodeCollection};
 
 use crossbeam_channel::Sender;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use std::any::Any;
 use std::ops::Deref;
@@ -24,6 +25,7 @@ pub struct RenderScope {
 
     pub(crate) node_id: Cell<AudioNodeId>,
     pub(crate) event_sender: Option<Sender<EventDispatch>>,
+    pub(crate) garbage_collector: Option<Rc<RefCell<llq::Producer<Box<dyn Any + Send>>>>>,
 }
 
 impl RenderScope {
@@ -59,6 +61,13 @@ impl RenderScope {
                 },
             };
             let _ = sender.try_send(EventDispatch::processor_error(self.node_id.get(), event));
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn deallocate_async(&self, value: llq::Node<Box<dyn Any + Send>>) {
+        if let Some(gc) = self.garbage_collector.as_ref() {
+            gc.borrow_mut().push(value);
         }
     }
 }

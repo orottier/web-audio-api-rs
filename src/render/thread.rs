@@ -1,7 +1,8 @@
 //! Communicates with the control thread and ships audio samples to the hardware
 
 use std::any::Any;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -32,7 +33,7 @@ pub(crate) struct RenderThread {
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
     event_sender: Option<Sender<EventDispatch>>,
-    garbage_collector: Option<llq::Producer<Box<dyn Any + Send>>>,
+    garbage_collector: Option<Rc<RefCell<llq::Producer<Box<dyn Any + Send>>>>>,
 }
 
 // SAFETY:
@@ -79,7 +80,7 @@ impl RenderThread {
         if self.garbage_collector.is_none() {
             let (gc_producer, gc_consumer) = llq::Queue::new().split();
             spawn_garbage_collector_thread(gc_consumer);
-            self.garbage_collector = Some(gc_producer);
+            self.garbage_collector = Some(Rc::new(RefCell::new(gc_producer)));
         }
     }
 
@@ -139,13 +140,17 @@ impl RenderThread {
                     return; // no further handling of ctrl msgs
                 }
                 Startup { graph } => {
+                    // Obtaining the current thread id invokes an allocation (on OSX) so let's take
+                    // this hit on audio graph startup, so subsequent calls (needed for crossbeam)
+                    // don't need to.
+                    assert_no_alloc::permit_alloc(|| std::thread::current().id());
                     debug_assert!(self.graph.is_none());
                     self.graph = Some(graph);
                 }
                 NodeMessage { id, mut msg } => {
                     self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
-                    if let Some(gc) = self.garbage_collector.as_mut() {
-                        gc.push(msg)
+                    if let Some(gc) = self.garbage_collector.as_ref() {
+                        gc.borrow_mut().push(msg)
                     }
                 }
             }
@@ -183,6 +188,7 @@ impl RenderThread {
                 sample_rate: self.sample_rate,
                 event_sender: self.event_sender.clone(),
                 node_id: Cell::new(AudioNodeId(0)), // placeholder value
+                garbage_collector: self.garbage_collector.clone(),
             };
 
             // Render audio graph
@@ -213,12 +219,13 @@ impl RenderThread {
         let render_start = Instant::now();
 
         // Perform actual rendering
-
-        // For x64 and aarch, process with denormal floats disabled (for performance, #194)
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
-        no_denormals::no_denormals(|| self.render_inner(output_buffer));
-        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-        self.render_inner(output_buffer);
+        assert_no_alloc::assert_no_alloc(|| {
+            // For x64 and aarch, process with denormal floats disabled (for performance, #194)
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
+            no_denormals::no_denormals(|| self.render_inner(output_buffer));
+            #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+            self.render_inner(output_buffer);
+        });
 
         // calculate load value and ship to control thread
         if let Some(load_value_sender) = &self.load_value_sender {
@@ -292,6 +299,7 @@ impl RenderThread {
                 sample_rate: self.sample_rate,
                 event_sender: self.event_sender.clone(),
                 node_id: Cell::new(AudioNodeId(0)), // placeholder value
+                garbage_collector: self.garbage_collector.clone(),
             };
 
             // render audio graph, clone it in case we need to mutate/store the value later
@@ -330,7 +338,7 @@ impl RenderThread {
 impl Drop for RenderThread {
     fn drop(&mut self) {
         if let Some(gc) = self.garbage_collector.as_mut() {
-            gc.push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)))
+            gc.borrow_mut().push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)))
         }
         log::info!("Audio render thread has been dropped");
     }
@@ -349,7 +357,7 @@ fn spawn_garbage_collector_thread(consumer: llq::Consumer<Box<dyn Any + Send>>) 
 }
 
 fn run_garbage_collector_thread(mut consumer: llq::Consumer<Box<dyn Any + Send>>) {
-    log::info!("Entering garbage collector thread");
+    log::debug!("Entering garbage collector thread");
     loop {
         if let Some(node) = consumer.pop() {
             if node

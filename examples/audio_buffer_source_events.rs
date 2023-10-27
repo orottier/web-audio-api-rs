@@ -41,6 +41,7 @@ fn main() {
     let now = context.current_time();
     src.start_at(now);
     src.stop_at(now + 1.);
+    drop(src);
 
     std::thread::sleep(std::time::Duration::from_secs(4));
 }

@@ -128,7 +128,7 @@ struct AudioParamEventTimeline {
 impl AudioParamEventTimeline {
     fn new() -> Self {
         Self {
-            inner: Vec::new(),
+            inner: Vec::with_capacity(5),
             dirty: false,
         }
     }

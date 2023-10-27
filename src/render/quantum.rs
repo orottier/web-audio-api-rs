@@ -681,7 +681,7 @@ mod tests {
         let alloc = Alloc::with_capacity(2);
         assert_eq!(alloc.pool_size(), 2);
 
-        alloc_counter::deny_alloc(|| {
+        assert_no_alloc::assert_no_alloc(|| {
             {
                 // take a buffer out of the pool
                 let a = alloc.allocate();
@@ -712,7 +712,7 @@ mod tests {
                 let a = alloc.allocate();
                 let b = alloc.allocate();
 
-                let c = alloc_counter::allow_alloc(|| {
+                let c = assert_no_alloc::permit_alloc(|| {
                     // we can allocate beyond the pool size
                     let c = alloc.allocate();
                     assert_eq!(alloc.pool_size(), 0);
@@ -728,7 +728,7 @@ mod tests {
             };
 
             // dropping c will cause a re-allocation: the pool capacity is extended
-            alloc_counter::allow_alloc(move || {
+            assert_no_alloc::permit_alloc(move || {
                 std::mem::drop(c);
             });
 
