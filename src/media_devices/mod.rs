@@ -4,7 +4,7 @@
 //!
 //! <https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices>
 
-use rustc_hash::FxHasher;
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
@@ -54,7 +54,7 @@ impl DeviceId {
             index,
         };
 
-        let mut hasher = FxHasher::default();
+        let mut hasher = DefaultHasher::new();
         device_info.hash(&mut hasher);
         format!("{}", hasher.finish())
     }
