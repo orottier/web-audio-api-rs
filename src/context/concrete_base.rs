@@ -17,6 +17,34 @@ use crossbeam_channel::{Receiver, SendError, Sender};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 
+/// This struct assigns new [`AudioNodeId`]s for [`AudioNode`]s
+///
+/// It reuses the ids of decommissioned nodes to prevent unbounded growth of the audio graphs node
+/// list (which is stored in a Vec indexed by the AudioNodeId).
+struct AudioNodeIdIssuer {
+    /// incrementing id
+    id_inc: AtomicU64,
+    /// receiver for decommissioned AudioNodeIds, which can be reused
+    id_consumer: Mutex<llq::Consumer<AudioNodeId>>,
+}
+
+impl AudioNodeIdIssuer {
+    fn new(id_consumer: llq::Consumer<AudioNodeId>) -> Self {
+        Self {
+            id_inc: AtomicU64::new(0),
+            id_consumer: Mutex::new(id_consumer),
+        }
+    }
+
+    fn issue(&self) -> AudioNodeId {
+        if let Some(available_id) = self.id_consumer.lock().unwrap().pop() {
+            llq::Node::into_inner(available_id)
+        } else {
+            AudioNodeId(self.id_inc.fetch_add(1, Ordering::Relaxed))
+        }
+    }
+}
+
 /// The struct that corresponds to the Javascript `BaseAudioContext` object.
 ///
 /// This object is returned from the `base()` method on
@@ -47,10 +75,8 @@ struct ConcreteBaseAudioContextInner {
     sample_rate: f32,
     /// max number of speaker output channels
     max_channel_count: usize,
-    /// incrementing id to assign to audio nodes
-    node_id_inc: AtomicU64,
-    /// receiver for decommissioned AudioNodeIds, which can be reused
-    node_id_consumer: Mutex<llq::Consumer<AudioNodeId>>,
+    /// issuer for new AudioNodeIds
+    audio_node_id_issuer: AudioNodeIdIssuer,
     /// destination node's current channel count
     destination_channel_config: ChannelConfig,
     /// message channel from control to render thread
@@ -85,13 +111,8 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
         &self,
         f: F,
     ) -> T {
-        // create unique identifier for this node
-        let id = if let Some(available_id) = self.inner.node_id_consumer.lock().unwrap().pop() {
-            llq::Node::into_inner(available_id)
-        } else {
-            AudioNodeId(self.inner.node_id_inc.fetch_add(1, Ordering::Relaxed))
-        };
-
+        // create a unique id for this node
+        let id = self.inner.audio_node_id_issuer.issue();
         let registration = AudioContextRegistration {
             id,
             context: self.clone(),
@@ -141,13 +162,14 @@ impl ConcreteBaseAudioContext {
             Some((send, recv)) => (Some(send), Some(recv)),
         };
 
+        let audio_node_id_issuer = AudioNodeIdIssuer::new(node_id_consumer);
+
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             max_channel_count,
             render_channel: RwLock::new(render_channel),
             queued_messages: Mutex::new(Vec::new()),
-            node_id_inc: AtomicU64::new(0),
-            node_id_consumer: Mutex::new(node_id_consumer),
+            audio_node_id_issuer,
             destination_channel_config: ChannelConfigOptions::default().into(),
             frames_played,
             queued_audio_listener_msgs: Mutex::new(Vec::new()),
@@ -211,7 +233,10 @@ impl ConcreteBaseAudioContext {
 
         // Validate if the hardcoded node IDs line up
         debug_assert_eq!(
-            base.inner.node_id_inc.load(Ordering::Relaxed),
+            base.inner
+                .audio_node_id_issuer
+                .id_inc
+                .load(Ordering::Relaxed),
             LISTENER_PARAM_IDS.end,
         );
 
@@ -427,5 +452,21 @@ impl ConcreteBaseAudioContext {
 
     pub(crate) fn clear_event_handler(&self, event: EventType) {
         self.inner.event_loop.clear_handler(event);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_issue_node_id() {
+        let (mut id_producer, id_consumer) = llq::Queue::new().split();
+        let issuer = AudioNodeIdIssuer::new(id_consumer);
+        assert_eq!(issuer.issue().0, 0); // newly assigned
+        assert_eq!(issuer.issue().0, 1); // newly assigned
+        id_producer.push(llq::Node::new(AudioNodeId(0)));
+        assert_eq!(issuer.issue().0, 0); // reused
+        assert_eq!(issuer.issue().0, 2); // newly assigned
     }
 }
