@@ -100,7 +100,7 @@ pub(crate) struct Graph {
 impl Graph {
     pub fn new(reclaim_id_channel: llq::Producer<AudioNodeId>) -> Self {
         Graph {
-            nodes: NodeCollection::new(),
+            nodes: NodeCollection::with_capacity(INITIAL_GRAPH_SIZE),
             alloc: Alloc::with_capacity(INITIAL_CHANNEL_DATA_COUNT),
             reclaim_id_channel,
             ordered: Vec::with_capacity(INITIAL_GRAPH_SIZE),
