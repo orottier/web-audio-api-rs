@@ -223,7 +223,11 @@ impl RenderThread {
             // For x64 and aarch, process with denormal floats disabled (for performance, #194)
             #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
             no_denormals::no_denormals(|| self.render_inner(output_buffer));
-            #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+            #[cfg(not(any(
+                target_arch = "x86",
+                target_arch = "x86_64",
+                target_arch = "aarch64"
+            )))]
             self.render_inner(output_buffer);
         });
 
@@ -338,7 +342,8 @@ impl RenderThread {
 impl Drop for RenderThread {
     fn drop(&mut self) {
         if let Some(gc) = self.garbage_collector.as_mut() {
-            gc.borrow_mut().push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)))
+            gc.borrow_mut()
+                .push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)))
         }
         log::info!("Audio render thread has been dropped");
     }
