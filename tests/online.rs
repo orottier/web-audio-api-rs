@@ -143,7 +143,34 @@ fn test_panner_node_drop_panic() {
 
     // A crashed thread will not fail the test (only if the main thread panics).
     // Instead inspect if there is progression of time in the audio context.
+    let time = context.current_time();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(context.current_time() >= time + 0.15);
+}
 
+#[test]
+fn test_audioparam_outlives_audionode() {
+    let options = AudioContextOptions {
+        sink_id: "none".into(),
+        ..AudioContextOptions::default()
+    };
+    let context = AudioContext::new(options);
+
+    // Create a node with an audioparam, drop to node but keep the audioparam
+    let gain = context.create_gain();
+    let gain_param = gain.gain().clone();
+    drop(gain);
+
+    // Start the audio graph, and give some time to drop the gain node (it has no inputs connected
+    // so dynamic lifetime will drop the node);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    // We still have a handle to the param, so that should not be removed from the audio graph.
+    // So by updating the value, the render thread should not crash.
+    gain_param.set_value(1.);
+
+    // A crashed thread will not fail the test (only if the main thread panics).
+    // Instead inspect if there is progression of time in the audio context.
     let time = context.current_time();
     std::thread::sleep(std::time::Duration::from_millis(200));
     assert!(context.current_time() >= time + 0.15);

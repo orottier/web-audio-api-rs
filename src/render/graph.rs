@@ -451,23 +451,27 @@ impl Graph {
                 // Nodes are only dropped when they do not have incoming connections.
                 // But they may have AudioParams feeding into them, these can de dropped too.
                 nodes.retain(|id, node| {
+                    let node = node.get_mut(); // unwrap the RefCell
+
                     // Check if this node was connected to the dropped node. In that case, it is
                     // either an AudioParam (which can be dropped), or the AudioListener that feeds
                     // into a PannerNode (which can be disconnected).
                     let was_connected = {
-                        let outgoing_edges = &mut node.borrow_mut().outgoing_edges;
+                        let outgoing_edges = &mut node.outgoing_edges;
                         let prev_len = outgoing_edges.len();
                         outgoing_edges.retain(|e| e.other_id != *index);
                         outgoing_edges.len() != prev_len
                     };
 
-                    // retain when special or not connected to this dropped node
-                    let special = id < 2; // never drop Listener and Destination node
-                    let retain = special || !was_connected;
+                    // Retain when
+                    // - special node (destination = id 0, listener = id 1), or
+                    // - not connected to this dropped node, or
+                    // - if the control thread still has a handle to it.
+                    let retain = id < 2 || !was_connected || !node.free_when_finished;
 
                     if !retain {
                         self.reclaim_id_channel
-                            .push(node.get_mut().reclaim_id.take().unwrap());
+                            .push(node.reclaim_id.take().unwrap());
                     }
                     retain
                 })
@@ -727,6 +731,8 @@ mod tests {
         // Add an AudioParam at id 4, it should be dropped alongside the regular node
         let param = Box::new(TestNode { tail_time: true }); // audio params have tail time true
         add_node(&mut graph, 3, param);
+        // Mark the node as 'detached from the control thread', so it is allowed to drop
+        graph.nodes[3].get_mut().free_when_finished = true;
 
         // Connect the audioparam to the regular node
         add_audioparam(&mut graph, 3, 2);
