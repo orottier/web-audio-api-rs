@@ -496,7 +496,9 @@ mod tests {
     use super::*;
 
     #[derive(Debug, Clone)]
-    struct TestNode {}
+    struct TestNode {
+        tail_time: bool,
+    }
 
     impl AudioProcessor for TestNode {
         fn process(
@@ -506,7 +508,7 @@ mod tests {
             _params: AudioParamValues<'_>,
             _scope: &RenderScope,
         ) -> bool {
-            false
+            self.tail_time
         }
     }
 
@@ -529,11 +531,15 @@ mod tests {
         graph.add_edge((AudioNodeId(from), 0), (AudioNodeId(to), 0));
     }
 
+    fn add_audioparam(graph: &mut Graph, from: u64, to: u64) {
+        graph.add_edge((AudioNodeId(from), 0), (AudioNodeId(to), usize::MAX));
+    }
+
     #[test]
     fn test_add_remove() {
         let mut graph = Graph::new(llq::Queue::new().split().0);
 
-        let node = Box::new(TestNode {});
+        let node = Box::new(TestNode { tail_time: false });
         add_node(&mut graph, 0, node.clone());
         add_node(&mut graph, 1, node.clone());
         add_node(&mut graph, 2, node.clone());
@@ -584,7 +590,7 @@ mod tests {
     fn test_remove_all() {
         let mut graph = Graph::new(llq::Queue::new().split().0);
 
-        let node = Box::new(TestNode {});
+        let node = Box::new(TestNode { tail_time: false });
         add_node(&mut graph, 0, node.clone());
         add_node(&mut graph, 1, node.clone());
         add_node(&mut graph, 2, node);
@@ -623,7 +629,7 @@ mod tests {
     fn test_cycle() {
         let mut graph = Graph::new(llq::Queue::new().split().0);
 
-        let node = Box::new(TestNode {});
+        let node = Box::new(TestNode { tail_time: false });
         add_node(&mut graph, 0, node.clone());
         add_node(&mut graph, 1, node.clone());
         add_node(&mut graph, 2, node.clone());
@@ -659,7 +665,7 @@ mod tests {
         let (node_id_producer, mut node_id_consumer) = llq::Queue::new().split();
         let mut graph = Graph::new(node_id_producer);
 
-        let node = Box::new(TestNode {});
+        let node = Box::new(TestNode { tail_time: false });
 
         // Destination Node is always node id 0, and should never drop
         add_node(&mut graph, 0, node.clone());
@@ -691,5 +697,55 @@ mod tests {
             .pop()
             .expect("should have decommisioned node");
         assert_eq!(reclaimed.0, 2);
+
+        // No other dropped nodes
+        assert!(node_id_consumer.pop().is_none());
+    }
+
+    #[test]
+    fn test_audio_param_lifecycle() {
+        let (node_id_producer, mut node_id_consumer) = llq::Queue::new().split();
+        let mut graph = Graph::new(node_id_producer);
+
+        let node = Box::new(TestNode { tail_time: false });
+
+        // Destination Node is always node id 0, and should never drop
+        add_node(&mut graph, 0, node.clone());
+
+        // AudioListener Node is always node id 1, and should never drop
+        add_node(&mut graph, 1, node.clone());
+
+        // Add a regular node at id 3, it has tail time false so after rendering it should be
+        // dropped and the AudioNodeId(3) should be reclaimed
+        add_node(&mut graph, 2, node.clone());
+        // Mark the node as 'detached from the control thread', so it is allowed to drop
+        graph.nodes[2].get_mut().free_when_finished = true;
+
+        // Connect the regular node to the AudioDestinationNode
+        add_edge(&mut graph, 2, 0);
+
+        // Add an AudioParam at id 4, it should be dropped alongside the regular node
+        let param = Box::new(TestNode { tail_time: true }); // audio params have tail time true
+        add_node(&mut graph, 3, param);
+
+        // Connect the audioparam to the regular node
+        add_audioparam(&mut graph, 3, 2);
+
+        // Render a single quantum
+        let scope = RenderScope {
+            current_frame: 0,
+            current_time: 0.,
+            sample_rate: 48000.,
+            node_id: std::cell::Cell::new(AudioNodeId(0)),
+            event_sender: None,
+        };
+        graph.render(&scope);
+
+        // First the regular node should be dropped, then the audioparam
+        assert_eq!(node_id_consumer.pop().unwrap().0, 2);
+        assert_eq!(node_id_consumer.pop().unwrap().0, 3);
+
+        // No other dropped nodes
+        assert!(node_id_consumer.pop().is_none());
     }
 }
