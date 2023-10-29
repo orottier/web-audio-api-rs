@@ -21,14 +21,14 @@ use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 ///
 /// It reuses the ids of decommissioned nodes to prevent unbounded growth of the audio graphs node
 /// list (which is stored in a Vec indexed by the AudioNodeId).
-struct AudioNodeIdIssuer {
+struct AudioNodeIdProvider {
     /// incrementing id
     id_inc: AtomicU64,
     /// receiver for decommissioned AudioNodeIds, which can be reused
     id_consumer: Mutex<llq::Consumer<AudioNodeId>>,
 }
 
-impl AudioNodeIdIssuer {
+impl AudioNodeIdProvider {
     fn new(id_consumer: llq::Consumer<AudioNodeId>) -> Self {
         Self {
             id_inc: AtomicU64::new(0),
@@ -36,7 +36,7 @@ impl AudioNodeIdIssuer {
         }
     }
 
-    fn issue(&self) -> AudioNodeId {
+    fn get(&self) -> AudioNodeId {
         if let Some(available_id) = self.id_consumer.lock().unwrap().pop() {
             llq::Node::into_inner(available_id)
         } else {
@@ -75,8 +75,8 @@ struct ConcreteBaseAudioContextInner {
     sample_rate: f32,
     /// max number of speaker output channels
     max_channel_count: usize,
-    /// issuer for new AudioNodeIds
-    audio_node_id_issuer: AudioNodeIdIssuer,
+    /// provider for new AudioNodeIds
+    audio_node_id_provider: AudioNodeIdProvider,
     /// destination node's current channel count
     destination_channel_config: ChannelConfig,
     /// message channel from control to render thread
@@ -112,7 +112,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
         f: F,
     ) -> T {
         // create a unique id for this node
-        let id = self.inner.audio_node_id_issuer.issue();
+        let id = self.inner.audio_node_id_provider.get();
         let registration = AudioContextRegistration {
             id,
             context: self.clone(),
@@ -162,14 +162,14 @@ impl ConcreteBaseAudioContext {
             Some((send, recv)) => (Some(send), Some(recv)),
         };
 
-        let audio_node_id_issuer = AudioNodeIdIssuer::new(node_id_consumer);
+        let audio_node_id_provider = AudioNodeIdProvider::new(node_id_consumer);
 
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             max_channel_count,
             render_channel: RwLock::new(render_channel),
             queued_messages: Mutex::new(Vec::new()),
-            audio_node_id_issuer,
+            audio_node_id_provider,
             destination_channel_config: ChannelConfigOptions::default().into(),
             frames_played,
             queued_audio_listener_msgs: Mutex::new(Vec::new()),
@@ -234,7 +234,7 @@ impl ConcreteBaseAudioContext {
         // Validate if the hardcoded node IDs line up
         debug_assert_eq!(
             base.inner
-                .audio_node_id_issuer
+                .audio_node_id_provider
                 .id_inc
                 .load(Ordering::Relaxed),
             LISTENER_PARAM_IDS.end,
@@ -460,13 +460,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_issue_node_id() {
+    fn test_provide_node_id() {
         let (mut id_producer, id_consumer) = llq::Queue::new().split();
-        let issuer = AudioNodeIdIssuer::new(id_consumer);
-        assert_eq!(issuer.issue().0, 0); // newly assigned
-        assert_eq!(issuer.issue().0, 1); // newly assigned
+        let provider = AudioNodeIdProvider::new(id_consumer);
+        assert_eq!(provider.get().0, 0); // newly assigned
+        assert_eq!(provider.get().0, 1); // newly assigned
         id_producer.push(llq::Node::new(AudioNodeId(0)));
-        assert_eq!(issuer.issue().0, 0); // reused
-        assert_eq!(issuer.issue().0, 2); // newly assigned
+        assert_eq!(provider.get().0, 0); // reused
+        assert_eq!(provider.get().0, 2); // newly assigned
     }
 }
