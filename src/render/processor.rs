@@ -154,7 +154,7 @@ impl<'a> AudioParamValues<'a> {
     /// provide a slice of length equal to the render quantum size (default: 128)
     #[allow(clippy::missing_panics_doc)]
     pub fn get(&self, index: &AudioParamId) -> impl Deref<Target = [f32]> + '_ {
-        DerefAudioRenderQuantumChannel(self.nodes[index.0 as usize].borrow())
+        DerefAudioRenderQuantumChannel(self.nodes[index.into()].borrow())
     }
 
     pub(crate) fn listener_params(&self) -> [impl Deref<Target = [f32]> + '_; 9] {
