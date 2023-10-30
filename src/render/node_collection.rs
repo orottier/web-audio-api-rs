@@ -9,11 +9,11 @@ pub(crate) struct NodeCollection {
 }
 
 impl NodeCollection {
-    pub fn new() -> Self {
+    pub fn with_capacity(capacity: usize) -> Self {
         let mut instance = Self {
-            nodes: Vec::with_capacity(64),
+            nodes: Vec::with_capacity(capacity),
         };
-        instance.ensure_capacity(64);
+        instance.ensure_capacity(capacity);
         instance
     }
 

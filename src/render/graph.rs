@@ -10,6 +10,9 @@ use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeCol
 use crate::node::ChannelConfig;
 use crate::render::RenderScope;
 
+const INITIAL_GRAPH_SIZE: usize = 16;
+const INITIAL_CHANNEL_DATA_COUNT: usize = INITIAL_GRAPH_SIZE * 4;
+
 /// Connection between two audio nodes
 struct OutgoingEdge {
     /// index of the current Nodes output port
@@ -27,9 +30,9 @@ pub struct Node {
     /// Renderer: converts inputs to outputs
     processor: Box<dyn AudioProcessor>,
     /// Reusable input buffers
-    inputs: Vec<AudioRenderQuantum>,
+    inputs: SmallVec<[AudioRenderQuantum; 2]>,
     /// Reusable output buffers, consumed by subsequent Nodes in this graph
-    outputs: Vec<AudioRenderQuantum>,
+    outputs: SmallVec<[AudioRenderQuantum; 2]>,
     /// Channel configuration: determines up/down-mixing of inputs
     channel_config: ChannelConfig,
     /// Outgoing edges: tuple of outcoming node reference, our output index and their input index
@@ -97,14 +100,14 @@ pub(crate) struct Graph {
 impl Graph {
     pub fn new(reclaim_id_channel: llq::Producer<AudioNodeId>) -> Self {
         Graph {
-            nodes: NodeCollection::new(),
-            alloc: Alloc::with_capacity(64),
+            nodes: NodeCollection::with_capacity(INITIAL_GRAPH_SIZE),
+            alloc: Alloc::with_capacity(INITIAL_CHANNEL_DATA_COUNT),
             reclaim_id_channel,
-            ordered: vec![],
-            marked: vec![],
-            marked_temp: vec![],
-            in_cycle: vec![],
-            cycle_breakers: vec![],
+            ordered: Vec::with_capacity(INITIAL_GRAPH_SIZE),
+            marked: Vec::with_capacity(INITIAL_GRAPH_SIZE),
+            marked_temp: Vec::with_capacity(INITIAL_GRAPH_SIZE),
+            in_cycle: Vec::with_capacity(INITIAL_GRAPH_SIZE),
+            cycle_breakers: Vec::with_capacity(INITIAL_GRAPH_SIZE),
         }
     }
 
@@ -127,8 +130,8 @@ impl Graph {
 
         // set input and output buffers to single channel of silence, will be upmixed when
         // necessary
-        let inputs = vec![AudioRenderQuantum::from(self.alloc.silence()); number_of_inputs];
-        let outputs = vec![AudioRenderQuantum::from(self.alloc.silence()); number_of_outputs];
+        let inputs = smallvec![AudioRenderQuantum::from(self.alloc.silence()); number_of_inputs];
+        let outputs = smallvec![AudioRenderQuantum::from(self.alloc.silence()); number_of_outputs];
 
         self.nodes.insert(
             index,
@@ -487,6 +490,7 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::GarbageCollector;
 
     #[derive(Debug, Clone)]
     struct TestNode {
@@ -682,6 +686,7 @@ mod tests {
             sample_rate: 48000.,
             node_id: std::cell::Cell::new(AudioNodeId(0)),
             event_sender: None,
+            garbage_collector: GarbageCollector::default(),
         };
         graph.render(&scope);
 
@@ -733,6 +738,7 @@ mod tests {
             sample_rate: 48000.,
             node_id: std::cell::Cell::new(AudioNodeId(0)),
             event_sender: None,
+            garbage_collector: GarbageCollector::default(),
         };
         graph.render(&scope);
 
