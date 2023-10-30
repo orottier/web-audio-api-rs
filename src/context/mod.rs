@@ -43,7 +43,7 @@ pub(crate) struct AudioNodeId(pub u64);
 ///
 /// Store these in your `AudioProcessor` to get access to `AudioParam` values.
 #[derive(Debug)]
-pub struct AudioParamId(pub(crate) u64);
+pub struct AudioParamId(u64);
 
 // bit contrived, but for type safety only the context mod can access the inner u64
 impl From<&AudioParamId> for AudioNodeId {
