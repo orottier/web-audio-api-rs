@@ -11,4 +11,8 @@ pub(crate) use thread::*;
 mod processor;
 pub use processor::*;
 mod quantum;
+
+mod node_collection;
+pub(crate) use node_collection::NodeCollection;
+
 pub use quantum::*;

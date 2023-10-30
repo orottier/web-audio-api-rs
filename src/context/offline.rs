@@ -43,7 +43,8 @@ impl OfflineAudioContext {
         // unbounded is fine because it does not need to be realtime safe
         let (sender, receiver) = crossbeam_channel::unbounded();
 
-        let graph = crate::render::graph::Graph::new();
+        let (node_id_producer, node_id_consumer) = llq::Queue::new().split();
+        let graph = crate::render::graph::Graph::new(node_id_producer);
         let message = crate::message::ControlMessage::Startup { graph };
         sender.send(message).unwrap();
 
@@ -67,6 +68,7 @@ impl OfflineAudioContext {
             sender,
             None,
             true,
+            node_id_consumer,
         );
 
         Self {

@@ -17,6 +17,34 @@ use crossbeam_channel::{Receiver, SendError, Sender};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 
+/// This struct assigns new [`AudioNodeId`]s for [`AudioNode`]s
+///
+/// It reuses the ids of decommissioned nodes to prevent unbounded growth of the audio graphs node
+/// list (which is stored in a Vec indexed by the AudioNodeId).
+struct AudioNodeIdProvider {
+    /// incrementing id
+    id_inc: AtomicU64,
+    /// receiver for decommissioned AudioNodeIds, which can be reused
+    id_consumer: Mutex<llq::Consumer<AudioNodeId>>,
+}
+
+impl AudioNodeIdProvider {
+    fn new(id_consumer: llq::Consumer<AudioNodeId>) -> Self {
+        Self {
+            id_inc: AtomicU64::new(0),
+            id_consumer: Mutex::new(id_consumer),
+        }
+    }
+
+    fn get(&self) -> AudioNodeId {
+        if let Some(available_id) = self.id_consumer.lock().unwrap().pop() {
+            llq::Node::into_inner(available_id)
+        } else {
+            AudioNodeId(self.id_inc.fetch_add(1, Ordering::Relaxed))
+        }
+    }
+}
+
 /// The struct that corresponds to the Javascript `BaseAudioContext` object.
 ///
 /// This object is returned from the `base()` method on
@@ -47,8 +75,8 @@ struct ConcreteBaseAudioContextInner {
     sample_rate: f32,
     /// max number of speaker output channels
     max_channel_count: usize,
-    /// incrementing id to assign to audio nodes
-    node_id_inc: AtomicU64,
+    /// provider for new AudioNodeIds
+    audio_node_id_provider: AudioNodeIdProvider,
     /// destination node's current channel count
     destination_channel_config: ChannelConfig,
     /// message channel from control to render thread
@@ -83,9 +111,8 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
         &self,
         f: F,
     ) -> T {
-        // create unique identifier for this node
-        let id = self.inner.node_id_inc.fetch_add(1, Ordering::SeqCst);
-        let id = AudioNodeId(id);
+        // create a unique id for this node
+        let id = self.inner.audio_node_id_provider.get();
         let registration = AudioContextRegistration {
             id,
             context: self.clone(),
@@ -97,6 +124,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
         // pass the renderer to the audio graph
         let message = ControlMessage::RegisterNode {
             id,
+            reclaim_id: llq::Node::new(id),
             node: render,
             inputs: node.number_of_inputs(),
             outputs: node.number_of_outputs(),
@@ -126,6 +154,7 @@ impl ConcreteBaseAudioContext {
         render_channel: Sender<ControlMessage>,
         event_channel: Option<(Sender<EventDispatch>, Receiver<EventDispatch>)>,
         offline: bool,
+        node_id_consumer: llq::Consumer<AudioNodeId>,
     ) -> Self {
         let event_loop = EventLoop::new();
         let (event_send, event_recv) = match event_channel {
@@ -133,12 +162,14 @@ impl ConcreteBaseAudioContext {
             Some((send, recv)) => (Some(send), Some(recv)),
         };
 
+        let audio_node_id_provider = AudioNodeIdProvider::new(node_id_consumer);
+
         let base_inner = ConcreteBaseAudioContextInner {
             sample_rate,
             max_channel_count,
             render_channel: RwLock::new(render_channel),
             queued_messages: Mutex::new(Vec::new()),
-            node_id_inc: AtomicU64::new(0),
+            audio_node_id_provider,
             destination_channel_config: ChannelConfigOptions::default().into(),
             frames_played,
             queued_audio_listener_msgs: Mutex::new(Vec::new()),
@@ -202,7 +233,10 @@ impl ConcreteBaseAudioContext {
 
         // Validate if the hardcoded node IDs line up
         debug_assert_eq!(
-            base.inner.node_id_inc.load(Ordering::Relaxed),
+            base.inner
+                .audio_node_id_provider
+                .id_inc
+                .load(Ordering::Relaxed),
             LISTENER_PARAM_IDS.end,
         );
 
@@ -418,5 +452,21 @@ impl ConcreteBaseAudioContext {
 
     pub(crate) fn clear_event_handler(&self, event: EventType) {
         self.inner.event_loop.clear_handler(event);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provide_node_id() {
+        let (mut id_producer, id_consumer) = llq::Queue::new().split();
+        let provider = AudioNodeIdProvider::new(id_consumer);
+        assert_eq!(provider.get().0, 0); // newly assigned
+        assert_eq!(provider.get().0, 1); // newly assigned
+        id_producer.push(llq::Node::new(AudioNodeId(0)));
+        assert_eq!(provider.get().0, 0); // reused
+        assert_eq!(provider.get().0, 2); // newly assigned
     }
 }
