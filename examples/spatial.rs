@@ -1,17 +1,34 @@
 use std::io::BufRead;
-use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, PannerNode, PannerOptions, PanningModelType,
 };
 
+// PannerNode example
+//
+// `cargo run --release --example spatial`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example spatial`
 fn main() {
-    let ctx_opts = AudioContextOptions {
-        sample_rate: Some(44100.),
-        ..AudioContextOptions::default()
-    };
-    let context = AudioContext::new(ctx_opts);
+    env_logger::init();
 
-    // Move listener slightly out of carthesian center to prevent numerical artefacts
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
+
+    // Move listener slightly out of cartesian center to prevent numerical artefacts
     context.listener().position_x().set_value(0.01);
     context.listener().position_y().set_value(0.01);
     context.listener().position_z().set_value(0.01);
@@ -19,7 +36,7 @@ fn main() {
     // Create looping 'siren' sound
     let file = std::fs::File::open("samples/siren.mp3").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();
-    let tone = context.create_buffer_source();
+    let mut tone = context.create_buffer_source();
     tone.set_buffer(buffer);
     tone.set_loop(true);
     tone.start();
@@ -30,7 +47,7 @@ fn main() {
         ..PannerOptions::default()
     };
 
-    let panner = PannerNode::new(&context, opts);
+    let mut panner = PannerNode::new(&context, opts);
     tone.connect(&panner);
     panner.connect(&context.destination());
 
@@ -40,7 +57,7 @@ fn main() {
     // will be audible (ref distance = 1.)
     //
     // Make x-value a periodic wave
-    let moving = context.create_oscillator();
+    let mut moving = context.create_oscillator();
     moving.frequency().set_value_at_time(0.25, 0.);
     let gain = context.create_gain();
     gain.gain().set_value_at_time(10., 0.);
@@ -49,7 +66,7 @@ fn main() {
     moving.start();
 
     // Make y-value a periodic wave, delayed so it forms a circle with the x-value
-    let moving = context.create_oscillator();
+    let mut moving = context.create_oscillator();
     moving.frequency().set_value_at_time(0.25, 0.);
     let delay = context.create_delay(1.);
     delay

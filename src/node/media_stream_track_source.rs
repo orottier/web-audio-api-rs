@@ -6,9 +6,13 @@ use crate::RENDER_QUANTUM_SIZE;
 use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
 
 /// Options for constructing a [`MediaStreamTrackAudioSourceNode`]
-// dictionary MediaStreamAudioSourceOptions {
-//   required MediaStream mediaStream;
+// dictionary MediaStreamTrackAudioSourceOptions {
+//     required MediaStreamTrack mediaStreamTrack;
 // };
+//
+// @note - Does not extend AudioNodeOptions because AudioNodeOptions are
+// useless for source nodes as they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. https://github.com/mdn/content/pull/18472
 pub struct MediaStreamTrackAudioSourceOptions<'a> {
     pub media_stream_track: &'a MediaStreamTrack,
 }
@@ -79,7 +83,7 @@ impl AudioNode for MediaStreamTrackAudioSourceNode {
 impl MediaStreamTrackAudioSourceNode {
     pub fn new<C: BaseAudioContext>(
         context: &C,
-        options: MediaStreamTrackAudioSourceOptions,
+        options: MediaStreamTrackAudioSourceOptions<'_>,
     ) -> Self {
         context.register(move |registration| {
             let node = MediaStreamTrackAudioSourceNode {

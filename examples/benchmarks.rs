@@ -4,18 +4,24 @@ use std::fs::File;
 use std::io::{stdin, stdout, BufRead, Write};
 use std::time::{Duration, Instant};
 
-use web_audio_api::context::{AudioContext, BaseAudioContext, OfflineAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+    OfflineAudioContext,
+};
 use web_audio_api::node::{
     AudioBufferSourceNode, AudioNode, AudioScheduledSourceNode, OscillatorType,
 };
 use web_audio_api::AudioBuffer;
 
-// benchmark adapted from https://github.com/padenot/webaudio-benchmark
-// missing the "Convolution Reverb" as we don't have the node implemented yet
+// Benchmarks adapted from https://github.com/padenot/webaudio-benchmark
 //
-// run in release mode
 // `cargo run --release --example benchmarks`
-
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example benchmarks`
 struct BenchResult {
     name: &'static str,
     duration: Duration,
@@ -57,6 +63,8 @@ fn benchmark(name: &'static str, context: OfflineAudioContext, results: &mut Vec
 }
 
 fn main() {
+    env_logger::init();
+
     let mut sources = Vec::<AudioBuffer>::new();
     let mut results = Vec::<BenchResult>::new();
 
@@ -87,7 +95,7 @@ fn main() {
         let name = "Simple source test without resampling (Mono)";
 
         let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let source = context.create_buffer_source();
+        let mut source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate, 1);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -101,7 +109,7 @@ fn main() {
         let name = "Simple source test without resampling (Stereo)";
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
-        let source = context.create_buffer_source();
+        let mut source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate, 2);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -125,7 +133,7 @@ fn main() {
         panner.orientation_y().set_value(2.);
         panner.orientation_z().set_value(3.);
 
-        let source = context.create_buffer_source();
+        let mut source = context.create_buffer_source();
         source.connect(&panner);
 
         let buf = get_buffer(&sources, sample_rate, 2);
@@ -140,7 +148,7 @@ fn main() {
         let name = "Simple source test with resampling (Mono)";
 
         let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let source = context.create_buffer_source();
+        let mut source = context.create_buffer_source();
         let buf = get_buffer(&sources, 38000., 1);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -154,7 +162,7 @@ fn main() {
         let name = "Simple source test with resampling (Stereo)";
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
-        let source = context.create_buffer_source();
+        let mut source = context.create_buffer_source();
         let buf = get_buffer(&sources, 38000., 2);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -178,7 +186,7 @@ fn main() {
         panner.orientation_y().set_value(2.);
         panner.orientation_z().set_value(3.);
 
-        let source = context.create_buffer_source();
+        let mut source = context.create_buffer_source();
         source.connect(&panner);
 
         let buf = get_buffer(&sources, 38000., 2);
@@ -193,7 +201,7 @@ fn main() {
         let name = "Upmix without resampling (Mono -> Stereo)";
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
-        let source = context.create_buffer_source();
+        let mut source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate, 1);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -207,7 +215,7 @@ fn main() {
         let name = "Downmix without resampling (Stereo -> Mono)";
 
         let context = OfflineAudioContext::new(1, DURATION * sample_rate as usize, sample_rate);
-        let source = context.create_buffer_source();
+        let mut source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate, 2);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -225,7 +233,7 @@ fn main() {
             OfflineAudioContext::new(2, adjusted_duration * sample_rate as usize, sample_rate);
 
         for _ in 0..100 {
-            let source = context.create_buffer_source();
+            let mut source = context.create_buffer_source();
             let buf = get_buffer(&sources, 38000., 1);
             source.set_buffer(buf);
             source.set_loop(true);
@@ -249,7 +257,7 @@ fn main() {
             let mut buffer = context.create_buffer(1, reference.length(), 38000.);
             buffer.copy_to_channel(channel_data, 0);
 
-            let source = context.create_buffer_source();
+            let mut source = context.create_buffer_source();
             source.set_buffer(buffer);
             source.set_loop(true);
             source.connect(&context.destination());
@@ -280,7 +288,7 @@ fn main() {
         for _ in 0..2 {
             let buf = get_buffer(&sources, 38000., 1);
 
-            let source = context.create_buffer_source();
+            let mut source = context.create_buffer_source();
             source.set_buffer(buf);
             source.set_loop(true);
             source.start();
@@ -327,11 +335,11 @@ fn main() {
                 *b = (rng.gen_range(0.0..2.) - 1.) * (1. - i as f32 / len).powf(decay)
             });
 
-        let convolver = context.create_convolver();
+        let mut convolver = context.create_convolver();
         convolver.set_buffer(buffer);
         convolver.connect(&context.destination());
 
-        let source = context.create_buffer_source();
+        let mut source = context.create_buffer_source();
         source.set_buffer(buf);
         source.set_loop(true);
         source.start();
@@ -355,7 +363,7 @@ fn main() {
             let env = context.create_gain();
             env.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&env);
             src.set_buffer(buffer.clone());
 
@@ -392,7 +400,7 @@ fn main() {
             let env = context.create_gain();
             env.connect(&context.destination());
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&env);
             osc.set_type(OscillatorType::Sawtooth);
             osc.frequency().set_value(110.);
@@ -422,7 +430,7 @@ fn main() {
             let env = context.create_gain();
             env.connect(&context.destination());
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&env);
             osc.set_type(OscillatorType::Sawtooth);
             osc.frequency().set_value(110.);
@@ -445,7 +453,7 @@ fn main() {
         let duration = DURATION as f64;
 
         while offset < duration {
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.set_type(OscillatorType::Sawtooth);
             osc.frequency().set_value(110.);
@@ -474,7 +482,7 @@ fn main() {
         env.connect(&filter);
         env.gain().set_value_at_time(0., 0.);
 
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&env);
         osc.set_type(OscillatorType::Sawtooth);
         osc.frequency().set_value(110.);
@@ -504,7 +512,7 @@ fn main() {
         panner.connect(&context.destination());
         panner.pan().set_value(0.1);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         let buffer = get_buffer(&sources, sample_rate, 2);
         src.connect(&panner);
         src.set_buffer(buffer);
@@ -524,7 +532,7 @@ fn main() {
         panner.pan().set_value_at_time(-1., 0.);
         panner.pan().set_value_at_time(0.2, 0.5);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         let buffer = get_buffer(&sources, sample_rate, 2);
         src.connect(&panner);
         src.set_buffer(buffer);
@@ -539,7 +547,7 @@ fn main() {
 
         let context = OfflineAudioContext::new(2, DURATION * sample_rate as usize, sample_rate);
 
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.set_type(OscillatorType::Sawtooth);
         osc.frequency().set_value(2000.);
@@ -559,7 +567,7 @@ fn main() {
         delay.delay_time().set_value(1.);
         delay.connect(&context.destination());
 
-        let source = context.create_buffer_source();
+        let mut source = context.create_buffer_source();
         let buf = get_buffer(&sources, sample_rate, 2);
         source.set_buffer(buf);
         source.set_loop(true);
@@ -587,7 +595,7 @@ fn main() {
         let iir = context.create_iir_filter(feedforward, feedback);
         iir.connect(&context.destination());
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         let buffer = get_buffer(&sources, sample_rate, 2);
         src.connect(&iir);
         src.set_buffer(buffer);
@@ -607,7 +615,7 @@ fn main() {
         biquad.connect(&context.destination());
         biquad.frequency().set_value(200.);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         let buffer = get_buffer(&sources, sample_rate, 2);
         src.connect(&biquad);
         src.set_buffer(buffer);
@@ -647,7 +655,16 @@ fn main() {
     // -------------------------------------------------------
     // handle input and preview
     // -------------------------------------------------------
-    let context = AudioContext::default();
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
+
     let mut current_source: Option<AudioBufferSourceNode> = None;
 
     let lines = stdin().lock().lines();
@@ -660,12 +677,12 @@ fn main() {
         let result = &results[id];
         let name = result.name;
 
-        if let Some(cur) = current_source.take() {
+        if let Some(mut cur) = current_source.take() {
             cur.stop();
         }
 
         let buffer = result.buffer.clone();
-        let source = context.create_buffer_source();
+        let mut source = context.create_buffer_source();
         source.set_buffer(buffer);
         source.connect(&context.destination());
         source.start();

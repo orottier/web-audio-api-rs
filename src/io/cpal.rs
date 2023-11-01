@@ -1,4 +1,5 @@
 //! Audio IO management API
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -7,6 +8,7 @@ use cpal::{
     BuildStreamError, Device, OutputCallbackInfo, SampleFormat, Stream, StreamConfig,
     SupportedBufferSize,
 };
+use crossbeam_channel::Receiver;
 
 use super::{AudioBackendManager, RenderThreadInit};
 
@@ -15,10 +17,11 @@ use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
-use crate::AtomicF64;
+use crate::{AtomicF64, MAX_CHANNELS};
 
-use crossbeam_channel::Receiver;
-
+// I doubt this construct is entirely safe. Stream is not Send/Sync (probably for a good reason) so
+// it should be managed from a single thread instead.
+// <https://github.com/orottier/web-audio-api-rs/issues/357>
 mod private {
     use super::*;
 
@@ -27,6 +30,7 @@ mod private {
 
     impl ThreadSafeClosableStream {
         pub fn new(stream: Stream) -> Self {
+            #[allow(clippy::arc_with_non_send_sync)]
             Self(Arc::new(Mutex::new(Some(stream))))
         }
 
@@ -66,6 +70,39 @@ mod private {
 }
 use private::ThreadSafeClosableStream;
 
+fn get_host() -> cpal::Host {
+    #[cfg(feature = "cpal-jack")]
+    {
+        // seems to be always Some when jack is installed,
+        // even if it's not running
+        if let Some(jack_id) = cpal::available_hosts()
+            .into_iter()
+            .find(|id| *id == cpal::HostId::Jack)
+        {
+            let jack_host = cpal::host_from_id(jack_id).unwrap();
+
+            // if jack is not running, the host can't access devices
+            // fallback to default host
+            return match jack_host.devices() {
+                Ok(devices) => {
+                    // no jack devices found, jack is not running
+                    if devices.count() == 0 {
+                        log::warn!("No jack devices found, fallback to default host");
+                        cpal::default_host()
+                    } else {
+                        jack_host
+                    }
+                }
+                // cpal does not seems to return Err at this point
+                // but just in case, fallback to default host
+                Err(_) => cpal::default_host(),
+            };
+        }
+    }
+
+    cpal::default_host()
+}
+
 /// Audio backend using the `cpal` library
 #[derive(Clone)]
 pub(crate) struct CpalBackend {
@@ -81,7 +118,8 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let host = cpal::default_host();
+        let host = get_host();
+
         log::info!("Audio Output Host: cpal {:?}", host.id());
 
         let RenderThreadInit {
@@ -99,59 +137,75 @@ impl AudioBackendManager for CpalBackend {
                 .into_iter()
                 .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
-                .unwrap()
+                .unwrap_or_else(|| {
+                    host.default_output_device()
+                        .expect("no output device available")
+                })
         };
 
         log::info!("Output device: {:?}", device.name());
 
-        let supported = device
+        let default_device_config = device
             .default_output_config()
             .expect("error while querying config");
 
-        let mut prefered: StreamConfig = supported.clone().into();
+        // we grab the largest number of channels provided by the soundcard
+        // clamped to MAX_CHANNELS, this value cannot be changed by the user
+        let number_of_channels = usize::from(default_device_config.channels()).min(MAX_CHANNELS);
+
+        // override default device configuration with the options provided by
+        // the user when creating the `AudioContext`
+        let mut preferred_config: StreamConfig = default_device_config.clone().into();
+        // make sure the number of channels is clamped to MAX_CHANNELS
+        preferred_config.channels = number_of_channels as u16;
 
         // set specific sample rate if requested
         if let Some(sample_rate) = options.sample_rate {
             crate::assert_valid_sample_rate(sample_rate);
-            prefered.sample_rate.0 = sample_rate as u32;
+            preferred_config.sample_rate.0 = sample_rate as u32;
         }
 
         // always try to set a decent buffer size
         let buffer_size = super::buffer_size_for_latency_category(
             options.latency_hint,
-            prefered.sample_rate.0 as f32,
+            preferred_config.sample_rate.0 as f32,
         ) as u32;
 
-        let clamped_buffer_size: u32 = match supported.buffer_size() {
+        let clamped_buffer_size: u32 = match default_device_config.buffer_size() {
             SupportedBufferSize::Unknown => buffer_size,
             SupportedBufferSize::Range { min, max } => buffer_size.clamp(*min, *max),
         };
 
-        prefered.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
+        preferred_config.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
 
+        // report the picked sample rate to the render thread, i.e. if the requested
+        // sample rate is not supported by the hardware, it will fallback to the
+        // default device sample rate
+        let mut sample_rate = preferred_config.sample_rate.0 as f32;
+
+        // shared atomic to report output latency to the control thread
         let output_latency = Arc::new(AtomicF64::new(0.));
-        let mut number_of_channels = usize::from(prefered.channels);
-        let mut sample_rate = prefered.sample_rate.0 as f32;
 
-        let renderer = RenderThread::new(
+        let mut renderer = RenderThread::new(
             sample_rate,
-            prefered.channels as usize,
+            preferred_config.channels as usize,
             ctrl_msg_recv.clone(),
-            frames_played.clone(),
-            Some(load_value_send.clone()),
-            Some(event_send.clone()),
+            Arc::clone(&frames_played),
         );
+        renderer.set_event_channels(load_value_send.clone(), event_send.clone());
+        renderer.spawn_garbage_collector_thread();
 
         log::debug!(
-            "Attempt output stream with prefered config: {:?}",
-            &prefered
+            "Attempt output stream with preferred config: {:?}",
+            &preferred_config
         );
+
         let spawned = spawn_output_stream(
             &device,
-            supported.sample_format(),
-            &prefered,
+            default_device_config.sample_format(),
+            &preferred_config,
             renderer,
-            output_latency.clone(),
+            Arc::clone(&output_latency),
         );
 
         let stream = match spawned {
@@ -160,10 +214,12 @@ impl AudioBackendManager for CpalBackend {
                 stream
             }
             Err(e) => {
-                log::warn!("Output stream build failed with prefered config: {}", e);
+                log::warn!("Output stream build failed with preferred config: {}", e);
 
-                let supported_config: StreamConfig = supported.clone().into();
-                number_of_channels = usize::from(supported_config.channels);
+                let mut supported_config: StreamConfig = default_device_config.clone().into();
+                // make sure number of channels is clamped to MAX_CHANNELS
+                supported_config.channels = number_of_channels as u16;
+                // fallback to device default sample rate
                 sample_rate = supported_config.sample_rate.0 as f32;
 
                 log::debug!(
@@ -171,22 +227,23 @@ impl AudioBackendManager for CpalBackend {
                     &supported_config
                 );
 
-                let renderer = RenderThread::new(
+                let mut renderer = RenderThread::new(
                     sample_rate,
                     supported_config.channels as usize,
                     ctrl_msg_recv,
                     frames_played,
-                    Some(load_value_send),
-                    Some(event_send),
                 );
+                renderer.set_event_channels(load_value_send, event_send);
+                renderer.spawn_garbage_collector_thread();
 
                 let spawned = spawn_output_stream(
                     &device,
-                    supported.sample_format(),
+                    default_device_config.sample_format(),
                     &supported_config,
                     renderer,
-                    output_latency.clone(),
+                    Arc::clone(&output_latency),
                 );
+
                 spawned.expect("OutputStream build failed with default config")
             }
         };
@@ -206,7 +263,8 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let host = cpal::default_host();
+        let host = get_host();
+
         log::info!("Audio Input Host: cpal {:?}", host.id());
 
         let device = if options.sink_id.is_empty() {
@@ -217,7 +275,10 @@ impl AudioBackendManager for CpalBackend {
                 .into_iter()
                 .find(|e| e.device_id() == options.sink_id)
                 .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
-                .unwrap()
+                .unwrap_or_else(|| {
+                    host.default_input_device()
+                        .expect("no input device available")
+                })
         };
 
         log::info!("Input device: {:?}", device.name());
@@ -227,18 +288,18 @@ impl AudioBackendManager for CpalBackend {
             .expect("error while querying configs");
 
         // clone the config, we may need to fall back on it later
-        let mut prefered: StreamConfig = supported.clone().into();
+        let mut preferred: StreamConfig = supported.clone().into();
 
         // set specific sample rate if requested
         if let Some(sample_rate) = options.sample_rate {
             crate::assert_valid_sample_rate(sample_rate);
-            prefered.sample_rate.0 = sample_rate as u32;
+            preferred.sample_rate.0 = sample_rate as u32;
         }
 
         // always try to set a decent buffer size
         let buffer_size = super::buffer_size_for_latency_category(
             options.latency_hint,
-            prefered.sample_rate.0 as f32,
+            preferred.sample_rate.0 as f32,
         ) as u32;
 
         let clamped_buffer_size: u32 = match supported.buffer_size() {
@@ -246,19 +307,19 @@ impl AudioBackendManager for CpalBackend {
             SupportedBufferSize::Range { min, max } => buffer_size.clamp(*min, *max),
         };
 
-        prefered.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
+        preferred.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
 
-        let mut number_of_channels = usize::from(prefered.channels);
-        let mut sample_rate = prefered.sample_rate.0 as f32;
+        let mut number_of_channels = usize::from(preferred.channels);
+        let mut sample_rate = preferred.sample_rate.0 as f32;
 
         let smoothing = 3; // todo, use buffering to smooth frame drops
         let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
         let renderer = MicrophoneRender::new(number_of_channels, sample_rate, sender);
 
         let maybe_stream =
-            spawn_input_stream(&device, supported.sample_format(), &prefered, renderer);
+            spawn_input_stream(&device, supported.sample_format(), &preferred, renderer);
 
-        // the required block size prefered config may not be supported, in that
+        // the required block size preferred config may not be supported, in that
         // case, fallback the supported config
         let stream = match maybe_stream {
             Ok(stream) => stream,
@@ -266,7 +327,7 @@ impl AudioBackendManager for CpalBackend {
                 log::warn!(
                     "Output stream failed to build: {:?}, retry with default config {:?}",
                     e,
-                    prefered
+                    preferred
                 );
 
                 let supported_config: StreamConfig = supported.clone().into();
@@ -324,7 +385,7 @@ impl AudioBackendManager for CpalBackend {
     }
 
     fn output_latency(&self) -> f64 {
-        self.output_latency.load()
+        self.output_latency.load(Ordering::Relaxed)
     }
 
     fn sink_id(&self) -> &str {
@@ -339,55 +400,61 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let mut index = 0;
+        let host = get_host();
 
-        let mut inputs: Vec<MediaDeviceInfo> = cpal::default_host()
-            .devices()
-            .unwrap()
-            .filter(|d| d.default_input_config().is_ok())
-            .map(|d| {
-                index += 1;
+        let input_devices = host.input_devices().unwrap().map(|d| {
+            let num_channels = d.default_input_config().unwrap().channels();
+            (d, MediaDeviceInfoKind::AudioInput, num_channels)
+        });
 
-                MediaDeviceInfo::new(
-                    format!("{}", index),
-                    None,
-                    MediaDeviceInfoKind::AudioInput,
-                    d.name().unwrap(),
-                    Box::new(d),
-                )
-            })
-            .collect();
+        let output_devices = host.output_devices().unwrap().map(|d| {
+            let num_channels = d.default_output_config().unwrap().channels();
+            (d, MediaDeviceInfoKind::AudioOutput, num_channels)
+        });
 
-        let mut outputs: Vec<MediaDeviceInfo> = cpal::default_host()
-            .devices()
-            .unwrap()
-            .filter(|d| d.default_output_config().is_ok())
-            .map(|d| {
-                index += 1;
+        // cf. https://github.com/orottier/web-audio-api-rs/issues/356
+        let mut list = Vec::<MediaDeviceInfo>::new();
 
-                MediaDeviceInfo::new(
-                    format!("{}", index),
-                    None,
-                    MediaDeviceInfoKind::AudioOutput,
-                    d.name().unwrap(),
-                    Box::new(d),
-                )
-            })
-            .collect();
+        for (device, kind, num_channels) in input_devices.chain(output_devices) {
+            let mut index = 0;
 
-        inputs.append(&mut outputs);
+            loop {
+                let device_id = crate::media_devices::DeviceId::as_string(
+                    kind,
+                    "cpal".to_string(),
+                    device.name().unwrap(),
+                    num_channels,
+                    index,
+                );
 
-        inputs
+                if !list.iter().any(|d| d.device_id() == device_id) {
+                    let device = MediaDeviceInfo::new(
+                        device_id,
+                        None,
+                        kind,
+                        device.name().unwrap(),
+                        Box::new(device),
+                    );
+
+                    list.push(device);
+                    break;
+                } else {
+                    index += 1;
+                }
+            }
+        }
+
+        list
     }
 }
 
 fn latency_in_seconds(infos: &OutputCallbackInfo) -> f64 {
     let timestamp = infos.timestamp();
-    let delta = timestamp
+    timestamp
         .playback
         .duration_since(&timestamp.callback)
-        .unwrap();
-    delta.as_secs() as f64 + delta.subsec_nanos() as f64 * 1e-9
+        .map(|delta| delta.as_secs() as f64 + delta.subsec_nanos() as f64 * 1e-9)
+        .unwrap_or(0.0)
 }
 
 /// Creates an output stream
@@ -412,7 +479,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [f32], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i));
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -421,7 +488,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [f64], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i));
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -430,7 +497,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u8], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i));
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -439,7 +506,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u16], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i));
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -448,7 +515,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u32], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i));
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -457,7 +524,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u64], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i));
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -466,7 +533,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i8], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i));
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -475,7 +542,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i16], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i));
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -484,7 +551,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i32], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i));
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,
@@ -493,7 +560,7 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i64], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i));
+                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
             },
             err_fn,
             None,

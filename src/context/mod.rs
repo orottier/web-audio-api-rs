@@ -1,5 +1,5 @@
 //! The `BaseAudioContext` interface and the `AudioContext` and `OfflineAudioContext` types
-use std::ops::Range;
+use std::{any::Any, ops::Range};
 
 mod base;
 pub use base::*;
@@ -82,7 +82,7 @@ impl From<u8> for AudioContextState {
 ///
 /// The only way to construct this object is by calling [`BaseAudioContext::register`]
 pub struct AudioContextRegistration {
-    /// the audio context in wich nodes and connections lives
+    /// the audio context in which nodes and connections lives
     context: ConcreteBaseAudioContext,
     /// identify a specific `AudioNode`
     id: AudioNodeId,
@@ -99,6 +99,18 @@ impl AudioContextRegistration {
     #[must_use]
     pub(crate) fn context(&self) -> &ConcreteBaseAudioContext {
         &self.context
+    }
+
+    /// Send a message to the corresponding audio processor of this node
+    ///
+    /// The message will be handled by
+    /// [`AudioProcessor::onmessage`](crate::render::AudioProcessor::onmessage).
+    pub fn post_message<M: Any + Send + 'static>(&self, msg: M) {
+        let wrapped = crate::message::ControlMessage::NodeMessage {
+            id: self.id,
+            msg: llq::Node::new(Box::new(msg)),
+        };
+        let _ = self.context.send_control_msg(wrapped);
     }
 }
 

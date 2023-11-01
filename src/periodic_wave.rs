@@ -9,7 +9,7 @@ use crate::node::TABLE_LENGTH_USIZE;
 /// Options for constructing a [`PeriodicWave`]
 #[derive(Debug, Default, Clone)]
 pub struct PeriodicWaveOptions {
-    /// The real parameter represents an array of cosine terms of Fourrier series.
+    /// The real parameter represents an array of cosine terms of Fourier series.
     ///
     /// The first element (index 0) represents the DC-offset.
     /// This offset has to be given but will not be taken into account
@@ -18,7 +18,7 @@ pub struct PeriodicWaveOptions {
     /// The following elements (index 1 and more) represent the fundamental and
     /// harmonics of the periodic waveform.
     pub real: Option<Vec<f32>>,
-    /// The imag parameter represents an array of sine terms of Fourrier series.
+    /// The imag parameter represents an array of sine terms of Fourier series.
     ///
     /// The first element (index 0) will not be taken into account
     /// to build the custom periodic waveform.
@@ -38,7 +38,7 @@ pub struct PeriodicWaveOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/PeriodicWave>
 /// - specification: <https://webaudio.github.io/web-audio-api/#PeriodicWave>
-/// - see also: [`BaseAudioContext::create_periodic_wave`](crate::context::BaseAudioContext::create_periodic_wave)
+/// - see also: [`BaseAudioContext::create_periodic_wave`]
 /// - see also: [`OscillatorNode`](crate::node::OscillatorNode)
 ///
 /// # Usage
@@ -59,7 +59,7 @@ pub struct PeriodicWaveOptions {
 ///
 /// let periodic_wave = PeriodicWave::new(&context, options);
 ///
-/// let osc = context.create_oscillator();
+/// let mut osc = context.create_oscillator();
 /// osc.set_periodic_wave(periodic_wave);
 /// osc.connect(&context.destination());
 /// osc.start();
@@ -69,7 +69,7 @@ pub struct PeriodicWaveOptions {
 /// - `cargo run --release --example oscillators`
 ///
 // Basically a wrapper around Arc<Vec<f32>>, so `PeriodicWave`s are cheap to clone
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PeriodicWave {
     wavetable: Arc<Vec<f32>>,
 }
@@ -79,8 +79,8 @@ impl PeriodicWave {
     ///
     /// # Arguments
     ///
-    /// * `real` - The real parameter represents an array of cosine terms of Fourrier series.
-    /// * `imag` - The imag parameter represents an array of sine terms of Fourrier series.
+    /// * `real` - The real parameter represents an array of cosine terms of Fourier series.
+    /// * `imag` - The imag parameter represents an array of sine terms of Fourier series.
     /// * `constraints` - The constraints parameter specifies the normalization mode of the `PeriodicWave`
     ///
     /// # Panics
@@ -294,7 +294,7 @@ mod tests {
 
         for i in 0..TABLE_LENGTH_USIZE {
             let mut sample = 0.;
-            // fondamental frequency
+            // fundamental frequency
             sample += 0.5 * (1. * i as f32 / TABLE_LENGTH_F32 * 2. * PI).sin();
             // 1rst partial
             sample += 0.5 * (2. * i as f32 / TABLE_LENGTH_F32 * 2. * PI).sin();
@@ -334,7 +334,7 @@ mod tests {
 
         for i in 0..TABLE_LENGTH_USIZE {
             let mut sample = 0.;
-            // fondamental frequency
+            // fundamental frequency
             sample += 0.5 * (1. * i as f32 / TABLE_LENGTH_F32 * 2. * PI).sin();
             // 1rst partial
             sample += 0.5 * (2. * i as f32 / TABLE_LENGTH_F32 * 2. * PI).sin();

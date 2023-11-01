@@ -1,24 +1,18 @@
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc,
-};
+use std::any::Any;
 
-use crossbeam_channel::{Receiver, Sender};
-use once_cell::sync::OnceCell;
-use rubato::{FftFixedInOut, Resampler};
+use rubato::{FftFixedInOut, Resampler as _};
 
 use crate::{
     context::{AudioContextRegistration, BaseAudioContext},
     render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope},
+    RENDER_QUANTUM_SIZE,
 };
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
-struct CurveMessage(Vec<f32>);
-
 /// enumerates the oversampling rate available for `WaveShaperNode`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// the naming comes from the web audio specfication
+// the naming comes from the web audio specification
 pub enum OverSampleType {
     /// No oversampling is applied
     None,
@@ -63,8 +57,8 @@ pub struct WaveShaperOptions {
 impl Default for WaveShaperOptions {
     fn default() -> Self {
         Self {
-            curve: None,
             oversample: OverSampleType::None,
+            curve: None,
             channel_config: ChannelConfigOptions::default(),
         }
     }
@@ -75,7 +69,7 @@ impl Default for WaveShaperOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/WaveShaperNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#WaveShaperNode>
-/// - see also: [`BaseAudioContext::create_wave_shaper`](crate::context::BaseAudioContext::create_wave_shaper)
+/// - see also: [`BaseAudioContext::create_wave_shaper`]
 ///
 /// # Usage
 ///
@@ -106,7 +100,7 @@ impl Default for WaveShaperOptions {
 /// post_gain.connect(&context.destination());
 /// post_gain.gain().set_value(1. / drive);
 ///
-/// let shaper = context.create_wave_shaper();
+/// let mut shaper = context.create_wave_shaper();
 /// shaper.connect(&post_gain);
 /// shaper.set_curve(curve);
 ///
@@ -114,7 +108,7 @@ impl Default for WaveShaperOptions {
 /// pre_gain.connect(&shaper);
 /// pre_gain.gain().set_value(drive);
 ///
-/// let src = context.create_buffer_source();
+/// let mut src = context.create_buffer_source();
 /// src.connect(&pre_gain);
 /// src.set_buffer(buffer);
 ///
@@ -130,11 +124,9 @@ pub struct WaveShaperNode {
     /// Infos about audio node channel configuration
     channel_config: ChannelConfig,
     /// distortion curve
-    curve: OnceCell<Vec<f32>>,
+    curve: Option<Vec<f32>>,
     /// oversample type
-    oversample: Arc<AtomicU32>,
-    /// Channel between node and renderer (sender part)
-    sender: Sender<CurveMessage>,
+    oversample: OverSampleType,
 }
 
 impl AudioNode for WaveShaperNode {
@@ -163,48 +155,42 @@ impl WaveShaperNode {
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - waveshaper options
     pub fn new<C: BaseAudioContext>(context: &C, options: WaveShaperOptions) -> Self {
-        context.register(move |registration| {
-            let WaveShaperOptions {
-                curve,
-                oversample,
-                channel_config,
-            } = options;
+        let WaveShaperOptions {
+            oversample,
+            curve,
+            channel_config,
+        } = options;
 
+        let mut node = context.register(move |registration| {
             let sample_rate = context.sample_rate() as usize;
-            let channel_config = channel_config.into();
-            let oversample = Arc::new(AtomicU32::new(oversample as u32));
 
-            // Channel to send the `curve` to the renderer
-            // A capacity of 1 suffices since it is not allowed to set the value multiple times
-            let (sender, receiver) = crossbeam_channel::bounded(1);
-
-            let config = RendererConfig {
+            let renderer = WaveShaperRenderer::new(RendererConfig {
+                oversample,
                 sample_rate,
-                oversample: oversample.clone(),
-                receiver,
-            };
+            });
 
-            let renderer = WaveShaperRenderer::new(config);
             let node = Self {
                 registration,
-                channel_config,
-                curve: OnceCell::new(),
+                channel_config: channel_config.into(),
+                curve: None,
                 oversample,
-                sender,
             };
 
-            if let Some(c) = curve {
-                node.set_curve(c);
-            }
-
             (node, Box::new(renderer))
-        })
+        });
+
+        // renderer has been sent to render thread, we can sent it messages
+        if let Some(curve) = curve {
+            node.set_curve(curve);
+        }
+
+        node
     }
 
     /// Returns the distortion curve
     #[must_use]
     pub fn curve(&self) -> Option<&[f32]> {
-        self.curve.get().map(Vec::as_slice)
+        self.curve.as_deref()
     }
 
     /// Set the distortion `curve` of this node
@@ -217,22 +203,21 @@ impl WaveShaperNode {
     ///
     /// Panics if a curve has already been given to the source (though `new` or through
     /// `set_curve`)
-    pub fn set_curve(&self, curve: Vec<f32>) {
-        let clone = curve.clone();
-
-        if self.curve.set(curve).is_err() {
+    pub fn set_curve(&mut self, curve: Vec<f32>) {
+        if self.curve.is_some() {
             panic!("InvalidStateError - cannot assign curve twice");
         }
 
-        self.sender
-            .send(CurveMessage(clone))
-            .expect("Sending CurveMessage failed");
+        let clone = curve.clone();
+
+        self.curve = Some(curve);
+        self.registration.post_message(Some(clone));
     }
 
     /// Returns the `oversample` faactor of this node
     #[must_use]
     pub fn oversample(&self) -> OverSampleType {
-        self.oversample.load(Ordering::SeqCst).into()
+        self.oversample
     }
 
     /// set the `oversample` factor of this node
@@ -240,44 +225,158 @@ impl WaveShaperNode {
     /// # Arguments
     ///
     /// * `oversample` - the desired `OversampleType` variant
-    pub fn set_oversample(&self, oversample: OverSampleType) {
-        self.oversample.store(oversample as u32, Ordering::SeqCst);
+    pub fn set_oversample(&mut self, oversample: OverSampleType) {
+        self.oversample = oversample;
+        self.registration.post_message(oversample);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResamplerConfig {
+    channels: usize,
+    chunk_size_in: usize,
+    sample_rate_in: usize,
+    sample_rate_out: usize,
+}
+
+impl ResamplerConfig {
+    fn upsample_x2(channels: usize, sample_rate: usize) -> Self {
+        let chunk_size_in = RENDER_QUANTUM_SIZE * 2;
+        let sample_rate_in = sample_rate;
+        let sample_rate_out = sample_rate * 2;
+        Self {
+            channels,
+            chunk_size_in,
+            sample_rate_in,
+            sample_rate_out,
+        }
+    }
+
+    fn upsample_x4(channels: usize, sample_rate: usize) -> Self {
+        let chunk_size_in = RENDER_QUANTUM_SIZE * 4;
+        let sample_rate_in = sample_rate;
+        let sample_rate_out = sample_rate * 4;
+        Self {
+            channels,
+            chunk_size_in,
+            sample_rate_in,
+            sample_rate_out,
+        }
+    }
+
+    fn downsample_x2(channels: usize, sample_rate: usize) -> Self {
+        let chunk_size_in = RENDER_QUANTUM_SIZE;
+        let sample_rate_in = sample_rate * 2;
+        let sample_rate_out = sample_rate;
+        Self {
+            channels,
+            chunk_size_in,
+            sample_rate_in,
+            sample_rate_out,
+        }
+    }
+
+    fn downsample_x4(channels: usize, sample_rate: usize) -> Self {
+        let chunk_size_in = RENDER_QUANTUM_SIZE;
+        let sample_rate_in = sample_rate * 4;
+        let sample_rate_out = sample_rate;
+        Self {
+            channels,
+            chunk_size_in,
+            sample_rate_in,
+            sample_rate_out,
+        }
+    }
+}
+
+struct Resampler {
+    config: ResamplerConfig,
+    processor: FftFixedInOut<f32>,
+    samples_out: Vec<Vec<f32>>,
+}
+
+impl Resampler {
+    fn new(config: ResamplerConfig) -> Self {
+        let ResamplerConfig {
+            channels,
+            chunk_size_in,
+            sample_rate_in,
+            sample_rate_out,
+        } = &config;
+
+        let processor =
+            FftFixedInOut::new(*sample_rate_in, *sample_rate_out, *chunk_size_in, *channels)
+                .unwrap();
+
+        let samples_out = processor.output_buffer_allocate(true);
+
+        Self {
+            config,
+            processor,
+            samples_out,
+        }
+    }
+
+    fn process<T>(&mut self, samples_in: &[T])
+    where
+        T: AsRef<[f32]>,
+    {
+        debug_assert_eq!(self.config.channels, samples_in.len());
+        // Processing the output from another resampler directly as input requires this assumption.
+        debug_assert!(samples_in
+            .iter()
+            .all(|channel| channel.as_ref().len() == self.processor.input_frames_next()));
+        let (in_len, out_len) = self
+            .processor
+            .process_into_buffer(samples_in, &mut self.samples_out[..], None)
+            .unwrap();
+        // All input samples must have been consumed.
+        debug_assert_eq!(in_len, samples_in[0].as_ref().len());
+        // All output samples must have been initialized.
+        debug_assert!(self
+            .samples_out
+            .iter()
+            .all(|channel| channel.len() == out_len));
+    }
+
+    fn samples_out(&self) -> &[Vec<f32>] {
+        &self.samples_out[..]
+    }
+
+    fn samples_out_mut(&mut self) -> &mut [Vec<f32>] {
+        &mut self.samples_out[..]
     }
 }
 
 /// Helper struct which regroups all parameters
 /// required to build `WaveShaperRenderer`
 struct RendererConfig {
+    /// oversample factor
+    oversample: OverSampleType,
     /// Sample rate (equals to audio context sample rate)
     sample_rate: usize,
-    /// oversample factor
-    oversample: Arc<AtomicU32>,
-    /// Channel between node and renderer (receiver part)
-    receiver: Receiver<CurveMessage>,
 }
 
 /// `WaveShaperRenderer` represents the rendering part of `WaveShaperNode`
 struct WaveShaperRenderer {
+    /// oversample factor
+    oversample: OverSampleType,
+    /// distortion curve
+    curve: Option<Vec<f32>>,
     /// Sample rate (equals to audio context sample rate)
     sample_rate: usize,
-    /// oversample factor
-    oversample: Arc<AtomicU32>,
     /// Number of channels used to build the up/down sampler X2
     channels_x2: usize,
     /// Number of channels used to build the up/down sampler X4
     channels_x4: usize,
     // up sampler configured to multiply by 2 the input signal
-    upsampler_x2: FftFixedInOut<f32>,
+    upsampler_x2: Resampler,
     // up sampler configured to multiply by 4 the input signal
-    upsampler_x4: FftFixedInOut<f32>,
+    upsampler_x4: Resampler,
     // down sampler configured to divide by 4 the upsampled signal
-    downsampler_x2: FftFixedInOut<f32>,
+    downsampler_x2: Resampler,
     // down sampler configured to divide by 4 the upsampled signal
-    downsampler_x4: FftFixedInOut<f32>,
-    /// distortion curve
-    curve: Option<Vec<f32>>,
-    /// Channel between node and renderer (receiver part)
-    receiver: Receiver<CurveMessage>,
+    downsampler_x4: Resampler,
 }
 
 impl AudioProcessor for WaveShaperRenderer {
@@ -285,7 +384,7 @@ impl AudioProcessor for WaveShaperRenderer {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         // single input/output node
@@ -297,18 +396,13 @@ impl AudioProcessor for WaveShaperRenderer {
             return false;
         }
 
-        // Check if a curve have been set at k-rate
-        if let Ok(msg) = self.receiver.try_recv() {
-            self.curve = Some(msg.0);
-        }
-
         *output = input.clone();
 
-        if self.curve.is_some() {
-            match self.oversample.load(Ordering::SeqCst).into() {
+        if let Some(curve) = &self.curve {
+            match self.oversample {
                 OverSampleType::None => {
                     output.modify_channels(|channel| {
-                        channel.iter_mut().for_each(|o| *o = self.apply_curve(*o));
+                        channel.iter_mut().for_each(|o| *o = apply_curve(curve, *o));
                     });
                 }
                 OverSampleType::X2 => {
@@ -318,34 +412,32 @@ impl AudioProcessor for WaveShaperRenderer {
                     if channels.len() != self.channels_x2 {
                         self.channels_x2 = channels.len();
 
-                        self.upsampler_x2 = FftFixedInOut::<f32>::new(
-                            self.sample_rate,
-                            self.sample_rate * 2,
-                            256,
+                        self.upsampler_x2 = Resampler::new(ResamplerConfig::upsample_x2(
                             self.channels_x2,
-                        )
-                        .unwrap();
+                            self.sample_rate,
+                        ));
 
-                        self.downsampler_x2 = FftFixedInOut::<f32>::new(
-                            self.sample_rate * 2,
-                            self.sample_rate,
-                            128,
+                        self.downsampler_x2 = Resampler::new(ResamplerConfig::downsample_x2(
                             self.channels_x2,
-                        )
-                        .unwrap();
+                            self.sample_rate,
+                        ));
                     }
 
-                    let mut up_channels = self.upsampler_x2.process(channels, None).unwrap();
-
-                    for channel in up_channels.iter_mut() {
+                    self.upsampler_x2.process(channels);
+                    for channel in self.upsampler_x2.samples_out_mut().iter_mut() {
                         for s in channel.iter_mut() {
-                            *s = self.apply_curve(*s);
+                            *s = apply_curve(curve, *s);
                         }
                     }
 
-                    let down_channels = self.downsampler_x2.process(&up_channels, None).unwrap();
+                    self.downsampler_x2.process(self.upsampler_x2.samples_out());
 
-                    for (processed, output) in down_channels.iter().zip(output.channels_mut()) {
+                    for (processed, output) in self
+                        .downsampler_x2
+                        .samples_out()
+                        .iter()
+                        .zip(output.channels_mut())
+                    {
                         output.copy_from_slice(&processed[..]);
                     }
                 }
@@ -356,34 +448,33 @@ impl AudioProcessor for WaveShaperRenderer {
                     if channels.len() != self.channels_x4 {
                         self.channels_x4 = channels.len();
 
-                        self.upsampler_x4 = FftFixedInOut::<f32>::new(
-                            self.sample_rate,
-                            self.sample_rate * 4,
-                            512,
+                        self.upsampler_x4 = Resampler::new(ResamplerConfig::upsample_x4(
                             self.channels_x4,
-                        )
-                        .unwrap();
+                            self.sample_rate,
+                        ));
 
-                        self.downsampler_x4 = FftFixedInOut::<f32>::new(
-                            self.sample_rate * 4,
-                            self.sample_rate,
-                            128,
+                        self.downsampler_x4 = Resampler::new(ResamplerConfig::downsample_x4(
                             self.channels_x4,
-                        )
-                        .unwrap();
+                            self.sample_rate,
+                        ));
                     }
 
-                    let mut up_channels = self.upsampler_x4.process(channels, None).unwrap();
+                    self.upsampler_x4.process(channels);
 
-                    for channel in up_channels.iter_mut() {
+                    for channel in self.upsampler_x4.samples_out_mut().iter_mut() {
                         for s in channel.iter_mut() {
-                            *s = self.apply_curve(*s);
+                            *s = apply_curve(curve, *s);
                         }
                     }
 
-                    let down_channels = self.downsampler_x4.process(&up_channels, None).unwrap();
+                    self.downsampler_x4.process(self.upsampler_x4.samples_out());
 
-                    for (processed, output) in down_channels.iter().zip(output.channels_mut()) {
+                    for (processed, output) in self
+                        .downsampler_x4
+                        .samples_out()
+                        .iter()
+                        .zip(output.channels_mut())
+                    {
                         output.copy_from_slice(&processed[..]);
                     }
                 }
@@ -392,6 +483,20 @@ impl AudioProcessor for WaveShaperRenderer {
 
         // @tbc - rubato::FftFixedInOut doesn't seem to introduce any latency
         false
+    }
+
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        if let Some(&oversample) = msg.downcast_ref::<OverSampleType>() {
+            self.oversample = oversample;
+            return;
+        }
+
+        if let Some(curve) = msg.downcast_mut::<Option<Vec<f32>>>() {
+            std::mem::swap(&mut self.curve, curve);
+            return;
+        }
+
+        log::warn!("WaveShaperRenderer: Dropping incoming message {msg:?}");
     }
 }
 
@@ -402,59 +507,52 @@ impl WaveShaperRenderer {
         let RendererConfig {
             sample_rate,
             oversample,
-            receiver,
         } = config;
 
         let channels_x2 = 1;
         let channels_x4 = 1;
 
-        let upsampler_x2 =
-            FftFixedInOut::<f32>::new(sample_rate, sample_rate * 2, 256, channels_x2).unwrap();
+        let upsampler_x2 = Resampler::new(ResamplerConfig::upsample_x2(channels_x2, sample_rate));
 
         let downsampler_x2 =
-            FftFixedInOut::<f32>::new(sample_rate * 2, sample_rate, 128, channels_x2).unwrap();
+            Resampler::new(ResamplerConfig::downsample_x2(channels_x2, sample_rate));
 
-        let upsampler_x4 =
-            FftFixedInOut::<f32>::new(sample_rate, sample_rate * 4, 512, channels_x4).unwrap();
+        let upsampler_x4 = Resampler::new(ResamplerConfig::upsample_x4(channels_x2, sample_rate));
 
         let downsampler_x4 =
-            FftFixedInOut::<f32>::new(sample_rate * 4, sample_rate, 128, channels_x4).unwrap();
+            Resampler::new(ResamplerConfig::downsample_x4(channels_x2, sample_rate));
 
         Self {
-            sample_rate,
             oversample,
+            curve: None,
+            sample_rate,
             channels_x2,
             channels_x4,
             upsampler_x2,
             upsampler_x4,
             downsampler_x2,
             downsampler_x4,
-            curve: None,
-            receiver,
         }
     }
+}
 
-    #[inline]
-    fn apply_curve(&self, input: f32) -> f32 {
-        // curve is always set at this point
-        let curve = self.curve.as_deref().unwrap();
+#[inline]
+fn apply_curve(curve: &[f32], input: f32) -> f32 {
+    if curve.is_empty() {
+        return 0.;
+    }
 
-        if curve.is_empty() {
-            return 0.;
-        }
+    let n = curve.len() as f32;
+    let v = (n - 1.) / 2.0 * (input + 1.);
 
-        let n = curve.len() as f32;
-        let v = (n - 1.) / 2.0 * (input + 1.);
-
-        if v <= 0. {
-            curve[0]
-        } else if v >= n - 1. {
-            curve[(n - 1.) as usize]
-        } else {
-            let k = v.floor();
-            let f = v - k;
-            (1. - f) * curve[k as usize] + f * curve[(k + 1.) as usize]
-        }
+    if v <= 0. {
+        curve[0]
+    } else if v >= n - 1. {
+        curve[(n - 1.) as usize]
+    } else {
+        let k = v.floor();
+        let f = v - k;
+        (1. - f) * curve[k as usize] + f * curve[(k + 1.) as usize]
     }
 }
 
@@ -519,7 +617,7 @@ mod tests {
             ..Default::default()
         };
 
-        let shaper = WaveShaperNode::new(&context, options);
+        let mut shaper = WaveShaperNode::new(&context, options);
         assert_eq!(shaper.curve(), Some(&[1.0][..]));
         assert_eq!(shaper.oversample(), OverSampleType::X2);
 
@@ -542,7 +640,7 @@ mod tests {
             ..Default::default()
         };
 
-        let shaper = WaveShaperNode::new(&context, options);
+        let mut shaper = WaveShaperNode::new(&context, options);
         assert_eq!(shaper.curve(), None);
         assert_eq!(shaper.oversample(), OverSampleType::X2);
 
@@ -558,20 +656,20 @@ mod tests {
     #[test]
     fn test_shape_boundaries() {
         let sample_rate = 44100.;
-        let context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
+        let context = OfflineAudioContext::new(1, 3 * RENDER_QUANTUM_SIZE, sample_rate);
 
-        let shaper = context.create_wave_shaper();
+        let mut shaper = context.create_wave_shaper();
         let curve = vec![-0.5, 0., 0.5];
         shaper.set_curve(curve);
         shaper.connect(&context.destination());
 
-        let mut data = vec![0.; 3 * 128];
-        let mut expected = vec![0.; 3 * 128];
-        for i in 0..(3 * 128) {
-            if i < 128 {
+        let mut data = vec![0.; 3 * RENDER_QUANTUM_SIZE];
+        let mut expected = vec![0.; 3 * RENDER_QUANTUM_SIZE];
+        for i in 0..(3 * RENDER_QUANTUM_SIZE) {
+            if i < RENDER_QUANTUM_SIZE {
                 data[i] = -1.;
                 expected[i] = -0.5;
-            } else if i < 2 * 128 {
+            } else if i < 2 * RENDER_QUANTUM_SIZE {
                 data[i] = 0.;
                 expected[i] = 0.;
             } else {
@@ -579,10 +677,10 @@ mod tests {
                 expected[i] = 0.5;
             }
         }
-        let mut buffer = context.create_buffer(1, 3 * 128, sample_rate);
+        let mut buffer = context.create_buffer(1, 3 * RENDER_QUANTUM_SIZE, sample_rate);
         buffer.copy_to_channel(&data, 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&shaper);
         src.set_buffer(buffer);
         src.start_at(0.);
@@ -596,26 +694,26 @@ mod tests {
     #[test]
     fn test_shape_interpolation() {
         let sample_rate = 44100.;
-        let context = OfflineAudioContext::new(1, 128, sample_rate);
+        let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
-        let shaper = context.create_wave_shaper();
+        let mut shaper = context.create_wave_shaper();
         let curve = vec![-0.5, 0., 0.5];
         shaper.set_curve(curve);
         shaper.connect(&context.destination());
 
-        let mut data = vec![0.; 128];
-        let mut expected = vec![0.; 128];
+        let mut data = vec![0.; RENDER_QUANTUM_SIZE];
+        let mut expected = vec![0.; RENDER_QUANTUM_SIZE];
 
-        for i in 0..128 {
-            let sample = i as f32 / 128. * 2. - 1.;
+        for i in 0..RENDER_QUANTUM_SIZE {
+            let sample = i as f32 / (RENDER_QUANTUM_SIZE as f32) * 2. - 1.;
             data[i] = sample;
             expected[i] = sample / 2.;
         }
 
-        let mut buffer = context.create_buffer(1, 3 * 128, sample_rate);
+        let mut buffer = context.create_buffer(1, 3 * RENDER_QUANTUM_SIZE, sample_rate);
         buffer.copy_to_channel(&data, 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&shaper);
         src.set_buffer(buffer);
         src.start_at(0.);

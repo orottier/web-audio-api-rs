@@ -1,9 +1,32 @@
 use std::fs::File;
-use web_audio_api::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
+// Play buffers recorded or decoded at different sample rates. The decoding and the
+// AudioBufferSourceNode resample them back to the audio context sample rate.
+//
+// `cargo run --release --example resampling`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example resampling`
 fn main() {
-    let audio_context = AudioContext::default();
+    env_logger::init();
+
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let audio_context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
+
     println!(
         "> AudioContext sample_rate: {:?}",
         audio_context.sample_rate()
@@ -27,7 +50,7 @@ fn main() {
         "+ playing sample-38000.wav - decoded sample rate: {:?}",
         buffer_38000.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_38000);
     src.start();
@@ -38,7 +61,7 @@ fn main() {
         "+ playing sample-44100.wav - decoded sample rate: {:?}",
         buffer_44100.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_44100);
     src.start();
@@ -49,7 +72,7 @@ fn main() {
         "+ playing sample-48000.wav - decoded sample rate: {:?}",
         buffer_48000.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_48000);
     src.start();
@@ -93,7 +116,7 @@ fn main() {
         "+ playing sample-38000.wav - decoded sample rate: {:?}",
         buffer_38000.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_38000);
     src.start();
@@ -104,7 +127,7 @@ fn main() {
         "+ playing sample-44100.wav - decoded sample rate: {:?}",
         buffer_44100.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_44100);
     src.start();
@@ -115,7 +138,7 @@ fn main() {
         "+ playing sample-48000.wav - decoded sample rate: {:?}",
         buffer_48000.sample_rate()
     );
-    let src = audio_context.create_buffer_source();
+    let mut src = audio_context.create_buffer_source();
     src.connect(&audio_context.destination());
     src.set_buffer(buffer_48000);
     src.start();

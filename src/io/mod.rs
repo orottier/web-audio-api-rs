@@ -42,17 +42,26 @@ pub(crate) struct RenderThreadInit {
 }
 
 pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
-    // track number of frames - synced from render thread to control thread
+    // Track number of frames - synced from render thread to control thread
     let frames_played = Arc::new(AtomicU64::new(0));
-    // communication channel for ctrl msgs to the render thread
-    let (ctrl_msg_send, ctrl_msg_recv) = crossbeam_channel::unbounded();
-    // communication channel for render load values
+
+    // Communication channel for ctrl msgs from the control thread to the render thread.
+    // Use a bounded channel for real-time safety. A maximum of 256 control messages (add/remove
+    // node, settings, ..) will be handled per render quantum. The control thread will block when
+    // the capacity is reached.
+    let (ctrl_msg_send, ctrl_msg_recv) = crossbeam_channel::bounded(256);
+
+    // Communication channel for render load values.
+    // A dedicated thread is consuming these messages so there is no need for buffering.
     let (load_value_send, load_value_recv) = crossbeam_channel::bounded(1);
-    // communication channel for events for render thread to control thread
-    let (event_send, event_recv) = crossbeam_channel::unbounded();
+
+    // Communication channel for events from the render thread to the control thread.
+    // Use a bounded channel for real-time safety. A maximum of 256 events (node ended, error, ..)
+    // will be sent per render quantum. Excess events are dropped when the capacity is reached.
+    let (event_send, event_recv) = crossbeam_channel::bounded(256);
 
     let control_thread_init = ControlThreadInit {
-        frames_played: frames_played.clone(),
+        frames_played: Arc::clone(&frames_played),
         ctrl_msg_send,
         load_value_recv,
         event_send: event_send.clone(),

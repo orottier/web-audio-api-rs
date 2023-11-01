@@ -30,7 +30,7 @@ let file = std::fs::File::open("samples/major-scale.ogg").unwrap();
 let buffer = context.decode_audio_data_sync(file).unwrap();
 
 // setup an AudioBufferSourceNode
-let src = context.create_buffer_source();
+let mut src = context.create_buffer_source();
 src.set_buffer(buffer);
 src.set_loop(true);
 
@@ -56,7 +56,7 @@ Check out the [docs](https://docs.rs/web-audio-api) for more info.
 We have tried to stick to the official W3C spec as close as possible, but some
 deviations could not be avoided:
 
-- naming: snake\_case instead of CamelCase
+- naming: snake_case instead of CamelCase
 - getters/setters methods instead of exposed attributes
 - introduced some namespacing
 - AudioWorklet functionality is provided in a more rust-friendly way
@@ -78,29 +78,41 @@ and track our spec compliance improvements over time.
 By default, the [`cpal`](https://github.com/rustaudio/cpal) library is used for
 cross platform audio I/O.
 
-We offer [experimental
-support](https://github.com/orottier/web-audio-api-rs/issues/187) for the
+We offer [experimental support](https://github.com/orottier/web-audio-api-rs/issues/187) for the
 [`cubeb`](https://github.com/mozilla/cubeb-rs) backend via the `cubeb` feature
 flag. Please note that `cmake` must be installed locally in order to run
 `cubeb`.
 
-| Feature flag   | Backend        | Notes |
-| -------------- | -------------- | ----- |
-| cpal (default) | ALSA           | |
-| cpal (default) | WASAPI         | |
-| cpal (default) | CoreAudio      | |
-| cpal (default) | Oboe (Android) | |
-| cpal-jack      | JACK           | |
+| Feature flag   | Backend        | Notes                                                   |
+| -------------- | -------------- | ------------------------------------------------------- |
+| cpal (default) | ALSA           |                                                         |
+| cpal (default) | WASAPI         |                                                         |
+| cpal (default) | CoreAudio      |                                                         |
+| cpal (default) | Oboe (Android) |                                                         |
+| cpal-jack      | JACK           |                                                         |
 | cpal-asio      | ASIO           | see <https://github.com/rustaudio/cpal#asio-on-windows> |
-| cubeb          | PulseAudio     | |
-| cubeb          | AudioUnit      | |
-| cubeb          | WASAPI         | |
-| cubeb          | OpenSL         | |
-| cubeb          | AAudio         | |
-| cubeb          | sndio          | |
-| cubeb          | Sun            | |
-| cubeb          | OSS            | |
 
+| cubeb | PulseAudio | |
+| cubeb | AudioUnit | |
+| cubeb | WASAPI | |
+| cubeb | OpenSL | |
+| cubeb | AAudio | |
+| cubeb | sndio | |
+| cubeb | Sun | |
+| cubeb | OSS | |
+
+### Notes for Linux users
+
+Using the library on Linux with the ALSA backend might lead to unexpected cranky sound with the default render size (i.e. 128 frames). In such cases, a simple workaround is to pass the `AudioContextLatencyCategory::Playback` latency hint when creating the audio context, which will increase the render size to 1024 frames:
+
+```rs
+let audio_context = AudioContext::new(AudioContextOptions {
+    latency_hint: AudioContextLatencyCategory::Playback,
+    ..AudioContextOptions::default()
+});
+```
+
+For real-time and interactive applications where low latency is crucial, you should instead rely on the JACK backend provided by `cpal`. To that end you will need a running JACK server and build your application with the `cpal-jack` feature, e.g. `cargo run --release --features "cpal-jack" --example microphone`.
 
 ## Contributing
 

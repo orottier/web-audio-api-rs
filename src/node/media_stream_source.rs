@@ -9,6 +9,10 @@ use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
 // dictionary MediaStreamAudioSourceOptions {
 //   required MediaStream mediaStream;
 // };
+//
+// @note - Does not extend AudioNodeOptions because AudioNodeOptions are
+// useless for source nodes as they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. https://github.com/mdn/content/pull/18472
 pub struct MediaStreamAudioSourceOptions<'a> {
     pub media_stream: &'a MediaStream,
 }
@@ -48,7 +52,10 @@ impl MediaStreamAudioSourceNode {
     /// # Panics
     ///
     /// This method will panic when the provided `MediaStream` does not contain any audio tracks.
-    pub fn new<C: BaseAudioContext>(context: &C, options: MediaStreamAudioSourceOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(
+        context: &C,
+        options: MediaStreamAudioSourceOptions<'_>,
+    ) -> Self {
         context.register(move |registration| {
             let node = MediaStreamAudioSourceNode {
                 registration,

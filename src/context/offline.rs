@@ -9,7 +9,7 @@ use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
 
 /// The `OfflineAudioContext` doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an `AudioBuffer`.
-// the naming comes from the web audio specfication
+// the naming comes from the web audio specification
 #[allow(clippy::module_name_repetitions)]
 pub struct OfflineAudioContext {
     /// represents the underlying `BaseAudioContext`
@@ -17,32 +17,8 @@ pub struct OfflineAudioContext {
     /// the size of the buffer in sample-frames
     length: usize,
     /// the rendering 'thread', fully controlled by the offline context
-    renderer: SingleUseRenderThread,
+    renderer: RenderThread,
 }
-
-mod private {
-    use super::*;
-
-    pub(crate) struct SingleUseRenderThread(RenderThread);
-
-    impl SingleUseRenderThread {
-        pub fn new(rt: RenderThread) -> Self {
-            Self(rt)
-        }
-
-        pub fn render_audiobuffer(self, buffer_size: usize) -> AudioBuffer {
-            self.0.render_audiobuffer(buffer_size)
-        }
-    }
-
-    // SAFETY:
-    // The RenderThread is not Sync since it contains `AudioRenderQuantum`s (which use Rc) and `dyn
-    // AudioProcessor` which may not allow sharing between threads. However we mark the
-    // SingleUseRenderThread as Sync because it can only run once (and thus on a single thread)
-    // NB: the render thread should never hand out the contained `Rc` and `AudioProcessor`s
-    unsafe impl Sync for SingleUseRenderThread {}
-}
-use private::SingleUseRenderThread;
 
 impl BaseAudioContext for OfflineAudioContext {
     fn base(&self) -> &ConcreteBaseAudioContext {
@@ -63,16 +39,18 @@ impl OfflineAudioContext {
     pub fn new(number_of_channels: usize, length: usize, sample_rate: f32) -> Self {
         assert_valid_sample_rate(sample_rate);
 
-        // communication channel to the render thread
+        // communication channel to the render thread,
+        // unbounded is fine because it does not need to be realtime safe
         let (sender, receiver) = crossbeam_channel::unbounded();
 
-        let graph = crate::render::graph::Graph::new(RENDER_QUANTUM_SIZE);
+        let (node_id_producer, node_id_consumer) = llq::Queue::new().split();
+        let graph = crate::render::graph::Graph::new(RENDER_QUANTUM_SIZE, node_id_producer);
         let message = crate::message::ControlMessage::Startup { graph };
         sender.send(message).unwrap();
 
         // track number of frames - synced from render thread to control thread
         let frames_played = Arc::new(AtomicU64::new(0));
-        let frames_played_clone = frames_played.clone();
+        let frames_played_clone = Arc::clone(&frames_played);
 
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
@@ -80,8 +58,6 @@ impl OfflineAudioContext {
             number_of_channels,
             receiver,
             frames_played_clone,
-            None,
-            None,
         );
 
         // first, setup the base audio context
@@ -92,12 +68,13 @@ impl OfflineAudioContext {
             sender,
             None,
             true,
+            node_id_consumer,
         );
 
         Self {
             base,
             length,
-            renderer: SingleUseRenderThread::new(renderer),
+            renderer,
         }
     }
 
@@ -106,7 +83,7 @@ impl OfflineAudioContext {
     /// This function will block the current thread and returns the rendered `AudioBuffer`
     /// synchronously. An async version is currently not implemented.
     pub fn start_rendering_sync(self) -> AudioBuffer {
-        self.renderer.render_audiobuffer(self.length)
+        self.renderer.render_audiobuffer_sync(self.length)
     }
 
     /// get the length of rendering audio buffer

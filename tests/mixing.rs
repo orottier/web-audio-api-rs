@@ -26,7 +26,7 @@ fn run_with_intermediate_channel_config(
 ) -> AudioBuffer {
     {
         // input signal
-        let constant = context.create_constant_source();
+        let mut constant = context.create_constant_source();
         constant.start();
 
         // gain node is only added for mixing

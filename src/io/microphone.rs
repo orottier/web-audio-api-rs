@@ -1,14 +1,10 @@
 use std::error::Error;
 
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
+use crate::io::AudioBackendManager;
 use crate::RENDER_QUANTUM_SIZE;
 
-use crossbeam_channel::Sender;
-
-use crate::buffer::ChannelData;
-use crate::io::AudioBackendManager;
-
-use crossbeam_channel::{Receiver, TryRecvError};
+use crossbeam_channel::{Receiver, Sender, TryRecvError};
 
 pub(crate) struct MicrophoneStream {
     receiver: Receiver<AudioBuffer>,
@@ -49,7 +45,7 @@ impl Iterator for MicrophoneStream {
             }
             Err(TryRecvError::Empty) => {
                 // frame not received in time, emit silence
-                // log::debug!("input frame delayed");
+                log::debug!("empty channel: input frame delayed");
 
                 let options = AudioBufferOptions {
                     number_of_channels: self.number_of_channels,
@@ -89,17 +85,18 @@ impl MicrophoneRender {
 
         // copy rendered audio into output slice
         for i in 0..self.number_of_channels {
-            channels.push(ChannelData::from(
+            channels.push(
                 data.iter()
                     .skip(i)
                     .step_by(self.number_of_channels)
                     .map(|v| v.to_sample_())
                     .collect(),
-            ));
+            );
         }
 
-        let buffer = AudioBuffer::from_channels(channels, self.sample_rate);
+        let buffer = AudioBuffer::from(channels, self.sample_rate);
         let result = self.sender.try_send(buffer); // can fail (frame dropped)
+
         if result.is_err() {
             log::debug!("input frame dropped");
         }

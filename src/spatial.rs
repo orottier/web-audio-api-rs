@@ -9,10 +9,10 @@ use crate::node::{
 use crate::param::{AudioParam, AudioParamDescriptor, AudioParamRaw, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
-use lazy_static::lazy_static;
 use std::f32::consts::PI;
+use std::sync::OnceLock;
 
-/// AudioParam settings for the carthesian coordinates
+/// AudioParam settings for the cartesian coordinates
 pub(crate) const PARAM_OPTS: AudioParamDescriptor = AudioParamDescriptor {
     min_value: f32::MIN,
     max_value: f32::MAX,
@@ -81,22 +81,21 @@ pub(crate) struct AudioListenerNode {
     fields: AudioListener,
 }
 
-lazy_static! {
-    static ref AUDIO_LISTENER_CHANNEL_CONFIG: ChannelConfig = ChannelConfigOptions {
-        count: 1,
-        count_mode: ChannelCountMode::Explicit,
-        interpretation: ChannelInterpretation::Discrete,
-    }
-    .into();
-}
-
 impl AudioNode for AudioListenerNode {
     fn registration(&self) -> &AudioContextRegistration {
         &self.registration
     }
 
     fn channel_config(&self) -> &ChannelConfig {
-        &AUDIO_LISTENER_CHANNEL_CONFIG
+        static INSTANCE: OnceLock<ChannelConfig> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            ChannelConfigOptions {
+                count: 1,
+                count_mode: ChannelCountMode::Explicit,
+                interpretation: ChannelInterpretation::Discrete,
+            }
+            .into()
+        })
     }
 
     fn number_of_inputs(&self) -> usize {
@@ -172,7 +171,7 @@ impl AudioProcessor for ListenerRenderer {
         &mut self,
         _inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         // do nothing, the Listener is just here to make sure the position/forward/up params render in order

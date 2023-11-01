@@ -7,7 +7,6 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretatio
 
 use std::cell::{Cell, RefCell, RefMut};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Options for constructing a [`DelayNode`]
 // dictionary DelayOptions : AudioNodeOptions {
@@ -45,7 +44,7 @@ struct PlaybackInfo {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/DelayNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#DelayNode>
-/// - see also: [`BaseAudioContext::create_delay`](crate::context::BaseAudioContext::create_delay)
+/// - see also: [`BaseAudioContext::create_delay`]
 ///
 /// # Usage
 ///
@@ -64,7 +63,7 @@ struct PlaybackInfo {
 /// delay.delay_time().set_value(0.5);
 /// delay.connect(&context.destination());
 ///
-/// let src = context.create_buffer_source();
+/// let mut src = context.create_buffer_source();
 /// src.set_buffer(audio_buffer);
 /// // connect to both delay and destination
 /// src.connect(&delay);
@@ -206,16 +205,16 @@ impl DelayNode {
         let ring_buffer = Vec::with_capacity(num_quanta);
 
         let shared_ring_buffer = Rc::new(RefCell::new(ring_buffer));
-        let shared_ring_buffer_clone = shared_ring_buffer.clone();
+        let shared_ring_buffer_clone = Rc::clone(&shared_ring_buffer);
 
         // shared value set by the writer when it is dropped
         let last_written_index = Rc::new(Cell::<Option<usize>>::new(None));
-        let last_written_index_clone = last_written_index.clone();
+        let last_written_index_clone = Rc::clone(&last_written_index);
 
         // shared value for reader/writer to determine who was rendered first,
         // this will indicate if the delay node acts as a cycle breaker
-        let latest_frame_written = Rc::new(AtomicU64::new(u64::MAX));
-        let latest_frame_written_clone = latest_frame_written.clone();
+        let latest_frame_written = Rc::new(Cell::new(u64::MAX));
+        let latest_frame_written_clone = Rc::clone(&latest_frame_written);
 
         let node = context.register(move |writer_registration| {
             let node = context.register(move |reader_registration| {
@@ -279,7 +278,7 @@ impl DelayNode {
 struct DelayWriter {
     ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
-    latest_frame_written: Rc<AtomicU64>,
+    latest_frame_written: Rc<Cell<u64>>,
     last_written_index: Rc<Cell<Option<usize>>>,
 }
 
@@ -290,7 +289,7 @@ struct DelayWriter {
 unsafe impl Send for DelayWriter {}
 
 trait RingBufferChecker {
-    fn ring_buffer_mut(&self) -> RefMut<Vec<AudioRenderQuantum>>;
+    fn ring_buffer_mut(&self) -> RefMut<'_, Vec<AudioRenderQuantum>>;
 
     // This step guarantees the ring buffer is filled with silence buffers,
     // This allow to simplify the code in both Writer and Reader as we know
@@ -323,7 +322,7 @@ impl Drop for DelayWriter {
 
 impl RingBufferChecker for DelayWriter {
     #[inline(always)]
-    fn ring_buffer_mut(&self) -> RefMut<Vec<AudioRenderQuantum>> {
+    fn ring_buffer_mut(&self) -> RefMut<'_, Vec<AudioRenderQuantum>> {
         self.ring_buffer.borrow_mut()
     }
 }
@@ -333,7 +332,7 @@ impl AudioProcessor for DelayWriter {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         // single input/output node
@@ -353,11 +352,10 @@ impl AudioProcessor for DelayWriter {
 
         // increment cursor and last written frame
         self.index = (self.index + 1) % buffer.capacity();
-        self.latest_frame_written
-            .store(scope.current_frame, Ordering::SeqCst);
+        self.latest_frame_written.set(scope.current_frame);
 
         // The writer end does not produce output,
-        // clear the buffer so that it can be re-used
+        // clear the buffer so that it can be reused
         output.make_silent();
 
         // let the node be decommisioned if it has no input left
@@ -392,7 +390,7 @@ struct DelayReader {
     delay_time: AudioParamId,
     ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
     index: usize,
-    latest_frame_written: Rc<AtomicU64>,
+    latest_frame_written: Rc<Cell<u64>>,
     in_cycle: bool,
     last_written_index: Rc<Cell<Option<usize>>>,
     // local copy of shared `last_written_index` so as to avoid render ordering issues
@@ -407,7 +405,7 @@ unsafe impl Send for DelayReader {}
 
 impl RingBufferChecker for DelayReader {
     #[inline(always)]
-    fn ring_buffer_mut(&self) -> RefMut<Vec<AudioRenderQuantum>> {
+    fn ring_buffer_mut(&self) -> RefMut<'_, Vec<AudioRenderQuantum>> {
         self.ring_buffer.borrow_mut()
     }
 }
@@ -417,7 +415,7 @@ impl AudioProcessor for DelayReader {
         &mut self,
         _inputs: &[AudioRenderQuantum], // cannot be used
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         // single input/output node
@@ -434,7 +432,7 @@ impl AudioProcessor for DelayReader {
 
         if !self.in_cycle {
             // check the latest written frame by the delay writer
-            let latest_frame_written = self.latest_frame_written.load(Ordering::SeqCst);
+            let latest_frame_written = self.latest_frame_written.get();
             // if the delay writer has not rendered before us, the cycle breaker has been applied
             self.in_cycle = latest_frame_written != scope.current_frame;
             // once we store in_cycle = true, we do not want to go back to false
@@ -665,7 +663,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&delay);
             src.set_buffer(dirac);
             src.start_at(0.);
@@ -694,7 +692,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&delay);
             src.set_buffer(dirac);
             src.start_at(0.);
@@ -721,7 +719,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&delay);
             src.set_buffer(dirac);
             src.start_at(0.);
@@ -752,7 +750,7 @@ mod tests {
         two_chan_dirac.copy_to_channel(&[1.], 0);
         two_chan_dirac.copy_to_channel(&[0., 1.], 1);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&delay);
         src.set_buffer(two_chan_dirac);
         src.start_at(0.);
@@ -783,7 +781,7 @@ mod tests {
         let mut one_chan_dirac = context.create_buffer(1, 128, sample_rate);
         one_chan_dirac.copy_to_channel(&[1.], 0);
 
-        let src1 = context.create_buffer_source();
+        let mut src1 = context.create_buffer_source();
         src1.connect(&delay);
         src1.set_buffer(one_chan_dirac);
         src1.start_at(0.);
@@ -793,7 +791,7 @@ mod tests {
         two_chan_dirac.copy_to_channel(&[1.], 0);
         two_chan_dirac.copy_to_channel(&[0., 1.], 1);
         // start second buffer at next block
-        let src2 = context.create_buffer_source();
+        let mut src2 = context.create_buffer_source();
         src2.connect(&delay);
         src2.set_buffer(two_chan_dirac);
         src2.start_at(delay_in_samples as f64 / sample_rate as f64);
@@ -832,7 +830,7 @@ mod tests {
                 let mut dirac = context.create_buffer(1, 1, sample_rate);
                 dirac.copy_to_channel(&[1.], 0);
 
-                let src = context.create_buffer_source();
+                let mut src = context.create_buffer_source();
                 src.connect(&delay);
                 src.set_buffer(dirac);
                 // 3rd block - play buffer
@@ -862,7 +860,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&delay);
             src.set_buffer(dirac);
             src.start_at(0.);
@@ -895,7 +893,7 @@ mod tests {
         let mut dirac = context.create_buffer(1, 1, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.connect(&delay);
         src.set_buffer(dirac);
         src.start_at(0.);
@@ -913,7 +911,7 @@ mod tests {
     fn test_max_delay_smaller_than_quantum_size() {
         // regression test that even if the declared max_delay_time is smaller than
         // a quantum duration, the node internally clamps it to quantum duration so
-        // that everything works even if order of processing is not garanteed
+        // that everything works even if order of processing is not guaranteed
         // (i.e. when delay is in a loop)
         for _ in 0..10 {
             let sample_rate = 480000.;
@@ -934,7 +932,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&delay);
             src.set_buffer(dirac);
             src.start_at(0.);
@@ -968,7 +966,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&delay);
             src.set_buffer(dirac);
             src.start_at(0.);
@@ -994,7 +992,7 @@ mod tests {
             let mut dirac = context.create_buffer(1, 1, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&delay);
             src.set_buffer(dirac);
             src.start_at(0.);
@@ -1024,7 +1022,7 @@ mod tests {
             delay.connect(&context.destination());
 
             // emit 120 samples
-            let src = context.create_constant_source();
+            let mut src = context.create_constant_source();
             src.connect(&delay);
             src.start_at(0.);
             src.stop_at(120. / sample_rate as f64);

@@ -66,7 +66,7 @@ impl Default for DynamicsCompressorOptions {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/DynamicsCompressorNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#DynamicsCompressorNode>
-/// - see also: [`BaseAudioContext::create_dynamics_compressor`](crate::context::BaseAudioContext::create_dynamics_compressor)
+/// - see also: [`BaseAudioContext::create_dynamics_compressor`]
 ///
 /// # Usage
 ///
@@ -86,7 +86,7 @@ impl Default for DynamicsCompressorOptions {
 /// compressor.connect(&context.destination());
 ///
 /// // pipe the audio source in the compressor
-/// let src = context.create_buffer_source();
+/// let mut src = context.create_buffer_source();
 /// src.connect(&compressor);
 /// src.set_buffer(buffer.clone());
 /// src.start();
@@ -199,7 +199,7 @@ impl DynamicsCompressorNode {
                 ratio: ratio_proc,
                 release: release_proc,
                 threshold: threshold_proc,
-                reduction: reduction.clone(),
+                reduction: Arc::clone(&reduction),
                 ring_buffer,
                 ring_index: 0,
                 prev_detector_value: 0.,
@@ -241,7 +241,7 @@ impl DynamicsCompressorNode {
     }
 
     pub fn reduction(&self) -> f32 {
-        self.reduction.load(Ordering::SeqCst)
+        self.reduction.load(Ordering::Relaxed)
     }
 }
 
@@ -271,7 +271,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         // single input/output node
@@ -301,7 +301,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
         //     xG + (1/R − 1)(xG − T + W/2)^2 / (2W)   if 2|(xG − T)| ≤ W
         //     T + (xG − T)/R                          if 2(xG − T) > W
         // This is weird, and probably wrong because `knee` and `threshold` are not
-        // independant, but matches the spec.
+        // independent, but matches the spec.
         let threshold = if knee > 0. {
             threshold + knee / 2.
         } else {
@@ -386,7 +386,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
         // update prev_detector_value for next block
         self.prev_detector_value = prev_detector_value;
         // update reduction shared w/ main thread
-        self.reduction.store(reduction_gain, Ordering::SeqCst);
+        self.reduction.store(reduction_gain, Ordering::Relaxed);
 
         // store input in delay line
         self.ring_buffer[self.ring_index] = input;
@@ -480,7 +480,7 @@ mod tests {
         let signal = [1.; 128 * 5];
         buffer.copy_to_channel(&signal, 0);
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(buffer);
         src.connect(&compressor);
         src.start();
@@ -495,7 +495,7 @@ mod tests {
             abs_all <= 0.
         );
 
-        // as some compresssion is applied, we just check the remaining is non zero
+        // as some compression is applied, we just check the remaining is non zero
         for sample in chan.iter().take(128 * 8).skip(non_zero_index) {
             assert!(*sample != 0.);
         }
@@ -519,7 +519,7 @@ mod tests {
         assert_float_eq!(lin_to_db(0.), -1000., abs <= 0.);
     }
 
-    // @note: keep this, is usefull to grab some internal value to be plotted
+    // @note: keep this, is useful to grab some internal value to be plotted
     // #[test]
     // fn test_attenuated_values() {
     //     // threshold: -40.
@@ -545,7 +545,7 @@ mod tests {
     //     // println!("{:?}", signal);
     //     buffer.copy_to_channel(&signal, 0);
 
-    //     let src = context.create_buffer_source();
+    //     let mut src = context.create_buffer_source();
     //     src.set_buffer(buffer);
     //     src.connect(&compressor);
     //     src.start();

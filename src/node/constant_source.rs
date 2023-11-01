@@ -1,5 +1,6 @@
+use std::any::Any;
+
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::RENDER_QUANTUM_SIZE;
@@ -10,8 +11,14 @@ use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 // dictionary ConstantSourceOptions {
 //   float offset = 1;
 // };
+// https://webaudio.github.io/web-audio-api/#ConstantSourceOptions
+//
+// @note - Does not extend AudioNodeOptions because AudioNodeOptions are
+// useless for source nodes, because they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. mdn/content#18472
 #[derive(Clone, Debug)]
 pub struct ConstantSourceOptions {
+    /// Initial parameter value of the constant signal
     pub offset: f32,
 }
 
@@ -21,12 +28,19 @@ impl Default for ConstantSourceOptions {
     }
 }
 
+/// Instructions to start or stop processing
+#[derive(Debug, Copy, Clone)]
+enum Schedule {
+    Start(f64),
+    Stop(f64),
+}
+
 /// Audio source whose output is nominally a constant value. A `ConstantSourceNode`
 /// can be used as a constructible `AudioParam` by automating the value of its offset.
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/ConstantSourceNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#ConstantSourceNode>
-/// - see also: [`BaseAudioContext::create_constant_source`](crate::context::BaseAudioContext::create_constant_source)
+/// - see also: [`BaseAudioContext::create_constant_source`]
 ///
 /// # Usage
 ///
@@ -59,7 +73,6 @@ pub struct ConstantSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     offset: AudioParam,
-    scheduler: Scheduler,
 }
 
 impl AudioNode for ConstantSourceNode {
@@ -81,42 +94,43 @@ impl AudioNode for ConstantSourceNode {
 }
 
 impl AudioScheduledSourceNode for ConstantSourceNode {
-    fn start(&self) {
+    fn start(&mut self) {
         let when = self.registration.context().current_time();
         self.start_at(when);
     }
 
-    fn start_at(&self, when: f64) {
-        self.scheduler.start_at(when);
+    fn start_at(&mut self, when: f64) {
+        self.registration.post_message(Schedule::Start(when));
     }
 
-    fn stop(&self) {
+    fn stop(&mut self) {
         let when = self.registration.context().current_time();
         self.stop_at(when);
     }
 
-    fn stop_at(&self, when: f64) {
-        self.scheduler.stop_at(when);
+    fn stop_at(&mut self, when: f64) {
+        self.registration.post_message(Schedule::Stop(when));
     }
 }
 
 impl ConstantSourceNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
         context.register(move |registration| {
-            let param_opts = AudioParamDescriptor {
+            let ConstantSourceOptions { offset } = options;
+
+            let param_options = AudioParamDescriptor {
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,
                 automation_rate: AutomationRate::A,
             };
-            let (param, proc) = context.create_audio_param(param_opts, &registration);
-            param.set_value(options.offset);
-
-            let scheduler = Scheduler::new();
+            let (param, proc) = context.create_audio_param(param_options, &registration);
+            param.set_value(offset);
 
             let render = ConstantSourceRenderer {
                 offset: proc,
-                scheduler: scheduler.clone(),
+                start_time: f64::MAX,
+                stop_time: f64::MAX,
                 ended_triggered: false,
             };
 
@@ -124,7 +138,6 @@ impl ConstantSourceNode {
                 registration,
                 channel_config: ChannelConfig::default(),
                 offset: param,
-                scheduler,
             };
 
             (node, Box::new(render))
@@ -138,7 +151,8 @@ impl ConstantSourceNode {
 
 struct ConstantSourceRenderer {
     offset: AudioParamId,
-    scheduler: Scheduler,
+    start_time: f64,
+    stop_time: f64,
     ended_triggered: bool,
 }
 
@@ -147,7 +161,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         &mut self,
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         // single output node
@@ -156,10 +170,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         let dt = 1. / scope.sample_rate as f64;
         let next_block_time = scope.current_time + dt * RENDER_QUANTUM_SIZE as f64;
 
-        let start_time = self.scheduler.get_start_at();
-        let stop_time = self.scheduler.get_stop_at();
-
-        if start_time >= next_block_time {
+        if self.start_time >= next_block_time {
             output.make_silent();
             return true;
         }
@@ -174,7 +185,7 @@ impl AudioProcessor for ConstantSourceRenderer {
             .iter_mut()
             .zip(offset.iter().cycle())
             .for_each(|(o, &value)| {
-                if current_time < start_time || current_time >= stop_time {
+                if current_time < self.start_time || current_time >= self.stop_time {
                     *o = 0.;
                 } else {
                     // as we pick values directly from the offset param which is already
@@ -187,7 +198,7 @@ impl AudioProcessor for ConstantSourceRenderer {
             });
 
         // tail_time false when output has ended this quantum
-        let still_running = stop_time >= next_block_time;
+        let still_running = self.stop_time >= next_block_time;
 
         if !still_running {
             // @note: we need this check because this is called a until the program
@@ -199,6 +210,18 @@ impl AudioProcessor for ConstantSourceRenderer {
         }
 
         still_running
+    }
+
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        if let Some(schedule) = msg.downcast_ref::<Schedule>() {
+            match *schedule {
+                Schedule::Start(v) => self.start_time = v,
+                Schedule::Stop(v) => self.stop_time = v,
+            }
+            return;
+        }
+
+        log::warn!("ConstantSourceRenderer: Dropping incoming message {msg:?}");
     }
 }
 
@@ -216,7 +239,7 @@ mod tests {
         let stop_in_samples = (256 + 1) as f64; // stop rendering of 3rd block
         let context = OfflineAudioContext::new(1, 128 * 4, sample_rate);
 
-        let src = context.create_constant_source();
+        let mut src = context.create_constant_source();
         src.connect(&context.destination());
 
         src.start_at(start_in_samples / sample_rate as f64);
@@ -246,7 +269,7 @@ mod tests {
     fn test_start_in_the_past() {
         let context = OfflineAudioContext::new(1, 128, 48000.);
 
-        let src = context.create_constant_source();
+        let mut src = context.create_constant_source();
         src.connect(&context.destination());
         src.start_at(-1.);
 

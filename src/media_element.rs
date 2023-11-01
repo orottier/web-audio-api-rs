@@ -11,6 +11,7 @@ use crate::{AtomicF64, AudioBuffer, RENDER_QUANTUM_SIZE};
 /// Real time safe audio stream
 pub(crate) struct RTSStream {
     stream: ReadDiskStream<SymphoniaDecoder>,
+    number_of_channels: usize,
     current_time: Arc<AtomicF64>,
     receiver: Receiver<MediaElementAction>,
     loop_: Arc<AtomicBool>,
@@ -54,6 +55,7 @@ impl MediaElement {
             0,                  // The frame in the file to start reading from.
             Default::default(), // Use default read stream options.
         )?;
+        let number_of_channels = read_disk_stream.info().num_channels as usize;
 
         // Cache the start of the file into cache with index `0`.
         let _ = read_disk_stream.cache(0, 0);
@@ -65,8 +67,11 @@ impl MediaElement {
         // Wait until the buffer is filled before sending it to the process thread.
         read_disk_stream.block_until_ready()?;
 
-        // Setup control/render thream message bus
-        let (sender, receiver) = crossbeam_channel::unbounded();
+        // Setup control/render thread message bus
+        // Use a bounded channel for real-time safety. A maximum of 32 control messages (start,
+        // seek, ..) will be handled per render quantum. The control thread will block when the
+        // capacity is reached.
+        let (sender, receiver) = crossbeam_channel::bounded(32);
         // Setup currentTime shared value
         let current_time = Arc::new(AtomicF64::new(0.));
 
@@ -76,11 +81,12 @@ impl MediaElement {
 
         let rts_stream = RTSStream {
             stream: read_disk_stream,
-            current_time: current_time.clone(),
+            number_of_channels,
+            current_time: Arc::clone(&current_time),
             receiver,
-            loop_: loop_.clone(),
-            paused: paused.clone(),
-            playback_rate: playback_rate.clone(),
+            loop_: Arc::clone(&loop_),
+            paused: Arc::clone(&paused),
+            playback_rate: Arc::clone(&playback_rate),
         };
 
         Ok(Self {
@@ -98,7 +104,7 @@ impl MediaElement {
     }
 
     pub fn current_time(&self) -> f64 {
-        self.current_time.load()
+        self.current_time.load(Ordering::SeqCst)
     }
 
     pub fn set_current_time(&self, value: f64) {
@@ -126,7 +132,7 @@ impl MediaElement {
     }
 
     pub fn playback_rate(&self) -> f64 {
-        self.playback_rate.load()
+        self.playback_rate.load(Ordering::SeqCst)
     }
 
     pub fn set_playback_rate(&self, value: f64) {
@@ -144,7 +150,7 @@ impl Iterator for RTSStream {
             use MediaElementAction::*;
             match msg {
                 Seek(value) => {
-                    self.current_time.store(value);
+                    self.current_time.store(value, Ordering::SeqCst);
                     let frame = (value * sample_rate as f64) as usize;
                     self.stream.seek(frame, SeekMode::default()).unwrap();
                 }
@@ -153,16 +159,19 @@ impl Iterator for RTSStream {
                 }
                 Play => self.paused.store(false, Ordering::SeqCst),
                 Pause => self.paused.store(true, Ordering::SeqCst),
-                SetPlaybackRate(value) => self.playback_rate.store(value),
+                SetPlaybackRate(value) => self.playback_rate.store(value, Ordering::SeqCst),
             };
         }
 
         if self.paused.load(Ordering::SeqCst) {
-            let silence = AudioBuffer::from(vec![vec![0.; RENDER_QUANTUM_SIZE]], sample_rate);
+            let silence = AudioBuffer::from(
+                vec![vec![0.; RENDER_QUANTUM_SIZE]; self.number_of_channels],
+                sample_rate,
+            );
             return Some(Ok(silence));
         }
 
-        let playback_rate = self.playback_rate.load().abs();
+        let playback_rate = self.playback_rate.load(Ordering::SeqCst).abs();
         let _reverse = playback_rate < 0.; // TODO
         let samples = (RENDER_QUANTUM_SIZE as f64 * playback_rate) as usize;
 
@@ -175,11 +184,13 @@ impl Iterator for RTSStream {
 
                 if self.loop_.load(Ordering::SeqCst) && data.reached_end_of_file() {
                     self.stream.seek(0, SeekMode::default()).unwrap();
-                    self.current_time.store(0.);
+                    self.current_time.store(0., Ordering::SeqCst);
                 } else {
-                    let current_time = self.current_time.load();
-                    self.current_time
-                        .store(current_time + (RENDER_QUANTUM_SIZE as f64 / sample_rate as f64));
+                    let current_time = self.current_time.load(Ordering::SeqCst);
+                    self.current_time.store(
+                        current_time + (RENDER_QUANTUM_SIZE as f64 / sample_rate as f64),
+                        Ordering::SeqCst,
+                    );
                 }
 
                 Ok(buf)

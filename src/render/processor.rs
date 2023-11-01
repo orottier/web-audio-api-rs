@@ -3,11 +3,10 @@ use crate::context::{AudioNodeId, AudioParamId};
 use crate::events::{ErrorEvent, EventDispatch};
 use crate::{Event, RENDER_QUANTUM_SIZE};
 
-use super::{graph::Node, AudioRenderQuantum};
+use super::{graph::Node, AudioRenderQuantum, NodeCollection};
 
 use crossbeam_channel::Sender;
-use rustc_hash::FxHashMap;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 
 use std::any::Any;
 use std::ops::Deref;
@@ -30,11 +29,12 @@ pub struct RenderScope {
 impl RenderScope {
     pub(crate) fn send_ended_event(&self) {
         if let Some(sender) = self.event_sender.as_ref() {
+            // sending could fail if the channel is saturated or the main thread is shutting down
             let _ = sender.try_send(EventDispatch::ended(self.node_id.get()));
         }
     }
 
-    pub(crate) fn report_error(&self, error: Box<dyn Any + Send + 'static>) {
+    pub(crate) fn report_error(&self, error: Box<dyn Any + Send>) {
         pub fn type_name_of_val<T: ?Sized>(_val: &T) -> &'static str {
             std::any::type_name::<T>()
         }
@@ -46,7 +46,7 @@ impl RenderScope {
             type_name_of_val(&error).to_string()
         };
         eprintln!(
-            "Panic occured in Audio Processor: '{}'. Removing node from graph.",
+            "Panic occurred in Audio Processor: '{}'. Removing node from graph.",
             &message
         );
 
@@ -94,9 +94,28 @@ pub trait AudioProcessor: Send {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool;
+
+    /// Handle incoming messages from the linked AudioNode
+    ///
+    /// By overriding this method you can add a handler for messages sent from the control thread
+    /// via
+    /// [`AudioContextRegistration::post_message`](crate::context::AudioContextRegistration::post_message).
+    /// This will not be necessary for most processors.
+    ///
+    /// Receivers are supposed to consume the content of `msg`. The content of `msg` might
+    /// also be replaced by cruft that needs to be deallocated outside of the render thread
+    /// afterwards, e.g. when replacing an internal buffer.
+    ///
+    /// This method is just a shim of the full
+    /// [`MessagePort`](https://webaudio.github.io/web-audio-api/#dom-audioworkletprocessor-port)
+    /// `onmessage` functionality of the AudioWorkletProcessor.
+    #[allow(unused_variables)]
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        log::warn!("Ignoring incoming message");
+    }
 }
 
 struct DerefAudioRenderQuantumChannel<'a>(std::cell::Ref<'a, Node>);
@@ -120,11 +139,11 @@ impl Deref for DerefAudioRenderQuantumChannel<'_> {
 ///
 /// Provided to implementations of [`AudioProcessor`] in the render thread
 pub struct AudioParamValues<'a> {
-    nodes: &'a FxHashMap<AudioNodeId, RefCell<Node>>,
+    nodes: &'a NodeCollection,
 }
 
 impl<'a> AudioParamValues<'a> {
-    pub(crate) fn from(nodes: &'a FxHashMap<AudioNodeId, RefCell<Node>>) -> Self {
+    pub(crate) fn from(nodes: &'a NodeCollection) -> Self {
         Self { nodes }
     }
 
@@ -135,7 +154,7 @@ impl<'a> AudioParamValues<'a> {
     /// provide a slice of length equal to the render quantum size (default: 128)
     #[allow(clippy::missing_panics_doc)]
     pub fn get(&self, index: &AudioParamId) -> impl Deref<Target = [f32]> + '_ {
-        DerefAudioRenderQuantumChannel(self.nodes.get(&index.into()).unwrap().borrow())
+        DerefAudioRenderQuantumChannel(self.nodes[index.into()].borrow())
     }
 
     pub(crate) fn listener_params(&self) -> [impl Deref<Target = [f32]> + '_; 9] {

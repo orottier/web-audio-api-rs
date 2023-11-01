@@ -1,18 +1,38 @@
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::AudioNode;
 use web_audio_api::node::AudioScheduledSourceNode;
 
+// PannerNode example
+//
+// `cargo run --release --example panner_cone`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example panner_cone`
 fn main() {
     env_logger::init();
-    let context = AudioContext::default();
+
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
 
     // Create a friendly tone
-    let tone = context.create_oscillator();
+    let mut tone = context.create_oscillator();
     tone.frequency().set_value_at_time(300.0f32, 0.);
     tone.start();
 
     // Connect tone > panner node > destination node
-    let panner = context.create_panner();
+    let mut panner = context.create_panner();
     tone.connect(&panner);
     panner.connect(&context.destination());
 
@@ -22,7 +42,7 @@ fn main() {
     panner.orientation_x().set_value(0.);
 
     // Panner rotates around their axis, every second
-    let moving = context.create_oscillator();
+    let mut moving = context.create_oscillator();
     moving.start();
     moving.frequency().set_value_at_time(1., 0.);
     // Connect to x-orientation

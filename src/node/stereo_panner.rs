@@ -4,8 +4,8 @@ use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
 use super::{
-    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
-    SINETABLE, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE,
+    precomputed_sine_table, AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode,
+    ChannelInterpretation, TABLE_LENGTH_BY_4_F32, TABLE_LENGTH_BY_4_USIZE,
 };
 
 /// Options for constructing a [`StereoPannerOptions`]
@@ -69,10 +69,11 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
 /// - `gain_left = (x * PI / 2.).cos()`
 /// - `gain_right = (x * PI / 2.).sin()`
 #[inline(always)]
-fn get_stereo_gains(x: f32) -> [f32; 2] {
+fn get_stereo_gains(sine_table: &[f32], x: f32) -> [f32; 2] {
     let idx = (x * TABLE_LENGTH_BY_4_F32) as usize;
-    let gain_left = SINETABLE[idx + TABLE_LENGTH_BY_4_USIZE];
-    let gain_right = SINETABLE[idx];
+
+    let gain_left = sine_table[idx + TABLE_LENGTH_BY_4_USIZE];
+    let gain_right = sine_table[idx];
 
     [gain_left, gain_right]
 }
@@ -84,7 +85,7 @@ fn get_stereo_gains(x: f32) -> [f32; 2] {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/StereoPannerNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#stereopannernode>
-/// - see also: [`BaseAudioContext::create_stereo_panner`](crate::context::BaseAudioContext::create_stereo_panner)
+/// - see also: [`BaseAudioContext::create_stereo_panner`]
 ///
 /// # Usage
 ///
@@ -101,7 +102,7 @@ fn get_stereo_gains(x: f32) -> [f32; 2] {
 /// panner.pan().set_value(-1.);
 ///
 /// // pipe an oscillator into the stereo panner
-/// let osc = context.create_oscillator();
+/// let mut osc = context.create_oscillator();
 /// osc.frequency().set_value(200.);
 /// osc.connect(&panner);
 /// osc.start();
@@ -183,7 +184,7 @@ impl StereoPannerNode {
 
             pan_param.set_value(options.pan);
 
-            let renderer = StereoPannerRenderer { pan: pan_proc };
+            let renderer = StereoPannerRenderer::new(pan_proc);
 
             let node = Self {
                 registration,
@@ -195,7 +196,7 @@ impl StereoPannerNode {
         })
     }
 
-    /// Returns the pan audio paramter
+    /// Returns the pan audio parameter
     #[must_use]
     pub fn pan(&self) -> &AudioParam {
         &self.pan
@@ -207,6 +208,16 @@ struct StereoPannerRenderer {
     /// Position of the input in the output’s stereo image.
     /// -1 represents full left, +1 represents full right.
     pan: AudioParamId,
+    sine_table: &'static [f32],
+}
+
+impl StereoPannerRenderer {
+    fn new(pan: AudioParamId) -> Self {
+        Self {
+            pan,
+            sine_table: precomputed_sine_table(),
+        }
+    }
 }
 
 impl AudioProcessor for StereoPannerRenderer {
@@ -214,7 +225,7 @@ impl AudioProcessor for StereoPannerRenderer {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         // single input/output node
@@ -239,7 +250,7 @@ impl AudioProcessor for StereoPannerRenderer {
                 if pan_values.len() == 1 {
                     let pan = pan_values[0];
                     let x = (pan + 1.) * 0.5;
-                    let [gain_left, gain_right] = get_stereo_gains(x);
+                    let [gain_left, gain_right] = get_stereo_gains(self.sine_table, x);
 
                     left.iter_mut()
                         .zip(right.iter_mut())
@@ -255,7 +266,7 @@ impl AudioProcessor for StereoPannerRenderer {
                         .zip(input.channel_data(0).iter())
                         .for_each(|(((l, r), pan), input)| {
                             let x = (pan + 1.) * 0.5;
-                            let [gain_left, gain_right] = get_stereo_gains(x);
+                            let [gain_left, gain_right] = get_stereo_gains(self.sine_table, x);
 
                             *l = input * gain_left;
                             *r = input * gain_right;
@@ -266,7 +277,7 @@ impl AudioProcessor for StereoPannerRenderer {
                 if pan_values.len() == 1 {
                     let pan = pan_values[0];
                     let x = if pan <= 0. { pan + 1. } else { pan };
-                    let [gain_left, gain_right] = get_stereo_gains(x);
+                    let [gain_left, gain_right] = get_stereo_gains(self.sine_table, x);
 
                     left.iter_mut()
                         .zip(right.iter_mut())
@@ -290,13 +301,13 @@ impl AudioProcessor for StereoPannerRenderer {
                         .for_each(|((((l, r), &pan), &input_left), &input_right)| {
                             if pan <= 0. {
                                 let x = pan + 1.;
-                                let [gain_left, gain_right] = get_stereo_gains(x);
+                                let [gain_left, gain_right] = get_stereo_gains(self.sine_table, x);
 
                                 *l = input_right.mul_add(gain_left, input_left);
                                 *r = input_right * gain_right;
                             } else {
                                 let x = pan;
-                                let [gain_left, gain_right] = get_stereo_gains(x);
+                                let [gain_left, gain_right] = get_stereo_gains(self.sine_table, x);
 
                                 *l = input_left * gain_left;
                                 *r = input_left.mul_add(gain_right, input_right);
@@ -345,11 +356,13 @@ mod tests {
 
     #[test]
     fn test_get_stereo_gains() {
+        let sine_table = precomputed_sine_table();
+
         // check correctness of wavetable lookup
         for i in 0..1001 {
             let x = i as f32 / 1000.;
 
-            let [gain_left, gain_right] = get_stereo_gains(x);
+            let [gain_left, gain_right] = get_stereo_gains(sine_table, x);
 
             assert_float_eq!(
                 gain_left,
@@ -392,7 +405,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -420,7 +433,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -448,7 +461,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -491,7 +504,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -515,7 +528,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();
@@ -539,7 +552,7 @@ mod tests {
             );
             panner.connect(&context.destination());
 
-            let src = context.create_buffer_source();
+            let mut src = context.create_buffer_source();
             src.connect(&panner);
             src.set_buffer(buffer.clone());
             src.start();

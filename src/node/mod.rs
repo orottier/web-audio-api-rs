@@ -1,15 +1,13 @@
 //! The AudioNode interface and concrete types
 use std::f32::consts::PI;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
 use crate::events::{ErrorEvent, EventHandler, EventPayload, EventType};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::AudioBufferIter;
 use crate::Event;
-
-use lazy_static::lazy_static;
 
 mod analyser;
 pub use analyser::*;
@@ -58,14 +56,15 @@ pub(crate) const TABLE_LENGTH_BY_4_USIZE: usize = TABLE_LENGTH_USIZE / 4;
 pub(crate) const TABLE_LENGTH_F32: f32 = TABLE_LENGTH_USIZE as f32;
 pub(crate) const TABLE_LENGTH_BY_4_F32: f32 = TABLE_LENGTH_BY_4_USIZE as f32;
 
-// Compute one period sine wavetable of size TABLE_LENGTH
-lazy_static! {
-    pub(crate) static ref SINETABLE: Vec<f32> = {
-        let table: Vec<f32> = (0..TABLE_LENGTH_USIZE)
+/// Precomputed sine table
+pub(crate) fn precomputed_sine_table() -> &'static [f32] {
+    static INSTANCE: OnceLock<Vec<f32>> = OnceLock::new();
+    INSTANCE.get_or_init(|| {
+        // Compute one period sine wavetable of size TABLE_LENGTH
+        (0..TABLE_LENGTH_USIZE)
             .map(|x| ((x as f32) * 2.0 * PI * (1. / (TABLE_LENGTH_F32))).sin())
-            .collect();
-        table
-    };
+            .collect()
+    })
 }
 
 /// How channels must be matched between the node's inputs and outputs.
@@ -153,9 +152,14 @@ impl Default for ChannelConfigOptions {
 /// let _: ChannelConfig = opts.into();
 #[derive(Clone, Debug)]
 pub struct ChannelConfig {
-    count: Arc<AtomicUsize>,
-    count_mode: Arc<AtomicU32>,
-    interpretation: Arc<AtomicU32>,
+    inner: Arc<ChannelConfigInner>,
+}
+
+#[derive(Debug)]
+struct ChannelConfigInner {
+    count: AtomicUsize,
+    count_mode: AtomicU32,
+    interpretation: AtomicU32,
 }
 
 impl Default for ChannelConfig {
@@ -164,45 +168,55 @@ impl Default for ChannelConfig {
     }
 }
 
-// All methods on this struct are marked `pub(crate)` because we don't want outside users to be able to change the values directly.
-// These methods are only accessible via the AudioNode interface, so AudioNode's that have channel count/mode constraints
-// should be able to assert those.
+// All methods on this struct are marked `pub(crate)` because we don't want outside users to be
+// able to change the values directly.  These methods are only accessible via the AudioNode
+// interface, so AudioNode's that have channel count/mode constraints should be able to assert
+// those.
+//
+// Uses the canonical ordering for handover of values, i.e. `Acquire` on load and `Release` on
+// store.
 impl ChannelConfig {
     /// Represents an enumerated value describing the way channels must be matched between the
     /// node's inputs and outputs.
     pub(crate) fn count_mode(&self) -> ChannelCountMode {
-        self.count_mode.load(Ordering::SeqCst).into()
+        self.inner.count_mode.load(Ordering::Acquire).into()
     }
+
     fn set_count_mode(&self, v: ChannelCountMode) {
-        self.count_mode.store(v as u32, Ordering::SeqCst)
+        self.inner.count_mode.store(v as u32, Ordering::Release)
     }
 
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
     /// will define how audio up-mixing and down-mixing will happen.
     pub(crate) fn interpretation(&self) -> ChannelInterpretation {
-        self.interpretation.load(Ordering::SeqCst).into()
+        self.inner.interpretation.load(Ordering::Acquire).into()
     }
+
     fn set_interpretation(&self, v: ChannelInterpretation) {
-        self.interpretation.store(v as u32, Ordering::SeqCst)
+        self.inner.interpretation.store(v as u32, Ordering::Release)
     }
 
     /// Represents an integer used to determine how many channels are used when up-mixing and
     /// down-mixing connections to any inputs to the node.
     pub(crate) fn count(&self) -> usize {
-        self.count.load(Ordering::SeqCst)
+        self.inner.count.load(Ordering::Acquire)
     }
+
     fn set_count(&self, v: usize) {
         crate::assert_valid_number_of_channels(v);
-        self.count.store(v, Ordering::SeqCst)
+        self.inner.count.store(v, Ordering::Release)
     }
 }
 
 impl From<ChannelConfigOptions> for ChannelConfig {
     fn from(opts: ChannelConfigOptions) -> Self {
+        let inner = ChannelConfigInner {
+            count: AtomicUsize::from(opts.count),
+            count_mode: AtomicU32::from(opts.count_mode as u32),
+            interpretation: AtomicU32::from(opts.interpretation as u32),
+        };
         Self {
-            count: Arc::new(AtomicUsize::from(opts.count)),
-            count_mode: Arc::new(AtomicU32::from(opts.count_mode as u32)),
-            interpretation: Arc::new(AtomicU32::from(opts.interpretation as u32)),
+            inner: Arc::new(inner),
         }
     }
 }
@@ -357,28 +371,28 @@ pub trait AudioScheduledSourceNode: AudioNode {
     /// # Panics
     ///
     /// Panics if the source was already started
-    fn start(&self);
+    fn start(&mut self);
 
     /// Schedule playback start at given timestamp
     ///
     /// # Panics
     ///
     /// Panics if the source was already started
-    fn start_at(&self, when: f64);
+    fn start_at(&mut self, when: f64);
 
     /// Stop immediately
     ///
     /// # Panics
     ///
     /// Panics if the source was already stopped
-    fn stop(&self);
+    fn stop(&mut self);
 
     /// Schedule playback stop at given timestamp
     ///
     /// # Panics
     ///
     /// Panics if the source was already stopped
-    fn stop_at(&self, when: f64);
+    fn stop_at(&mut self, when: f64);
 
     /// Register callback to run when the source node has stopped playing
     ///
@@ -426,7 +440,7 @@ impl<R: AudioBufferIter> AudioProcessor for MediaStreamRenderer<R> {
         &mut self,
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues,
+        _params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         // single output node

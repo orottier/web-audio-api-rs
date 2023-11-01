@@ -1,18 +1,15 @@
-use crossbeam_channel::{self, Receiver, Sender};
+use std::any::Any;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::control::Scheduler;
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
-use crate::periodic_wave::PeriodicWave;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::PeriodicWave;
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
-    AudioNode, AudioScheduledSourceNode, ChannelConfig, ChannelConfigOptions, SINETABLE,
-    TABLE_LENGTH_USIZE,
+    precomputed_sine_table, AudioNode, AudioScheduledSourceNode, ChannelConfig,
+    ChannelConfigOptions, TABLE_LENGTH_USIZE,
 };
 
 /// Options for constructing an [`OscillatorNode`]
@@ -22,6 +19,11 @@ use super::{
 //   float detune = 0;
 //   PeriodicWave periodicWave;
 // };
+//
+// @note - Does extend AudioNodeOptions but they are useless for source nodes as
+// they instruct how to upmix the inputs.
+// This is a common source of confusion, see e.g. https://github.com/mdn/content/pull/18472, and
+// an issue in the spec, see discussion in https://github.com/WebAudio/web-audio-api/issues/2496
 #[derive(Clone, Debug)]
 pub struct OscillatorOptions {
     /// The shape of the periodic waveform
@@ -30,7 +32,7 @@ pub struct OscillatorOptions {
     pub frequency: f32,
     /// A detuning value (in cents) which will offset the frequency by the given amount.
     pub detune: f32,
-    /// Optionnal custom waveform, if specified (set `type` to "custom")
+    /// Optional custom waveform, if specified (set `type` to "custom")
     pub periodic_wave: Option<PeriodicWave>,
     /// channel config options
     pub channel_config: ChannelConfigOptions,
@@ -82,14 +84,21 @@ impl From<u32> for OscillatorType {
     }
 }
 
+/// Instructions to start or stop processing
+#[derive(Debug, Copy, Clone)]
+enum Schedule {
+    Start(f64),
+    Stop(f64),
+}
+
 /// `OscillatorNode` represents an audio source generating a periodic waveform.
 /// It can generate a few common waveforms (i.e. sine, square, sawtooth, triangle),
 /// or can be set to an arbitrary periodic waveform using a [`PeriodicWave`] object.
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/OscillatorNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#OscillatorNode>
-/// - see also: [`BaseAudioContext::create_oscillator`](crate::context::BaseAudioContext::create_oscillator)
-/// - see also: [`PeriodicWave`](crate::periodic_wave::PeriodicWave)
+/// - see also: [`BaseAudioContext::create_oscillator`]
+/// - see also: [`PeriodicWave`]
 ///
 /// # Usage
 ///
@@ -99,7 +108,7 @@ impl From<u32> for OscillatorType {
 ///
 /// let context = AudioContext::default();
 ///
-/// let osc = context.create_oscillator();
+/// let mut osc = context.create_oscillator();
 /// osc.frequency().set_value(200.);
 /// osc.connect(&context.destination());
 /// osc.start();
@@ -121,11 +130,7 @@ pub struct OscillatorNode {
     /// A detuning value (in cents) which will offset the frequency by the given amount.
     detune: AudioParam,
     /// Waveform of an oscillator
-    type_: Arc<AtomicU32>,
-    /// starts and stops Oscillator audio streams
-    scheduler: Scheduler,
-    /// channel between control and renderer parts (sender part)
-    sender: Sender<PeriodicWave>,
+    type_: OscillatorType,
 }
 
 impl AudioNode for OscillatorNode {
@@ -149,22 +154,22 @@ impl AudioNode for OscillatorNode {
 }
 
 impl AudioScheduledSourceNode for OscillatorNode {
-    fn start(&self) {
+    fn start(&mut self) {
         let when = self.registration.context().current_time();
         self.start_at(when);
     }
 
-    fn start_at(&self, when: f64) {
-        self.scheduler.start_at(when);
+    fn start_at(&mut self, when: f64) {
+        self.registration.post_message(Schedule::Start(when));
     }
 
-    fn stop(&self) {
+    fn stop(&mut self) {
         let when = self.registration.context().current_time();
         self.stop_at(when);
     }
 
-    fn stop_at(&self, when: f64) {
-        self.scheduler.stop_at(when);
+    fn stop_at(&mut self, when: f64) {
+        self.registration.post_message(Schedule::Stop(when));
     }
 }
 
@@ -189,50 +194,45 @@ impl OscillatorNode {
             } = options;
 
             // frequency audio parameter
-            let freq_param_opts = AudioParamDescriptor {
+            let freq_param_options = AudioParamDescriptor {
                 min_value: -nyquist,
                 max_value: nyquist,
                 default_value: 440.,
                 automation_rate: AutomationRate::A,
             };
-            let (f_param, f_proc) = context.create_audio_param(freq_param_opts, &registration);
+            let (f_param, f_proc) = context.create_audio_param(freq_param_options, &registration);
             f_param.set_value(frequency);
 
             // detune audio parameter
-            let det_param_opts = AudioParamDescriptor {
+            let det_param_options = AudioParamDescriptor {
                 min_value: -153_600.,
                 max_value: 153_600.,
                 default_value: 0.,
                 automation_rate: AutomationRate::A,
             };
-            let (det_param, det_proc) = context.create_audio_param(det_param_opts, &registration);
+            let (det_param, det_proc) =
+                context.create_audio_param(det_param_options, &registration);
             det_param.set_value(detune);
 
-            let type_ = Arc::new(AtomicU32::new(type_ as u32));
-
-            let scheduler = Scheduler::new();
-            let (sender, receiver) = crossbeam_channel::bounded(1);
-
             let renderer = OscillatorRenderer {
-                type_: type_.clone(),
+                type_,
                 frequency: f_proc,
                 detune: det_proc,
-                scheduler: scheduler.clone(),
-                receiver,
                 phase: 0.,
+                start_time: f64::MAX,
+                stop_time: f64::MAX,
                 started: false,
                 periodic_wave: None,
                 ended_triggered: false,
+                sine_table: precomputed_sine_table(),
             };
 
-            let node = Self {
+            let mut node = Self {
                 registration,
                 channel_config: channel_config.into(),
                 frequency: f_param,
                 detune: det_param,
                 type_,
-                scheduler,
-                sender,
             };
 
             // if periodic wave has been given, init it
@@ -244,7 +244,7 @@ impl OscillatorNode {
         })
     }
 
-    /// A-rate [`AudioParam`] that defines the fondamental frequency of the
+    /// A-rate [`AudioParam`] that defines the fundamental frequency of the
     /// oscillator, expressed in Hz
     ///
     /// The final frequency is calculated as follow: frequency * 2^(detune/1200)
@@ -267,7 +267,7 @@ impl OscillatorNode {
     /// Returns the oscillator type
     #[must_use]
     pub fn type_(&self) -> OscillatorType {
-        self.type_.load(Ordering::SeqCst).into()
+        self.type_
     }
 
     /// Set the oscillator type
@@ -279,7 +279,7 @@ impl OscillatorNode {
     /// # Panics
     ///
     /// if `type_` is `OscillatorType::Custom`
-    pub fn set_type(&self, type_: OscillatorType) {
+    pub fn set_type(&mut self, type_: OscillatorType) {
         assert_ne!(
             type_,
             OscillatorType::Custom,
@@ -287,47 +287,46 @@ impl OscillatorNode {
         );
 
         // if periodic wave has been set specified, type_ changes are ignored
-        if self.type_.load(Ordering::SeqCst) == OscillatorType::Custom as u32 {
+        if self.type_ == OscillatorType::Custom {
             return;
         }
 
-        self.type_.store(type_ as u32, Ordering::SeqCst);
+        self.type_ = type_;
+        self.registration.post_message(type_);
     }
 
     /// Sets a `PeriodicWave` which describes a waveform to be used by the oscillator.
     ///
     /// Calling this sets the oscillator type to `custom`, once set to `custom`
     /// the oscillator cannot be reverted back to a standard waveform.
-    pub fn set_periodic_wave(&self, periodic_wave: PeriodicWave) {
-        self.type_
-            .store(OscillatorType::Custom as u32, Ordering::SeqCst);
-
-        self.sender
-            .send(periodic_wave)
-            .expect("Sending periodic wave to the node renderer failed");
+    pub fn set_periodic_wave(&mut self, periodic_wave: PeriodicWave) {
+        self.type_ = OscillatorType::Custom;
+        self.registration.post_message(periodic_wave);
     }
 }
 
 /// Rendering component of the oscillator node
 struct OscillatorRenderer {
     /// The shape of the periodic waveform
-    type_: Arc<AtomicU32>,
+    type_: OscillatorType,
     /// The frequency of the fundamental frequency.
     frequency: AudioParamId,
     /// A detuning value (in cents) which will offset the frequency by the given amount.
     detune: AudioParamId,
-    /// starts and stops oscillator audio streams
-    scheduler: Scheduler,
-    /// channel between control and renderer parts (receiver part)
-    receiver: Receiver<PeriodicWave>,
     /// current phase of the oscillator
     phase: f64,
+    /// start time
+    start_time: f64,
+    /// end time
+    stop_time: f64,
     /// defines if the oscillator has started
     started: bool,
     /// wavetable placeholder for custom oscillators
     periodic_wave: Option<PeriodicWave>,
     /// defines if the `ended` events was already dispatched
     ended_triggered: bool,
+    /// Precomputed sine table
+    sine_table: &'static [f32],
 }
 
 impl AudioProcessor for OscillatorRenderer {
@@ -335,7 +334,7 @@ impl AudioProcessor for OscillatorRenderer {
         &mut self,
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        params: AudioParamValues,
+        params: AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
         // single output node
@@ -343,23 +342,15 @@ impl AudioProcessor for OscillatorRenderer {
         // 1 channel output
         output.set_number_of_channels(1);
 
-        // check if any message was send from the control thread
-        if let Ok(periodic_wave) = self.receiver.try_recv() {
-            self.periodic_wave = Some(periodic_wave);
-        }
-
         let sample_rate = scope.sample_rate as f64;
         let dt = 1. / sample_rate;
         let num_frames = RENDER_QUANTUM_SIZE;
         let next_block_time = scope.current_time + dt * num_frames as f64;
 
-        let mut start_time = self.scheduler.get_start_at();
-        let stop_time = self.scheduler.get_stop_at();
-
-        if start_time >= next_block_time {
+        if self.start_time >= next_block_time {
             output.make_silent();
             return true;
-        } else if stop_time < scope.current_time {
+        } else if self.stop_time < scope.current_time {
             output.make_silent();
 
             // @note: we need this check because this is called a until the program
@@ -372,7 +363,6 @@ impl AudioProcessor for OscillatorRenderer {
             return false;
         }
 
-        let type_ = self.type_.load(Ordering::SeqCst).into();
         let channel_data = output.channel_data_mut(0);
         let frequency_values = params.get(&self.frequency);
         let detune_values = params.get(&self.detune);
@@ -384,8 +374,8 @@ impl AudioProcessor for OscillatorRenderer {
         // [spec] If 0 is passed in for this value or if the value is less than
         // currentTime, then the sound will start playing immediately
         // cf. https://webaudio.github.io/web-audio-api/#dom-audioscheduledsourcenode-start-when-when
-        if !self.started && start_time < current_time {
-            start_time = current_time;
+        if !self.started && self.start_time < current_time {
+            self.start_time = current_time;
         }
 
         channel_data
@@ -393,7 +383,7 @@ impl AudioProcessor for OscillatorRenderer {
             .zip(frequency_values.iter().cycle())
             .zip(detune_values.iter().cycle())
             .for_each(|((o, &frequency), &detune)| {
-                if current_time < start_time || current_time >= stop_time {
+                if current_time < self.start_time || current_time >= self.stop_time {
                     *o = 0.;
                     current_time += dt;
 
@@ -407,9 +397,9 @@ impl AudioProcessor for OscillatorRenderer {
                 if !self.started {
                     // if start time was between last frame and current frame
                     // we need to adjust the phase first
-                    if current_time > start_time {
+                    if current_time > self.start_time {
                         let phase_incr = computed_frequency as f64 / sample_rate;
-                        let ratio = (current_time - start_time) / dt;
+                        let ratio = (current_time - self.start_time) / dt;
                         self.phase = Self::unroll_phase(phase_incr * ratio);
                     }
 
@@ -422,7 +412,7 @@ impl AudioProcessor for OscillatorRenderer {
                 // wavetable, define if it worth the assle...
                 // e.g. for now `generate_sine` and `generate_custom` are almost the sames
                 // cf. https://webaudio.github.io/web-audio-api/#oscillator-coefficients
-                *o = match type_ {
+                *o = match self.type_ {
                     OscillatorType::Sine => self.generate_sine(),
                     OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
                     OscillatorType::Square => self.generate_square(phase_incr),
@@ -436,6 +426,35 @@ impl AudioProcessor for OscillatorRenderer {
             });
 
         true
+    }
+
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        if let Some(&type_) = msg.downcast_ref::<OscillatorType>() {
+            self.type_ = type_;
+            return;
+        }
+
+        if let Some(&schedule) = msg.downcast_ref::<Schedule>() {
+            match schedule {
+                Schedule::Start(v) => self.start_time = v,
+                Schedule::Stop(v) => self.stop_time = v,
+            }
+            return;
+        }
+
+        if let Some(periodic_wave) = msg.downcast_mut::<PeriodicWave>() {
+            if let Some(current_periodic_wave) = &mut self.periodic_wave {
+                // Avoid deallocation in the render thread by swapping the wavetable buffers.
+                std::mem::swap(current_periodic_wave, periodic_wave)
+            } else {
+                // The default wavetable buffer is empty and does not cause allocations.
+                self.periodic_wave = Some(std::mem::take(periodic_wave));
+            }
+            self.type_ = OscillatorType::Custom; // shared type is already updated by control
+            return;
+        }
+
+        log::warn!("OscillatorRenderer: Dropping incoming message {msg:?}");
     }
 }
 
@@ -453,7 +472,7 @@ impl OscillatorRenderer {
 
         // linear interpolation into lookup table
         let k = (position - floored) as f32;
-        SINETABLE[prev_index].mul_add(1. - k, SINETABLE[next_index] * k)
+        self.sine_table[prev_index].mul_add(1. - k, self.sine_table[next_index] * k)
     }
 
     #[inline]
@@ -566,8 +585,7 @@ mod tests {
         let det = osc.detune.value();
         assert_float_eq!(det, default_det, abs_all <= 0.);
 
-        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(type_, default_type as u32);
+        assert_eq!(osc.type_(), default_type);
     }
 
     #[test]
@@ -586,15 +604,14 @@ mod tests {
         let det = osc.detune.value();
         assert_float_eq!(det, default_det, abs_all <= 0.);
 
-        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(type_, default_type as u32);
+        assert_eq!(osc.type_(), default_type);
     }
 
     #[test]
     #[should_panic]
     fn set_type_to_custom_should_panic() {
         let context = OfflineAudioContext::new(2, 1, 44_100.);
-        let osc = OscillatorNode::new(&context, OscillatorOptions::default());
+        let mut osc = OscillatorNode::new(&context, OscillatorOptions::default());
         osc.set_type(OscillatorType::Custom);
     }
 
@@ -613,8 +630,7 @@ mod tests {
 
         let osc = OscillatorNode::new(&context, options);
 
-        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(type_, expected_type as u32);
+        assert_eq!(osc.type_(), expected_type);
     }
 
     #[test]
@@ -630,12 +646,10 @@ mod tests {
             ..OscillatorOptions::default()
         };
 
-        let osc = OscillatorNode::new(&context, options);
+        let mut osc = OscillatorNode::new(&context, options);
 
         osc.set_type(OscillatorType::Sine);
-
-        let type_ = osc.type_.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(type_, expected_type as u32);
+        assert_eq!(osc.type_(), expected_type);
     }
 
     // # Test waveforms
@@ -660,7 +674,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.start_at(0.);
@@ -696,7 +710,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.start_at(0.);
@@ -725,7 +739,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.set_type(OscillatorType::Square);
@@ -763,7 +777,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.set_type(OscillatorType::Triangle);
@@ -810,7 +824,7 @@ mod tests {
 
             let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.frequency().set_value(freq);
             osc.set_type(OscillatorType::Sawtooth);
@@ -863,7 +877,7 @@ mod tests {
 
             let periodic_wave = context.create_periodic_wave(options);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.set_periodic_wave(periodic_wave);
             osc.frequency().set_value(freq);
@@ -910,11 +924,10 @@ mod tests {
 
             let periodic_wave = context.create_periodic_wave(options);
 
-            let osc = context.create_oscillator();
+            let mut osc = context.create_oscillator();
             osc.connect(&context.destination());
             osc.set_periodic_wave(periodic_wave);
             osc.frequency().set_value(freq);
-            osc.set_type(OscillatorType::Sawtooth);
             osc.start_at(0.);
 
             let output = context.start_rendering_sync();
@@ -987,7 +1000,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(2. / sample_rate as f64);
@@ -1019,7 +1032,7 @@ mod tests {
         let sample_rate = 96000;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         // start between second and third sample
@@ -1051,7 +1064,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(0.);
@@ -1083,7 +1096,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(0.);
@@ -1115,7 +1128,7 @@ mod tests {
         let sample_rate = 44_100;
 
         let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
         osc.connect(&context.destination());
         osc.frequency().set_value(freq);
         osc.start_at(-1.);

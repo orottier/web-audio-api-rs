@@ -53,7 +53,7 @@ pub struct AudioBufferOptions {
 /// buffer.copy_to_channel(&sine, 0);
 ///
 /// // play the buffer in a loop
-/// let src = context.create_buffer_source();
+/// let mut src = context.create_buffer_source();
 /// src.set_buffer(buffer.clone());
 /// src.set_loop(true);
 /// src.connect(&context.destination());
@@ -66,8 +66,8 @@ pub struct AudioBufferOptions {
 ///
 #[derive(Clone, Debug)]
 pub struct AudioBuffer {
-    channels: Vec<ChannelData>,
-    sample_rate: f32,
+    pub(crate) channels: Vec<ChannelData>,
+    pub(crate) sample_rate: f32,
 }
 
 impl AudioBuffer {
@@ -298,7 +298,7 @@ impl AudioBuffer {
     }
 
     /// Resample to the desired sample rate. The method performs a simple linear
-    /// interpolation an keep the first and last sample intacts. The new number
+    /// interpolation an keep the first and last sample intact. The new number
     /// of samples is always ceiled according the ratio defined by old and new
     /// sample rates.
     ///
@@ -538,7 +538,7 @@ mod tests {
             abs_all <= 0.
         );
 
-        // w/ offset ouside range
+        // w/ offset outside range
         let mut dest = vec![1.; 10];
         audio_buffer.copy_from_channel_with_offset(&mut dest, 0, usize::MAX);
 
@@ -618,7 +618,7 @@ mod tests {
         }
 
         {
-            // w/ offset ouside range
+            // w/ offset outside range
             let mut audio_buffer = AudioBuffer::new(options);
             let src = vec![1.; 10];
             audio_buffer.copy_to_channel_with_offset(&src, 0, usize::MAX);

@@ -17,11 +17,11 @@ fn test_offline_render() {
     assert_eq!(context.length(), LENGTH);
 
     {
-        let constant1 = context.create_constant_source();
+        let mut constant1 = context.create_constant_source();
         constant1.offset().set_value(2.);
         constant1.connect(&context.destination());
 
-        let constant2 = context.create_constant_source();
+        let mut constant2 = context.create_constant_source();
         constant2.offset().set_value(-4.);
         constant2.connect(&context.destination());
 
@@ -59,7 +59,7 @@ fn test_start_stop() {
             frequency: 0., // constant signal
             ..Default::default()
         };
-        let osc = OscillatorNode::new(&context, opts);
+        let mut osc = OscillatorNode::new(&context, opts);
         osc.connect(&context.destination());
 
         osc.start_at(128. / sample_rate as f64);
@@ -93,7 +93,7 @@ fn test_delayed_constant_source() {
         delay.delay_time().set_value(128. * 2. / sample_rate);
         delay.connect(&context.destination());
 
-        let source = context.create_constant_source();
+        let mut source = context.create_constant_source();
         source.connect(&delay);
         source.start();
     }
@@ -120,15 +120,15 @@ fn test_audio_param_graph() {
         gain.gain().set_value(0.5); // intrinsic value
         gain.connect(&context.destination());
 
-        let source = context.create_constant_source();
+        let mut source = context.create_constant_source();
         source.offset().set_value(0.8);
         source.connect(&gain);
 
-        let param_input1 = context.create_constant_source();
+        let mut param_input1 = context.create_constant_source();
         param_input1.offset().set_value(0.1);
         param_input1.connect(gain.gain());
 
-        let param_input2 = context.create_constant_source();
+        let mut param_input2 = context.create_constant_source();
         param_input2.offset().set_value(0.3);
         param_input2.connect(gain.gain());
 
@@ -181,11 +181,11 @@ fn test_cycle() {
         // here we go
         cycle1.connect(&cycle2);
 
-        let source_cycle = context.create_constant_source();
+        let mut source_cycle = context.create_constant_source();
         source_cycle.offset().set_value(1.);
         source_cycle.connect(&cycle1);
 
-        let other = context.create_constant_source();
+        let mut other = context.create_constant_source();
         other.offset().set_value(2.);
         other.connect(&context.destination());
 
@@ -215,7 +215,7 @@ fn test_cycle_breaker() {
         // here we go
         delay.connect(&delay);
 
-        let source = context.create_constant_source();
+        let mut source = context.create_constant_source();
         source.offset().set_value(1.);
         source.connect(&delay);
         source.connect(&context.destination());
@@ -261,7 +261,7 @@ fn test_spatial() {
     listener.up_z().set_value(1.);
 
     // add constant tone
-    let constant = context.create_constant_source();
+    let mut constant = context.create_constant_source();
 
     // add panner at (10, 10, 0) - no cone/direction
     let panner = context.create_panner();

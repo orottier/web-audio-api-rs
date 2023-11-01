@@ -1,14 +1,22 @@
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use std::fs::File;
-use std::{thread, time};
 
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 use web_audio_api::AudioBuffer;
 
-// run in release mode
+// Granular synthesis example
+//
 // `cargo run --release --example granular`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example granular`
 
 // note: naive lookhead scheduler implementation, a proper implementation should:
 // - generalize to handle several engines and type of engines
@@ -40,7 +48,9 @@ impl Scheduler {
 
         loop {
             self.tick();
-            thread::sleep(time::Duration::from_millis((self.period * 1000.) as u64));
+            std::thread::sleep(std::time::Duration::from_millis(
+                (self.period * 1000.) as u64,
+            ));
         }
     }
 
@@ -103,7 +113,7 @@ impl ScrubEngine {
         env.gain().set_value(0.);
         env.connect(&audio_context.destination());
 
-        let src = audio_context.create_buffer_source();
+        let mut src = audio_context.create_buffer_source();
         src.set_buffer(self.audio_buffer.clone());
         src.connect(&env);
 
@@ -134,7 +144,15 @@ fn main() {
     env_logger::init();
     println!("++ scrub into file forward and backward at 0.5 speed");
 
-    let audio_context = AudioContext::default();
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let audio_context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
 
     let file = File::open("samples/sample.wav").unwrap();
     let audio_buffer = audio_context.decode_audio_data_sync(file).unwrap();

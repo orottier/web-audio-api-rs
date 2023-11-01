@@ -1,28 +1,47 @@
 use std::fs::File;
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, DistanceModelType, PannerNode, PannerOptions,
     PanningModelType,
 };
 
-/*
- * This example feature a 'true physics' Doppler effect.
- *
- * The basics are very simple, we just add a DelayNode that represents the finite speed of sound.
- * Speed of sound = 343 m/s
- * So a siren at 100 meters away from you will have a delay of 0.3 seconds. A siren near you
- * obviously has no delay.
- *
- * We combine a delay node with a panner node that represents the moving siren. When the panner
- * node moves closer to the listener, we decrease the delay time linearly. This gives the Doppler
- * effect.
- */
+// This example feature a 'true physics' Doppler effect.
+//
+// The basics are very simple, we just add a DelayNode that represents the finite speed of sound.
+// Speed of sound = 343 m/s
+// So a siren at 100 meters away from you will have a delay of 0.3 seconds. A siren near you
+// obviously has no delay.
+//
+// We combine a delay node with a panner node that represents the moving siren. When the panner
+// node moves closer to the listener, we decrease the delay time linearly. This gives the Doppler
+// effect.
+//
+// `cargo run --release --example doppler`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example doppler`
 fn main() {
-    let context = AudioContext::default();
+    env_logger::init();
+
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
+
     let file = File::open("samples/siren.mp3").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();
 
-    let src = context.create_buffer_source();
+    let mut src = context.create_buffer_source();
     src.set_buffer(buffer);
     src.set_loop(true);
 

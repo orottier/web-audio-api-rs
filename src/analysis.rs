@@ -131,7 +131,7 @@ impl AnalyserRingBuffer {
             .take(len)
             .enumerate()
             .for_each(|(index, value)| {
-                // offset calculation by RING_BUFFER_SIZE so we cant negative values
+                // offset calculation by RING_BUFFER_SIZE so we can't negative values
                 let position = (RING_BUFFER_SIZE + write_index - len + index) % RING_BUFFER_SIZE;
                 *value = self.buffer[position].load(Ordering::Relaxed);
             });
@@ -781,7 +781,7 @@ mod tests {
         analyser.set_fft_size(RENDER_QUANTUM_SIZE);
 
         // get data, should be zero (negative infinity decibel)
-        let mut bins = vec![255; RENDER_QUANTUM_SIZE];
+        let mut bins = [255; RENDER_QUANTUM_SIZE];
         analyser.get_byte_frequency_data(&mut bins[..], 0.);
 
         // only N / 2 values should contain frequency data, rest is unaltered

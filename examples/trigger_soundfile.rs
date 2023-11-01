@@ -1,10 +1,30 @@
 use std::fs::File;
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
+// Showcase different methods of the AudioBufferSourceNode
+//
+// `cargo run --release --example trigger_soundfile`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example trigger_soundfile`
 fn main() {
-    let context = AudioContext::default();
-    // @note - `context.resume` is not needed for now
+    env_logger::init();
+
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
 
     // load and decode buffer
     let file = File::open("samples/sample.wav").unwrap();
@@ -13,13 +33,13 @@ fn main() {
     // @fixme - if only one node in the graph it is never removed even when returning
     // false, se we put this dummy node in the graph so that other ones are properly
     // removed
-    let src = context.create_buffer_source();
+    let mut src = context.create_buffer_source();
     src.set_buffer(audio_buffer.clone());
     src.connect(&context.destination());
 
     {
         println!("++ play until end");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.start_at(context.current_time());
@@ -29,7 +49,7 @@ fn main() {
 
     {
         println!("++ play / stop 1sec");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.start_at(context.current_time());
@@ -40,7 +60,7 @@ fn main() {
 
     {
         println!("++ play / stop 1sec with offset");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.start_at_with_offset(context.current_time(), 1.);
@@ -51,7 +71,7 @@ fn main() {
 
     {
         println!("++ play 1sec with offset and duration");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.start_at_with_offset_and_duration(context.current_time(), 1., 1.);
@@ -61,7 +81,7 @@ fn main() {
 
     {
         println!("++ play backward from offset 1.");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.playback_rate().set_value(-1.);
@@ -72,7 +92,7 @@ fn main() {
 
     {
         println!("++ play backward full buffer");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.playback_rate().set_value(-1.);
@@ -83,7 +103,7 @@ fn main() {
 
     {
         println!("++ simple loop (x2)");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.set_loop(true);
@@ -95,7 +115,7 @@ fn main() {
 
     {
         println!("++ loop between 1 and 2 starting from 0");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.set_loop(true);
@@ -111,7 +131,7 @@ fn main() {
 
     {
         println!("++ loop backward between 1 and 2 starting from end");
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&context.destination());
         src.playback_rate().set_value(-1.);
@@ -136,36 +156,11 @@ fn main() {
         env.gain().set_value(gain);
         env.connect(&context.destination());
 
-        let src = context.create_buffer_source();
+        let mut src = context.create_buffer_source();
         src.set_buffer(audio_buffer.clone());
         src.connect(&env);
         src.start_at(context.current_time() + offset);
     }
 
     std::thread::sleep(std::time::Duration::from_millis(8000));
-
-    // some stress test
-    // let num_sources_by_sec = 100; // one source per 10ms
-    // // 100 is ok
-    // // 200 starts to click
-    // // 1000 is really not ok
-    // // ...let's agree 10ms is ok for descent granular synthesis
-
-    // for i in 0..num_sources_by_sec {
-    //   // let offset = i as f64 / 1000.; // 10ms - look ok in --release
-    //   let offset = i as f64 / num_sources_by_sec as f64;
-
-    //   // this starts to look like home :)
-    //   let gain = if i % 4 == 0 { 1. } else { 0.3 };
-    //   let env = context.create_gain();
-    //   env.gain().set_value(gain);
-    //   env.connect(&context.destination());
-
-    //   let src = context.create_buffer_source();
-    //   src.set_buffer(audio_buffer);
-    //   src.connect(&env);
-    //   src.start_at(context.current_time() + offset);
-    // }
-
-    // std::thread::sleep(std::time::Duration::from_secs(8));
 }

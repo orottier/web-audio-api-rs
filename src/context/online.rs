@@ -5,22 +5,23 @@ use std::sync::Mutex;
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::events::{EventDispatch, EventHandler, EventType};
 use crate::io::{self, AudioBackendManager, ControlThreadInit, RenderThreadInit};
-use crate::media_devices::enumerate_devices_sync;
+use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
-use crate::MediaElement;
-use crate::{AudioRenderCapacity, Event};
+use crate::render::graph::Graph;
+use crate::{AudioRenderCapacity, Event, MediaElement, RENDER_QUANTUM_SIZE};
 
 /// Check if the provided sink_id is available for playback
 ///
-/// It should be "", "none" or a valid `sinkId` returned from [`enumerate_devices_sync`]
+/// It should be "", "none" or a valid output `sinkId` returned from [`enumerate_devices_sync`]
 fn is_valid_sink_id(sink_id: &str) -> bool {
     if sink_id.is_empty() || sink_id == "none" {
         true
     } else {
         enumerate_devices_sync()
             .into_iter()
+            .filter(|d| d.kind() == MediaDeviceInfoKind::AudioOutput)
             .any(|d| d.device_id() == sink_id)
     }
 }
@@ -39,7 +40,7 @@ pub enum AudioContextLatencyCategory {
     Playback,
     /// Specify the number of seconds of latency
     ///
-    /// This latency is not guaranted to be applied, it depends on the audio hardware capabilities
+    /// This latency is not guaranteed to be applied, it depends on the audio hardware capabilities
     Custom(f64),
 }
 
@@ -101,7 +102,7 @@ pub struct AudioContextOptions {
 
 /// This interface represents an audio graph whose `AudioDestinationNode` is routed to a real-time
 /// output device that produces a signal directed at the user.
-// the naming comes from the web audio specfication
+// the naming comes from the web audio specification
 #[allow(clippy::module_name_repetitions)]
 pub struct AudioContext {
     /// represents the underlying `BaseAudioContext`
@@ -154,9 +155,10 @@ impl AudioContext {
     /// never panics.
     #[allow(clippy::needless_pass_by_value)]
     #[must_use]
-    pub fn new(options: AudioContextOptions) -> Self {
+    pub fn new(mut options: AudioContextOptions) -> Self {
         if !is_valid_sink_id(&options.sink_id) {
-            panic!("NotFoundError: invalid sinkId {:?}", options.sink_id);
+            log::error!("NotFoundError: invalid sinkId {:?}", options.sink_id);
+            options.sink_id = String::from("");
         }
 
         let (control_thread_init, render_thread_init) = io::thread_init();
@@ -170,8 +172,9 @@ impl AudioContext {
             event_recv,
         } = control_thread_init;
 
-        let graph = crate::render::graph::Graph::new(crate::RENDER_QUANTUM_SIZE);
-        let message = crate::message::ControlMessage::Startup { graph };
+        let (node_id_producer, node_id_consumer) = llq::Queue::new().split();
+        let graph = Graph::new(RENDER_QUANTUM_SIZE, node_id_producer);
+        let message = ControlMessage::Startup { graph };
         ctrl_msg_send.send(message).unwrap();
 
         let base = ConcreteBaseAudioContext::new(
@@ -181,6 +184,7 @@ impl AudioContext {
             ctrl_msg_send,
             Some((event_send, event_recv)),
             false,
+            node_id_consumer,
         );
         base.set_state(AudioContextState::Running);
 

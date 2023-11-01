@@ -1,9 +1,30 @@
 use std::fs::File;
-use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::context::{
+    AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
+};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
+// IIRFilterNode example - lowpass filter at 200Hz
+//
+// `cargo run --release --example iir`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example iir`
 fn main() {
-    let context = AudioContext::default();
+    env_logger::init();
+
+    let latency_hint = match std::env::var("WEB_AUDIO_LATENCY").as_deref() {
+        Ok("playback") => AudioContextLatencyCategory::Playback,
+        _ => AudioContextLatencyCategory::default(),
+    };
+
+    let context = AudioContext::new(AudioContextOptions {
+        latency_hint,
+        ..AudioContextOptions::default()
+    });
 
     let file = File::open("samples/think-stereo-48000.wav").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();
@@ -22,7 +43,7 @@ fn main() {
     iir.connect(&context.destination());
 
     // Play buffer and pipe to filter
-    let src = context.create_buffer_source();
+    let mut src = context.create_buffer_source();
     src.connect(&iir);
     src.set_buffer(buffer);
     src.set_loop(true);

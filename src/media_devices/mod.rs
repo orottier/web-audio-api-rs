@@ -4,6 +4,9 @@
 //!
 //! <https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices>
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
 use crate::media_streams::MediaStream;
 
@@ -24,8 +27,41 @@ pub fn enumerate_devices_sync() -> Vec<MediaDeviceInfo> {
     crate::io::enumerate_devices_sync()
 }
 
+// Internal struct to derive a stable id for a given input / output device
+// cf. https://github.com/orottier/web-audio-api-rs/issues/356
+#[derive(Hash)]
+pub(crate) struct DeviceId {
+    kind: MediaDeviceInfoKind,
+    host: String,
+    device_name: String,
+    num_channels: u16,
+    index: u8,
+}
+
+impl DeviceId {
+    pub(crate) fn as_string(
+        kind: MediaDeviceInfoKind,
+        host: String,
+        device_name: String,
+        num_channels: u16,
+        index: u8,
+    ) -> String {
+        let device_info = Self {
+            kind,
+            host,
+            device_name,
+            num_channels,
+            index,
+        };
+
+        let mut hasher = DefaultHasher::new();
+        device_info.hash(&mut hasher);
+        format!("{}", hasher.finish())
+    }
+}
+
 /// Describes input/output type of a media device
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum MediaDeviceInfoKind {
     VideoInput,
     AudioInput,
@@ -134,6 +170,20 @@ impl From<MediaTrackConstraints> for AudioContextOptions {
     }
 }
 
+/// Check if the provided device_id is available for playback
+///
+/// It should be "" or a valid input `deviceId` returned from [`enumerate_devices_sync`]
+fn is_valid_device_id(device_id: &str) -> bool {
+    if device_id.is_empty() {
+        true
+    } else {
+        enumerate_devices_sync()
+            .into_iter()
+            .filter(|d| d.kind == MediaDeviceInfoKind::AudioInput)
+            .any(|d| d.device_id() == device_id)
+    }
+}
+
 /// Prompt for permission to use a media input (audio only)
 ///
 /// This produces a [`MediaStream`] with tracks containing the requested types of media, which can
@@ -168,9 +218,15 @@ impl From<MediaTrackConstraints> for AudioContextOptions {
 /// std::thread::sleep(std::time::Duration::from_secs(4));
 /// ```
 pub fn get_user_media_sync(constraints: MediaStreamConstraints) -> MediaStream {
-    let options = match constraints {
+    let mut options = match constraints {
         MediaStreamConstraints::Audio => AudioContextOptions::default(),
         MediaStreamConstraints::AudioWithConstraints(cs) => cs.into(),
     };
+
+    if !is_valid_device_id(&options.sink_id) {
+        log::error!("NotFoundError: invalid deviceId {:?}", options.sink_id);
+        options.sink_id = String::from("");
+    }
+
     crate::io::build_input(options)
 }

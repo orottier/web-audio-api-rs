@@ -25,6 +25,8 @@ pub trait BaseAudioContext {
     /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]
     ///
     /// The `AudioNode` lives in the user-facing control thread. The Processor is sent to the render thread.
+    ///
+    /// Check the `examples/worklet.rs` file for example usage of this method.
     fn register<
         T: AudioNode,
         F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
@@ -43,7 +45,7 @@ pub trait BaseAudioContext {
     ///
     /// In addition to the official spec, the input parameter can be any byte stream (not just an
     /// array). This means you can decode audio data from a file, network stream, or in memory
-    /// buffer, and any other [`std::io::Read`] implementor. The data if buffered internally so you
+    /// buffer, and any other [`std::io::Read`] implementer. The data if buffered internally so you
     /// should not wrap the source in a `BufReader`.
     ///
     /// This function operates synchronously, which may be undesirable on the control thread. The

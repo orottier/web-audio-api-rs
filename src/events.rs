@@ -30,7 +30,7 @@ pub struct ErrorEvent {
     /// The error message
     pub message: String,
     /// The object with which panic was originally invoked.
-    pub error: Box<dyn Any + Send + 'static>,
+    pub error: Box<dyn Any + Send>,
     /// Inherits from this base Event
     pub event: Event,
 }
@@ -97,17 +97,23 @@ impl EventLoop {
         std::thread::spawn(move || loop {
             // this thread is dedicated to event handling so we can block
             for event in event_channel.iter() {
-                let mut handlers = self_clone.event_handlers.lock().unwrap();
-                if let Some(callback) = handlers.remove(&event.type_) {
+                let mut event_handler_lock = self_clone.event_handlers.lock().unwrap();
+                let callback_option = event_handler_lock.remove(&event.type_);
+                drop(event_handler_lock); // release Mutex while running callback
+
+                if let Some(callback) = callback_option {
                     match callback {
                         EventHandler::Once(f) => (f)(event.payload),
                         EventHandler::Multiple(mut f) => {
                             (f)(event.payload);
-                            handlers.insert(event.type_, EventHandler::Multiple(f));
+                            self_clone
+                                .event_handlers
+                                .lock()
+                                .unwrap()
+                                .insert(event.type_, EventHandler::Multiple(f));
                         }
                     };
                 }
-                // handlers Mutex guard drops here
             }
         });
     }

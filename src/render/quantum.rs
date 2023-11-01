@@ -61,7 +61,7 @@ impl Alloc {
 impl AllocInner {
     fn allocate(&self) -> Rc<[f32]> {
         if let Some(rc) = self.pool.borrow_mut().pop() {
-            // re-use from pool
+            // reuse from pool
             rc
         } else {
             // allocate
@@ -135,7 +135,7 @@ impl AudioRenderQuantumChannel {
 
     pub(crate) fn silence(&self) -> Self {
         Self {
-            data: self.alloc.zeroes.clone(),
+            data: Rc::clone(&self.alloc.zeroes),
             alloc: Rc::clone(&self.alloc),
         }
     }
@@ -166,7 +166,8 @@ impl AsRef<[f32]> for AudioRenderQuantumChannel {
 impl std::ops::Drop for AudioRenderQuantumChannel {
     fn drop(&mut self) {
         if Rc::strong_count(&self.data) == 1 {
-            let rc = std::mem::replace(&mut self.data, self.alloc.zeroes.clone());
+            let zeroes = Rc::clone(&self.alloc.zeroes);
+            let rc = std::mem::replace(&mut self.data, zeroes);
             self.alloc.push(rc);
         }
     }
