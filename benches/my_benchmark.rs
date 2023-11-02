@@ -15,6 +15,7 @@ use std::sync::OnceLock;
 const SAMPLE_RATE: f32 = 48000.;
 const DURATION: usize = 10;
 const SAMPLES: usize = SAMPLE_RATE as usize * DURATION;
+const SAMPLES_SHORT: usize = SAMPLE_RATE as usize; // only 1 second for heavy benchmarks
 
 /// Load an audio buffer and cache the result
 ///
@@ -220,7 +221,7 @@ pub fn bench_analyser_node() {
 }
 
 pub fn bench_hrtf_panners() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES_SHORT), SAMPLE_RATE);
 
     let mut panner1 = ctx.create_panner();
     panner1.set_panning_model(PanningModelType::HRTF);
@@ -237,7 +238,7 @@ pub fn bench_hrtf_panners() {
     osc.connect(&panner2);
     osc.start();
 
-    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES_SHORT);
 }
 
 #[cfg(feature = "iai")]
