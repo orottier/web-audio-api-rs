@@ -53,11 +53,11 @@ jobs:
       - name: Revert when benches do not compile on main
         run: cargo check --benches --no-default-features || git checkout main -- benches/my_benchmark.rs
       - name: Run benchmarks for main branch
-        run: cargo bench --no-default-features
+        run: cargo bench --no-default-features --feature iai
       - name: Checkout PR branch
         run: git checkout -
       - name: Run bench against baseline
-        run: cargo bench --no-default-features | sed '0,/^test result:/d' | tee bench.txt
+        run: cargo bench --no-default-features --feature iai | sed '0,/^test result:/d' | tee bench.txt
 
       # for testing
       # - name: create mock results
