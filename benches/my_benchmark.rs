@@ -259,69 +259,69 @@ iai::main!(
 
 #[cfg(not(feature = "iai"))]
 fn criterion_ctor(c: &mut Criterion) {
-    c.bench_function("bench_ctor", |b| b.iter(|| bench_ctor()));
+    c.bench_function("bench_ctor", |b| b.iter(bench_ctor));
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_audio_buffer_decode(c: &mut Criterion) {
     c.bench_function("bench_audio_buffer_decode", |b| {
-        b.iter(|| bench_audio_buffer_decode())
+        b.iter(bench_audio_buffer_decode)
     });
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_sine(c: &mut Criterion) {
-    c.bench_function("bench_sine", |b| b.iter(|| bench_sine()));
+    c.bench_function("bench_sine", |b| b.iter(bench_sine));
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_sine_gain(c: &mut Criterion) {
-    c.bench_function("bench_sine_gain", |b| b.iter(|| bench_sine_gain()));
+    c.bench_function("bench_sine_gain", |b| b.iter(bench_sine_gain));
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_sine_gain_delay(c: &mut Criterion) {
     c.bench_function("bench_sine_gain_delay", |b| {
-        b.iter(|| bench_sine_gain_delay())
+        b.iter(bench_sine_gain_delay)
     });
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_buffer_src(c: &mut Criterion) {
-    c.bench_function("bench_buffer_src", |b| b.iter(|| bench_buffer_src()));
+    c.bench_function("bench_buffer_src", |b| b.iter(bench_buffer_src));
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_buffer_src_delay(c: &mut Criterion) {
     c.bench_function("bench_buffer_src_delay", |b| {
-        b.iter(|| bench_buffer_src_delay())
+        b.iter(bench_buffer_src_delay)
     });
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_buffer_src_iir(c: &mut Criterion) {
     c.bench_function("bench_buffer_src_iir", |b| {
-        b.iter(|| bench_buffer_src_iir())
+        b.iter(bench_buffer_src_iir)
     });
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_buffer_src_biquad(c: &mut Criterion) {
     c.bench_function("bench_buffer_src_biquad", |b| {
-        b.iter(|| bench_buffer_src_biquad())
+        b.iter(bench_buffer_src_biquad)
     });
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_stereo_positional(c: &mut Criterion) {
     c.bench_function("bench_stereo_positional", |b| {
-        b.iter(|| bench_stereo_positional())
+        b.iter(bench_stereo_positional)
     });
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_stereo_panning_automation(c: &mut Criterion) {
     c.bench_function("bench_stereo_panning_automation", |b| {
-        b.iter(|| bench_stereo_panning_automation())
+        b.iter(bench_stereo_panning_automation)
     });
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_analyser_node(c: &mut Criterion) {
-    c.bench_function("bench_analyser_node", |b| b.iter(|| bench_analyser_node()));
+    c.bench_function("bench_analyser_node", |b| b.iter(bench_analyser_node));
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_hrtf_panners(c: &mut Criterion) {
-    c.bench_function("bench_hrtf_panners", |b| b.iter(|| bench_hrtf_panners()));
+    c.bench_function("bench_hrtf_panners", |b| b.iter(bench_hrtf_panners));
 }
 
 #[cfg(not(feature = "iai"))]
