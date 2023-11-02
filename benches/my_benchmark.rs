@@ -26,7 +26,6 @@ fn get_audio_buffer(ctx: &OfflineAudioContext) -> AudioBuffer {
     static BUFFER: OnceLock<AudioBuffer> = OnceLock::new();
     BUFFER
         .get_or_init(|| {
-            println!("decoding now");
             let file = File::open("samples/think-stereo-48000.wav").unwrap();
             ctx.decode_audio_data_sync(file).unwrap()
         })
