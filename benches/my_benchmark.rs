@@ -7,14 +7,42 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use web_audio_api::context::BaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, PanningModelType};
+use web_audio_api::AudioBuffer;
+
+use std::fs::File;
+use std::sync::OnceLock;
 
 const SAMPLE_RATE: f32 = 48000.;
 const DURATION: usize = 10;
 const SAMPLES: usize = SAMPLE_RATE as usize * DURATION;
 
+/// Load an audio buffer and cache the result
+///
+/// We don't want to measure the IO and decoding in most of our benchmarks, so by using this static
+/// instance we avoid this in the criterion benchmarks because the file is already loaded in the
+/// warmup phase.
+fn get_audio_buffer(ctx: &OfflineAudioContext) -> AudioBuffer {
+    static BUFFER: OnceLock<AudioBuffer> = OnceLock::new();
+    BUFFER
+        .get_or_init(|| {
+            println!("decoding now");
+            let file = File::open("samples/think-stereo-48000.wav").unwrap();
+            ctx.decode_audio_data_sync(file).unwrap()
+        })
+        .clone()
+}
+
 pub fn bench_ctor() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
+}
+
+// This benchmark only makes sense in `iai`, because subsequent runs use the cached audiobuffer.
+// However we would like to run this test here so the cache is filled for the subsequent benches.
+pub fn bench_audio_buffer_decode() {
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let buffer = get_audio_buffer(&ctx);
+    assert_eq!(buffer.length(), 101129);
 }
 
 pub fn bench_sine() {
@@ -60,9 +88,7 @@ pub fn bench_sine_gain_delay() {
 
 pub fn bench_buffer_src() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
-
-    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
-    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+    let buffer = get_audio_buffer(&ctx);
 
     let mut src = ctx.create_buffer_source();
     src.connect(&ctx.destination());
@@ -74,9 +100,7 @@ pub fn bench_buffer_src() {
 
 pub fn bench_buffer_src_delay() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
-
-    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
-    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+    let buffer = get_audio_buffer(&ctx);
 
     let delay = ctx.create_delay(0.3);
     delay.delay_time().set_value(0.2);
@@ -93,8 +117,7 @@ pub fn bench_buffer_src_delay() {
 
 pub fn bench_buffer_src_iir() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
-    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
-    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+    let buffer = get_audio_buffer(&ctx);
 
     // these values correspond to a lowpass filter at 200Hz (calculated from biquad)
     let feedforward = vec![
@@ -120,8 +143,7 @@ pub fn bench_buffer_src_iir() {
 
 pub fn bench_buffer_src_biquad() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
-    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
-    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+    let buffer = get_audio_buffer(&ctx);
 
     // Create an biquad filter node (defaults to low pass)
     let biquad = ctx.create_biquad_filter();
@@ -139,8 +161,7 @@ pub fn bench_buffer_src_biquad() {
 
 pub fn bench_stereo_positional() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
-    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
-    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+    let buffer = get_audio_buffer(&ctx);
 
     // Create static panner node
     let panner = ctx.create_panner();
@@ -163,8 +184,7 @@ pub fn bench_stereo_positional() {
 
 pub fn bench_stereo_panning_automation() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
-    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
-    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+    let buffer = get_audio_buffer(&ctx);
 
     let panner = ctx.create_stereo_panner();
     panner.connect(&ctx.destination());
@@ -185,8 +205,7 @@ pub fn bench_stereo_panning_automation() {
 // benchmark this in deterministic way [citation needed].
 pub fn bench_analyser_node() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
-    let file = std::fs::File::open("samples/think-stereo-48000.wav").unwrap();
-    let buffer = ctx.decode_audio_data_sync(file).unwrap();
+    let buffer = get_audio_buffer(&ctx);
 
     let analyser = ctx.create_analyser();
     analyser.connect(&ctx.destination());
@@ -224,6 +243,7 @@ pub fn bench_hrtf_panners() {
 #[cfg(feature = "iai")]
 iai::main!(
     bench_ctor,
+    bench_audio_buffer_decode,
     bench_sine,
     bench_sine_gain,
     bench_sine_gain_delay,
@@ -240,6 +260,12 @@ iai::main!(
 #[cfg(not(feature = "iai"))]
 fn criterion_ctor(c: &mut Criterion) {
     c.bench_function("bench_ctor", |b| b.iter(|| bench_ctor()));
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_audio_buffer_decode(c: &mut Criterion) {
+    c.bench_function("bench_audio_buffer_decode", |b| {
+        b.iter(|| bench_audio_buffer_decode())
+    });
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_sine(c: &mut Criterion) {
@@ -302,6 +328,7 @@ fn criterion_hrtf_panners(c: &mut Criterion) {
 criterion_group!(
     benches,
     criterion_ctor,
+    criterion_audio_buffer_decode,
     criterion_sine,
     criterion_sine_gain,
     criterion_sine_gain_delay,
