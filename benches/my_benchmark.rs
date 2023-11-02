@@ -277,9 +277,7 @@ fn criterion_sine_gain(c: &mut Criterion) {
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_sine_gain_delay(c: &mut Criterion) {
-    c.bench_function("bench_sine_gain_delay", |b| {
-        b.iter(bench_sine_gain_delay)
-    });
+    c.bench_function("bench_sine_gain_delay", |b| b.iter(bench_sine_gain_delay));
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_buffer_src(c: &mut Criterion) {
@@ -287,15 +285,11 @@ fn criterion_buffer_src(c: &mut Criterion) {
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_buffer_src_delay(c: &mut Criterion) {
-    c.bench_function("bench_buffer_src_delay", |b| {
-        b.iter(bench_buffer_src_delay)
-    });
+    c.bench_function("bench_buffer_src_delay", |b| b.iter(bench_buffer_src_delay));
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_buffer_src_iir(c: &mut Criterion) {
-    c.bench_function("bench_buffer_src_iir", |b| {
-        b.iter(bench_buffer_src_iir)
-    });
+    c.bench_function("bench_buffer_src_iir", |b| b.iter(bench_buffer_src_iir));
 }
 #[cfg(not(feature = "iai"))]
 fn criterion_buffer_src_biquad(c: &mut Criterion) {
