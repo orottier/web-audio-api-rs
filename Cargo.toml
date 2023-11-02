@@ -35,6 +35,7 @@ vecmath = "1.0"
 
 [dev-dependencies]
 alloc_counter = "0.0.4"
+criterion = "0.5.1"
 env_logger = "0.10"
 iai = "0.1.1"
 rand = "0.8"
@@ -62,3 +63,4 @@ cpal = ["dep:cpal"]
 cubeb = ["dep:cubeb"]
 cpal-jack = ["cpal", "cpal/jack"]
 cpal-asio = ["cpal", "cpal/asio"]
+iai = []

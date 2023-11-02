@@ -1,4 +1,8 @@
+#[cfg(feature = "iai")]
 use iai::black_box;
+
+#[cfg(not(feature = "iai"))]
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use web_audio_api::context::BaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
@@ -217,6 +221,7 @@ pub fn bench_hrtf_panners() {
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
+#[cfg(feature = "iai")]
 iai::main!(
     bench_ctor,
     bench_sine,
@@ -231,3 +236,84 @@ iai::main!(
     bench_analyser_node,
     bench_hrtf_panners,
 );
+
+#[cfg(not(feature = "iai"))]
+fn criterion_ctor(c: &mut Criterion) {
+    c.bench_function("bench_ctor", |b| b.iter(|| bench_ctor()));
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_sine(c: &mut Criterion) {
+    c.bench_function("bench_sine", |b| b.iter(|| bench_sine()));
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_sine_gain(c: &mut Criterion) {
+    c.bench_function("bench_sine_gain", |b| b.iter(|| bench_sine_gain()));
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_sine_gain_delay(c: &mut Criterion) {
+    c.bench_function("bench_sine_gain_delay", |b| {
+        b.iter(|| bench_sine_gain_delay())
+    });
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_buffer_src(c: &mut Criterion) {
+    c.bench_function("bench_buffer_src", |b| b.iter(|| bench_buffer_src()));
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_buffer_src_delay(c: &mut Criterion) {
+    c.bench_function("bench_buffer_src_delay", |b| {
+        b.iter(|| bench_buffer_src_delay())
+    });
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_buffer_src_iir(c: &mut Criterion) {
+    c.bench_function("bench_buffer_src_iir", |b| {
+        b.iter(|| bench_buffer_src_iir())
+    });
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_buffer_src_biquad(c: &mut Criterion) {
+    c.bench_function("bench_buffer_src_biquad", |b| {
+        b.iter(|| bench_buffer_src_biquad())
+    });
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_stereo_positional(c: &mut Criterion) {
+    c.bench_function("bench_stereo_positional", |b| {
+        b.iter(|| bench_stereo_positional())
+    });
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_stereo_panning_automation(c: &mut Criterion) {
+    c.bench_function("bench_stereo_panning_automation", |b| {
+        b.iter(|| bench_stereo_panning_automation())
+    });
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_analyser_node(c: &mut Criterion) {
+    c.bench_function("bench_analyser_node", |b| b.iter(|| bench_analyser_node()));
+}
+#[cfg(not(feature = "iai"))]
+fn criterion_hrtf_panners(c: &mut Criterion) {
+    c.bench_function("bench_hrtf_panners", |b| b.iter(|| bench_hrtf_panners()));
+}
+
+#[cfg(not(feature = "iai"))]
+criterion_group!(
+    benches,
+    criterion_ctor,
+    criterion_sine,
+    criterion_sine_gain,
+    criterion_sine_gain_delay,
+    criterion_buffer_src,
+    criterion_buffer_src_delay,
+    criterion_buffer_src_iir,
+    criterion_buffer_src_biquad,
+    criterion_stereo_positional,
+    criterion_stereo_panning_automation,
+    criterion_analyser_node,
+    criterion_hrtf_panners
+);
+
+#[cfg(not(feature = "iai"))]
+criterion_main!(benches);
