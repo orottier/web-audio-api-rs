@@ -83,23 +83,12 @@ We offer [experimental support](https://github.com/orottier/web-audio-api-rs/iss
 flag. Please note that `cmake` must be installed locally in order to run
 `cubeb`.
 
-| Feature flag   | Backend        | Notes                                                   |
-| -------------- | -------------- | ------------------------------------------------------- |
-| cpal (default) | ALSA           |                                                         |
-| cpal (default) | WASAPI         |                                                         |
-| cpal (default) | CoreAudio      |                                                         |
-| cpal (default) | Oboe (Android) |                                                         |
-| cpal-jack      | JACK           |                                                         |
-| cpal-asio      | ASIO           | see <https://github.com/rustaudio/cpal#asio-on-windows> |
-
-| cubeb | PulseAudio | |
-| cubeb | AudioUnit | |
-| cubeb | WASAPI | |
-| cubeb | OpenSL | |
-| cubeb | AAudio | |
-| cubeb | sndio | |
-| cubeb | Sun | |
-| cubeb | OSS | |
+| Feature flag   | Backends                                                       |
+| -------------- | ---------------------------------------------------------------|
+| cpal (default) | ALSA, WASAPI, CoreAudio, Oboe (Android)                        |
+| cpal-jack      | JACK                                                           |
+| cpal-asio      | ASIO see <https://github.com/rustaudio/cpal#asio-on-windows>   |
+| cubeb          | PulseAudio, AudioUnit, WASAPI, OpenSL, AAudio, sndio, Sun, OSS |
 
 ### Notes for Linux users
 
