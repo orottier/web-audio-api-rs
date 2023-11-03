@@ -1,16 +1,18 @@
+use std::fs::File;
+use std::sync::OnceLock;
+
 #[cfg(feature = "iai")]
 use iai::black_box;
 
 #[cfg(not(feature = "iai"))]
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
+use paste::paste;
+
 use web_audio_api::context::BaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, PanningModelType};
 use web_audio_api::AudioBuffer;
-
-use std::fs::File;
-use std::sync::OnceLock;
 
 const SAMPLE_RATE: f32 = 48000.;
 const DURATION: usize = 10;
@@ -240,8 +242,34 @@ pub fn bench_hrtf_panners() {
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES_SHORT);
 }
 
-#[cfg(feature = "iai")]
-iai::main!(
+macro_rules! iai_or_criterion {
+    ( $( $func:expr ),+ $(,)* ) => {
+        #[cfg(feature = "iai")]
+        iai::main!(
+            $($func,)*
+        );
+
+        paste! {
+            $(
+                #[cfg(not(feature = "iai"))]
+                fn [<criterion_ $func>](c: &mut Criterion) {
+                    c.bench_function(stringify!($func), |b| b.iter($func));
+                }
+            )*
+
+            #[cfg(not(feature = "iai"))]
+            criterion_group!(
+                benches,
+                $([<criterion_ $func>],)*
+            );
+        }
+
+        #[cfg(not(feature = "iai"))]
+        criterion_main!(benches);
+    }
+}
+
+iai_or_criterion!(
     bench_ctor,
     bench_audio_buffer_decode,
     bench_sine,
@@ -256,85 +284,3 @@ iai::main!(
     bench_analyser_node,
     bench_hrtf_panners,
 );
-
-#[cfg(not(feature = "iai"))]
-fn criterion_ctor(c: &mut Criterion) {
-    c.bench_function("bench_ctor", |b| b.iter(bench_ctor));
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_audio_buffer_decode(c: &mut Criterion) {
-    c.bench_function("bench_audio_buffer_decode", |b| {
-        b.iter(bench_audio_buffer_decode)
-    });
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_sine(c: &mut Criterion) {
-    c.bench_function("bench_sine", |b| b.iter(bench_sine));
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_sine_gain(c: &mut Criterion) {
-    c.bench_function("bench_sine_gain", |b| b.iter(bench_sine_gain));
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_sine_gain_delay(c: &mut Criterion) {
-    c.bench_function("bench_sine_gain_delay", |b| b.iter(bench_sine_gain_delay));
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_buffer_src(c: &mut Criterion) {
-    c.bench_function("bench_buffer_src", |b| b.iter(bench_buffer_src));
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_buffer_src_delay(c: &mut Criterion) {
-    c.bench_function("bench_buffer_src_delay", |b| b.iter(bench_buffer_src_delay));
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_buffer_src_iir(c: &mut Criterion) {
-    c.bench_function("bench_buffer_src_iir", |b| b.iter(bench_buffer_src_iir));
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_buffer_src_biquad(c: &mut Criterion) {
-    c.bench_function("bench_buffer_src_biquad", |b| {
-        b.iter(bench_buffer_src_biquad)
-    });
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_stereo_positional(c: &mut Criterion) {
-    c.bench_function("bench_stereo_positional", |b| {
-        b.iter(bench_stereo_positional)
-    });
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_stereo_panning_automation(c: &mut Criterion) {
-    c.bench_function("bench_stereo_panning_automation", |b| {
-        b.iter(bench_stereo_panning_automation)
-    });
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_analyser_node(c: &mut Criterion) {
-    c.bench_function("bench_analyser_node", |b| b.iter(bench_analyser_node));
-}
-#[cfg(not(feature = "iai"))]
-fn criterion_hrtf_panners(c: &mut Criterion) {
-    c.bench_function("bench_hrtf_panners", |b| b.iter(bench_hrtf_panners));
-}
-
-#[cfg(not(feature = "iai"))]
-criterion_group!(
-    benches,
-    criterion_ctor,
-    criterion_audio_buffer_decode,
-    criterion_sine,
-    criterion_sine_gain,
-    criterion_sine_gain_delay,
-    criterion_buffer_src,
-    criterion_buffer_src_delay,
-    criterion_buffer_src_iir,
-    criterion_buffer_src_biquad,
-    criterion_stereo_positional,
-    criterion_stereo_panning_automation,
-    criterion_analyser_node,
-    criterion_hrtf_panners
-);
-
-#[cfg(not(feature = "iai"))]
-criterion_main!(benches);
