@@ -84,7 +84,7 @@ flag. Please note that `cmake` must be installed locally in order to run
 `cubeb`.
 
 | Feature flag   | Backends                                                       |
-| -------------- | ---------------------------------------------------------------|
+| -------------- | -------------------------------------------------------------- |
 | cpal (default) | ALSA, WASAPI, CoreAudio, Oboe (Android)                        |
 | cpal-jack      | JACK                                                           |
 | cpal-asio      | ASIO see <https://github.com/rustaudio/cpal#asio-on-windows>   |
