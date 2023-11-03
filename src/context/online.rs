@@ -10,8 +10,7 @@ use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::ControlMessage;
 use crate::node::{self, ChannelConfigOptions};
 use crate::render::graph::Graph;
-use crate::MediaElement;
-use crate::{AudioRenderCapacity, Event};
+use crate::{AudioRenderCapacity, Event, MediaElement, RENDER_QUANTUM_SIZE};
 
 /// Check if the provided sink_id is available for playback
 ///
@@ -174,7 +173,7 @@ impl AudioContext {
         } = control_thread_init;
 
         let (node_id_producer, node_id_consumer) = llq::Queue::new().split();
-        let graph = Graph::new(node_id_producer);
+        let graph = Graph::new(RENDER_QUANTUM_SIZE, node_id_producer);
         let message = ControlMessage::Startup { graph };
         ctrl_msg_send.send(message).unwrap();
 

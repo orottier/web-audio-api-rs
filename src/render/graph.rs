@@ -95,10 +95,10 @@ pub(crate) struct Graph {
 }
 
 impl Graph {
-    pub fn new(reclaim_id_channel: llq::Producer<AudioNodeId>) -> Self {
+    pub fn new(buffer_size: usize, reclaim_id_channel: llq::Producer<AudioNodeId>) -> Self {
         Graph {
             nodes: NodeCollection::new(),
-            alloc: Alloc::with_capacity(64),
+            alloc: Alloc::new(buffer_size, 64),
             reclaim_id_channel,
             ordered: vec![],
             marked: vec![],
@@ -487,6 +487,7 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RENDER_QUANTUM_SIZE;
 
     #[derive(Debug, Clone)]
     struct TestNode {
@@ -530,7 +531,7 @@ mod tests {
 
     #[test]
     fn test_add_remove() {
-        let mut graph = Graph::new(llq::Queue::new().split().0);
+        let mut graph = Graph::new(RENDER_QUANTUM_SIZE, llq::Queue::new().split().0);
 
         let node = Box::new(TestNode { tail_time: false });
         add_node(&mut graph, 0, node.clone());
@@ -581,7 +582,7 @@ mod tests {
 
     #[test]
     fn test_remove_all() {
-        let mut graph = Graph::new(llq::Queue::new().split().0);
+        let mut graph = Graph::new(RENDER_QUANTUM_SIZE, llq::Queue::new().split().0);
 
         let node = Box::new(TestNode { tail_time: false });
         add_node(&mut graph, 0, node.clone());
@@ -620,7 +621,7 @@ mod tests {
 
     #[test]
     fn test_cycle() {
-        let mut graph = Graph::new(llq::Queue::new().split().0);
+        let mut graph = Graph::new(RENDER_QUANTUM_SIZE, llq::Queue::new().split().0);
 
         let node = Box::new(TestNode { tail_time: false });
         add_node(&mut graph, 0, node.clone());
@@ -656,7 +657,7 @@ mod tests {
     #[test]
     fn test_lifecycle_and_reclaim() {
         let (node_id_producer, mut node_id_consumer) = llq::Queue::new().split();
-        let mut graph = Graph::new(node_id_producer);
+        let mut graph = Graph::new(RENDER_QUANTUM_SIZE, node_id_producer);
 
         let node = Box::new(TestNode { tail_time: false });
 
@@ -698,7 +699,7 @@ mod tests {
     #[test]
     fn test_audio_param_lifecycle() {
         let (node_id_producer, mut node_id_consumer) = llq::Queue::new().split();
-        let mut graph = Graph::new(node_id_producer);
+        let mut graph = Graph::new(RENDER_QUANTUM_SIZE, node_id_producer);
 
         let node = Box::new(TestNode { tail_time: false });
 

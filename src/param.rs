@@ -3281,7 +3281,7 @@ mod tests {
 
     #[test]
     fn test_varying_param_size_modulated() {
-        let alloc = Alloc::with_capacity(1);
+        let alloc = Alloc::new(RENDER_QUANTUM_SIZE, 1);
 
         // buffer length is 1 and input is silence (no modulation)
         {
@@ -3348,7 +3348,7 @@ mod tests {
 
     #[test]
     fn test_full_render_chain() {
-        let alloc = Alloc::with_capacity(1);
+        let alloc = Alloc::new(RENDER_QUANTUM_SIZE, 1);
         // prevent regression between the different processing stage
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
