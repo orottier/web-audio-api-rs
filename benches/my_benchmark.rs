@@ -243,7 +243,7 @@ pub fn bench_hrtf_panners() {
 }
 
 macro_rules! iai_or_criterion {
-    ( $( $func:expr ),+ $(,)* ) => {
+    ( $( $func:ident ),+ $(,)* ) => {
         #[cfg(feature = "iai")]
         iai::main!(
             $($func,)*
