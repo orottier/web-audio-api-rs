@@ -12,13 +12,13 @@ use web_audio_api::{AudioParam, AudioParamDescriptor, AutomationRate};
 
 // Shocase how to create your own audio node
 //
-// `cargo run --release --example worklet`
+// `cargo run --release --example audio_processor_trait`
 //
 // If you are on Linux and use ALSA as audio backend backend, you might want to run
 // the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
 // increase the buffer size to 1024
 //
-// `WEB_AUDIO_LATENCY=playback cargo run --release --example worklet`
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example audio_processor_trait`
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum NoiseColor {
