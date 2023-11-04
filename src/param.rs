@@ -119,7 +119,7 @@ pub(crate) struct AudioParamEvent {
 // occurs during the insertion of events)
 // After this point, the queue should be considered sorted and no operations that
 // breaks the ordering should be done.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct AudioParamEventTimeline {
     inner: Vec<AudioParamEvent>,
     dirty: bool,
@@ -611,6 +611,14 @@ impl AudioParamShared {
     }
 }
 
+struct BlockInfos {
+    block_time: f64,
+    dt: f64,
+    count: usize,
+    is_a_rate: bool,
+    next_block_time: f64,
+}
+
 #[derive(Debug)]
 pub(crate) struct AudioParamProcessor {
     default_value: f32, // immutable
@@ -1036,6 +1044,56 @@ impl AudioParamProcessor {
         self.event_timeline.sort();
     }
 
+    fn compute_set_value_automation(
+        &mut self,
+        event_timeline: &mut AudioParamEventTimeline,
+        infos: &BlockInfos,
+    ) -> bool {
+        let event = event_timeline.peek().unwrap();
+        let mut time = event.time;
+
+        // `set_value` calls and implicitly inserted events
+        // are inserted with a `time = 0.` to make sure
+        // they are processed first, replacing w/ block_time
+        // allows to conform to the spec:
+        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
+        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
+        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
+        if time == 0. {
+            time = infos.block_time;
+        }
+
+        // fill buffer with current intrinsic value until `event.time`
+        if infos.is_a_rate {
+            let end_index = ((time - infos.block_time).max(0.) / infos.dt) as usize;
+            let end_index_clipped = end_index.min(infos.count);
+
+            for _ in self.buffer.len()..end_index_clipped {
+                self.buffer.push(self.intrinsic_value);
+            }
+        }
+
+        // event time has not been reached, we are done for this block
+        if time > infos.next_block_time {
+            return true;
+        }
+
+        // else store event as last event and continue with next one
+        self.intrinsic_value = event.value;
+
+        // no computation has been done on `time`
+        #[allow(clippy::float_cmp)]
+        if time != event.time {
+            let mut event = event_timeline.pop().unwrap();
+            event.time = time;
+            self.last_event = Some(event);
+        } else {
+            self.last_event = event_timeline.pop();
+        }
+
+        false
+    }
+
     fn compute_buffer(&mut self, block_time: f64, dt: f64, count: usize) {
         // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
@@ -1046,8 +1104,6 @@ impl AudioParamProcessor {
         self.buffer.clear();
 
         let is_a_rate = self.automation_rate.is_a_rate();
-        let is_k_rate = !is_a_rate;
-
         let next_block_time = dt.mul_add(count as f64, block_time);
 
         // Check if we can safely return a buffer of length 1 even for a-rate params.
@@ -1075,7 +1131,7 @@ impl AudioParamProcessor {
             }
         };
 
-        if is_k_rate || is_constant_block {
+        if !is_a_rate || is_constant_block {
             self.buffer.push(self.intrinsic_value);
             // nothing to compute in timeline, for both k-rate and a-rate
             if is_constant_block {
@@ -1083,14 +1139,26 @@ impl AudioParamProcessor {
             }
         }
 
+        // For borrow check reasons, we move move out the `event_timeline`,
+        // and pass it around as &mut.
+        let mut event_timeline = std::mem::take(&mut self.event_timeline);
+        let block_infos = BlockInfos {
+            block_time,
+            dt,
+            count,
+            is_a_rate,
+            next_block_time,
+        };
+
         loop {
-            let some_event = self.event_timeline.peek();
+            let some_event = event_timeline.peek();
 
             match some_event {
                 None => {
                     if is_a_rate {
                         // @note - we use `count` rather then `buffer.remaining_capacity`
-                        // to correctly unit tests where `count` is lower than RENDER_QUANTUM_SIZE
+                        // to correctly handle unit tests where `count` is lower than
+                        // RENDER_QUANTUM_SIZE
                         //
                         // @todo(perf) - consider using try_extend_from_slice
                         // which internally uses ptr::copy_nonoverlapping
@@ -1103,45 +1171,9 @@ impl AudioParamProcessor {
                 Some(event) => {
                     match event.event_type {
                         AudioParamEventType::SetValue | AudioParamEventType::SetValueAtTime => {
-                            let value = event.value;
-                            let mut time = event.time;
-
-                            // `set_value` calls and implicitly inserted events
-                            // are inserted with a `time = 0.` to make sure
-                            // they are processed first, replacing w/ block_time
-                            // allows to conform to the spec:
-                            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
-                            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
-                            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
-                            if time == 0. {
-                                time = block_time;
-                            }
-
-                            // fill buffer with current intrinsic value until `event.time`
-                            if is_a_rate {
-                                let end_index = ((time - block_time).max(0.) / dt) as usize;
-                                let end_index_clipped = end_index.min(count);
-
-                                for _ in self.buffer.len()..end_index_clipped {
-                                    self.buffer.push(self.intrinsic_value);
-                                }
-                            }
-
-                            if time > next_block_time {
+                            if self.compute_set_value_automation(&mut event_timeline, &block_infos)
+                            {
                                 break;
-                            } else {
-                                self.intrinsic_value = value;
-
-                                // no computation has been done on `time`
-                                #[allow(clippy::float_cmp)]
-                                if time != event.time {
-                                    // store as last event with the applied time
-                                    let mut event = self.event_timeline.pop().unwrap();
-                                    event.time = time;
-                                    self.last_event = Some(event);
-                                } else {
-                                    self.last_event = self.event_timeline.pop();
-                                }
                             }
                         }
                         // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
@@ -1219,7 +1251,7 @@ impl AudioParamProcessor {
 
                                 self.intrinsic_value = value;
 
-                                let mut last_event = self.event_timeline.pop().unwrap();
+                                let mut last_event = event_timeline.pop().unwrap();
                                 last_event.time = end_time;
                                 last_event.value = value;
                                 self.last_event = Some(last_event);
@@ -1227,7 +1259,7 @@ impl AudioParamProcessor {
                             // Event ended during this block
                             } else {
                                 self.intrinsic_value = end_value;
-                                self.last_event = self.event_timeline.pop();
+                                self.last_event = event_timeline.pop();
                             }
                         }
                         // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
@@ -1266,7 +1298,7 @@ impl AudioParamProcessor {
                                     values: None,
                                 };
 
-                                self.event_timeline.replace_peek(event);
+                                event_timeline.replace_peek(event);
                             } else {
                                 if is_a_rate {
                                     let start_index = self.buffer.len();
@@ -1324,7 +1356,7 @@ impl AudioParamProcessor {
 
                                     self.intrinsic_value = value;
 
-                                    let mut last_event = self.event_timeline.pop().unwrap();
+                                    let mut last_event = event_timeline.pop().unwrap();
                                     last_event.time = end_time;
                                     last_event.value = value;
                                     self.last_event = Some(last_event);
@@ -1332,7 +1364,7 @@ impl AudioParamProcessor {
                                 // Event ended during this block
                                 } else {
                                     self.intrinsic_value = end_value;
-                                    self.last_event = self.event_timeline.pop();
+                                    self.last_event = event_timeline.pop();
                                 }
                             }
                         }
@@ -1349,7 +1381,7 @@ impl AudioParamProcessor {
                             let mut ended = false;
 
                             // handle next event stop SetTarget if any
-                            let some_next_event = self.event_timeline.next();
+                            let some_next_event = event_timeline.next();
 
                             if let Some(next_event) = some_next_event {
                                 match next_event.event_type {
@@ -1469,7 +1501,7 @@ impl AudioParamProcessor {
                                         values: None,
                                     };
 
-                                    self.event_timeline.replace_peek(event);
+                                    event_timeline.replace_peek(event);
                                 } else {
                                     self.intrinsic_value = value;
                                 }
@@ -1488,7 +1520,7 @@ impl AudioParamProcessor {
                                 self.intrinsic_value = value;
                                 // end_value and end_time must be stored for use
                                 // as start time by next event
-                                let mut event = self.event_timeline.pop().unwrap();
+                                let mut event = event_timeline.pop().unwrap();
                                 event.time = end_time;
                                 event.value = value;
                                 self.last_event = Some(event);
@@ -1561,7 +1593,7 @@ impl AudioParamProcessor {
 
                                     self.intrinsic_value = value;
 
-                                    let mut last_event = self.event_timeline.pop().unwrap();
+                                    let mut last_event = event_timeline.pop().unwrap();
                                     last_event.time = end_time;
                                     last_event.value = value;
                                     self.last_event = Some(last_event);
@@ -1569,7 +1601,7 @@ impl AudioParamProcessor {
                                 } else {
                                     let value = values[values.len() - 1];
 
-                                    let mut last_event = self.event_timeline.pop().unwrap();
+                                    let mut last_event = event_timeline.pop().unwrap();
                                     last_event.time = end_time;
                                     last_event.value = value;
 
@@ -1586,6 +1618,8 @@ impl AudioParamProcessor {
                 }
             }
         }
+
+        self.event_timeline = event_timeline;
     }
 }
 
