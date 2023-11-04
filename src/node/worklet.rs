@@ -34,7 +34,7 @@ impl AudioNode for AudioWorkletNode {
 impl AudioWorkletNode {
     pub fn new<C: BaseAudioContext>(
         context: &C,
-        callback: impl FnMut(&[&[f32]], &[&mut [f32]]) -> bool + Send + 'static,
+        callback: impl FnMut(&[&[f32]], &mut [&mut [f32]]) -> bool + Send + 'static,
         // todo AudioWorkletNodeOptions
     ) -> Self {
         context.register(move |registration| {
@@ -54,7 +54,7 @@ impl AudioWorkletNode {
     }
 }
 
-type AudioWorkletProcessCallback = dyn FnMut(&[&[f32]], &[&mut [f32]]) -> bool + Send;
+type AudioWorkletProcessCallback = dyn FnMut(&[&[f32]], &mut [&mut [f32]]) -> bool + Send;
 
 struct AudioWorkletProcessor {
     callback: Box<AudioWorkletProcessCallback>,
@@ -92,7 +92,7 @@ impl AudioProcessor for AudioWorkletProcessor {
             self.outputs.push(static_slice)
         });
 
-        let tail_time = (self.callback)(&self.inputs[..], &self.outputs[..]);
+        let tail_time = (self.callback)(&self.inputs[..], &mut self.outputs[..]);
 
         self.inputs.clear();
         self.outputs.clear();
