@@ -59,6 +59,64 @@ fn assert_sequence_length(values: &[f32]) {
     }
 }
 
+// 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
+#[inline(always)]
+fn compute_linear_ramp_sample(
+    start_time: f64,
+    duration: f64,
+    start_value: f32,
+    diff: f32, // end_value - start_value
+    time: f64,
+) -> f32 {
+    let phase = (time - start_time) / duration;
+    diff.mul_add(phase as f32, start_value)
+}
+
+// v(t) = v1 * (v2/v1)^((t-t1) / (t2-t1))
+#[inline(always)]
+fn compute_exponential_ramp_sample(
+    start_time: f64,
+    duration: f64,
+    start_value: f32,
+    ratio: f32, // end_value / start_value
+    time: f64,
+) -> f32 {
+    let phase = (time - start_time) / duration;
+    start_value * ratio.powf(phase as f32)
+}
+
+// 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+#[inline(always)]
+fn compute_set_target_sample(
+    start_time: f64,
+    time_constant: f64,
+    end_value: f32,
+    diff: f32, // start_value - end_value
+    time: f64,
+) -> f32 {
+    let exponent = -1. * ((time - start_time) / time_constant);
+    diff.mul_add(exponent.exp() as f32, end_value)
+}
+
+// 𝑘=⌊𝑁−1 / 𝑇𝐷 * (𝑡−𝑇0)⌋
+// Then 𝑣(𝑡) is computed by linearly interpolating between 𝑉[𝑘] and 𝑉[𝑘+1],
+#[inline(always)]
+fn compute_set_value_curve_sample(
+    start_time: f64,
+    duration: f64,
+    values: &[f32],
+    time: f64,
+) -> f32 {
+    if time - start_time >= duration {
+        return values[values.len() - 1];
+    }
+
+    let position = (values.len() - 1) as f64 * (time - start_time) / duration;
+    let k = position as usize;
+    let phase = (position - position.floor()) as f32;
+    (values[k + 1] - values[k]).mul_add(phase, values[k])
+}
+
 /// Precision of AudioParam value calculation per render quantum
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum AutomationRate {
@@ -87,7 +145,7 @@ pub struct AudioParamDescriptor {
     pub max_value: f32,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 enum AudioParamEventType {
     SetValue,
     SetValueAtTime,
@@ -119,7 +177,7 @@ pub(crate) struct AudioParamEvent {
 // occurs during the insertion of events)
 // After this point, the queue should be considered sorted and no operations that
 // breaks the ordering should be done.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct AudioParamEventTimeline {
     inner: Vec<AudioParamEvent>,
     dirty: bool,
@@ -128,7 +186,7 @@ struct AudioParamEventTimeline {
 impl AudioParamEventTimeline {
     fn new() -> Self {
         Self {
-            inner: Vec::new(),
+            inner: Vec::with_capacity(32),
             dirty: false,
         }
     }
@@ -611,6 +669,14 @@ impl AudioParamShared {
     }
 }
 
+struct BlockInfos {
+    block_time: f64,
+    dt: f64,
+    count: usize,
+    is_a_rate: bool,
+    next_block_time: f64,
+}
+
 #[derive(Debug)]
 pub(crate) struct AudioParamProcessor {
     default_value: f32, // immutable
@@ -716,68 +782,6 @@ impl AudioParamProcessor {
 
                     *o = o.clamp(self.min_value, self.max_value)
                 });
-        }
-    }
-
-    // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
-    #[inline(always)]
-    fn compute_linear_ramp_sample(
-        &self,
-        start_time: f64,
-        duration: f64,
-        start_value: f32,
-        diff: f32, // end_value - start_value
-        time: f64,
-    ) -> f32 {
-        let phase = (time - start_time) / duration;
-        diff.mul_add(phase as f32, start_value)
-    }
-
-    // v(t) = v1 * (v2/v1)^((t-t1) / (t2-t1))
-    #[inline(always)]
-    fn compute_exponential_ramp_sample(
-        &self,
-        start_time: f64,
-        duration: f64,
-        start_value: f32,
-        ratio: f32, // end_value / start_value
-        time: f64,
-    ) -> f32 {
-        let phase = (time - start_time) / duration;
-        start_value * ratio.powf(phase as f32)
-    }
-
-    // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
-    #[inline(always)]
-    fn compute_set_target_sample(
-        &self,
-        start_time: f64,
-        time_constant: f64,
-        end_value: f32,
-        diff: f32, // start_value - end_value
-        time: f64,
-    ) -> f32 {
-        let exponent = -1. * ((time - start_time) / time_constant);
-        diff.mul_add(exponent.exp() as f32, end_value)
-    }
-
-    // 𝑘=⌊𝑁−1 / 𝑇𝐷 * (𝑡−𝑇0)⌋
-    // Then 𝑣(𝑡) is computed by linearly interpolating between 𝑉[𝑘] and 𝑉[𝑘+1],
-    #[inline(always)]
-    fn compute_set_value_curve_sample(
-        &self,
-        start_time: f64,
-        duration: f64,
-        values: &[f32],
-        time: f64,
-    ) -> f32 {
-        if time - start_time >= duration {
-            values[values.len() - 1]
-        } else {
-            let position = (values.len() - 1) as f64 * (time - start_time) / duration;
-            let k = position as usize;
-            let phase = (position - position.floor()) as f32;
-            (values[k + 1] - values[k]).mul_add(phase, values[k])
         }
     }
 
@@ -1036,6 +1040,464 @@ impl AudioParamProcessor {
         self.event_timeline.sort();
     }
 
+    // https://www.w3.org/TR/webaudio/%23dom-audioparam-linearramptovalueattime#dom-audioparam-setvalueattime
+    fn compute_set_value_automation(&mut self, infos: &BlockInfos) -> bool {
+        let event = self.event_timeline.peek().unwrap();
+        let mut time = event.time;
+
+        // `set_value` and implicitly inserted events are inserted with `time = 0.`,
+        // so that we ensure they are processed first. Replacing their `time` with
+        // `block_time` allows to conform to the spec:
+        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
+        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
+        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
+        if time == 0. {
+            time = infos.block_time;
+        }
+
+        // fill buffer with current intrinsic value until `event.time`
+        if infos.is_a_rate {
+            let end_index = ((time - infos.block_time).max(0.) / infos.dt) as usize;
+            let end_index_clipped = end_index.min(infos.count);
+
+            for _ in self.buffer.len()..end_index_clipped {
+                self.buffer.push(self.intrinsic_value);
+            }
+        }
+
+        // event time is not reached within this block, we are done
+        if time > infos.next_block_time {
+            return true;
+        }
+
+        // else update `intrisic_value` and `last_event` and continue the loop
+        self.intrinsic_value = event.value;
+
+        // no computation has been done on `time`
+        #[allow(clippy::float_cmp)]
+        if time != event.time {
+            let mut event = self.event_timeline.pop().unwrap();
+            event.time = time;
+            self.last_event = Some(event);
+        } else {
+            self.last_event = self.event_timeline.pop();
+        }
+
+        false
+    }
+
+    // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
+    // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
+    fn compute_linear_ramp_automation(&mut self, infos: &BlockInfos) -> bool {
+        let event = self.event_timeline.peek().unwrap();
+        let last_event = self.last_event.as_ref().unwrap();
+
+        let start_time = last_event.time;
+        let mut end_time = event.time;
+        // compute duration before clapping `end_time` to`cancel_time`, to keep
+        // declared slope of the ramp consistent
+        let duration = end_time - start_time;
+        if let Some(cancel_time) = event.cancel_time {
+            end_time = cancel_time;
+        }
+
+        let start_value = last_event.value;
+        let end_value = event.value;
+        let diff = end_value - start_value;
+
+        if infos.is_a_rate {
+            let start_index = self.buffer.len();
+            // we need to `ceil()` because if `end_time` is between two samples
+            // we actually want the sample before `end_time` to be computed
+            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).ceil() as usize;
+            let end_index_clipped = end_index.min(infos.count);
+
+            // compute "real" value according to `t` then clamp it
+            // cf. Example 7 https://www.w3.org/TR/webaudio/#computation-of-value
+            if end_index_clipped > start_index {
+                let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
+
+                for _ in start_index..end_index_clipped {
+                    let value =
+                        compute_linear_ramp_sample(start_time, duration, start_value, diff, time);
+
+                    self.buffer.push(value);
+
+                    time += infos.dt;
+                    self.intrinsic_value = value;
+                }
+            }
+        }
+
+        // Event will continue in next tick:
+        // compute value for `next_block_time` so that `param.value()`
+        // stays coherent, also allows to properly fill k-rate
+        // within next block too
+        if end_time >= infos.next_block_time {
+            let value = compute_linear_ramp_sample(
+                start_time,
+                duration,
+                start_value,
+                diff,
+                infos.next_block_time,
+            );
+            self.intrinsic_value = value;
+
+            return true;
+        }
+
+        // Event cancelled during this block
+        if event.cancel_time.is_some() {
+            let value =
+                compute_linear_ramp_sample(start_time, duration, start_value, diff, end_time);
+
+            self.intrinsic_value = value;
+
+            let mut last_event = self.event_timeline.pop().unwrap();
+            last_event.time = end_time;
+            last_event.value = value;
+            self.last_event = Some(last_event);
+        // Event ended during this block
+        } else {
+            self.intrinsic_value = end_value;
+            self.last_event = self.event_timeline.pop();
+        }
+
+        false
+    }
+
+    // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
+    // v(t) = v1 * (v2/v1)^((t-t1) / (t2-t1))
+    fn compute_exponential_ramp_automation(&mut self, infos: &BlockInfos) -> bool {
+        let event = self.event_timeline.peek().unwrap();
+        let last_event = self.last_event.as_ref().unwrap();
+
+        let start_time = last_event.time;
+        let mut end_time = event.time;
+        // compute duration before clapping `end_time` to `cancel_time`, to keep
+        // declared slope of the ramp consistent
+        let duration = end_time - start_time;
+        if let Some(cancel_time) = event.cancel_time {
+            end_time = cancel_time;
+        }
+
+        let start_value = last_event.value;
+        let end_value = event.value;
+        let ratio = end_value / start_value;
+
+        // Handle edge cases:
+        // > If 𝑉0 and 𝑉1 have opposite signs or if 𝑉0 is zero,
+        // > then 𝑣(𝑡)=𝑉0 for 𝑇0≤𝑡<𝑇1.
+        // as:
+        // > If there are no more events after this ExponentialRampToValue
+        // > event then for 𝑡≥𝑇1, 𝑣(𝑡)=𝑉1.
+        // this should thus behave as a SetValue
+        if start_value == 0. || start_value * end_value < 0. {
+            let event = AudioParamEvent {
+                event_type: AudioParamEventType::SetValueAtTime,
+                time: end_time,
+                value: end_value,
+                time_constant: None,
+                cancel_time: None,
+                duration: None,
+                values: None,
+            };
+
+            self.event_timeline.replace_peek(event);
+            return false;
+        }
+
+        if infos.is_a_rate {
+            let start_index = self.buffer.len();
+            // we need to `ceil()` because if `end_time` is between two samples
+            // we actually want the sample before `end_time` to be computed
+            // @todo - more tests
+            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).ceil() as usize;
+            let end_index_clipped = end_index.min(infos.count);
+
+            if end_index_clipped > start_index {
+                let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
+
+                for _ in start_index..end_index_clipped {
+                    let value = compute_exponential_ramp_sample(
+                        start_time,
+                        duration,
+                        start_value,
+                        ratio,
+                        time,
+                    );
+
+                    self.buffer.push(value);
+                    self.intrinsic_value = value;
+
+                    time += infos.dt;
+                }
+            }
+        }
+
+        // Event will continue in next tick:
+        // compute value for `next_block_time` so that `param.value()`
+        // stays coherent, also allows to properly fill k-rate
+        // within next block too
+        if end_time >= infos.next_block_time {
+            let value = compute_exponential_ramp_sample(
+                start_time,
+                duration,
+                start_value,
+                ratio,
+                infos.next_block_time,
+            );
+            self.intrinsic_value = value;
+
+            return true;
+        }
+
+        // Event cancelled during this block
+        if event.cancel_time.is_some() {
+            let value =
+                compute_exponential_ramp_sample(start_time, duration, start_value, ratio, end_time);
+
+            self.intrinsic_value = value;
+
+            let mut last_event = self.event_timeline.pop().unwrap();
+            last_event.time = end_time;
+            last_event.value = value;
+            self.last_event = Some(last_event);
+
+        // Event ended during this block
+        } else {
+            self.intrinsic_value = end_value;
+            self.last_event = self.event_timeline.pop();
+        }
+
+        false
+    }
+
+    // https://webaudio.github.io/web-audio-api/#dom-audioparam-settargetattime
+    // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+    // Note that as SetTarget never resolves on an end value, a `SetTarget` event
+    // is inserted in the timeline when the value is close enough to the target.
+    // cf. `SNAP_TO_TARGET`
+    fn compute_set_target_automation(&mut self, infos: &BlockInfos) -> bool {
+        let event = self.event_timeline.peek().unwrap();
+        let mut end_time = infos.next_block_time;
+        let mut ended = false;
+
+        // handle next event stop SetTarget if any
+        let some_next_event = self.event_timeline.next();
+
+        if let Some(next_event) = some_next_event {
+            match next_event.event_type {
+                AudioParamEventType::LinearRampToValueAtTime
+                | AudioParamEventType::ExponentialRampToValueAtTime => {
+                    // [spec] If the preceding event is a SetTarget
+                    // event, 𝑇0 and 𝑉0 are chosen from the current
+                    // time and value of SetTarget automation. That
+                    // is, if the SetTarget event has not started,
+                    // 𝑇0 is the start time of the event, and 𝑉0
+                    // is the value just before the SetTarget event
+                    // starts. In this case, the LinearRampToValue
+                    // event effectively replaces the SetTarget event.
+                    // If the SetTarget event has already started,
+                    // 𝑇0 is the current context time, and 𝑉0 is
+                    // the current SetTarget automation value at time 𝑇0.
+                    // In both cases, the automation curve is continuous.
+                    end_time = infos.block_time;
+                    ended = true;
+                }
+                _ => {
+                    // For all other events, the SetTarget
+                    // event ends at the time of the next event.
+                    if next_event.time < infos.next_block_time {
+                        end_time = next_event.time;
+                        ended = true;
+                    }
+                }
+            }
+        }
+
+        // handle CancelAndHoldAtTime
+        if let Some(cancel_time) = event.cancel_time {
+            if cancel_time < infos.next_block_time {
+                end_time = cancel_time;
+                ended = true;
+            }
+        }
+
+        let start_time = event.time;
+        // if SetTarget is the first event registered, we implicitly
+        // insert a SetValue event just before just as for Ramps.
+        // Therefore we are sure last_event exists
+        let start_value = self.last_event.as_ref().unwrap().value;
+        let end_value = event.value;
+        let diff = start_value - end_value;
+        let time_constant = event.time_constant.unwrap();
+
+        if infos.is_a_rate {
+            let start_index = self.buffer.len();
+            // we need to `ceil()` because if `end_time` is between two samples
+            // we actually want the sample before `end_time` to be computed
+            // @todo - more tests
+            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).ceil() as usize;
+            let end_index_clipped = end_index.min(infos.count);
+
+            if end_index_clipped > start_index {
+                let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
+
+                for _ in start_index..end_index_clipped {
+                    // check if we have reached start_time
+                    let value = if time - start_time < 0. {
+                        self.intrinsic_value
+                    } else {
+                        compute_set_target_sample(start_time, time_constant, end_value, diff, time)
+                    };
+
+                    self.buffer.push(value);
+                    self.intrinsic_value = value;
+                    time += infos.dt;
+                }
+            }
+        }
+
+        if !ended {
+            // compute value for `next_block_time` so that `param.value()`
+            // stays coherent (see. comment in `AudioParam`)
+            // allows to properly fill k-rate within next block too
+            let value = compute_set_target_sample(
+                start_time,
+                time_constant,
+                end_value,
+                diff,
+                infos.next_block_time,
+            );
+
+            let diff = (end_value - value).abs();
+
+            // abort event if diff is below SNAP_TO_TARGET
+            if diff < SNAP_TO_TARGET {
+                self.intrinsic_value = end_value;
+
+                // if end_value is zero, the buffer might contain
+                // subnormals, we need to check that and flush to zero
+                if end_value == 0. {
+                    for v in self.buffer.iter_mut() {
+                        if v.is_subnormal() {
+                            *v = 0.;
+                        }
+                    }
+                }
+
+                let event = AudioParamEvent {
+                    event_type: AudioParamEventType::SetValueAtTime,
+                    time: infos.next_block_time,
+                    value: end_value,
+                    time_constant: None,
+                    cancel_time: None,
+                    duration: None,
+                    values: None,
+                };
+
+                self.event_timeline.replace_peek(event);
+            } else {
+                self.intrinsic_value = value;
+            }
+
+            return true;
+        }
+
+        // setTarget has no "real" end value, compute according
+        // to next event start time
+        let value = compute_set_target_sample(start_time, time_constant, end_value, diff, end_time);
+
+        self.intrinsic_value = value;
+        // end_value and end_time must be stored for use
+        // as start time by next event
+        let mut event = self.event_timeline.pop().unwrap();
+        event.time = end_time;
+        event.value = value;
+        self.last_event = Some(event);
+
+        false
+    }
+
+    fn compute_set_value_curve_automation(&mut self, infos: &BlockInfos) -> bool {
+        let event = self.event_timeline.peek().unwrap();
+        let start_time = event.time;
+        let duration = event.duration.unwrap();
+        let values = event.values.as_ref().unwrap();
+        let mut end_time = start_time + duration;
+
+        // we must check for the cancel event after we have
+        // the "real" duration computed to not change the
+        // slope of the ramp
+        if let Some(cancel_time) = event.cancel_time {
+            end_time = cancel_time;
+        }
+
+        if infos.is_a_rate {
+            let start_index = self.buffer.len();
+            // we need to `ceil()` because if `end_time` is between two samples
+            // we actually want the sample before `end_time` to be computed
+            // @todo - more tests
+            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).ceil() as usize;
+            let end_index_clipped = end_index.min(infos.count);
+
+            if end_index_clipped > start_index {
+                let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
+
+                for _ in start_index..end_index_clipped {
+                    // check if we have reached start_time
+                    let value = if time - start_time < 0. {
+                        self.intrinsic_value
+                    } else {
+                        compute_set_value_curve_sample(start_time, duration, values, time)
+                    };
+
+                    self.buffer.push(value);
+                    self.intrinsic_value = value;
+
+                    time += infos.dt;
+                }
+            }
+        }
+
+        // event will continue in next tick
+        if end_time >= infos.next_block_time {
+            // compute value for `next_block_time` so that `param.value()`
+            // stays coherent (see. comment in `AudioParam`)
+            // allows to properly fill k-rate within next block too
+            let value =
+                compute_set_value_curve_sample(start_time, duration, values, infos.next_block_time);
+            self.intrinsic_value = value;
+
+            return true;
+        }
+
+        // event has been cancelled
+        if event.cancel_time.is_some() {
+            let value = compute_set_value_curve_sample(start_time, duration, values, end_time);
+
+            self.intrinsic_value = value;
+
+            let mut last_event = self.event_timeline.pop().unwrap();
+            last_event.time = end_time;
+            last_event.value = value;
+            self.last_event = Some(last_event);
+        // event has ended
+        } else {
+            let value = values[values.len() - 1];
+
+            let mut last_event = self.event_timeline.pop().unwrap();
+            last_event.time = end_time;
+            last_event.value = value;
+
+            self.intrinsic_value = value;
+            self.last_event = Some(last_event);
+        }
+
+        false
+    }
+
     fn compute_buffer(&mut self, block_time: f64, dt: f64, count: usize) {
         // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
@@ -1046,8 +1508,6 @@ impl AudioParamProcessor {
         self.buffer.clear();
 
         let is_a_rate = self.automation_rate.is_a_rate();
-        let is_k_rate = !is_a_rate;
-
         let next_block_time = dt.mul_add(count as f64, block_time);
 
         // Check if we can safely return a buffer of length 1 even for a-rate params.
@@ -1075,7 +1535,7 @@ impl AudioParamProcessor {
             }
         };
 
-        if is_k_rate || is_constant_block {
+        if !is_a_rate || is_constant_block {
             self.buffer.push(self.intrinsic_value);
             // nothing to compute in timeline, for both k-rate and a-rate
             if is_constant_block {
@@ -1083,507 +1543,53 @@ impl AudioParamProcessor {
             }
         }
 
-        loop {
-            let some_event = self.event_timeline.peek();
+        // pack block infos for automation methods
+        let block_infos = BlockInfos {
+            block_time,
+            dt,
+            count,
+            is_a_rate,
+            next_block_time,
+        };
 
-            match some_event {
+        loop {
+            let next_event_type = self.event_timeline.peek().map(|e| e.event_type);
+
+            let exit_loop = match next_event_type {
                 None => {
                     if is_a_rate {
-                        // @note - we use `count` rather then `buffer.remaining_capacity`
-                        // to correctly unit tests where `count` is lower than RENDER_QUANTUM_SIZE
-                        //
-                        // @todo(perf) - consider using try_extend_from_slice
-                        // which internally uses ptr::copy_nonoverlapping
+                        // we use `count` rather then `buffer.remaining_capacity`
+                        // to correctly handle unit tests where `count` is lower than
+                        // RENDER_QUANTUM_SIZE
                         for _ in self.buffer.len()..count {
                             self.buffer.push(self.intrinsic_value);
                         }
                     }
-                    break;
+                    true
                 }
-                Some(event) => {
-                    match event.event_type {
-                        AudioParamEventType::SetValue | AudioParamEventType::SetValueAtTime => {
-                            let value = event.value;
-                            let mut time = event.time;
-
-                            // `set_value` calls and implicitly inserted events
-                            // are inserted with a `time = 0.` to make sure
-                            // they are processed first, replacing w/ block_time
-                            // allows to conform to the spec:
-                            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
-                            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
-                            // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
-                            if time == 0. {
-                                time = block_time;
-                            }
-
-                            // fill buffer with current intrinsic value until `event.time`
-                            if is_a_rate {
-                                let end_index = ((time - block_time).max(0.) / dt) as usize;
-                                let end_index_clipped = end_index.min(count);
-
-                                for _ in self.buffer.len()..end_index_clipped {
-                                    self.buffer.push(self.intrinsic_value);
-                                }
-                            }
-
-                            if time > next_block_time {
-                                break;
-                            } else {
-                                self.intrinsic_value = value;
-
-                                // no computation has been done on `time`
-                                #[allow(clippy::float_cmp)]
-                                if time != event.time {
-                                    // store as last event with the applied time
-                                    let mut event = self.event_timeline.pop().unwrap();
-                                    event.time = time;
-                                    self.last_event = Some(event);
-                                } else {
-                                    self.last_event = self.event_timeline.pop();
-                                }
-                            }
-                        }
-                        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
-                        // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
-                        AudioParamEventType::LinearRampToValueAtTime => {
-                            let last_event = self.last_event.as_ref().unwrap();
-
-                            let start_time = last_event.time;
-                            let mut end_time = event.time;
-                            // compute duration before clapping `end_time` to
-                            // `cancel_time` to keep declared slope of the ramp
-                            let duration = end_time - start_time;
-                            if let Some(cancel_time) = event.cancel_time {
-                                end_time = cancel_time;
-                            }
-
-                            let start_value = last_event.value;
-                            let end_value = event.value;
-                            let diff = end_value - start_value;
-
-                            if is_a_rate {
-                                let start_index = self.buffer.len();
-                                // we need to `ceil()` because if `end_time` is between two samples
-                                // we actually want the sample before `end_time` to be computed
-                                let end_index =
-                                    ((end_time - block_time).max(0.) / dt).ceil() as usize;
-                                let end_index_clipped = end_index.min(count);
-
-                                // compute "real" value according to `t` then clamp it
-                                // cf. Example 7 https://www.w3.org/TR/webaudio/#computation-of-value
-                                if end_index_clipped > start_index {
-                                    let mut time = (start_index as f64).mul_add(dt, block_time);
-
-                                    for _ in start_index..end_index_clipped {
-                                        let value = self.compute_linear_ramp_sample(
-                                            start_time,
-                                            duration,
-                                            start_value,
-                                            diff,
-                                            time,
-                                        );
-
-                                        self.buffer.push(value);
-
-                                        time += dt;
-                                        self.intrinsic_value = value;
-                                    }
-                                }
-                            }
-
-                            // Event will continue in next tick:
-                            // compute value for `next_block_time` so that `param.value()`
-                            // stays coherent, also allows to properly fill k-rate
-                            // within next block too
-                            if end_time >= next_block_time {
-                                let value = self.compute_linear_ramp_sample(
-                                    start_time,
-                                    duration,
-                                    start_value,
-                                    diff,
-                                    next_block_time,
-                                );
-                                self.intrinsic_value = value;
-                                break;
-
-                            // Event cancelled during this block
-                            } else if event.cancel_time.is_some() {
-                                let value = self.compute_linear_ramp_sample(
-                                    start_time,
-                                    duration,
-                                    start_value,
-                                    diff,
-                                    end_time,
-                                );
-
-                                self.intrinsic_value = value;
-
-                                let mut last_event = self.event_timeline.pop().unwrap();
-                                last_event.time = end_time;
-                                last_event.value = value;
-                                self.last_event = Some(last_event);
-
-                            // Event ended during this block
-                            } else {
-                                self.intrinsic_value = end_value;
-                                self.last_event = self.event_timeline.pop();
-                            }
-                        }
-                        // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
-                        // v(t) = v1 * (v2/v1)^((t-t1) / (t2-t1))
-                        AudioParamEventType::ExponentialRampToValueAtTime => {
-                            let last_event = self.last_event.as_ref().unwrap();
-
-                            let start_time = last_event.time;
-                            let mut end_time = event.time;
-                            // compute duration before clapping `end_time` to
-                            // `cancel_time` to keep declared slope of the ramp
-                            let duration = end_time - start_time;
-                            if let Some(cancel_time) = event.cancel_time {
-                                end_time = cancel_time;
-                            }
-
-                            let start_value = last_event.value;
-                            let end_value = event.value;
-                            let ratio = end_value / start_value;
-
-                            // Handle edge cases:
-                            // > If 𝑉0 and 𝑉1 have opposite signs or if 𝑉0 is zero,
-                            // > then 𝑣(𝑡)=𝑉0 for 𝑇0≤𝑡<𝑇1.
-                            // as:
-                            // > If there are no more events after this ExponentialRampToValue
-                            // > event then for 𝑡≥𝑇1, 𝑣(𝑡)=𝑉1.
-                            // this should thus behave as a SetValue
-                            if start_value == 0. || start_value * end_value < 0. {
-                                let event = AudioParamEvent {
-                                    event_type: AudioParamEventType::SetValueAtTime,
-                                    time: end_time,
-                                    value: end_value,
-                                    time_constant: None,
-                                    cancel_time: None,
-                                    duration: None,
-                                    values: None,
-                                };
-
-                                self.event_timeline.replace_peek(event);
-                            } else {
-                                if is_a_rate {
-                                    let start_index = self.buffer.len();
-                                    // we need to `ceil()` because if `end_time` is between two samples
-                                    // we actually want the sample before `end_time` to be computed
-                                    // @todo - more tests
-                                    let end_index =
-                                        ((end_time - block_time).max(0.) / dt).ceil() as usize;
-                                    let end_index_clipped = end_index.min(count);
-
-                                    if end_index_clipped > start_index {
-                                        let mut time = (start_index as f64).mul_add(dt, block_time);
-
-                                        for _ in start_index..end_index_clipped {
-                                            let value = self.compute_exponential_ramp_sample(
-                                                start_time,
-                                                duration,
-                                                start_value,
-                                                ratio,
-                                                time,
-                                            );
-
-                                            self.buffer.push(value);
-                                            self.intrinsic_value = value;
-
-                                            time += dt;
-                                        }
-                                    }
-                                }
-
-                                // Event will continue in next tick:
-                                // compute value for `next_block_time` so that `param.value()`
-                                // stays coherent, also allows to properly fill k-rate
-                                // within next block too
-                                if end_time >= next_block_time {
-                                    let value = self.compute_exponential_ramp_sample(
-                                        start_time,
-                                        duration,
-                                        start_value,
-                                        ratio,
-                                        next_block_time,
-                                    );
-                                    self.intrinsic_value = value;
-                                    break;
-
-                                // Event cancelled during this block
-                                } else if event.cancel_time.is_some() {
-                                    let value = self.compute_exponential_ramp_sample(
-                                        start_time,
-                                        duration,
-                                        start_value,
-                                        ratio,
-                                        end_time,
-                                    );
-
-                                    self.intrinsic_value = value;
-
-                                    let mut last_event = self.event_timeline.pop().unwrap();
-                                    last_event.time = end_time;
-                                    last_event.value = value;
-                                    self.last_event = Some(last_event);
-
-                                // Event ended during this block
-                                } else {
-                                    self.intrinsic_value = end_value;
-                                    self.last_event = self.event_timeline.pop();
-                                }
-                            }
-                        }
-                        // https://webaudio.github.io/web-audio-api/#dom-audioparam-settargetattime
-                        // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
-                        //
-                        // @todo - as SetTarget never resolves on an end value, some
-                        // strategy could be implemented here so that when the value
-                        // is close enough to the target a SetValue event could be
-                        // inserted in the timeline. This could be done at k-rate.
-                        // Note that Chrome has such strategy, cf. `HasSetTargetConverged`
-                        AudioParamEventType::SetTargetAtTime => {
-                            let mut end_time = next_block_time;
-                            let mut ended = false;
-
-                            // handle next event stop SetTarget if any
-                            let some_next_event = self.event_timeline.next();
-
-                            if let Some(next_event) = some_next_event {
-                                match next_event.event_type {
-                                    AudioParamEventType::LinearRampToValueAtTime
-                                    | AudioParamEventType::ExponentialRampToValueAtTime => {
-                                        // [spec] If the preceding event is a SetTarget
-                                        // event, 𝑇0 and 𝑉0 are chosen from the current
-                                        // time and value of SetTarget automation. That
-                                        // is, if the SetTarget event has not started,
-                                        // 𝑇0 is the start time of the event, and 𝑉0
-                                        // is the value just before the SetTarget event
-                                        // starts. In this case, the LinearRampToValue
-                                        // event effectively replaces the SetTarget event.
-                                        // If the SetTarget event has already started,
-                                        // 𝑇0 is the current context time, and 𝑉0 is
-                                        // the current SetTarget automation value at time 𝑇0.
-                                        // In both cases, the automation curve is continuous.
-                                        end_time = block_time;
-                                        ended = true;
-                                    }
-                                    _ => {
-                                        // For all other events, the SetTarget
-                                        // event ends at the time of the next event.
-                                        if next_event.time < next_block_time {
-                                            end_time = next_event.time;
-                                            ended = true;
-                                        }
-                                    }
-                                }
-                            }
-
-                            // handle CancelAndHoldAtTime
-                            if let Some(cancel_time) = event.cancel_time {
-                                if cancel_time < next_block_time {
-                                    end_time = cancel_time;
-                                    ended = true;
-                                }
-                            }
-
-                            let start_time = event.time;
-                            // if SetTarget is the first event registered, we implicitly
-                            // insert a SetValue event just before just as for Ramps.
-                            // Therefore we are sure last_event exists
-                            let start_value = self.last_event.as_ref().unwrap().value;
-                            let end_value = event.value;
-                            let diff = start_value - end_value;
-                            let time_constant = event.time_constant.unwrap();
-
-                            if is_a_rate {
-                                let start_index = self.buffer.len();
-                                // we need to `ceil()` because if `end_time` is between two samples
-                                // we actually want the sample before `end_time` to be computed
-                                // @todo - more tests
-                                let end_index =
-                                    ((end_time - block_time).max(0.) / dt).ceil() as usize;
-                                let end_index_clipped = end_index.min(count);
-
-                                if end_index_clipped > start_index {
-                                    let mut time = (start_index as f64).mul_add(dt, block_time);
-
-                                    for _ in start_index..end_index_clipped {
-                                        // check if we have reached start_time
-                                        let value = if time - start_time < 0. {
-                                            self.intrinsic_value
-                                        } else {
-                                            self.compute_set_target_sample(
-                                                start_time,
-                                                time_constant,
-                                                end_value,
-                                                diff,
-                                                time,
-                                            )
-                                        };
-
-                                        self.buffer.push(value);
-                                        self.intrinsic_value = value;
-                                        time += dt;
-                                    }
-                                }
-                            }
-
-                            if !ended {
-                                // compute value for `next_block_time` so that `param.value()`
-                                // stays coherent (see. comment in `AudioParam`)
-                                // allows to properly fill k-rate within next block too
-                                let value = self.compute_set_target_sample(
-                                    start_time,
-                                    time_constant,
-                                    end_value,
-                                    diff,
-                                    next_block_time,
-                                );
-
-                                let diff = (end_value - value).abs();
-
-                                // abort event if diff is below SNAP_TO_TARGET
-                                if diff < SNAP_TO_TARGET {
-                                    self.intrinsic_value = end_value;
-
-                                    // if end_value is zero, the buffer might contain
-                                    // subnormals, we need to check that and flush to zero
-                                    if end_value == 0. {
-                                        for v in self.buffer.iter_mut() {
-                                            if v.is_subnormal() {
-                                                *v = 0.;
-                                            }
-                                        }
-                                    }
-
-                                    let event = AudioParamEvent {
-                                        event_type: AudioParamEventType::SetValueAtTime,
-                                        time: next_block_time,
-                                        value: end_value,
-                                        time_constant: None,
-                                        cancel_time: None,
-                                        duration: None,
-                                        values: None,
-                                    };
-
-                                    self.event_timeline.replace_peek(event);
-                                } else {
-                                    self.intrinsic_value = value;
-                                }
-                                break;
-                            } else {
-                                // setTarget has no "real" end value, compute according
-                                // to next event start time
-                                let value = self.compute_set_target_sample(
-                                    start_time,
-                                    time_constant,
-                                    end_value,
-                                    diff,
-                                    end_time,
-                                );
-
-                                self.intrinsic_value = value;
-                                // end_value and end_time must be stored for use
-                                // as start time by next event
-                                let mut event = self.event_timeline.pop().unwrap();
-                                event.time = end_time;
-                                event.value = value;
-                                self.last_event = Some(event);
-                            }
-                        }
-                        AudioParamEventType::SetValueCurveAtTime => {
-                            let start_time = event.time;
-                            let duration = event.duration.unwrap();
-                            let values = event.values.as_ref().unwrap();
-                            let mut end_time = start_time + duration;
-
-                            // we must check for the cancel event after we have
-                            // the "real" duration computed to not change the
-                            // slope of the ramp
-                            if let Some(cancel_time) = event.cancel_time {
-                                end_time = cancel_time;
-                            }
-
-                            if is_a_rate {
-                                let start_index = self.buffer.len();
-                                // we need to `ceil()` because if `end_time` is between two samples
-                                // we actually want the sample before `end_time` to be computed
-                                // @todo - more tests
-                                let end_index =
-                                    ((end_time - block_time).max(0.) / dt).ceil() as usize;
-                                let end_index_clipped = end_index.min(count);
-
-                                if end_index_clipped > start_index {
-                                    let mut time = (start_index as f64).mul_add(dt, block_time);
-
-                                    for _ in start_index..end_index_clipped {
-                                        // check if we have reached start_time
-                                        let value = if time - start_time < 0. {
-                                            self.intrinsic_value
-                                        } else {
-                                            self.compute_set_value_curve_sample(
-                                                start_time, duration, values, time,
-                                            )
-                                        };
-
-                                        self.buffer.push(value);
-                                        self.intrinsic_value = value;
-
-                                        time += dt;
-                                    }
-                                }
-                            }
-
-                            // event will continue in next tick
-                            if end_time >= next_block_time {
-                                // compute value for `next_block_time` so that `param.value()`
-                                // stays coherent (see. comment in `AudioParam`)
-                                // allows to properly fill k-rate within next block too
-                                let value = self.compute_set_value_curve_sample(
-                                    start_time,
-                                    duration,
-                                    values,
-                                    next_block_time,
-                                );
-                                self.intrinsic_value = value;
-                                break;
-
-                            // handle end of event during this block
-                            } else {
-                                // event has been cancelled
-                                if event.cancel_time.is_some() {
-                                    let value = self.compute_set_value_curve_sample(
-                                        start_time, duration, values, end_time,
-                                    );
-
-                                    self.intrinsic_value = value;
-
-                                    let mut last_event = self.event_timeline.pop().unwrap();
-                                    last_event.time = end_time;
-                                    last_event.value = value;
-                                    self.last_event = Some(last_event);
-                                // event has ended
-                                } else {
-                                    let value = values[values.len() - 1];
-
-                                    let mut last_event = self.event_timeline.pop().unwrap();
-                                    last_event.time = end_time;
-                                    last_event.value = value;
-
-                                    self.intrinsic_value = value;
-                                    self.last_event = Some(last_event);
-                                }
-                            }
-                        }
-                        _ => panic!(
-                            "AudioParamEvent {:?} should not appear in AudioParamEventTimeline",
-                            event.event_type
-                        ),
-                    }
+                Some(AudioParamEventType::SetValue) | Some(AudioParamEventType::SetValueAtTime) => {
+                    self.compute_set_value_automation(&block_infos)
                 }
+                Some(AudioParamEventType::LinearRampToValueAtTime) => {
+                    self.compute_linear_ramp_automation(&block_infos)
+                }
+                Some(AudioParamEventType::ExponentialRampToValueAtTime) => {
+                    self.compute_exponential_ramp_automation(&block_infos)
+                }
+                Some(AudioParamEventType::SetTargetAtTime) => {
+                    self.compute_set_target_automation(&block_infos)
+                }
+                Some(AudioParamEventType::SetValueCurveAtTime) => {
+                    self.compute_set_value_curve_automation(&block_infos)
+                }
+                _ => panic!(
+                    "AudioParamEvent {:?} should not appear in AudioParamEventTimeline",
+                    next_event_type.unwrap()
+                ),
+            };
+
+            if exit_loop {
+                break;
             }
         }
     }
