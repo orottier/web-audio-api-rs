@@ -59,6 +59,64 @@ fn assert_sequence_length(values: &[f32]) {
     }
 }
 
+// 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
+#[inline(always)]
+fn compute_linear_ramp_sample(
+    start_time: f64,
+    duration: f64,
+    start_value: f32,
+    diff: f32, // end_value - start_value
+    time: f64,
+) -> f32 {
+    let phase = (time - start_time) / duration;
+    diff.mul_add(phase as f32, start_value)
+}
+
+// v(t) = v1 * (v2/v1)^((t-t1) / (t2-t1))
+#[inline(always)]
+fn compute_exponential_ramp_sample(
+    start_time: f64,
+    duration: f64,
+    start_value: f32,
+    ratio: f32, // end_value / start_value
+    time: f64,
+) -> f32 {
+    let phase = (time - start_time) / duration;
+    start_value * ratio.powf(phase as f32)
+}
+
+// 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
+#[inline(always)]
+fn compute_set_target_sample(
+    start_time: f64,
+    time_constant: f64,
+    end_value: f32,
+    diff: f32, // start_value - end_value
+    time: f64,
+) -> f32 {
+    let exponent = -1. * ((time - start_time) / time_constant);
+    diff.mul_add(exponent.exp() as f32, end_value)
+}
+
+// 𝑘=⌊𝑁−1 / 𝑇𝐷 * (𝑡−𝑇0)⌋
+// Then 𝑣(𝑡) is computed by linearly interpolating between 𝑉[𝑘] and 𝑉[𝑘+1],
+#[inline(always)]
+fn compute_set_value_curve_sample(
+    start_time: f64,
+    duration: f64,
+    values: &[f32],
+    time: f64,
+) -> f32 {
+    if time - start_time >= duration {
+        return values[values.len() - 1];
+    }
+
+    let position = (values.len() - 1) as f64 * (time - start_time) / duration;
+    let k = position as usize;
+    let phase = (position - position.floor()) as f32;
+    (values[k + 1] - values[k]).mul_add(phase, values[k])
+}
+
 /// Precision of AudioParam value calculation per render quantum
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum AutomationRate {
@@ -727,68 +785,6 @@ impl AudioParamProcessor {
         }
     }
 
-    // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
-    #[inline(always)]
-    fn compute_linear_ramp_sample(
-        &self,
-        start_time: f64,
-        duration: f64,
-        start_value: f32,
-        diff: f32, // end_value - start_value
-        time: f64,
-    ) -> f32 {
-        let phase = (time - start_time) / duration;
-        diff.mul_add(phase as f32, start_value)
-    }
-
-    // v(t) = v1 * (v2/v1)^((t-t1) / (t2-t1))
-    #[inline(always)]
-    fn compute_exponential_ramp_sample(
-        &self,
-        start_time: f64,
-        duration: f64,
-        start_value: f32,
-        ratio: f32, // end_value / start_value
-        time: f64,
-    ) -> f32 {
-        let phase = (time - start_time) / duration;
-        start_value * ratio.powf(phase as f32)
-    }
-
-    // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
-    #[inline(always)]
-    fn compute_set_target_sample(
-        &self,
-        start_time: f64,
-        time_constant: f64,
-        end_value: f32,
-        diff: f32, // start_value - end_value
-        time: f64,
-    ) -> f32 {
-        let exponent = -1. * ((time - start_time) / time_constant);
-        diff.mul_add(exponent.exp() as f32, end_value)
-    }
-
-    // 𝑘=⌊𝑁−1 / 𝑇𝐷 * (𝑡−𝑇0)⌋
-    // Then 𝑣(𝑡) is computed by linearly interpolating between 𝑉[𝑘] and 𝑉[𝑘+1],
-    #[inline(always)]
-    fn compute_set_value_curve_sample(
-        &self,
-        start_time: f64,
-        duration: f64,
-        values: &[f32],
-        time: f64,
-    ) -> f32 {
-        if time - start_time >= duration {
-            values[values.len() - 1]
-        } else {
-            let position = (values.len() - 1) as f64 * (time - start_time) / duration;
-            let k = position as usize;
-            let phase = (position - position.floor()) as f32;
-            (values[k + 1] - values[k]).mul_add(phase, values[k])
-        }
-    }
-
     fn handle_incoming_event(&mut self, event: AudioParamEvent) {
         // cf. https://www.w3.org/TR/webaudio/#computation-of-value
         // 1. paramIntrinsicValue will be calculated at each time, which is either the
@@ -1122,13 +1118,8 @@ impl AudioParamProcessor {
                 let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
 
                 for _ in start_index..end_index_clipped {
-                    let value = self.compute_linear_ramp_sample(
-                        start_time,
-                        duration,
-                        start_value,
-                        diff,
-                        time,
-                    );
+                    let value =
+                        compute_linear_ramp_sample(start_time, duration, start_value, diff, time);
 
                     self.buffer.push(value);
 
@@ -1143,7 +1134,7 @@ impl AudioParamProcessor {
         // stays coherent, also allows to properly fill k-rate
         // within next block too
         if end_time >= infos.next_block_time {
-            let value = self.compute_linear_ramp_sample(
+            let value = compute_linear_ramp_sample(
                 start_time,
                 duration,
                 start_value,
@@ -1158,7 +1149,7 @@ impl AudioParamProcessor {
         // Event cancelled during this block
         if event.cancel_time.is_some() {
             let value =
-                self.compute_linear_ramp_sample(start_time, duration, start_value, diff, end_time);
+                compute_linear_ramp_sample(start_time, duration, start_value, diff, end_time);
 
             self.intrinsic_value = value;
 
@@ -1228,7 +1219,7 @@ impl AudioParamProcessor {
                 let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
 
                 for _ in start_index..end_index_clipped {
-                    let value = self.compute_exponential_ramp_sample(
+                    let value = compute_exponential_ramp_sample(
                         start_time,
                         duration,
                         start_value,
@@ -1249,7 +1240,7 @@ impl AudioParamProcessor {
         // stays coherent, also allows to properly fill k-rate
         // within next block too
         if end_time >= infos.next_block_time {
-            let value = self.compute_exponential_ramp_sample(
+            let value = compute_exponential_ramp_sample(
                 start_time,
                 duration,
                 start_value,
@@ -1263,13 +1254,8 @@ impl AudioParamProcessor {
 
         // Event cancelled during this block
         if event.cancel_time.is_some() {
-            let value = self.compute_exponential_ramp_sample(
-                start_time,
-                duration,
-                start_value,
-                ratio,
-                end_time,
-            );
+            let value =
+                compute_exponential_ramp_sample(start_time, duration, start_value, ratio, end_time);
 
             self.intrinsic_value = value;
 
@@ -1363,13 +1349,7 @@ impl AudioParamProcessor {
                     let value = if time - start_time < 0. {
                         self.intrinsic_value
                     } else {
-                        self.compute_set_target_sample(
-                            start_time,
-                            time_constant,
-                            end_value,
-                            diff,
-                            time,
-                        )
+                        compute_set_target_sample(start_time, time_constant, end_value, diff, time)
                     };
 
                     self.buffer.push(value);
@@ -1383,7 +1363,7 @@ impl AudioParamProcessor {
             // compute value for `next_block_time` so that `param.value()`
             // stays coherent (see. comment in `AudioParam`)
             // allows to properly fill k-rate within next block too
-            let value = self.compute_set_target_sample(
+            let value = compute_set_target_sample(
                 start_time,
                 time_constant,
                 end_value,
@@ -1427,8 +1407,7 @@ impl AudioParamProcessor {
 
         // setTarget has no "real" end value, compute according
         // to next event start time
-        let value =
-            self.compute_set_target_sample(start_time, time_constant, end_value, diff, end_time);
+        let value = compute_set_target_sample(start_time, time_constant, end_value, diff, end_time);
 
         self.intrinsic_value = value;
         // end_value and end_time must be stored for use
@@ -1471,7 +1450,7 @@ impl AudioParamProcessor {
                     let value = if time - start_time < 0. {
                         self.intrinsic_value
                     } else {
-                        self.compute_set_value_curve_sample(start_time, duration, values, time)
+                        compute_set_value_curve_sample(start_time, duration, values, time)
                     };
 
                     self.buffer.push(value);
@@ -1487,12 +1466,8 @@ impl AudioParamProcessor {
             // compute value for `next_block_time` so that `param.value()`
             // stays coherent (see. comment in `AudioParam`)
             // allows to properly fill k-rate within next block too
-            let value = self.compute_set_value_curve_sample(
-                start_time,
-                duration,
-                values,
-                infos.next_block_time,
-            );
+            let value =
+                compute_set_value_curve_sample(start_time, duration, values, infos.next_block_time);
             self.intrinsic_value = value;
 
             return true;
@@ -1500,7 +1475,7 @@ impl AudioParamProcessor {
 
         // event has been cancelled
         if event.cancel_time.is_some() {
-            let value = self.compute_set_value_curve_sample(start_time, duration, values, end_time);
+            let value = compute_set_value_curve_sample(start_time, duration, values, end_time);
 
             self.intrinsic_value = value;
 
@@ -1568,7 +1543,7 @@ impl AudioParamProcessor {
             }
         }
 
-        // pack block infos for automations methods
+        // pack block infos for automation methods
         let block_infos = BlockInfos {
             block_time,
             dt,
