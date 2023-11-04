@@ -1580,50 +1580,41 @@ impl AudioParamProcessor {
         loop {
             let next_event_type = self.event_timeline.peek().map(|e| e.event_type);
 
-            match next_event_type {
+            let exit_loop = match next_event_type {
                 None => {
                     if is_a_rate {
-                        // @note - we use `count` rather then `buffer.remaining_capacity`
+                        // we use `count` rather then `buffer.remaining_capacity`
                         // to correctly handle unit tests where `count` is lower than
                         // RENDER_QUANTUM_SIZE
-                        //
-                        // @todo(perf) - consider using try_extend_from_slice
-                        // which internally uses ptr::copy_nonoverlapping
                         for _ in self.buffer.len()..count {
                             self.buffer.push(self.intrinsic_value);
                         }
                     }
-                    break;
+                    true
                 }
                 Some(AudioParamEventType::SetValue) | Some(AudioParamEventType::SetValueAtTime) => {
-                    if self.compute_set_value_automation(&block_infos) {
-                        break;
-                    }
+                    self.compute_set_value_automation(&block_infos)
                 }
                 Some(AudioParamEventType::LinearRampToValueAtTime) => {
-                    if self.compute_linear_ramp_automation(&block_infos) {
-                        break;
-                    }
+                    self.compute_linear_ramp_automation(&block_infos)
                 }
                 Some(AudioParamEventType::ExponentialRampToValueAtTime) => {
-                    if self.compute_exponential_ramp_automation(&block_infos) {
-                        break;
-                    }
+                    self.compute_exponential_ramp_automation(&block_infos)
                 }
                 Some(AudioParamEventType::SetTargetAtTime) => {
-                    if self.compute_set_target_automation(&block_infos) {
-                        break;
-                    }
+                    self.compute_set_target_automation(&block_infos)
                 }
                 Some(AudioParamEventType::SetValueCurveAtTime) => {
-                    if self.compute_set_value_curve_automation(&block_infos) {
-                        break;
-                    }
+                    self.compute_set_value_curve_automation(&block_infos)
                 }
                 _ => panic!(
                     "AudioParamEvent {:?} should not appear in AudioParamEventTimeline",
                     next_event_type.unwrap()
                 ),
+            };
+
+            if exit_loop {
+                break;
             }
         }
     }
