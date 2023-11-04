@@ -1,7 +1,9 @@
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
-use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, AudioWorkletNode};
+use web_audio_api::node::{
+    AudioNode, AudioScheduledSourceNode, AudioWorkletNode, AudioWorkletNodeOptions,
+};
 
 // AudioWorkletNode example
 //
@@ -34,7 +36,9 @@ fn main() {
         false
     };
 
-    let worklet = AudioWorkletNode::new(&context, process);
+    let options = AudioWorkletNodeOptions::default();
+
+    let worklet = AudioWorkletNode::new(&context, process, options);
     worklet.connect(&context.destination());
 
     let mut osc = context.create_oscillator();
