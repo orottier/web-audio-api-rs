@@ -1,26 +1,40 @@
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use crate::context::AudioParamId;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::MAX_CHANNELS;
 
 use std::collections::HashMap;
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 
 use arrayvec::ArrayVec;
 
+pub struct AudioParamValues<'a> {
+    values: crate::render::AudioParamValues<'a>,
+    map: &'a HashMap<String, AudioParamId>,
+}
+
+impl<'a> AudioParamValues<'a> {
+    pub fn get(&'a self, name: &str) -> impl Deref<Target = [f32]> + 'a {
+        let id = self.map.get(name).unwrap();
+        self.values.get(id)
+    }
+}
+
 pub trait AudioWorkletProcessor: Send {
-    fn parameter_descriptors() -> &'static [AudioParamDescriptor]
+    fn parameter_descriptors() -> Vec<(String, AudioParamDescriptor)>
     where
         Self: Sized,
     {
-        &[] // empty by default
+        vec![] // empty by default
     }
 
     fn process<'a, 'b>(
         &mut self,
         inputs: &'b [&'a [f32]],
         outputs: &'b mut [&'a mut [f32]],
+        params: AudioParamValues<'b>,
     ) -> bool;
 }
 
@@ -65,7 +79,6 @@ pub struct AudioWorkletNode {
     channel_config: ChannelConfig,
     number_of_inputs: usize,
     number_of_outputs: usize,
-    #[allow(dead_code)]
     audio_param_map: HashMap<String, AudioParam>,
 }
 
@@ -92,9 +105,9 @@ impl AudioWorkletNode {
     ///
     /// This function panics when the number of inputs and the number of outputs of the supplied
     /// options are both equal to zero.
-    pub fn new<C: BaseAudioContext>(
+    pub fn new<C: BaseAudioContext, P: AudioWorkletProcessor + 'static>(
         context: &C,
-        audio_worklet_processor: impl AudioWorkletProcessor + 'static,
+        audio_worklet_processor: P,
         options: AudioWorkletNodeOptions,
     ) -> Self {
         context.register(move |registration| {
@@ -102,7 +115,7 @@ impl AudioWorkletNode {
                 number_of_inputs,
                 number_of_outputs,
                 output_channel_count: _,
-                parameter_data: _,
+                parameter_data,
                 channel_config,
             } = options;
 
@@ -112,28 +125,43 @@ impl AudioWorkletNode {
 
             // todo handle output_channel_count
 
-            // todo setup audio params, set initial values when supplied via parameter_data
-            let audio_param_map = HashMap::new();
+            // Setup audio params, set initial values when supplied via parameter_data
+            let mut node_param_map = HashMap::new();
+            let mut processor_param_map = HashMap::new();
+            for (name, param_descriptor) in P::parameter_descriptors() {
+                let (param, proc) = context.create_audio_param(param_descriptor, &registration);
+                if let Some(value) = parameter_data.get(&name) {
+                    param.set_value(*value as f32); // mismatch in spec f32 vs f64
+                }
+                node_param_map.insert(name.clone(), param);
+                processor_param_map.insert(name, proc);
+            }
 
             let node = AudioWorkletNode {
                 registration,
                 channel_config: channel_config.into(),
                 number_of_inputs,
                 number_of_outputs,
-                audio_param_map,
+                audio_param_map: node_param_map,
             };
 
             let render = AudioWorkletRenderer {
                 processor: Box::new(audio_worklet_processor),
+                audio_param_map: processor_param_map,
             };
 
             (node, Box::new(render))
         })
     }
+
+    pub fn parameters(&self) -> &HashMap<String, AudioParam> {
+        &self.audio_param_map
+    }
 }
 
 struct AudioWorkletRenderer {
     processor: Box<dyn AudioWorkletProcessor>,
+    audio_param_map: HashMap<String, AudioParamId>,
 }
 
 impl AudioProcessor for AudioWorkletRenderer {
@@ -141,7 +169,7 @@ impl AudioProcessor for AudioWorkletRenderer {
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues<'_>,
+        params: crate::render::AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
         // only single input/output is supported now
@@ -155,9 +183,14 @@ impl AudioProcessor for AudioWorkletRenderer {
             .map(|c| c.deref_mut())
             .collect();
 
-        let tail_time = self
-            .processor
-            .process(&inputs_cast[..], &mut outputs_cast[..]);
+        let param_getter = AudioParamValues {
+            values: params,
+            map: &self.audio_param_map,
+        };
+
+        let tail_time =
+            self.processor
+                .process(&inputs_cast[..], &mut outputs_cast[..], param_getter);
 
         tail_time
     }
