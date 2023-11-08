@@ -1,6 +1,6 @@
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::param::AudioParam;
+use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::MAX_CHANNELS;
 
@@ -8,6 +8,21 @@ use std::collections::HashMap;
 use std::ops::DerefMut;
 
 use arrayvec::ArrayVec;
+
+pub trait AudioWorkletProcessor: Send {
+    fn parameter_descriptors() -> &'static [AudioParamDescriptor]
+    where
+        Self: Sized,
+    {
+        &[] // empty by default
+    }
+
+    fn process<'a, 'b>(
+        &mut self,
+        inputs: &'b [&'a [f32]],
+        outputs: &'b mut [&'a mut [f32]],
+    ) -> bool;
+}
 
 /// Options for constructing an [`AudioWorkletNode`]
 // dictionary AudioWorkletNodeOptions : AudioNodeOptions {
@@ -79,7 +94,7 @@ impl AudioWorkletNode {
     /// options are both equal to zero.
     pub fn new<C: BaseAudioContext>(
         context: &C,
-        callback: impl FnMut(&[&[f32]], &mut [&mut [f32]]) -> bool + Send + 'static,
+        audio_worklet_processor: impl AudioWorkletProcessor + 'static,
         options: AudioWorkletNodeOptions,
     ) -> Self {
         context.register(move |registration| {
@@ -108,10 +123,8 @@ impl AudioWorkletNode {
                 audio_param_map,
             };
 
-            let render = AudioWorkletProcessor {
-                callback: Box::new(callback),
-                inputs: ArrayVec::new(),
-                outputs: ArrayVec::new(),
+            let render = AudioWorkletRenderer {
+                processor: Box::new(audio_worklet_processor),
             };
 
             (node, Box::new(render))
@@ -119,15 +132,11 @@ impl AudioWorkletNode {
     }
 }
 
-type AudioWorkletProcessCallback = dyn FnMut(&[&[f32]], &mut [&mut [f32]]) -> bool + Send;
-
-struct AudioWorkletProcessor {
-    callback: Box<AudioWorkletProcessCallback>,
-    inputs: ArrayVec<&'static [f32], MAX_CHANNELS>,
-    outputs: ArrayVec<&'static mut [f32], MAX_CHANNELS>,
+struct AudioWorkletRenderer {
+    processor: Box<dyn AudioWorkletProcessor>,
 }
 
-impl AudioProcessor for AudioWorkletProcessor {
+impl AudioProcessor for AudioWorkletRenderer {
     fn process(
         &mut self,
         inputs: &[AudioRenderQuantum],
@@ -137,30 +146,18 @@ impl AudioProcessor for AudioWorkletProcessor {
     ) -> bool {
         // only single input/output is supported now
 
-        inputs[0].channels().iter().for_each(|c| {
-            let slice: &[f32] = c.as_ref();
-            // SAFETY
-            // We're upgrading the lifetime of the inputs to `static`. This is okay because
-            // `self.callback` is a HRTB (for <'a> FnMut &'a ...) so the references cannot
-            // escape. The inputs are dropped at the end of the `process` method.
-            let static_slice: &'static [f32] = unsafe { core::mem::transmute(slice) };
-            self.inputs.push(static_slice)
-        });
+        let inputs_cast: ArrayVec<&[f32], MAX_CHANNELS> =
+            inputs[0].channels().iter().map(|c| c.as_ref()).collect();
 
-        outputs[0].channels_mut().iter_mut().for_each(|c| {
-            let slice: &mut [f32] = c.deref_mut();
-            // SAFETY
-            // We're upgrading the lifetime of the outputs to `static`. This is okay because
-            // `self.callback` is a HRTB (for <'a> FnMut &'a ...) so the references cannot
-            // escape. The outputs are dropped at the end of the `process` method.
-            let static_slice: &'static mut [f32] = unsafe { core::mem::transmute(slice) };
-            self.outputs.push(static_slice)
-        });
+        let mut outputs_cast: ArrayVec<&mut [f32], MAX_CHANNELS> = outputs[0]
+            .channels_mut()
+            .iter_mut()
+            .map(|c| c.deref_mut())
+            .collect();
 
-        let tail_time = (self.callback)(&self.inputs[..], &mut self.outputs[..]);
-
-        self.inputs.clear();
-        self.outputs.clear();
+        let tail_time = self
+            .processor
+            .process(&inputs_cast[..], &mut outputs_cast[..]);
 
         tail_time
     }

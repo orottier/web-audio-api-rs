@@ -3,7 +3,26 @@ use web_audio_api::context::{
 };
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, AudioWorkletNode, AudioWorkletNodeOptions,
+    AudioWorkletProcessor,
 };
+
+struct MyProcessor;
+
+impl AudioWorkletProcessor for MyProcessor {
+    fn process<'a, 'b>(
+        &mut self,
+        inputs: &'b [&'a [f32]],
+        outputs: &'b mut [&'a mut [f32]],
+    ) -> bool {
+        // passthrough
+        inputs
+            .iter()
+            .zip(outputs)
+            .for_each(|(i, o)| o.copy_from_slice(i));
+
+        false
+    }
+}
 
 // AudioWorkletNode example
 //
@@ -27,15 +46,7 @@ fn main() {
         ..AudioContextOptions::default()
     });
 
-    // create a pass-through processor
-    let process = |input: &[&[f32]], output: &mut [&mut [f32]]| {
-        input
-            .iter()
-            .zip(output)
-            .for_each(|(i, o)| o.copy_from_slice(i));
-        false
-    };
-
+    let process = MyProcessor;
     let options = AudioWorkletNodeOptions::default();
 
     let worklet = AudioWorkletNode::new(&context, process, options);
