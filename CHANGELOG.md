@@ -1,5 +1,10 @@
 # Version History
 
+## Version 0.36.1 (2023-11-08)
+
+- Fix compilation on targets that are not x86/aarch64
+- Added the ability to run benchmarks locally with `criterion`
+
 ## Version 0.36.0 (2023-10-20)
 
 - Disable floating point denormals in audio processing via processor flags
