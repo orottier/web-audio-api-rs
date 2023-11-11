@@ -24,7 +24,7 @@ impl<'a> AudioParamValues<'a> {
 }
 
 pub trait AudioWorkletProcessor: Send {
-    type ConstructorOptions: Send + Clone;
+    type ConstructorOptions: Send;
 
     fn construct(opts: Self::ConstructorOptions) -> Self;
 
@@ -153,10 +153,11 @@ impl AudioWorkletNode {
 
             // TODO make initialization of proc nicer
             let mut proc = None;
+            let mut processor_options = Some(processor_options);
             let render = AudioWorkletRenderer {
                 processor: Box::new(move |i, o, p| {
                     if proc.is_none() {
-                        let opts = processor_options.clone();
+                        let opts = processor_options.take().unwrap();
                         proc = Some(P::construct(opts));
                     }
                     proc.as_mut().unwrap().process(i, o, p)
