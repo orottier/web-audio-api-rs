@@ -11,6 +11,12 @@ use web_audio_api::{AudioParamDescriptor, AutomationRate};
 struct MyProcessor;
 
 impl AudioWorkletProcessor for MyProcessor {
+    type ConstructorOptions = ();
+
+    fn construct(_opts: Self::ConstructorOptions) -> Self {
+        Self {}
+    }
+
     fn parameter_descriptors() -> Vec<(String, AudioParamDescriptor)>
     where
         Self: Sized,
@@ -66,11 +72,10 @@ fn main() {
         ..AudioContextOptions::default()
     });
 
-    let process = MyProcessor;
     let mut options = AudioWorkletNodeOptions::default();
     options.parameter_data.insert(String::from("gain"), 1.0);
 
-    let worklet = AudioWorkletNode::new(&context, process, options);
+    let worklet = AudioWorkletNode::new::<MyProcessor>(&context, options);
     worklet.connect(&context.destination());
     worklet
         .parameters()

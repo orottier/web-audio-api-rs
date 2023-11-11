@@ -23,6 +23,10 @@ impl<'a> AudioParamValues<'a> {
 }
 
 pub trait AudioWorkletProcessor: Send {
+    type ConstructorOptions: Send + Clone;
+
+    fn construct(opts: Self::ConstructorOptions) -> Self;
+
     fn parameter_descriptors() -> Vec<(String, AudioParamDescriptor)>
     where
         Self: Sized,
@@ -47,7 +51,7 @@ pub trait AudioWorkletProcessor: Send {
 //     object processorOptions;
 // };
 #[derive(Clone, Debug)]
-pub struct AudioWorkletNodeOptions {
+pub struct AudioWorkletNodeOptions<C> {
     /// This is used to initialize the value of the AudioNode numberOfInputs attribute.
     pub number_of_inputs: usize,
     /// This is used to initialize the value of the AudioNode numberOfOutputs attribute.
@@ -57,17 +61,18 @@ pub struct AudioWorkletNodeOptions {
     /// This is a list of user-defined key-value pairs that are used to set the initial value of an
     /// AudioParam with the matched name in the AudioWorkletNode.
     pub parameter_data: HashMap<String, f64>,
-    // processorOptions - ignored for now since rust allows to move data into the processor closure
+    pub processor_options: C,
     pub channel_config: ChannelConfigOptions,
 }
 
-impl Default for AudioWorkletNodeOptions {
+impl<C: Default> Default for AudioWorkletNodeOptions<C> {
     fn default() -> Self {
         Self {
             number_of_inputs: 1,
             number_of_outputs: 1,
             output_channel_count: Vec::new(),
             parameter_data: HashMap::new(),
+            processor_options: C::default(),
             channel_config: ChannelConfigOptions::default(),
         }
     }
@@ -105,10 +110,9 @@ impl AudioWorkletNode {
     ///
     /// This function panics when the number of inputs and the number of outputs of the supplied
     /// options are both equal to zero.
-    pub fn new<C: BaseAudioContext, P: AudioWorkletProcessor + 'static>(
-        context: &C,
-        audio_worklet_processor: P,
-        options: AudioWorkletNodeOptions,
+    pub fn new<P: AudioWorkletProcessor + 'static>(
+        context: &impl BaseAudioContext,
+        options: AudioWorkletNodeOptions<P::ConstructorOptions>,
     ) -> Self {
         context.register(move |registration| {
             let AudioWorkletNodeOptions {
@@ -116,6 +120,7 @@ impl AudioWorkletNode {
                 number_of_outputs,
                 output_channel_count: _,
                 parameter_data,
+                processor_options,
                 channel_config,
             } = options;
 
@@ -145,8 +150,16 @@ impl AudioWorkletNode {
                 audio_param_map: node_param_map,
             };
 
+            // TODO make initialization of proc nicer
+            let mut proc = None;
             let render = AudioWorkletRenderer {
-                processor: Box::new(audio_worklet_processor),
+                processor: Box::new(move |i, o, p| {
+                    if proc.is_none() {
+                        let opts = processor_options.clone();
+                        proc = Some(P::construct(opts));
+                    }
+                    proc.as_mut().unwrap().process(i, o, p)
+                }),
                 audio_param_map: processor_param_map,
             };
 
@@ -159,8 +172,11 @@ impl AudioWorkletNode {
     }
 }
 
+type ProcessCallback = dyn for<'a, 'b> FnMut(&'b [&'a [f32]], &'b mut [&'a mut [f32]], AudioParamValues<'b>) -> bool
+    + Send;
+
 struct AudioWorkletRenderer {
-    processor: Box<dyn AudioWorkletProcessor>,
+    processor: Box<ProcessCallback>,
     audio_param_map: HashMap<String, AudioParamId>,
 }
 
@@ -188,9 +204,7 @@ impl AudioProcessor for AudioWorkletRenderer {
             map: &self.audio_param_map,
         };
 
-        let tail_time =
-            self.processor
-                .process(&inputs_cast[..], &mut outputs_cast[..], param_getter);
+        let tail_time = (self.processor)(&inputs_cast[..], &mut outputs_cast[..], param_getter);
 
         tail_time
     }
