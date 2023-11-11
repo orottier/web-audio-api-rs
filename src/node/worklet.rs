@@ -16,6 +16,7 @@ pub struct AudioParamValues<'a> {
 }
 
 impl<'a> AudioParamValues<'a> {
+    #[allow(clippy::missing_panics_doc)]
     pub fn get(&'a self, name: &str) -> impl Deref<Target = [f32]> + 'a {
         let id = self.map.get(name).unwrap();
         self.values.get(id)
@@ -204,8 +205,6 @@ impl AudioProcessor for AudioWorkletRenderer {
             map: &self.audio_param_map,
         };
 
-        let tail_time = (self.processor)(&inputs_cast[..], &mut outputs_cast[..], param_getter);
-
-        tail_time
+        (self.processor)(&inputs_cast[..], &mut outputs_cast[..], param_getter)
     }
 }

@@ -41,7 +41,7 @@ impl AudioWorkletProcessor for MyProcessor {
         // passthrough with gain
         inputs.iter().zip(outputs).for_each(|(ic, oc)| {
             let gain = params.get("gain");
-            for ((is, os), g) in ic.iter().zip(oc.iter_mut()).zip(gain.into_iter().cycle()) {
+            for ((is, os), g) in ic.iter().zip(oc.iter_mut()).zip(gain.iter().cycle()) {
                 *os = is * g;
             }
         });
