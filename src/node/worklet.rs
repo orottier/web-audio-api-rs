@@ -23,7 +23,7 @@ impl<'a> AudioParamValues<'a> {
     }
 }
 
-pub trait AudioWorkletProcessor: Send {
+pub trait AudioWorkletProcessor {
     type ConstructorOptions: Send;
 
     fn construct(opts: Self::ConstructorOptions) -> Self;
@@ -174,13 +174,19 @@ impl AudioWorkletNode {
     }
 }
 
-type ProcessCallback = dyn for<'a, 'b> FnMut(&'b [&'a [f32]], &'b mut [&'a mut [f32]], AudioParamValues<'b>) -> bool
-    + Send;
+type ProcessCallback =
+    dyn for<'a, 'b> FnMut(&'b [&'a [f32]], &'b mut [&'a mut [f32]], AudioParamValues<'b>) -> bool;
 
 struct AudioWorkletRenderer {
     processor: Box<ProcessCallback>,
     audio_param_map: HashMap<String, AudioParamId>,
 }
+
+// SAFETY:
+// The concrete AudioWorkletProcessor is instantiated inside the render thread and won't be sent
+// elsewhere. TODO how to express this in safe rust? Can we remove the Send bound from
+// AudioProcessor?
+unsafe impl Send for AudioWorkletRenderer {}
 
 impl AudioProcessor for AudioWorkletRenderer {
     fn process(
@@ -207,5 +213,40 @@ impl AudioProcessor for AudioWorkletRenderer {
         };
 
         (self.processor)(&inputs_cast[..], &mut outputs_cast[..], param_getter)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::OfflineAudioContext;
+
+    #[test]
+    fn send_bound() {
+        #[derive(Default)]
+        struct MyProcessor {
+            _rc: std::rc::Rc<()>, // not send
+        }
+
+        impl AudioWorkletProcessor for MyProcessor {
+            type ConstructorOptions = ();
+
+            fn construct(_opts: Self::ConstructorOptions) -> Self {
+                Self::default()
+            }
+
+            fn process<'a, 'b>(
+                &mut self,
+                _inputs: &'b [&'a [f32]],
+                _outputs: &'b mut [&'a mut [f32]],
+                _params: AudioParamValues<'b>,
+            ) -> bool {
+                true
+            }
+        }
+
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let options = AudioWorkletNodeOptions::default();
+        let _worklet = AudioWorkletNode::new::<MyProcessor>(&context, options);
     }
 }
