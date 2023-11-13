@@ -24,9 +24,9 @@ impl<'a> AudioParamValues<'a> {
 }
 
 pub trait AudioWorkletProcessor {
-    type ConstructorOptions: Send;
+    type ProcessorOptions: Send;
 
-    fn construct(opts: Self::ConstructorOptions) -> Self;
+    fn constructor(opts: Self::ProcessorOptions) -> Self;
 
     fn parameter_descriptors() -> Vec<AudioParamDescriptor>
     where
@@ -114,7 +114,7 @@ impl AudioWorkletNode {
     /// options are both equal to zero.
     pub fn new<P: AudioWorkletProcessor + 'static>(
         context: &impl BaseAudioContext,
-        options: AudioWorkletNodeOptions<P::ConstructorOptions>,
+        options: AudioWorkletNodeOptions<P::ProcessorOptions>,
     ) -> Self {
         context.register(move |registration| {
             let AudioWorkletNodeOptions {
@@ -160,7 +160,7 @@ impl AudioWorkletNode {
                 processor: Box::new(move |s, i, o, p| {
                     if proc.is_none() {
                         let opts = processor_options.take().unwrap();
-                        proc = Some(P::construct(opts));
+                        proc = Some(P::constructor(opts));
                     }
                     proc.as_mut().unwrap().process(s, i, o, p)
                 }),
@@ -235,9 +235,9 @@ mod tests {
         }
 
         impl AudioWorkletProcessor for MyProcessor {
-            type ConstructorOptions = ();
+            type ProcessorOptions = ();
 
-            fn construct(_opts: Self::ConstructorOptions) -> Self {
+            fn constructor(_opts: Self::ProcessorOptions) -> Self {
                 Self::default()
             }
 

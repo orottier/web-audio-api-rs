@@ -11,9 +11,9 @@ use web_audio_api::{AudioParamDescriptor, AutomationRate};
 struct MyProcessor;
 
 impl AudioWorkletProcessor for MyProcessor {
-    type ConstructorOptions = ();
+    type ProcessorOptions = ();
 
-    fn construct(_opts: Self::ConstructorOptions) -> Self {
+    fn constructor(_opts: Self::ProcessorOptions) -> Self {
         Self {}
     }
 
