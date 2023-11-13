@@ -37,6 +37,7 @@ pub trait AudioWorkletProcessor {
 
     fn process<'a, 'b>(
         &mut self,
+        scope: &'b RenderScope,
         inputs: &'b [&'a [f32]],
         outputs: &'b mut [&'a mut [f32]],
         params: AudioParamValues<'b>,
@@ -156,12 +157,12 @@ impl AudioWorkletNode {
             let mut proc = None;
             let mut processor_options = Some(processor_options);
             let render = AudioWorkletRenderer {
-                processor: Box::new(move |i, o, p| {
+                processor: Box::new(move |s, i, o, p| {
                     if proc.is_none() {
                         let opts = processor_options.take().unwrap();
                         proc = Some(P::construct(opts));
                     }
-                    proc.as_mut().unwrap().process(i, o, p)
+                    proc.as_mut().unwrap().process(s, i, o, p)
                 }),
                 audio_param_map: processor_param_map,
             };
@@ -175,8 +176,12 @@ impl AudioWorkletNode {
     }
 }
 
-type ProcessCallback =
-    dyn for<'a, 'b> FnMut(&'b [&'a [f32]], &'b mut [&'a mut [f32]], AudioParamValues<'b>) -> bool;
+type ProcessCallback = dyn for<'a, 'b> FnMut(
+    &'b RenderScope,
+    &'b [&'a [f32]],
+    &'b mut [&'a mut [f32]],
+    AudioParamValues<'b>,
+) -> bool;
 
 struct AudioWorkletRenderer {
     processor: Box<ProcessCallback>,
@@ -195,7 +200,7 @@ impl AudioProcessor for AudioWorkletRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: crate::render::AudioParamValues<'_>,
-        _scope: &RenderScope,
+        scope: &RenderScope,
     ) -> bool {
         // only single input/output is supported now
 
@@ -213,7 +218,7 @@ impl AudioProcessor for AudioWorkletRenderer {
             map: &self.audio_param_map,
         };
 
-        (self.processor)(&inputs_cast[..], &mut outputs_cast[..], param_getter)
+        (self.processor)(scope, &inputs_cast[..], &mut outputs_cast[..], param_getter)
     }
 }
 
@@ -238,6 +243,7 @@ mod tests {
 
             fn process<'a, 'b>(
                 &mut self,
+                _scope: &'b RenderScope,
                 _inputs: &'b [&'a [f32]],
                 _outputs: &'b mut [&'a mut [f32]],
                 _params: AudioParamValues<'b>,

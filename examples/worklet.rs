@@ -5,7 +5,7 @@ use web_audio_api::node::worklet::{
     AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor,
 };
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
-
+use web_audio_api::render::RenderScope;
 use web_audio_api::{AudioParamDescriptor, AutomationRate};
 
 struct MyProcessor;
@@ -32,6 +32,7 @@ impl AudioWorkletProcessor for MyProcessor {
 
     fn process<'a, 'b>(
         &mut self,
+        _scope: &'b RenderScope,
         inputs: &'b [&'a [f32]],
         outputs: &'b mut [&'a mut [f32]],
         params: AudioParamValues<'b>,
