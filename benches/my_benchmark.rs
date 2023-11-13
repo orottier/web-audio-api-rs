@@ -64,6 +64,7 @@ pub fn bench_sine_gain() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let mut osc = ctx.create_oscillator();
     let gain = ctx.create_gain();
+    gain.gain().set_value(0.5); // avoid happy path
 
     osc.connect(&gain);
     gain.connect(&ctx.destination());
@@ -251,6 +252,11 @@ pub fn bench_sine_gain_with_worklet() {
 
     let options = AudioWorkletNodeOptions::default();
     let gain_worklet = AudioWorkletNode::new::<worklet::GainProcessor>(&ctx, options);
+    gain_worklet
+        .parameters()
+        .get("gain")
+        .unwrap()
+        .set_value(0.5);
 
     osc.connect(&gain_worklet);
     gain_worklet.connect(&ctx.destination());
