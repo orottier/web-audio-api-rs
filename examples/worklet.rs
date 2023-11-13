@@ -33,17 +33,20 @@ impl AudioWorkletProcessor for MyProcessor {
     fn process<'a, 'b>(
         &mut self,
         _scope: &'b RenderScope,
-        inputs: &'b [&'a [f32]],
-        outputs: &'b mut [&'a mut [f32]],
+        inputs: &'b [&'b [&'a [f32]]],
+        outputs: &'b mut [&'b mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
     ) -> bool {
         // passthrough with gain
-        inputs.iter().zip(outputs).for_each(|(ic, oc)| {
-            let gain = params.get("gain");
-            for ((is, os), g) in ic.iter().zip(oc.iter_mut()).zip(gain.iter().cycle()) {
-                *os = is * g;
-            }
-        });
+        inputs[0]
+            .iter()
+            .zip(outputs[0].iter_mut())
+            .for_each(|(ic, oc)| {
+                let gain = params.get("gain");
+                for ((is, os), g) in ic.iter().zip(oc.iter_mut()).zip(gain.iter().cycle()) {
+                    *os = is * g;
+                }
+            });
 
         false
     }

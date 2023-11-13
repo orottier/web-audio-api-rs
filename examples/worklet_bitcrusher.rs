@@ -69,8 +69,8 @@ impl AudioWorkletProcessor for BitCrusher {
     fn process<'a, 'b>(
         &mut self,
         _scope: &'b RenderScope,
-        inputs: &'b [&'a [f32]],
-        outputs: &'b mut [&'a mut [f32]],
+        inputs: &'b [&'b [&'a [f32]]],
+        outputs: &'b mut [&'b mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
     ) -> bool {
         let bit_depth = params.get("bit_depth");
@@ -78,10 +78,8 @@ impl AudioWorkletProcessor for BitCrusher {
 
         // if we are in ramp
         if bit_depth.len() > 1 {
-            inputs
-                .iter()
-                .zip(outputs)
-                .for_each(|(input_channel, output_channel)| {
+            inputs[0].iter().zip(outputs[0].iter_mut()).for_each(
+                |(input_channel, output_channel)| {
                     input_channel
                         .iter()
                         .zip(output_channel.iter_mut())
@@ -99,17 +97,16 @@ impl AudioWorkletProcessor for BitCrusher {
 
                             *o = self.last_sample_value;
                         });
-                });
+                },
+            );
         } else {
             // Because we know bitDepth is constant for this call,
             // we can lift the computation of step outside the loop,
             // saving many operations.
             let step = (0.5_f32).powf(bit_depth[0]);
 
-            inputs
-                .iter()
-                .zip(outputs)
-                .for_each(|(input_channel, output_channel)| {
+            inputs[0].iter().zip(outputs[0].iter_mut()).for_each(
+                |(input_channel, output_channel)| {
                     input_channel
                         .iter()
                         .zip(output_channel.iter_mut())
@@ -124,7 +121,8 @@ impl AudioWorkletProcessor for BitCrusher {
 
                             *o = self.last_sample_value;
                         });
-                });
+                },
+            );
         }
 
         false

@@ -3,12 +3,9 @@ use crate::context::AudioParamId;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioProcessor, AudioRenderQuantum, RenderScope};
-use crate::MAX_CHANNELS;
 
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
-
-use arrayvec::ArrayVec;
 
 pub struct AudioParamValues<'a> {
     values: crate::render::AudioParamValues<'a>,
@@ -38,8 +35,8 @@ pub trait AudioWorkletProcessor {
     fn process<'a, 'b>(
         &mut self,
         scope: &'b RenderScope,
-        inputs: &'b [&'a [f32]],
-        outputs: &'b mut [&'a mut [f32]],
+        inputs: &'b [&'b [&'a [f32]]],
+        outputs: &'b mut [&'b mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
     ) -> bool;
 }
@@ -178,8 +175,8 @@ impl AudioWorkletNode {
 
 type ProcessCallback = dyn for<'a, 'b> FnMut(
     &'b RenderScope,
-    &'b [&'a [f32]],
-    &'b mut [&'a mut [f32]],
+    &'b [&'b [&'a [f32]]],
+    &'b mut [&'b mut [&'a mut [f32]]],
     AudioParamValues<'b>,
 ) -> bool;
 
@@ -202,23 +199,55 @@ impl AudioProcessor for AudioWorkletRenderer {
         params: crate::render::AudioParamValues<'_>,
         scope: &RenderScope,
     ) -> bool {
-        // only single input/output is supported now
-
-        let inputs_cast: ArrayVec<&[f32], MAX_CHANNELS> =
-            inputs[0].channels().iter().map(|c| c.as_ref()).collect();
-
-        let mut outputs_cast: ArrayVec<&mut [f32], MAX_CHANNELS> = outputs[0]
-            .channels_mut()
-            .iter_mut()
-            .map(|c| c.deref_mut())
+        // Bear with me, to construct a &[&[&[f32]]] we first build a backing vector of all the
+        // individual sample slices. Then we chop it up to get to the right sub-slice structure.
+        let inputs_flat: Vec<&[f32]> = inputs
+            .iter()
+            .flat_map(|input| input.channels())
+            .map(|input_channel| input_channel.as_ref())
             .collect();
+
+        let mut inputs_flat = &inputs_flat[..];
+        let mut inputs_grouped: Vec<&[&[f32]]> = vec![];
+        for input in inputs {
+            let c = input.number_of_channels();
+            let (left, right) = inputs_flat.split_at(c);
+            inputs_grouped.push(left);
+            inputs_flat = right;
+        }
+
+        // Collect the output channel counts beforehand, because we are taking a mutable reference
+        // right after this snippet and it won't longer be possible.
+        let output_channels: Vec<_> = outputs
+            .iter()
+            .map(AudioRenderQuantum::number_of_channels)
+            .collect();
+
+        let mut outputs_flat: Vec<&mut [f32]> = outputs
+            .iter_mut()
+            .flat_map(|output| output.channels_mut())
+            .map(|output_channel| output_channel.deref_mut())
+            .collect();
+
+        let mut outputs_flat = &mut outputs_flat[..];
+        let mut outputs_grouped: Vec<&mut [&mut [f32]]> = vec![];
+        for c in output_channels.into_iter() {
+            let (left, right) = outputs_flat.split_at_mut(c);
+            outputs_grouped.push(left);
+            outputs_flat = right;
+        }
 
         let param_getter = AudioParamValues {
             values: params,
             map: &self.audio_param_map,
         };
 
-        (self.processor)(scope, &inputs_cast[..], &mut outputs_cast[..], param_getter)
+        (self.processor)(
+            scope,
+            &inputs_grouped[..],
+            &mut outputs_grouped[..],
+            param_getter,
+        )
     }
 }
 
@@ -244,8 +273,8 @@ mod tests {
             fn process<'a, 'b>(
                 &mut self,
                 _scope: &'b RenderScope,
-                _inputs: &'b [&'a [f32]],
-                _outputs: &'b mut [&'a mut [f32]],
+                _inputs: &'b [&'b [&'a [f32]]],
+                _outputs: &'b mut [&'b mut [&'a mut [f32]]],
                 _params: AudioParamValues<'b>,
             ) -> bool {
                 true
