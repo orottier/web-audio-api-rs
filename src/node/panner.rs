@@ -504,7 +504,15 @@ impl PannerNode {
         self.ref_distance
     }
 
+    /// Set the refDistance attribute
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided value is negative.
     pub fn set_ref_distance(&mut self, value: f64) {
+        if value < 0. {
+            panic!("RangeError - refDistance cannot be negative");
+        }
         self.ref_distance = value;
         self.registration
             .post_message(ControlMessage::RefDistance(value));
@@ -514,7 +522,15 @@ impl PannerNode {
         self.max_distance
     }
 
+    /// Set the maxDistance attribute
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided value is negative.
     pub fn set_max_distance(&mut self, value: f64) {
+        if value < 0. {
+            panic!("RangeError - maxDistance cannot be negative");
+        }
         self.max_distance = value;
         self.registration
             .post_message(ControlMessage::MaxDistance(value));
@@ -524,7 +540,15 @@ impl PannerNode {
         self.rolloff_factor
     }
 
+    /// Set the rolloffFactor attribute
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided value is negative.
     pub fn set_rolloff_factor(&mut self, value: f64) {
+        if value < 0. {
+            panic!("RangeError - rolloffFactor cannot be negative");
+        }
         self.rolloff_factor = value;
         self.registration
             .post_message(ControlMessage::RollOffFactor(value));
@@ -554,7 +578,16 @@ impl PannerNode {
         self.cone_outer_gain
     }
 
+    /// Set the coneOuterGain attribute
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided value is not in the range [0, 1]
     pub fn set_cone_outer_gain(&mut self, value: f64) {
+        #[allow(clippy::manual_range_contains)]
+        if value < 0. || value > 1. {
+            panic!("InvalidStateError - coneOuterGain must be in the range [0, 1]");
+        }
         self.cone_outer_gain = value;
         self.registration
             .post_message(ControlMessage::ConeOuterGain(value));
@@ -862,11 +895,11 @@ impl PannerRenderer {
     fn dist_gain(&self, source_position: [f32; 3], listener_position: [f32; 3]) -> f32 {
         let distance_model = self.distance_model;
         let ref_distance = self.ref_distance;
-        let rolloff_factor = self.rolloff_factor;
         let distance = crate::spatial::distance(source_position, listener_position) as f64;
 
         let dist_gain = match distance_model {
             DistanceModelType::Linear => {
+                let rolloff_factor = self.rolloff_factor.clamp(0., 1.);
                 let max_distance = self.max_distance;
                 let d2ref = ref_distance.min(max_distance);
                 let d2max = ref_distance.max(max_distance);
@@ -874,6 +907,7 @@ impl PannerRenderer {
                 1. - rolloff_factor * (d_clamped - d2ref) / (d2max - d2ref)
             }
             DistanceModelType::Inverse => {
+                let rolloff_factor = self.rolloff_factor.max(0.);
                 if distance > 0. {
                     ref_distance
                         / (ref_distance
@@ -883,6 +917,7 @@ impl PannerRenderer {
                 }
             }
             DistanceModelType::Exponential => {
+                let rolloff_factor = self.rolloff_factor.max(0.);
                 (distance.max(ref_distance) / ref_distance).powf(-rolloff_factor)
             }
         };
