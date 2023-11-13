@@ -988,6 +988,45 @@ mod tests {
     }
 
     #[test]
+    fn test_equal_power_azimuth() {
+        let sample_rate = 44100.;
+        let length = RENDER_QUANTUM_SIZE;
+        let context = OfflineAudioContext::new(2, length, sample_rate);
+
+        // 128 input samples of value 1.
+        let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
+        let mut src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        src.set_buffer(input);
+        src.start();
+
+        let options = PannerOptions {
+            panning_model: PanningModelType::EqualPower,
+            ..PannerOptions::default()
+        };
+        let panner = PannerNode::new(&context, options);
+        assert_eq!(panner.panning_model(), PanningModelType::EqualPower);
+        panner.position_y().set_value(1.); // sound comes from above
+
+        src.connect(&panner);
+        panner.connect(&context.destination());
+
+        let output = context.start_rendering_sync();
+        let sqrt2 = vec![(1.0f32 / 2.).sqrt(); RENDER_QUANTUM_SIZE];
+
+        // assert both ears receive equal volume
+        assert_float_eq!(
+            output.get_channel_data(0)[..128],
+            &sqrt2[..],
+            abs_all <= 1E-6
+        );
+        assert_float_eq!(
+            output.get_channel_data(1)[..128],
+            &sqrt2[..],
+            abs_all <= 1E-6
+        );
+    }
+
+    #[test]
     fn test_hrtf() {
         let sample_rate = 44100.;
         let length = RENDER_QUANTUM_SIZE * 4;
