@@ -60,6 +60,8 @@ pub struct AudioWorkletNodeOptions<C> {
     /// This is a list of user-defined key-value pairs that are used to set the initial value of an
     /// AudioParam with the matched name in the AudioWorkletNode.
     pub parameter_data: HashMap<String, f64>,
+    /// This holds any user-defined data that may be used to initialize custom properties in an
+    /// AudioWorkletProcessor instance that is associated with the AudioWorkletNode.
     pub processor_options: C,
     pub channel_config: ChannelConfigOptions,
 }
@@ -117,7 +119,7 @@ impl AudioWorkletNode {
             let AudioWorkletNodeOptions {
                 number_of_inputs,
                 number_of_outputs,
-                output_channel_count: _,
+                output_channel_count,
                 parameter_data,
                 processor_options,
                 channel_config,
@@ -127,7 +129,24 @@ impl AudioWorkletNode {
                 panic!("NotSupportedError: number of inputs and outputs cannot both be zero")
             }
 
-            // todo handle output_channel_count
+            let output_channel_count = if output_channel_count.is_empty() {
+                if number_of_inputs == 1 && number_of_outputs == 1 {
+                    vec![] // special case
+                } else {
+                    vec![1; number_of_outputs]
+                }
+            } else {
+                output_channel_count
+                    .iter()
+                    .copied()
+                    .for_each(crate::assert_valid_number_of_channels);
+                if output_channel_count.len() != number_of_outputs {
+                    panic!(
+                        "IndexSizeError: outputChannelCount.length should equal numberOfOutputs"
+                    );
+                }
+                output_channel_count
+            };
 
             // Setup audio params, set initial values when supplied via parameter_data
             let mut node_param_map = HashMap::new();
@@ -162,6 +181,7 @@ impl AudioWorkletNode {
                     proc.as_mut().unwrap().process(s, i, o, p)
                 }),
                 audio_param_map: processor_param_map,
+                output_channel_count,
             };
 
             (node, Box::new(render))
@@ -183,6 +203,7 @@ type ProcessCallback = dyn for<'a, 'b> FnMut(
 struct AudioWorkletRenderer {
     processor: Box<ProcessCallback>,
     audio_param_map: HashMap<String, AudioParamId>,
+    output_channel_count: Vec<usize>,
 }
 
 // SAFETY:
@@ -216,12 +237,24 @@ impl AudioProcessor for AudioWorkletRenderer {
             inputs_flat = right;
         }
 
-        // Collect the output channel counts beforehand, because we are taking a mutable reference
-        // right after this snippet and it won't longer be possible.
-        let output_channels: Vec<_> = outputs
+        // Set the proper channel count for the outputs
+        if self.output_channel_count.is_empty() {
+            // special case - single input/output - inherit channel count from input
+            outputs[0].set_number_of_channels(inputs[0].number_of_channels());
+        } else {
+            outputs
+                .iter_mut()
+                .zip(self.output_channel_count.iter())
+                .for_each(|(output, &channel_count)| output.set_number_of_channels(channel_count));
+        }
+
+        // Create an iterator for the output channel counts without allocating, handling also the
+        // case where self.output_channel_count is empty.
+        let output_channel_count = self
+            .output_channel_count
             .iter()
-            .map(AudioRenderQuantum::number_of_channels)
-            .collect();
+            .copied()
+            .chain(std::iter::once(inputs[0].number_of_channels()));
 
         let mut outputs_flat: Vec<&mut [f32]> = outputs
             .iter_mut()
@@ -231,7 +264,7 @@ impl AudioProcessor for AudioWorkletRenderer {
 
         let mut outputs_flat = &mut outputs_flat[..];
         let mut outputs_grouped: Vec<&mut [&mut [f32]]> = vec![];
-        for c in output_channels.into_iter() {
+        for c in output_channel_count {
             let (left, right) = outputs_flat.split_at_mut(c);
             outputs_grouped.push(left);
             outputs_flat = right;
