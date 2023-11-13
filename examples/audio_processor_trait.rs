@@ -63,6 +63,7 @@ impl WhiteNoiseNode {
         context.register(move |registration| {
             // setup the amplitude audio param
             let param_opts = AudioParamDescriptor {
+                name: String::from("amplitude"),
                 min_value: 0.,
                 max_value: 1.,
                 default_value: 1.,

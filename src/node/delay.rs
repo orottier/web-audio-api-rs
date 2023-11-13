@@ -219,6 +219,7 @@ impl DelayNode {
         let node = context.register(move |writer_registration| {
             let node = context.register(move |reader_registration| {
                 let param_opts = AudioParamDescriptor {
+                    name: String::new(),
                     min_value: 0.,
                     max_value: max_delay_time as f32,
                     default_value: 0.,

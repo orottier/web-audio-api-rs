@@ -17,19 +17,17 @@ impl AudioWorkletProcessor for MyProcessor {
         Self {}
     }
 
-    fn parameter_descriptors() -> Vec<(String, AudioParamDescriptor)>
+    fn parameter_descriptors() -> Vec<AudioParamDescriptor>
     where
         Self: Sized,
     {
-        vec![(
-            String::from("gain"),
-            AudioParamDescriptor {
-                min_value: f32::MIN,
-                max_value: f32::MAX,
-                default_value: 1.,
-                automation_rate: AutomationRate::A,
-            },
-        )]
+        vec![AudioParamDescriptor {
+            name: String::from("gain"),
+            min_value: f32::MIN,
+            max_value: f32::MAX,
+            default_value: 1.,
+            automation_rate: AutomationRate::A,
+        }]
     }
 
     fn process<'a, 'b>(

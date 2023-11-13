@@ -28,7 +28,7 @@ pub trait AudioWorkletProcessor {
 
     fn construct(opts: Self::ConstructorOptions) -> Self;
 
-    fn parameter_descriptors() -> Vec<(String, AudioParamDescriptor)>
+    fn parameter_descriptors() -> Vec<AudioParamDescriptor>
     where
         Self: Sized,
     {
@@ -134,7 +134,8 @@ impl AudioWorkletNode {
             // Setup audio params, set initial values when supplied via parameter_data
             let mut node_param_map = HashMap::new();
             let mut processor_param_map = HashMap::new();
-            for (name, param_descriptor) in P::parameter_descriptors() {
+            for mut param_descriptor in P::parameter_descriptors() {
+                let name = std::mem::take(&mut param_descriptor.name);
                 let (param, proc) = context.create_audio_param(param_descriptor, &registration);
                 if let Some(value) = parameter_data.get(&name) {
                     param.set_value(*value as f32); // mismatch in spec f32 vs f64

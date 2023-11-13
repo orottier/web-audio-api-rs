@@ -195,6 +195,7 @@ impl OscillatorNode {
 
             // frequency audio parameter
             let freq_param_options = AudioParamDescriptor {
+                name: String::new(),
                 min_value: -nyquist,
                 max_value: nyquist,
                 default_value: 440.,
@@ -205,6 +206,7 @@ impl OscillatorNode {
 
             // detune audio parameter
             let det_param_options = AudioParamDescriptor {
+                name: String::new(),
                 min_value: -153_600.,
                 max_value: 153_600.,
                 default_value: 0.,

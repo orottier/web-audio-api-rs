@@ -131,6 +131,7 @@ impl DynamicsCompressorNode {
             // attack, knee, ratio, release and threshold have automation rate constraints
             // https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints
             let attack_param_opts = AudioParamDescriptor {
+                name: String::new(),
                 min_value: 0.,
                 max_value: 1.,
                 default_value: 0.003,
@@ -142,6 +143,7 @@ impl DynamicsCompressorNode {
             attack_param.set_value(options.attack);
 
             let knee_param_opts = AudioParamDescriptor {
+                name: String::new(),
                 min_value: 0.,
                 max_value: 40.,
                 default_value: 30.,
@@ -153,6 +155,7 @@ impl DynamicsCompressorNode {
             knee_param.set_value(options.knee);
 
             let ratio_param_opts = AudioParamDescriptor {
+                name: String::new(),
                 min_value: 1.,
                 max_value: 20.,
                 default_value: 12.,
@@ -164,6 +167,7 @@ impl DynamicsCompressorNode {
             ratio_param.set_value(options.ratio);
 
             let release_param_opts = AudioParamDescriptor {
+                name: String::new(),
                 min_value: 0.,
                 max_value: 1.,
                 default_value: 0.25,
@@ -175,6 +179,7 @@ impl DynamicsCompressorNode {
             release_param.set_value(options.release);
 
             let threshold_param_opts = AudioParamDescriptor {
+                name: String::new(),
                 min_value: -100.,
                 max_value: 0.,
                 default_value: -24.,
