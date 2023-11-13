@@ -5,19 +5,36 @@ use web_audio_api::node::worklet::{
     AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor,
 };
 use web_audio_api::node::{
-    AudioNode, AudioScheduledSourceNode, GainNode, GainOptions, OscillatorNode, OscillatorOptions,
+    AudioNode, AudioScheduledSourceNode, OscillatorNode, OscillatorOptions, OscillatorType,
 };
 use web_audio_api::render::RenderScope;
 use web_audio_api::{AudioParamDescriptor, AutomationRate};
 
-// https://webaudio.github.io/web-audio-api/#the-bitcrusher-node
+// AudioWorkletNode example - BitCrusher
+//
+// `cargo run --release --example worklet_bitcrusher`
+//
+// If you are on Linux and use ALSA as audio backend backend, you might want to run
+// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
+// increase the buffer size to 1024
+//
+// `WEB_AUDIO_LATENCY=playback cargo run --release --example worklet_bitcrusher`
+//
+// implementation from:
+// https://webaudio.github.io/web-audio-api/#the-bitCrusher-node
+//
+// example usage from:
+// https://github.com/GoogleChromeLabs/web-audio-samples/blob/main/src/audio-worklet/basic/bit-crusher/main.js
+//
+// online demo:
+// https://googlechromelabs.github.io/web-audio-samples/audio-worklet/basic/bit-crusher/
 
-struct Bitcrusher {
+struct BitCrusher {
     phase: f32,
     last_sample_value: f32,
 }
 
-impl AudioWorkletProcessor for Bitcrusher {
+impl AudioWorkletProcessor for BitCrusher {
     type ProcessorOptions = ();
 
     fn parameter_descriptors() -> Vec<AudioParamDescriptor>
@@ -114,15 +131,6 @@ impl AudioWorkletProcessor for Bitcrusher {
     }
 }
 
-// AudioWorkletNode example - Bitcrusher
-//
-// `cargo run --release --example worklet_bitcrusher`
-//
-// If you are on Linux and use ALSA as audio backend backend, you might want to run
-// the example with the `WEB_AUDIO_LATENCY=playback ` env variable which will
-// increase the buffer size to 1024
-//
-// `WEB_AUDIO_LATENCY=playback cargo run --release --example worklet`
 fn main() {
     env_logger::init();
 
@@ -137,21 +145,27 @@ fn main() {
     });
 
     let mut osc = OscillatorNode::new(&context, OscillatorOptions::default());
-    let gain = GainNode::new(&context, GainOptions::default());
 
-    let mut options = AudioWorkletNodeOptions::default();
-    options
-        .parameter_data
-        .insert(String::from("bit_depth"), 4.0);
+    let options = AudioWorkletNodeOptions::default();
+    let bit_crusher = AudioWorkletNode::new::<BitCrusher>(&context, options);
 
-    let bitcrusher = AudioWorkletNode::new::<Bitcrusher>(&context, options);
+    let param_bit_depth = bit_crusher.parameters().get("bit_depth").unwrap();
+    let param_reduction = bit_crusher.parameters().get("frequency_reduction").unwrap();
 
-    osc.connect(&bitcrusher)
-        .connect(&gain)
-        .connect(&context.destination());
+    osc.set_type(OscillatorType::Sawtooth);
+    osc.frequency().set_value(5000.);
+    param_bit_depth.set_value_at_time(1., 0.);
+
+    osc.connect(&bit_crusher).connect(&context.destination());
+
+    // `frequencyReduction` parameters will be automated and changing over time.
+    // Thus its parameter array will have 128 values.
+    param_reduction.set_value_at_time(0.01, 0.);
+    param_reduction.linear_ramp_to_value_at_time(0.1, 4.);
+    param_reduction.exponential_ramp_to_value_at_time(0.01, 8.);
+
     osc.start();
+    osc.stop_at(8.);
 
-    loop {
-        std::thread::sleep(std::time::Duration::from_millis(1000));
-    }
+    std::thread::sleep(std::time::Duration::from_millis(8000));
 }
