@@ -158,8 +158,6 @@ fn main() {
 
     osc.connect(&bit_crusher).connect(&context.destination());
 
-    // `frequencyReduction` parameters will be automated and changing over time.
-    // Thus its parameter array will have 128 values.
     param_reduction.set_value_at_time(0.01, 0.);
     param_reduction.linear_ramp_to_value_at_time(0.1, 4.);
     param_reduction.exponential_ramp_to_value_at_time(0.01, 8.);
