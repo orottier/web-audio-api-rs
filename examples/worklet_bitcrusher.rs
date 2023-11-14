@@ -69,8 +69,8 @@ impl AudioWorkletProcessor for BitCrusher {
     fn process<'a, 'b>(
         &mut self,
         _scope: &'b RenderScope,
-        inputs: &'b [&'b [&'a [f32]]],
-        outputs: &'b mut [&'b mut [&'a mut [f32]]],
+        inputs: &'b [&'a [&'a [f32]]],
+        outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
     ) -> bool {
         let bit_depth = params.get("bit_depth");

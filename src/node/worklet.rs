@@ -1,8 +1,8 @@
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
-use crate::context::AudioParamId;
-use crate::context::{AudioContextRegistration, BaseAudioContext};
+use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::MAX_CHANNELS;
 
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
@@ -35,8 +35,8 @@ pub trait AudioWorkletProcessor {
     fn process<'a, 'b>(
         &mut self,
         scope: &'b RenderScope,
-        inputs: &'b [&'b [&'a [f32]]],
-        outputs: &'b mut [&'b mut [&'a mut [f32]]],
+        inputs: &'b [&'a [&'a [f32]]],
+        outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
     ) -> bool;
 }
@@ -172,6 +172,11 @@ impl AudioWorkletNode {
             // TODO make initialization of proc nicer
             let mut proc = None;
             let mut processor_options = Some(processor_options);
+            let number_of_output_channels = if output_channel_count.is_empty() {
+                MAX_CHANNELS
+            } else {
+                output_channel_count.iter().sum::<usize>()
+            };
             let render = AudioWorkletRenderer {
                 processor: Box::new(move |s, i, o, p| {
                     if proc.is_none() {
@@ -182,6 +187,10 @@ impl AudioWorkletNode {
                 }),
                 audio_param_map: processor_param_map,
                 output_channel_count,
+                inputs_flat: Vec::with_capacity(number_of_inputs * MAX_CHANNELS),
+                inputs_grouped: Vec::with_capacity(number_of_inputs),
+                outputs_flat: Vec::with_capacity(number_of_output_channels),
+                outputs_grouped: Vec::with_capacity(number_of_outputs),
             };
 
             (node, Box::new(render))
@@ -195,8 +204,8 @@ impl AudioWorkletNode {
 
 type ProcessCallback = dyn for<'a, 'b> FnMut(
     &'b RenderScope,
-    &'b [&'b [&'a [f32]]],
-    &'b mut [&'b mut [&'a mut [f32]]],
+    &'b [&'a [&'a [f32]]],
+    &'b mut [&'a mut [&'a mut [f32]]],
     AudioParamValues<'b>,
 ) -> bool;
 
@@ -204,6 +213,12 @@ struct AudioWorkletRenderer {
     processor: Box<ProcessCallback>,
     audio_param_map: HashMap<String, AudioParamId>,
     output_channel_count: Vec<usize>,
+
+    // Preallocated, reusable containers for channel data
+    inputs_flat: Vec<&'static [f32]>,
+    inputs_grouped: Vec<&'static [&'static [f32]]>,
+    outputs_flat: Vec<&'static mut [f32]>,
+    outputs_grouped: Vec<&'static mut [&'static mut [f32]]>,
 }
 
 // SAFETY:
@@ -222,18 +237,24 @@ impl AudioProcessor for AudioWorkletRenderer {
     ) -> bool {
         // Bear with me, to construct a &[&[&[f32]]] we first build a backing vector of all the
         // individual sample slices. Then we chop it up to get to the right sub-slice structure.
-        let inputs_flat: Vec<&[f32]> = inputs
+        inputs
             .iter()
             .flat_map(|input| input.channels())
             .map(|input_channel| input_channel.as_ref())
-            .collect();
+            // SAFETY
+            // We're upgrading the lifetime of the channel data to `static`. This is okay because
+            // `self.processor` is a HRTB (for <'a> Fn (&'a) -> ..) so the references cannot
+            // escape. The channel containers are cleared at the end of the `process` method.
+            .map(|input_channel| unsafe { std::mem::transmute(input_channel) })
+            .for_each(|c| self.inputs_flat.push(c));
 
-        let mut inputs_flat = &inputs_flat[..];
-        let mut inputs_grouped: Vec<&[&[f32]]> = vec![];
+        let mut inputs_flat = &self.inputs_flat[..];
         for input in inputs {
             let c = input.number_of_channels();
             let (left, right) = inputs_flat.split_at(c);
-            inputs_grouped.push(left);
+            // SAFETY - see comments above
+            let left_static = unsafe { std::mem::transmute(left) };
+            self.inputs_grouped.push(left_static);
             inputs_flat = right;
         }
 
@@ -256,17 +277,23 @@ impl AudioProcessor for AudioWorkletRenderer {
             .copied()
             .chain(std::iter::once(inputs[0].number_of_channels()));
 
-        let mut outputs_flat: Vec<&mut [f32]> = outputs
+        outputs
             .iter_mut()
             .flat_map(|output| output.channels_mut())
             .map(|output_channel| output_channel.deref_mut())
-            .collect();
+            // SAFETY
+            // We're upgrading the lifetime of the channel data to `static`. This is okay because
+            // `self.processor` is a HRTB (for <'a> Fn (&'a) -> ..) so the references cannot
+            // escape. The channel containers are cleared at the end of the `process` method.
+            .map(|output_channel| unsafe { std::mem::transmute(output_channel) })
+            .for_each(|c| self.outputs_flat.push(c));
 
-        let mut outputs_flat = &mut outputs_flat[..];
-        let mut outputs_grouped: Vec<&mut [&mut [f32]]> = vec![];
+        let mut outputs_flat = &mut self.outputs_flat[..];
         for c in output_channel_count {
             let (left, right) = outputs_flat.split_at_mut(c);
-            outputs_grouped.push(left);
+            // SAFETY - see comments above
+            let left_static = unsafe { std::mem::transmute(left) };
+            self.outputs_grouped.push(left_static);
             outputs_flat = right;
         }
 
@@ -275,12 +302,19 @@ impl AudioProcessor for AudioWorkletRenderer {
             map: &self.audio_param_map,
         };
 
-        (self.processor)(
+        let tail_time = (self.processor)(
             scope,
-            &inputs_grouped[..],
-            &mut outputs_grouped[..],
+            &self.inputs_grouped[..],
+            &mut self.outputs_grouped[..],
             param_getter,
-        )
+        );
+
+        self.inputs_grouped.clear();
+        self.inputs_flat.clear();
+        self.outputs_grouped.clear();
+        self.outputs_flat.clear();
+
+        tail_time
     }
 }
 
@@ -306,8 +340,8 @@ mod tests {
             fn process<'a, 'b>(
                 &mut self,
                 _scope: &'b RenderScope,
-                _inputs: &'b [&'b [&'a [f32]]],
-                _outputs: &'b mut [&'b mut [&'a mut [f32]]],
+                _inputs: &'b [&'a [&'a [f32]]],
+                _outputs: &'b mut [&'a mut [&'a mut [f32]]],
                 _params: AudioParamValues<'b>,
             ) -> bool {
                 true
