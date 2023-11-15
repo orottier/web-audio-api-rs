@@ -1,4 +1,4 @@
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioProcessor, AudioRenderQuantum, RenderScope};

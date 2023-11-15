@@ -1,4 +1,4 @@
-use web_audio_api::node::worklet::{AudioParamValues, AudioWorkletProcessor};
+use web_audio_api::worklet::{AudioParamValues, AudioWorkletProcessor};
 use web_audio_api::render::RenderScope;
 use web_audio_api::{AudioParamDescriptor, AutomationRate};
 

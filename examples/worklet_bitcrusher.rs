@@ -1,7 +1,7 @@
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
-use web_audio_api::node::worklet::{
+use web_audio_api::worklet::{
     AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor,
 };
 use web_audio_api::node::{
