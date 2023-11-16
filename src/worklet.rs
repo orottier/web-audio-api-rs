@@ -1,5 +1,10 @@
-use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
+//! User-defined audio nodes and processors
+//!
+//! See `examples/worklet.rs` or `examples/worklet_bitcrusher.rs` for an example implementation of
+//! user defined nodes.
+
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
+use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::MAX_CHANNELS;
@@ -7,12 +12,18 @@ use crate::MAX_CHANNELS;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
+/// Accessor for current [`AudioParam`] values
 pub struct AudioParamValues<'a> {
     values: crate::render::AudioParamValues<'a>,
     map: &'a HashMap<String, AudioParamId>,
 }
 
 impl<'a> AudioParamValues<'a> {
+    /// Get the computed values for the given [`AudioParam`]
+    ///
+    /// For k-rate params or if the (a-rate) parameter is constant for this block, it will provide
+    /// a slice of length 1. In other cases, i.e. a-rate param with scheduled automations it will
+    /// provide a slice of length equal to the render quantum size (default: 128)
     #[allow(clippy::missing_panics_doc)]
     pub fn get(&'a self, name: &str) -> impl Deref<Target = [f32]> + 'a {
         let id = self.map.get(name).unwrap();
@@ -20,11 +31,21 @@ impl<'a> AudioParamValues<'a> {
     }
 }
 
+/// Audio processing code that runs on the audio rendering thread.
 pub trait AudioWorkletProcessor {
+    /// Constructor options for the audio processor
+    ///
+    /// This holds any user-defined data that may be used to initialize custom
+    /// properties in an AudioWorkletProcessor instance that is associated with the
+    /// AudioWorkletNode.
     type ProcessorOptions: Send;
 
+    /// Constructor of the [`AudioWorkletProcessor`] instance (to be executed in the render thread)
     fn constructor(opts: Self::ProcessorOptions) -> Self;
 
+    /// List of [`AudioParam`]s for this audio processor
+    ///
+    /// A default implementation is provided that supplies no parameters.
     fn parameter_descriptors() -> Vec<AudioParamDescriptor>
     where
         Self: Sized,
@@ -32,6 +53,24 @@ pub trait AudioWorkletProcessor {
         vec![] // empty by default
     }
 
+    /// Audio processing function
+    ///
+    /// # Arguments
+    ///
+    /// - scope: AudioWorkletGlobalScope object with current frame, timestamp, sample rate
+    /// - inputs: readonly array of input buffers
+    /// - outputs: array of output buffers
+    /// - params: available [`AudioParam`] values for this processor
+    ///
+    /// # Return value
+    ///
+    /// The return value (bool) of this callback controls the lifetime of the processor.
+    ///
+    /// - return `false` when the node only transforms their inputs, and as such can be removed when
+    /// the inputs are disconnected (e.g. GainNode)
+    /// - return `true` for some time when the node still outputs after the inputs are disconnected
+    /// (e.g. DelayNode)
+    /// - return `true` as long as this node is a source of output (e.g. OscillatorNode)
     fn process<'a, 'b>(
         &mut self,
         scope: &'b RenderScope,
@@ -79,7 +118,16 @@ impl<C: Default> Default for AudioWorkletNodeOptions<C> {
     }
 }
 
-/// A user-defined AudioNode
+/// A user-defined AudioNode which lives in the control thread
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/AudioWorkletNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#AudioWorkletNode>
+///
+/// # Examples
+///
+/// - `cargo run --release --example worklet`
+/// - `cargo run --release --example worklet_bitcrusher`
+///
 pub struct AudioWorkletNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
@@ -107,10 +155,14 @@ impl AudioNode for AudioWorkletNode {
 }
 
 impl AudioWorkletNode {
+    /// Construct a new AudioWorkletNode
+    ///
     /// # Panics
     ///
-    /// This function panics when the number of inputs and the number of outputs of the supplied
-    /// options are both equal to zero.
+    /// This function panics when
+    /// - the number of inputs and the number of outputs of the supplied options are both equal to
+    /// zero.
+    /// - any of the output channel counts is equal to zero or larger than 32 ([`MAX_CHANNELS`])
     pub fn new<P: AudioWorkletProcessor + 'static>(
         context: &impl BaseAudioContext,
         options: AudioWorkletNodeOptions<P::ProcessorOptions>,

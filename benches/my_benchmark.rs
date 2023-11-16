@@ -11,8 +11,8 @@ use paste::paste;
 
 use web_audio_api::context::BaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
-use web_audio_api::worklet::{AudioWorkletNode, AudioWorkletNodeOptions};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, PanningModelType};
+use web_audio_api::worklet::{AudioWorkletNode, AudioWorkletNodeOptions};
 use web_audio_api::AudioBuffer;
 
 const SAMPLE_RATE: f32 = 48000.;
