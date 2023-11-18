@@ -487,6 +487,7 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::DESTINATION_NODE_ID;
 
     #[derive(Debug, Clone)]
     struct TestNode {
@@ -526,6 +527,18 @@ mod tests {
 
     fn add_audioparam(graph: &mut Graph, from: u64, to: u64) {
         graph.add_edge((AudioNodeId(from), 0), (AudioNodeId(to), usize::MAX));
+    }
+
+    // regression test for:
+    // https://github.com/orottier/web-audio-api-rs/issues/389
+    #[test]
+    fn test_active() {
+        let mut graph = Graph::new(llq::Queue::new().split().0);
+        assert!(!graph.is_active());
+        // graph is active only when AudioDestiantion is set up
+        let node = Box::new(TestNode { tail_time: false });
+        add_node(&mut graph, DESTINATION_NODE_ID.0, node.clone());
+        assert!(graph.is_active());
     }
 
     #[test]
