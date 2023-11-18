@@ -57,10 +57,10 @@ pub trait AudioWorkletProcessor {
     ///
     /// # Arguments
     ///
-    /// - scope: AudioWorkletGlobalScope object with current frame, timestamp, sample rate
     /// - inputs: readonly array of input buffers
     /// - outputs: array of output buffers
     /// - params: available [`AudioParam`] values for this processor
+    /// - scope: AudioWorkletGlobalScope object with current frame, timestamp, sample rate
     ///
     /// # Return value
     ///
@@ -73,10 +73,10 @@ pub trait AudioWorkletProcessor {
     /// - return `true` as long as this node is a source of output (e.g. OscillatorNode)
     fn process<'a, 'b>(
         &mut self,
-        scope: &'b RenderScope,
         inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
+        scope: &'b RenderScope,
     ) -> bool;
 }
 
@@ -230,12 +230,12 @@ impl AudioWorkletNode {
                 output_channel_count.iter().sum::<usize>()
             };
             let render = AudioWorkletRenderer {
-                processor: Box::new(move |s, i, o, p| {
+                processor: Box::new(move |i, o, p, s| {
                     if proc.is_none() {
                         let opts = processor_options.take().unwrap();
                         proc = Some(P::constructor(opts));
                     }
-                    proc.as_mut().unwrap().process(s, i, o, p)
+                    proc.as_mut().unwrap().process(i, o, p, s)
                 }),
                 audio_param_map: processor_param_map,
                 output_channel_count,
@@ -255,10 +255,10 @@ impl AudioWorkletNode {
 }
 
 type ProcessCallback = dyn for<'a, 'b> FnMut(
-    &'b RenderScope,
     &'b [&'a [&'a [f32]]],
     &'b mut [&'a mut [&'a mut [f32]]],
     AudioParamValues<'b>,
+    &'b RenderScope,
 ) -> bool;
 
 struct AudioWorkletRenderer {
@@ -355,10 +355,10 @@ impl AudioProcessor for AudioWorkletRenderer {
         };
 
         let tail_time = (self.processor)(
-            scope,
             &self.inputs_grouped[..],
             &mut self.outputs_grouped[..],
             param_getter,
+            scope,
         );
 
         self.inputs_grouped.clear();
@@ -391,10 +391,10 @@ mod tests {
 
             fn process<'a, 'b>(
                 &mut self,
-                _scope: &'b RenderScope,
                 _inputs: &'b [&'a [&'a [f32]]],
                 _outputs: &'b mut [&'a mut [&'a mut [f32]]],
                 _params: AudioParamValues<'b>,
+                _scope: &'b RenderScope,
             ) -> bool {
                 true
             }

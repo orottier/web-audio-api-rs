@@ -26,10 +26,10 @@ impl AudioWorkletProcessor for GainProcessor {
 
     fn process<'a, 'b>(
         &mut self,
-        _scope: &'b RenderScope,
         inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
+        _scope: &'b RenderScope,
     ) -> bool {
         let gain = params.get("gain");
         let io_zip = inputs[0].iter().zip(outputs[0].iter_mut());

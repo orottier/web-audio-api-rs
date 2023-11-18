@@ -32,10 +32,10 @@ impl AudioWorkletProcessor for MyProcessor {
 
     fn process<'a, 'b>(
         &mut self,
-        _scope: &'b RenderScope,
         inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
+        _scope: &'b RenderScope,
     ) -> bool {
         // passthrough with gain
         inputs[0]
