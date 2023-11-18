@@ -112,7 +112,7 @@ impl IndexMut<AudioNodeId> for NodeCollection {
 mod tests {
     use super::*;
 
-    // regression tests for:
+    // regression test for:
     // https://github.com/orottier/web-audio-api-rs/issues/389
     #[test]
     fn test_empty() {
