@@ -172,6 +172,7 @@ impl AudioBufferSourceNode {
             // these parameters can't be changed to a-rate
             // @see - <https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints>
             let detune_param_options = AudioParamDescriptor {
+                name: String::new(),
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 0.,
@@ -183,6 +184,7 @@ impl AudioBufferSourceNode {
             d_param.set_value(detune);
 
             let playback_rate_param_options = AudioParamDescriptor {
+                name: String::new(),
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,

@@ -175,6 +175,7 @@ impl StereoPannerNode {
             assert_valid_channel_count(options.channel_config.count);
 
             let pan_options = AudioParamDescriptor {
+                name: String::new(),
                 min_value: -1.,
                 max_value: 1.,
                 default_value: 0.,

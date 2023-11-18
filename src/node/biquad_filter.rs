@@ -351,6 +351,7 @@ impl BiquadFilterNode {
             } = options;
 
             let q_param_options = AudioParamDescriptor {
+                name: String::new(),
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,
@@ -360,6 +361,7 @@ impl BiquadFilterNode {
             q_param.set_value(q);
 
             let detune_param_options = AudioParamDescriptor {
+                name: String::new(),
                 min_value: -153_600.,
                 max_value: 153_600.,
                 default_value: 0.,
@@ -369,6 +371,7 @@ impl BiquadFilterNode {
             d_param.set_value(detune);
 
             let freq_options = AudioParamDescriptor {
+                name: String::new(),
                 min_value: 0.,
                 max_value: sample_rate / 2.,
                 default_value: 350.,
@@ -378,6 +381,7 @@ impl BiquadFilterNode {
             f_param.set_value(frequency);
 
             let gain_options = AudioParamDescriptor {
+                name: String::new(),
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 0.,

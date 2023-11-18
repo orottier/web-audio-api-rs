@@ -89,6 +89,7 @@ mod media_element;
 pub use media_element::MediaElement;
 
 mod resampling;
+pub mod worklet;
 
 #[derive(Debug)]
 #[repr(transparent)]

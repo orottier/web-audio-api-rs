@@ -52,6 +52,7 @@ impl GainNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: GainOptions) -> Self {
         context.register(move |registration| {
             let param_opts = AudioParamDescriptor {
+                name: String::new(),
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,

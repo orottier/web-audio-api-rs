@@ -12,12 +12,15 @@ use paste::paste;
 use web_audio_api::context::BaseAudioContext;
 use web_audio_api::context::OfflineAudioContext;
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, PanningModelType};
+use web_audio_api::worklet::{AudioWorkletNode, AudioWorkletNodeOptions};
 use web_audio_api::AudioBuffer;
 
 const SAMPLE_RATE: f32 = 48000.;
 const DURATION: usize = 10;
 const SAMPLES: usize = SAMPLE_RATE as usize * DURATION;
 const SAMPLES_SHORT: usize = SAMPLE_RATE as usize; // only 1 second for heavy benchmarks
+
+mod worklet;
 
 /// Load an audio buffer and cache the result
 ///
@@ -61,6 +64,7 @@ pub fn bench_sine_gain() {
     let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let mut osc = ctx.create_oscillator();
     let gain = ctx.create_gain();
+    gain.gain().set_value(0.5); // avoid happy path
 
     osc.connect(&gain);
     gain.connect(&ctx.destination());
@@ -242,6 +246,26 @@ pub fn bench_hrtf_panners() {
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES_SHORT);
 }
 
+pub fn bench_sine_gain_with_worklet() {
+    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut osc = ctx.create_oscillator();
+
+    let options = AudioWorkletNodeOptions::default();
+    let gain_worklet = AudioWorkletNode::new::<worklet::GainProcessor>(&ctx, options);
+    gain_worklet
+        .parameters()
+        .get("gain")
+        .unwrap()
+        .set_value(0.5);
+
+    osc.connect(&gain_worklet);
+    gain_worklet.connect(&ctx.destination());
+
+    osc.start();
+
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
+}
+
 macro_rules! iai_or_criterion {
     ( $( $func:ident ),+ $(,)* ) => {
         #[cfg(feature = "iai")]
@@ -283,4 +307,5 @@ iai_or_criterion!(
     bench_stereo_panning_automation,
     bench_analyser_node,
     bench_hrtf_panners,
+    bench_sine_gain_with_worklet,
 );

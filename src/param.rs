@@ -139,6 +139,7 @@ impl AutomationRate {
 /// Options for constructing an [`AudioParam`]
 #[derive(Clone, Debug)]
 pub struct AudioParamDescriptor {
+    pub name: String,
     pub automation_rate: AutomationRate,
     pub default_value: f32,
     pub min_value: f32,
@@ -1604,6 +1605,7 @@ pub(crate) fn audio_param_pair(
         default_value,
         max_value,
         min_value,
+        ..
     } = descriptor;
 
     let shared_parts = Arc::new(AudioParamShared::new(default_value, automation_rate));
@@ -1693,6 +1695,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -1713,6 +1716,7 @@ mod tests {
             let context = OfflineAudioContext::new(1, 0, 48000.);
 
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: -10.,
@@ -1735,6 +1739,7 @@ mod tests {
             let context = OfflineAudioContext::new(1, 0, 48000.);
 
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -1760,6 +1765,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: -10.,
@@ -1786,6 +1792,7 @@ mod tests {
         {
             // events spread on several blocks
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: -10.,
@@ -1816,6 +1823,7 @@ mod tests {
     fn test_steps_k_rate() {
         let context = OfflineAudioContext::new(1, 0, 48000.);
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::K,
             default_value: 0.,
             min_value: -10.,
@@ -1843,6 +1851,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -1870,6 +1879,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -1899,6 +1909,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -1934,6 +1945,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -20.,
@@ -1975,6 +1987,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::K,
                 default_value: 0.,
                 min_value: -20.,
@@ -2001,6 +2014,7 @@ mod tests {
         {
             // finish in the middle of a block
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::K,
                 default_value: 0.,
                 min_value: -20.,
@@ -2030,6 +2044,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -2065,6 +2080,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -2100,6 +2116,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -2140,6 +2157,7 @@ mod tests {
         {
             // zero target
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2163,6 +2181,7 @@ mod tests {
         {
             // opposite signs
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: -1.,
@@ -2190,6 +2209,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 1.,
             min_value: 0.,
@@ -2204,6 +2224,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::K,
             default_value: 0.,
             min_value: 0.,
@@ -2246,6 +2267,7 @@ mod tests {
         {
             // zero target
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::K,
                 default_value: 0.,
                 min_value: 0.,
@@ -2266,6 +2288,7 @@ mod tests {
         {
             // opposite signs
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::K,
                 default_value: -1.,
                 min_value: -1.,
@@ -2289,6 +2312,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -2329,6 +2353,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2357,6 +2382,7 @@ mod tests {
         {
             // implicit SetValue if SetTarget is first event
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2384,6 +2410,7 @@ mod tests {
         {
             // start later in block with arbitrary values
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2414,6 +2441,7 @@ mod tests {
         {
             // handle time_constant == 0.
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2436,6 +2464,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2471,6 +2500,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2508,6 +2538,7 @@ mod tests {
     fn test_set_target_at_time_ends_at_threshold() {
         let context = OfflineAudioContext::new(1, 0, 48000.);
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -2539,6 +2570,7 @@ mod tests {
     fn test_set_target_at_time_waits_for_start_time() {
         let context = OfflineAudioContext::new(1, 0, 48000.);
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -2563,6 +2595,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2617,6 +2650,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::K,
                 default_value: 0.,
                 min_value: 0.,
@@ -2651,6 +2685,7 @@ mod tests {
     fn test_set_target_at_time_snap_to_value() {
         let context = OfflineAudioContext::new(1, 0, 48000.);
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -2692,6 +2727,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -2718,6 +2754,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2737,6 +2774,7 @@ mod tests {
         // ramp already started, go back to previous value
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2767,6 +2805,7 @@ mod tests {
         // @see - note in CancelScheduledValues insertion in timeline
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2785,6 +2824,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2814,6 +2854,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2842,6 +2883,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2883,6 +2925,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2904,6 +2947,7 @@ mod tests {
         {
             // cancel between two samples
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2929,6 +2973,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2962,6 +3007,7 @@ mod tests {
         {
             // cancel between 2 samples
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -2999,6 +3045,7 @@ mod tests {
 
         {
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -3021,6 +3068,7 @@ mod tests {
         {
             // sub-sample
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -3046,6 +3094,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -3073,6 +3122,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -3108,6 +3158,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 1.,
             min_value: 0.,
@@ -3130,6 +3181,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 1.,
             min_value: 0.,
@@ -3150,6 +3202,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: 0.,
@@ -3174,6 +3227,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: 0.,
             min_value: -10.,
@@ -3193,6 +3247,7 @@ mod tests {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::K,
             default_value: 0.,
             min_value: -10.,
@@ -3214,6 +3269,7 @@ mod tests {
             let context = OfflineAudioContext::new(1, 0, 48000.);
 
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -3252,6 +3308,7 @@ mod tests {
             let context = OfflineAudioContext::new(1, 0, 48000.);
 
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -3294,6 +3351,7 @@ mod tests {
             let context = OfflineAudioContext::new(1, 0, 48000.);
 
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -3323,6 +3381,7 @@ mod tests {
             let context = OfflineAudioContext::new(1, 0, 48000.);
 
             let opts = AudioParamDescriptor {
+                name: String::new(),
                 automation_rate: AutomationRate::A,
                 default_value: 0.,
                 min_value: 0.,
@@ -3363,6 +3422,7 @@ mod tests {
         let default = 2.;
 
         let opts = AudioParamDescriptor {
+            name: String::new(),
             automation_rate: AutomationRate::A,
             default_value: default,
             min_value: min,

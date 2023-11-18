@@ -119,6 +119,7 @@ impl ConstantSourceNode {
             let ConstantSourceOptions { offset } = options;
 
             let param_options = AudioParamDescriptor {
+                name: String::new(),
                 min_value: f32::MIN,
                 max_value: f32::MAX,
                 default_value: 1.,

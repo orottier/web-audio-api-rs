@@ -14,6 +14,7 @@ use std::sync::OnceLock;
 
 /// AudioParam settings for the cartesian coordinates
 pub(crate) const PARAM_OPTS: AudioParamDescriptor = AudioParamDescriptor {
+    name: String::new(),
     min_value: f32::MIN,
     max_value: f32::MAX,
     default_value: 0.,

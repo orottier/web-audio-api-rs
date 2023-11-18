@@ -49,6 +49,7 @@ mod stereo_panner;
 pub use stereo_panner::*;
 mod waveshaper;
 pub use waveshaper::*;
+//use worklet::*;
 
 pub(crate) const TABLE_LENGTH_USIZE: usize = 8192;
 pub(crate) const TABLE_LENGTH_BY_4_USIZE: usize = TABLE_LENGTH_USIZE / 4;
