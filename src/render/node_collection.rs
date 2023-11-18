@@ -107,3 +107,16 @@ impl IndexMut<AudioNodeId> for NodeCollection {
             .unwrap_or_else(|| panic!("Index {} for dropped Node in NodeCollection", index.0))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // regression tests for:
+    // https://github.com/orottier/web-audio-api-rs/issues/389
+    #[test]
+    fn test_empty() {
+        let nodes = NodeCollection::new();
+        assert!(nodes.is_empty());
+    }
+}
