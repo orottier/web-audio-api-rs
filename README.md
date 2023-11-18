@@ -90,6 +90,10 @@ flag. Please note that `cmake` must be installed locally in order to run
 | cpal-asio      | ASIO see <https://github.com/rustaudio/cpal#asio-on-windows>   |
 | cubeb          | PulseAudio, AudioUnit, WASAPI, OpenSL, AAudio, sndio, Sun, OSS |
 
+A WebAssembly backend is currently not available. Please read up on the [wasm
+tracking issue](https://github.com/orottier/web-audio-api-rs/issues/265) for
+alternative solutions.
+
 ### Notes for Linux users
 
 Using the library on Linux with the ALSA backend might lead to unexpected
