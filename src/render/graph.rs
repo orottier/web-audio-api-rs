@@ -535,7 +535,7 @@ mod tests {
     fn test_active() {
         let mut graph = Graph::new(llq::Queue::new().split().0);
         assert!(!graph.is_active());
-        // graph is active only when AudioDestiantion is set up
+        // graph is active only when AudioDestination is set up
         let node = Box::new(TestNode { tail_time: false });
         add_node(&mut graph, DESTINATION_NODE_ID.0, node.clone());
         assert!(graph.is_active());
