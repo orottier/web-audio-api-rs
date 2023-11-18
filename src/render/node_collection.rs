@@ -1,4 +1,4 @@
-use crate::context::AudioNodeId;
+use crate::context::{AudioNodeId, DESTINATION_NODE_ID};
 use crate::render::graph::Node;
 
 use std::cell::RefCell;
@@ -17,8 +17,11 @@ impl NodeCollection {
         instance
     }
 
+    // NodeCollection is considered empty until the destination is set up
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
+        let destination_id = DESTINATION_NODE_ID.0 as usize;
+        self.nodes[destination_id].is_none()
     }
 
     #[inline(always)]
