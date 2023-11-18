@@ -15,7 +15,7 @@ pub use online::*;
 
 // magic node values
 /// Destination node id is always at index 0
-const DESTINATION_NODE_ID: AudioNodeId = AudioNodeId(0);
+pub(crate) const DESTINATION_NODE_ID: AudioNodeId = AudioNodeId(0);
 /// listener node id is always at index 1
 const LISTENER_NODE_ID: AudioNodeId = AudioNodeId(1);
 /// listener audio parameters ids are always at index 2 through 10

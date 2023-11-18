@@ -1,4 +1,4 @@
-use crate::context::AudioNodeId;
+use crate::context::{AudioNodeId, DESTINATION_NODE_ID};
 use crate::render::graph::Node;
 
 use std::cell::RefCell;
@@ -17,8 +17,11 @@ impl NodeCollection {
         instance
     }
 
+    // NodeCollection is considered empty until the destination is set up
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
+        let destination_id = DESTINATION_NODE_ID.0 as usize;
+        self.nodes[destination_id].is_none()
     }
 
     #[inline(always)]
@@ -102,5 +105,18 @@ impl IndexMut<AudioNodeId> for NodeCollection {
             .unwrap_or_else(|| panic!("Unexpected index {} for NodeCollection", index.0))
             .as_mut()
             .unwrap_or_else(|| panic!("Index {} for dropped Node in NodeCollection", index.0))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // regression test for:
+    // https://github.com/orottier/web-audio-api-rs/issues/389
+    #[test]
+    fn test_empty() {
+        let nodes = NodeCollection::new();
+        assert!(nodes.is_empty());
     }
 }
