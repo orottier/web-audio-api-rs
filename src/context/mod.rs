@@ -110,7 +110,7 @@ impl AudioContextRegistration {
             id: self.id,
             msg: llq::Node::new(Box::new(msg)),
         };
-        let _ = self.context.send_control_msg(wrapped);
+        self.context.send_control_msg(wrapped);
     }
 }
 

@@ -137,7 +137,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
                 self.inner.queued_audio_listener_msgs.lock().unwrap();
             queued_audio_listener_msgs.push(message);
         } else {
-            self.send_control_msg(message).unwrap();
+            self.send_control_msg(message);
             self.resolve_queued_control_msgs(id);
         }
 
@@ -255,11 +255,18 @@ impl ConcreteBaseAudioContext {
         base
     }
 
-    pub(crate) fn send_control_msg(
-        &self,
-        msg: ControlMessage,
-    ) -> Result<(), SendError<ControlMessage>> {
-        self.inner.render_channel.read().unwrap().send(msg)
+    /// Send a control message to the render thread
+    ///
+    /// When the render thread is closed or crashed, the message is discarded and a log warning is
+    /// emitted.
+    pub(crate) fn send_control_msg(&self, msg: ControlMessage) {
+        if self.state() != AudioContextState::Closed {
+            let result = self.inner.render_channel.read().unwrap().send(msg);
+            if result.is_err() {
+                self.set_state(AudioContextState::Closed);
+                log::warn!("Discarding control message - render thread is closed");
+            }
+        }
     }
 
     pub(crate) fn send_event(&self, msg: EventDispatch) -> Result<(), SendError<EventDispatch>> {
@@ -282,10 +289,7 @@ impl ConcreteBaseAudioContext {
 
         if !magic {
             let message = ControlMessage::FreeWhenFinished { id };
-
-            // Sending the message will fail when the render thread has already shut down.
-            // This is fine
-            let _r = self.send_control_msg(message);
+            self.send_control_msg(message);
         }
     }
 
@@ -294,10 +298,7 @@ impl ConcreteBaseAudioContext {
     pub fn mark_cycle_breaker(&self, reg: &AudioContextRegistration) {
         let id = reg.id();
         let message = ControlMessage::MarkCycleBreaker { id };
-
-        // Sending the message will fail when the render thread has already shut down.
-        // This is fine
-        let _r = self.send_control_msg(message);
+        self.send_control_msg(message);
     }
 
     /// `ChannelConfig` of the `AudioDestinationNode`
@@ -372,7 +373,7 @@ impl ConcreteBaseAudioContext {
         while i < queued.len() {
             if matches!(&queued[i], ControlMessage::ConnectNode {to, ..} if *to == id) {
                 let m = queued.remove(i);
-                self.send_control_msg(m).unwrap();
+                self.send_control_msg(m);
             } else {
                 i += 1;
             }
@@ -387,7 +388,7 @@ impl ConcreteBaseAudioContext {
             output,
             input,
         };
-        self.send_control_msg(message).unwrap();
+        self.send_control_msg(message);
     }
 
     /// Schedule a connection of an `AudioParam` to the `AudioNode` it belongs to
@@ -406,13 +407,13 @@ impl ConcreteBaseAudioContext {
     /// Disconnects all outputs of the audio node that go to a specific destination node.
     pub(crate) fn disconnect_from(&self, from: AudioNodeId, to: AudioNodeId) {
         let message = ControlMessage::DisconnectNode { from, to };
-        self.send_control_msg(message).unwrap();
+        self.send_control_msg(message);
     }
 
     /// Disconnects all outgoing connections from the audio node.
     pub(crate) fn disconnect(&self, from: AudioNodeId) {
         let message = ControlMessage::DisconnectAll { from };
-        self.send_control_msg(message).unwrap();
+        self.send_control_msg(message);
     }
 
     /// Connect the `AudioListener` to a `PannerNode`
@@ -426,7 +427,7 @@ impl ConcreteBaseAudioContext {
         let mut released = false;
         while let Some(message) = queued_audio_listener_msgs.pop() {
             // add the AudioListenerRenderer to the graph
-            self.send_control_msg(message).unwrap();
+            self.send_control_msg(message);
             released = true;
         }
 
