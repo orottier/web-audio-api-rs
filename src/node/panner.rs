@@ -759,7 +759,11 @@ impl AudioProcessor for PannerRenderer {
                 projected_source = [0., 0., 1.];
             }
 
-            // Only handle mono for now (todo issue #44)
+            // Currently, only mono-to-stereo panning is supported (todo issue #241).
+            // Stereo-to-stereo is typically implemented by using 2 HRTF-kernels, feeding each
+            // channels into their respective kernel, and summing the result per ear.  This will
+            // usually double the output volume as compared to mono-to-stereo.  Hence we double
+            // the input signal for stereo inputs to correct for our lack of implementation.
             *output = input.clone();
             let mut overall_gain_correction = 1.;
             if output.number_of_channels() == 2 {
