@@ -796,46 +796,54 @@ impl AudioProcessor for PannerRenderer {
                 && listener_up_z.len() == 1;
 
             if single_valued {
-                if input.number_of_channels() == 1 {
-                    *output = input.clone();
-                    output.mix(2, ChannelInterpretation::Speakers);
-                    let [left, right] = output.stereo_mut();
-                    std::iter::repeat(a_rate_params.next().unwrap())
-                        .zip(&mut left[..])
-                        .zip(&mut right[..])
-                        .for_each(|((p, l), r)| apply_mono_to_stereo_gain(p, l, r));
-                } else {
-                    output.set_number_of_channels(2);
-                    let [left, right] = output.stereo_mut();
-                    std::iter::repeat(a_rate_params.next().unwrap())
-                        .zip(input.channel_data(0).iter().copied())
-                        .zip(input.channel_data(1).iter().copied())
-                        .zip(&mut left[..])
-                        .zip(&mut right[..])
-                        .for_each(|((((p, il), ir), ol), or)| {
-                            apply_stereo_to_stereo_gain(p, il, ir, ol, or)
-                        });
+                match input.number_of_channels() {
+                    1 => {
+                        *output = input.clone();
+                        output.mix(2, ChannelInterpretation::Speakers);
+                        let [left, right] = output.stereo_mut();
+                        std::iter::repeat(a_rate_params.next().unwrap())
+                            .zip(&mut left[..])
+                            .zip(&mut right[..])
+                            .for_each(|((p, l), r)| apply_mono_to_stereo_gain(p, l, r));
+                    }
+                    2 => {
+                        output.set_number_of_channels(2);
+                        let [left, right] = output.stereo_mut();
+                        std::iter::repeat(a_rate_params.next().unwrap())
+                            .zip(input.channel_data(0).iter().copied())
+                            .zip(input.channel_data(1).iter().copied())
+                            .zip(&mut left[..])
+                            .zip(&mut right[..])
+                            .for_each(|((((p, il), ir), ol), or)| {
+                                apply_stereo_to_stereo_gain(p, il, ir, ol, or)
+                            });
+                    }
+                    _ => unreachable!(),
                 }
             } else {
-                if input.number_of_channels() == 1 {
-                    *output = input.clone();
-                    output.mix(2, ChannelInterpretation::Speakers);
-                    let [left, right] = output.stereo_mut();
-                    a_rate_params
-                        .zip(&mut left[..])
-                        .zip(&mut right[..])
-                        .for_each(|((p, l), r)| apply_mono_to_stereo_gain(p, l, r));
-                } else {
-                    output.set_number_of_channels(2);
-                    let [left, right] = output.stereo_mut();
-                    a_rate_params
-                        .zip(input.channel_data(0).iter().copied())
-                        .zip(input.channel_data(1).iter().copied())
-                        .zip(&mut left[..])
-                        .zip(&mut right[..])
-                        .for_each(|((((p, il), ir), ol), or)| {
-                            apply_stereo_to_stereo_gain(p, il, ir, ol, or)
-                        });
+                match input.number_of_channels() {
+                    1 => {
+                        *output = input.clone();
+                        output.mix(2, ChannelInterpretation::Speakers);
+                        let [left, right] = output.stereo_mut();
+                        a_rate_params
+                            .zip(&mut left[..])
+                            .zip(&mut right[..])
+                            .for_each(|((p, l), r)| apply_mono_to_stereo_gain(p, l, r));
+                    }
+                    2 => {
+                        output.set_number_of_channels(2);
+                        let [left, right] = output.stereo_mut();
+                        a_rate_params
+                            .zip(input.channel_data(0).iter().copied())
+                            .zip(input.channel_data(1).iter().copied())
+                            .zip(&mut left[..])
+                            .zip(&mut right[..])
+                            .for_each(|((((p, il), ir), ol), or)| {
+                                apply_stereo_to_stereo_gain(p, il, ir, ol, or)
+                            });
+                    }
+                    _ => unreachable!(),
                 }
             }
         }
