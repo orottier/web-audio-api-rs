@@ -648,15 +648,9 @@ impl AudioProcessor for PannerRenderer {
         params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
-        // single input/output node
+        // Single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
-
-        // pass through input
-        *output = input.clone();
-
-        // only handle mono for now (todo issue #44)
-        output.mix(1, ChannelInterpretation::Speakers);
 
         // early exit for silence
         if input.is_silent() {
@@ -667,14 +661,12 @@ impl AudioProcessor for PannerRenderer {
                 Some(hrtf_state) => hrtf_state.tail_time_samples() > self.tail_time_counter,
             };
             if !tail_time {
+                output.make_silent();
                 return false;
             }
 
             self.tail_time_counter += RENDER_QUANTUM_SIZE;
         }
-
-        // convert mono to identical stereo
-        output.mix(2, ChannelInterpretation::Speakers);
 
         // for borrow reasons, take the hrtf_state out of self
         let mut hrtf_state = self.hrtf_state.take();
@@ -767,51 +759,30 @@ impl AudioProcessor for PannerRenderer {
                 projected_source = [0., 0., 1.];
             }
 
+            // Only handle mono for now (todo issue #44)
+            *output = input.clone();
+            let mut overall_gain_correction = 1.;
+            if output.number_of_channels() == 2 {
+                overall_gain_correction *= 2.; // stereo-to-stereo panning typically doubles volume
+                output.mix(1, ChannelInterpretation::Speakers);
+            }
+
             let output_interleaved =
                 hrtf_state.process(output.channel_data(0), new_distance_gain, projected_source);
 
+            output.set_number_of_channels(2);
             let [left, right] = output.stereo_mut();
+
             output_interleaved
                 .iter()
                 .zip(&mut left[..])
                 .zip(&mut right[..])
                 .for_each(|((p, l), r)| {
-                    *l = p.0;
-                    *r = p.1;
+                    *l = overall_gain_correction * p.0;
+                    *r = overall_gain_correction * p.1;
                 });
         } else {
             // EqualPower panning
-            let [left, right] = output.stereo_mut();
-
-            // Closure to apply gain per stereo channel
-            let apply_stereo_gain =
-                |((spatial_params, l), r): ((SpatialParams, &mut f32), &mut f32)| {
-                    let SpatialParams {
-                        dist_gain,
-                        cone_gain,
-                        azimuth,
-                        ..
-                    } = spatial_params;
-
-                    // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
-                    let mut azimuth = azimuth.clamp(-180., 180.);
-
-                    // Then wrap to range [-90, 90].
-                    if azimuth < -90. {
-                        azimuth = -180. - azimuth;
-                    } else if azimuth > 90. {
-                        azimuth = 180. - azimuth;
-                    }
-
-                    // x is the horizontal plane orientation of the sound
-                    let x = (azimuth + 90.) / 180.;
-                    let gain_l = (x * PI / 2.).cos();
-                    let gain_r = (x * PI / 2.).sin();
-
-                    // multiply signal with gain per ear
-                    *l *= gain_l * dist_gain * cone_gain;
-                    *r *= gain_r * dist_gain * cone_gain;
-                };
 
             // Optimize for static Panner & Listener
             let single_valued = listener_position_x.len() == 1
@@ -823,16 +794,49 @@ impl AudioProcessor for PannerRenderer {
                 && listener_up_x.len() == 1
                 && listener_up_y.len() == 1
                 && listener_up_z.len() == 1;
+
             if single_valued {
-                std::iter::repeat(a_rate_params.next().unwrap())
-                    .zip(&mut left[..])
-                    .zip(&mut right[..])
-                    .for_each(apply_stereo_gain);
+                if input.number_of_channels() == 1 {
+                    *output = input.clone();
+                    output.mix(2, ChannelInterpretation::Speakers);
+                    let [left, right] = output.stereo_mut();
+                    std::iter::repeat(a_rate_params.next().unwrap())
+                        .zip(&mut left[..])
+                        .zip(&mut right[..])
+                        .for_each(|((p, l), r)| apply_mono_to_stereo_gain(p, l, r));
+                } else {
+                    output.set_number_of_channels(2);
+                    let [left, right] = output.stereo_mut();
+                    std::iter::repeat(a_rate_params.next().unwrap())
+                        .zip(input.channel_data(0).iter().copied())
+                        .zip(input.channel_data(1).iter().copied())
+                        .zip(&mut left[..])
+                        .zip(&mut right[..])
+                        .for_each(|((((p, il), ir), ol), or)| {
+                            apply_stereo_to_stereo_gain(p, il, ir, ol, or)
+                        });
+                }
             } else {
-                a_rate_params
-                    .zip(&mut left[..])
-                    .zip(&mut right[..])
-                    .for_each(apply_stereo_gain);
+                if input.number_of_channels() == 1 {
+                    *output = input.clone();
+                    output.mix(2, ChannelInterpretation::Speakers);
+                    let [left, right] = output.stereo_mut();
+                    a_rate_params
+                        .zip(&mut left[..])
+                        .zip(&mut right[..])
+                        .for_each(|((p, l), r)| apply_mono_to_stereo_gain(p, l, r));
+                } else {
+                    output.set_number_of_channels(2);
+                    let [left, right] = output.stereo_mut();
+                    a_rate_params
+                        .zip(input.channel_data(0).iter().copied())
+                        .zip(input.channel_data(1).iter().copied())
+                        .zip(&mut left[..])
+                        .zip(&mut right[..])
+                        .for_each(|((((p, il), ir), ol), or)| {
+                            apply_stereo_to_stereo_gain(p, il, ir, ol, or)
+                        });
+                }
             }
         }
 
@@ -925,6 +929,77 @@ impl PannerRenderer {
     }
 }
 
+fn apply_mono_to_stereo_gain(spatial_params: SpatialParams, l: &mut f32, r: &mut f32) {
+    let SpatialParams {
+        dist_gain,
+        cone_gain,
+        azimuth,
+        ..
+    } = spatial_params;
+
+    // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
+    let mut azimuth = azimuth.clamp(-180., 180.);
+
+    // Then wrap to range [-90, 90].
+    if azimuth < -90. {
+        azimuth = -180. - azimuth;
+    } else if azimuth > 90. {
+        azimuth = 180. - azimuth;
+    }
+
+    // x is the horizontal plane orientation of the sound
+    let x = (azimuth + 90.) / 180.;
+    let gain_l = (x * PI / 2.).cos();
+    let gain_r = (x * PI / 2.).sin();
+
+    // multiply signal with gain per ear
+    *l *= gain_l * dist_gain * cone_gain;
+    *r *= gain_r * dist_gain * cone_gain;
+}
+
+fn apply_stereo_to_stereo_gain(
+    spatial_params: SpatialParams,
+    il: f32,
+    ir: f32,
+    ol: &mut f32,
+    or: &mut f32,
+) {
+    let SpatialParams {
+        dist_gain,
+        cone_gain,
+        azimuth,
+        ..
+    } = spatial_params;
+
+    // Determine left/right ear gain. Clamp azimuth to range of [-180, 180].
+    let mut azimuth = azimuth.clamp(-180., 180.);
+
+    // Then wrap to range [-90, 90].
+    if azimuth < -90. {
+        azimuth = -180. - azimuth;
+    } else if azimuth > 90. {
+        azimuth = 180. - azimuth;
+    }
+
+    // x is the horizontal plane orientation of the sound
+    let x = if azimuth <= 0. {
+        (azimuth + 90.) / 90.
+    } else {
+        azimuth / 90.
+    };
+    let gain_l = (x * PI / 2.).cos();
+    let gain_r = (x * PI / 2.).sin();
+
+    // multiply signal with gain per ear
+    if azimuth <= 0. {
+        *ol = (il + ir * gain_l) * dist_gain * cone_gain;
+        *or = ir * gain_r * dist_gain * cone_gain;
+    } else {
+        *ol = il * gain_l * dist_gain * cone_gain;
+        *or = (ir + il * gain_r) * dist_gain * cone_gain;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use float_eq::{assert_float_eq, assert_float_ne};
@@ -936,7 +1011,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_equal_power() {
+    fn test_equal_power_mono_to_stereo() {
         let sample_rate = 44100.;
         let length = RENDER_QUANTUM_SIZE * 4;
         let context = OfflineAudioContext::new(2, length, sample_rate);
@@ -953,6 +1028,7 @@ mod tests {
         };
         let panner = PannerNode::new(&context, options);
         assert_eq!(panner.panning_model(), PanningModelType::EqualPower);
+        panner.set_channel_count(1);
         panner.position_x().set_value(1.); // sound comes from the right
 
         src.connect(&panner);
@@ -988,7 +1064,7 @@ mod tests {
     }
 
     #[test]
-    fn test_equal_power_azimuth() {
+    fn test_equal_power_azimuth_mono_to_stereo() {
         let sample_rate = 44100.;
         let length = RENDER_QUANTUM_SIZE;
         let context = OfflineAudioContext::new(2, length, sample_rate);
@@ -1006,6 +1082,7 @@ mod tests {
         let panner = PannerNode::new(&context, options);
         assert_eq!(panner.panning_model(), PanningModelType::EqualPower);
         panner.position_y().set_value(1.); // sound comes from above
+        panner.set_channel_count(1);
 
         src.connect(&panner);
         panner.connect(&context.destination());
@@ -1023,6 +1100,56 @@ mod tests {
             output.get_channel_data(1)[..128],
             &sqrt2[..],
             abs_all <= 1E-6
+        );
+    }
+
+    #[test]
+    fn test_equal_power_stereo_to_stereo() {
+        let sample_rate = 44100.;
+        let length = RENDER_QUANTUM_SIZE;
+        let context = OfflineAudioContext::new(2, length, sample_rate);
+
+        // put listener at (10, 0, 0), directed at (1, 0, 0)
+        let listener = context.listener();
+        listener.position_x().set_value(10.);
+        listener.position_y().set_value(0.);
+        listener.position_z().set_value(0.);
+        listener.forward_x().set_value(1.);
+        listener.forward_y().set_value(0.);
+        listener.forward_z().set_value(0.);
+        listener.up_x().set_value(0.);
+        listener.up_y().set_value(0.);
+        listener.up_z().set_value(1.);
+
+        // 128 input samples of value 1.
+        let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
+        let mut src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        src.set_buffer(input);
+        src.start();
+
+        // add panner at (10, 10, 0) - no cone/direction
+        let panner = context.create_panner();
+        panner.position_x().set_value(10.);
+        panner.position_y().set_value(10.);
+        panner.position_z().set_value(0.);
+
+        src.connect(&panner);
+        panner.connect(&context.destination());
+
+        let output = context.start_rendering_sync();
+
+        // left channel should full signal (both channels summed) = 2.,
+        // but distance = 10 so times 0.1
+        assert_float_eq!(
+            output.get_channel_data(0)[..RENDER_QUANTUM_SIZE],
+            &[0.2; RENDER_QUANTUM_SIZE][..],
+            abs_all <= 0.001
+        );
+        // right channel should silent
+        assert_float_eq!(
+            output.get_channel_data(1)[..RENDER_QUANTUM_SIZE],
+            &[0.; RENDER_QUANTUM_SIZE][..],
+            abs_all <= 0.001
         );
     }
 
