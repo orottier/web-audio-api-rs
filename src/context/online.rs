@@ -311,7 +311,7 @@ impl AudioContext {
         // flush the cached msgs
         pending_msgs
             .into_iter()
-            .for_each(|m| self.base().send_control_msg(m).unwrap());
+            .for_each(|m| self.base().send_control_msg(m));
 
         // explicitly release the lock to prevent concurrent render threads
         drop(backend_manager_guard);

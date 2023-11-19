@@ -175,3 +175,22 @@ fn test_audioparam_outlives_audionode() {
     std::thread::sleep(std::time::Duration::from_millis(200));
     assert!(context.current_time() >= time + 0.15);
 }
+
+#[test]
+fn test_closed() {
+    let options = AudioContextOptions {
+        sink_id: "none".into(),
+        ..AudioContextOptions::default()
+    };
+    let context = AudioContext::new(options);
+    let node = context.create_gain();
+
+    // close the context, and drop it as well (otherwise the comms channel is kept alive)
+    context.close_sync();
+    drop(context);
+
+    // allow some time for the render thread to drop
+    std::thread::sleep(std::time::Duration::from_millis(10));
+
+    node.disconnect(); // should not panic
+}
