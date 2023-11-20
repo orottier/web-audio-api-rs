@@ -57,14 +57,7 @@ repos:
     rev: v1.0
     hooks:
       - id: cargo-check
-        args:
-          [
-            --locked,
-            --workspace,
-            --features,
-            cubeb,
-            --all-targets,
-          ]
+        args: [--locked, --workspace, --features, cubeb, --all-targets]
       - id: fmt
         args: [--all, --]
       - id: clippy
