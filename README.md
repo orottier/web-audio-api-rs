@@ -92,7 +92,11 @@ flag. Please note that `cmake` must be installed locally in order to run
 
 ### Notes for Linux users
 
-Using the library on Linux with the ALSA backend might lead to unexpected cranky sound with the default render size (i.e. 128 frames). In such cases, a simple workaround is to pass the `AudioContextLatencyCategory::Playback` latency hint when creating the audio context, which will increase the render size to 1024 frames:
+Using the library on Linux with the ALSA backend might lead to unexpected
+cranky sound with the default render size (i.e. 128 frames). In such cases, a
+simple workaround is to pass the `AudioContextLatencyCategory::Playback`
+latency hint when creating the audio context, which will increase the render
+size to 1024 frames:
 
 ```rs
 let audio_context = AudioContext::new(AudioContextOptions {
@@ -101,12 +105,24 @@ let audio_context = AudioContext::new(AudioContextOptions {
 });
 ```
 
-For real-time and interactive applications where low latency is crucial, you should instead rely on the JACK backend provided by `cpal`. To that end you will need a running JACK server and build your application with the `cpal-jack` feature, e.g. `cargo run --release --features "cpal-jack" --example microphone`.
+For real-time and interactive applications where low latency is crucial, you
+should instead rely on the JACK backend provided by `cpal`. To that end you
+will need a running JACK server and build your application with the `cpal-jack`
+feature, e.g. `cargo run --release --features "cpal-jack" --example
+microphone`.
+
+### Targeting the browser
+
+We could go full circle and pipe the Rust WebAudio output back into the browser
+via `cpal`'s `wasm-bindgen` backend. However, this project is currently not
+compatible for compiling to WebAssembly. Please read up on the [wasm tracking
+issue](https://github.com/orottier/web-audio-api-rs/issues/265) for alternative
+solutions.
 
 ## Contributing
 
-web-audio-api-rs welcomes contribution from everyone in the form of suggestions, bug reports,
-pull requests, and feedback. 💛
+web-audio-api-rs welcomes contribution from everyone in the form of
+suggestions, bug reports, pull requests, and feedback. 💛
 
 If you need ideas for contribution, there are several ways to get started:
 
