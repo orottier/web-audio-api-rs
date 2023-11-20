@@ -90,10 +90,6 @@ flag. Please note that `cmake` must be installed locally in order to run
 | cpal-asio      | ASIO see <https://github.com/rustaudio/cpal#asio-on-windows>   |
 | cubeb          | PulseAudio, AudioUnit, WASAPI, OpenSL, AAudio, sndio, Sun, OSS |
 
-A WebAssembly backend is currently not available. Please read up on the [wasm
-tracking issue](https://github.com/orottier/web-audio-api-rs/issues/265) for
-alternative solutions.
-
 ### Notes for Linux users
 
 Using the library on Linux with the ALSA backend might lead to unexpected
@@ -114,6 +110,14 @@ should instead rely on the JACK backend provided by `cpal`. To that end you
 will need a running JACK server and build your application with the `cpal-jack`
 feature, e.g. `cargo run --release --features "cpal-jack" --example
 microphone`.
+
+### Targeting the browser
+
+We could go full circle and pipe the Rust WebAudio output back into the browser
+via `cpal`'s `wasm-bindgen` backend. However, this project is currently not
+compatible for compiling to WebAssembly. Please read up on the [wasm tracking
+issue](https://github.com/orottier/web-audio-api-rs/issues/265) for alternative
+solutions.
 
 ## Contributing
 
