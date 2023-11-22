@@ -19,6 +19,8 @@ fn main() {
 
         osc = Some(new_osc);
 
+        // reduce sleep duration to make the effect faster
+        // ...I personally like the result but not sure this is what we expect :)
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
 }
