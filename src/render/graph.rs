@@ -174,12 +174,17 @@ impl Graph {
     }
 
     pub fn remove_edges_from(&mut self, source: AudioNodeId) {
+        // Remove outgoing edges
         self.nodes[source].get_mut().outgoing_edges.clear();
 
+        // Remove incoming edges - we need to traverse all nodes
         self.nodes.values_mut().for_each(|node| {
+            // Retain edge when
+            // - not connected to this node, or
+            // - when this is an audioparam edge (only disconnect true audio nodes)
             node.get_mut()
                 .outgoing_edges
-                .retain(|edge| edge.other_id != source);
+                .retain(|edge| edge.other_id != source || edge.other_index == usize::MAX);
         });
 
         self.ordered.clear(); // void current ordering
