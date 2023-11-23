@@ -11,6 +11,7 @@ use crate::node::ChannelConfig;
 use crate::render::RenderScope;
 
 /// Connection between two audio nodes
+#[derive(Debug)]
 struct OutgoingEdge {
     /// index of the current Nodes output port
     self_index: usize,
@@ -40,6 +41,19 @@ pub struct Node {
     has_inputs_connected: bool,
     /// Indicates if the node can act as a cycle breaker (only DelayNode for now)
     cycle_breaker: bool,
+}
+
+impl std::fmt::Debug for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Node")
+            .field("id", &self.reclaim_id.as_ref().map(|n| &**n))
+            .field("processor", &self.processor)
+            .field("channel_config", &self.channel_config)
+            .field("outgoing_edges", &self.outgoing_edges)
+            .field("free_when_finished", &self.free_when_finished)
+            .field("cycle_breaker", &self.cycle_breaker)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Node {
@@ -92,6 +106,15 @@ pub(crate) struct Graph {
     in_cycle: Vec<AudioNodeId>,
     /// Topological sorting helper
     cycle_breakers: Vec<AudioNodeId>,
+}
+
+impl std::fmt::Debug for Graph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Graph")
+            .field("nodes", &self.nodes)
+            .field("ordered", &self.ordered)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Graph {

@@ -4,6 +4,7 @@ use crate::render::graph::Node;
 use std::cell::RefCell;
 use std::ops::{Index, IndexMut};
 
+#[derive(Debug)]
 pub(crate) struct NodeCollection {
     nodes: Vec<Option<RefCell<Node>>>,
 }

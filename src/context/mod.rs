@@ -36,8 +36,14 @@ pub(crate) const LISTENER_AUDIO_PARAM_IDS: [AudioParamId; 9] = [
 /// Unique identifier for audio nodes.
 ///
 /// Used for internal bookkeeping.
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub(crate) struct AudioNodeId(pub u64);
+
+impl std::fmt::Debug for AudioNodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AudioNodeId({})", self.0)
+    }
+}
 
 /// Unique identifier for audio params.
 ///
