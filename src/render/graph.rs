@@ -57,7 +57,12 @@ impl Node {
             return false;
         }
 
-        // Drop, when the node does not have any inputs connected,
+        // Drop when the node does not have any inputs and outputs
+        if !self.has_inputs_connected && self.outgoing_edges.is_empty() {
+            return true;
+        }
+
+        // Drop when the node does not have any inputs connected,
         // and if the processor reports it won't yield output.
         if !self.has_inputs_connected && !tail_time {
             return true;
@@ -169,12 +174,17 @@ impl Graph {
     }
 
     pub fn remove_edges_from(&mut self, source: AudioNodeId) {
+        // Remove outgoing edges
         self.nodes[source].get_mut().outgoing_edges.clear();
 
+        // Remove incoming edges - we need to traverse all nodes
         self.nodes.values_mut().for_each(|node| {
+            // Retain edge when
+            // - not connected to this node, or
+            // - when this is an audioparam edge (only disconnect true audio nodes)
             node.get_mut()
                 .outgoing_edges
-                .retain(|edge| edge.other_id != source);
+                .retain(|edge| edge.other_id != source || edge.other_index == usize::MAX);
         });
 
         self.ordered.clear(); // void current ordering
@@ -752,6 +762,47 @@ mod tests {
         // First the regular node should be dropped, then the audioparam
         assert_eq!(node_id_consumer.pop().unwrap().0, 2);
         assert_eq!(node_id_consumer.pop().unwrap().0, 3);
+
+        // No other dropped nodes
+        assert!(node_id_consumer.pop().is_none());
+    }
+
+    #[test]
+    fn test_release_orphaned_source_nodes() {
+        let (node_id_producer, mut node_id_consumer) = llq::Queue::new().split();
+        let mut graph = Graph::new(node_id_producer);
+
+        let node = Box::new(TestNode { tail_time: true });
+
+        // Destination Node is always node id 0, and should never drop
+        add_node(&mut graph, 0, node.clone());
+
+        // AudioListener Node is always node id 1, and should never drop
+        add_node(&mut graph, 1, node.clone());
+
+        // Add a regular node at id 3, it has tail time true but since we drop the control handle
+        // and there aren't any inputs and outputs, it will still be dropped and the AudioNodeId(3)
+        // should be reclaimed
+        add_node(&mut graph, 2, node);
+
+        // Mark the node as 'detached from the control thread', so it is allowed to drop
+        graph.nodes[AudioNodeId(2)].get_mut().free_when_finished = true;
+
+        // Render a single quantum
+        let scope = RenderScope {
+            current_frame: 0,
+            current_time: 0.,
+            sample_rate: 48000.,
+            node_id: std::cell::Cell::new(AudioNodeId(0)),
+            event_sender: None,
+        };
+        graph.render(&scope);
+
+        // The dropped node should be our orphaned node
+        let reclaimed = node_id_consumer
+            .pop()
+            .expect("should have decommisioned node");
+        assert_eq!(reclaimed.0, 2);
 
         // No other dropped nodes
         assert!(node_id_consumer.pop().is_none());
