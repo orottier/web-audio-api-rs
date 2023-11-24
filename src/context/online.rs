@@ -345,6 +345,7 @@ impl AudioContext {
     }
 
     #[allow(clippy::missing_panics_doc)]
+    #[doc(hidden)] // Method signature might change in the future
     pub fn run_diagnostics<F: Fn(String) + Send + 'static>(&self, callback: F) {
         let mut buffer = Vec::with_capacity(32 * 1024);
         {
