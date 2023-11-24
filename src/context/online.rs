@@ -346,6 +346,19 @@ impl AudioContext {
 
     #[allow(clippy::missing_panics_doc)]
     pub fn run_diagnostics<F: Fn(String) + Send + 'static>(&self, callback: F) {
+        let mut buffer = Vec::with_capacity(32 * 1024);
+        {
+            let backend = self.backend_manager.lock().unwrap();
+            use std::io::Write;
+            writeln!(&mut buffer, "backend: {}", backend.name()).ok();
+            writeln!(&mut buffer, "sink id: {}", backend.sink_id()).ok();
+            writeln!(
+                &mut buffer,
+                "output latency: {:.6}",
+                backend.output_latency()
+            )
+            .ok();
+        }
         let callback = move |v| match v {
             EventPayload::Diagnostics(v) => {
                 let s = String::from_utf8(v).unwrap();
@@ -359,7 +372,6 @@ impl AudioContext {
             EventHandler::Once(Box::new(callback)),
         );
 
-        let buffer = Vec::with_capacity(32 * 1024);
         self.base()
             .send_control_msg(ControlMessage::RunDiagnostics { buffer });
     }
