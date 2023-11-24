@@ -120,7 +120,7 @@ pub trait AudioProcessor: Send {
     /// Return the name of the actual AudioProcessor type
     #[doc(hidden)] // not meant to be user facing
     fn name(&self) -> &'static str {
-        return std::any::type_name::<Self>();
+        std::any::type_name::<Self>()
     }
 }
 

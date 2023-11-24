@@ -11,7 +11,6 @@ use crate::node::ChannelConfig;
 use crate::render::RenderScope;
 
 /// Connection between two audio nodes
-#[derive(Debug)]
 struct OutgoingEdge {
     /// index of the current Nodes output port
     self_index: usize,
@@ -19,6 +18,21 @@ struct OutgoingEdge {
     other_id: AudioNodeId,
     /// index of the other Nodes input port
     other_index: usize,
+}
+
+impl std::fmt::Debug for OutgoingEdge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut format = f.debug_struct("OutgoingEdge");
+        format
+            .field("self_index", &self.self_index)
+            .field("other_id", &self.other_id);
+        if self.other_index == usize::MAX {
+            format.field("other_index", &"HIDDEN");
+        } else {
+            format.field("other_index", &self.other_index);
+        }
+        format.finish()
+    }
 }
 
 /// Renderer Node in the Audio Graph
@@ -46,7 +60,7 @@ pub struct Node {
 impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
-            .field("id", &self.reclaim_id.as_ref().map(|n| &**n))
+            .field("id", &self.reclaim_id.as_deref())
             .field("processor", &self.processor)
             .field("channel_config", &self.channel_config)
             .field("outgoing_edges", &self.outgoing_edges)

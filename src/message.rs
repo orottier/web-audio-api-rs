@@ -52,4 +52,7 @@ pub(crate) enum ControlMessage {
         id: AudioNodeId,
         msg: llq::Node<Box<dyn Any + Send>>,
     },
+
+    /// Request a diagnostic report of the audio graph
+    RunDiagnostics { buffer: Vec<u8> },
 }

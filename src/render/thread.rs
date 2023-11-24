@@ -148,8 +148,31 @@ impl RenderThread {
                         gc.push(msg)
                     }
                 }
+                RunDiagnostics { mut buffer } => {
+                    if let Some(sender) = self.event_sender.as_ref() {
+                        self.write_diagnostics(&mut buffer);
+                        let dispatch = EventDispatch::diagnostics(buffer);
+                        sender
+                            .try_send(dispatch)
+                            .expect("Unable to send diagnostics - channel is full");
+                    }
+                }
             }
         }
+    }
+
+    pub fn write_diagnostics(&self, buffer: &mut Vec<u8>) {
+        use std::io::Write;
+
+        writeln!(
+            buffer,
+            "current frame: {}",
+            self.frames_played.load(Ordering::Relaxed)
+        )
+        .ok();
+        writeln!(buffer, "sample rate: {}", self.sample_rate).ok();
+        writeln!(buffer, "number of channels: {}", self.number_of_channels).ok();
+        writeln!(buffer, "graph: {:?}", &self.graph).ok(); // use {:#?} for newlines between items
     }
 
     // Render method of the `OfflineAudioContext::start_rendering_sync`
