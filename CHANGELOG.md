@@ -1,5 +1,16 @@
 # Version History
 
+## Version 0.37.0 (2023-11-25)
+
+- Added the AudioWorkletNode and AudioWorkletProcessor interfaces
+- Added stereo-to-stereo panning for PannerNode in EqualPower mode
+- Aggressively release resources of 'orphaned' audio nodes
+- Tuned the volume of stereo-to-stereo panning for PannerNode in HRTF mode
+- Added `context.run_diagnostics` for debugging purposes
+- Fixed a panic that could occur during audio graph booting (flawed `is_active` check)
+- Fix: `disconnect` would disassociate an AudioNode from its AudioParams
+- Fix: properly clamp PannerNode rollOffFactor according to the distance model
+
 ## Version 0.36.1 (2023-11-08)
 
 - Fix compilation on targets that are not x86/aarch64
