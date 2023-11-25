@@ -181,17 +181,17 @@ impl OscillatorNode {
     /// * `context` - The `AudioContext`
     /// * `options` - The OscillatorOptions
     pub fn new<C: BaseAudioContext>(context: &C, options: OscillatorOptions) -> Self {
-        context.register(move |registration| {
+        let OscillatorOptions {
+            type_,
+            frequency,
+            detune,
+            channel_config,
+            periodic_wave,
+        } = options;
+
+        let mut node = context.register(move |registration| {
             let sample_rate = context.sample_rate();
             let nyquist = sample_rate / 2.;
-
-            let OscillatorOptions {
-                type_,
-                frequency,
-                detune,
-                channel_config,
-                periodic_wave,
-            } = options;
 
             // frequency audio parameter
             let freq_param_options = AudioParamDescriptor {
@@ -229,7 +229,7 @@ impl OscillatorNode {
                 sine_table: precomputed_sine_table(),
             };
 
-            let mut node = Self {
+            let node = Self {
                 registration,
                 channel_config: channel_config.into(),
                 frequency: f_param,
@@ -237,13 +237,15 @@ impl OscillatorNode {
                 type_,
             };
 
-            // if periodic wave has been given, init it
-            if let Some(p_wave) = periodic_wave {
-                node.set_periodic_wave(p_wave);
-            }
-
             (node, Box::new(renderer))
-        })
+        });
+
+        // renderer has been sent to render thread, we can send it messages
+        if let Some(p_wave) = periodic_wave {
+            node.set_periodic_wave(p_wave);
+        }
+
+        node
     }
 
     /// A-rate [`AudioParam`] that defines the fundamental frequency of the
@@ -579,7 +581,7 @@ mod tests {
 
         let context = OfflineAudioContext::new(2, 1, 44_100.);
 
-        let osc = context.create_oscillator();
+        let mut osc = context.create_oscillator();
 
         let freq = osc.frequency.value();
         assert_float_eq!(freq, default_freq, abs_all <= 0.);
@@ -588,6 +590,11 @@ mod tests {
         assert_float_eq!(det, default_det, abs_all <= 0.);
 
         assert_eq!(osc.type_(), default_type);
+
+        // should not panic when run
+        osc.start();
+        osc.connect(&context.destination());
+        let _ = context.start_rendering_sync();
     }
 
     #[test]
@@ -598,7 +605,7 @@ mod tests {
 
         let context = OfflineAudioContext::new(2, 1, 44_100.);
 
-        let osc = OscillatorNode::new(&context, OscillatorOptions::default());
+        let mut osc = OscillatorNode::new(&context, OscillatorOptions::default());
 
         let freq = osc.frequency.value();
         assert_float_eq!(freq, default_freq, abs_all <= 0.);
@@ -607,6 +614,11 @@ mod tests {
         assert_float_eq!(det, default_det, abs_all <= 0.);
 
         assert_eq!(osc.type_(), default_type);
+
+        // should not panic when run
+        osc.start();
+        osc.connect(&context.destination());
+        let _ = context.start_rendering_sync();
     }
 
     #[test]
@@ -630,9 +642,14 @@ mod tests {
             ..OscillatorOptions::default()
         };
 
-        let osc = OscillatorNode::new(&context, options);
+        let mut osc = OscillatorNode::new(&context, options);
 
         assert_eq!(osc.type_(), expected_type);
+
+        // should not panic when run
+        osc.start();
+        osc.connect(&context.destination());
+        let _ = context.start_rendering_sync();
     }
 
     #[test]
@@ -652,6 +669,11 @@ mod tests {
 
         osc.set_type(OscillatorType::Sine);
         assert_eq!(osc.type_(), expected_type);
+
+        // should not panic when run
+        osc.start();
+        osc.connect(&context.destination());
+        let _ = context.start_rendering_sync();
     }
 
     // # Test waveforms

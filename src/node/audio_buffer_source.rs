@@ -159,16 +159,16 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
 impl AudioBufferSourceNode {
     /// Create a new [`AudioBufferSourceNode`] instance
     pub fn new<C: BaseAudioContext>(context: &C, options: AudioBufferSourceOptions) -> Self {
-        context.register(move |registration| {
-            let AudioBufferSourceOptions {
-                buffer,
-                detune,
-                loop_,
-                loop_start,
-                loop_end,
-                playback_rate,
-            } = options;
+        let AudioBufferSourceOptions {
+            buffer,
+            detune,
+            loop_,
+            loop_start,
+            loop_end,
+            playback_rate,
+        } = options;
 
+        let mut node = context.register(move |registration| {
             // these parameters can't be changed to a-rate
             // @see - <https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints>
             let detune_param_options = AudioParamDescriptor {
@@ -214,7 +214,7 @@ impl AudioBufferSourceNode {
                 ended_triggered: false,
             };
 
-            let mut node = Self {
+            let node = Self {
                 registration,
                 channel_config: ChannelConfig::default(),
                 detune: d_param,
@@ -225,12 +225,15 @@ impl AudioBufferSourceNode {
                 source_started: false,
             };
 
-            if let Some(buf) = buffer {
-                node.set_buffer(buf);
-            }
-
             (node, Box::new(renderer))
-        })
+        });
+
+        // renderer has been sent to render thread, we can send it messages
+        if let Some(buf) = buffer {
+            node.set_buffer(buf);
+        }
+
+        node
     }
 
     /// Start the playback at the given time and with a given offset
@@ -788,6 +791,29 @@ mod tests {
     use crate::RENDER_QUANTUM_SIZE;
 
     use super::*;
+
+    #[test]
+    fn test_construct_with_options_and_run() {
+        let sample_rate = 44100.;
+        let length = RENDER_QUANTUM_SIZE;
+        let context = OfflineAudioContext::new(1, length, sample_rate);
+
+        let buffer = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
+        let options = AudioBufferSourceOptions {
+            buffer: Some(buffer),
+            ..Default::default()
+        };
+        let mut src = AudioBufferSourceNode::new(&context, options);
+        src.connect(&context.destination());
+        src.start();
+        let res = context.start_rendering_sync();
+
+        assert_float_eq!(
+            res.channel_data(0).as_slice()[..],
+            &[1.; RENDER_QUANTUM_SIZE][..],
+            abs_all <= 0.
+        );
+    }
 
     #[test]
     fn test_playing_some_file() {
