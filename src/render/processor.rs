@@ -116,6 +116,18 @@ pub trait AudioProcessor: Send {
     fn onmessage(&mut self, msg: &mut dyn Any) {
         log::warn!("Ignoring incoming message");
     }
+
+    /// Return the name of the actual AudioProcessor type
+    #[doc(hidden)] // not meant to be user facing
+    fn name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+}
+
+impl std::fmt::Debug for dyn AudioProcessor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(self.name()).finish_non_exhaustive()
+    }
 }
 
 struct DerefAudioRenderQuantumChannel<'a>(std::cell::Ref<'a, Node>);
@@ -159,5 +171,33 @@ impl<'a> AudioParamValues<'a> {
 
     pub(crate) fn listener_params(&self) -> [impl Deref<Target = [f32]> + '_; 9] {
         crate::context::LISTENER_AUDIO_PARAM_IDS.map(|p| self.get(&p))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestNode;
+
+    impl AudioProcessor for TestNode {
+        fn process(
+            &mut self,
+            _inputs: &[AudioRenderQuantum],
+            _outputs: &mut [AudioRenderQuantum],
+            _params: AudioParamValues<'_>,
+            _scope: &RenderScope,
+        ) -> bool {
+            todo!()
+        }
+    }
+
+    #[test]
+    fn test_debug_fmt() {
+        let proc = &TestNode as &dyn AudioProcessor;
+        assert_eq!(
+            &format!("{:?}", proc),
+            "web_audio_api::render::processor::tests::TestNode { .. }"
+        );
     }
 }

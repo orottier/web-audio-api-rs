@@ -21,6 +21,7 @@ pub(crate) enum EventType {
     SinkChange,
     RenderCapacity,
     ProcessorError(AudioNodeId),
+    Diagnostics,
 }
 
 /// The Error Event interface
@@ -39,6 +40,7 @@ pub(crate) enum EventPayload {
     None,
     RenderCapacity(AudioRenderCapacityEvent),
     ProcessorError(ErrorEvent),
+    Diagnostics(Vec<u8>),
 }
 
 pub(crate) struct EventDispatch {
@@ -72,6 +74,13 @@ impl EventDispatch {
         EventDispatch {
             type_: EventType::ProcessorError(id),
             payload: EventPayload::ProcessorError(value),
+        }
+    }
+
+    pub fn diagnostics(value: Vec<u8>) -> Self {
+        EventDispatch {
+            type_: EventType::Diagnostics,
+            payload: EventPayload::Diagnostics(value),
         }
     }
 }

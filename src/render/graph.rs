@@ -20,6 +20,21 @@ struct OutgoingEdge {
     other_index: usize,
 }
 
+impl std::fmt::Debug for OutgoingEdge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut format = f.debug_struct("OutgoingEdge");
+        format
+            .field("self_index", &self.self_index)
+            .field("other_id", &self.other_id);
+        if self.other_index == usize::MAX {
+            format.field("other_index", &"HIDDEN");
+        } else {
+            format.field("other_index", &self.other_index);
+        }
+        format.finish()
+    }
+}
+
 /// Renderer Node in the Audio Graph
 pub struct Node {
     /// AudioNodeId, to be sent back to the control thread when this node is dropped
@@ -40,6 +55,19 @@ pub struct Node {
     has_inputs_connected: bool,
     /// Indicates if the node can act as a cycle breaker (only DelayNode for now)
     cycle_breaker: bool,
+}
+
+impl std::fmt::Debug for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Node")
+            .field("id", &self.reclaim_id.as_deref())
+            .field("processor", &self.processor)
+            .field("channel_config", &self.channel_config)
+            .field("outgoing_edges", &self.outgoing_edges)
+            .field("free_when_finished", &self.free_when_finished)
+            .field("cycle_breaker", &self.cycle_breaker)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Node {
@@ -97,6 +125,15 @@ pub(crate) struct Graph {
     in_cycle: Vec<AudioNodeId>,
     /// Topological sorting helper
     cycle_breakers: Vec<AudioNodeId>,
+}
+
+impl std::fmt::Debug for Graph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Graph")
+            .field("nodes", &self.nodes)
+            .field("ordered", &self.ordered)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Graph {

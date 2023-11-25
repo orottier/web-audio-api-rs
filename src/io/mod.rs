@@ -133,6 +133,11 @@ pub(crate) fn build_input(options: AudioContextOptions) -> MediaStream {
 
 /// Interface for audio backends
 pub(crate) trait AudioBackendManager: Send + Sync + 'static {
+    /// Name of the concrete implementation - for debug purposes
+    fn name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     /// Setup a new output stream (speakers)
     fn build_output(options: AudioContextOptions, render_thread_init: RenderThreadInit) -> Self
     where

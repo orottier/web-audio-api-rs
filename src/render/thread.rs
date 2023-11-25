@@ -24,6 +24,7 @@ use super::graph::Graph;
 pub(crate) struct RenderThread {
     graph: Option<Graph>,
     sample_rate: f32,
+    buffer_size: usize,
     /// number of channels of the backend stream, i.e. sound card number of
     /// channels clamped to MAX_CHANNELS
     number_of_channels: usize,
@@ -46,6 +47,17 @@ unsafe impl Sync for Graph {}
 unsafe impl Send for RenderThread {}
 unsafe impl Sync for RenderThread {}
 
+impl std::fmt::Debug for RenderThread {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RenderThread")
+            .field("sample_rate", &self.sample_rate)
+            .field("buffer_size", &self.buffer_size)
+            .field("frames_played", &self.frames_played.load(Ordering::Relaxed))
+            .field("number_of_channels", &self.number_of_channels)
+            .finish_non_exhaustive()
+    }
+}
+
 impl RenderThread {
     pub fn new(
         sample_rate: f32,
@@ -56,6 +68,7 @@ impl RenderThread {
         Self {
             graph: None,
             sample_rate,
+            buffer_size: 0,
             number_of_channels,
             frames_played,
             receiver: Some(receiver),
@@ -148,6 +161,16 @@ impl RenderThread {
                         gc.push(msg)
                     }
                 }
+                RunDiagnostics { mut buffer } => {
+                    if let Some(sender) = self.event_sender.as_ref() {
+                        use std::io::Write;
+                        writeln!(&mut buffer, "{:#?}", &self).ok();
+                        writeln!(&mut buffer, "{:?}", &self.graph).ok();
+                        sender
+                            .try_send(EventDispatch::diagnostics(buffer))
+                            .expect("Unable to send diagnostics - channel is full");
+                    }
+                }
             }
         }
     }
@@ -236,6 +259,8 @@ impl RenderThread {
     }
 
     fn render_inner<S: FromSample<f32> + Clone>(&mut self, mut output_buffer: &mut [S]) {
+        self.buffer_size = output_buffer.len();
+
         // There may be audio frames left over from the previous render call,
         // if the cpal buffer size did not align with our internal RENDER_QUANTUM_SIZE
         if let Some((offset, prev_rendered)) = self.buffer_offset.take() {

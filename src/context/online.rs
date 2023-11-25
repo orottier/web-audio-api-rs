@@ -3,7 +3,7 @@ use std::error::Error;
 use std::sync::Mutex;
 
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::events::{EventDispatch, EventHandler, EventType};
+use crate::events::{EventDispatch, EventHandler, EventPayload, EventType};
 use crate::io::{self, AudioBackendManager, ControlThreadInit, RenderThreadInit};
 use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
@@ -342,6 +342,39 @@ impl AudioContext {
     /// Unset the callback to run when the audio sink has changed
     pub fn clear_onsinkchange(&self) {
         self.base().clear_event_handler(EventType::SinkChange);
+    }
+
+    #[allow(clippy::missing_panics_doc)]
+    #[doc(hidden)] // Method signature might change in the future
+    pub fn run_diagnostics<F: Fn(String) + Send + 'static>(&self, callback: F) {
+        let mut buffer = Vec::with_capacity(32 * 1024);
+        {
+            let backend = self.backend_manager.lock().unwrap();
+            use std::io::Write;
+            writeln!(&mut buffer, "backend: {}", backend.name()).ok();
+            writeln!(&mut buffer, "sink id: {}", backend.sink_id()).ok();
+            writeln!(
+                &mut buffer,
+                "output latency: {:.6}",
+                backend.output_latency()
+            )
+            .ok();
+        }
+        let callback = move |v| match v {
+            EventPayload::Diagnostics(v) => {
+                let s = String::from_utf8(v).unwrap();
+                callback(s);
+            }
+            _ => unreachable!(),
+        };
+
+        self.base().set_event_handler(
+            EventType::Diagnostics,
+            EventHandler::Once(Box::new(callback)),
+        );
+
+        self.base()
+            .send_control_msg(ControlMessage::RunDiagnostics { buffer });
     }
 
     /// Suspends the progression of time in the audio context.
