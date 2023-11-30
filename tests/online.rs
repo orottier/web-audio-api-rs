@@ -108,6 +108,17 @@ fn test_none_sink_id() {
 }
 
 #[test]
+fn test_weird_sample_rate() {
+    let options = AudioContextOptions {
+        sink_id: "none".into(),
+        sample_rate: Some(24000.),
+        ..AudioContextOptions::default()
+    };
+
+    AudioContext::new(options);
+}
+
+#[test]
 fn test_channels() {
     let options = AudioContextOptions {
         sink_id: "none".into(),

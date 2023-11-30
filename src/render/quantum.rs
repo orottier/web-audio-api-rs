@@ -573,7 +573,8 @@ impl AudioRenderQuantum {
                         .zip(center.iter())
                         .for_each(|(r, c)| *r += sqrt05 * c);
                 }
-
+                _ => (),
+                /*
                 _ => panic!(
                     "{mixing} from {from} to {to} channels not supported",
                     mixing = if self.number_of_channels() < computed_number_of_channels {
@@ -584,6 +585,7 @@ impl AudioRenderQuantum {
                     from = self.number_of_channels(),
                     to = computed_number_of_channels,
                 ),
+                */
             }
         }
     }
