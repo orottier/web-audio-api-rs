@@ -17,7 +17,7 @@ pub struct OfflineAudioContext {
     /// the size of the buffer in sample-frames
     length: usize,
     /// the rendering 'thread', fully controlled by the offline context
-    renderer: RenderThread,
+    renderer: Option<RenderThread>,
 }
 
 impl BaseAudioContext for OfflineAudioContext {
@@ -74,7 +74,7 @@ impl OfflineAudioContext {
         Self {
             base,
             length,
-            renderer,
+            renderer: Some(renderer),
         }
     }
 
@@ -82,8 +82,16 @@ impl OfflineAudioContext {
     ///
     /// This function will block the current thread and returns the rendered `AudioBuffer`
     /// synchronously. An async version is currently not implemented.
-    pub fn start_rendering_sync(self) -> AudioBuffer {
-        self.renderer.render_audiobuffer_sync(self.length)
+    ///
+    /// # Panics
+    ///
+    /// Panics if this method is called multiple times
+    pub fn start_rendering_sync(&mut self) -> AudioBuffer {
+        let renderer = match self.renderer.take() {
+            None => panic!("InvalidStateError: Cannot call `startRendering` twice"),
+            Some(v) => v,
+        };
+        renderer.render_audiobuffer_sync(self.length)
     }
 
     /// get the length of rendering audio buffer
