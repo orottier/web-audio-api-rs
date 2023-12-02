@@ -120,4 +120,12 @@ mod tests {
         assert_float_eq!(buffer.get_channel_data(0), &[0.; 555][..], abs_all <= 0.);
         assert_float_eq!(buffer.get_channel_data(1), &[0.; 555][..], abs_all <= 0.);
     }
+
+    #[test]
+    #[should_panic]
+    fn render_twice_panics() {
+        let mut context = OfflineAudioContext::new(2, 555, 44_100.);
+        let _ = context.start_rendering_sync();
+        let _ = context.start_rendering_sync();
+    }
 }
