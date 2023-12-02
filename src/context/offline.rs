@@ -113,6 +113,8 @@ mod tests {
         let mut context = OfflineAudioContext::new(2, 555, 44_100.);
         let buffer = context.start_rendering_sync();
 
+        assert_eq!(context.length(), 555);
+
         assert_eq!(buffer.number_of_channels(), 2);
         assert_eq!(buffer.length(), 555);
         assert_float_eq!(buffer.get_channel_data(0), &[0.; 555][..], abs_all <= 0.);
