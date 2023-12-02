@@ -38,7 +38,7 @@ fn get_audio_buffer(ctx: &OfflineAudioContext) -> AudioBuffer {
 }
 
 pub fn bench_ctor() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
@@ -51,7 +51,7 @@ pub fn bench_audio_buffer_decode() {
 }
 
 pub fn bench_sine() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let mut osc = ctx.create_oscillator();
 
     osc.connect(&ctx.destination());
@@ -61,7 +61,7 @@ pub fn bench_sine() {
 }
 
 pub fn bench_sine_gain() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let mut osc = ctx.create_oscillator();
     let gain = ctx.create_gain();
     gain.gain().set_value(0.5); // avoid happy path
@@ -75,7 +75,7 @@ pub fn bench_sine_gain() {
 }
 
 pub fn bench_sine_gain_delay() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
 
     let mut osc = ctx.create_oscillator();
     let gain = ctx.create_gain();
@@ -93,7 +93,7 @@ pub fn bench_sine_gain_delay() {
 }
 
 pub fn bench_buffer_src() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let buffer = get_audio_buffer(&ctx);
 
     let mut src = ctx.create_buffer_source();
@@ -105,7 +105,7 @@ pub fn bench_buffer_src() {
 }
 
 pub fn bench_buffer_src_delay() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let buffer = get_audio_buffer(&ctx);
 
     let delay = ctx.create_delay(0.3);
@@ -122,7 +122,7 @@ pub fn bench_buffer_src_delay() {
 }
 
 pub fn bench_buffer_src_iir() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let buffer = get_audio_buffer(&ctx);
 
     // these values correspond to a lowpass filter at 200Hz (calculated from biquad)
@@ -148,7 +148,7 @@ pub fn bench_buffer_src_iir() {
 }
 
 pub fn bench_buffer_src_biquad() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let buffer = get_audio_buffer(&ctx);
 
     // Create an biquad filter node (defaults to low pass)
@@ -166,7 +166,7 @@ pub fn bench_buffer_src_biquad() {
 }
 
 pub fn bench_stereo_positional() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let buffer = get_audio_buffer(&ctx);
 
     // Create static panner node
@@ -189,7 +189,7 @@ pub fn bench_stereo_positional() {
 }
 
 pub fn bench_stereo_panning_automation() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let buffer = get_audio_buffer(&ctx);
 
     let panner = ctx.create_stereo_panner();
@@ -210,7 +210,7 @@ pub fn bench_stereo_panning_automation() {
 // We don't request freq/time data because that happens off thread and there is no sensible way to
 // benchmark this in deterministic way [citation needed].
 pub fn bench_analyser_node() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let buffer = get_audio_buffer(&ctx);
 
     let analyser = ctx.create_analyser();
@@ -226,7 +226,7 @@ pub fn bench_analyser_node() {
 }
 
 pub fn bench_hrtf_panners() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES_SHORT), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES_SHORT), SAMPLE_RATE);
 
     let mut panner1 = ctx.create_panner();
     panner1.set_panning_model(PanningModelType::HRTF);
@@ -247,7 +247,7 @@ pub fn bench_hrtf_panners() {
 }
 
 pub fn bench_sine_gain_with_worklet() {
-    let ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let mut osc = ctx.create_oscillator();
 
     let options = AudioWorkletNodeOptions::default();

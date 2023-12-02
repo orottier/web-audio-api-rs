@@ -13,7 +13,7 @@ fn test_offline_render() {
 
     assert_ne!(LENGTH % RENDER_QUANTUM_SIZE, 0);
 
-    let context = OfflineAudioContext::new(2, LENGTH, 44_100.);
+    let mut context = OfflineAudioContext::new(2, LENGTH, 44_100.);
     assert_eq!(context.length(), LENGTH);
 
     {
@@ -50,7 +50,7 @@ fn test_start_stop() {
     let len = RENDER_QUANTUM_SIZE * 4;
     let sample_rate = 480000.;
 
-    let context = OfflineAudioContext::new(1, len, sample_rate);
+    let mut context = OfflineAudioContext::new(1, len, sample_rate);
     assert_eq!(context.length(), len);
 
     {
@@ -85,7 +85,7 @@ fn test_delayed_constant_source() {
     let len = RENDER_QUANTUM_SIZE * 4;
     let sample_rate = 480000.;
 
-    let context = OfflineAudioContext::new(1, len, sample_rate);
+    let mut context = OfflineAudioContext::new(1, len, sample_rate);
     assert_eq!(context.length(), len);
 
     {
@@ -114,7 +114,7 @@ fn test_delayed_constant_source() {
 #[test]
 fn test_audio_param_graph() {
     let sample_rate = 480000.;
-    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
     {
         let gain = context.create_gain();
         gain.gain().set_value(0.5); // intrinsic value
@@ -151,7 +151,7 @@ fn test_audio_param_graph() {
 #[test]
 fn test_listener() {
     let sample_rate = 480000.;
-    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
     {
         let listener1 = context.listener();
@@ -169,7 +169,7 @@ fn test_listener() {
 
 #[test]
 fn test_cycle() {
-    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, 48000.);
+    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, 48000.);
 
     {
         let cycle1 = context.create_gain();
@@ -205,7 +205,7 @@ fn test_cycle() {
 #[test]
 fn test_cycle_breaker() {
     let sample_rate = 480000.;
-    let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 3, sample_rate);
+    let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 3, sample_rate);
 
     {
         let delay = context.create_delay(1. / sample_rate as f64);

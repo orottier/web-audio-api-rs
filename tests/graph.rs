@@ -28,7 +28,7 @@ fn test_ordering_with_cycle_breakers(
         nodes.shuffle(&mut rng);
         edges.shuffle(&mut rng);
 
-        let context = OfflineAudioContext::new(1, 128, 44_100.);
+        let mut context = OfflineAudioContext::new(1, 128, 44_100.);
         let collect = Arc::new(Mutex::new(vec![]));
 
         let map: HashMap<_, _> = nodes

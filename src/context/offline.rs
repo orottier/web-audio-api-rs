@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn render_empty_graph() {
-        let context = OfflineAudioContext::new(2, 555, 44_100.);
+        let mut context = OfflineAudioContext::new(2, 555, 44_100.);
         let buffer = context.start_rendering_sync();
 
         assert_eq!(buffer.number_of_channels(), 2);

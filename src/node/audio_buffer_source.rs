@@ -796,7 +796,7 @@ mod tests {
     fn test_construct_with_options_and_run() {
         let sample_rate = 44100.;
         let length = RENDER_QUANTUM_SIZE;
-        let context = OfflineAudioContext::new(1, length, sample_rate);
+        let mut context = OfflineAudioContext::new(1, length, sample_rate);
 
         let buffer = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
         let options = AudioBufferSourceOptions {
@@ -836,7 +836,7 @@ mod tests {
 
             assert_eq!(audio_buffer.sample_rate(), *sr as f32);
 
-            let context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, 44_100.);
+            let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, 44_100.);
 
             let mut src = context.create_buffer_source();
             src.set_buffer(audio_buffer);
@@ -873,7 +873,7 @@ mod tests {
     #[test]
     fn test_sub_quantum_start() {
         let sample_rate = 480000.;
-        let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
         let mut dirac = context.create_buffer(1, 1, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
@@ -896,7 +896,7 @@ mod tests {
     fn test_sub_sample_start() {
         // sub sample
         let sample_rate = 480000.;
-        let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
         let mut dirac = context.create_buffer(1, 1, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
@@ -920,7 +920,7 @@ mod tests {
         // fast track
         {
             let sample_rate = 480000.;
-            let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+            let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1.], 0);
@@ -942,7 +942,7 @@ mod tests {
         // slow track
         {
             let sample_rate = 480000.;
-            let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+            let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1.], 0);
@@ -967,7 +967,7 @@ mod tests {
         // fast track
         {
             let sample_rate = 480000.;
-            let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+            let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
@@ -991,7 +991,7 @@ mod tests {
         // slow track
         {
             let sample_rate = 480000.;
-            let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+            let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
@@ -1016,7 +1016,7 @@ mod tests {
     #[test]
     fn test_schedule_in_the_past() {
         let sample_rate = 48000.;
-        let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
         let mut dirac = context.create_buffer(1, 1, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
@@ -1039,7 +1039,7 @@ mod tests {
     fn test_audio_buffer_resampling() {
         [22500, 38000, 48000, 96000].iter().for_each(|sr| {
             let base_sr = 44100;
-            let context = OfflineAudioContext::new(1, base_sr, base_sr as f32);
+            let mut context = OfflineAudioContext::new(1, base_sr, base_sr as f32);
 
             // 1Hz sine at different sample rates
             let buf_sr = *sr;
@@ -1080,7 +1080,7 @@ mod tests {
     #[test]
     fn test_playback_rate() {
         let sample_rate = 44100;
-        let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
         let mut buffer = context.create_buffer(1, sample_rate, sample_rate as f32);
         let mut sine = vec![];
@@ -1118,7 +1118,7 @@ mod tests {
     #[test]
     fn test_detune() {
         let sample_rate = 44100;
-        let context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
 
         let mut buffer = context.create_buffer(1, sample_rate, sample_rate as f32);
         let mut sine = vec![];
@@ -1158,7 +1158,7 @@ mod tests {
         // fast track
         {
             let sample_rate = 480000.;
-            let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 2, sample_rate);
+            let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 2, sample_rate);
 
             let mut buffer = context.create_buffer(1, 129, sample_rate);
             let mut data = vec![0.; 129];
@@ -1184,7 +1184,7 @@ mod tests {
         // slow track
         {
             let sample_rate = 480000.;
-            let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 2, sample_rate);
+            let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 2, sample_rate);
 
             let mut buffer = context.create_buffer(1, 129, sample_rate);
             let mut data = vec![0.; 129];
@@ -1213,7 +1213,7 @@ mod tests {
         // fast track
         {
             let sample_rate = 480000.;
-            let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+            let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
@@ -1235,7 +1235,7 @@ mod tests {
 
         {
             let sample_rate = 480000.;
-            let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+            let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
             let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
             dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
@@ -1266,7 +1266,7 @@ mod tests {
     fn test_with_offset() {
         // offset always bypass slow track
         let sample_rate = 480000.;
-        let context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
         let mut dirac = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
         dirac.copy_to_channel(&[0., 0., 0., 0., 1., 1.], 0);
@@ -1308,7 +1308,7 @@ mod tests {
             RENDER_QUANTUM_SIZE * 2,
             RENDER_QUANTUM_SIZE * 2 + 1,
         ] {
-            let context = OfflineAudioContext::new(1, len, sample_rate);
+            let mut context = OfflineAudioContext::new(1, len, sample_rate);
 
             let mut dirac = context.create_buffer(1, buffer_len, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
@@ -1347,7 +1347,7 @@ mod tests {
             RENDER_QUANTUM_SIZE * 2,
             RENDER_QUANTUM_SIZE * 2 + 1,
         ] {
-            let context = OfflineAudioContext::new(2, len, sample_rate);
+            let mut context = OfflineAudioContext::new(2, len, sample_rate);
             let mut dirac = context.create_buffer(2, buffer_len, sample_rate);
             dirac.copy_to_channel(&[1.], 0);
             dirac.copy_to_channel(&[0., 1.], 1);

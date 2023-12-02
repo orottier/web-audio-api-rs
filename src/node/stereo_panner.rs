@@ -391,7 +391,7 @@ mod tests {
 
         // left
         {
-            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            let mut context = OfflineAudioContext::new(2, 128, 44_100.);
             // force channel count to mono
             let panner = StereoPannerNode::new(
                 &context,
@@ -419,7 +419,7 @@ mod tests {
 
         // right
         {
-            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            let mut context = OfflineAudioContext::new(2, 128, 44_100.);
             // force channel count to mono
             let panner = StereoPannerNode::new(
                 &context,
@@ -447,7 +447,7 @@ mod tests {
 
         // equal power
         {
-            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            let mut context = OfflineAudioContext::new(2, 128, 44_100.);
             // force channel count to mono
             let panner = StereoPannerNode::new(
                 &context,
@@ -494,7 +494,7 @@ mod tests {
 
         // left
         {
-            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            let mut context = OfflineAudioContext::new(2, 128, 44_100.);
             // force channel count to mono
             let panner = StereoPannerNode::new(
                 &context,
@@ -518,7 +518,7 @@ mod tests {
 
         // right
         {
-            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            let mut context = OfflineAudioContext::new(2, 128, 44_100.);
             // force channel count to mono
             let panner = StereoPannerNode::new(
                 &context,
@@ -542,7 +542,7 @@ mod tests {
 
         // middle
         {
-            let context = OfflineAudioContext::new(2, 128, 44_100.);
+            let mut context = OfflineAudioContext::new(2, 128, 44_100.);
             // force channel count to mono
             let panner = StereoPannerNode::new(
                 &context,
