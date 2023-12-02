@@ -305,13 +305,16 @@ impl AudioRenderQuantum {
         computed_number_of_channels: usize,
         interpretation: ChannelInterpretation,
     ) {
+        // cf. https://www.w3.org/TR/webaudio/#channel-up-mixing-and-down-mixing
         assert_valid_number_of_channels(computed_number_of_channels);
-
         let silence = self.channels[0].silence();
 
-        // cf. https://www.w3.org/TR/webaudio/#channel-up-mixing-and-down-mixing
-        // handle discrete interpretation
-        if interpretation == ChannelInterpretation::Discrete {
+        // Handle discrete interpretation or speaker layouts where the initial or desired number of
+        // channels is larger than 6 (undefined by the specification)
+        if interpretation == ChannelInterpretation::Discrete
+            || self.number_of_channels() > 6
+            || computed_number_of_channels > 6
+        {
             // upmix by filling with silence
             for _ in self.number_of_channels()..computed_number_of_channels {
                 self.channels.push(silence.clone());
@@ -319,36 +322,48 @@ impl AudioRenderQuantum {
 
             // downmix by truncating
             self.channels.truncate(computed_number_of_channels);
-        } else if interpretation == ChannelInterpretation::Speakers {
+        } else {
             match (self.number_of_channels(), computed_number_of_channels) {
                 // ------------------------------------------
                 // UP MIX
                 // https://www.w3.org/TR/webaudio/#UpMix-sub
                 // ------------------------------------------
-                // 1 -> 2 : up-mix from mono to stereo
-                //   output.L = input;
-                //   output.R = input;
                 (1, 2) => {
+                    // output.L = input;
+                    // output.R = input;
                     self.channels.push(self.channels[0].clone());
                 }
-                // 1 -> 4 : up-mix from mono to quad
-                //   output.L = input;
-                //   output.R = input;
-                //   output.SL = 0;
-                //   output.SR = 0;
+                (1, 3) => {
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence);
+                }
                 (1, 4) => {
+                    // output.L = input;
+                    // output.R = input;
+                    // output.SL = 0;
+                    // output.SR = 0;
                     self.channels.push(self.channels[0].clone());
                     self.channels.push(silence.clone());
                     self.channels.push(silence);
                 }
-                // 1 -> 5.1 : up-mix from mono to 5.1
-                //   output.L = 0;
-                //   output.R = 0;
-                //   output.C = input; // put in center channel
-                //   output.LFE = 0;
-                //   output.SL = 0;
-                //   output.SR = 0;
+                (1, 5) => {
+                    // output.C = input;
+                    // output.L = 0;
+                    // output.R = 0;
+                    // output.SL = 0;
+                    // output.SR = 0;
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence);
+                }
                 (1, 6) => {
+                    // output.L = 0;
+                    // output.R = 0;
+                    // output.C = input; // put in center channel
+                    // output.LFE = 0;
+                    // output.SL = 0;
+                    // output.SR = 0;
                     let main = std::mem::replace(&mut self.channels[0], silence.clone());
                     self.channels.push(silence.clone());
                     self.channels.push(main);
@@ -356,115 +371,90 @@ impl AudioRenderQuantum {
                     self.channels.push(silence.clone());
                     self.channels.push(silence);
                 }
-                // 1 -> 8 : up-mix from mono to 8
-                //   output.FL = 0;
-                //   output.FR = 0;
-                //   output.FC = input; // put in center channel
-                //   output.LFE = 0;
-                //   output.SL = 0;
-                //   output.SR = 0;
-                //   output.BL = 0;
-                //   output.BR = 0;
-                (1, 8) => {
-                    let main = std::mem::replace(&mut self.channels[0], silence.clone());
-                    self.channels.push(silence.clone());
-                    self.channels.push(main);
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence);
+                (2, 3) => {
+                    let left = std::mem::replace(&mut self.channels[0], silence);
+                    let right = std::mem::replace(&mut self.channels[1], left);
+                    self.channels.push(right);
                 }
-                // 2 -> 4 : up-mix from stereo to quad
-                //   output.L = input.L;
-                //   output.R = input.R;
-                //   output.SL = 0;
-                //   output.SR = 0;
                 (2, 4) => {
+                    // output.L = input.L;
+                    // output.R = input.R;
+                    // output.SL = 0;
+                    // output.SR = 0;
                     self.channels.push(silence.clone());
                     self.channels.push(silence);
                 }
-                // 2 -> 5.1 : up-mix from stereo to 5.1
-                //   output.L = input.L;
-                //   output.R = input.R;
-                //   output.C = 0;
-                //   output.LFE = 0;
-                //   output.SL = 0;
-                //   output.SR = 0;
+                (2, 5) => {
+                    // output.L = input.L;
+                    // output.R = input.R;
+                    // output.C = 0;
+                    // output.SL = 0;
+                    // output.SR = 0;
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence.clone());
+                    self.channels.push(silence);
+                }
                 (2, 6) => {
+                    // output.L = input.L;
+                    // output.R = input.R;
+                    // output.C = 0;
+                    // output.LFE = 0;
+                    // output.SL = 0;
+                    // output.SR = 0;
                     self.channels.push(silence.clone());
                     self.channels.push(silence.clone());
                     self.channels.push(silence.clone());
                     self.channels.push(silence);
                 }
-                // 2 -> 8 : up-mix from stereo to 8
-                //   output.FL = input.L;
-                //   output.FR = input.R;
-                //   output.FC = 0;
-                //   output.LFE = 0;
-                //   output.SL = 0;
-                //   output.SR = 0;
-                //   output.BL = 0;
-                //   output.BR = 0;
-                (2, 8) => {
+                (3, 4) => {
+                    self.channels.push(silence);
+                }
+                (3, 5) => {
                     self.channels.push(silence.clone());
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence.clone());
+                    self.channels.push(silence);
+                }
+                (3, 6) => {
                     self.channels.push(silence.clone());
                     self.channels.push(silence.clone());
                     self.channels.push(silence);
                 }
-                // 4 -> 5.1 : up-mix from quad to 5.1
-                //   output.L = input.L;
-                //   output.R = input.R;
-                //   output.C = 0;
-                //   output.LFE = 0;
-                //   output.SL = input.SL;
-                //   output.SR = input.SR;
+                (4, 5) => {
+                    // output.L = input.L;
+                    // output.R = input.R;
+                    // output.C = 0;
+                    // output.SL = input.SL;
+                    // output.SR = input.SR;
+                    let sl = std::mem::replace(&mut self.channels[2], silence.clone());
+                    let sr = std::mem::replace(&mut self.channels[3], sl);
+                    self.channels.push(sr);
+                }
                 (4, 6) => {
+                    // output.L = input.L;
+                    // output.R = input.R;
+                    // output.C = 0;
+                    // output.LFE = 0;
+                    // output.SL = input.SL;
+                    // output.SR = input.SR;
                     let sl = std::mem::replace(&mut self.channels[2], silence.clone());
                     let sr = std::mem::replace(&mut self.channels[3], silence);
                     self.channels.push(sl);
                     self.channels.push(sr);
                 }
-                // 4 -> 8 : up-mix from quad to 8
-                //   output.FL = input.L;
-                //   output.FR = input.R;
-                //   output.FC = 0;
-                //   output.LFE = 0;
-                //   output.SL = input.SL;
-                //   output.SR = input.SR;
-                //   output.BL = 0;
-                //   output.BR = 0;
-                (4, 8) => {
-                    let sl = std::mem::replace(&mut self.channels[2], silence.clone());
-                    let sr = std::mem::replace(&mut self.channels[3], silence.clone());
-                    self.channels.push(sl);
-                    self.channels.push(sr);
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence);
-                }
-                // 6 -> 8 : up-mix from 5.1 to 8
-                // 4 -> 8 : up-mix from quad to 8
-                //   output.FL = input.L;
-                //   output.FR = input.R;
-                //   output.FC = input.C;
-                //   output.LFE = input.LFE;
-                //   output.SL = input.SL;
-                //   output.SR = input.SR;
-                //   output.BL = 0;
-                //   output.BR = 0;
-                (6, 8) => {
-                    self.channels.push(silence.clone());
+                (5, 6) => {
+                    // output.L = input.L;
+                    // output.R = input.R;
+                    // output.C = 0;
+                    // output.LFE = 0;
+                    // output.SL = input.SL;
+                    // output.SR = input.SR;
                     self.channels.push(silence);
                 }
                 // ------------------------------------------
                 // DOWN MIX
                 // https://www.w3.org/TR/webaudio/#down-mix
                 // ------------------------------------------
-                // 2 -> 1 : stereo to mono
-                //   output = 0.5 * (input.L + input.R);
                 (2, 1) => {
+                    // M = 0.5 * (input.L + input.R);
                     let right = self.channels[1].clone();
 
                     self.channels[0]
@@ -474,9 +464,12 @@ impl AudioRenderQuantum {
 
                     self.channels.truncate(1);
                 }
-                // 4 -> 1 : quad to mono
-                //   output = 0.25 * (input.L + input.R + input.SL + input.SR);
+                (3, 1) => {
+                    // M = C;
+                    self.channels.truncate(1);
+                }
                 (4, 1) => {
+                    // M = 0.25 * (input.L + input.R + input.SL + input.SR);
                     let right = self.channels[1].clone();
                     let s_left = self.channels[2].clone();
                     let s_right = self.channels[3].clone();
@@ -490,9 +483,14 @@ impl AudioRenderQuantum {
 
                     self.channels.truncate(1);
                 }
-                // 5.1 -> 1 : 5.1 to mono
-                //   output = sqrt(0.5) * (input.L + input.R) + input.C + 0.5 * (input.SL + input.SR)
+                (5, 1) => {
+                    // M = C;
+                    let c = std::mem::replace(&mut self.channels[2], silence);
+                    self.channels[0] = c;
+                    self.channels.truncate(1);
+                }
                 (6, 1) => {
+                    // output = sqrt(0.5) * (input.L + input.R) + input.C + 0.5 * (input.SL + input.SR)
                     let right = self.channels[1].clone();
                     let center = self.channels[2].clone();
                     let s_left = self.channels[4].clone();
@@ -511,10 +509,12 @@ impl AudioRenderQuantum {
 
                     self.channels.truncate(1);
                 }
-                // 4 -> 2 : quad to stereo
-                //   output.L = 0.5 * (input.L + input.SL);
-                //   output.R = 0.5 * (input.R + input.SR);
+                (3, 2) => {
+                    self.channels.truncate(2);
+                }
                 (4, 2) => {
+                    // output.L = 0.5 * (input.L + input.SL);
+                    // output.R = 0.5 * (input.R + input.SR);
                     let s_left = self.channels[2].clone();
                     let s_right = self.channels[3].clone();
 
@@ -530,10 +530,12 @@ impl AudioRenderQuantum {
 
                     self.channels.truncate(2);
                 }
-                // 5.1 -> 2 : 5.1 to stereo
-                //   output.L = L + sqrt(0.5) * (input.C + input.SL)
-                //   output.R = R + sqrt(0.5) * (input.C + input.SR)
+                (5, 2) => {
+                    self.channels.truncate(2);
+                }
                 (6, 2) => {
+                    // output.L = L + sqrt(0.5) * (input.C + input.SL)
+                    // output.R = R + sqrt(0.5) * (input.C + input.SR)
                     let center = self.channels[2].clone();
                     let s_left = self.channels[4].clone();
                     let s_right = self.channels[5].clone();
@@ -553,12 +555,23 @@ impl AudioRenderQuantum {
 
                     self.channels.truncate(2)
                 }
-                // 5.1 -> 4 : 5.1 to quad
-                //   output.L = L + sqrt(0.5) * input.C
-                //   output.R = R + sqrt(0.5) * input.C
-                //   output.SL = input.SL
-                //   output.SR = input.SR
+                (4, 3) => {
+                    self.channels.truncate(3);
+                }
+                (5, 3) => {
+                    self.channels.truncate(3);
+                }
+                (6, 3) => {
+                    self.channels.truncate(3);
+                }
+                (5, 4) => {
+                    self.channels.truncate(4);
+                }
                 (6, 4) => {
+                    // output.L = L + sqrt(0.5) * input.C
+                    // output.R = R + sqrt(0.5) * input.C
+                    // output.SL = input.SL
+                    // output.SR = input.SR
                     let _low_f = self.channels.swap_remove(3); // swap lr to index 3
                     let center = self.channels.swap_remove(2); // swap lf to index 2
                     let sqrt05 = (0.5_f32).sqrt();
@@ -573,19 +586,13 @@ impl AudioRenderQuantum {
                         .zip(center.iter())
                         .for_each(|(r, c)| *r += sqrt05 * c);
                 }
-
-                _ => panic!(
-                    "{mixing} from {from} to {to} channels not supported",
-                    mixing = if self.number_of_channels() < computed_number_of_channels {
-                        "Up-mixing"
-                    } else {
-                        "Down-mixing"
-                    },
-                    from = self.number_of_channels(),
-                    to = computed_number_of_channels,
-                ),
+                (6, 5) => {
+                    self.channels.truncate(5);
+                }
+                _ => unreachable!(),
             }
         }
+        debug_assert_eq!(self.number_of_channels(), computed_number_of_channels);
     }
 
     /// Convert this buffer to silence
@@ -868,6 +875,22 @@ mod tests {
     }
 
     #[test]
+    fn test_audiobuffer_mix_speakers_all() {
+        let alloc = Alloc::with_capacity(1);
+        let signal = alloc.silence();
+        let mut buffer = AudioRenderQuantum::from(signal);
+
+        for i in 1..MAX_CHANNELS {
+            buffer.set_number_of_channels(i);
+            assert_eq!(buffer.number_of_channels(), i);
+            for j in 1..MAX_CHANNELS {
+                buffer.mix(j, ChannelInterpretation::Speakers);
+                assert_eq!(buffer.number_of_channels(), j);
+            }
+        }
+    }
+
+    #[test]
     fn test_audiobuffer_upmix_speakers() {
         let alloc = Alloc::with_capacity(1);
 
@@ -980,59 +1003,6 @@ mod tests {
         }
 
         {
-            // 1 -> 8
-            let mut signal = alloc.silence();
-            signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
-
-            let mut buffer = AudioRenderQuantum::from(signal);
-
-            buffer.mix(8, ChannelInterpretation::Speakers);
-            assert_eq!(buffer.number_of_channels(), 8);
-
-            // left and right equal
-            assert_float_eq!(
-                &buffer.channel_data(0)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(1)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(2)[..],
-                &[1.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(4)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(5)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(6)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(6)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-        }
-
-        {
             // 2 -> 4
             let mut left_signal = alloc.silence();
             left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
@@ -1129,72 +1099,6 @@ mod tests {
             );
             assert_float_eq!(
                 &buffer.channel_data(5)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-        }
-
-        {
-            // 2 -> 8
-            let mut left_signal = alloc.silence();
-            left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
-            let mut right_signal = alloc.silence();
-            right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
-
-            let mut buffer = AudioRenderQuantum::from(left_signal);
-            buffer.channels.push(right_signal);
-
-            assert_eq!(buffer.number_of_channels(), 2);
-            assert_float_eq!(
-                &buffer.channel_data(0)[..],
-                &[1.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(1)[..],
-                &[0.5; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-
-            buffer.mix(8, ChannelInterpretation::Speakers);
-            assert_eq!(buffer.number_of_channels(), 8);
-            assert_float_eq!(
-                &buffer.channel_data(0)[..],
-                &[1.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(1)[..],
-                &[0.5; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(2)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(4)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(5)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(6)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(6)[..],
                 &[0.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );

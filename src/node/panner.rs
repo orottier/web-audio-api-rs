@@ -23,21 +23,27 @@ use super::{
 pub(crate) fn load_hrtf_processor(sample_rate: u32) -> (HrtfProcessor, usize) {
     static INSTANCE: OnceLock<Mutex<HashMap<u32, (HrtfProcessor, usize)>>> = OnceLock::new();
     let cache = INSTANCE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = cache.lock().unwrap();
-    guard
-        .entry(sample_rate)
-        .or_insert_with(|| {
-            let resource = include_bytes!("../../resources/IRC_1003_C.bin");
-            let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
-            let len = hrir_sphere.len();
 
-            let interpolation_steps = 1; // TODO?
-            let samples_per_step = RENDER_QUANTUM_SIZE / interpolation_steps;
-            let processor = HrtfProcessor::new(hrir_sphere, interpolation_steps, samples_per_step);
+    // To avoid poisening the cache mutex, don't use the `entry()` API on HashMap
+    {
+        if let Some(value) = cache.lock().unwrap().get(&sample_rate) {
+            return value.clone();
+        }
+    }
 
-            (processor, len)
-        })
-        .clone()
+    // The following snippet might panic
+    let resource = include_bytes!("../../resources/IRC_1003_C.bin");
+    let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
+    let len = hrir_sphere.len();
+
+    let interpolation_steps = 1; // TODO?
+    let samples_per_step = RENDER_QUANTUM_SIZE / interpolation_steps;
+    let processor = HrtfProcessor::new(hrir_sphere, interpolation_steps, samples_per_step);
+
+    let value = (processor, len);
+    cache.lock().unwrap().insert(sample_rate, value.clone());
+
+    value
 }
 
 /// Spatialization algorithm used to position the audio in 3D space

@@ -211,6 +211,8 @@ impl ChannelConfig {
 
 impl From<ChannelConfigOptions> for ChannelConfig {
     fn from(opts: ChannelConfigOptions) -> Self {
+        crate::assert_valid_number_of_channels(opts.count);
+
         let inner = ChannelConfigInner {
             count: AtomicUsize::from(opts.count),
             count_mode: AtomicU32::from(opts.count_mode as u32),
