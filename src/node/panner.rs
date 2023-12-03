@@ -24,6 +24,11 @@ pub(crate) fn load_hrtf_processor(sample_rate: u32) -> (HrtfProcessor, usize) {
     static INSTANCE: OnceLock<Mutex<HashMap<u32, (HrtfProcessor, usize)>>> = OnceLock::new();
     let cache = INSTANCE.get_or_init(|| Mutex::new(HashMap::new()));
 
+    // There's an upstream bug for low sample rates, so work around it by forcing sample_rate to be
+    // 27k minimum. The HRTF response will be a bit distorted but I assume you won't be using it
+    // anyway when running these low sample rates. <https://github.com/mrDIMAS/hrtf/issues/9>
+    let sample_rate = sample_rate.max(27_000);
+
     // To avoid poisening the cache mutex, don't use the `entry()` API on HashMap
     {
         if let Some(value) = cache.lock().unwrap().get(&sample_rate) {

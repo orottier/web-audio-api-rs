@@ -108,7 +108,6 @@ fn test_none_sink_id() {
 }
 
 #[test]
-#[should_panic] // https://github.com/mrDIMAS/hrtf/issues/9
 fn test_weird_sample_rate() {
     let options = AudioContextOptions {
         sink_id: "none".into(),
@@ -116,6 +115,7 @@ fn test_weird_sample_rate() {
         ..AudioContextOptions::default()
     };
 
+    // would crash due to <https://github.com/mrDIMAS/hrtf/issues/9>
     let _ = AudioContext::new(options);
 }
 
