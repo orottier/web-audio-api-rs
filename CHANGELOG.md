@@ -1,5 +1,14 @@
 # Version History
 
+## Version 0.38.0 (2023-12-03)
+
+- Breaking: `OfflineAudioContext::start_rendering_sync` takes `&mut` instead of `self`
+- Fix panic in AudioBufferSource when supplying buffer in options
+- Fix panic in Oscillator when supplying periodic wave in options
+- Fix panic in AudioContext for really low sample rates
+- Support up/down-mixing of all speaker layouts with 6 channels or less
+- Disallow channel merger/splitter configurations with more than 32 channels
+
 ## Version 0.37.0 (2023-11-25)
 
 - Added the AudioWorkletNode and AudioWorkletProcessor interfaces
