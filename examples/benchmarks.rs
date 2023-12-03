@@ -45,7 +45,7 @@ fn get_buffer(sources: &[AudioBuffer], sample_rate: f32, number_of_channels: usi
     buffer.unwrap().clone()
 }
 
-fn benchmark(name: &'static str, context: OfflineAudioContext, results: &mut Vec<BenchResult>) {
+fn benchmark(name: &'static str, mut context: OfflineAudioContext, results: &mut Vec<BenchResult>) {
     print!("> Running benchmark: {:<70}\r", name);
     stdout().flush().unwrap();
 

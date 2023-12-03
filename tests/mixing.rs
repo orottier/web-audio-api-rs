@@ -19,7 +19,7 @@ fn setup_with_destination_channel_config(
 }
 
 fn run_with_intermediate_channel_config(
-    context: OfflineAudioContext,
+    mut context: OfflineAudioContext,
     number_of_channels: usize,
     channel_count_mode: ChannelCountMode,
     channel_interpretation: ChannelInterpretation,

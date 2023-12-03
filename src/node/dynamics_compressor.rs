@@ -476,7 +476,7 @@ mod tests {
             as usize
             * RENDER_QUANTUM_SIZE;
 
-        let context = OfflineAudioContext::new(1, 128 * 8, sample_rate);
+        let mut context = OfflineAudioContext::new(1, 128 * 8, sample_rate);
 
         let compressor = DynamicsCompressorNode::new(&context, Default::default());
         compressor.connect(&context.destination());
@@ -531,7 +531,7 @@ mod tests {
     //     // knee: 0.
     //     // ratio: 12.
     //     let sample_rate = 1_000.;
-    //     let context = OfflineAudioContext::new(1, 128, sample_rate);
+    //     let mut context = OfflineAudioContext::new(1, 128, sample_rate);
 
     //     let compressor = DynamicsCompressorNode::new(&context, Default::default());
     //     compressor.knee().set_value(0.);

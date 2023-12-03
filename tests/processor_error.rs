@@ -58,7 +58,7 @@ impl AudioProcessor for PanicProcessor {
 
 #[test]
 fn test_processor_error() {
-    let context = OfflineAudioContext::new(1, 128, 48000.);
+    let mut context = OfflineAudioContext::new(1, 128, 48000.);
 
     {
         // create constant source with value 1, connect to destination

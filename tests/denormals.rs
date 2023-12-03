@@ -3,7 +3,7 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 #[test]
 fn test_flush_denormals() {
-    let context = OfflineAudioContext::new(1, 128, 48000.);
+    let mut context = OfflineAudioContext::new(1, 128, 48000.);
 
     let mut signal = context.create_constant_source();
     signal.start();

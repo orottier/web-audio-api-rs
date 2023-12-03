@@ -1037,7 +1037,7 @@ mod tests {
     fn test_equal_power_mono_to_stereo() {
         let sample_rate = 44100.;
         let length = RENDER_QUANTUM_SIZE * 4;
-        let context = OfflineAudioContext::new(2, length, sample_rate);
+        let mut context = OfflineAudioContext::new(2, length, sample_rate);
 
         // 128 input samples of value 1.
         let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
@@ -1090,7 +1090,7 @@ mod tests {
     fn test_equal_power_azimuth_mono_to_stereo() {
         let sample_rate = 44100.;
         let length = RENDER_QUANTUM_SIZE;
-        let context = OfflineAudioContext::new(2, length, sample_rate);
+        let mut context = OfflineAudioContext::new(2, length, sample_rate);
 
         // 128 input samples of value 1.
         let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
@@ -1130,7 +1130,7 @@ mod tests {
     fn test_equal_power_stereo_to_stereo() {
         let sample_rate = 44100.;
         let length = RENDER_QUANTUM_SIZE;
-        let context = OfflineAudioContext::new(2, length, sample_rate);
+        let mut context = OfflineAudioContext::new(2, length, sample_rate);
 
         // put listener at (10, 0, 0), directed at (1, 0, 0)
         let listener = context.listener();
@@ -1180,7 +1180,7 @@ mod tests {
     fn test_hrtf() {
         let sample_rate = 44100.;
         let length = RENDER_QUANTUM_SIZE * 4;
-        let context = OfflineAudioContext::new(2, length, sample_rate);
+        let mut context = OfflineAudioContext::new(2, length, sample_rate);
 
         // 128 input samples of value 1.
         let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);

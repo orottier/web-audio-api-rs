@@ -17,7 +17,7 @@ pub struct OfflineAudioContext {
     /// the size of the buffer in sample-frames
     length: usize,
     /// the rendering 'thread', fully controlled by the offline context
-    renderer: RenderThread,
+    renderer: Option<RenderThread>,
 }
 
 impl BaseAudioContext for OfflineAudioContext {
@@ -74,7 +74,7 @@ impl OfflineAudioContext {
         Self {
             base,
             length,
-            renderer,
+            renderer: Some(renderer),
         }
     }
 
@@ -82,8 +82,16 @@ impl OfflineAudioContext {
     ///
     /// This function will block the current thread and returns the rendered `AudioBuffer`
     /// synchronously. An async version is currently not implemented.
-    pub fn start_rendering_sync(self) -> AudioBuffer {
-        self.renderer.render_audiobuffer_sync(self.length)
+    ///
+    /// # Panics
+    ///
+    /// Panics if this method is called multiple times
+    pub fn start_rendering_sync(&mut self) -> AudioBuffer {
+        let renderer = match self.renderer.take() {
+            None => panic!("InvalidStateError: Cannot call `startRendering` twice"),
+            Some(v) => v,
+        };
+        renderer.render_audiobuffer_sync(self.length)
     }
 
     /// get the length of rendering audio buffer
@@ -102,12 +110,22 @@ mod tests {
 
     #[test]
     fn render_empty_graph() {
-        let context = OfflineAudioContext::new(2, 555, 44_100.);
+        let mut context = OfflineAudioContext::new(2, 555, 44_100.);
         let buffer = context.start_rendering_sync();
+
+        assert_eq!(context.length(), 555);
 
         assert_eq!(buffer.number_of_channels(), 2);
         assert_eq!(buffer.length(), 555);
         assert_float_eq!(buffer.get_channel_data(0), &[0.; 555][..], abs_all <= 0.);
         assert_float_eq!(buffer.get_channel_data(1), &[0.; 555][..], abs_all <= 0.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn render_twice_panics() {
+        let mut context = OfflineAudioContext::new(2, 555, 44_100.);
+        let _ = context.start_rendering_sync();
+        let _ = context.start_rendering_sync();
     }
 }

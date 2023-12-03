@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn test_constructor_options_buffer() {
         let sample_rate = 44100.;
-        let context = OfflineAudioContext::new(1, 10, sample_rate);
+        let mut context = OfflineAudioContext::new(1, 10, sample_rate);
 
         let ir = vec![1.];
         let calibration = 0.00125;
@@ -493,7 +493,7 @@ mod tests {
 
     fn test_convolve(signal: &[f32], impulse_resp: Option<Vec<f32>>, length: usize) -> AudioBuffer {
         let sample_rate = 44100.;
-        let context = OfflineAudioContext::new(1, length, sample_rate);
+        let mut context = OfflineAudioContext::new(1, length, sample_rate);
 
         let input = AudioBuffer::from(vec![signal.to_vec()], sample_rate);
         let mut src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());

@@ -238,7 +238,7 @@ mod tests {
         let sample_rate = 48000.;
         let start_in_samples = (128 + 1) as f64; // start rendering in 2d block
         let stop_in_samples = (256 + 1) as f64; // stop rendering of 3rd block
-        let context = OfflineAudioContext::new(1, 128 * 4, sample_rate);
+        let mut context = OfflineAudioContext::new(1, 128 * 4, sample_rate);
 
         let mut src = context.create_constant_source();
         src.connect(&context.destination());
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_start_in_the_past() {
-        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let mut context = OfflineAudioContext::new(1, 128, 48000.);
 
         let mut src = context.create_constant_source();
         src.connect(&context.destination());
