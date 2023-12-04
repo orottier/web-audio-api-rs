@@ -1,11 +1,16 @@
 //! The `OfflineAudioContext` type
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use crate::assert_valid_sample_rate;
 use crate::buffer::AudioBuffer;
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
+use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
+
+pub(crate) type OfflineAudioContextCallback =
+    dyn FnOnce(&mut OfflineAudioContext) + Send + Sync + 'static;
 
 /// The `OfflineAudioContext` doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an `AudioBuffer`.
@@ -18,6 +23,8 @@ pub struct OfflineAudioContext {
     length: usize,
     /// the rendering 'thread', fully controlled by the offline context
     renderer: Option<RenderThread>,
+    /// callbacks to run at certain render quanta (via `suspend`)
+    suspend_callbacks: HashMap<usize, Box<OfflineAudioContextCallback>>,
 }
 
 impl BaseAudioContext for OfflineAudioContext {
@@ -75,6 +82,7 @@ impl OfflineAudioContext {
             base,
             length,
             renderer: Some(renderer),
+            suspend_callbacks: HashMap::new(),
         }
     }
 
@@ -91,7 +99,11 @@ impl OfflineAudioContext {
             None => panic!("InvalidStateError: Cannot call `startRendering` twice"),
             Some(v) => v,
         };
-        renderer.render_audiobuffer_sync(self.length)
+        renderer.render_audiobuffer_sync(
+            self.length,
+            std::mem::take(&mut self.suspend_callbacks),
+            self,
+        )
     }
 
     /// get the length of rendering audio buffer
@@ -100,6 +112,36 @@ impl OfflineAudioContext {
     #[must_use]
     pub fn length(&self) -> usize {
         self.length
+    }
+
+    /// Schedules a suspension of the time progression in the audio context at the specified time
+    /// and runs a callback.
+    ///
+    /// The specified time is quantized and rounded up to the render quantum size.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the quantized frame number
+    ///
+    /// - is negative or
+    /// - is less than or equal to the current time or
+    /// - is greater than or equal to the total render duration or
+    /// - is scheduled by another suspend for the same time
+    pub fn suspend_at<F: FnOnce(&mut Self) + Send + Sync + 'static>(
+        &mut self,
+        suspend_time: f64,
+        callback: F,
+    ) {
+        let quantum = (suspend_time * self.base.sample_rate() as f64 / RENDER_QUANTUM_SIZE as f64)
+            .ceil() as usize;
+        match self.suspend_callbacks.entry(quantum) {
+            Entry::Occupied(_) => panic!(
+                "InvalidStateError: cannot suspend multiple times at the same render quantum"
+            ),
+            Entry::Vacant(e) => {
+                e.insert(Box::new(callback));
+            }
+        }
     }
 }
 

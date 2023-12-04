@@ -2,6 +2,7 @@
 
 use std::any::Any;
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -11,7 +12,7 @@ use dasp_sample::FromSample;
 
 use super::AudioRenderQuantum;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::context::AudioNodeId;
+use crate::context::{AudioNodeId, OfflineAudioContext};
 use crate::events::EventDispatch;
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
@@ -180,7 +181,12 @@ impl RenderThread {
     // don't launch a thread.
     //
     // cf. https://webaudio.github.io/web-audio-api/#dom-offlineaudiocontext-startrendering
-    pub fn render_audiobuffer_sync(mut self, length: usize) -> AudioBuffer {
+    pub fn render_audiobuffer_sync(
+        mut self,
+        length: usize,
+        mut suspend_callbacks: HashMap<usize, Box<crate::context::OfflineAudioContextCallback>>,
+        context: &mut OfflineAudioContext,
+    ) -> AudioBuffer {
         let options = AudioBufferOptions {
             number_of_channels: self.number_of_channels,
             length,
@@ -190,7 +196,12 @@ impl RenderThread {
         let mut buffer = AudioBuffer::new(options);
         let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
 
-        for _ in 0..num_frames {
+        for quantum in 0..num_frames {
+            // Suspend at given times and run callbacks
+            if let Some(callback) = suspend_callbacks.remove(&quantum) {
+                (callback)(context)
+            }
+
             // Handle addition/removal of nodes/edges
             self.handle_control_messages();
 
