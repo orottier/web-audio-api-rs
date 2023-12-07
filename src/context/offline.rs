@@ -9,8 +9,7 @@ use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
 use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
 
-pub(crate) type OfflineAudioContextCallback =
-    dyn FnOnce(&mut OfflineAudioContext) + Send + Sync + 'static;
+pub(crate) type OfflineAudioContextCallback = dyn FnOnce(&mut OfflineAudioContext);
 
 /// The `OfflineAudioContext` doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an `AudioBuffer`.
@@ -127,11 +126,7 @@ impl OfflineAudioContext {
     /// - is less than or equal to the current time or
     /// - is greater than or equal to the total render duration or
     /// - is scheduled by another suspend for the same time
-    pub fn suspend_at<F: FnOnce(&mut Self) + Send + Sync + 'static>(
-        &mut self,
-        suspend_time: f64,
-        callback: F,
-    ) {
+    pub fn suspend_at<F: FnOnce(&mut Self) + 'static>(&mut self, suspend_time: f64, callback: F) {
         let quantum = (suspend_time * self.base.sample_rate() as f64 / RENDER_QUANTUM_SIZE as f64)
             .ceil() as usize;
         match self.suspend_callbacks.entry(quantum) {
