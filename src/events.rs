@@ -15,10 +15,11 @@ pub struct Event {
     pub type_: &'static str,
 }
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Debug)]
 pub(crate) enum EventType {
     Ended(AudioNodeId),
     SinkChange,
+    StateChange,
     RenderCapacity,
     ProcessorError(AudioNodeId),
     Diagnostics,
@@ -36,6 +37,7 @@ pub struct ErrorEvent {
     pub event: Event,
 }
 
+#[derive(Debug)]
 pub(crate) enum EventPayload {
     None,
     RenderCapacity(AudioRenderCapacityEvent),
@@ -43,6 +45,7 @@ pub(crate) enum EventPayload {
     Diagnostics(Vec<u8>),
 }
 
+#[derive(Debug)]
 pub(crate) struct EventDispatch {
     type_: EventType,
     payload: EventPayload,
@@ -59,6 +62,13 @@ impl EventDispatch {
     pub fn sink_change() -> Self {
         EventDispatch {
             type_: EventType::SinkChange,
+            payload: EventPayload::None,
+        }
+    }
+
+    pub fn state_change() -> Self {
+        EventDispatch {
+            type_: EventType::StateChange,
             payload: EventPayload::None,
         }
     }

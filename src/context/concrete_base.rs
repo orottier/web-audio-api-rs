@@ -338,7 +338,11 @@ impl ConcreteBaseAudioContext {
 
     /// Updates state of current context
     pub(super) fn set_state(&self, state: AudioContextState) {
-        self.inner.state.store(state as u8, Ordering::SeqCst);
+        let current_state = self.state();
+        if current_state != state {
+            self.inner.state.store(state as u8, Ordering::SeqCst);
+            let _ = self.send_event(EventDispatch::state_change());
+        }
     }
 
     /// The sample rate (in sample-frames per second) at which the `AudioContext` handles audio.
