@@ -8,7 +8,7 @@ use web_audio_api::context::{
 };
 use web_audio_api::node::AudioNode;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use web_audio_api::MAX_CHANNELS;
 
 fn require_send_sync_static<T: Send + Sync + 'static>(_: T) {}
@@ -87,6 +87,16 @@ fn test_none_sink_id() {
     let context = AudioContext::new(options);
     assert_eq!(context.sink_id(), "none");
 
+    // count the number of state changes
+    let state_changes = &*Box::leak(Box::new(AtomicU32::new(0)));
+    context.set_onstatechange(move |_| {
+        state_changes.fetch_add(1, Ordering::Relaxed);
+    });
+
+    // give event thread some time to pick up events
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(state_changes.load(Ordering::Relaxed), 1); // started
+
     // changing sink_id to 'none' again should make no changes
     let sink_stable = &*Box::leak(Box::new(AtomicBool::new(true)));
     context.set_onsinkchange(move |_| {
@@ -98,13 +108,24 @@ fn test_none_sink_id() {
     context.suspend_sync();
     assert_eq!(context.state(), AudioContextState::Suspended);
 
+    // give event thread some time to pick up events
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(state_changes.load(Ordering::Relaxed), 2); // suspended
+
     context.resume_sync();
     assert_eq!(context.state(), AudioContextState::Running);
+
+    // give event thread some time to pick up events
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(state_changes.load(Ordering::Relaxed), 3); // resumed
 
     context.close_sync();
     assert_eq!(context.state(), AudioContextState::Closed);
 
+    // give event thread some time to pick up events
+    std::thread::sleep(std::time::Duration::from_millis(20));
     assert!(sink_stable.load(Ordering::SeqCst));
+    assert_eq!(state_changes.load(Ordering::Relaxed), 4); // closed
 }
 
 #[test]

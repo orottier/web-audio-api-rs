@@ -6,6 +6,7 @@ use crate::context::{
     DESTINATION_NODE_ID,
 };
 use crate::decoding::MediaDecoder;
+use crate::events::{Event, EventHandler, EventType};
 use crate::node::{AudioNode, ChannelConfigOptions};
 use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
@@ -299,6 +300,23 @@ pub trait BaseAudioContext {
 
         let proc_id = AudioParamId(param.registration().id().0);
         (param, proc_id)
+    }
+
+    /// Register callback to run when the state of the AudioContext has changed
+    ///
+    /// Only a single event handler is active at any time. Calling this method multiple times will
+    /// override the previous event handler.
+    fn set_onstatechange<F: FnMut(Event) + Send + 'static>(&self, mut callback: F) {
+        let callback = move |_| {
+            callback(Event {
+                type_: "onstatechange",
+            })
+        };
+
+        self.base().set_event_handler(
+            EventType::StateChange,
+            EventHandler::Multiple(Box::new(callback)),
+        );
     }
 
     #[cfg(test)]
