@@ -9,10 +9,12 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
 use dasp_sample::FromSample;
+use futures::channel;
+use futures::stream::StreamExt;
 
 use super::AudioRenderQuantum;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::context::{AudioNodeId, OfflineAudioContext};
+use crate::context::AudioNodeId;
 use crate::events::EventDispatch;
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
@@ -181,11 +183,11 @@ impl RenderThread {
     // don't launch a thread.
     //
     // cf. https://webaudio.github.io/web-audio-api/#dom-offlineaudiocontext-startrendering
-    pub fn render_audiobuffer_sync(
+    pub async fn render_audiobuffer(
         mut self,
         length: usize,
-        mut suspend_callbacks: HashMap<usize, Box<crate::context::OfflineAudioContextCallback>>,
-        context: &mut OfflineAudioContext,
+        mut suspend_callbacks: HashMap<usize, channel::oneshot::Sender<()>>,
+        mut resume_receiver: channel::mpsc::Receiver<()>,
     ) -> AudioBuffer {
         let options = AudioBufferOptions {
             number_of_channels: self.number_of_channels,
@@ -198,8 +200,9 @@ impl RenderThread {
 
         for quantum in 0..num_frames {
             // Suspend at given times and run callbacks
-            if let Some(callback) = suspend_callbacks.remove(&quantum) {
-                (callback)(context)
+            if let Some(sender) = suspend_callbacks.remove(&quantum) {
+                sender.send(()).unwrap();
+                resume_receiver.next().await;
             }
 
             // Handle addition/removal of nodes/edges

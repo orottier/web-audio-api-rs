@@ -21,6 +21,7 @@ crossbeam-channel = "0.5"
 cubeb = { version = "0.10", optional = true }
 dasp_sample = "0.11"
 float_eq = "1.0"
+futures = { version = "0.3.29", default-features = false, features = ["std"] }
 hound = "3.5"
 hrtf = "0.8.1"
 llq = "0.1.1"
@@ -36,6 +37,7 @@ vecmath = "1.0"
 no_denormals = "0.1.2"
 
 [dev-dependencies]
+futures = { version = "0.3.29", features = ["executor"] }
 alloc_counter = "0.0.4"
 criterion = "0.5.1"
 env_logger = "0.10"

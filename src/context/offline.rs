@@ -2,15 +2,15 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::buffer::AudioBuffer;
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
 use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
 
-pub(crate) type OfflineAudioContextCallback =
-    dyn FnOnce(&mut OfflineAudioContext) + Send + Sync + 'static;
+use futures::channel::oneshot;
+use futures::sink::SinkExt;
 
 /// The `OfflineAudioContext` doesn't render the audio to the device hardware; instead, it generates
 /// it, as fast as it can, and outputs the result to an `AudioBuffer`.
@@ -21,10 +21,18 @@ pub struct OfflineAudioContext {
     base: ConcreteBaseAudioContext,
     /// the size of the buffer in sample-frames
     length: usize,
+    /// actual renderer of the audio graph, can only be called once
+    renderer: Mutex<Option<OfflineAudioContextRenderer>>,
+    /// channel to notify resume actions on the rendering
+    resume_sender: futures::channel::mpsc::Sender<()>,
+}
+
+struct OfflineAudioContextRenderer {
     /// the rendering 'thread', fully controlled by the offline context
-    renderer: Option<RenderThread>,
+    renderer: RenderThread,
     /// callbacks to run at certain render quanta (via `suspend`)
-    suspend_callbacks: HashMap<usize, Box<OfflineAudioContextCallback>>,
+    suspend_callbacks: HashMap<usize, oneshot::Sender<()>>,
+    resume_receiver: futures::channel::mpsc::Receiver<()>,
 }
 
 impl BaseAudioContext for OfflineAudioContext {
@@ -78,32 +86,57 @@ impl OfflineAudioContext {
             node_id_consumer,
         );
 
+        let (resume_sender, resume_receiver) = futures::channel::mpsc::channel(0);
+
+        let renderer = OfflineAudioContextRenderer {
+            renderer,
+            suspend_callbacks: HashMap::new(),
+            resume_receiver,
+        };
+
         Self {
             base,
             length,
-            renderer: Some(renderer),
-            suspend_callbacks: HashMap::new(),
+            renderer: Mutex::new(Some(renderer)),
+            resume_sender,
         }
     }
 
     /// Given the current connections and scheduled changes, starts rendering audio.
     ///
     /// This function will block the current thread and returns the rendered `AudioBuffer`
-    /// synchronously. An async version is currently not implemented.
+    /// synchronously.
     ///
     /// # Panics
     ///
     /// Panics if this method is called multiple times
     pub fn start_rendering_sync(&mut self) -> AudioBuffer {
-        let renderer = match self.renderer.take() {
+        todo!()
+    }
+
+    /// Given the current connections and scheduled changes, starts rendering audio.
+    ///
+    /// Rendering is purely CPU bound and contains no `await` points, so calling this method will
+    /// block the executor until completion or until the context is suspended.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this method is called multiple times.
+    pub async fn start_rendering(&self) -> AudioBuffer {
+        // We are mixing async with a std Mutex, so be sure not to `await` while the lock is held
+        let renderer = match self.renderer.lock().unwrap().take() {
             None => panic!("InvalidStateError: Cannot call `startRendering` twice"),
             Some(v) => v,
         };
-        renderer.render_audiobuffer_sync(
-            self.length,
-            std::mem::take(&mut self.suspend_callbacks),
-            self,
-        )
+
+        renderer
+            .renderer
+            .render_audiobuffer(
+                self.length,
+                renderer.suspend_callbacks,
+                renderer.resume_receiver,
+            )
+            .await
     }
 
     /// get the length of rendering audio buffer
@@ -127,21 +160,37 @@ impl OfflineAudioContext {
     /// - is less than or equal to the current time or
     /// - is greater than or equal to the total render duration or
     /// - is scheduled by another suspend for the same time
-    pub fn suspend_at<F: FnOnce(&mut Self) + Send + Sync + 'static>(
-        &mut self,
-        suspend_time: f64,
-        callback: F,
-    ) {
+    pub async fn suspend_at(&self, suspend_time: f64) {
         let quantum = (suspend_time * self.base.sample_rate() as f64 / RENDER_QUANTUM_SIZE as f64)
             .ceil() as usize;
-        match self.suspend_callbacks.entry(quantum) {
-            Entry::Occupied(_) => panic!(
-                "InvalidStateError: cannot suspend multiple times at the same render quantum"
-            ),
-            Entry::Vacant(e) => {
-                e.insert(Box::new(callback));
+
+        let (sender, receiver) = oneshot::channel();
+
+        // We are mixing async with a std Mutex, so be sure not to `await` while the lock is held
+        {
+            let mut lock = self.renderer.lock().unwrap();
+            let renderer = lock.as_mut().unwrap();
+
+            match renderer.suspend_callbacks.entry(quantum) {
+                Entry::Occupied(_) => panic!(
+                    "InvalidStateError: cannot suspend multiple times at the same render quantum"
+                ),
+                Entry::Vacant(e) => {
+                    e.insert(sender);
+                }
             }
-        }
+        } // lock is dropped
+
+        receiver.await.unwrap()
+    }
+
+    /// Resumes the progression of the OfflineAudioContext's currentTime when it has been suspended
+    ///
+    /// # Panics
+    ///
+    /// Panics when the context is closed or rendering has not started
+    pub async fn resume(&self) {
+        self.resume_sender.clone().send(()).await.unwrap()
     }
 }
 
@@ -149,6 +198,9 @@ impl OfflineAudioContext {
 mod tests {
     use super::*;
     use float_eq::assert_float_eq;
+
+    use crate::node::AudioNode;
+    use crate::node::AudioScheduledSourceNode;
 
     #[test]
     fn render_empty_graph() {
@@ -169,5 +221,40 @@ mod tests {
         let mut context = OfflineAudioContext::new(2, 555, 44_100.);
         let _ = context.start_rendering_sync();
         let _ = context.start_rendering_sync();
+    }
+
+    #[test]
+    fn render_suspend_resume() {
+        use futures::executor;
+        use futures::future::FutureExt;
+        use futures::join;
+
+        let context = Arc::new(OfflineAudioContext::new(1, 512, 44_100.));
+        let context_clone = Arc::clone(&context.clone());
+
+        let suspend_promise = context.suspend_at(128. / 44_100.).then(|_| async move {
+            let mut src = context_clone.create_constant_source();
+            src.connect(&context_clone.destination());
+            src.start();
+            context_clone.resume().await;
+        });
+
+        let render_promise = context.start_rendering();
+
+        let buffer = executor::block_on(async move { join!(suspend_promise, render_promise).1 });
+
+        assert_eq!(buffer.number_of_channels(), 1);
+        assert_eq!(buffer.length(), 512);
+
+        assert_float_eq!(
+            buffer.get_channel_data(0)[..128],
+            &[0.; 128][..],
+            abs_all <= 0.
+        );
+        assert_float_eq!(
+            buffer.get_channel_data(0)[128..],
+            &[1.; 384][..],
+            abs_all <= 0.
+        );
     }
 }
