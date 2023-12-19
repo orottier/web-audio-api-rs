@@ -198,7 +198,7 @@ impl OfflineAudioContext {
     /// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
     ///
     /// let context = Arc::new(OfflineAudioContext::new(1, 512, 44_100.));
-    /// let context_clone = Arc::clone(&context.clone());
+    /// let context_clone = Arc::clone(&context);
     ///
     /// let suspend_promise = context.suspend_at(128. / 44_100.).then(|_| async move {
     ///     let mut src = context_clone.create_constant_source();
@@ -376,7 +376,7 @@ mod tests {
         use futures::join;
 
         let context = Arc::new(OfflineAudioContext::new(1, 512, 44_100.));
-        let context_clone = Arc::clone(&context.clone());
+        let context_clone = Arc::clone(&context);
 
         let suspend_promise = context.suspend_at(128. / 44_100.).then(|_| async move {
             let mut src = context_clone.create_constant_source();
