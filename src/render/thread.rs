@@ -199,10 +199,16 @@ impl RenderThread {
         let mut buffer = AudioBuffer::new(options);
         let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
 
+        // Handle addition/removal of nodes/edges
+        self.handle_control_messages();
+
         for quantum in 0..num_frames {
             // Suspend at given times and run callbacks
             if let Some(callback) = suspend_callbacks.remove(&quantum) {
-                (callback)(context)
+                (callback)(context);
+
+                // Handle addition/removal of nodes/edges
+                self.handle_control_messages();
             }
 
             self.render_offline_quantum(&mut buffer);
@@ -231,11 +237,17 @@ impl RenderThread {
         let mut buffer = AudioBuffer::new(options);
         let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
 
+        // Handle addition/removal of nodes/edges
+        self.handle_control_messages();
+
         for quantum in 0..num_frames {
             // Suspend at given times and run callbacks
             if let Some(sender) = suspend_callbacks.remove(&quantum) {
                 sender.send(()).unwrap();
                 resume_receiver.next().await;
+
+                // Handle addition/removal of nodes/edges
+                self.handle_control_messages();
             }
 
             self.render_offline_quantum(&mut buffer);
@@ -246,9 +258,6 @@ impl RenderThread {
 
     /// Render a single quantum into an AudioBuffer
     fn render_offline_quantum(&mut self, buffer: &mut AudioBuffer) {
-        // Handle addition/removal of nodes/edges
-        self.handle_control_messages();
-
         // Update time
         let current_frame = self
             .frames_played
