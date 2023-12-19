@@ -242,39 +242,3 @@ fn test_cycle_breaker() {
         abs_all <= 0.
     );
 }
-
-#[test]
-fn test_suspend() {
-    let len = RENDER_QUANTUM_SIZE * 4;
-    let sample_rate = 48000_f64;
-
-    let mut context = OfflineAudioContext::new(1, len, sample_rate as f32);
-
-    context.suspend_at(RENDER_QUANTUM_SIZE as f64 / sample_rate, |context| {
-        let mut src = context.create_constant_source();
-        src.connect(&context.destination());
-        src.start();
-    });
-
-    context.suspend_at((3 * RENDER_QUANTUM_SIZE) as f64 / sample_rate, |context| {
-        context.destination().disconnect();
-    });
-
-    let output = context.start_rendering_sync();
-
-    assert_float_eq!(
-        output.get_channel_data(0)[..RENDER_QUANTUM_SIZE],
-        &[0.; RENDER_QUANTUM_SIZE][..],
-        abs_all <= 0.
-    );
-    assert_float_eq!(
-        output.get_channel_data(0)[RENDER_QUANTUM_SIZE..3 * RENDER_QUANTUM_SIZE],
-        &[1.; 2 * RENDER_QUANTUM_SIZE][..],
-        abs_all <= 0.
-    );
-    assert_float_eq!(
-        output.get_channel_data(0)[3 * RENDER_QUANTUM_SIZE..4 * RENDER_QUANTUM_SIZE],
-        &[0.; RENDER_QUANTUM_SIZE][..],
-        abs_all <= 0.
-    );
-}

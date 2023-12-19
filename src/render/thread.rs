@@ -14,7 +14,7 @@ use futures::stream::StreamExt;
 
 use super::AudioRenderQuantum;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::context::AudioNodeId;
+use crate::context::{AudioNodeId, OfflineAudioContext};
 use crate::events::EventDispatch;
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
@@ -179,8 +179,75 @@ impl RenderThread {
     }
 
     // Render method of the `OfflineAudioContext::start_rendering_sync`
+    //
     // This method is not spec compliant and obviously marked as synchronous, so we
     // don't launch a thread.
+    //
+    // cf. https://webaudio.github.io/web-audio-api/#dom-offlineaudiocontext-startrendering
+    pub fn render_audiobuffer_sync(
+        mut self,
+        length: usize,
+        mut suspend_callbacks: HashMap<usize, Box<crate::context::OfflineAudioContextCallback>>,
+        context: &mut OfflineAudioContext,
+    ) -> AudioBuffer {
+        let options = AudioBufferOptions {
+            number_of_channels: self.number_of_channels,
+            length,
+            sample_rate: self.sample_rate,
+        };
+
+        let mut buffer = AudioBuffer::new(options);
+        let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
+
+        for quantum in 0..num_frames {
+            // Suspend at given times and run callbacks
+            if let Some(callback) = suspend_callbacks.remove(&quantum) {
+                (callback)(context)
+            }
+
+            // Handle addition/removal of nodes/edges
+            self.handle_control_messages();
+
+            // Update time
+            let current_frame = self
+                .frames_played
+                .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
+            let current_time = current_frame as f64 / self.sample_rate as f64;
+
+            let scope = RenderScope {
+                current_frame,
+                current_time,
+                sample_rate: self.sample_rate,
+                event_sender: self.event_sender.clone(),
+                node_id: Cell::new(AudioNodeId(0)), // placeholder value
+            };
+
+            // Render audio graph
+            let graph = self.graph.as_mut().unwrap();
+
+            // For x64 and aarch, process with denormal floats disabled (for performance, #194)
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
+            let rendered = no_denormals::no_denormals(|| graph.render(&scope));
+            #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+            let rendered = graph.render(&scope);
+
+            rendered.channels().iter().enumerate().for_each(
+                |(channel_number, rendered_channel)| {
+                    buffer.copy_to_channel_with_offset(
+                        rendered_channel,
+                        channel_number,
+                        current_frame as usize,
+                    );
+                },
+            );
+        }
+
+        buffer
+    }
+
+    // Render method of the `OfflineAudioContext::start_rendering`
+    //
+    // This is the async interface, as compared to render_audiobuffer_sync
     //
     // cf. https://webaudio.github.io/web-audio-api/#dom-offlineaudiocontext-startrendering
     pub async fn render_audiobuffer(
