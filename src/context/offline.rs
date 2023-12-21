@@ -222,7 +222,12 @@ impl OfflineAudioContext {
         // We are mixing async with a std Mutex, so be sure not to `await` while the lock is held
         {
             let mut lock = self.renderer.lock().unwrap();
-            let renderer = lock.as_mut().unwrap();
+            let renderer = match lock.as_mut() {
+                Some(r) => r,
+                None => {
+                    panic!("InvalidStateError: cannot suspend when rendering has already started")
+                }
+            };
 
             match renderer.suspend_promises.entry(quantum) {
                 Entry::Occupied(_) => panic!(
@@ -283,7 +288,10 @@ impl OfflineAudioContext {
             .ceil() as usize;
 
         let mut lock = self.renderer.lock().unwrap();
-        let renderer = lock.as_mut().unwrap();
+        let renderer = match lock.as_mut() {
+            Some(r) => r,
+            None => panic!("InvalidStateError: cannot suspend when rendering has already started"),
+        };
         match renderer.suspend_callbacks.entry(quantum) {
             Entry::Occupied(_) => panic!(
                 "InvalidStateError: cannot suspend multiple times at the same render quantum"
