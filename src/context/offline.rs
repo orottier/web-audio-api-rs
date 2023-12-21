@@ -114,8 +114,8 @@ impl OfflineAudioContext {
     /// This function will block the current thread and returns the rendered `AudioBuffer`
     /// synchronously.
     ///
-    /// This method will only adhere to scheduled suspensions via [`Self::suspend_at_sync`] and
-    /// will ignore those provided via [`Self::suspend_at`].
+    /// This method will only adhere to scheduled suspensions via [`Self::suspend_sync`] and
+    /// will ignore those provided via [`Self::suspend`].
     ///
     /// # Panics
     ///
@@ -139,8 +139,8 @@ impl OfflineAudioContext {
     /// Rendering is purely CPU bound and contains no `await` points, so calling this method will
     /// block the executor until completion or until the context is suspended.
     ///
-    /// This method will only adhere to scheduled suspensions via [`Self::suspend_at`] and will
-    /// ignore those provided via [`Self::suspend_at_sync`].
+    /// This method will only adhere to scheduled suspensions via [`Self::suspend`] and will
+    /// ignore those provided via [`Self::suspend_sync`].
     ///
     /// # Panics
     ///
@@ -200,7 +200,7 @@ impl OfflineAudioContext {
     /// let context = Arc::new(OfflineAudioContext::new(1, 512, 44_100.));
     /// let context_clone = Arc::clone(&context);
     ///
-    /// let suspend_promise = context.suspend_at(128. / 44_100.).then(|_| async move {
+    /// let suspend_promise = context.suspend(128. / 44_100.).then(|_| async move {
     ///     let mut src = context_clone.create_constant_source();
     ///     src.connect(&context_clone.destination());
     ///     src.start();
@@ -213,7 +213,7 @@ impl OfflineAudioContext {
     /// assert_eq!(buffer.number_of_channels(), 1);
     /// assert_eq!(buffer.length(), 512);
     /// ```
-    pub async fn suspend_at(&self, suspend_time: f64) {
+    pub async fn suspend(&self, suspend_time: f64) {
         let quantum = (suspend_time * self.base.sample_rate() as f64 / RENDER_QUANTUM_SIZE as f64)
             .ceil() as usize;
 
@@ -240,7 +240,7 @@ impl OfflineAudioContext {
     /// Schedules a suspension of the time progression in the audio context at the specified time
     /// and runs a callback.
     ///
-    /// This is a synchronous version of [`Self::suspend_at`] that runs the provided callback at
+    /// This is a synchronous version of [`Self::suspend`] that runs the provided callback at
     /// the `suspendTime`. The rendering resumes automatically after the callback has run, so there
     /// is no `resume_sync` method.
     ///
@@ -264,7 +264,7 @@ impl OfflineAudioContext {
     ///
     /// let mut context = OfflineAudioContext::new(1, 512, 44_100.);
     ///
-    /// context.suspend_at_sync(128. / 44_100., |context| {
+    /// context.suspend_sync(128. / 44_100., |context| {
     ///     let mut src = context.create_constant_source();
     ///     src.connect(&context.destination());
     ///     src.start();
@@ -274,7 +274,7 @@ impl OfflineAudioContext {
     /// assert_eq!(buffer.number_of_channels(), 1);
     /// assert_eq!(buffer.length(), 512);
     /// ```
-    pub fn suspend_at_sync<F: FnOnce(&mut Self) + Send + Sync + 'static>(
+    pub fn suspend_sync<F: FnOnce(&mut Self) + Send + Sync + 'static>(
         &mut self,
         suspend_time: f64,
         callback: F,
@@ -340,13 +340,13 @@ mod tests {
 
         let mut context = OfflineAudioContext::new(1, len, sample_rate as f32);
 
-        context.suspend_at_sync(RENDER_QUANTUM_SIZE as f64 / sample_rate, |context| {
+        context.suspend_sync(RENDER_QUANTUM_SIZE as f64 / sample_rate, |context| {
             let mut src = context.create_constant_source();
             src.connect(&context.destination());
             src.start();
         });
 
-        context.suspend_at_sync((3 * RENDER_QUANTUM_SIZE) as f64 / sample_rate, |context| {
+        context.suspend_sync((3 * RENDER_QUANTUM_SIZE) as f64 / sample_rate, |context| {
             context.destination().disconnect();
         });
 
@@ -378,7 +378,7 @@ mod tests {
         let context = Arc::new(OfflineAudioContext::new(1, 512, 44_100.));
         let context_clone = Arc::clone(&context);
 
-        let suspend_promise = context.suspend_at(128. / 44_100.).then(|_| async move {
+        let suspend_promise = context.suspend(128. / 44_100.).then(|_| async move {
             let mut src = context_clone.create_constant_source();
             src.connect(&context_clone.destination());
             src.start();
