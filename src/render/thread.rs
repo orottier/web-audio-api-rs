@@ -2,7 +2,7 @@
 
 use std::any::Any;
 use std::cell::Cell;
-use std::collections::HashMap;
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,7 +14,7 @@ use futures::stream::StreamExt;
 
 use super::AudioRenderQuantum;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::context::{AudioNodeId, OfflineAudioContext};
+use crate::context::{AudioNodeId, OfflineAudioContext, OfflineAudioContextCallback};
 use crate::events::EventDispatch;
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
@@ -187,7 +187,7 @@ impl RenderThread {
     pub fn render_audiobuffer_sync(
         mut self,
         length: usize,
-        mut suspend_callbacks: HashMap<usize, Box<crate::context::OfflineAudioContextCallback>>,
+        mut suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
         context: &mut OfflineAudioContext,
     ) -> AudioBuffer {
         let options = AudioBufferOptions {
@@ -204,7 +204,8 @@ impl RenderThread {
 
         for quantum in 0..num_frames {
             // Suspend at given times and run callbacks
-            if let Some(callback) = suspend_callbacks.remove(&quantum) {
+            if suspend_callbacks.get(0).map(|&(q, _)| q) == Some(quantum) {
+                let callback = suspend_callbacks.remove(0).1;
                 (callback)(context);
 
                 // Handle addition/removal of nodes/edges
@@ -225,7 +226,7 @@ impl RenderThread {
     pub async fn render_audiobuffer(
         mut self,
         length: usize,
-        mut suspend_callbacks: HashMap<usize, channel::oneshot::Sender<()>>,
+        mut suspend_callbacks: Vec<(usize, channel::oneshot::Sender<()>)>,
         mut resume_receiver: channel::mpsc::Receiver<()>,
     ) -> AudioBuffer {
         let options = AudioBufferOptions {
@@ -242,7 +243,8 @@ impl RenderThread {
 
         for quantum in 0..num_frames {
             // Suspend at given times and run callbacks
-            if let Some(sender) = suspend_callbacks.remove(&quantum) {
+            if suspend_callbacks.get(0).map(|&(q, _)| q) == Some(quantum) {
+                let sender = suspend_callbacks.remove(0).1;
                 sender.send(()).unwrap();
                 resume_receiver.next().await;
 

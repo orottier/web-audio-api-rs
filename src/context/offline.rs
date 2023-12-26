@@ -1,6 +1,5 @@
 //! The `OfflineAudioContext` type
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
@@ -33,10 +32,10 @@ pub struct OfflineAudioContext {
 struct OfflineAudioContextRenderer {
     /// the rendering 'thread', fully controlled by the offline context
     renderer: RenderThread,
-    /// promises to resolve at certain render quanta (via `suspend`)
-    suspend_promises: HashMap<usize, oneshot::Sender<()>>,
-    /// callbacks to run at certain render quanta (via `suspend_sync`)
-    suspend_callbacks: HashMap<usize, Box<OfflineAudioContextCallback>>,
+    /// sorted list of promises to resolve at certain render quanta (via `suspend`)
+    suspend_promises: Vec<(usize, oneshot::Sender<()>)>,
+    /// sorted list of callbacks to run at certain render quanta (via `suspend_sync`)
+    suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
     /// channel to listen for `resume` calls on a suspended context
     resume_receiver: futures::channel::mpsc::Receiver<()>,
 }
@@ -96,8 +95,8 @@ impl OfflineAudioContext {
 
         let renderer = OfflineAudioContextRenderer {
             renderer,
-            suspend_promises: HashMap::new(),
-            suspend_callbacks: HashMap::new(),
+            suspend_promises: Vec::new(),
+            suspend_callbacks: Vec::new(),
             resume_receiver,
         };
 
@@ -242,13 +241,16 @@ impl OfflineAudioContext {
                 }
             };
 
-            match renderer.suspend_promises.entry(quantum) {
-                Entry::Occupied(_) => panic!(
+            match renderer
+                .suspend_promises
+                .binary_search_by_key(&quantum, |&(q, _)| q)
+            {
+                Ok(_) => panic!(
                     "InvalidStateError: cannot suspend multiple times at the same render quantum"
                 ),
-                Entry::Vacant(e) => {
-                    e.insert(sender);
-                }
+                Err(position) => renderer
+                    .suspend_promises
+                    .insert(position, (quantum, sender)),
             }
         } // lock is dropped
 
@@ -304,13 +306,16 @@ impl OfflineAudioContext {
             Some(r) => r,
             None => panic!("InvalidStateError: cannot suspend when rendering has already started"),
         };
-        match renderer.suspend_callbacks.entry(quantum) {
-            Entry::Occupied(_) => panic!(
+        match renderer
+            .suspend_callbacks
+            .binary_search_by_key(&quantum, |(q, _c)| *q)
+        {
+            Ok(_) => panic!(
                 "InvalidStateError: cannot suspend multiple times at the same render quantum"
             ),
-            Entry::Vacant(e) => {
-                e.insert(Box::new(callback));
-            }
+            Err(position) => renderer
+                .suspend_callbacks
+                .insert(position, (quantum, Box::new(callback))),
         }
     }
 
