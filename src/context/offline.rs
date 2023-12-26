@@ -172,6 +172,19 @@ impl OfflineAudioContext {
         self.length
     }
 
+    #[track_caller]
+    fn calculate_suspend_frame(&self, suspend_time: f64) -> usize {
+        assert!(
+            suspend_time >= 0.,
+            "InvalidStateError: suspendTime cannot be negative"
+        );
+        assert!(
+            suspend_time < self.length as f64 / self.sample_rate() as f64,
+            "InvalidStateError: suspendTime cannot be greater than or equal to the total render duration"
+        );
+        (suspend_time * self.base.sample_rate() as f64 / RENDER_QUANTUM_SIZE as f64).ceil() as usize
+    }
+
     /// Schedules a suspension of the time progression in the audio context at the specified time
     /// and returns a promise
     ///
@@ -214,8 +227,7 @@ impl OfflineAudioContext {
     /// assert_eq!(buffer.length(), 512);
     /// ```
     pub async fn suspend(&self, suspend_time: f64) {
-        let quantum = (suspend_time * self.base.sample_rate() as f64 / RENDER_QUANTUM_SIZE as f64)
-            .ceil() as usize;
+        let quantum = self.calculate_suspend_frame(suspend_time);
 
         let (sender, receiver) = oneshot::channel();
 
@@ -284,8 +296,7 @@ impl OfflineAudioContext {
         suspend_time: f64,
         callback: F,
     ) {
-        let quantum = (suspend_time * self.base.sample_rate() as f64 / RENDER_QUANTUM_SIZE as f64)
-            .ceil() as usize;
+        let quantum = self.calculate_suspend_frame(suspend_time);
 
         let mut lock = self.renderer.lock().unwrap();
         let renderer = match lock.as_mut() {
@@ -410,5 +421,27 @@ mod tests {
             &[1.; 384][..],
             abs_all <= 0.
         );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_suspend_negative_panics() {
+        let mut context = OfflineAudioContext::new(2, 128, 44_100.);
+        context.suspend_sync(-1.0, |_| ());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_suspend_after_duration_panics() {
+        let mut context = OfflineAudioContext::new(2, 128, 44_100.);
+        context.suspend_sync(1.0, |_| ());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_suspend_after_render_panics() {
+        let mut context = OfflineAudioContext::new(2, 128, 44_100.);
+        let _ = context.start_rendering_sync();
+        context.suspend_sync(0.0, |_| ());
     }
 }
