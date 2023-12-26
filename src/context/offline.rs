@@ -120,6 +120,7 @@ impl OfflineAudioContext {
     /// # Panics
     ///
     /// Panics if this method is called multiple times
+    #[must_use]
     pub fn start_rendering_sync(&mut self) -> AudioBuffer {
         let renderer = match self.renderer.lock().unwrap().take() {
             None => panic!("InvalidStateError: Cannot call `startRendering` twice"),
