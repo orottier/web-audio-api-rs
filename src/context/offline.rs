@@ -241,17 +241,16 @@ impl OfflineAudioContext {
                 }
             };
 
-            match renderer
+            let insert_pos = renderer
                 .suspend_promises
                 .binary_search_by_key(&quantum, |&(q, _)| q)
-            {
-                Ok(_) => panic!(
-                    "InvalidStateError: cannot suspend multiple times at the same render quantum"
-                ),
-                Err(position) => renderer
-                    .suspend_promises
-                    .insert(position, (quantum, sender)),
-            }
+                .expect_err(
+                    "InvalidStateError: cannot suspend multiple times at the same render quantum",
+                );
+
+            renderer
+                .suspend_promises
+                .insert(insert_pos, (quantum, sender));
         } // lock is dropped
 
         receiver.await.unwrap()
@@ -306,17 +305,17 @@ impl OfflineAudioContext {
             Some(r) => r,
             None => panic!("InvalidStateError: cannot suspend when rendering has already started"),
         };
-        match renderer
+
+        let insert_pos = renderer
             .suspend_callbacks
             .binary_search_by_key(&quantum, |(q, _c)| *q)
-        {
-            Ok(_) => panic!(
-                "InvalidStateError: cannot suspend multiple times at the same render quantum"
-            ),
-            Err(position) => renderer
-                .suspend_callbacks
-                .insert(position, (quantum, Box::new(callback))),
-        }
+            .expect_err(
+                "InvalidStateError: cannot suspend multiple times at the same render quantum",
+            );
+
+        renderer
+            .suspend_callbacks
+            .insert(insert_pos, (quantum, Box::new(callback)));
     }
 
     /// Resumes the progression of the OfflineAudioContext's currentTime when it has been suspended
@@ -448,6 +447,14 @@ mod tests {
     fn test_suspend_after_render_panics() {
         let mut context = OfflineAudioContext::new(2, 128, 44_100.);
         let _ = context.start_rendering_sync();
+        context.suspend_sync(0.0, |_| ());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_suspend_identical_frame_panics() {
+        let mut context = OfflineAudioContext::new(2, 128, 44_100.);
+        context.suspend_sync(0.0, |_| ());
         context.suspend_sync(0.0, |_| ());
     }
 }
