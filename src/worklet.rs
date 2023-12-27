@@ -323,13 +323,15 @@ impl AudioProcessor for AudioWorkletRenderer {
 
         // Create an iterator for the output channel counts without allocating, handling also the
         // case where self.output_channel_count is empty.
-        let single_case = [inputs.get(0).map(|i| i.number_of_channels()).unwrap_or_default()];
-        
+        let single_case = [inputs
+            .get(0)
+            .map(|i| i.number_of_channels())
+            .unwrap_or_default()];
         let output_channel_count = if self.output_channel_count.is_empty() {
-            single_case.iter()
+            &single_case[..]
         } else {
-            self.output_channel_count.iter()
-        }.copied();
+            &self.output_channel_count[..]
+        };
 
         outputs
             .iter_mut()
@@ -344,7 +346,7 @@ impl AudioProcessor for AudioWorkletRenderer {
 
         let mut outputs_flat = &mut self.outputs_flat[..];
         for c in output_channel_count {
-            let (left, right) = outputs_flat.split_at_mut(c);
+            let (left, right) = outputs_flat.split_at_mut(*c);
             // SAFETY - see comments above
             let left_static = unsafe { std::mem::transmute(left) };
             self.outputs_grouped.push(left_static);
@@ -376,15 +378,113 @@ impl AudioProcessor for AudioWorkletRenderer {
 mod tests {
     use super::*;
     use crate::context::OfflineAudioContext;
+    use float_eq::assert_float_eq;
+
+    struct TestProcessor;
+
+    impl AudioWorkletProcessor for TestProcessor {
+        type ProcessorOptions = ();
+
+        fn constructor(_opts: Self::ProcessorOptions) -> Self {
+            TestProcessor {}
+        }
+
+        fn process<'a, 'b>(
+            &mut self,
+            _inputs: &'b [&'a [&'a [f32]]],
+            _outputs: &'b mut [&'a mut [&'a mut [f32]]],
+            _params: AudioParamValues<'b>,
+            _scope: &'b RenderScope,
+        ) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn test_worklet_render() {
+        let mut context = OfflineAudioContext::new(1, 128, 48000.);
+        let options = AudioWorkletNodeOptions::default();
+        let worklet = AudioWorkletNode::new::<TestProcessor>(&context, options);
+        worklet.connect(&context.destination());
+        let buffer = context.start_rendering_sync();
+        assert_float_eq!(
+            buffer.get_channel_data(0)[..],
+            &[0.; 128][..],
+            abs_all <= 0.
+        );
+    }
+
+    #[test]
+    fn test_worklet_inputs_outputs() {
+        let matrix = [0, 1, 2];
+        let mut context = OfflineAudioContext::new(1, 128, 48000.);
+        for inputs in matrix {
+            for outputs in matrix {
+                if inputs == 0 && outputs == 0 {
+                    continue; // this case is not allowed
+                }
+                let options = AudioWorkletNodeOptions {
+                    number_of_inputs: inputs,
+                    number_of_outputs: outputs,
+                    ..AudioWorkletNodeOptions::default()
+                };
+                let worklet = AudioWorkletNode::new::<TestProcessor>(&context, options);
+
+                if outputs > 0 {
+                    worklet.connect(&context.destination());
+                }
+            }
+        }
+        let buffer = context.start_rendering_sync();
+        assert_float_eq!(
+            buffer.get_channel_data(0)[..],
+            &[0.; 128][..],
+            abs_all <= 0.
+        );
+    }
+
+    #[test]
+    fn test_worklet_output_channel_count() {
+        let mut context = OfflineAudioContext::new(1, 128, 48000.);
+
+        let options1 = AudioWorkletNodeOptions {
+            output_channel_count: vec![],
+            ..AudioWorkletNodeOptions::default()
+        };
+        let worklet1 = AudioWorkletNode::new::<TestProcessor>(&context, options1);
+        worklet1.connect(&context.destination());
+
+        let options2 = AudioWorkletNodeOptions {
+            output_channel_count: vec![1],
+            ..AudioWorkletNodeOptions::default()
+        };
+        let worklet2 = AudioWorkletNode::new::<TestProcessor>(&context, options2);
+        worklet2.connect(&context.destination());
+
+        let options3 = AudioWorkletNodeOptions {
+            number_of_outputs: 2,
+            output_channel_count: vec![1, 2],
+            ..AudioWorkletNodeOptions::default()
+        };
+        let worklet3 = AudioWorkletNode::new::<TestProcessor>(&context, options3);
+        worklet3.connect(&context.destination());
+
+        let buffer = context.start_rendering_sync();
+        assert_float_eq!(
+            buffer.get_channel_data(0)[..],
+            &[0.; 128][..],
+            abs_all <= 0.
+        );
+    }
 
     #[test]
     fn send_bound() {
         #[derive(Default)]
-        struct MyProcessor {
+        struct RcProcessor {
             _rc: std::rc::Rc<()>, // not send
         }
 
-        impl AudioWorkletProcessor for MyProcessor {
+        impl AudioWorkletProcessor for RcProcessor {
             type ProcessorOptions = ();
 
             fn constructor(_opts: Self::ProcessorOptions) -> Self {
@@ -404,6 +504,6 @@ mod tests {
 
         let context = OfflineAudioContext::new(1, 128, 48000.);
         let options = AudioWorkletNodeOptions::default();
-        let _worklet = AudioWorkletNode::new::<MyProcessor>(&context, options);
+        let _worklet = AudioWorkletNode::new::<RcProcessor>(&context, options);
     }
 }
