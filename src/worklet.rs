@@ -323,11 +323,13 @@ impl AudioProcessor for AudioWorkletRenderer {
 
         // Create an iterator for the output channel counts without allocating, handling also the
         // case where self.output_channel_count is empty.
-        let output_channel_count = self
-            .output_channel_count
-            .iter()
-            .copied()
-            .chain(std::iter::once(inputs[0].number_of_channels()));
+        let single_case = [inputs.get(0).map(|i| i.number_of_channels()).unwrap_or_default()];
+        
+        let output_channel_count = if self.output_channel_count.is_empty() {
+            single_case.iter()
+        } else {
+            self.output_channel_count.iter()
+        }.copied();
 
         outputs
             .iter_mut()
