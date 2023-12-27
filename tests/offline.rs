@@ -48,7 +48,7 @@ fn test_offline_render() {
 #[test]
 fn test_start_stop() {
     let len = RENDER_QUANTUM_SIZE * 4;
-    let sample_rate = 480000.;
+    let sample_rate = 48000.;
 
     let mut context = OfflineAudioContext::new(1, len, sample_rate);
     assert_eq!(context.length(), len);
@@ -83,7 +83,7 @@ fn test_start_stop() {
 #[test]
 fn test_delayed_constant_source() {
     let len = RENDER_QUANTUM_SIZE * 4;
-    let sample_rate = 480000.;
+    let sample_rate = 48000.;
 
     let mut context = OfflineAudioContext::new(1, len, sample_rate);
     assert_eq!(context.length(), len);
@@ -113,7 +113,7 @@ fn test_delayed_constant_source() {
 
 #[test]
 fn test_audio_param_graph() {
-    let sample_rate = 480000.;
+    let sample_rate = 48000.;
     let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
     {
         let gain = context.create_gain();
@@ -150,7 +150,7 @@ fn test_audio_param_graph() {
 
 #[test]
 fn test_listener() {
-    let sample_rate = 480000.;
+    let sample_rate = 48000.;
     let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
     {
@@ -204,7 +204,7 @@ fn test_cycle() {
 
 #[test]
 fn test_cycle_breaker() {
-    let sample_rate = 480000.;
+    let sample_rate = 48000.;
     let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 3, sample_rate);
 
     {

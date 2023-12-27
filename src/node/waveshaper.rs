@@ -600,7 +600,7 @@ mod tests {
 
         let shaper = WaveShaperNode::new(&context, options);
 
-        context.start_rendering_sync();
+        let _ = context.start_rendering_sync();
 
         assert_eq!(shaper.curve(), Some(&[1.0][..]));
         assert_eq!(shaper.oversample(), OverSampleType::X2);
@@ -624,7 +624,7 @@ mod tests {
         shaper.set_curve(vec![2.0]);
         shaper.set_oversample(OverSampleType::X4);
 
-        context.start_rendering_sync();
+        let _ = context.start_rendering_sync();
 
         assert_eq!(shaper.curve(), Some(&[2.0][..]));
         assert_eq!(shaper.oversample(), OverSampleType::X4);
@@ -647,7 +647,7 @@ mod tests {
         shaper.set_curve(vec![2.0]);
         shaper.set_oversample(OverSampleType::X4);
 
-        context.start_rendering_sync();
+        let _ = context.start_rendering_sync();
 
         assert_eq!(shaper.curve(), Some(&[2.0][..]));
         assert_eq!(shaper.oversample(), OverSampleType::X4);
