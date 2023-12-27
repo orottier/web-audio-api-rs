@@ -1,5 +1,11 @@
 # Version History
 
+## Version 0.39.0 (2023-12-27)
+
+- Added async OfflineAudioContext methods: startRendering, suspend and resume
+- Added sync OfflineAudioContext methods: suspend
+- Added BaseAudioContext::onStateChange
+
 ## Version 0.38.0 (2023-12-03)
 
 - Breaking: `OfflineAudioContext::start_rendering_sync` takes `&mut` instead of `self`
