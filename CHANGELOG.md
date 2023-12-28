@@ -1,5 +1,9 @@
 # Version History
 
+## Version 0.39.1 (2023-12-28)
+
+- Fix AudioWorkletNode custom output channel counts
+
 ## Version 0.39.0 (2023-12-27)
 
 - Added async OfflineAudioContext methods: startRendering, suspend and resume
