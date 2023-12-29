@@ -309,7 +309,7 @@ pub trait BaseAudioContext {
     fn set_onstatechange<F: FnMut(Event) + Send + 'static>(&self, mut callback: F) {
         let callback = move |_| {
             callback(Event {
-                type_: "onstatechange",
+                type_: "statechange",
             })
         };
 
@@ -317,6 +317,10 @@ pub trait BaseAudioContext {
             EventType::StateChange,
             EventHandler::Multiple(Box::new(callback)),
         );
+    }
+
+    fn clear_onstatechange(&self) {
+        self.base().clear_event_handler(EventType::StateChange);
     }
 
     #[cfg(test)]

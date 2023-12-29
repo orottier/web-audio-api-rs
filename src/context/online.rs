@@ -329,7 +329,7 @@ impl AudioContext {
     pub fn set_onsinkchange<F: FnMut(Event) + Send + 'static>(&self, mut callback: F) {
         let callback = move |_| {
             callback(Event {
-                type_: "onsinkchange",
+                type_: "sinkchange",
             })
         };
 
