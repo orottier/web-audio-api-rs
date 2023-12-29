@@ -103,7 +103,7 @@ impl Node {
 
     /// Get the current buffer for AudioParam values
     pub fn get_buffer(&self) -> &AudioRenderQuantum {
-        self.outputs.get(0).unwrap()
+        self.outputs.first().unwrap()
     }
 }
 

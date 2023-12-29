@@ -226,7 +226,7 @@ impl AudioParamEventTimeline {
     }
 
     fn unsorted_peek(&self) -> Option<&AudioParamEvent> {
-        self.inner.get(0)
+        self.inner.first()
     }
 
     // panic if dirty, we are doing something wrong here
@@ -234,7 +234,7 @@ impl AudioParamEventTimeline {
         if self.dirty {
             panic!("`AudioParamEventTimeline`: Invalid `.peek()` call, the queue is dirty");
         }
-        self.inner.get(0)
+        self.inner.first()
     }
 
     fn next(&self) -> Option<&AudioParamEvent> {

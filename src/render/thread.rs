@@ -204,7 +204,7 @@ impl RenderThread {
 
         for quantum in 0..num_frames {
             // Suspend at given times and run callbacks
-            if suspend_callbacks.get(0).map(|&(q, _)| q) == Some(quantum) {
+            if suspend_callbacks.first().map(|&(q, _)| q) == Some(quantum) {
                 let callback = suspend_callbacks.remove(0).1;
                 (callback)(context);
 
@@ -243,7 +243,7 @@ impl RenderThread {
 
         for quantum in 0..num_frames {
             // Suspend at given times and run callbacks
-            if suspend_callbacks.get(0).map(|&(q, _)| q) == Some(quantum) {
+            if suspend_callbacks.first().map(|&(q, _)| q) == Some(quantum) {
                 let sender = suspend_callbacks.remove(0).1;
                 sender.send(()).unwrap();
                 resume_receiver.next().await;

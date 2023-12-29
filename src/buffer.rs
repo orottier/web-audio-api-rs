@@ -124,7 +124,7 @@ impl AudioBuffer {
 
     /// Number of samples per channel in this `AudioBuffer`
     pub fn length(&self) -> usize {
-        self.channels.get(0).map(ChannelData::len).unwrap_or(0)
+        self.channels.first().map(ChannelData::len).unwrap_or(0)
     }
 
     /// Sample rate of this `AudioBuffer` in Hertz

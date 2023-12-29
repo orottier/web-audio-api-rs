@@ -324,7 +324,7 @@ impl AudioProcessor for AudioWorkletRenderer {
         // Create an iterator for the output channel counts without allocating, handling also the
         // case where self.output_channel_count is empty.
         let single_case = [inputs
-            .get(0)
+            .first()
             .map(|i| i.number_of_channels())
             .unwrap_or_default()];
         let output_channel_count = if self.output_channel_count.is_empty() {

@@ -265,7 +265,7 @@ impl AudioContext {
         let mut pending_msgs: Vec<_> = self.render_thread_init.ctrl_msg_recv.try_iter().collect();
 
         // Acquire the active audio graph from the current render thread, shutting it down
-        let graph = if matches!(pending_msgs.get(0), Some(ControlMessage::Startup { .. })) {
+        let graph = if matches!(pending_msgs.first(), Some(ControlMessage::Startup { .. })) {
             // Handle the edge case where the previous backend was suspended for its entire lifetime.
             // In this case, the `Startup` control message was never processed.
             let msg = pending_msgs.remove(0);
