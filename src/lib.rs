@@ -220,10 +220,12 @@ pub(crate) fn assert_valid_time_value(value: f64) {
     }
 
     if value < 0. {
-        panic!("RangeError - The provided time value ({:?}) cannot be negative", value);
+        panic!(
+            "RangeError - The provided time value ({:?}) cannot be negative",
+            value
+        );
     }
 }
-
 
 pub(crate) trait AudioBufferIter: Iterator<Item = FallibleBuffer> + Send + 'static {}
 
