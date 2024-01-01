@@ -44,7 +44,7 @@ impl Default for StereoPannerOptions {
 #[inline(always)]
 fn assert_valid_channel_count(count: usize) {
     if count > 2 {
-        panic!("NotSupportedError: StereoPannerNode channel count cannot be greater than two");
+        panic!("NotSupportedError - StereoPannerNode channel count cannot be greater than two");
     }
 }
 
@@ -59,7 +59,7 @@ fn assert_valid_channel_count(count: usize) {
 #[inline(always)]
 fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
     if mode == ChannelCountMode::Max {
-        panic!("NotSupportedError: StereoPannerNode channel count mode cannot be set to max");
+        panic!("NotSupportedError - StereoPannerNode channel count mode cannot be set to max");
     }
 }
 

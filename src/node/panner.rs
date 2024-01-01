@@ -174,7 +174,7 @@ enum ControlMessage {
 #[inline(always)]
 fn assert_valid_channel_count(count: usize) {
     if count > 2 {
-        panic!("NotSupportedError: PannerNode channel count cannot be greater than two");
+        panic!("NotSupportedError - PannerNode channel count cannot be greater than two");
     }
 }
 
@@ -189,7 +189,7 @@ fn assert_valid_channel_count(count: usize) {
 #[inline(always)]
 fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
     if mode == ChannelCountMode::Max {
-        panic!("NotSupportedError: PannerNode channel count mode cannot be set to max");
+        panic!("NotSupportedError - PannerNode channel count mode cannot be set to max");
     }
 }
 
