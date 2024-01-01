@@ -5,7 +5,7 @@ use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::PeriodicWave;
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{assert_valid_time_value, RENDER_QUANTUM_SIZE};
 
 use super::{
     precomputed_sine_table, AudioNode, AudioScheduledSourceNode, ChannelConfig,
@@ -160,6 +160,7 @@ impl AudioScheduledSourceNode for OscillatorNode {
     }
 
     fn start_at(&mut self, when: f64) {
+        assert_valid_time_value(when);
         self.registration.post_message(Schedule::Start(when));
     }
 
@@ -169,6 +170,7 @@ impl AudioScheduledSourceNode for OscillatorNode {
     }
 
     fn stop_at(&mut self, when: f64) {
+        assert_valid_time_value(when);
         self.registration.post_message(Schedule::Stop(when));
     }
 }
@@ -1147,15 +1149,18 @@ mod tests {
     }
 
     #[test]
-    fn osc_schedule_in_past() {
+    fn test_start_in_the_past() {
         let freq = 8910.1;
         let sample_rate = 44_100;
 
         let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
-        let mut osc = context.create_oscillator();
-        osc.connect(&context.destination());
-        osc.frequency().set_value(freq);
-        osc.start_at(-1.);
+
+        context.suspend_sync(128. / sample_rate as f64, move |context| {
+            let mut osc = context.create_oscillator();
+            osc.connect(&context.destination());
+            osc.frequency().set_value(freq);
+            osc.start_at(0.);
+        });
 
         let output = context.start_rendering_sync();
         let result = output.get_channel_data(0);
@@ -1164,10 +1169,14 @@ mod tests {
         let mut phase: f64 = 0.;
         let phase_incr = freq as f64 / sample_rate as f64;
 
-        for _i in 0..sample_rate {
-            let sample = (phase * 2. * PI).sin();
-            expected.push(sample as f32);
-            phase += phase_incr;
+        for i in 0..sample_rate {
+            if i < 128 {
+                expected.push(0.);
+            } else {
+                let sample = (phase * 2. * PI).sin();
+                expected.push(sample as f32);
+                phase += phase_incr;
+            }
         }
 
         assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);

@@ -185,8 +185,8 @@ pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
     }
 }
 
-/// Assert that the given channel number is valid according the number of channel
-/// of an Audio asset (e.g. [`AudioBuffer`])
+/// Assert that the given channel number is valid according to the number of channels
+/// of an Audio asset (e.g. [`AudioBuffer`]).
 ///
 /// # Panics
 ///
@@ -203,6 +203,27 @@ pub(crate) fn assert_valid_channel_number(channel_number: usize, number_of_chann
         );
     }
 }
+
+/// Assert that the given value number is a valid time informations, i.e. greater
+/// than or equal to zero and finite.
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - the given value is not finite and lower than zero
+///
+#[track_caller]
+#[inline(always)]
+pub(crate) fn assert_valid_time_value(value: f64) {
+    if !value.is_finite() {
+        panic!("TypeError - The provided time value is non-finite.");
+    }
+
+    if value < 0. {
+        panic!("RangeError - The provided time value ({:?}) cannot be negative", value);
+    }
+}
+
 
 pub(crate) trait AudioBufferIter: Iterator<Item = FallibleBuffer> + Send + 'static {}
 
@@ -264,5 +285,23 @@ mod tests {
     fn test_valid_number_of_channels() {
         assert_valid_number_of_channels(1);
         assert_valid_number_of_channels(32);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_time_value_non_finite() {
+        assert_valid_time_value(f64::NAN);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_time_value_negative() {
+        assert_valid_time_value(-1.);
+    }
+
+    #[test]
+    fn test_valid_time_value() {
+        assert_valid_time_value(0.);
+        assert_valid_time_value(1.);
     }
 }

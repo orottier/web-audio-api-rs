@@ -3,7 +3,7 @@ use std::any::Any;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
-use crate::RENDER_QUANTUM_SIZE;
+use crate::{assert_valid_time_value, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 
@@ -100,6 +100,7 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
     }
 
     fn start_at(&mut self, when: f64) {
+        assert_valid_time_value(when);
         self.registration.post_message(Schedule::Start(when));
     }
 
@@ -109,6 +110,7 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
     }
 
     fn stop_at(&mut self, when: f64) {
+        assert_valid_time_value(when);
         self.registration.post_message(Schedule::Stop(when));
     }
 }
@@ -268,16 +270,20 @@ mod tests {
 
     #[test]
     fn test_start_in_the_past() {
-        let mut context = OfflineAudioContext::new(1, 128, 48000.);
+        let sample_rate = 48000.;
+        let mut context = OfflineAudioContext::new(1, 2 * 128, sample_rate);
 
-        let mut src = context.create_constant_source();
-        src.connect(&context.destination());
-        src.start_at(-1.);
+        context.suspend_sync((128. / sample_rate).into(), |context| {
+            let mut src = context.create_constant_source();
+            src.connect(&context.destination());
+            src.start_at(0.);
+        });
 
         let buffer = context.start_rendering_sync();
         let channel = buffer.get_channel_data(0);
 
         // 1rst block should be silence
-        assert_float_eq!(channel[0..128], vec![1.; 128][..], abs_all <= 0.);
+        assert_float_eq!(channel[0..128], vec![0.; 128][..], abs_all <= 0.);
+        assert_float_eq!(channel[128..], vec![1.; 128][..], abs_all <= 0.);
     }
 }

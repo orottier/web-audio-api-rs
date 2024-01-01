@@ -366,18 +366,6 @@ pub trait AudioNode {
     }
 }
 
-#[track_caller]
-#[inline(always)]
-pub(create) fn assert_greater_then_f64(value: f64, minimum_bound: f64) {
-    if !value.is_finite() {
-        panic!("TypeError - The provided value is non-finite.");
-    }
-
-    if value < 0. {
-        panic!("RangeError - The offset value ({:?}) is less than the minimum bound (0).", value, minimum_bound);
-    }
-}
-
 /// Interface of source nodes, controlling start and stop times.
 /// The node will emit silence before it is started, and after it has ended.
 pub trait AudioScheduledSourceNode: AudioNode {
@@ -487,27 +475,5 @@ impl<R: AudioBufferIter> AudioProcessor for MediaStreamRenderer<R> {
         }
 
         !self.finished
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[should_panic]
-    fn test_assert_positive_f64_1() {
-        assert_positive_f64(f64::NAN);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_assert_positive_f64_1() {
-        assert_positive_f64(-1.);
-    }
-
-    #[test]
-    fn test_assert_positive_f64_1() {
-        assert_positive_f64(1.);
     }
 }
