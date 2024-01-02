@@ -1,5 +1,10 @@
 # Version History
 
+## Version 0.40.0 (2024-01-02)
+
+- Assert `AudioScheduledSourceNode` start and stop time values are valid
+- Added BaseAudioContext `clearOnstatechange` and fix some event type names
+
 ## Version 0.39.1 (2023-12-28)
 
 - Fix AudioWorkletNode custom output channel counts
