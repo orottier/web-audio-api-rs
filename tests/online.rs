@@ -106,10 +106,10 @@ fn test_none_sink_id() {
     assert_eq!(context.sink_id(), "none");
 
     context.suspend_sync();
-    assert_eq!(context.state(), AudioContextState::Suspended);
 
     // give event thread some time to pick up events
     std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(context.state(), AudioContextState::Suspended);
     assert_eq!(state_changes.load(Ordering::Relaxed), 2); // suspended
 
     context.resume_sync();
@@ -120,6 +120,7 @@ fn test_none_sink_id() {
     assert_eq!(state_changes.load(Ordering::Relaxed), 3); // resumed
 
     context.close_sync();
+    std::thread::sleep(std::time::Duration::from_millis(20));
     assert_eq!(context.state(), AudioContextState::Closed);
 
     // give event thread some time to pick up events

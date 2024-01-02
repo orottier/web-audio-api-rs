@@ -71,14 +71,20 @@ impl AudioBackendManager for NoneBackend {
         let sample_rate = options.sample_rate.unwrap_or(48000.);
 
         let RenderThreadInit {
+            state,
             frames_played,
             ctrl_msg_recv,
             load_value_send,
             event_send,
         } = render_thread_init;
 
-        let mut render_thread =
-            RenderThread::new(sample_rate, MAX_CHANNELS, ctrl_msg_recv, frames_played);
+        let mut render_thread = RenderThread::new(
+            sample_rate,
+            MAX_CHANNELS,
+            ctrl_msg_recv,
+            state,
+            frames_played,
+        );
         render_thread.set_event_channels(load_value_send, event_send);
         render_thread.spawn_garbage_collector_thread();
 

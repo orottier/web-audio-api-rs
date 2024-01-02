@@ -166,6 +166,7 @@ impl AudioContext {
         let backend = io::build_output(options, render_thread_init.clone());
 
         let ControlThreadInit {
+            state,
             frames_played,
             ctrl_msg_send,
             load_value_recv,
@@ -181,13 +182,13 @@ impl AudioContext {
         let base = ConcreteBaseAudioContext::new(
             backend.sample_rate(),
             backend.number_of_channels(),
+            state,
             frames_played,
             ctrl_msg_send,
             Some((event_send, event_recv)),
             false,
             node_id_consumer,
         );
-        base.set_state(AudioContextState::Running);
 
         // setup AudioRenderCapacity for this context
         let base_clone = base.clone();
@@ -255,9 +256,6 @@ impl AudioContext {
             return Ok(());
         }
 
-        // Temporarily set the state to Suspended, resume after the new backend is up
-        self.base().set_state(AudioContextState::Suspended);
-
         // Acquire exclusive lock on ctrl msg sender
         let ctrl_msg_send = self.base.lock_control_msg_sender();
 
@@ -286,6 +284,8 @@ impl AudioContext {
             graph_recv.recv().unwrap()
         };
 
+        backend_manager_guard.close();
+
         // hotswap the backend
         let options = AudioContextOptions {
             sample_rate: Some(self.sample_rate()),
@@ -303,10 +303,6 @@ impl AudioContext {
         // send the audio graph to the new render thread
         let message = ControlMessage::Startup { graph };
         ctrl_msg_send.send(message).unwrap();
-
-        if original_state == AudioContextState::Running {
-            self.base().set_state(AudioContextState::Running);
-        }
 
         // flush the cached msgs
         pending_msgs
@@ -394,6 +390,8 @@ impl AudioContext {
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn suspend_sync(&self) {
         if self.backend_manager.lock().unwrap().suspend() {
+            // TODO: state should signal device readiness hence should be updated by the render
+            // thread, not the control thread.
             self.base().set_state(AudioContextState::Suspended);
         }
     }
@@ -413,6 +411,8 @@ impl AudioContext {
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn resume_sync(&self) {
         if self.backend_manager.lock().unwrap().resume() {
+            // TODO: state should signal device readiness hence should be updated by the render
+            // thread, not the control thread.
             self.base().set_state(AudioContextState::Running);
         }
     }
@@ -432,7 +432,6 @@ impl AudioContext {
     pub fn close_sync(&self) {
         self.backend_manager.lock().unwrap().close();
         self.render_capacity.stop();
-        self.base().set_state(AudioContextState::Closed);
     }
 
     /// Creates a [`MediaStreamAudioSourceNode`](node::MediaStreamAudioSourceNode) from a

@@ -3,7 +3,7 @@
 use std::any::Any;
 use std::cell::Cell;
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -14,7 +14,9 @@ use futures::stream::StreamExt;
 
 use super::AudioRenderQuantum;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::context::{AudioNodeId, OfflineAudioContext, OfflineAudioContextCallback};
+use crate::context::{
+    AudioContextState, AudioNodeId, OfflineAudioContext, OfflineAudioContextCallback,
+};
 use crate::events::EventDispatch;
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
@@ -31,6 +33,7 @@ pub(crate) struct RenderThread {
     /// number of channels of the backend stream, i.e. sound card number of
     /// channels clamped to MAX_CHANNELS
     number_of_channels: usize,
+    state: Arc<AtomicU8>,
     frames_played: Arc<AtomicU64>,
     receiver: Option<Receiver<ControlMessage>>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
@@ -66,6 +69,7 @@ impl RenderThread {
         sample_rate: f32,
         number_of_channels: usize,
         receiver: Receiver<ControlMessage>,
+        state: Arc<AtomicU8>,
         frames_played: Arc<AtomicU64>,
     ) -> Self {
         Self {
@@ -73,6 +77,7 @@ impl RenderThread {
             sample_rate,
             buffer_size: 0,
             number_of_channels,
+            state,
             frames_played,
             receiver: Some(receiver),
             buffer_offset: None,
@@ -150,6 +155,7 @@ impl RenderThread {
                     self.graph.as_mut().unwrap().mark_cycle_breaker(id);
                 }
                 Shutdown { sender } => {
+                    self.set_state(AudioContextState::Suspended);
                     let _ = sender.send(self.graph.take().unwrap());
                     self.receiver = None;
                     return; // no further handling of ctrl msgs
@@ -157,6 +163,7 @@ impl RenderThread {
                 Startup { graph } => {
                     debug_assert!(self.graph.is_none());
                     self.graph = Some(graph);
+                    self.set_state(AudioContextState::Running);
                 }
                 NodeMessage { id, mut msg } => {
                     self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
@@ -415,10 +422,23 @@ impl RenderThread {
             self.handle_control_messages();
         }
     }
+
+    fn set_state(&self, state: AudioContextState) {
+        self.state.store(state as u8, Ordering::Relaxed);
+        if let Some(sender) = self.event_sender.as_ref() {
+            sender.try_send(EventDispatch::state_change()).ok();
+        }
+    }
 }
 
 impl Drop for RenderThread {
     fn drop(&mut self) {
+        // If the audio graph is still there, this is an actual shutdown.
+        // When the graph is None, this means we are only changing the sink - not shutting down.
+        if self.graph.is_some() {
+            self.set_state(AudioContextState::Closed);
+        }
+
         if let Some(gc) = self.garbage_collector.as_mut() {
             gc.push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)))
         }

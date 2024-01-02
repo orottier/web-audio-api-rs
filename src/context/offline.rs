@@ -1,10 +1,10 @@
 //! The `OfflineAudioContext` type
 
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, AtomicU8};
 use std::sync::{Arc, Mutex};
 
 use crate::buffer::AudioBuffer;
-use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
+use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
 use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
 
@@ -71,12 +71,15 @@ impl OfflineAudioContext {
         // track number of frames - synced from render thread to control thread
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = Arc::clone(&frames_played);
+        let state = Arc::new(AtomicU8::new(AudioContextState::Suspended as u8));
+        let state_clone = Arc::clone(&state);
 
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
             sample_rate,
             number_of_channels,
             receiver,
+            state_clone,
             frames_played_clone,
         );
 
@@ -84,6 +87,7 @@ impl OfflineAudioContext {
         let base = ConcreteBaseAudioContext::new(
             sample_rate,
             number_of_channels,
+            state,
             frames_played,
             sender,
             None,
