@@ -6,7 +6,7 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
-use crate::{AtomicF64, RENDER_QUANTUM_SIZE};
+use crate::{assert_valid_time_value, AtomicF64, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
 
@@ -147,6 +147,7 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
     }
 
     fn stop_at(&mut self, when: f64) {
+        assert_valid_time_value(when);
         assert!(
             self.source_started,
             "InvalidStateError cannot stop before start"
@@ -251,10 +252,14 @@ impl AudioBufferSourceNode {
     ///
     /// Panics if the source was already started
     pub fn start_at_with_offset_and_duration(&mut self, start: f64, offset: f64, duration: f64) {
+        assert_valid_time_value(start);
+        assert_valid_time_value(offset);
+        assert_valid_time_value(duration);
         assert!(
             !self.source_started,
             "InvalidStateError: Cannot call `start` twice"
         );
+
         self.source_started = true;
 
         let control = ControlMessage::StartWithOffsetAndDuration(start, offset, duration);
@@ -1014,23 +1019,25 @@ mod tests {
     }
 
     #[test]
-    fn test_schedule_in_the_past() {
+    fn test_start_in_the_past() {
         let sample_rate = 48000.;
-        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+        let mut context = OfflineAudioContext::new(1, 2 * RENDER_QUANTUM_SIZE, sample_rate);
 
         let mut dirac = context.create_buffer(1, 1, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
 
-        let mut src = context.create_buffer_source();
-        src.connect(&context.destination());
-        src.set_buffer(dirac);
-        src.start_at(-1.);
+        context.suspend_sync((128. / sample_rate).into(), |context| {
+            let mut src = context.create_buffer_source();
+            src.connect(&context.destination());
+            src.set_buffer(dirac);
+            src.start_at(0.);
+        });
 
         let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
 
-        let mut expected = vec![0.; RENDER_QUANTUM_SIZE];
-        expected[0] = 1.;
+        let mut expected = vec![0.; 2 * RENDER_QUANTUM_SIZE];
+        expected[128] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
