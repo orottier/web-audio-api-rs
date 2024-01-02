@@ -287,3 +287,42 @@ impl AudioProcessor for AnalyserRenderer {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+    use crate::node::{AudioNode, AudioScheduledSourceNode};
+    use float_eq::assert_float_eq;
+
+    #[test]
+    fn test_analyser_after_closed() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+
+        let mut src = context.create_constant_source();
+        src.start();
+
+        let mut analyser = context.create_analyser();
+        src.connect(&analyser);
+
+        // allow buffer to fill
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        let mut buffer = vec![0.; 128];
+        analyser.get_float_time_domain_data(&mut buffer);
+        assert_float_eq!(&buffer[..], &[1.; 128][..], abs_all <= 0.); // constant source of 1.
+
+        // close context
+        context.close_sync();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        let mut buffer = vec![0.; 128];
+        analyser.get_float_time_domain_data(&mut buffer); // should not crash or hang
+
+        // should contain the most recent frames available
+        assert_float_eq!(&buffer[..], &[1.; 128][..], abs_all <= 0.);
+    }
+}
