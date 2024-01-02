@@ -147,6 +147,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
 
 impl ConcreteBaseAudioContext {
     /// Creates a `BaseAudioContext` instance
+    #[allow(clippy::too_many_arguments)] // TODO refactor with builder pattern
     pub(super) fn new(
         sample_rate: f32,
         max_channel_count: usize,
