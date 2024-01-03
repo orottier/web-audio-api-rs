@@ -13,6 +13,8 @@ use crate::render::graph::Graph;
 use crate::MediaElement;
 use crate::{AudioRenderCapacity, Event};
 
+use futures::channel::oneshot;
+
 /// Check if the provided sink_id is available for playback
 ///
 /// It should be "", "none" or a valid output `sinkId` returned from [`enumerate_devices_sync`]
@@ -378,8 +380,86 @@ impl AudioContext {
     /// This will temporarily halt audio hardware access and reducing CPU/battery usage in the
     /// process.
     ///
-    /// This function operates synchronously and might block the current thread. An async version
-    /// is currently not implemented.
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * The audio device is not available
+    /// * For a `BackendSpecificError`
+    pub async fn suspend(&self) {
+        // First, pause rendering via a control message
+        let (sender, receiver) = oneshot::channel();
+        let notify = OneshotNotify::Async(sender);
+        let suspend_msg = ControlMessage::Suspend { notify };
+        self.base.send_control_msg(suspend_msg);
+
+        // Wait for the render thread to have processed the suspend message.
+        // The AudioContextState will be updated by the render thread.
+        receiver.await.unwrap();
+
+        // Then ask the audio host to suspend the stream
+        self.backend_manager.lock().unwrap().suspend();
+    }
+
+    /// Resumes the progression of time in an audio context that has previously been
+    /// suspended/paused.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if:
+    ///
+    /// * The audio device is not available
+    /// * For a `BackendSpecificError`
+    pub async fn resume(&self) {
+        // First ask the audio host to resume the stream
+        self.backend_manager.lock().unwrap().resume();
+
+        // Then, ask to resume rendering via a control message
+        let (sender, receiver) = oneshot::channel();
+        let notify = OneshotNotify::Async(sender);
+        let suspend_msg = ControlMessage::Resume { notify };
+        self.base.send_control_msg(suspend_msg);
+
+        // Wait for the render thread to have processed the resume message
+        // The AudioContextState will be updated by the render thread.
+        receiver.await.unwrap();
+    }
+
+    /// Closes the `AudioContext`, releasing the system resources being used.
+    ///
+    /// This will not automatically release all `AudioContext`-created objects, but will suspend
+    /// the progression of the currentTime, and stop processing audio data.
+    ///
+    /// # Panics
+    ///
+    /// Will panic when this function is called multiple times
+    pub async fn close(&self) {
+        // First, stop rendering via a control message
+        let (sender, receiver) = oneshot::channel();
+        let notify = OneshotNotify::Async(sender);
+        let suspend_msg = ControlMessage::Close { notify };
+        self.base.send_control_msg(suspend_msg);
+
+        // Wait for the render thread to have processed the suspend message.
+        // The AudioContextState will be updated by the render thread.
+        receiver.await.unwrap();
+
+        // Then ask the audio host to close the stream
+        self.backend_manager.lock().unwrap().close();
+
+        // Stop the AudioRenderCapacity collection thread
+        self.render_capacity.stop();
+
+        // TODO stop the event loop <https://github.com/orottier/web-audio-api-rs/issues/421>
+    }
+
+    /// Suspends the progression of time in the audio context.
+    ///
+    /// This will temporarily halt audio hardware access and reducing CPU/battery usage in the
+    /// process.
+    ///
+    /// This function operates synchronously and blocks the current thread until the audio thread
+    /// has stopped processing.
     ///
     /// # Panics
     ///
@@ -405,8 +485,8 @@ impl AudioContext {
     /// Resumes the progression of time in an audio context that has previously been
     /// suspended/paused.
     ///
-    /// This function operates synchronously and might block the current thread. An async version
-    /// is currently not implemented.
+    /// This function operates synchronously and blocks the current thread until the audio thread
+    /// has started processing again.
     ///
     /// # Panics
     ///
@@ -434,13 +514,12 @@ impl AudioContext {
     /// This will not automatically release all `AudioContext`-created objects, but will suspend
     /// the progression of the currentTime, and stop processing audio data.
     ///
-    /// This function operates synchronously and might block the current thread. An async version
-    /// is currently not implemented.
+    /// This function operates synchronously and blocks the current thread until the audio thread
+    /// has stopped processing.
     ///
     /// # Panics
     ///
     /// Will panic when this function is called multiple times
-    #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn close_sync(&self) {
         // First, stop rendering via a control message
         let (sender, receiver) = crossbeam_channel::bounded(0);
@@ -509,5 +588,55 @@ impl AudioContext {
     #[must_use]
     pub fn render_capacity(&self) -> &AudioRenderCapacity {
         &self.render_capacity
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::executor;
+
+    #[test]
+    fn test_suspend_resume_close() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+
+        // construct with 'none' sink_id
+        let context = AudioContext::new(options);
+
+        // allow some time to progress
+        std::thread::sleep(std::time::Duration::from_millis(1));
+
+        executor::block_on(context.suspend());
+        assert_eq!(context.state(), AudioContextState::Suspended);
+        let time1 = context.current_time();
+        assert!(time1 >= 0.);
+
+        // allow some time to progress
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let time2 = context.current_time();
+        assert_eq!(time1, time2); // no progression of time
+
+        executor::block_on(context.resume());
+        assert_eq!(context.state(), AudioContextState::Running);
+
+        // allow some time to progress
+        std::thread::sleep(std::time::Duration::from_millis(1));
+
+        let time3 = context.current_time();
+        assert!(time3 > time2); // time is progressing
+
+        executor::block_on(context.close());
+        assert_eq!(context.state(), AudioContextState::Closed);
+
+        let time4 = context.current_time();
+
+        // allow some time to progress
+        std::thread::sleep(std::time::Duration::from_millis(1));
+
+        let time5 = context.current_time();
+        assert_eq!(time5, time4); // no progression of time
     }
 }
