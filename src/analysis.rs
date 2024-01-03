@@ -188,8 +188,8 @@ impl Analyser {
             ring_buffer,
             fft_size: DEFAULT_FFT_SIZE,
             smoothing_time_constant: DEFAULT_SMOOTHING_TIME_CONSTANT,
-            min_decibels: DEFAULT_MIN_DECIBELS,
-            max_decibels: DEFAULT_MAX_DECIBELS,
+            min_decibels: f64::NEG_INFINITY,
+            max_decibels: f64::INFINITY,
             fft_planner: Mutex::new(fft_planner),
             fft_input,
             fft_scratch,
@@ -636,6 +636,7 @@ mod tests {
     #[should_panic]
     fn test_min_decibels_constraints_lt_max_decibels() {
         let mut analyser = Analyser::new();
+        analyser.set_max_decibels(DEFAULT_MAX_DECIBELS); // init value
         analyser.set_min_decibels(DEFAULT_MAX_DECIBELS);
     }
 
@@ -643,7 +644,15 @@ mod tests {
     #[should_panic]
     fn test_max_decibels_constraints_lt_min_decibels() {
         let mut analyser = Analyser::new();
+        analyser.set_min_decibels(DEFAULT_MIN_DECIBELS); // init value
         analyser.set_max_decibels(DEFAULT_MIN_DECIBELS);
+    }
+
+    #[test]
+    fn test_min_max_decibels_init() {
+        let mut analyser = Analyser::new();
+        analyser.set_min_decibels(-10.);
+        analyser.set_max_decibels(20.);
     }
 
     #[test]
