@@ -156,7 +156,7 @@ impl RenderThread {
                 MarkCycleBreaker { id } => {
                     self.graph.as_mut().unwrap().mark_cycle_breaker(id);
                 }
-                Shutdown { sender } => {
+                CloseAndRecycle { sender } => {
                     self.set_state(AudioContextState::Suspended);
                     let _ = sender.send(self.graph.take().unwrap());
                     self.receiver = None;
@@ -191,6 +191,11 @@ impl RenderThread {
                 Resume { notify } => {
                     self.suspended = false;
                     self.set_state(AudioContextState::Running);
+                    notify.send();
+                }
+                Close { notify } => {
+                    self.suspended = true;
+                    self.set_state(AudioContextState::Closed);
                     notify.send();
                 }
             }
@@ -445,12 +450,6 @@ impl RenderThread {
 
 impl Drop for RenderThread {
     fn drop(&mut self) {
-        // If the audio graph is still there, this is an actual shutdown.
-        // When the graph is None, this means we are only changing the sink - not shutting down.
-        if self.graph.is_some() {
-            self.set_state(AudioContextState::Closed);
-        }
-
         if let Some(gc) = self.garbage_collector.as_mut() {
             gc.push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)))
         }

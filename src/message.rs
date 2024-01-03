@@ -40,7 +40,7 @@ pub(crate) enum ControlMessage {
     MarkCycleBreaker { id: AudioNodeId },
 
     /// Shut down and recycle the audio graph
-    Shutdown {
+    CloseAndRecycle {
         sender: crossbeam_channel::Sender<Graph>,
     },
 
@@ -52,6 +52,9 @@ pub(crate) enum ControlMessage {
 
     /// Resume audio processing after suspending
     Resume { notify: OneshotNotify },
+
+    /// Stop audio processing
+    Close { notify: OneshotNotify },
 
     /// Generic message to be handled by AudioProcessor
     NodeMessage {

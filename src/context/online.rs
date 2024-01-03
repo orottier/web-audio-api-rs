@@ -274,7 +274,7 @@ impl AudioContext {
         } else {
             // Acquire the audio graph from the current render thread, shutting it down
             let (graph_send, graph_recv) = crossbeam_channel::bounded(1);
-            let message = ControlMessage::Shutdown { sender: graph_send };
+            let message = ControlMessage::CloseAndRecycle { sender: graph_send };
             ctrl_msg_send.send(message).unwrap();
             if original_state == AudioContextState::Suspended {
                 // We must wake up the render thread to be able to handle the shutdown.
@@ -442,8 +442,23 @@ impl AudioContext {
     /// Will panic when this function is called multiple times
     #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn close_sync(&self) {
+        // First, stop rendering via a control message
+        let (sender, receiver) = crossbeam_channel::bounded(0);
+        let notify = OneshotNotify::Sync(sender);
+        let suspend_msg = ControlMessage::Close { notify };
+        self.base.send_control_msg(suspend_msg);
+
+        // Wait for the render thread to have processed the suspend message.
+        // The AudioContextState will be updated by the render thread.
+        receiver.recv().ok();
+
+        // Then ask the audio host to close the stream
         self.backend_manager.lock().unwrap().close();
+
+        // Stop the AudioRenderCapacity collection thread
         self.render_capacity.stop();
+
+        // TODO stop the event loop <https://github.com/orottier/web-audio-api-rs/issues/421>
     }
 
     /// Creates a [`MediaStreamAudioSourceNode`](node::MediaStreamAudioSourceNode) from a

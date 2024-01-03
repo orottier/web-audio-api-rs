@@ -114,9 +114,6 @@ fn test_none_sink_id() {
     assert_eq!(state_changes.load(Ordering::Relaxed), 3); // resumed
 
     context.close_sync();
-
-    // give event thread some time to pick up events
-    std::thread::sleep(std::time::Duration::from_millis(20));
     assert_eq!(context.state(), AudioContextState::Closed);
     assert!(sink_stable.load(Ordering::SeqCst));
     assert_eq!(state_changes.load(Ordering::Relaxed), 4); // closed
