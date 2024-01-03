@@ -33,6 +33,7 @@ pub(crate) struct RenderThread {
     /// number of channels of the backend stream, i.e. sound card number of
     /// channels clamped to MAX_CHANNELS
     number_of_channels: usize,
+    suspended: bool,
     state: Arc<AtomicU8>,
     frames_played: Arc<AtomicU64>,
     receiver: Option<Receiver<ControlMessage>>,
@@ -77,6 +78,7 @@ impl RenderThread {
             sample_rate,
             buffer_size: 0,
             number_of_channels,
+            suspended: false,
             state,
             frames_played,
             receiver: Some(receiver),
@@ -180,6 +182,16 @@ impl RenderThread {
                             .try_send(EventDispatch::diagnostics(buffer))
                             .expect("Unable to send diagnostics - channel is full");
                     }
+                }
+                Suspend { notify } => {
+                    self.suspended = true;
+                    self.set_state(AudioContextState::Suspended);
+                    notify.send();
+                }
+                Resume { notify } => {
+                    self.suspended = false;
+                    self.set_state(AudioContextState::Running);
+                    notify.send();
                 }
             }
         }
@@ -366,8 +378,8 @@ impl RenderThread {
         // handle addition/removal of nodes/edges
         self.handle_control_messages();
 
-        // if the thread is still booting, or shutting down, fill with silence
-        if !self.graph.as_ref().is_some_and(Graph::is_active) {
+        // if the thread is still booting, suspended, or shutting down, fill with silence
+        if self.suspended || !self.graph.as_ref().is_some_and(Graph::is_active) {
             output_buffer.fill(S::from_sample_(0.));
             return;
         }

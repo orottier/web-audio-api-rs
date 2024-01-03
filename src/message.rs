@@ -7,8 +7,6 @@ use crate::node::ChannelConfig;
 use crate::render::graph::Graph;
 use crate::render::AudioProcessor;
 
-use crossbeam_channel::Sender;
-
 /// Commands from the control thread to the render thread
 pub(crate) enum ControlMessage {
     /// Register a new node in the audio graph
@@ -42,10 +40,18 @@ pub(crate) enum ControlMessage {
     MarkCycleBreaker { id: AudioNodeId },
 
     /// Shut down and recycle the audio graph
-    Shutdown { sender: Sender<Graph> },
+    Shutdown {
+        sender: crossbeam_channel::Sender<Graph>,
+    },
 
     /// Start rendering with given audio graph
     Startup { graph: Graph },
+
+    /// Suspend and pause audio processing
+    Suspend { notify: OneshotNotify },
+
+    /// Resume audio processing after suspending
+    Resume { notify: OneshotNotify },
 
     /// Generic message to be handled by AudioProcessor
     NodeMessage {
@@ -55,4 +61,22 @@ pub(crate) enum ControlMessage {
 
     /// Request a diagnostic report of the audio graph
     RunDiagnostics { buffer: Vec<u8> },
+}
+
+/// Helper object to emit single notification
+pub(crate) enum OneshotNotify {
+    /// A synchronous oneshot sender
+    Sync(crossbeam_channel::Sender<()>),
+    /// An asynchronous oneshot sender
+    Async(futures::channel::oneshot::Sender<()>),
+}
+
+impl OneshotNotify {
+    /// Emit the notification
+    pub fn send(self) {
+        match self {
+            Self::Sync(s) => s.send(()).ok(),
+            Self::Async(s) => s.send(()).ok(),
+        };
+    }
 }

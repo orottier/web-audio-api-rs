@@ -7,7 +7,7 @@ use crate::events::{EventDispatch, EventHandler, EventPayload, EventType};
 use crate::io::{self, AudioBackendManager, ControlThreadInit, RenderThreadInit};
 use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
-use crate::message::ControlMessage;
+use crate::message::{ControlMessage, OneshotNotify};
 use crate::node::{self, ChannelConfigOptions};
 use crate::render::graph::Graph;
 use crate::MediaElement;
@@ -387,13 +387,19 @@ impl AudioContext {
     ///
     /// * The audio device is not available
     /// * For a `BackendSpecificError`
-    #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn suspend_sync(&self) {
-        if self.backend_manager.lock().unwrap().suspend() {
-            // TODO: state should signal device readiness hence should be updated by the render
-            // thread, not the control thread.
-            self.base().set_state(AudioContextState::Suspended);
-        }
+        // First, pause rendering via a control message
+        let (sender, receiver) = crossbeam_channel::bounded(0);
+        let notify = OneshotNotify::Sync(sender);
+        let suspend_msg = ControlMessage::Suspend { notify };
+        self.base.send_control_msg(suspend_msg);
+
+        // Wait for the render thread to have processed the suspend message.
+        // The AudioContextState will be updated by the render thread.
+        receiver.recv().ok();
+
+        // Then ask the audio host to suspend the stream
+        self.backend_manager.lock().unwrap().suspend();
     }
 
     /// Resumes the progression of time in an audio context that has previously been
@@ -408,13 +414,19 @@ impl AudioContext {
     ///
     /// * The audio device is not available
     /// * For a `BackendSpecificError`
-    #[allow(clippy::missing_const_for_fn, clippy::unused_self)]
     pub fn resume_sync(&self) {
-        if self.backend_manager.lock().unwrap().resume() {
-            // TODO: state should signal device readiness hence should be updated by the render
-            // thread, not the control thread.
-            self.base().set_state(AudioContextState::Running);
-        }
+        // First ask the audio host to resume the stream
+        self.backend_manager.lock().unwrap().resume();
+
+        // Then, ask to resume rendering via a control message
+        let (sender, receiver) = crossbeam_channel::bounded(0);
+        let notify = OneshotNotify::Sync(sender);
+        let suspend_msg = ControlMessage::Resume { notify };
+        self.base.send_control_msg(suspend_msg);
+
+        // Wait for the render thread to have processed the resume message
+        // The AudioContextState will be updated by the render thread.
+        receiver.recv().ok();
     }
 
     /// Closes the `AudioContext`, releasing the system resources being used.
