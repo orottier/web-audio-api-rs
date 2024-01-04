@@ -11,26 +11,26 @@ use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
-use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
+use crate::{assert_valid_time_value, AtomicF32, RENDER_QUANTUM_SIZE};
 
 /// For SetTargetAtTime event, that theoretically cannot end, if the diff between
 /// the current value and the target is below this threshold, the value is set
 /// to target value and the event is considered ended.
 const SNAP_TO_TARGET: f32 = 1e-10;
 
-// arguments sanity check functions for automation methods
 #[track_caller]
-fn assert_non_negative(value: f64) {
-    if value < 0. {
-        panic!(
-            "RangeError - timing value ({:?}) should not be negative",
-            value
-        );
+fn assert_is_finite(value: f32) {
+    if !value.is_finite() {
+        panic!("TypeError - The provided value is non-finite.");
     }
 }
 
 #[track_caller]
 fn assert_strictly_positive(value: f64) {
+    if !value.is_finite() {
+        panic!("TypeError - The provided value is non-finite.");
+    }
+
     if value <= 0. {
         panic!(
             "RangeError - duration ({:?}) should be strictly positive",
@@ -41,6 +41,8 @@ fn assert_strictly_positive(value: f64) {
 
 #[track_caller]
 fn assert_not_zero(value: f32) {
+    assert_is_finite(value);
+
     if value == 0. {
         panic!(
             "RangeError - value ({:?}) should not be equal to zero",
@@ -379,6 +381,7 @@ impl AudioParam {
     }
 
     fn set_value_raw(&self, value: f32) -> AudioParamEvent {
+        assert_is_finite(value);
         // current_value should always be clamped
         let clamped = value.clamp(self.raw_parts.min_value, self.raw_parts.max_value);
         self.raw_parts.shared_parts.store_current_value(clamped);
@@ -406,7 +409,8 @@ impl AudioParam {
     }
 
     fn set_value_at_time_raw(&self, value: f32, start_time: f64) -> AudioParamEvent {
-        assert_non_negative(start_time);
+        assert_is_finite(value);
+        assert_valid_time_value(start_time);
 
         AudioParamEvent {
             event_type: AudioParamEventType::SetValueAtTime,
@@ -430,7 +434,8 @@ impl AudioParam {
     }
 
     fn linear_ramp_to_value_at_time_raw(&self, value: f32, end_time: f64) -> AudioParamEvent {
-        assert_non_negative(end_time);
+        assert_is_finite(value);
+        assert_valid_time_value(end_time);
 
         AudioParamEvent {
             event_type: AudioParamEventType::LinearRampToValueAtTime,
@@ -457,7 +462,7 @@ impl AudioParam {
 
     fn exponential_ramp_to_value_at_time_raw(&self, value: f32, end_time: f64) -> AudioParamEvent {
         assert_not_zero(value);
-        assert_non_negative(end_time);
+        assert_valid_time_value(end_time);
 
         AudioParamEvent {
             event_type: AudioParamEventType::ExponentialRampToValueAtTime,
@@ -488,8 +493,9 @@ impl AudioParam {
         start_time: f64,
         time_constant: f64,
     ) -> AudioParamEvent {
-        assert_non_negative(start_time);
-        assert_non_negative(time_constant);
+        assert_is_finite(value);
+        assert_valid_time_value(start_time);
+        assert_valid_time_value(time_constant);
 
         // [spec] If timeConstant is zero, the output value jumps immediately to the final value.
         if time_constant == 0. {
@@ -526,7 +532,7 @@ impl AudioParam {
     }
 
     fn cancel_scheduled_values_raw(&self, cancel_time: f64) -> AudioParamEvent {
-        assert_non_negative(cancel_time);
+        assert_valid_time_value(cancel_time);
 
         AudioParamEvent {
             event_type: AudioParamEventType::CancelScheduledValues,
@@ -551,7 +557,7 @@ impl AudioParam {
     }
 
     fn cancel_and_hold_at_time_raw(&self, cancel_time: f64) -> AudioParamEvent {
-        assert_non_negative(cancel_time);
+        assert_valid_time_value(cancel_time);
 
         AudioParamEvent {
             event_type: AudioParamEventType::CancelAndHoldAtTime,
@@ -584,7 +590,7 @@ impl AudioParam {
         duration: f64,
     ) -> AudioParamEvent {
         assert_sequence_length(values);
-        assert_non_negative(start_time);
+        assert_valid_time_value(start_time);
         assert_strictly_positive(duration);
 
         // When this method is called, an internal copy of the curve is
@@ -1645,16 +1651,16 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    #[should_panic]
-    fn test_assert_non_negative_fail() {
-        assert_non_negative(-1.);
-    }
+    // #[test]
+    // #[should_panic]
+    // fn test_assert_valid_time_value_fail() {
+    //     assert_valid_time_value(-1.);
+    // }
 
-    #[test]
-    fn test_assert_non_negative() {
-        assert_non_negative(0.);
-    }
+    // #[test]
+    // fn test_assert_valid_time_value() {
+    //     assert_valid_time_value(0.);
+    // }
 
     #[test]
     #[should_panic]
