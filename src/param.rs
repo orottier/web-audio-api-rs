@@ -274,6 +274,7 @@ pub(crate) struct AudioParamRaw {
     default_value: f32, // immutable
     min_value: f32,     // immutable
     max_value: f32,     // immutable
+    automation_rate: AutomationRate,
     automation_rate_constrained: bool,
     // TODO Use `Weak` instead of `Arc`. The `AudioParamProcessor` is the owner.
     shared_parts: Arc<AudioParamShared>,
@@ -318,7 +319,7 @@ impl AudioNode for AudioParam {
 impl AudioParam {
     /// Current value of the automation rate of the AudioParam
     pub fn automation_rate(&self) -> AutomationRate {
-        self.raw_parts.shared_parts.load_automation_rate()
+        self.raw_parts.automation_rate
     }
 
     /// Update the current value of the automation rate of the AudioParam
@@ -331,7 +332,9 @@ impl AudioParam {
             panic!("InvalidStateError: automation rate cannot be changed for this param");
         }
 
+        self.automation_rate = value;
         self.registration().post_message(value);
+
         value
     }
 
