@@ -1,12 +1,12 @@
 //! Audio input/output interfaces
 
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, AtomicU8};
 use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender};
 
 use crate::buffer::AudioBuffer;
-use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
+use crate::context::{AudioContextLatencyCategory, AudioContextOptions, AudioContextState};
 use crate::events::EventDispatch;
 use crate::media_devices::MediaDeviceInfo;
 use crate::media_streams::{MediaStream, MediaStreamTrack};
@@ -26,6 +26,7 @@ mod microphone;
 
 #[derive(Debug)]
 pub(crate) struct ControlThreadInit {
+    pub state: Arc<AtomicU8>,
     pub frames_played: Arc<AtomicU64>,
     pub ctrl_msg_send: Sender<ControlMessage>,
     pub load_value_recv: Receiver<AudioRenderCapacityLoad>,
@@ -35,6 +36,7 @@ pub(crate) struct ControlThreadInit {
 
 #[derive(Clone, Debug)]
 pub(crate) struct RenderThreadInit {
+    pub state: Arc<AtomicU8>,
     pub frames_played: Arc<AtomicU64>,
     pub ctrl_msg_recv: Receiver<ControlMessage>,
     pub load_value_send: Sender<AudioRenderCapacityLoad>,
@@ -42,6 +44,9 @@ pub(crate) struct RenderThreadInit {
 }
 
 pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
+    // Track audio context state - synced from render thread to control thread
+    let state = Arc::new(AtomicU8::new(AudioContextState::Suspended as u8));
+
     // Track number of frames - synced from render thread to control thread
     let frames_played = Arc::new(AtomicU64::new(0));
 
@@ -61,6 +66,7 @@ pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
     let (event_send, event_recv) = crossbeam_channel::bounded(256);
 
     let control_thread_init = ControlThreadInit {
+        state: Arc::clone(&state),
         frames_played: Arc::clone(&frames_played),
         ctrl_msg_send,
         load_value_recv,
@@ -69,6 +75,7 @@ pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
     };
 
     let render_thread_init = RenderThreadInit {
+        state,
         frames_played,
         ctrl_msg_recv,
         load_value_send,

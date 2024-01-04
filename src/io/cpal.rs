@@ -123,6 +123,7 @@ impl AudioBackendManager for CpalBackend {
         log::info!("Audio Output Host: cpal {:?}", host.id());
 
         let RenderThreadInit {
+            state,
             frames_played,
             ctrl_msg_recv,
             load_value_send,
@@ -190,6 +191,7 @@ impl AudioBackendManager for CpalBackend {
             sample_rate,
             preferred_config.channels as usize,
             ctrl_msg_recv.clone(),
+            Arc::clone(&state),
             Arc::clone(&frames_played),
         );
         renderer.set_event_channels(load_value_send.clone(), event_send.clone());
@@ -231,6 +233,7 @@ impl AudioBackendManager for CpalBackend {
                     sample_rate,
                     supported_config.channels as usize,
                     ctrl_msg_recv,
+                    state,
                     frames_played,
                 );
                 renderer.set_event_channels(load_value_send, event_send);

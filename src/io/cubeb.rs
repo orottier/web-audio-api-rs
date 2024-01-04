@@ -151,6 +151,7 @@ impl AudioBackendManager for CubebBackend {
         Self: Sized,
     {
         let RenderThreadInit {
+            state,
             frames_played,
             ctrl_msg_recv,
             load_value_send,
@@ -186,6 +187,7 @@ impl AudioBackendManager for CubebBackend {
             sample_rate,
             number_of_channels,
             ctrl_msg_recv,
+            state,
             frames_played,
         );
         renderer.set_event_channels(load_value_send, event_send);

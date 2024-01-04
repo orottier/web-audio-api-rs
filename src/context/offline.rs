@@ -1,10 +1,10 @@
 //! The `OfflineAudioContext` type
 
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, AtomicU8};
 use std::sync::{Arc, Mutex};
 
 use crate::buffer::AudioBuffer;
-use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
+use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
 use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
 
@@ -71,12 +71,15 @@ impl OfflineAudioContext {
         // track number of frames - synced from render thread to control thread
         let frames_played = Arc::new(AtomicU64::new(0));
         let frames_played_clone = Arc::clone(&frames_played);
+        let state = Arc::new(AtomicU8::new(AudioContextState::Suspended as u8));
+        let state_clone = Arc::clone(&state);
 
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
             sample_rate,
             number_of_channels,
             receiver,
+            state_clone,
             frames_played_clone,
         );
 
@@ -84,6 +87,7 @@ impl OfflineAudioContext {
         let base = ConcreteBaseAudioContext::new(
             sample_rate,
             number_of_channels,
+            state,
             frames_played,
             sender,
             None,
@@ -131,7 +135,11 @@ impl OfflineAudioContext {
             ..
         } = renderer;
 
-        renderer.render_audiobuffer_sync(self.length, suspend_callbacks, self)
+        self.base.set_state(AudioContextState::Running);
+        let result = renderer.render_audiobuffer_sync(self.length, suspend_callbacks, self);
+        self.base.set_state(AudioContextState::Closed);
+
+        result
     }
 
     /// Given the current connections and scheduled changes, starts rendering audio.
@@ -159,9 +167,15 @@ impl OfflineAudioContext {
             ..
         } = renderer;
 
-        renderer
+        self.base.set_state(AudioContextState::Running);
+
+        let result = renderer
             .render_audiobuffer(self.length, suspend_promises, resume_receiver)
-            .await
+            .await;
+
+        self.base.set_state(AudioContextState::Closed);
+
+        result
     }
 
     /// get the length of rendering audio buffer
@@ -253,7 +267,8 @@ impl OfflineAudioContext {
                 .insert(insert_pos, (quantum, sender));
         } // lock is dropped
 
-        receiver.await.unwrap()
+        receiver.await.unwrap();
+        self.base().set_state(AudioContextState::Suspended);
     }
 
     /// Schedules a suspension of the time progression in the audio context at the specified time
@@ -313,9 +328,15 @@ impl OfflineAudioContext {
                 "InvalidStateError: cannot suspend multiple times at the same render quantum",
             );
 
+        let boxed_callback = Box::new(|ctx: &mut OfflineAudioContext| {
+            ctx.base().set_state(AudioContextState::Suspended);
+            (callback)(ctx);
+            ctx.base().set_state(AudioContextState::Running);
+        });
+
         renderer
             .suspend_callbacks
-            .insert(insert_pos, (quantum, Box::new(callback)));
+            .insert(insert_pos, (quantum, boxed_callback));
     }
 
     /// Resumes the progression of the OfflineAudioContext's currentTime when it has been suspended
@@ -324,6 +345,7 @@ impl OfflineAudioContext {
     ///
     /// Panics when the context is closed or rendering has not started
     pub async fn resume(&self) {
+        self.base().set_state(AudioContextState::Running);
         self.resume_sender.clone().send(()).await.unwrap()
     }
 }
@@ -339,6 +361,7 @@ mod tests {
     #[test]
     fn render_empty_graph() {
         let mut context = OfflineAudioContext::new(2, 555, 44_100.);
+        assert_eq!(context.state(), AudioContextState::Suspended);
         let buffer = context.start_rendering_sync();
 
         assert_eq!(context.length(), 555);
@@ -347,6 +370,8 @@ mod tests {
         assert_eq!(buffer.length(), 555);
         assert_float_eq!(buffer.get_channel_data(0), &[0.; 555][..], abs_all <= 0.);
         assert_float_eq!(buffer.get_channel_data(1), &[0.; 555][..], abs_all <= 0.);
+
+        assert_eq!(context.state(), AudioContextState::Closed);
     }
 
     #[test]
@@ -365,12 +390,14 @@ mod tests {
         let mut context = OfflineAudioContext::new(1, len, sample_rate as f32);
 
         context.suspend_sync(RENDER_QUANTUM_SIZE as f64 / sample_rate, |context| {
+            assert_eq!(context.state(), AudioContextState::Suspended);
             let mut src = context.create_constant_source();
             src.connect(&context.destination());
             src.start();
         });
 
         context.suspend_sync((3 * RENDER_QUANTUM_SIZE) as f64 / sample_rate, |context| {
+            assert_eq!(context.state(), AudioContextState::Suspended);
             context.destination().disconnect();
         });
 

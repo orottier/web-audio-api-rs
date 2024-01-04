@@ -91,8 +91,8 @@ struct ConcreteBaseAudioContextInner {
     listener_params: Option<AudioListenerParams>,
     /// Denotes if this AudioContext is offline or not
     offline: bool,
-    /// Describes the current state of the `ConcreteBaseAudioContext`
-    state: AtomicU8,
+    /// Current state of the `ConcreteBaseAudioContext`, shared with the RenderThread
+    state: Arc<AtomicU8>,
     /// Stores the event handlers
     event_loop: EventLoop,
     /// Sender for events that will be handled by the EventLoop
@@ -147,9 +147,11 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
 
 impl ConcreteBaseAudioContext {
     /// Creates a `BaseAudioContext` instance
+    #[allow(clippy::too_many_arguments)] // TODO refactor with builder pattern
     pub(super) fn new(
         sample_rate: f32,
         max_channel_count: usize,
+        state: Arc<AtomicU8>,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
         event_channel: Option<(Sender<EventDispatch>, Receiver<EventDispatch>)>,
@@ -175,7 +177,7 @@ impl ConcreteBaseAudioContext {
             queued_audio_listener_msgs: Mutex::new(Vec::new()),
             listener_params: None,
             offline,
-            state: AtomicU8::new(AudioContextState::Suspended as u8),
+            state,
             event_loop: event_loop.clone(),
             event_send,
         };
@@ -263,7 +265,6 @@ impl ConcreteBaseAudioContext {
         if self.state() != AudioContextState::Closed {
             let result = self.inner.render_channel.read().unwrap().send(msg);
             if result.is_err() {
-                self.set_state(AudioContextState::Closed);
                 log::warn!("Discarding control message - render thread is closed");
             }
         }
@@ -333,14 +334,14 @@ impl ConcreteBaseAudioContext {
     /// Returns state of current context
     #[must_use]
     pub(super) fn state(&self) -> AudioContextState {
-        self.inner.state.load(Ordering::SeqCst).into()
+        self.inner.state.load(Ordering::Acquire).into()
     }
 
     /// Updates state of current context
     pub(super) fn set_state(&self, state: AudioContextState) {
         let current_state = self.state();
         if current_state != state {
-            self.inner.state.store(state as u8, Ordering::SeqCst);
+            self.inner.state.store(state as u8, Ordering::Release);
             let _ = self.send_event(EventDispatch::state_change());
         }
     }

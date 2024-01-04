@@ -9,6 +9,7 @@ use web_audio_api::context::{
 use web_audio_api::node::AudioNode;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::time::Duration;
 use web_audio_api::MAX_CHANNELS;
 
 fn require_send_sync_static<T: Send + Sync + 'static>(_: T) {}
@@ -94,7 +95,7 @@ fn test_none_sink_id() {
     });
 
     // give event thread some time to pick up events
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::thread::sleep(Duration::from_millis(5));
     assert_eq!(state_changes.load(Ordering::Relaxed), 1); // started
 
     // changing sink_id to 'none' again should make no changes
@@ -109,22 +110,22 @@ fn test_none_sink_id() {
     assert_eq!(context.state(), AudioContextState::Suspended);
 
     // give event thread some time to pick up events
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::thread::sleep(Duration::from_millis(5));
     assert_eq!(state_changes.load(Ordering::Relaxed), 2); // suspended
 
     context.resume_sync();
     assert_eq!(context.state(), AudioContextState::Running);
 
     // give event thread some time to pick up events
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::thread::sleep(Duration::from_millis(5));
     assert_eq!(state_changes.load(Ordering::Relaxed), 3); // resumed
 
     context.close_sync();
     assert_eq!(context.state(), AudioContextState::Closed);
+    assert!(sink_stable.load(Ordering::SeqCst));
 
     // give event thread some time to pick up events
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    assert!(sink_stable.load(Ordering::SeqCst));
+    std::thread::sleep(Duration::from_millis(5));
     assert_eq!(state_changes.load(Ordering::Relaxed), 4); // closed
 }
 
@@ -169,7 +170,7 @@ fn test_panner_node_drop_panic() {
     drop(panner);
 
     // allow the audio render thread to boot and handle adding and dropping the panner
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(200));
 
     // creating a new panner node should not crash the render thread
     let mut _panner = context.create_panner();
@@ -177,7 +178,7 @@ fn test_panner_node_drop_panic() {
     // A crashed thread will not fail the test (only if the main thread panics).
     // Instead inspect if there is progression of time in the audio context.
     let time = context.current_time();
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(200));
     assert!(context.current_time() >= time + 0.15);
 }
 
@@ -196,7 +197,7 @@ fn test_audioparam_outlives_audionode() {
 
     // Start the audio graph, and give some time to drop the gain node (it has no inputs connected
     // so dynamic lifetime will drop the node);
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(200));
 
     // We still have a handle to the param, so that should not be removed from the audio graph.
     // So by updating the value, the render thread should not crash.
@@ -205,7 +206,7 @@ fn test_audioparam_outlives_audionode() {
     // A crashed thread will not fail the test (only if the main thread panics).
     // Instead inspect if there is progression of time in the audio context.
     let time = context.current_time();
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(200));
     assert!(context.current_time() >= time + 0.15);
 }
 
@@ -223,7 +224,7 @@ fn test_closed() {
     drop(context);
 
     // allow some time for the render thread to drop
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    std::thread::sleep(Duration::from_millis(10));
 
     node.disconnect(); // should not panic
 }

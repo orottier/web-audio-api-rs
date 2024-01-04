@@ -3,7 +3,7 @@
 use std::any::Any;
 use std::cell::Cell;
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -14,7 +14,9 @@ use futures::stream::StreamExt;
 
 use super::AudioRenderQuantum;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
-use crate::context::{AudioNodeId, OfflineAudioContext, OfflineAudioContextCallback};
+use crate::context::{
+    AudioContextState, AudioNodeId, OfflineAudioContext, OfflineAudioContextCallback,
+};
 use crate::events::EventDispatch;
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
@@ -31,6 +33,8 @@ pub(crate) struct RenderThread {
     /// number of channels of the backend stream, i.e. sound card number of
     /// channels clamped to MAX_CHANNELS
     number_of_channels: usize,
+    suspended: bool,
+    state: Arc<AtomicU8>,
     frames_played: Arc<AtomicU64>,
     receiver: Option<Receiver<ControlMessage>>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
@@ -66,6 +70,7 @@ impl RenderThread {
         sample_rate: f32,
         number_of_channels: usize,
         receiver: Receiver<ControlMessage>,
+        state: Arc<AtomicU8>,
         frames_played: Arc<AtomicU64>,
     ) -> Self {
         Self {
@@ -73,6 +78,8 @@ impl RenderThread {
             sample_rate,
             buffer_size: 0,
             number_of_channels,
+            suspended: false,
+            state,
             frames_played,
             receiver: Some(receiver),
             buffer_offset: None,
@@ -149,7 +156,8 @@ impl RenderThread {
                 MarkCycleBreaker { id } => {
                     self.graph.as_mut().unwrap().mark_cycle_breaker(id);
                 }
-                Shutdown { sender } => {
+                CloseAndRecycle { sender } => {
+                    self.set_state(AudioContextState::Suspended);
                     let _ = sender.send(self.graph.take().unwrap());
                     self.receiver = None;
                     return; // no further handling of ctrl msgs
@@ -157,6 +165,7 @@ impl RenderThread {
                 Startup { graph } => {
                     debug_assert!(self.graph.is_none());
                     self.graph = Some(graph);
+                    self.set_state(AudioContextState::Running);
                 }
                 NodeMessage { id, mut msg } => {
                     self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
@@ -173,6 +182,21 @@ impl RenderThread {
                             .try_send(EventDispatch::diagnostics(buffer))
                             .expect("Unable to send diagnostics - channel is full");
                     }
+                }
+                Suspend { notify } => {
+                    self.suspended = true;
+                    self.set_state(AudioContextState::Suspended);
+                    notify.send();
+                }
+                Resume { notify } => {
+                    self.suspended = false;
+                    self.set_state(AudioContextState::Running);
+                    notify.send();
+                }
+                Close { notify } => {
+                    self.suspended = true;
+                    self.set_state(AudioContextState::Closed);
+                    notify.send();
                 }
             }
         }
@@ -359,8 +383,8 @@ impl RenderThread {
         // handle addition/removal of nodes/edges
         self.handle_control_messages();
 
-        // if the thread is still booting, or shutting down, fill with silence
-        if !self.graph.as_ref().is_some_and(Graph::is_active) {
+        // if the thread is still booting, suspended, or shutting down, fill with silence
+        if self.suspended || !self.graph.as_ref().is_some_and(Graph::is_active) {
             output_buffer.fill(S::from_sample_(0.));
             return;
         }
@@ -413,6 +437,13 @@ impl RenderThread {
 
             // handle addition/removal of nodes/edges
             self.handle_control_messages();
+        }
+    }
+
+    fn set_state(&self, state: AudioContextState) {
+        self.state.store(state as u8, Ordering::Relaxed);
+        if let Some(sender) = self.event_sender.as_ref() {
+            sender.try_send(EventDispatch::state_change()).ok();
         }
     }
 }
