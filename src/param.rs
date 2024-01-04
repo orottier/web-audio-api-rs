@@ -327,12 +327,12 @@ impl AudioParam {
     /// # Panics
     ///
     /// Some nodes have automation rate constraints and may panic when updating the value.
-    pub fn set_automation_rate(&self, value: AutomationRate) {
+    pub fn set_automation_rate(&mut self, value: AutomationRate) {
         if self.raw_parts.automation_rate_constrained && value != self.automation_rate() {
             panic!("InvalidStateError: automation rate cannot be changed for this param");
         }
 
-        self.automation_rate = value;
+        self.raw_parts.automation_rate = value;
         self.registration().post_message(value);
     }
 
@@ -645,14 +645,12 @@ impl AudioParam {
 #[derive(Debug)]
 pub(crate) struct AudioParamShared {
     current_value: AtomicF32,
-    is_a_rate: AtomicBool,
 }
 
 impl AudioParamShared {
-    pub(crate) fn new(current_value: f32, automation_rate: AutomationRate) -> Self {
+    pub(crate) fn new(current_value: f32) -> Self {
         Self {
             current_value: AtomicF32::new(current_value),
-            is_a_rate: AtomicBool::new(automation_rate.is_a_rate()),
         }
     }
 
@@ -662,19 +660,6 @@ impl AudioParamShared {
 
     pub(crate) fn store_current_value(&self, value: f32) {
         self.current_value.store(value, Ordering::Release);
-    }
-
-    pub(crate) fn load_automation_rate(&self) -> AutomationRate {
-        if self.is_a_rate.load(Ordering::Acquire) {
-            AutomationRate::A
-        } else {
-            AutomationRate::K
-        }
-    }
-
-    pub(crate) fn store_automation_rate(&self, automation_rate: AutomationRate) {
-        self.is_a_rate
-            .store(automation_rate.is_a_rate(), Ordering::Release);
     }
 }
 
@@ -721,7 +706,6 @@ impl AudioProcessor for AudioParamProcessor {
     fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(automation_rate) = msg.downcast_ref::<AutomationRate>() {
             self.automation_rate = *automation_rate;
-            self.shared_parts.store_automation_rate(*automation_rate);
             return;
         }
 
@@ -1616,7 +1600,7 @@ pub(crate) fn audio_param_pair(
         ..
     } = descriptor;
 
-    let shared_parts = Arc::new(AudioParamShared::new(default_value, automation_rate));
+    let shared_parts = Arc::new(AudioParamShared::new(default_value));
 
     let param = AudioParam {
         registration: registration.into(),
@@ -1624,6 +1608,7 @@ pub(crate) fn audio_param_pair(
             default_value,
             max_value,
             min_value,
+            automation_rate,
             automation_rate_constrained: false,
             shared_parts: Arc::clone(&shared_parts),
         },
@@ -1705,6 +1690,24 @@ mod tests {
         assert_float_eq!(param.min_value(), -10., abs_all <= 0.);
         assert_float_eq!(param.max_value(), 10., abs_all <= 0.);
         assert_float_eq!(param.value(), 0., abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_automation_rate_synchronicity_on_control_thread() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        // zero target
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (mut param, _render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_automation_rate(AutomationRate::K);
+        assert_eq!(param.automation_rate(), AutomationRate::K);
     }
 
     #[test]
