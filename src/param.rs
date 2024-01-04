@@ -1651,17 +1651,6 @@ mod tests {
 
     use super::*;
 
-    // #[test]
-    // #[should_panic]
-    // fn test_assert_valid_time_value_fail() {
-    //     assert_valid_time_value(-1.);
-    // }
-
-    // #[test]
-    // fn test_assert_valid_time_value() {
-    //     assert_valid_time_value(0.);
-    // }
-
     #[test]
     #[should_panic]
     fn test_assert_strictly_positive_fail() {
