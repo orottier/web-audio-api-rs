@@ -317,6 +317,7 @@ impl AudioNode for AudioParam {
 
 impl AudioParam {
     /// Current value of the automation rate of the AudioParam
+    #[allow(clippy::missing_panics_doc)]
     pub fn automation_rate(&self) -> AutomationRate {
         *self.raw_parts.automation_rate.lock().unwrap()
     }
