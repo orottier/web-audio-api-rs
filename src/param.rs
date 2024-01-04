@@ -331,6 +331,7 @@ impl AudioParam {
             panic!("InvalidStateError: automation rate cannot be changed for this param");
         }
 
+        self.raw_parts.shared_parts.store_automation_rate(value);
         self.registration().post_message(value);
     }
 
@@ -719,7 +720,6 @@ impl AudioProcessor for AudioParamProcessor {
     fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(automation_rate) = msg.downcast_ref::<AutomationRate>() {
             self.automation_rate = *automation_rate;
-            self.shared_parts.store_automation_rate(*automation_rate);
             return;
         }
 
@@ -1703,6 +1703,24 @@ mod tests {
         assert_float_eq!(param.min_value(), -10., abs_all <= 0.);
         assert_float_eq!(param.max_value(), 10., abs_all <= 0.);
         assert_float_eq!(param.value(), 0., abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_automation_rate_synchronicity() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A, // start with A
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
+
+        // set to K
+        param.set_automation_rate(AutomationRate::K);
+        assert_eq!(param.automation_rate(), AutomationRate::K);
     }
 
     #[test]
