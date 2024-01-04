@@ -326,12 +326,13 @@ impl AudioParam {
     /// # Panics
     ///
     /// Some nodes have automation rate constraints and may panic when updating the value.
-    pub fn set_automation_rate(&self, value: AutomationRate) {
+    pub fn set_automation_rate(&self, value: AutomationRate) -> AutomationRate {
         if self.raw_parts.automation_rate_constrained && value != self.automation_rate() {
             panic!("InvalidStateError: automation rate cannot be changed for this param");
         }
 
         self.registration().post_message(value);
+        value
     }
 
     pub(crate) fn set_automation_rate_constrained(&mut self, value: bool) {
@@ -376,8 +377,9 @@ impl AudioParam {
     // Any exceptions that would be thrown by setValueAtTime() will also be
     // thrown by setting this attribute.
     // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
-    pub fn set_value(&self, value: f32) -> &Self {
-        self.send_event(self.set_value_raw(value))
+    pub fn set_value(&self, value: f32) -> f32 {
+        self.send_event(self.set_value_raw(value));
+        value
     }
 
     fn set_value_raw(&self, value: f32) -> AudioParamEvent {
@@ -1714,6 +1716,24 @@ mod tests {
         assert_float_eq!(param.min_value(), -10., abs_all <= 0.);
         assert_float_eq!(param.max_value(), 10., abs_all <= 0.);
         assert_float_eq!(param.value(), 0., abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_automation_rate_synchronicity_on_control_thread() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        // zero target
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_automation_rate(AutomationRate::K);
+        assert_eq!(param.automation_rate(), AutomationRate::K);
     }
 
     #[test]
