@@ -60,24 +60,13 @@ fn assert_valid_smoothing_time_constant(smoothing_time_constant: f64) {
     }
 }
 
-// [spec] If the value of this attribute is set to a value more than or equal
-// to maxDecibels, an IndexSizeError exception MUST be thrown.
-fn assert_valid_min_decibels(min_decibels: f64, max_decibels: f64) {
+// [spec] If the value of minDecibels is set to a value more than or equal to maxDecibels, an
+// IndexSizeError exception MUST be thrown.
+fn assert_valid_decibels(min_decibels: f64, max_decibels: f64) {
     if min_decibels >= max_decibels {
         panic!(
             "IndexSizeError - Invalid min decibels: {:?} is greater than or equals to max decibels {:?}",
             min_decibels, max_decibels
-        );
-    }
-}
-
-// [spec] If the value of this attribute is set to a value less than or equal to
-// minDecibels, an IndexSizeError exception MUST be thrown.
-fn assert_valid_max_decibels(max_decibels: f64, min_decibels: f64) {
-    if max_decibels <= min_decibels {
-        panic!(
-            "IndexSizeError - Invalid max decibels: {:?} is lower than or equals to min decibels {:?}",
-            max_decibels, min_decibels
         );
     }
 }
@@ -237,18 +226,16 @@ impl Analyser {
         self.min_decibels
     }
 
-    pub fn set_min_decibels(&mut self, value: f64) {
-        assert_valid_min_decibels(value, self.max_decibels());
-        self.min_decibels = value;
-    }
-
     pub fn max_decibels(&self) -> f64 {
         self.max_decibels
     }
 
-    pub fn set_max_decibels(&mut self, value: f64) {
-        assert_valid_max_decibels(value, self.min_decibels());
-        self.max_decibels = value;
+    pub fn set_decibels(&mut self, min: f64, max: f64) {
+        // set them together to avoid invalid intermediate min/max combinations
+        assert_valid_decibels(min, max);
+
+        self.min_decibels = min;
+        self.min_decibels = max;
     }
 
     pub fn frequency_bin_count(&self) -> usize {
@@ -636,14 +623,14 @@ mod tests {
     #[should_panic]
     fn test_min_decibels_constraints_lt_max_decibels() {
         let mut analyser = Analyser::new();
-        analyser.set_min_decibels(DEFAULT_MAX_DECIBELS);
+        analyser.set_decibels(DEFAULT_MAX_DECIBELS, analyser.max_decibels());
     }
 
     #[test]
     #[should_panic]
     fn test_max_decibels_constraints_lt_min_decibels() {
         let mut analyser = Analyser::new();
-        analyser.set_max_decibels(DEFAULT_MIN_DECIBELS);
+        analyser.set_decibels(analyser.min_decibels(), DEFAULT_MIN_DECIBELS);
     }
 
     #[test]

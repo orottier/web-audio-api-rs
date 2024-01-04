@@ -112,8 +112,7 @@ impl AnalyserNode {
             let mut analyser = Analyser::new();
             analyser.set_fft_size(fft_size);
             analyser.set_smoothing_time_constant(smoothing_time_constant);
-            analyser.set_min_decibels(min_decibels);
-            analyser.set_max_decibels(max_decibels);
+            analyser.set_decibels(min_decibels, max_decibels);
 
             let render = AnalyserRenderer {
                 ring_buffer: analyser.get_ring_buffer_clone(),
@@ -184,7 +183,7 @@ impl AnalyserNode {
     /// This function panics if the value is set to a value more than or equal
     /// to max decibels.
     pub fn set_min_decibels(&mut self, value: f64) {
-        self.analyser.set_min_decibels(value);
+        self.analyser.set_decibels(value, self.max_decibels());
     }
 
     /// Maximum power value in the scaling range for the FFT analysis data for
@@ -204,7 +203,7 @@ impl AnalyserNode {
     /// This function panics if the value is set to a value less than or equal
     /// to min decibels.
     pub fn set_max_decibels(&mut self, value: f64) {
-        self.analyser.set_max_decibels(value);
+        self.analyser.set_decibels(self.min_decibels(), value);
     }
 
     /// Number of bins in the FFT results, is half the FFT size
@@ -290,7 +289,10 @@ impl AudioProcessor for AnalyserRenderer {
 
 #[cfg(test)]
 mod tests {
-    use crate::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+    use super::*;
+    use crate::context::{
+        AudioContext, AudioContextOptions, BaseAudioContext, OfflineAudioContext,
+    };
     use crate::node::{AudioNode, AudioScheduledSourceNode};
     use float_eq::assert_float_eq;
 
@@ -324,5 +326,16 @@ mod tests {
 
         // should contain the most recent frames available
         assert_float_eq!(&buffer[..], &[1.; 128][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_construct_decibels() {
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
+        let options = AnalyserOptions {
+            min_decibels: -10.,
+            max_decibels: 20.,
+            ..AnalyserOptions::default()
+        };
+        let _ = AnalyserNode::new(&context, options);
     }
 }
