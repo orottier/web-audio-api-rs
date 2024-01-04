@@ -1,7 +1,7 @@
 //! AudioParam interface
 use std::any::Any;
 use std::slice::{Iter, IterMut};
-use std::sync::atomic::{Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock};
 
 use arrayvec::ArrayVec;
@@ -390,7 +390,9 @@ impl AudioParam {
         assert_is_finite(value);
         // current_value should always be clamped
         let clamped = value.clamp(self.raw_parts.min_value, self.raw_parts.max_value);
-        self.raw_parts.current_value.store(clamped, Ordering::Release);
+        self.raw_parts
+            .current_value
+            .store(clamped, Ordering::Release);
 
         // this event is meant to update param intrinsic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
