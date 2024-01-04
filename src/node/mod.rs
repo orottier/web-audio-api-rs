@@ -184,13 +184,17 @@ impl ChannelConfig {
     }
 
     fn set_count_mode(&self, v: ChannelCountMode, registration: &AudioContextRegistration) {
-        self.inner.lock().unwrap().count_mode = v;
+        let mut guard = self.inner.lock().unwrap();
+        guard.count_mode = v;
 
         let message = ControlMessage::SetChannelCountMode {
             id: registration.id(),
             mode: v,
         };
         registration.context().send_control_msg(message);
+
+        drop(guard); // drop guard after sending message to prevent out of order arrivals on
+                     // concurrent access
     }
 
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
@@ -204,13 +208,17 @@ impl ChannelConfig {
         v: ChannelInterpretation,
         registration: &AudioContextRegistration,
     ) {
-        self.inner.lock().unwrap().interpretation = v;
+        let mut guard = self.inner.lock().unwrap();
+        guard.interpretation = v;
 
         let message = ControlMessage::SetChannelInterpretation {
             id: registration.id(),
             interpretation: v,
         };
         registration.context().send_control_msg(message);
+
+        drop(guard); // drop guard after sending message to prevent out of order arrivals on
+                     // concurrent access
     }
 
     /// Represents an integer used to determine how many channels are used when up-mixing and
@@ -221,13 +229,18 @@ impl ChannelConfig {
 
     fn set_count(&self, v: usize, registration: &AudioContextRegistration) {
         crate::assert_valid_number_of_channels(v);
-        self.inner.lock().unwrap().count = v;
+
+        let mut guard = self.inner.lock().unwrap();
+        guard.count = v;
 
         let message = ControlMessage::SetChannelCount {
             id: registration.id(),
             count: v,
         };
         registration.context().send_control_msg(message);
+
+        drop(guard); // drop guard after sending message to prevent out of order arrivals on
+                     // concurrent access
     }
 
     pub(crate) fn inner(&self) -> ChannelConfigInner {
