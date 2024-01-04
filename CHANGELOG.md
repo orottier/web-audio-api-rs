@@ -1,5 +1,12 @@
 # Version History
 
+## Version 0.41.0 (2024-01-04)
+
+- Fix BaseAudioContext onChangeState to signal device readiness
+- Fix OfflineAudioContext::state is not updated when calling supend and resume
+- Fix AudioContext resume_sync, suspend_sync, close_sync now block until completion
+- Added async versions of AudioContext suspend/resume/close
+
 ## Version 0.40.0 (2024-01-02)
 
 - Assert `AudioScheduledSourceNode` start and stop time values are valid
