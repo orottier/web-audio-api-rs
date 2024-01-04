@@ -271,12 +271,12 @@ pub struct AudioParam {
 // helper struct to attach / detach to context (for borrow reasons)
 #[derive(Clone)]
 pub(crate) struct AudioParamRaw {
-    default_value: f32, // immutable
-    min_value: f32,     // immutable
-    max_value: f32,     // immutable
-    automation_rate_constrained: bool,
-    automation_rate: Arc<Mutex<AutomationRate>>,
-    current_value: Arc<AtomicF32>,
+    default_value: f32,                          // immutable
+    min_value: f32,                              // immutable
+    max_value: f32,                              // immutable
+    automation_rate_constrained: bool,           // effectively immutable
+    automation_rate: Arc<Mutex<AutomationRate>>, // shared with clones
+    current_value: Arc<AtomicF32>,               // shared with clones and with render thread
 }
 
 impl AudioNode for AudioParam {
@@ -1674,7 +1674,6 @@ mod tests {
     fn test_automation_rate_synchronicity_on_control_thread() {
         let context = OfflineAudioContext::new(1, 0, 48000.);
 
-        // zero target
         let opts = AudioParamDescriptor {
             name: String::new(),
             automation_rate: AutomationRate::A,
@@ -1686,6 +1685,35 @@ mod tests {
 
         param.set_automation_rate(AutomationRate::K);
         assert_eq!(param.automation_rate(), AutomationRate::K);
+    }
+
+    #[test]
+    fn test_audioparam_clones_in_sync() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -10.,
+            max_value: 10.,
+        };
+        let (param1, mut render) = audio_param_pair(opts, context.mock_registration());
+        let param2 = param1.clone();
+
+        // changing automation rate on param1 should reflect in param2
+        param1.set_automation_rate(AutomationRate::K);
+        assert_eq!(param2.automation_rate(), AutomationRate::K);
+
+        // setting value on param1 should reflect in param2
+        render.handle_incoming_event(param1.set_value_raw(2.));
+        assert_float_eq!(param1.value(), 2., abs_all <= 0.);
+        assert_float_eq!(param2.value(), 2., abs_all <= 0.);
+
+        // setting value on param2 should reflect in param1
+        render.handle_incoming_event(param2.set_value_raw(3.));
+        assert_float_eq!(param1.value(), 3., abs_all <= 0.);
+        assert_float_eq!(param2.value(), 3., abs_all <= 0.);
     }
 
     #[test]
