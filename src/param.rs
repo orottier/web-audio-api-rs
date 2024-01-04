@@ -1,8 +1,8 @@
 //! AudioParam interface
 use std::any::Any;
 use std::slice::{Iter, IterMut};
-use std::sync::atomic::{Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use arrayvec::ArrayVec;
 
@@ -274,11 +274,9 @@ pub(crate) struct AudioParamRaw {
     default_value: f32, // immutable
     min_value: f32,     // immutable
     max_value: f32,     // immutable
-    automation_rate: AutomationRate,
     automation_rate_constrained: bool,
+    automation_rate: Arc<Mutex<AutomationRate>>,
     current_value: Arc<AtomicF32>,
-    // TODO Use `Weak` instead of `Arc`. The `AudioParamProcessor` is the owner.
-    // shared_parts: Arc<AudioParamShared>,
 }
 
 impl AudioNode for AudioParam {
@@ -320,7 +318,7 @@ impl AudioNode for AudioParam {
 impl AudioParam {
     /// Current value of the automation rate of the AudioParam
     pub fn automation_rate(&self) -> AutomationRate {
-        self.raw_parts.automation_rate
+        *self.raw_parts.automation_rate.lock().unwrap()
     }
 
     /// Update the current value of the automation rate of the AudioParam
@@ -328,13 +326,16 @@ impl AudioParam {
     /// # Panics
     ///
     /// Some nodes have automation rate constraints and may panic when updating the value.
-    pub fn set_automation_rate(&mut self, value: AutomationRate) {
+    pub fn set_automation_rate(&self, value: AutomationRate) {
         if self.raw_parts.automation_rate_constrained && value != self.automation_rate() {
             panic!("InvalidStateError: automation rate cannot be changed for this param");
         }
 
-        self.raw_parts.automation_rate = value;
+        let mut guard = self.raw_parts.automation_rate.lock().unwrap();
+        *guard = value;
         self.registration().post_message(value);
+        drop(guard); // drop guard after sending message to prevent out of order arrivals on
+                     // concurrent access
     }
 
     pub(crate) fn set_automation_rate_constrained(&mut self, value: bool) {
@@ -387,7 +388,9 @@ impl AudioParam {
         assert_is_finite(value);
         // current_value should always be clamped
         let clamped = value.clamp(self.raw_parts.min_value, self.raw_parts.max_value);
-        self.raw_parts.current_value.store(clamped, Ordering::Release);
+        self.raw_parts
+            .current_value
+            .store(clamped, Ordering::Release);
 
         // this event is meant to update param intrinsic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
@@ -1583,8 +1586,8 @@ pub(crate) fn audio_param_pair(
             default_value,
             max_value,
             min_value,
-            automation_rate,
             automation_rate_constrained: false,
+            automation_rate: Arc::new(Mutex::new(automation_rate)),
             current_value: Arc::clone(&current_value),
         },
     };
@@ -1679,7 +1682,7 @@ mod tests {
             min_value: 0.,
             max_value: 1.,
         };
-        let (mut param, _render) = audio_param_pair(opts, context.mock_registration());
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
 
         param.set_automation_rate(AutomationRate::K);
         assert_eq!(param.automation_rate(), AutomationRate::K);
