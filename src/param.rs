@@ -1,7 +1,7 @@
 //! AudioParam interface
 use std::any::Any;
 use std::slice::{Iter, IterMut};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{Ordering};
 use std::sync::{Arc, OnceLock};
 
 use arrayvec::ArrayVec;
@@ -276,8 +276,9 @@ pub(crate) struct AudioParamRaw {
     max_value: f32,     // immutable
     automation_rate: AutomationRate,
     automation_rate_constrained: bool,
+    current_value: Arc<AtomicF32>,
     // TODO Use `Weak` instead of `Arc`. The `AudioParamProcessor` is the owner.
-    shared_parts: Arc<AudioParamShared>,
+    // shared_parts: Arc<AudioParamShared>,
 }
 
 impl AudioNode for AudioParam {
@@ -364,7 +365,7 @@ impl AudioParam {
     //      test_exponential_ramp_a_rate_multiple_blocks
     //      test_exponential_ramp_k_rate_multiple_blocks
     pub fn value(&self) -> f32 {
-        self.raw_parts.shared_parts.load_current_value()
+        self.raw_parts.current_value.load(Ordering::Acquire)
     }
 
     /// Set the value of the `AudioParam`.
@@ -386,7 +387,7 @@ impl AudioParam {
         assert_is_finite(value);
         // current_value should always be clamped
         let clamped = value.clamp(self.raw_parts.min_value, self.raw_parts.max_value);
-        self.raw_parts.shared_parts.store_current_value(clamped);
+        self.raw_parts.current_value.store(clamped, Ordering::Release);
 
         // this event is meant to update param intrinsic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
@@ -637,32 +638,6 @@ impl AudioParam {
     }
 }
 
-// Atomic fields of `AudioParam` that could be safely shared between threads
-// when wrapped into an `Arc`.
-//
-// Uses the canonical ordering for handover of values, i.e. `Acquire` on load
-// and `Release` on store.
-#[derive(Debug)]
-pub(crate) struct AudioParamShared {
-    current_value: AtomicF32,
-}
-
-impl AudioParamShared {
-    pub(crate) fn new(current_value: f32) -> Self {
-        Self {
-            current_value: AtomicF32::new(current_value),
-        }
-    }
-
-    pub(crate) fn load_current_value(&self) -> f32 {
-        self.current_value.load(Ordering::Acquire)
-    }
-
-    pub(crate) fn store_current_value(&self, value: f32) {
-        self.current_value.store(value, Ordering::Release);
-    }
-}
-
 struct BlockInfos {
     block_time: f64,
     dt: f64,
@@ -678,7 +653,7 @@ pub(crate) struct AudioParamProcessor {
     max_value: f32,     // immutable
     intrinsic_value: f32,
     automation_rate: AutomationRate,
-    shared_parts: Arc<AudioParamShared>,
+    current_value: Arc<AtomicF32>,
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
     buffer: ArrayVec<f32, RENDER_QUANTUM_SIZE>,
@@ -1495,7 +1470,7 @@ impl AudioParamProcessor {
         // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
         let clamped = self.intrinsic_value.clamp(self.min_value, self.max_value);
-        self.shared_parts.store_current_value(clamped);
+        self.current_value.store(clamped, Ordering::Release);
 
         // clear the buffer for this block
         self.buffer.clear();
@@ -1600,7 +1575,7 @@ pub(crate) fn audio_param_pair(
         ..
     } = descriptor;
 
-    let shared_parts = Arc::new(AudioParamShared::new(default_value));
+    let current_value = Arc::new(AtomicF32::new(default_value));
 
     let param = AudioParam {
         registration: registration.into(),
@@ -1610,17 +1585,17 @@ pub(crate) fn audio_param_pair(
             min_value,
             automation_rate,
             automation_rate_constrained: false,
-            shared_parts: Arc::clone(&shared_parts),
+            current_value: Arc::clone(&current_value),
         },
     };
 
     let processor = AudioParamProcessor {
         intrinsic_value: default_value,
+        current_value,
         default_value,
         min_value,
         max_value,
         automation_rate,
-        shared_parts,
         event_timeline: AudioParamEventTimeline::new(),
         last_event: None,
         buffer: ArrayVec::new(),
