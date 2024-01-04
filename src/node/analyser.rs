@@ -289,7 +289,10 @@ impl AudioProcessor for AnalyserRenderer {
 
 #[cfg(test)]
 mod tests {
-    use crate::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+    use super::*;
+    use crate::context::{
+        AudioContext, AudioContextOptions, BaseAudioContext, OfflineAudioContext,
+    };
     use crate::node::{AudioNode, AudioScheduledSourceNode};
     use float_eq::assert_float_eq;
 
@@ -323,5 +326,16 @@ mod tests {
 
         // should contain the most recent frames available
         assert_float_eq!(&buffer[..], &[1.; 128][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_construct_decibels() {
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
+        let options = AnalyserOptions {
+            min_decibels: -10.,
+            max_decibels: 20.,
+            ..AnalyserOptions::default()
+        };
+        let _ = AnalyserNode::new(&context, options);
     }
 }
