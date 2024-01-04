@@ -390,8 +390,8 @@ impl AudioContext {
         // First, pause rendering via a control message
         let (sender, receiver) = oneshot::channel();
         let notify = OneshotNotify::Async(sender);
-        let suspend_msg = ControlMessage::Suspend { notify };
-        self.base.send_control_msg(suspend_msg);
+        self.base
+            .send_control_msg(ControlMessage::Suspend { notify });
 
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
@@ -417,8 +417,8 @@ impl AudioContext {
         // Then, ask to resume rendering via a control message
         let (sender, receiver) = oneshot::channel();
         let notify = OneshotNotify::Async(sender);
-        let suspend_msg = ControlMessage::Resume { notify };
-        self.base.send_control_msg(suspend_msg);
+        self.base
+            .send_control_msg(ControlMessage::Resume { notify });
 
         // Wait for the render thread to have processed the resume message
         // The AudioContextState will be updated by the render thread.
@@ -437,8 +437,7 @@ impl AudioContext {
         // First, stop rendering via a control message
         let (sender, receiver) = oneshot::channel();
         let notify = OneshotNotify::Async(sender);
-        let suspend_msg = ControlMessage::Close { notify };
-        self.base.send_control_msg(suspend_msg);
+        self.base.send_control_msg(ControlMessage::Close { notify });
 
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
@@ -471,8 +470,8 @@ impl AudioContext {
         // First, pause rendering via a control message
         let (sender, receiver) = crossbeam_channel::bounded(0);
         let notify = OneshotNotify::Sync(sender);
-        let suspend_msg = ControlMessage::Suspend { notify };
-        self.base.send_control_msg(suspend_msg);
+        self.base
+            .send_control_msg(ControlMessage::Suspend { notify });
 
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
@@ -501,8 +500,8 @@ impl AudioContext {
         // Then, ask to resume rendering via a control message
         let (sender, receiver) = crossbeam_channel::bounded(0);
         let notify = OneshotNotify::Sync(sender);
-        let suspend_msg = ControlMessage::Resume { notify };
-        self.base.send_control_msg(suspend_msg);
+        self.base
+            .send_control_msg(ControlMessage::Resume { notify });
 
         // Wait for the render thread to have processed the resume message
         // The AudioContextState will be updated by the render thread.
@@ -524,8 +523,7 @@ impl AudioContext {
         // First, stop rendering via a control message
         let (sender, receiver) = crossbeam_channel::bounded(0);
         let notify = OneshotNotify::Sync(sender);
-        let suspend_msg = ControlMessage::Close { notify };
-        self.base.send_control_msg(suspend_msg);
+        self.base.send_control_msg(ControlMessage::Close { notify });
 
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
