@@ -3,7 +3,7 @@ use arrayvec::ArrayVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::node::{ChannelConfig, ChannelCountMode, ChannelInterpretation};
+use crate::node::{ChannelConfigInner, ChannelCountMode, ChannelInterpretation};
 
 use crate::assert_valid_number_of_channels;
 use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
@@ -620,16 +620,16 @@ impl AudioRenderQuantum {
     /// Sum two `AudioRenderQuantum`s
     ///
     /// Both buffers will be mixed up front according to the supplied `channel_config`
-    pub(crate) fn add(&mut self, other: &Self, channel_config: &ChannelConfig) {
+    pub(crate) fn add(&mut self, other: &Self, channel_config: &ChannelConfigInner) {
         // gather initial channel counts
         let channels_self = self.number_of_channels();
         let channels_other = other.number_of_channels();
         let max_channels = channels_self.max(channels_other);
 
         // up/down-mix the to the desired channel count for the receiving node
-        let interpretation = channel_config.interpretation();
-        let mode = channel_config.count_mode();
-        let count = channel_config.count();
+        let interpretation = channel_config.interpretation;
+        let mode = channel_config.count_mode;
+        let count = channel_config.count;
 
         let new_channels = match mode {
             ChannelCountMode::Max => max_channels,
@@ -1542,12 +1542,11 @@ mod tests {
         signal2.copy_from_slice(&[2.; RENDER_QUANTUM_SIZE]);
         let buffer2 = AudioRenderQuantum::from(signal2);
 
-        let channel_config = crate::node::ChannelConfigOptions {
+        let channel_config = ChannelConfigInner {
             count: 2,
             count_mode: ChannelCountMode::Explicit,
             interpretation: ChannelInterpretation::Discrete,
-        }
-        .into();
+        };
 
         buffer.add(&buffer2, &channel_config);
 

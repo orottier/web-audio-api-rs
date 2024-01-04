@@ -128,7 +128,7 @@ impl BaseAudioContext for ConcreteBaseAudioContext {
             node: render,
             inputs: node.number_of_inputs(),
             outputs: node.number_of_outputs(),
-            channel_config: node.channel_config().clone(),
+            channel_config: node.channel_config().inner(),
         };
 
         // if this is the AudioListener or its params, do not add it to the graph just yet

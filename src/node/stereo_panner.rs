@@ -145,12 +145,13 @@ impl AudioNode for StereoPannerNode {
 
     fn set_channel_count_mode(&self, mode: ChannelCountMode) {
         assert_valid_channel_count_mode(mode);
-        self.channel_config.set_count_mode(mode);
+        self.channel_config
+            .set_count_mode(mode, self.registration());
     }
 
     fn set_channel_count(&self, count: usize) {
         assert_valid_channel_count(count);
-        self.channel_config.set_count(count);
+        self.channel_config.set_count(count, self.registration());
     }
 }
 
