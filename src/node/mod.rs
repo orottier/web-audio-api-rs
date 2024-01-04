@@ -307,13 +307,13 @@ pub trait AudioNode {
         input: usize,
     ) -> &'a dyn AudioNode {
         if self.context() != dest.context() {
-            panic!("InvalidAccessError: Attempting to connect nodes from different contexts");
+            panic!("InvalidAccessError - Attempting to connect nodes from different contexts");
         }
         if self.number_of_outputs() <= output {
-            panic!("IndexSizeError: output port {} is out of bounds", output);
+            panic!("IndexSizeError - output port {} is out of bounds", output);
         }
         if dest.number_of_inputs() <= input {
-            panic!("IndexSizeError: input port {} is out of bounds", input);
+            panic!("IndexSizeError - input port {} is out of bounds", input);
         }
 
         self.context().connect(
