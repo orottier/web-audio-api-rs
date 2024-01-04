@@ -328,15 +328,13 @@ impl AudioParam {
     /// # Panics
     ///
     /// Some nodes have automation rate constraints and may panic when updating the value.
-    pub fn set_automation_rate(&mut self, value: AutomationRate) -> AutomationRate {
+    pub fn set_automation_rate(&mut self, value: AutomationRate) {
         if self.raw_parts.automation_rate_constrained && value != self.automation_rate() {
             panic!("InvalidStateError: automation rate cannot be changed for this param");
         }
 
         self.raw_parts.automation_rate = value;
         self.registration().post_message(value);
-
-        value
     }
 
     pub(crate) fn set_automation_rate_constrained(&mut self, value: bool) {
@@ -381,9 +379,8 @@ impl AudioParam {
     // Any exceptions that would be thrown by setValueAtTime() will also be
     // thrown by setting this attribute.
     // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-value
-    pub fn set_value(&self, value: f32) -> f32 {
+    pub fn set_value(&self, value: f32) {
         self.send_event(self.set_value_raw(value));
-        value
     }
 
     fn set_value_raw(&self, value: f32) -> AudioParamEvent {
