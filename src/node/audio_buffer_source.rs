@@ -257,7 +257,7 @@ impl AudioBufferSourceNode {
         assert_valid_time_value(duration);
         assert!(
             !self.source_started,
-            "InvalidStateError: Cannot call `start` twice"
+            "InvalidStateError - Cannot call `start` twice"
         );
 
         self.source_started = true;
