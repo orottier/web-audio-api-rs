@@ -265,12 +265,12 @@ impl AudioParamEventTimeline {
 #[derive(Clone)] // for the node bindings, see #378
 pub struct AudioParam {
     registration: Arc<AudioContextRegistration>,
-    raw_parts: AudioParamRaw,
+    raw_parts: AudioParamInner,
 }
 
 // helper struct to attach / detach to context (for borrow reasons)
 #[derive(Clone)]
-pub(crate) struct AudioParamRaw {
+pub(crate) struct AudioParamInner {
     default_value: f32,                          // immutable
     min_value: f32,                              // immutable
     max_value: f32,                              // immutable
@@ -617,7 +617,7 @@ impl AudioParam {
     }
 
     // helper function to detach from context (for borrow reasons)
-    pub(crate) fn into_raw_parts(self) -> AudioParamRaw {
+    pub(crate) fn into_raw_parts(self) -> AudioParamInner {
         let Self {
             registration: _,
             raw_parts,
@@ -628,7 +628,7 @@ impl AudioParam {
     // helper function to attach to context (for borrow reasons)
     pub(crate) fn from_raw_parts(
         registration: AudioContextRegistration,
-        raw_parts: AudioParamRaw,
+        raw_parts: AudioParamInner,
     ) -> Self {
         Self {
             registration: registration.into(),
@@ -1583,7 +1583,7 @@ pub(crate) fn audio_param_pair(
 
     let param = AudioParam {
         registration: registration.into(),
-        raw_parts: AudioParamRaw {
+        raw_parts: AudioParamInner {
             default_value,
             max_value,
             min_value,
