@@ -204,9 +204,10 @@ impl WaveShaperNode {
     /// Panics if a curve has already been given to the source (though `new` or through
     /// `set_curve`)
     pub fn set_curve(&mut self, curve: Vec<f32>) {
-        if self.curve.is_some() {
-            panic!("InvalidStateError - cannot assign curve twice");
-        }
+        assert!(
+            self.curve.is_none(),
+            "InvalidStateError - cannot assign curve twice",
+        );
 
         let clone = curve.clone();
 

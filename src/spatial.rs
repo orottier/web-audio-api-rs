@@ -108,13 +108,13 @@ impl AudioNode for AudioListenerNode {
     }
 
     fn set_channel_count(&self, _v: usize) {
-        panic!("AudioListenerNode has channel count constraints");
+        panic!("NotSupportedError - AudioListenerNode has channel count constraints");
     }
     fn set_channel_count_mode(&self, _v: ChannelCountMode) {
-        panic!("AudioListenerNode has channel count mode constraints");
+        panic!("NotSupportedError - AudioListenerNode has channel count mode constraints");
     }
     fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
-        panic!("AudioListenerNode has channel interpretation constraints");
+        panic!("NotSupportedError - AudioListenerNode has channel interpretation constraints");
     }
 }
 

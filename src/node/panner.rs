@@ -173,9 +173,10 @@ enum ControlMessage {
 #[track_caller]
 #[inline(always)]
 fn assert_valid_channel_count(count: usize) {
-    if count > 2 {
-        panic!("NotSupportedError - PannerNode channel count cannot be greater than two");
-    }
+    assert!(
+        count <= 2,
+        "NotSupportedError - PannerNode channel count cannot be greater than two"
+    );
 }
 
 /// Assert that the channel count is valid for the PannerNode
@@ -188,9 +189,11 @@ fn assert_valid_channel_count(count: usize) {
 #[track_caller]
 #[inline(always)]
 fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
-    if mode == ChannelCountMode::Max {
-        panic!("NotSupportedError - PannerNode channel count mode cannot be set to max");
-    }
+    assert_ne!(
+        mode,
+        ChannelCountMode::Max,
+        "NotSupportedError - PannerNode channel count mode cannot be set to max"
+    );
 }
 
 /// Internal state of the HRTF renderer
@@ -521,9 +524,7 @@ impl PannerNode {
     ///
     /// Panics if the provided value is negative.
     pub fn set_ref_distance(&mut self, value: f64) {
-        if value < 0. {
-            panic!("RangeError - refDistance cannot be negative");
-        }
+        assert!(value >= 0., "RangeError - refDistance cannot be negative");
         self.ref_distance = value;
         self.registration
             .post_message(ControlMessage::RefDistance(value));
@@ -539,9 +540,7 @@ impl PannerNode {
     ///
     /// Panics if the provided value is negative.
     pub fn set_max_distance(&mut self, value: f64) {
-        if value < 0. {
-            panic!("RangeError - maxDistance cannot be negative");
-        }
+        assert!(value >= 0., "RangeError - maxDistance cannot be negative");
         self.max_distance = value;
         self.registration
             .post_message(ControlMessage::MaxDistance(value));
@@ -557,9 +556,7 @@ impl PannerNode {
     ///
     /// Panics if the provided value is negative.
     pub fn set_rolloff_factor(&mut self, value: f64) {
-        if value < 0. {
-            panic!("RangeError - rolloffFactor cannot be negative");
-        }
+        assert!(value >= 0., "RangeError - rolloffFactor cannot be negative");
         self.rolloff_factor = value;
         self.registration
             .post_message(ControlMessage::RollOffFactor(value));
@@ -594,11 +591,12 @@ impl PannerNode {
     /// # Panics
     ///
     /// Panics if the provided value is not in the range [0, 1]
+    #[allow(clippy::manual_range_contains)]
     pub fn set_cone_outer_gain(&mut self, value: f64) {
-        #[allow(clippy::manual_range_contains)]
-        if value < 0. || value > 1. {
-            panic!("InvalidStateError - coneOuterGain must be in the range [0, 1]");
-        }
+        assert!(
+            value >= 0. && value <= 1.,
+            "InvalidStateError - coneOuterGain must be in the range [0, 1]"
+        );
         self.cone_outer_gain = value;
         self.registration
             .post_message(ControlMessage::ConeOuterGain(value));

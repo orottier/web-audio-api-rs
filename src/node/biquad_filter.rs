@@ -474,9 +474,10 @@ impl BiquadFilterNode {
         mag_response: &mut [f32],
         phase_response: &mut [f32],
     ) {
-        if frequency_hz.len() != mag_response.len() || mag_response.len() != phase_response.len() {
-            panic!("InvalidAccessError - Parameter lengths must match");
-        }
+        assert!(
+            frequency_hz.len() == mag_response.len() && mag_response.len() == phase_response.len(),
+            "InvalidAccessError - Parameter lengths must match",
+        );
 
         let sample_rate = self.context().sample_rate();
         let n_quist = sample_rate / 2.;

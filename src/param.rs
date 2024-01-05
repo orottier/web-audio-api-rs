@@ -20,45 +20,42 @@ const SNAP_TO_TARGET: f32 = 1e-10;
 
 #[track_caller]
 fn assert_is_finite(value: f32) {
-    if !value.is_finite() {
-        panic!("TypeError - The provided value is non-finite.");
-    }
+    assert!(
+        value.is_finite(),
+        "TypeError - The provided value is non-finite."
+    );
 }
 
 #[track_caller]
 fn assert_strictly_positive(value: f64) {
-    if !value.is_finite() {
-        panic!("TypeError - The provided value is non-finite.");
-    }
-
-    if value <= 0. {
-        panic!(
-            "RangeError - duration ({:?}) should be strictly positive",
-            value
-        );
-    }
+    assert!(
+        value.is_finite(),
+        "TypeError - The provided value is non-finite."
+    );
+    assert!(
+        value > 0.,
+        "RangeError - duration ({:?}) should be strictly positive",
+        value
+    );
 }
 
 #[track_caller]
 fn assert_not_zero(value: f32) {
     assert_is_finite(value);
-
-    if value == 0. {
-        panic!(
-            "RangeError - value ({:?}) should not be equal to zero",
-            value,
-        )
-    }
+    assert_ne!(
+        value, 0.,
+        "RangeError - value ({:?}) should not be equal to zero",
+        value
+    );
 }
 
 #[track_caller]
 fn assert_sequence_length(values: &[f32]) {
-    if values.len() < 2 {
-        panic!(
-            "InvalidStateError - sequence length ({:?}) should not be less than 2",
-            values.len()
-        )
-    }
+    assert!(
+        values.len() >= 2,
+        "InvalidStateError - sequence length ({:?}) should not be less than 2",
+        values.len()
+    );
 }
 
 // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
@@ -233,16 +230,18 @@ impl AudioParamEventTimeline {
 
     // panic if dirty, we are doing something wrong here
     fn peek(&self) -> Option<&AudioParamEvent> {
-        if self.dirty {
-            panic!("`AudioParamEventTimeline`: Invalid `.peek()` call, the queue is dirty");
-        }
+        assert!(
+            !self.dirty,
+            "`AudioParamEventTimeline`: Invalid `.peek()` call, the queue is dirty"
+        );
         self.inner.first()
     }
 
     fn next(&self) -> Option<&AudioParamEvent> {
-        if self.dirty {
-            panic!("`AudioParamEventTimeline`: Invalid `.next()` call, the queue is dirty");
-        }
+        assert!(
+            !self.dirty,
+            "`AudioParamEventTimeline`: Invalid `.next()` call, the queue is dirty"
+        );
         self.inner.get(1)
     }
 
@@ -305,13 +304,13 @@ impl AudioNode for AudioParam {
     }
 
     fn set_channel_count(&self, _v: usize) {
-        panic!("AudioParam has channel count constraints");
+        panic!("NotSupportedError - AudioParam has channel count constraints");
     }
     fn set_channel_count_mode(&self, _v: ChannelCountMode) {
-        panic!("AudioParam has channel count mode constraints");
+        panic!("NotSupportedError - AudioParam has channel count mode constraints");
     }
     fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
-        panic!("AudioParam has channel interpretation constraints");
+        panic!("NotSupportedError - AudioParam has channel interpretation constraints");
     }
 }
 
@@ -328,9 +327,10 @@ impl AudioParam {
     ///
     /// Some nodes have automation rate constraints and may panic when updating the value.
     pub fn set_automation_rate(&self, value: AutomationRate) {
-        if self.raw_parts.automation_rate_constrained && value != self.automation_rate() {
-            panic!("InvalidStateError: automation rate cannot be changed for this param");
-        }
+        assert!(
+            !self.raw_parts.automation_rate_constrained || value == self.automation_rate(),
+            "InvalidStateError - automation rate cannot be changed for this param"
+        );
 
         let mut guard = self.raw_parts.automation_rate.lock().unwrap();
         *guard = value;
@@ -921,13 +921,11 @@ impl AudioParamProcessor {
             let end_time = start_time + event.duration.unwrap();
 
             for queued in self.event_timeline.iter() {
-                if queued.time > start_time && queued.time < end_time {
-                    panic!(
-                        "NotSupportedError: scheduling SetValueCurveAtTime ({:?}) at
-                            time of another automation event ({:?})",
-                        event, queued,
-                    );
-                }
+                assert!(
+                    queued.time <= start_time || queued.time >= end_time,
+                    "NotSupportedError - scheduling SetValueCurveAtTime ({:?}) at time of another automation event ({:?})",
+                    event, queued,
+                );
             }
         }
 
@@ -946,13 +944,11 @@ impl AudioParamProcessor {
                     let start_time = queued.time;
                     let end_time = start_time + queued.duration.unwrap();
 
-                    if event.time > start_time && event.time < end_time {
-                        panic!(
-                            "NotSupportedError: scheduling automation event ({:?})
-                                during SetValueCurveAtTime ({:?})",
-                            event, queued,
-                        );
-                    }
+                    assert!(
+                        event.time <= start_time || event.time >= end_time,
+                        "NotSupportedError - scheduling automation event ({:?}) during SetValueCurveAtTime ({:?})",
+                        event, queued,
+                    );
                 }
             }
         }

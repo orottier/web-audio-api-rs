@@ -23,13 +23,15 @@ const MAX_IIR_COEFFS_LEN: usize = 20;
 #[track_caller]
 #[inline(always)]
 fn assert_valid_feedforward_coefs(coefs: &Vec<f64>) {
-    if coefs.is_empty() || coefs.len() > MAX_IIR_COEFFS_LEN {
-        panic!("NotSupportedError - IIR Filter feedforward coefficients should have length >= 0 and <= 20");
-    }
+    assert!(
+        !coefs.is_empty() && coefs.len() <= MAX_IIR_COEFFS_LEN,
+        "NotSupportedError - IIR Filter feedforward coefficients should have length >= 0 and <= 20"
+    );
 
-    if coefs.iter().all(|&f| f == 0.) {
-        panic!("InvalidStateError - IIR Filter feedforward coefficients cannot be all zeros");
-    }
+    assert!(
+        !coefs.iter().all(|&f| f == 0.),
+        "InvalidStateError - IIR Filter feedforward coefficients cannot be all zeros"
+    );
 }
 
 /// Assert that the feedforward coefficients are valid
@@ -44,13 +46,15 @@ fn assert_valid_feedforward_coefs(coefs: &Vec<f64>) {
 #[track_caller]
 #[inline(always)]
 fn assert_valid_feedback_coefs(coefs: &Vec<f64>) {
-    if coefs.is_empty() || coefs.len() > MAX_IIR_COEFFS_LEN {
-        panic!("NotSupportedError - IIR Filter feedback coefficients should have length >= 0 and <= 20");
-    }
+    assert!(
+        !coefs.is_empty() && coefs.len() <= MAX_IIR_COEFFS_LEN,
+        "NotSupportedError - IIR Filter feedback coefficients should have length >= 0 and <= 20"
+    );
 
-    if coefs[0] == 0. {
-        panic!("InvalidStateError - IIR Filter feedback first coefficient cannot be zero");
-    }
+    assert_ne!(
+        coefs[0], 0.,
+        "InvalidStateError - IIR Filter feedback first coefficient cannot be zero"
+    );
 }
 
 /// Options for constructing a [`IIRFilterNode`]
@@ -212,9 +216,10 @@ impl IIRFilterNode {
         mag_response: &mut [f32],
         phase_response: &mut [f32],
     ) {
-        if frequency_hz.len() != mag_response.len() || mag_response.len() != phase_response.len() {
-            panic!("InvalidAccessError - Parameter lengths must match");
-        }
+        assert!(
+            frequency_hz.len() == mag_response.len() && mag_response.len() == phase_response.len(),
+            "InvalidAccessError - Parameter lengths must match",
+        );
 
         let sample_rate = self.context().sample_rate() as f64;
         let nquist = sample_rate / 2.;
