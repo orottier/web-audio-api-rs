@@ -899,7 +899,8 @@ mod tests {
     fn test_sub_quantum_start_2() {
         let sample_rate = 44_100.;
         let length_in_seconds = 4.;
-        let mut context = OfflineAudioContext::new(2, (length_in_seconds * sample_rate) as usize, sample_rate);
+        let mut context =
+            OfflineAudioContext::new(2, (length_in_seconds * sample_rate) as usize, sample_rate);
 
         let mut dirac = context.create_buffer(2, 512, sample_rate);
         dirac.copy_to_channel(&[1.], 0);
@@ -925,7 +926,11 @@ mod tests {
         // assert we got our dirac at each defined offsets
 
         sample_offsets.iter().for_each(|index| {
-            assert_ne!(channel_left[*index], 0., "non zero sample at index {:?}", index);
+            assert_ne!(
+                channel_left[*index], 0.,
+                "non zero sample at index {:?}",
+                index
+            );
         });
     }
 
