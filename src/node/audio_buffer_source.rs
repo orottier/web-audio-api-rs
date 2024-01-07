@@ -280,9 +280,10 @@ impl AudioBufferSourceNode {
     pub fn set_buffer(&mut self, audio_buffer: AudioBuffer) {
         let clone = audio_buffer.clone();
 
-        if self.buffer.is_some() {
-            panic!("InvalidStateError - cannot assign buffer twice");
-        }
+        assert!(
+            self.buffer.is_none(),
+            "InvalidStateError - cannot assign buffer twice",
+        );
         self.buffer = Some(audio_buffer);
 
         self.registration.post_message(clone);

@@ -91,7 +91,7 @@ impl MediaElementAudioSourceNode {
             let stream = options
                 .media_element
                 .take_stream()
-                .expect("stream already taken");
+                .expect("InvalidStateError - stream already taken");
 
             let resampler = Resampler::new(context.sample_rate(), RENDER_QUANTUM_SIZE, stream);
 

@@ -204,12 +204,11 @@ fn buffer_size_for_latency_category(
         #[allow(clippy::cast_sign_loss)]
         #[allow(clippy::cast_possible_truncation)]
         AudioContextLatencyCategory::Custom(latency) => {
-            if latency <= 0. {
-                panic!(
-                    "RangeError - Invalid custom latency: {:?}, should be strictly positive",
-                    latency
-                );
-            }
+            assert!(
+                latency > 0.,
+                "RangeError - Invalid custom latency: {:?}, should be strictly positive",
+                latency
+            );
 
             let buffer_size = (latency * sample_rate as f64) as usize;
             buffer_size.next_power_of_two()

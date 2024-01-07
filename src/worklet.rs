@@ -177,9 +177,10 @@ impl AudioWorkletNode {
                 channel_config,
             } = options;
 
-            if number_of_inputs == 0 && number_of_outputs == 0 {
-                panic!("NotSupportedError: number of inputs and outputs cannot both be zero")
-            }
+            assert!(
+                number_of_inputs != 0 || number_of_outputs != 0,
+                "NotSupportedError: number of inputs and outputs cannot both be zero"
+            );
 
             let output_channel_count = if output_channel_count.is_empty() {
                 if number_of_inputs == 1 && number_of_outputs == 1 {
@@ -192,11 +193,11 @@ impl AudioWorkletNode {
                     .iter()
                     .copied()
                     .for_each(crate::assert_valid_number_of_channels);
-                if output_channel_count.len() != number_of_outputs {
-                    panic!(
-                        "IndexSizeError: outputChannelCount.length should equal numberOfOutputs"
-                    );
-                }
+                assert_eq!(
+                    output_channel_count.len(),
+                    number_of_outputs,
+                    "IndexSizeError: outputChannelCount.length should equal numberOfOutputs"
+                );
                 output_channel_count
             };
 

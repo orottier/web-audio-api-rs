@@ -125,10 +125,12 @@ impl OfflineAudioContext {
     /// Panics if this method is called multiple times
     #[must_use]
     pub fn start_rendering_sync(&mut self) -> AudioBuffer {
-        let renderer = match self.renderer.lock().unwrap().take() {
-            None => panic!("InvalidStateError: Cannot call `startRendering` twice"),
-            Some(v) => v,
-        };
+        let renderer = self
+            .renderer
+            .lock()
+            .unwrap()
+            .take()
+            .expect("InvalidStateError - Cannot call `startRendering` twice");
         let OfflineAudioContextRenderer {
             renderer,
             suspend_callbacks,
@@ -155,10 +157,12 @@ impl OfflineAudioContext {
     /// Panics if this method is called multiple times.
     pub async fn start_rendering(&self) -> AudioBuffer {
         // We are mixing async with a std Mutex, so be sure not to `await` while the lock is held
-        let renderer = match self.renderer.lock().unwrap().take() {
-            None => panic!("InvalidStateError: Cannot call `startRendering` twice"),
-            Some(v) => v,
-        };
+        let renderer = self
+            .renderer
+            .lock()
+            .unwrap()
+            .take()
+            .expect("InvalidStateError - Cannot call `startRendering` twice");
 
         let OfflineAudioContextRenderer {
             renderer,
@@ -248,18 +252,15 @@ impl OfflineAudioContext {
         // We are mixing async with a std Mutex, so be sure not to `await` while the lock is held
         {
             let mut lock = self.renderer.lock().unwrap();
-            let renderer = match lock.as_mut() {
-                Some(r) => r,
-                None => {
-                    panic!("InvalidStateError: cannot suspend when rendering has already started")
-                }
-            };
+            let renderer = lock
+                .as_mut()
+                .expect("InvalidStateError - cannot suspend when rendering has already started");
 
             let insert_pos = renderer
                 .suspend_promises
                 .binary_search_by_key(&quantum, |&(q, _)| q)
                 .expect_err(
-                    "InvalidStateError: cannot suspend multiple times at the same render quantum",
+                    "InvalidStateError - cannot suspend multiple times at the same render quantum",
                 );
 
             renderer
@@ -316,16 +317,15 @@ impl OfflineAudioContext {
         let quantum = self.calculate_suspend_frame(suspend_time);
 
         let mut lock = self.renderer.lock().unwrap();
-        let renderer = match lock.as_mut() {
-            Some(r) => r,
-            None => panic!("InvalidStateError: cannot suspend when rendering has already started"),
-        };
+        let renderer = lock
+            .as_mut()
+            .expect("InvalidStateError - cannot suspend when rendering has already started");
 
         let insert_pos = renderer
             .suspend_callbacks
             .binary_search_by_key(&quantum, |(q, _c)| *q)
             .expect_err(
-                "InvalidStateError: cannot suspend multiple times at the same render quantum",
+                "InvalidStateError - cannot suspend multiple times at the same render quantum",
             );
 
         let boxed_callback = Box::new(|ctx: &mut OfflineAudioContext| {

@@ -33,42 +33,42 @@ const MAX_FFT_SIZE: usize = 32768;
 
 // [spec] This MUST be a power of two in the range 32 to 32768, otherwise an
 // IndexSizeError exception MUST be thrown.
+#[allow(clippy::manual_range_contains)]
 fn assert_valid_fft_size(fft_size: usize) {
-    if !fft_size.is_power_of_two() {
-        panic!(
-            "IndexSizeError - Invalid fft size: {:?} is not a power of two",
-            fft_size
-        );
-    }
+    assert!(
+        fft_size.is_power_of_two(),
+        "IndexSizeError - Invalid fft size: {:?} is not a power of two",
+        fft_size
+    );
 
-    if !(MIN_FFT_SIZE..=MAX_FFT_SIZE).contains(&fft_size) {
-        panic!(
-            "IndexSizeError - Invalid fft size: {:?} is outside range [{:?}, {:?}]",
-            fft_size, MIN_FFT_SIZE, MAX_FFT_SIZE
-        );
-    }
+    assert!(
+        fft_size >= MIN_FFT_SIZE && fft_size <= MAX_FFT_SIZE,
+        "IndexSizeError - Invalid fft size: {:?} is outside range [{:?}, {:?}]",
+        fft_size,
+        MIN_FFT_SIZE,
+        MAX_FFT_SIZE
+    );
 }
 
 // [spec] If the value of this attribute is set to a value less than 0 or more
 // than 1, an IndexSizeError exception MUST be thrown.
+#[allow(clippy::manual_range_contains)]
 fn assert_valid_smoothing_time_constant(smoothing_time_constant: f64) {
-    if !(0. ..=1.).contains(&smoothing_time_constant) {
-        panic!(
-            "IndexSizeError - Invalid smoothing time constant: {:?} is outside range [0, 1]",
-            smoothing_time_constant
-        );
-    }
+    assert!(
+        smoothing_time_constant >= 0. && smoothing_time_constant <= 1.,
+        "IndexSizeError - Invalid smoothing time constant: {:?} is outside range [0, 1]",
+        smoothing_time_constant
+    );
 }
 
 // [spec] If the value of minDecibels is set to a value more than or equal to maxDecibels, an
 // IndexSizeError exception MUST be thrown.
 fn assert_valid_decibels(min_decibels: f64, max_decibels: f64) {
-    if min_decibels >= max_decibels {
-        panic!(
-            "IndexSizeError - Invalid min decibels: {:?} is greater than or equals to max decibels {:?}",
-            min_decibels, max_decibels
-        );
-    }
+    assert!(
+        min_decibels < max_decibels,
+        "IndexSizeError - Invalid min decibels: {:?} is greater than or equals to max decibels {:?}",
+        min_decibels, max_decibels
+    );
 }
 
 // as the queue is composed of AtomicF32 having only 1 render quantum of extra

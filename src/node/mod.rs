@@ -267,15 +267,22 @@ pub trait AudioNode {
         output: usize,
         input: usize,
     ) -> &'a dyn AudioNode {
-        if self.context() != dest.context() {
-            panic!("InvalidAccessError - Attempting to connect nodes from different contexts");
-        }
-        if self.number_of_outputs() <= output {
-            panic!("IndexSizeError - output port {} is out of bounds", output);
-        }
-        if dest.number_of_inputs() <= input {
-            panic!("IndexSizeError - input port {} is out of bounds", input);
-        }
+        assert!(
+            self.context() == dest.context(),
+            "InvalidAccessError - Attempting to connect nodes from different contexts",
+        );
+
+        assert!(
+            self.number_of_outputs() > output,
+            "IndexSizeError - output port {} is out of bounds",
+            output
+        );
+
+        assert!(
+            dest.number_of_inputs() > input,
+            "IndexSizeError - input port {} is out of bounds",
+            input
+        );
 
         self.context().connect(
             self.registration().id(),
@@ -288,9 +295,10 @@ pub trait AudioNode {
 
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
     fn disconnect_from<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
-        if self.context() != dest.context() {
-            panic!("attempting to disconnect nodes from different contexts");
-        }
+        assert!(
+            self.context() == dest.context(),
+            "InvalidAccessError - Attempting to disconnect nodes from different contexts"
+        );
 
         self.context()
             .disconnect_from(self.registration().id(), dest.registration().id());

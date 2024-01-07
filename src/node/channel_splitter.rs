@@ -46,15 +46,15 @@ impl AudioNode for ChannelSplitterNode {
     }
 
     fn set_channel_count(&self, _v: usize) {
-        panic!("InvalidStateError: Cannot edit channel count of ChannelSplitterNode")
+        panic!("InvalidStateError - Cannot edit channel count of ChannelSplitterNode")
     }
 
     fn set_channel_count_mode(&self, _v: ChannelCountMode) {
-        panic!("InvalidStateError: Cannot edit channel count mode of ChannelSplitterNode")
+        panic!("InvalidStateError - Cannot edit channel count mode of ChannelSplitterNode")
     }
 
     fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
-        panic!("InvalidStateError: Cannot edit channel interpretation of ChannelSplitterNode")
+        panic!("InvalidStateError - Cannot edit channel interpretation of ChannelSplitterNode")
     }
 
     fn number_of_inputs(&self) -> usize {

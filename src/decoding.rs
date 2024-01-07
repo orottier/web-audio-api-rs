@@ -34,7 +34,7 @@ impl<R: Read> Read for MediaInput<R> {
 
 impl<R> Seek for MediaInput<R> {
     fn seek(&mut self, _pos: SeekFrom) -> std::io::Result<u64> {
-        panic!("MediaInput does not support seeking")
+        panic!("NotSupportedError - MediaInput does not support seeking")
     }
 }
 

@@ -130,15 +130,22 @@ impl AudioNode for DelayNode {
         output: usize,
         input: usize,
     ) -> &'a dyn AudioNode {
-        if self.context() != dest.context() {
-            panic!("InvalidAccessError - Attempting to connect nodes from different contexts");
-        }
-        if self.number_of_outputs() <= output {
-            panic!("IndexSizeError - output port {} is out of bounds", output);
-        }
-        if dest.number_of_inputs() <= input {
-            panic!("IndexSizeError - input port {} is out of bounds", input);
-        }
+        assert!(
+            self.context() == dest.context(),
+            "InvalidAccessError - Attempting to connect nodes from different contexts",
+        );
+
+        assert!(
+            self.number_of_outputs() > output,
+            "IndexSizeError - output port {} is out of bounds",
+            output
+        );
+
+        assert!(
+            dest.number_of_inputs() > input,
+            "IndexSizeError - input port {} is out of bounds",
+            input
+        );
 
         self.context().connect(
             self.reader_registration.id(),
@@ -152,9 +159,10 @@ impl AudioNode for DelayNode {
 
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
     fn disconnect_from<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
-        if self.context() != dest.context() {
-            panic!("attempting to disconnect nodes from different contexts");
-        }
+        assert!(
+            self.context() == dest.context(),
+            "InvalidAccessError - Attempting to disconnect nodes from different contexts"
+        );
 
         self.context()
             .disconnect_from(self.reader_registration.id(), dest.registration().id());
@@ -181,9 +189,10 @@ impl DelayNode {
         // If specified, this value MUST be greater than zero and less than three
         // minutes or a NotSupportedError exception MUST be thrown. If not specified,
         // then 1 will be used.
-        if options.max_delay_time <= 0. || options.max_delay_time >= 180. {
-            panic!("NotSupportedError: MUST be greater than zero and less than three minutes");
-        }
+        assert!(
+            options.max_delay_time > 0. && options.max_delay_time < 180.,
+            "NotSupportedError - maxDelayTime MUST be greater than zero and less than three minutes",
+        );
 
         // we internally clamp max delay to quantum duration because the current
         // implementation doesn't allow sub-quantum delays. Later, this will

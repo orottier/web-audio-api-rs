@@ -158,12 +158,11 @@ impl AtomicF64 {
 pub(crate) fn assert_valid_sample_rate(sample_rate: f32) {
     // 1000 Hertz is a just a random cutoff, but it helps a if someone accidentally puts a
     // timestamp in the sample_rate variable
-    if sample_rate <= 1000. {
-        panic!(
-            "NotSupportedError - Invalid sample rate: {:?}, should be greater than 1000",
-            sample_rate
-        );
-    }
+    assert!(
+        sample_rate > 1000.,
+        "NotSupportedError - Invalid sample rate: {:?}, should be greater than 1000",
+        sample_rate
+    );
 }
 
 /// Assert that the given number of channels is valid.
@@ -177,12 +176,12 @@ pub(crate) fn assert_valid_sample_rate(sample_rate: f32) {
 #[track_caller]
 #[inline(always)]
 pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
-    if number_of_channels == 0 || number_of_channels > MAX_CHANNELS {
-        panic!(
-            "NotSupportedError - Invalid number of channels: {:?} is outside range [1, {:?}]",
-            number_of_channels, MAX_CHANNELS
-        );
-    }
+    assert!(
+        number_of_channels > 0 && number_of_channels <= MAX_CHANNELS,
+        "NotSupportedError - Invalid number of channels: {:?} is outside range [1, {:?}]",
+        number_of_channels,
+        MAX_CHANNELS
+    );
 }
 
 /// Assert that the given channel number is valid according to the number of channels
@@ -196,12 +195,12 @@ pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
 #[track_caller]
 #[inline(always)]
 pub(crate) fn assert_valid_channel_number(channel_number: usize, number_of_channels: usize) {
-    if channel_number >= number_of_channels {
-        panic!(
-            "IndexSizeError - Invalid channel number {:?} (number of channels: {:?})",
-            channel_number, number_of_channels
-        );
-    }
+    assert!(
+        channel_number < number_of_channels,
+        "IndexSizeError - Invalid channel number {:?} (number of channels: {:?})",
+        channel_number,
+        number_of_channels
+    );
 }
 
 /// Assert that the given value number is a valid time information, i.e. greater
@@ -215,16 +214,16 @@ pub(crate) fn assert_valid_channel_number(channel_number: usize, number_of_chann
 #[track_caller]
 #[inline(always)]
 pub(crate) fn assert_valid_time_value(value: f64) {
-    if !value.is_finite() {
-        panic!("TypeError - The provided time value is non-finite.");
-    }
+    assert!(
+        value.is_finite(),
+        "TypeError - The provided time value is non-finite.",
+    );
 
-    if value < 0. {
-        panic!(
-            "RangeError - The provided time value ({:?}) cannot be negative",
-            value
-        );
-    }
+    assert!(
+        value >= 0.,
+        "RangeError - The provided time value ({:?}) cannot be negative",
+        value
+    );
 }
 
 pub(crate) trait AudioBufferIter: Iterator<Item = FallibleBuffer> + Send + 'static {}

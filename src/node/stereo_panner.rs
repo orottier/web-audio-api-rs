@@ -43,9 +43,10 @@ impl Default for StereoPannerOptions {
 #[track_caller]
 #[inline(always)]
 fn assert_valid_channel_count(count: usize) {
-    if count > 2 {
-        panic!("NotSupportedError - StereoPannerNode channel count cannot be greater than two");
-    }
+    assert!(
+        count <= 2,
+        "NotSupportedError - StereoPannerNode channel count cannot be greater than two"
+    );
 }
 
 /// Assert that the channel count is valid for the StereoPannerNode
@@ -58,9 +59,11 @@ fn assert_valid_channel_count(count: usize) {
 #[track_caller]
 #[inline(always)]
 fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
-    if mode == ChannelCountMode::Max {
-        panic!("NotSupportedError - StereoPannerNode channel count mode cannot be set to max");
-    }
+    assert_ne!(
+        mode,
+        ChannelCountMode::Max,
+        "NotSupportedError - StereoPannerNode channel count mode cannot be set to max",
+    );
 }
 
 /// Generates the stereo gains for a specific x ∈ [0, 1] derived from pan.
