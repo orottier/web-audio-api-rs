@@ -18,7 +18,7 @@ use it in desktop apps, command line utilities, headless execution, etc.
 
 ## Example usage
 
-```rust
+```rust,no_run
 use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
