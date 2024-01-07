@@ -59,7 +59,6 @@ deviations could not be avoided:
 - naming: snake_case instead of CamelCase
 - getters/setters methods instead of exposed attributes
 - introduced some namespacing
-- AudioWorklet functionality is provided in a more rust-friendly way
 - inheritance is modelled with traits
 - ...
 
