@@ -25,7 +25,8 @@ const MAX_IIR_COEFFS_LEN: usize = 20;
 fn assert_valid_feedforward_coefs(coefs: &Vec<f64>) {
     assert!(
         !coefs.is_empty() && coefs.len() <= MAX_IIR_COEFFS_LEN,
-        "NotSupportedError - IIR Filter feedforward coefficients should have length >= 0 and <= 20"
+        "NotSupportedError - IIR Filter feedforward coefficients should have length >= 0 and <= {}",
+        MAX_IIR_COEFFS_LEN,
     );
 
     assert!(
@@ -48,7 +49,8 @@ fn assert_valid_feedforward_coefs(coefs: &Vec<f64>) {
 fn assert_valid_feedback_coefs(coefs: &Vec<f64>) {
     assert!(
         !coefs.is_empty() && coefs.len() <= MAX_IIR_COEFFS_LEN,
-        "NotSupportedError - IIR Filter feedback coefficients should have length >= 0 and <= 20"
+        "NotSupportedError - IIR Filter feedback coefficients should have length >= 0 and <= {}",
+        MAX_IIR_COEFFS_LEN,
     );
 
     assert_ne!(
