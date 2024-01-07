@@ -1,38 +1,4 @@
-//! A high-level API for processing and synthesizing audio.
-//!
-//! # Example
-//! ```no_run
-//! use std::fs::File;
-//! use web_audio_api::context::{BaseAudioContext, AudioContext};
-//! use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
-//!
-//! // set up AudioContext with optimized settings for your hardware
-//! let context = AudioContext::default();
-//!
-//! // create an audio buffer from a given file
-//! let file = File::open("samples/sample.wav").unwrap();
-//! let buffer = context.decode_audio_data_sync(file).unwrap();
-//!
-//! // play the buffer at given volume
-//! let volume = context.create_gain();
-//! volume.connect(&context.destination());
-//! volume.gain().set_value(0.5);
-//!
-//! let mut buffer_source = context.create_buffer_source();
-//! buffer_source.connect(&volume);
-//! buffer_source.set_buffer(buffer);
-//!
-//! // create oscillator branch
-//! let mut osc = context.create_oscillator();
-//! osc.connect(&context.destination());
-//!
-//! // start the sources
-//! buffer_source.start();
-//! osc.start();
-//!
-//! // enjoy listening
-//! std::thread::sleep(std::time::Duration::from_secs(4));
-//! ```
+#![doc = include_str!("../README.md")]
 
 #![warn(rust_2018_idioms)]
 #![warn(rust_2021_compatibility)]

@@ -46,7 +46,7 @@ biquad.connect(&context.destination());
 src.start();
 
 // enjoy listening
-loop { }
+std::thread::sleep(std::time::Duration::from_secs(4));
 ```
 
 Check out the [docs](https://docs.rs/web-audio-api) for more info.
