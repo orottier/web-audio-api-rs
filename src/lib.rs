@@ -1,5 +1,4 @@
 #![doc = include_str!("../README.md")]
-
 #![warn(rust_2018_idioms)]
 #![warn(rust_2021_compatibility)]
 #![warn(clippy::missing_panics_doc)]
