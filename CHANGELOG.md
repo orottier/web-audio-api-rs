@@ -1,5 +1,14 @@
 # Version History
 
+## Version 0.41.1 (2024-01-11)
+
+- Unified panic messages to format `<JsErrorType> - <Actual message>`
+- Unified README.md and crate level docs
+- Fix: minimize floating point errors in AudioBufferSourceNode currentTime calculation
+- Fix: AudioParam automationRate does not instantly update on the control thread
+- Fix: AudioParam better handling of non finite values in arguments
+- Fix: Panic at Analiser initialization for some combinations of min/maxDecibel
+
 ## Version 0.41.0 (2024-01-04)
 
 - Fix BaseAudioContext onChangeState to signal device readiness
