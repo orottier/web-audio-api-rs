@@ -41,3 +41,6 @@ jobs:
 
       - name: Check workspace
         run: cargo check --locked --workspace --verbose --all-targets --all-features
+
+      - name: Build package
+        run: cargo package --locked --verbose --all-features
