@@ -13,7 +13,7 @@ use crate::render::graph::Graph;
 use crate::MediaElement;
 use crate::{AudioRenderCapacity, Event};
 
-use futures::channel::oneshot;
+use futures_channel::oneshot;
 
 /// Check if the provided sink_id is available for playback
 ///
