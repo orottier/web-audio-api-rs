@@ -9,14 +9,21 @@ repository = "https://github.com/orottier/web-audio-api-rs"
 keywords = ["web-audio-api", "audio", "sound", "dsp"]
 license = "MIT"
 categories = ["multimedia::audio"]
-exclude = ["/samples", "/showcase", "/.github"]
+include = [
+    "/benches",
+    "/resources",
+    "/src",
+    "Cargo.toml",
+    "LICENSE",
+    "README.md",
+]
 rust-version = "1.70"
 
 [dependencies]
 arc-swap = "1.6"
 arrayvec = "0.7"
 cpal = { version = "0.15", optional = true }
-creek = "1.1"
+creek = "1.2"
 crossbeam-channel = "0.5"
 cubeb = { version = "0.10", optional = true }
 dasp_sample = "0.11"
@@ -58,12 +65,22 @@ harness = false
 [features]
 default = ["mp3", "ogg", "flac", "wav", "m4a", "alac", "cpal"]
 mp3 = ["symphonia/mp3", "creek/decode-mp3"]
-ogg = ["symphonia/ogg", "symphonia/vorbis", "creek/decode-ogg", "creek/decode-vorbis"]
+ogg = [
+    "symphonia/ogg",
+    "symphonia/vorbis",
+    "creek/decode-ogg",
+    "creek/decode-vorbis",
+]
 flac = ["symphonia/flac", "creek/decode-flac"]
 wav = ["symphonia/wav", "symphonia/pcm", "creek/decode-wav", "creek/decode-pcm"]
 aac = ["symphonia/aac", "creek/decode-aac"]
 m4a = ["aac", "symphonia/isomp4", "creek/decode-isomp4"]
-alac = ["symphonia/alac", "symphonia/isomp4", "creek/decode-alac", "creek/decode-isomp4"]
+alac = [
+    "symphonia/alac",
+    "symphonia/isomp4",
+    "creek/decode-alac",
+    "creek/decode-isomp4",
+]
 cpal = ["dep:cpal"]
 cubeb = ["dep:cubeb"]
 cpal-jack = ["cpal", "cpal/jack"]
