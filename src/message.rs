@@ -71,7 +71,7 @@ pub(crate) enum OneshotNotify {
     /// A synchronous oneshot sender
     Sync(crossbeam_channel::Sender<()>),
     /// An asynchronous oneshot sender
-    Async(futures::channel::oneshot::Sender<()>),
+    Async(futures_channel::oneshot::Sender<()>),
 }
 
 impl OneshotNotify {

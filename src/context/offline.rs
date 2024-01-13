@@ -8,8 +8,8 @@ use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioConte
 use crate::render::RenderThread;
 use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
 
-use futures::channel::oneshot;
-use futures::sink::SinkExt;
+use futures_channel::{mpsc, oneshot};
+use futures_util::SinkExt as _;
 
 pub(crate) type OfflineAudioContextCallback =
     dyn FnOnce(&mut OfflineAudioContext) + Send + Sync + 'static;
@@ -26,7 +26,7 @@ pub struct OfflineAudioContext {
     /// actual renderer of the audio graph, can only be called once
     renderer: Mutex<Option<OfflineAudioContextRenderer>>,
     /// channel to notify resume actions on the rendering
-    resume_sender: futures::channel::mpsc::Sender<()>,
+    resume_sender: mpsc::Sender<()>,
 }
 
 struct OfflineAudioContextRenderer {
@@ -37,7 +37,7 @@ struct OfflineAudioContextRenderer {
     /// sorted list of callbacks to run at certain render quanta (via `suspend_sync`)
     suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
     /// channel to listen for `resume` calls on a suspended context
-    resume_receiver: futures::channel::mpsc::Receiver<()>,
+    resume_receiver: mpsc::Receiver<()>,
 }
 
 impl BaseAudioContext for OfflineAudioContext {
@@ -95,7 +95,7 @@ impl OfflineAudioContext {
             node_id_consumer,
         );
 
-        let (resume_sender, resume_receiver) = futures::channel::mpsc::channel(0);
+        let (resume_sender, resume_receiver) = mpsc::channel(0);
 
         let renderer = OfflineAudioContextRenderer {
             renderer,
@@ -221,7 +221,7 @@ impl OfflineAudioContext {
     ///
     /// ```rust
     /// use futures::{executor, join};
-    /// use futures::future::FutureExt;
+    /// use futures::FutureExt as _;
     /// use std::sync::Arc;
     ///
     /// use web_audio_api::context::BaseAudioContext;
@@ -423,8 +423,8 @@ mod tests {
     #[test]
     fn render_suspend_resume_async() {
         use futures::executor;
-        use futures::future::FutureExt;
         use futures::join;
+        use futures::FutureExt as _;
 
         let context = Arc::new(OfflineAudioContext::new(1, 512, 44_100.));
         let context_clone = Arc::clone(&context);
