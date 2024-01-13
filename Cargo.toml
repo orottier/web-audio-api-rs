@@ -10,7 +10,6 @@ keywords = ["web-audio-api", "audio", "sound", "dsp"]
 license = "MIT"
 categories = ["multimedia::audio"]
 include = [
-    "/benches",
     "/resources",
     "/src",
     "LICENSE",
@@ -63,6 +62,9 @@ paste = "1.0.14"
 
 [[bench]]
 name = "my_benchmark"
+# The path is required for excluding /benches from the package.
+# See also: https://users.rust-lang.org/t/cargo-publish-with-excluded-benchmark-fails-validation/53444/2
+path = "benches/my_benchmark.rs"
 harness = false
 
 [features]
