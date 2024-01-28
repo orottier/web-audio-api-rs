@@ -393,6 +393,25 @@ impl PannerNode {
                 panning_model,
             } = options;
 
+            assert!(
+                ref_distance >= 0.,
+                "RangeError - refDistance cannot be negative"
+            );
+            assert!(
+                max_distance > 0.,
+                "RangeError - maxDistance must be positive"
+            );
+            assert!(
+                rolloff_factor >= 0.,
+                "RangeError - rolloffFactor cannot be negative"
+            );
+            assert!(
+                cone_outer_gain >= 0. && cone_outer_gain <= 1.,
+                "InvalidStateError - coneOuterGain must be in the range [0, 1]"
+            );
+            assert_valid_channel_count(channel_config.count);
+            assert_valid_channel_count_mode(channel_config.count_mode);
+
             // position params
             let (param_px, render_px) = context.create_audio_param(PARAM_OPTS, &registration);
             let (param_py, render_py) = context.create_audio_param(PARAM_OPTS, &registration);
@@ -540,7 +559,7 @@ impl PannerNode {
     ///
     /// Panics if the provided value is negative.
     pub fn set_max_distance(&mut self, value: f64) {
-        assert!(value >= 0., "RangeError - maxDistance cannot be negative");
+        assert!(value > 0., "RangeError - maxDistance must be positive");
         self.max_distance = value;
         self.registration
             .post_message(ControlMessage::MaxDistance(value));
