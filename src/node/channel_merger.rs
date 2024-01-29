@@ -66,6 +66,7 @@ impl Default for ChannelMergerOptions {
 pub struct ChannelMergerNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
+    number_of_inputs: usize,
 }
 
 impl AudioNode for ChannelMergerNode {
@@ -88,7 +89,7 @@ impl AudioNode for ChannelMergerNode {
     }
 
     fn number_of_inputs(&self) -> usize {
-        self.channel_count()
+        self.number_of_inputs
     }
 
     fn number_of_outputs(&self) -> usize {
@@ -100,7 +101,6 @@ impl ChannelMergerNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: ChannelMergerOptions) -> Self {
         context.register(move |registration| {
             crate::assert_valid_number_of_channels(options.number_of_inputs);
-            options.channel_config.count = options.number_of_inputs;
 
             assert_valid_channel_count(options.channel_config.count);
             assert_valid_channel_count_mode(options.channel_config.count_mode);
@@ -108,6 +108,7 @@ impl ChannelMergerNode {
             let node = ChannelMergerNode {
                 registration,
                 channel_config: options.channel_config.into(),
+                number_of_inputs: options.number_of_inputs,
             };
 
             let render = ChannelMergerRenderer {};
