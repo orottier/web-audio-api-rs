@@ -7,6 +7,38 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
+/// Assert that the channel count is valid for the ChannelMergerNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count is greater than 2
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count(count: usize) {
+    assert!(
+        count == 1,
+        "InvalidStateError - channel count of ChannelMergerNode must be equal to 1"
+    );
+}
+
+/// Assert that the channel count mode is valid for the ChannelMergerNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+///
+/// # Panics
+///
+/// This function panics if the mode is not equal to Explicit
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
+    assert!(
+        mode == ChannelCountMode::Explicit,
+        "InvalidStateError - channel count of ChannelMergerNode must be set to Explicit"
+    );
+}
+
 /// Options for constructing a [`ChannelMergerNode`]
 // dictionary ChannelMergerOptions : AudioNodeOptions {
 //   unsigned long numberOfInputs = 6;
@@ -45,12 +77,14 @@ impl AudioNode for ChannelMergerNode {
         &self.channel_config
     }
 
-    fn set_channel_count(&self, _v: usize) {
-        panic!("InvalidStateError - Cannot edit channel count of ChannelMergerNode")
+    fn set_channel_count(&self, count: usize) {
+        assert_valid_channel_count(count);
+        self.channel_config.set_count(count);
     }
 
-    fn set_channel_count_mode(&self, _v: ChannelCountMode) {
-        panic!("InvalidStateError - Cannot edit channel count mode of ChannelMergerNode")
+    fn set_channel_count_mode(&self, mode: ChannelCountMode) {
+        assert_valid_channel_count_mode(mode);
+        self.channel_config.set_count_mode(mode);
     }
 
     fn number_of_inputs(&self) -> usize {
@@ -63,10 +97,13 @@ impl AudioNode for ChannelMergerNode {
 }
 
 impl ChannelMergerNode {
-    pub fn new<C: BaseAudioContext>(context: &C, mut options: ChannelMergerOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: ChannelMergerOptions) -> Self {
         context.register(move |registration| {
             crate::assert_valid_number_of_channels(options.number_of_inputs);
             options.channel_config.count = options.number_of_inputs;
+
+            assert_valid_channel_count(options.channel_config.count);
+            assert_valid_channel_count_mode(options.channel_config.count_mode);
 
             let node = ChannelMergerNode {
                 registration,

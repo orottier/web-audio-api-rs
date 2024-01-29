@@ -7,6 +7,38 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
+/// Assert that the channel count mode is valid for the ChannelSplitterNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+///
+/// # Panics
+///
+/// This function panics if the mode is not equal to Explicit
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
+    assert!(
+        mode == ChannelCountMode::Explicit,
+        "InvalidStateError - channel count of ChannelSplitterNode must be set to Explicit"
+    );
+}
+
+/// Assert that the channel interpretation is valid for the ChannelSplitterNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelinterpretation-constraints>
+///
+/// # Panics
+///
+/// This function panics if the mode is not equal to Explicit
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_interpretation(interpretation: ChannelInterpretation) {
+    assert!(
+        interpretation == ChannelInterpretation::Discrete,
+        "InvalidStateError - channel interpretation of ChannelSplitterNode must be set to Discrete"
+    );
+}
+
 /// Options for constructing a [`ChannelSplitterNode`]
 // dictionary ChannelSplitterOptions : AudioNodeOptions {
 //   unsigned long numberOfOutputs = 6;
@@ -45,16 +77,22 @@ impl AudioNode for ChannelSplitterNode {
         &self.channel_config
     }
 
-    fn set_channel_count(&self, _v: usize) {
-        panic!("InvalidStateError - Cannot edit channel count of ChannelSplitterNode")
+    fn set_channel_count(&self, count: usize) {
+        assert_eq!(
+            count,
+            self.channel_count(),
+            "InvalidStateError - Cannot edit channel count of ChannelSplitterNode"
+        );
     }
 
-    fn set_channel_count_mode(&self, _v: ChannelCountMode) {
-        panic!("InvalidStateError - Cannot edit channel count mode of ChannelSplitterNode")
+    fn set_channel_count_mode(&self, mode: ChannelCountMode) {
+        assert_valid_channel_count_mode(mode);
+        self.channel_config.set_count_mode(mode);
     }
 
-    fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
-        panic!("InvalidStateError - Cannot edit channel interpretation of ChannelSplitterNode")
+    fn set_channel_interpretation(&self, interpretation: ChannelInterpretation) {
+        assert_valid_channel_interpretation(interpretation);
+        self.channel_config.set_interpretation(interpretation);
     }
 
     fn number_of_inputs(&self) -> usize {
@@ -71,6 +109,9 @@ impl ChannelSplitterNode {
         context.register(move |registration| {
             crate::assert_valid_number_of_channels(options.number_of_outputs);
             options.channel_config.count = options.number_of_outputs;
+
+            assert_valid_channel_count_mode(options.channel_config.count_mode);
+            assert_valid_channel_interpretation(options.channel_config.interpretation);
 
             let node = ChannelSplitterNode {
                 registration,
