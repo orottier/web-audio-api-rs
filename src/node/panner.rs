@@ -15,6 +15,22 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
+/// Assert that the given value number is a valid value for coneOuterGain
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - the given value is not finite and lower than zero
+#[track_caller]
+#[inline(always)]
+#[allow(clippy::manual_range_contains)]
+pub(crate) fn assert_valid_cone_outer_gain(value: f64) {
+    assert!(
+        value >= 0. && value <= 1.,
+        "InvalidStateError - coneOuterGain must be in the range [0, 1]"
+    );
+}
+
 /// Load the HRTF processor for the given sample_rate
 ///
 /// The included data contains the impulse responses at 44100 Hertz, so it needs to be resampled
@@ -405,10 +421,7 @@ impl PannerNode {
                 rolloff_factor >= 0.,
                 "RangeError - rolloffFactor cannot be negative"
             );
-            assert!(
-                cone_outer_gain >= 0. && cone_outer_gain <= 1.,
-                "InvalidStateError - coneOuterGain must be in the range [0, 1]"
-            );
+            assert_valid_cone_outer_gain(cone_outer_gain);
             assert_valid_channel_count(channel_config.count);
             assert_valid_channel_count_mode(channel_config.count_mode);
 
@@ -610,12 +623,8 @@ impl PannerNode {
     /// # Panics
     ///
     /// Panics if the provided value is not in the range [0, 1]
-    #[allow(clippy::manual_range_contains)]
     pub fn set_cone_outer_gain(&mut self, value: f64) {
-        assert!(
-            value >= 0. && value <= 1.,
-            "InvalidStateError - coneOuterGain must be in the range [0, 1]"
-        );
+        assert_valid_cone_outer_gain(value);
         self.cone_outer_gain = value;
         self.registration
             .post_message(ControlMessage::ConeOuterGain(value));
