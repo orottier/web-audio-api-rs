@@ -186,10 +186,23 @@ impl ConvolverNode {
     ///
     /// Panics when the sample rate of the provided AudioBuffer differs from the audio context
     /// sample rate.
-    pub fn set_buffer(&mut self, mut buffer: AudioBuffer) {
-        // resample if necessary
-        buffer.resample(self.context().sample_rate());
+    pub fn set_buffer(&mut self, buffer: AudioBuffer) {
+        // If the buffer number of channels is not 1, 2, 4, or if the sample-rate of the buffer is
+        // not the same as the sample-rate of its associated BaseAudioContext, a NotSupportedError
+        // MUST be thrown.
+
         let sample_rate = buffer.sample_rate();
+        assert_eq!(
+            sample_rate,
+            self.context().sample_rate(),
+            "NotSupportedError - sample rate of the convolution buffer must match the audio context"
+        );
+
+        let number_of_channels = buffer.number_of_channels();
+        assert!(
+            [1, 2, 4].contains(&number_of_channels),
+            "NotSupportedError - the convolution buffer must consist of 1, 2 or 4 channels"
+        );
 
         // normalize before padding because the length of the buffer affects the scale
         let scale = if self.normalize {
@@ -201,7 +214,7 @@ impl ConvolverNode {
         // Pad the response buffer with zeroes so its size is a power of 2, with 2 * 128 as min size
         let length = buffer.length();
         let padded_length = length.next_power_of_two().max(2 * RENDER_QUANTUM_SIZE);
-        let samples: Vec<_> = (0..buffer.number_of_channels())
+        let samples: Vec<_> = (0..number_of_channels)
             .map(|_| {
                 let mut samples = vec![0.; padded_length];
                 samples[..length]
@@ -462,6 +475,36 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn test_buffer_sample_rate_matches() {
+        let context = OfflineAudioContext::new(1, 128, 44100.);
+
+        let ir = vec![1.];
+        let ir = AudioBuffer::from(vec![ir; 1], 48000.); // sample_rate differs
+        let options = ConvolverOptions {
+            buffer: Some(ir),
+            ..ConvolverOptions::default()
+        };
+
+        let _ = ConvolverNode::new(&context, options);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_buffer_must_have_1_2_4_channels() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+
+        let ir = vec![1.];
+        let ir = AudioBuffer::from(vec![ir; 3], 48000.); // three channels
+        let options = ConvolverOptions {
+            buffer: Some(ir),
+            ..ConvolverOptions::default()
+        };
+
+        let _ = ConvolverNode::new(&context, options);
+    }
+
+    #[test]
     fn test_constructor_options_buffer() {
         let sample_rate = 44100.;
         let mut context = OfflineAudioContext::new(1, 10, sample_rate);
@@ -579,20 +622,5 @@ mod tests {
         let output = output.channel_data(0).as_slice();
         assert!(!output[..IR_LEN].iter().any(|v| *v <= 1E-6));
         assert_float_eq!(&output[IR_LEN..], &[0.; 512 - IR_LEN][..], abs_all <= 1E-6);
-    }
-
-    #[test]
-    fn test_resample() {
-        let ctx_sample_rate = 44100.;
-        let ir_sample_rate = 48000.;
-
-        let context = OfflineAudioContext::new(1, 128, ctx_sample_rate);
-
-        let mut conv = ConvolverNode::new(&context, ConvolverOptions::default());
-        let ir = vec![1.; 128];
-        let ir_buffer = AudioBuffer::from(vec![ir], ir_sample_rate);
-        conv.set_buffer(ir_buffer);
-
-        assert_eq!(conv.buffer().unwrap().sample_rate(), ctx_sample_rate);
     }
 }
