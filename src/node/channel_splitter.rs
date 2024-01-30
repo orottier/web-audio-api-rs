@@ -189,6 +189,6 @@ mod tests {
         let buffer = context.start_rendering_sync();
 
         let mono = buffer.get_channel_data(0);
-        assert_float_eq!(&mono[..], &[-1.; 128][..], abs_all <= 0.);
+        assert_float_eq!(mono, &[-1.; 128][..], abs_all <= 0.);
     }
 }

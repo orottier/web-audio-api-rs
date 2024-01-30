@@ -178,10 +178,10 @@ mod tests {
         let buffer = context.start_rendering_sync();
 
         let left = buffer.get_channel_data(0);
-        assert_float_eq!(&left[..], &[2.; 128][..], abs_all <= 0.);
+        assert_float_eq!(left, &[2.; 128][..], abs_all <= 0.);
 
         let right = buffer.get_channel_data(1);
-        assert_float_eq!(&right[..], &[3.; 128][..], abs_all <= 0.);
+        assert_float_eq!(right, &[3.; 128][..], abs_all <= 0.);
     }
 
     #[test]
@@ -209,7 +209,7 @@ mod tests {
         let buffer = context.start_rendering_sync();
 
         let left = buffer.get_channel_data(0);
-        assert_float_eq!(&left[..], &vec![2.; length][..], abs_all <= 0.);
+        assert_float_eq!(left, &vec![2.; length][..], abs_all <= 0.);
 
         let right = buffer.get_channel_data(1);
         assert_float_eq!(
