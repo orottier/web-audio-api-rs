@@ -149,3 +149,78 @@ impl AudioProcessor for ChannelMergerRenderer {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::node::{AudioNode, AudioScheduledSourceNode};
+
+    use float_eq::assert_float_eq;
+
+    #[test]
+    fn test_merge() {
+        let sample_rate = 48000.;
+        let mut context = OfflineAudioContext::new(2, 128, sample_rate);
+
+        let merger = context.create_channel_merger(2);
+        merger.connect(&context.destination());
+
+        let mut src1 = context.create_constant_source();
+        src1.offset().set_value(2.);
+        src1.connect_at(&merger, 0, 0);
+        src1.start();
+
+        let mut src2 = context.create_constant_source();
+        src2.offset().set_value(3.);
+        src2.connect_at(&merger, 0, 1);
+        src2.start();
+
+        let buffer = context.start_rendering_sync();
+
+        let left = buffer.get_channel_data(0);
+        assert_float_eq!(&left[..], &[2.; 128][..], abs_all <= 0.);
+
+        let right = buffer.get_channel_data(1);
+        assert_float_eq!(&right[..], &[3.; 128][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_merge_disconnect() {
+        let sample_rate = 48000.;
+        let length = 4 * 128;
+        let disconnect_at = length as f64 / sample_rate as f64 / 2.;
+        let mut context = OfflineAudioContext::new(2, length, sample_rate);
+
+        let merger = context.create_channel_merger(2);
+        merger.connect(&context.destination());
+
+        let mut src1 = context.create_constant_source();
+        src1.offset().set_value(2.);
+        src1.connect_at(&merger, 0, 0);
+        src1.start();
+
+        let mut src2 = context.create_constant_source();
+        src2.offset().set_value(3.);
+        src2.connect_at(&merger, 0, 1);
+        src2.start();
+
+        context.suspend_sync(disconnect_at, move |_| src2.disconnect());
+
+        let buffer = context.start_rendering_sync();
+
+        let left = buffer.get_channel_data(0);
+        assert_float_eq!(&left[..], &vec![2.; length][..], abs_all <= 0.);
+
+        let right = buffer.get_channel_data(1);
+        assert_float_eq!(
+            &right[0..length / 2],
+            &vec![3.; length / 2][..],
+            abs_all <= 0.
+        );
+        assert_float_eq!(
+            &right[length / 2..],
+            &vec![0.; length / 2][..],
+            abs_all <= 0.
+        );
+    }
+}
