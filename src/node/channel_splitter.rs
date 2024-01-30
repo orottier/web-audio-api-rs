@@ -160,3 +160,35 @@ impl AudioProcessor for ChannelSplitterRenderer {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::node::{AudioNode, AudioScheduledSourceNode};
+    use crate::AudioBuffer;
+
+    use float_eq::assert_float_eq;
+
+    #[test]
+    fn test_splitter() {
+        let sample_rate = 48000.;
+        let mut context = OfflineAudioContext::new(1, 128, sample_rate);
+
+        let splitter = context.create_channel_splitter(2);
+        // connect the 2nd output to the destination
+        splitter.connect_at(&context.destination(), 1, 0);
+
+        // create buffer with sample value 1. left, value -1. right
+        let audio_buffer = AudioBuffer::from(vec![vec![1.], vec![-1.]], 48000.);
+        let mut src = context.create_buffer_source();
+        src.set_buffer(audio_buffer);
+        src.set_loop(true);
+        src.start();
+        src.connect(&splitter);
+
+        let buffer = context.start_rendering_sync();
+
+        let mono = buffer.get_channel_data(0);
+        assert_float_eq!(&mono[..], &[-1.; 128][..], abs_all <= 0.);
+    }
+}
