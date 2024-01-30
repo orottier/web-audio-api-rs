@@ -66,7 +66,7 @@ impl AudioNode for AudioDestinationNode {
         self.channel_config.set_count(v);
     }
 
-    fn set_channel_count_mode(&self, _v: ChannelCountMode) {
+    fn set_channel_count_mode(&self, v: ChannelCountMode) {
         // [spec] If the AudioDestinationNode is the destination node of an
         // OfflineAudioContext, then the channel count mode cannot be changed.
         // An InvalidStateError exception MUST be thrown for any attempt to change the value.
@@ -74,6 +74,8 @@ impl AudioNode for AudioDestinationNode {
             !self.registration.context().offline(),
             "InvalidStateError - AudioDestinationNode has channel count mode constraints",
         );
+
+        self.channel_config.set_count_mode(v);
     }
 }
 

@@ -7,6 +7,38 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
+/// Assert that the channel count mode is valid for the ChannelSplitterNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+///
+/// # Panics
+///
+/// This function panics if the mode is not equal to Explicit
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
+    assert!(
+        mode == ChannelCountMode::Explicit,
+        "InvalidStateError - channel count of ChannelSplitterNode must be set to Explicit"
+    );
+}
+
+/// Assert that the channel interpretation is valid for the ChannelSplitterNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelinterpretation-constraints>
+///
+/// # Panics
+///
+/// This function panics if the mode is not equal to Explicit
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_interpretation(interpretation: ChannelInterpretation) {
+    assert!(
+        interpretation == ChannelInterpretation::Discrete,
+        "InvalidStateError - channel interpretation of ChannelSplitterNode must be set to Discrete"
+    );
+}
+
 /// Options for constructing a [`ChannelSplitterNode`]
 // dictionary ChannelSplitterOptions : AudioNodeOptions {
 //   unsigned long numberOfOutputs = 6;
@@ -45,16 +77,22 @@ impl AudioNode for ChannelSplitterNode {
         &self.channel_config
     }
 
-    fn set_channel_count(&self, _v: usize) {
-        panic!("InvalidStateError - Cannot edit channel count of ChannelSplitterNode")
+    fn set_channel_count(&self, count: usize) {
+        assert_eq!(
+            count,
+            self.channel_count(),
+            "InvalidStateError - Cannot edit channel count of ChannelSplitterNode"
+        );
     }
 
-    fn set_channel_count_mode(&self, _v: ChannelCountMode) {
-        panic!("InvalidStateError - Cannot edit channel count mode of ChannelSplitterNode")
+    fn set_channel_count_mode(&self, mode: ChannelCountMode) {
+        assert_valid_channel_count_mode(mode);
+        self.channel_config.set_count_mode(mode);
     }
 
-    fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
-        panic!("InvalidStateError - Cannot edit channel interpretation of ChannelSplitterNode")
+    fn set_channel_interpretation(&self, interpretation: ChannelInterpretation) {
+        assert_valid_channel_interpretation(interpretation);
+        self.channel_config.set_interpretation(interpretation);
     }
 
     fn number_of_inputs(&self) -> usize {
@@ -71,6 +109,9 @@ impl ChannelSplitterNode {
         context.register(move |registration| {
             crate::assert_valid_number_of_channels(options.number_of_outputs);
             options.channel_config.count = options.number_of_outputs;
+
+            assert_valid_channel_count_mode(options.channel_config.count_mode);
+            assert_valid_channel_interpretation(options.channel_config.interpretation);
 
             let node = ChannelSplitterNode {
                 registration,
@@ -117,5 +158,37 @@ impl AudioProcessor for ChannelSplitterRenderer {
         }
 
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::node::{AudioNode, AudioScheduledSourceNode};
+    use crate::AudioBuffer;
+
+    use float_eq::assert_float_eq;
+
+    #[test]
+    fn test_splitter() {
+        let sample_rate = 48000.;
+        let mut context = OfflineAudioContext::new(1, 128, sample_rate);
+
+        let splitter = context.create_channel_splitter(2);
+        // connect the 2nd output to the destination
+        splitter.connect_at(&context.destination(), 1, 0);
+
+        // create buffer with sample value 1. left, value -1. right
+        let audio_buffer = AudioBuffer::from(vec![vec![1.], vec![-1.]], 48000.);
+        let mut src = context.create_buffer_source();
+        src.set_buffer(audio_buffer);
+        src.set_loop(true);
+        src.start();
+        src.connect(&splitter);
+
+        let buffer = context.start_rendering_sync();
+
+        let mono = buffer.get_channel_data(0);
+        assert_float_eq!(mono, &[-1.; 128][..], abs_all <= 0.);
     }
 }

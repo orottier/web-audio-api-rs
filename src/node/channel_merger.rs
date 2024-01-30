@@ -7,6 +7,38 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
+/// Assert that the channel count is valid for the ChannelMergerNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count is greater than 2
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count(count: usize) {
+    assert!(
+        count == 1,
+        "InvalidStateError - channel count of ChannelMergerNode must be equal to 1"
+    );
+}
+
+/// Assert that the channel count mode is valid for the ChannelMergerNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+///
+/// # Panics
+///
+/// This function panics if the mode is not equal to Explicit
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
+    assert!(
+        mode == ChannelCountMode::Explicit,
+        "InvalidStateError - channel count of ChannelMergerNode must be set to Explicit"
+    );
+}
+
 /// Options for constructing a [`ChannelMergerNode`]
 // dictionary ChannelMergerOptions : AudioNodeOptions {
 //   unsigned long numberOfInputs = 6;
@@ -34,6 +66,7 @@ impl Default for ChannelMergerOptions {
 pub struct ChannelMergerNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
+    number_of_inputs: usize,
 }
 
 impl AudioNode for ChannelMergerNode {
@@ -45,16 +78,18 @@ impl AudioNode for ChannelMergerNode {
         &self.channel_config
     }
 
-    fn set_channel_count(&self, _v: usize) {
-        panic!("InvalidStateError - Cannot edit channel count of ChannelMergerNode")
+    fn set_channel_count(&self, count: usize) {
+        assert_valid_channel_count(count);
+        self.channel_config.set_count(count);
     }
 
-    fn set_channel_count_mode(&self, _v: ChannelCountMode) {
-        panic!("InvalidStateError - Cannot edit channel count mode of ChannelMergerNode")
+    fn set_channel_count_mode(&self, mode: ChannelCountMode) {
+        assert_valid_channel_count_mode(mode);
+        self.channel_config.set_count_mode(mode);
     }
 
     fn number_of_inputs(&self) -> usize {
-        self.channel_count()
+        self.number_of_inputs
     }
 
     fn number_of_outputs(&self) -> usize {
@@ -63,14 +98,17 @@ impl AudioNode for ChannelMergerNode {
 }
 
 impl ChannelMergerNode {
-    pub fn new<C: BaseAudioContext>(context: &C, mut options: ChannelMergerOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: ChannelMergerOptions) -> Self {
         context.register(move |registration| {
             crate::assert_valid_number_of_channels(options.number_of_inputs);
-            options.channel_config.count = options.number_of_inputs;
+
+            assert_valid_channel_count(options.channel_config.count);
+            assert_valid_channel_count_mode(options.channel_config.count_mode);
 
             let node = ChannelMergerNode {
                 registration,
                 channel_config: options.channel_config.into(),
+                number_of_inputs: options.number_of_inputs,
             };
 
             let render = ChannelMergerRenderer {};
@@ -109,5 +147,80 @@ impl AudioProcessor for ChannelMergerRenderer {
         }
 
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::node::{AudioNode, AudioScheduledSourceNode};
+
+    use float_eq::assert_float_eq;
+
+    #[test]
+    fn test_merge() {
+        let sample_rate = 48000.;
+        let mut context = OfflineAudioContext::new(2, 128, sample_rate);
+
+        let merger = context.create_channel_merger(2);
+        merger.connect(&context.destination());
+
+        let mut src1 = context.create_constant_source();
+        src1.offset().set_value(2.);
+        src1.connect_at(&merger, 0, 0);
+        src1.start();
+
+        let mut src2 = context.create_constant_source();
+        src2.offset().set_value(3.);
+        src2.connect_at(&merger, 0, 1);
+        src2.start();
+
+        let buffer = context.start_rendering_sync();
+
+        let left = buffer.get_channel_data(0);
+        assert_float_eq!(left, &[2.; 128][..], abs_all <= 0.);
+
+        let right = buffer.get_channel_data(1);
+        assert_float_eq!(right, &[3.; 128][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_merge_disconnect() {
+        let sample_rate = 48000.;
+        let length = 4 * 128;
+        let disconnect_at = length as f64 / sample_rate as f64 / 2.;
+        let mut context = OfflineAudioContext::new(2, length, sample_rate);
+
+        let merger = context.create_channel_merger(2);
+        merger.connect(&context.destination());
+
+        let mut src1 = context.create_constant_source();
+        src1.offset().set_value(2.);
+        src1.connect_at(&merger, 0, 0);
+        src1.start();
+
+        let mut src2 = context.create_constant_source();
+        src2.offset().set_value(3.);
+        src2.connect_at(&merger, 0, 1);
+        src2.start();
+
+        context.suspend_sync(disconnect_at, move |_| src2.disconnect());
+
+        let buffer = context.start_rendering_sync();
+
+        let left = buffer.get_channel_data(0);
+        assert_float_eq!(left, &vec![2.; length][..], abs_all <= 0.);
+
+        let right = buffer.get_channel_data(1);
+        assert_float_eq!(
+            &right[0..length / 2],
+            &vec![3.; length / 2][..],
+            abs_all <= 0.
+        );
+        assert_float_eq!(
+            &right[length / 2..],
+            &vec![0.; length / 2][..],
+            abs_all <= 0.
+        );
     }
 }
