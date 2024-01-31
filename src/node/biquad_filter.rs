@@ -649,7 +649,11 @@ impl AudioProcessor for BiquadFilterRenderer {
         };
 
         for (channel_number, output_channel) in output.channels_mut().iter_mut().enumerate() {
-            let input_channel = input.channel_data(channel_number);
+            let input_channel = if input.is_silent() {
+                input.channel_data(0)
+            } else {
+                input.channel_data(channel_number)
+            };
             // retrieve state from previous block
             let mut x1 = self.x1[channel_number];
             let mut x2 = self.x2[channel_number];

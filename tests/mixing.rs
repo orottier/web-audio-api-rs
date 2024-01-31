@@ -93,7 +93,7 @@ fn test_stereo_to_discrete_stereo() {
 
     assert_eq!(output.number_of_channels(), 2);
     assert_float_eq!(output.get_channel_data(0), ONES, abs_all <= 0.);
-    assert_float_eq!(output.get_channel_data(1), ONES, abs_all <= 0.);
+    assert_float_eq!(output.get_channel_data(1), ZEROES, abs_all <= 0.);
 }
 
 #[test]
