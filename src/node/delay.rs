@@ -236,7 +236,7 @@ impl DelayNode {
                 };
                 let (param, proc) = context.create_audio_param(param_opts, &reader_registration);
 
-                param.set_value_at_time(options.delay_time as f32, 0.);
+                param.set_value(options.delay_time as f32);
 
                 let reader_render = DelayReader {
                     delay_time: proc,
@@ -659,6 +659,17 @@ mod tests {
     use crate::node::AudioScheduledSourceNode;
 
     use super::*;
+
+    #[test]
+    fn test_audioparam_value_applies_immediately() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let options = DelayOptions {
+            delay_time: 0.12,
+            ..Default::default()
+        };
+        let src = DelayNode::new(&context, options);
+        assert_float_eq!(src.delay_time.value(), 0.12, abs_all <= 0.);
+    }
 
     #[test]
     fn test_sample_accurate() {

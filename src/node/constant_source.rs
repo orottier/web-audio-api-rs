@@ -235,6 +235,16 @@ mod tests {
 
     use float_eq::assert_float_eq;
 
+    use super::*;
+
+    #[test]
+    fn test_audioparam_value_applies_immediately() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let options = ConstantSourceOptions { offset: 12. };
+        let src = ConstantSourceNode::new(&context, options);
+        assert_float_eq!(src.offset.value(), 12., abs_all <= 0.);
+    }
+
     #[test]
     fn test_start_stop() {
         let sample_rate = 48000.;
