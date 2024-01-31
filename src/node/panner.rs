@@ -429,9 +429,9 @@ impl PannerNode {
             let (param_px, render_px) = context.create_audio_param(PARAM_OPTS, &registration);
             let (param_py, render_py) = context.create_audio_param(PARAM_OPTS, &registration);
             let (param_pz, render_pz) = context.create_audio_param(PARAM_OPTS, &registration);
-            param_px.set_value_at_time(position_x, 0.);
-            param_py.set_value_at_time(position_y, 0.);
-            param_pz.set_value_at_time(position_z, 0.);
+            param_px.set_value(position_x);
+            param_py.set_value(position_y);
+            param_pz.set_value(position_z);
 
             // orientation params
             let orientation_x_opts = AudioParamDescriptor {
@@ -442,9 +442,9 @@ impl PannerNode {
                 context.create_audio_param(orientation_x_opts, &registration);
             let (param_oy, render_oy) = context.create_audio_param(PARAM_OPTS, &registration);
             let (param_oz, render_oz) = context.create_audio_param(PARAM_OPTS, &registration);
-            param_ox.set_value_at_time(orientation_x, 0.);
-            param_oy.set_value_at_time(orientation_y, 0.);
-            param_oz.set_value_at_time(orientation_z, 0.);
+            param_ox.set_value(orientation_x);
+            param_oy.set_value(orientation_y);
+            param_oz.set_value(orientation_z);
 
             let render = PannerRenderer {
                 position_x: render_px,
@@ -1058,6 +1058,17 @@ mod tests {
     use crate::AudioBuffer;
 
     use super::*;
+
+    #[test]
+    fn test_audioparam_value_applies_immediately() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let options = PannerOptions {
+            position_x: 12.,
+            ..Default::default()
+        };
+        let src = PannerNode::new(&context, options);
+        assert_float_eq!(src.position_x.value(), 12., abs_all <= 0.);
+    }
 
     #[test]
     fn test_equal_power_mono_to_stereo() {
