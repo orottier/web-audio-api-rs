@@ -353,12 +353,13 @@ impl AudioProcessor for IirFilterRenderer {
         }
 
         // apply filter
-        for (channel_number, (input_channel, output_channel)) in input
-            .channels()
-            .iter()
-            .zip(output.channels_mut())
-            .enumerate()
-        {
+        for (channel_number, output_channel) in output.channels_mut().iter_mut().enumerate() {
+            let input_channel = if input.is_silent() {
+                input.channel_data(0)
+            } else {
+                input.channel_data(channel_number)
+            };
+
             for (&i, o) in input_channel.iter().zip(output_channel.iter_mut()) {
                 let input = f64::from(i);
                 let b0 = self.norm_coeffs[0].0;
