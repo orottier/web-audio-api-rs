@@ -99,6 +99,7 @@ pub fn bench_buffer_src() {
     let mut src = ctx.create_buffer_source();
     src.connect(&ctx.destination());
     src.set_buffer(buffer);
+    src.set_loop(true);
     src.start();
 
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
@@ -113,6 +114,7 @@ pub fn bench_buffer_src_delay() {
 
     let mut src = ctx.create_buffer_source();
     src.set_buffer(buffer);
+    src.set_loop(true);
     src.start();
 
     src.connect(&delay);
@@ -142,6 +144,7 @@ pub fn bench_buffer_src_iir() {
     let mut src = ctx.create_buffer_source();
     src.connect(&iir);
     src.set_buffer(buffer);
+    src.set_loop(true);
     src.start();
 
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
@@ -160,6 +163,7 @@ pub fn bench_buffer_src_biquad() {
     let mut src = ctx.create_buffer_source();
     src.connect(&biquad);
     src.set_buffer(buffer);
+    src.set_loop(true);
     src.start();
 
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
@@ -183,6 +187,7 @@ pub fn bench_stereo_positional() {
     let mut src = ctx.create_buffer_source();
     src.connect(&panner);
     src.set_buffer(buffer);
+    src.set_loop(true);
     src.start();
 
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
