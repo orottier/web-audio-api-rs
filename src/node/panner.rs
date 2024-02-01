@@ -1142,7 +1142,6 @@ mod tests {
         let panner = PannerNode::new(&context, options);
         assert_eq!(panner.panning_model(), PanningModelType::EqualPower);
         panner.position_y().set_value(1.); // sound comes from above
-        panner.set_channel_count(1);
 
         src.connect(&panner);
         panner.connect(&context.destination());
@@ -1181,8 +1180,11 @@ mod tests {
         listener.up_y().set_value(0.);
         listener.up_z().set_value(1.);
 
-        // 128 input samples of value 1.
-        let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
+        // 128 input samples of value 1, stereo
+        let input = AudioBuffer::from(
+            vec![vec![1.; RENDER_QUANTUM_SIZE], vec![1.; RENDER_QUANTUM_SIZE]],
+            sample_rate,
+        );
         let mut src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
         src.set_buffer(input);
         src.start();
