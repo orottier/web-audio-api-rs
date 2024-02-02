@@ -319,7 +319,7 @@ mod tests {
 
         // close context
         context.close_sync();
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::thread::sleep(std::time::Duration::from_millis(50));
 
         let mut buffer = vec![0.; 128];
         analyser.get_float_time_domain_data(&mut buffer); // should not crash or hang
