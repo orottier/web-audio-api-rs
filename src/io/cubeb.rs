@@ -269,7 +269,10 @@ impl AudioBackendManager for CubebBackend {
         backend
     }
 
-    fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
+    fn build_input(
+        options: AudioContextOptions,
+        _number_of_channels: Option<u32>,
+    ) -> (Self, Receiver<AudioBuffer>)
     where
         Self: Sized,
     {

@@ -72,6 +72,7 @@ fn main() {
 
     let mut constraints = MediaTrackConstraints::default();
     constraints.device_id = source_id;
+    // constraints.channel_count = Some(2);
     let stream_constraints = MediaStreamConstraints::AudioWithConstraints(constraints);
     let mic = media_devices::get_user_media_sync(stream_constraints);
 
