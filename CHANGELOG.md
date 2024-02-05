@@ -1,5 +1,12 @@
 # Version History
 
+## Version 0.42.0 (2024-02-05)
+
+- Added MediaTrackConstraints.channelCount for multi-channel microphone input
+- Fix: needless upmixing of AudioNode input channels for `max` and `clampedMax` interpretation
+- Fix: AudioParam value not returned correctly before rendering has started
+- Fix: eagerly panic for invalid AudioNode settings in constructors
+
 ## Version 0.41.1 (2024-01-11)
 
 - Unified panic messages to format `<JsErrorType> - <Actual message>`
