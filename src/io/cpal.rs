@@ -266,7 +266,10 @@ impl AudioBackendManager for CpalBackend {
         }
     }
 
-    fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
+    fn build_input(
+        options: AudioContextOptions,
+        number_of_channels: Option<u32>,
+    ) -> (Self, Receiver<AudioBuffer>)
     where
         Self: Sized,
     {
@@ -297,6 +300,10 @@ impl AudioBackendManager for CpalBackend {
         // clone the config, we may need to fall back on it later
         let mut preferred: StreamConfig = supported.clone().into();
 
+        if let Some(number_of_channels) = number_of_channels {
+            preferred.channels = number_of_channels as u16;
+        }
+
         // set specific sample rate if requested
         if let Some(sample_rate) = options.sample_rate {
             crate::assert_valid_sample_rate(sample_rate);
@@ -315,31 +322,39 @@ impl AudioBackendManager for CpalBackend {
         };
 
         preferred.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
-
-        let mut number_of_channels = usize::from(preferred.channels);
         let mut sample_rate = preferred.sample_rate.0 as f32;
+        let mut number_of_channels = preferred.channels as usize;
 
         let smoothing = 3; // todo, use buffering to smooth frame drops
         let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
         let renderer = MicrophoneRender::new(number_of_channels, sample_rate, sender);
 
-        let maybe_stream =
-            spawn_input_stream(&device, supported.sample_format(), &preferred, renderer);
+        log::debug!(
+            "Attempt input stream with preferred config: {:?}",
+            &preferred
+        );
+
+        let spawned = spawn_input_stream(&device, supported.sample_format(), &preferred, renderer);
 
         // the required block size preferred config may not be supported, in that
         // case, fallback the supported config
-        let stream = match maybe_stream {
-            Ok(stream) => stream,
+        let stream = match spawned {
+            Ok(stream) => {
+                log::debug!("Input stream set up successfully");
+                stream
+            }
             Err(e) => {
-                log::warn!(
-                    "Output stream failed to build: {:?}, retry with default config {:?}",
-                    e,
-                    preferred
-                );
+                log::warn!("Output stream build failed with preferred config: {}", e);
 
                 let supported_config: StreamConfig = supported.clone().into();
+                // fallback to device default sample rate and channel count
                 number_of_channels = usize::from(supported_config.channels);
                 sample_rate = supported_config.sample_rate.0 as f32;
+
+                log::debug!(
+                    "Attempt output stream with fallback config: {:?}",
+                    &supported_config
+                );
 
                 // setup a new comms channel
                 let (sender, receiver2) = crossbeam_channel::bounded(smoothing);

@@ -110,7 +110,10 @@ impl AudioBackendManager for NoneBackend {
     }
 
     /// Setup a new input stream (microphone capture)
-    fn build_input(_options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
+    fn build_input(
+        _options: AudioContextOptions,
+        _number_of_channels: Option<u32>,
+    ) -> (Self, Receiver<AudioBuffer>)
     where
         Self: Sized,
     {
