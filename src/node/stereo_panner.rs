@@ -142,10 +142,6 @@ impl AudioNode for StereoPannerNode {
         1
     }
 
-    fn channel_count_mode(&self) -> ChannelCountMode {
-        ChannelCountMode::ClampedMax
-    }
-
     fn set_channel_count_mode(&self, mode: ChannelCountMode) {
         assert_valid_channel_count_mode(mode);
         self.channel_config.set_count_mode(mode);
@@ -356,6 +352,24 @@ mod tests {
             let pan = panner.pan.value();
             assert_float_eq!(pan, default_pan, abs_all <= 0.);
         }
+    }
+
+    #[test]
+    fn test_init_with_channel_count_mode() {
+        let context = OfflineAudioContext::new(2, 1, 44_100.);
+        let options = StereoPannerOptions {
+            channel_config: ChannelConfigOptions {
+                count_mode: ChannelCountMode::Explicit,
+                ..ChannelConfigOptions::default()
+            },
+            ..StereoPannerOptions::default()
+        };
+        let panner = StereoPannerNode::new(&context, options);
+        assert_eq!(
+            panner.channel_config().count_mode(),
+            ChannelCountMode::Explicit
+        );
+        assert_eq!(panner.channel_count_mode(), ChannelCountMode::Explicit);
     }
 
     #[test]
