@@ -75,7 +75,7 @@ impl AudioNode for AudioDestinationNode {
             "InvalidStateError - AudioDestinationNode has channel count mode constraints",
         );
 
-        self.channel_config.set_count_mode(v);
+        self.channel_config.set_count_mode(v, self.registration());
     }
 }
 

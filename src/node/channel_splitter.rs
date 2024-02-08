@@ -87,12 +87,14 @@ impl AudioNode for ChannelSplitterNode {
 
     fn set_channel_count_mode(&self, mode: ChannelCountMode) {
         assert_valid_channel_count_mode(mode);
-        self.channel_config.set_count_mode(mode);
+        self.channel_config
+            .set_count_mode(mode, self.registration());
     }
 
     fn set_channel_interpretation(&self, interpretation: ChannelInterpretation) {
         assert_valid_channel_interpretation(interpretation);
-        self.channel_config.set_interpretation(interpretation);
+        self.channel_config
+            .set_interpretation(interpretation, self.registration());
     }
 
     fn number_of_inputs(&self) -> usize {
