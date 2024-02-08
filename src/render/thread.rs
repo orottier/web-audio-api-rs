@@ -198,6 +198,24 @@ impl RenderThread {
                     self.set_state(AudioContextState::Closed);
                     notify.send();
                 }
+
+                SetChannelCount { id, count } => {
+                    self.graph.as_mut().unwrap().set_channel_count(id, count);
+                }
+
+                SetChannelCountMode { id, mode } => {
+                    self.graph
+                        .as_mut()
+                        .unwrap()
+                        .set_channel_count_mode(id, mode);
+                }
+
+                SetChannelInterpretation { id, interpretation } => {
+                    self.graph
+                        .as_mut()
+                        .unwrap()
+                        .set_channel_interpretation(id, interpretation);
+                }
             }
         }
     }

@@ -3,7 +3,7 @@
 use std::any::Any;
 
 use crate::context::AudioNodeId;
-use crate::node::ChannelConfig;
+use crate::node::{ChannelConfigInner, ChannelCountMode, ChannelInterpretation};
 use crate::render::graph::Graph;
 use crate::render::AudioProcessor;
 
@@ -16,7 +16,7 @@ pub(crate) enum ControlMessage {
         node: Box<dyn AudioProcessor>,
         inputs: usize,
         outputs: usize,
-        channel_config: ChannelConfig,
+        channel_config: ChannelConfigInner,
     },
 
     /// Connect a node to another in the audio graph
@@ -64,6 +64,21 @@ pub(crate) enum ControlMessage {
 
     /// Request a diagnostic report of the audio graph
     RunDiagnostics { buffer: Vec<u8> },
+
+    /// Update the channel count of a node
+    SetChannelCount { id: AudioNodeId, count: usize },
+
+    /// Update the channel count mode of a node
+    SetChannelCountMode {
+        id: AudioNodeId,
+        mode: ChannelCountMode,
+    },
+
+    /// Update the channel interpretation of a node
+    SetChannelInterpretation {
+        id: AudioNodeId,
+        interpretation: ChannelInterpretation,
+    },
 }
 
 /// Helper object to emit single notification

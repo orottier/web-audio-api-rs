@@ -7,7 +7,7 @@ use crate::context::AudioNodeId;
 use smallvec::{smallvec, SmallVec};
 
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeCollection};
-use crate::node::ChannelConfig;
+use crate::node::{ChannelConfigInner, ChannelCountMode, ChannelInterpretation};
 use crate::render::RenderScope;
 
 /// Connection between two audio nodes
@@ -46,7 +46,7 @@ pub struct Node {
     /// Reusable output buffers, consumed by subsequent Nodes in this graph
     outputs: Vec<AudioRenderQuantum>,
     /// Channel configuration: determines up/down-mixing of inputs
-    channel_config: ChannelConfig,
+    channel_config: ChannelConfigInner,
     /// Outgoing edges: tuple of outcoming node reference, our output index and their input index
     outgoing_edges: SmallVec<[OutgoingEdge; 2]>,
     /// Indicates if the control thread has dropped this Node
@@ -163,7 +163,7 @@ impl Graph {
         processor: Box<dyn AudioProcessor>,
         number_of_inputs: usize,
         number_of_outputs: usize,
-        channel_config: ChannelConfig,
+        channel_config: ChannelConfigInner,
     ) {
         // todo: pre-allocate the buffers on the control thread
 
@@ -238,6 +238,16 @@ impl Graph {
 
     pub fn mark_cycle_breaker(&mut self, index: AudioNodeId) {
         self.nodes[index].get_mut().cycle_breaker = true;
+    }
+
+    pub fn set_channel_count(&mut self, index: AudioNodeId, v: usize) {
+        self.nodes[index].get_mut().channel_config.count = v;
+    }
+    pub fn set_channel_count_mode(&mut self, index: AudioNodeId, v: ChannelCountMode) {
+        self.nodes[index].get_mut().channel_config.count_mode = v;
+    }
+    pub fn set_channel_interpretation(&mut self, index: AudioNodeId, v: ChannelInterpretation) {
+        self.nodes[index].get_mut().channel_config.interpretation = v;
     }
 
     pub fn route_message(&mut self, index: AudioNodeId, msg: &mut dyn Any) {
@@ -545,13 +555,12 @@ mod tests {
         }
     }
 
-    fn config() -> ChannelConfig {
-        crate::node::ChannelConfigOptions {
+    fn config() -> ChannelConfigInner {
+        ChannelConfigInner {
             count: 2,
             count_mode: crate::node::ChannelCountMode::Explicit,
             interpretation: crate::node::ChannelInterpretation::Speakers,
         }
-        .into()
     }
 
     fn add_node(graph: &mut Graph, id: u64, node: Box<dyn AudioProcessor>) {

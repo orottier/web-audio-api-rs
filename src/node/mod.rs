@@ -1,10 +1,10 @@
 //! The AudioNode interface and concrete types
 use std::f32::consts::PI;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
 use crate::events::{ErrorEvent, EventHandler, EventPayload, EventType};
+use crate::message::ControlMessage;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::AudioBufferIter;
 use crate::Event;
@@ -153,14 +153,14 @@ impl Default for ChannelConfigOptions {
 /// let _: ChannelConfig = opts.into();
 #[derive(Clone, Debug)]
 pub struct ChannelConfig {
-    inner: Arc<ChannelConfigInner>,
+    inner: Arc<Mutex<ChannelConfigInner>>,
 }
 
-#[derive(Debug)]
-struct ChannelConfigInner {
-    count: AtomicUsize,
-    count_mode: AtomicU32,
-    interpretation: AtomicU32,
+#[derive(Debug, Clone)]
+pub(crate) struct ChannelConfigInner {
+    pub(crate) count: usize,
+    pub(crate) count_mode: ChannelCountMode,
+    pub(crate) interpretation: ChannelInterpretation,
 }
 
 impl Default for ChannelConfig {
@@ -180,32 +180,71 @@ impl ChannelConfig {
     /// Represents an enumerated value describing the way channels must be matched between the
     /// node's inputs and outputs.
     pub(crate) fn count_mode(&self) -> ChannelCountMode {
-        self.inner.count_mode.load(Ordering::Acquire).into()
+        self.inner.lock().unwrap().count_mode
     }
 
-    fn set_count_mode(&self, v: ChannelCountMode) {
-        self.inner.count_mode.store(v as u32, Ordering::Release)
+    fn set_count_mode(&self, v: ChannelCountMode, registration: &AudioContextRegistration) {
+        let mut guard = self.inner.lock().unwrap();
+        guard.count_mode = v;
+
+        let message = ControlMessage::SetChannelCountMode {
+            id: registration.id(),
+            mode: v,
+        };
+        registration.context().send_control_msg(message);
+
+        drop(guard); // drop guard after sending message to prevent out of order arrivals on
+                     // concurrent access
     }
 
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
     /// will define how audio up-mixing and down-mixing will happen.
     pub(crate) fn interpretation(&self) -> ChannelInterpretation {
-        self.inner.interpretation.load(Ordering::Acquire).into()
+        self.inner.lock().unwrap().interpretation
     }
 
-    fn set_interpretation(&self, v: ChannelInterpretation) {
-        self.inner.interpretation.store(v as u32, Ordering::Release)
+    fn set_interpretation(
+        &self,
+        v: ChannelInterpretation,
+        registration: &AudioContextRegistration,
+    ) {
+        let mut guard = self.inner.lock().unwrap();
+        guard.interpretation = v;
+
+        let message = ControlMessage::SetChannelInterpretation {
+            id: registration.id(),
+            interpretation: v,
+        };
+        registration.context().send_control_msg(message);
+
+        drop(guard); // drop guard after sending message to prevent out of order arrivals on
+                     // concurrent access
     }
 
     /// Represents an integer used to determine how many channels are used when up-mixing and
     /// down-mixing connections to any inputs to the node.
     pub(crate) fn count(&self) -> usize {
-        self.inner.count.load(Ordering::Acquire)
+        self.inner.lock().unwrap().count
     }
 
-    fn set_count(&self, v: usize) {
+    fn set_count(&self, v: usize, registration: &AudioContextRegistration) {
         crate::assert_valid_number_of_channels(v);
-        self.inner.count.store(v, Ordering::Release)
+
+        let mut guard = self.inner.lock().unwrap();
+        guard.count = v;
+
+        let message = ControlMessage::SetChannelCount {
+            id: registration.id(),
+            count: v,
+        };
+        registration.context().send_control_msg(message);
+
+        drop(guard); // drop guard after sending message to prevent out of order arrivals on
+                     // concurrent access
+    }
+
+    pub(crate) fn inner(&self) -> ChannelConfigInner {
+        self.inner.lock().unwrap().clone()
     }
 }
 
@@ -214,12 +253,12 @@ impl From<ChannelConfigOptions> for ChannelConfig {
         crate::assert_valid_number_of_channels(opts.count);
 
         let inner = ChannelConfigInner {
-            count: AtomicUsize::from(opts.count),
-            count_mode: AtomicU32::from(opts.count_mode as u32),
-            interpretation: AtomicU32::from(opts.interpretation as u32),
+            count: opts.count,
+            count_mode: opts.count_mode,
+            interpretation: opts.interpretation,
         };
         Self {
-            inner: Arc::new(inner),
+            inner: Arc::new(Mutex::new(inner)),
         }
     }
 }
@@ -325,7 +364,7 @@ pub trait AudioNode {
 
     /// Update the `channel_count_mode` attribute
     fn set_channel_count_mode(&self, v: ChannelCountMode) {
-        self.channel_config().set_count_mode(v)
+        self.channel_config().set_count_mode(v, self.registration())
     }
 
     /// Represents an enumerated value describing the meaning of the channels. This interpretation
@@ -336,7 +375,8 @@ pub trait AudioNode {
 
     /// Update the `channel_interpretation` attribute
     fn set_channel_interpretation(&self, v: ChannelInterpretation) {
-        self.channel_config().set_interpretation(v)
+        self.channel_config()
+            .set_interpretation(v, self.registration())
     }
     /// Represents an integer used to determine how many channels are used when up-mixing and
     /// down-mixing connections to any inputs to the node.
@@ -346,7 +386,7 @@ pub trait AudioNode {
 
     /// Update the `channel_count` attribute
     fn set_channel_count(&self, v: usize) {
-        self.channel_config().set_count(v)
+        self.channel_config().set_count(v, self.registration())
     }
 
     /// Register callback to run when an unhandled exception occurs in the audio processor.
