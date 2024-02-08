@@ -132,7 +132,9 @@ fn init_output_backend<const N: usize>(
             println!("stream state changed: {state:?}");
         });
 
-    let stream = builder.init(ctx).expect("Failed to create cubeb stream");
+    let stream = builder
+        .init(ctx)
+        .expect("InvalidStateError - Failed to create cubeb stream");
     ThreadSafeClosableStream::new(stream)
 }
 
@@ -267,7 +269,10 @@ impl AudioBackendManager for CubebBackend {
         backend
     }
 
-    fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
+    fn build_input(
+        options: AudioContextOptions,
+        _number_of_channels: Option<u32>,
+    ) -> (Self, Receiver<AudioBuffer>)
     where
         Self: Sized,
     {
@@ -346,7 +351,9 @@ impl AudioBackendManager for CubebBackend {
                 println!("stream state changed: {state:?}");
             });
 
-        let stream = builder.init(&ctx).expect("Failed to create cubeb stream");
+        let stream = builder
+            .init(&ctx)
+            .expect("InvalidStateError - Failed to create cubeb stream");
 
         stream.start().unwrap();
 

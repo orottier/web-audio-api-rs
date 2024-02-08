@@ -132,7 +132,7 @@ impl AudioBackendManager for CpalBackend {
 
         let device = if options.sink_id.is_empty() {
             host.default_output_device()
-                .expect("no output device available")
+                .expect("InvalidStateError - no output device available")
         } else {
             Self::enumerate_devices_sync()
                 .into_iter()
@@ -140,7 +140,7 @@ impl AudioBackendManager for CpalBackend {
                 .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
                 .unwrap_or_else(|| {
                     host.default_output_device()
-                        .expect("no output device available")
+                        .expect("InvalidStateError - no output device available")
                 })
         };
 
@@ -148,7 +148,7 @@ impl AudioBackendManager for CpalBackend {
 
         let default_device_config = device
             .default_output_config()
-            .expect("error while querying config");
+            .expect("InvalidStateError - error while querying device output config");
 
         // we grab the largest number of channels provided by the soundcard
         // clamped to MAX_CHANNELS, this value cannot be changed by the user
@@ -247,11 +247,15 @@ impl AudioBackendManager for CpalBackend {
                     Arc::clone(&output_latency),
                 );
 
-                spawned.expect("OutputStream build failed with default config")
+                spawned
+                    .expect("InvalidStateError - Unable to spawn output stream with default config")
             }
         };
 
-        stream.play().expect("Stream refused to play");
+        // Required because some hosts don't play the stream automatically
+        stream
+            .play()
+            .expect("InvalidStateError - Output stream refused to play");
 
         CpalBackend {
             stream: ThreadSafeClosableStream::new(stream),
@@ -262,7 +266,10 @@ impl AudioBackendManager for CpalBackend {
         }
     }
 
-    fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
+    fn build_input(
+        options: AudioContextOptions,
+        number_of_channels: Option<u32>,
+    ) -> (Self, Receiver<AudioBuffer>)
     where
         Self: Sized,
     {
@@ -272,7 +279,7 @@ impl AudioBackendManager for CpalBackend {
 
         let device = if options.sink_id.is_empty() {
             host.default_input_device()
-                .expect("no input device available")
+                .expect("InvalidStateError - no input device available")
         } else {
             Self::enumerate_devices_sync()
                 .into_iter()
@@ -280,7 +287,7 @@ impl AudioBackendManager for CpalBackend {
                 .map(|e| *e.device().downcast::<cpal::Device>().unwrap())
                 .unwrap_or_else(|| {
                     host.default_input_device()
-                        .expect("no input device available")
+                        .expect("InvalidStateError - no input device available")
                 })
         };
 
@@ -288,10 +295,14 @@ impl AudioBackendManager for CpalBackend {
 
         let supported = device
             .default_input_config()
-            .expect("error while querying configs");
+            .expect("InvalidStateError - error while querying device input config");
 
         // clone the config, we may need to fall back on it later
         let mut preferred: StreamConfig = supported.clone().into();
+
+        if let Some(number_of_channels) = number_of_channels {
+            preferred.channels = number_of_channels as u16;
+        }
 
         // set specific sample rate if requested
         if let Some(sample_rate) = options.sample_rate {
@@ -311,31 +322,39 @@ impl AudioBackendManager for CpalBackend {
         };
 
         preferred.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
-
-        let mut number_of_channels = usize::from(preferred.channels);
         let mut sample_rate = preferred.sample_rate.0 as f32;
+        let mut number_of_channels = preferred.channels as usize;
 
         let smoothing = 3; // todo, use buffering to smooth frame drops
         let (sender, mut receiver) = crossbeam_channel::bounded(smoothing);
         let renderer = MicrophoneRender::new(number_of_channels, sample_rate, sender);
 
-        let maybe_stream =
-            spawn_input_stream(&device, supported.sample_format(), &preferred, renderer);
+        log::debug!(
+            "Attempt input stream with preferred config: {:?}",
+            &preferred
+        );
+
+        let spawned = spawn_input_stream(&device, supported.sample_format(), &preferred, renderer);
 
         // the required block size preferred config may not be supported, in that
         // case, fallback the supported config
-        let stream = match maybe_stream {
-            Ok(stream) => stream,
+        let stream = match spawned {
+            Ok(stream) => {
+                log::debug!("Input stream set up successfully");
+                stream
+            }
             Err(e) => {
-                log::warn!(
-                    "Output stream failed to build: {:?}, retry with default config {:?}",
-                    e,
-                    preferred
-                );
+                log::warn!("Output stream build failed with preferred config: {}", e);
 
                 let supported_config: StreamConfig = supported.clone().into();
+                // fallback to device default sample rate and channel count
                 number_of_channels = usize::from(supported_config.channels);
                 sample_rate = supported_config.sample_rate.0 as f32;
+
+                log::debug!(
+                    "Attempt output stream with fallback config: {:?}",
+                    &supported_config
+                );
 
                 // setup a new comms channel
                 let (sender, receiver2) = crossbeam_channel::bounded(smoothing);
@@ -349,12 +368,15 @@ impl AudioBackendManager for CpalBackend {
                     &supported_config,
                     renderer,
                 );
-                spawned.expect("Unable to spawn input stream with default config")
+                spawned
+                    .expect("InvalidStateError - Unable to spawn input stream with default config")
             }
         };
 
         // Required because some hosts don't play the stream automatically
-        stream.play().expect("Input stream refused to play");
+        stream
+            .play()
+            .expect("InvalidStateError - Input stream refused to play");
 
         let backend = CpalBackend {
             stream: ThreadSafeClosableStream::new(stream),

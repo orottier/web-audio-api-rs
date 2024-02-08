@@ -1,5 +1,7 @@
 //! The IIR filter control and renderer parts
+use arrayvec::ArrayVec;
 use num_complex::Complex;
+
 use std::f64::consts::PI;
 
 use crate::context::{AudioContextRegistration, BaseAudioContext};
@@ -22,14 +24,17 @@ const MAX_IIR_COEFFS_LEN: usize = 20;
 ///
 #[track_caller]
 #[inline(always)]
-fn assert_valid_feedforward_coefs(coefs: &Vec<f64>) {
-    if coefs.is_empty() || coefs.len() > MAX_IIR_COEFFS_LEN {
-        panic!("NotSupportedError - IIR Filter feedforward coefficients should have length >= 0 and <= 20");
-    }
+fn assert_valid_feedforward_coefs(coefs: &[f64]) {
+    assert!(
+        !coefs.is_empty() && coefs.len() <= MAX_IIR_COEFFS_LEN,
+        "NotSupportedError - IIR Filter feedforward coefficients should have length >= 0 and <= {}",
+        MAX_IIR_COEFFS_LEN,
+    );
 
-    if coefs.iter().all(|&f| f == 0.) {
-        panic!("InvalidStateError - IIR Filter feedforward coefficients cannot be all zeros");
-    }
+    assert!(
+        !coefs.iter().all(|&f| f == 0.),
+        "InvalidStateError - IIR Filter feedforward coefficients cannot be all zeros"
+    );
 }
 
 /// Assert that the feedforward coefficients are valid
@@ -43,14 +48,17 @@ fn assert_valid_feedforward_coefs(coefs: &Vec<f64>) {
 ///
 #[track_caller]
 #[inline(always)]
-fn assert_valid_feedback_coefs(coefs: &Vec<f64>) {
-    if coefs.is_empty() || coefs.len() > MAX_IIR_COEFFS_LEN {
-        panic!("NotSupportedError - IIR Filter feedback coefficients should have length >= 0 and <= 20");
-    }
+fn assert_valid_feedback_coefs(coefs: &[f64]) {
+    assert!(
+        !coefs.is_empty() && coefs.len() <= MAX_IIR_COEFFS_LEN,
+        "NotSupportedError - IIR Filter feedback coefficients should have length >= 0 and <= {}",
+        MAX_IIR_COEFFS_LEN,
+    );
 
-    if coefs[0] == 0. {
-        panic!("InvalidStateError - IIR Filter feedback first coefficient cannot be zero");
-    }
+    assert_ne!(
+        coefs[0], 0.,
+        "InvalidStateError - IIR Filter feedback first coefficient cannot be zero"
+    );
 }
 
 /// Options for constructing a [`IIRFilterNode`]
@@ -212,9 +220,10 @@ impl IIRFilterNode {
         mag_response: &mut [f32],
         phase_response: &mut [f32],
     ) {
-        if frequency_hz.len() != mag_response.len() || mag_response.len() != phase_response.len() {
-            panic!("InvalidAccessError - Parameter lengths must match");
-        }
+        assert!(
+            frequency_hz.len() == mag_response.len() && mag_response.len() == phase_response.len(),
+            "InvalidAccessError - Parameter lengths must match",
+        );
 
         let sample_rate = self.context().sample_rate() as f64;
         let nquist = sample_rate / 2.;
@@ -247,7 +256,7 @@ struct IirFilterRenderer {
     /// Normalized filter's coeffs -- `(b[n], a[n])`
     norm_coeffs: Vec<(f64, f64)>,
     /// filter's states
-    states: Vec<Vec<f64>>,
+    states: ArrayVec<Vec<f64>, MAX_CHANNELS>,
 }
 
 impl IirFilterRenderer {
@@ -285,7 +294,11 @@ impl IirFilterRenderer {
         });
 
         let coeffs_len = norm_coeffs.len();
-        let states = vec![Vec::<f64>::with_capacity(MAX_CHANNELS); coeffs_len];
+
+        // eagerly assume stereo input, will adjust during rendering if needed
+        let mut states = ArrayVec::new();
+        states.push(vec![0.; coeffs_len]);
+        states.push(vec![0.; coeffs_len]);
 
         Self {
             norm_coeffs,
@@ -333,35 +346,38 @@ impl AudioProcessor for IirFilterRenderer {
             // see https://webaudio.github.io/web-audio-api/#channels-tail-time
             let num_channels = input.number_of_channels();
 
-            if num_channels != self.states[0].len() {
-                self.states
-                    .iter_mut()
-                    .for_each(|state| state.resize(num_channels, 0.));
+            if num_channels != self.states.len() {
+                self.states.truncate(num_channels);
+                for _ in self.states.len()..num_channels {
+                    self.states.push(vec![0.; self.norm_coeffs.len()]);
+                }
             }
 
             output.set_number_of_channels(num_channels);
         } else {
-            let num_channels = self.states[0].len();
+            let num_channels = self.states.len();
             output.set_number_of_channels(num_channels);
         }
 
         // apply filter
-        for (channel_number, (input_channel, output_channel)) in input
-            .channels()
-            .iter()
-            .zip(output.channels_mut())
-            .enumerate()
-        {
+        for (channel_number, output_channel) in output.channels_mut().iter_mut().enumerate() {
+            let input_channel = if input.is_silent() {
+                input.channel_data(0)
+            } else {
+                input.channel_data(channel_number)
+            };
+            let channel_state = &mut self.states[channel_number];
+
             for (&i, o) in input_channel.iter().zip(output_channel.iter_mut()) {
                 let input = f64::from(i);
                 let b0 = self.norm_coeffs[0].0;
-                let last_state = self.states[0][channel_number];
+                let last_state = channel_state[0];
                 let output = b0.mul_add(input, last_state);
 
                 // update states for next call
                 for (i, (b, a)) in self.norm_coeffs.iter().skip(1).enumerate() {
-                    let state = self.states[i + 1][channel_number];
-                    self.states[i][channel_number] = b * input - a * output + state;
+                    let state = channel_state[i + 1];
+                    channel_state[i] = b * input - a * output + state;
                 }
 
                 #[cfg(debug_assertions)]

@@ -60,7 +60,7 @@ impl GainNode {
             };
             let (param, proc) = context.create_audio_param(param_opts, &registration);
 
-            param.set_value_at_time(options.gain, 0.);
+            param.set_value(options.gain);
 
             let render = GainRenderer { gain: proc };
 
@@ -139,5 +139,23 @@ impl AudioProcessor for GainRenderer {
         }
 
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::OfflineAudioContext;
+    use float_eq::assert_float_eq;
+
+    #[test]
+    fn test_audioparam_value_applies_immediately() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let options = GainOptions {
+            gain: 0.12,
+            ..Default::default()
+        };
+        let src = GainNode::new(&context, options);
+        assert_float_eq!(src.gain.value(), 0.12, abs_all <= 0.);
     }
 }

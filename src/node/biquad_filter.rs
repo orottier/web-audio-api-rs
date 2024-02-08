@@ -2,6 +2,7 @@
 use std::any::Any;
 use std::f64::consts::{PI, SQRT_2};
 
+use arrayvec::ArrayVec;
 use num_complex::Complex;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
@@ -396,10 +397,7 @@ impl BiquadFilterNode {
                 frequency: f_proc,
                 q: q_proc,
                 type_,
-                x1: Vec::with_capacity(MAX_CHANNELS),
-                x2: Vec::with_capacity(MAX_CHANNELS),
-                y1: Vec::with_capacity(MAX_CHANNELS),
-                y2: Vec::with_capacity(MAX_CHANNELS),
+                xy: ArrayVec::new(),
             };
 
             let node = Self {
@@ -474,9 +472,10 @@ impl BiquadFilterNode {
         mag_response: &mut [f32],
         phase_response: &mut [f32],
     ) {
-        if frequency_hz.len() != mag_response.len() || mag_response.len() != phase_response.len() {
-            panic!("InvalidAccessError - Parameter lengths must match");
-        }
+        assert!(
+            frequency_hz.len() == mag_response.len() && mag_response.len() == phase_response.len(),
+            "InvalidAccessError - Parameter lengths must match",
+        );
 
         let sample_rate = self.context().sample_rate();
         let n_quist = sample_rate / 2.;
@@ -548,10 +547,7 @@ struct BiquadFilterRenderer {
     /// `BiquadFilterType`
     type_: BiquadFilterType,
     // keep filter state for each channel
-    x1: Vec<f64>,
-    x2: Vec<f64>,
-    y1: Vec<f64>,
-    y2: Vec<f64>,
+    xy: ArrayVec<[f64; 4], MAX_CHANNELS>,
 }
 
 impl AudioProcessor for BiquadFilterRenderer {
@@ -571,10 +567,10 @@ impl AudioProcessor for BiquadFilterRenderer {
         if input.is_silent() {
             let mut ended = true;
 
-            if self.x1.iter().any(|&v| v.is_normal())
-                || self.x2.iter().any(|&v| v.is_normal())
-                || self.y1.iter().any(|&v| v.is_normal())
-                || self.y2.iter().any(|&v| v.is_normal())
+            if self
+                .xy
+                .iter()
+                .any(|v| v.iter().copied().any(f64::is_normal))
             {
                 ended = false;
             }
@@ -594,16 +590,16 @@ impl AudioProcessor for BiquadFilterRenderer {
             // see https://webaudio.github.io/web-audio-api/#channels-tail-time
             let num_channels = input.number_of_channels();
 
-            if num_channels != self.x1.len() {
-                self.x1.resize(num_channels, 0.);
-                self.x2.resize(num_channels, 0.);
-                self.y1.resize(num_channels, 0.);
-                self.y2.resize(num_channels, 0.);
+            if num_channels != self.xy.len() {
+                self.xy.truncate(num_channels);
+                for _ in self.xy.len()..num_channels {
+                    self.xy.push([0.; 4]);
+                }
             }
 
             output.set_number_of_channels(num_channels);
         } else {
-            let num_channels = self.x1.len();
+            let num_channels = self.xy.len();
             output.set_number_of_channels(num_channels);
         }
 
@@ -648,12 +644,15 @@ impl AudioProcessor for BiquadFilterRenderer {
         };
 
         for (channel_number, output_channel) in output.channels_mut().iter_mut().enumerate() {
-            let input_channel = input.channel_data(channel_number);
+            let input_channel = if input.is_silent() {
+                input.channel_data(0)
+            } else {
+                input.channel_data(channel_number)
+            };
             // retrieve state from previous block
-            let mut x1 = self.x1[channel_number];
-            let mut x2 = self.x2[channel_number];
-            let mut y1 = self.y1[channel_number];
-            let mut y2 = self.y2[channel_number];
+            let (mut x1, mut x2, mut y1, mut y2) = match self.xy[channel_number] {
+                [x1, x2, y1, y2] => (x1, x2, y1, y2),
+            };
 
             output_channel
                 .iter_mut()
@@ -675,10 +674,7 @@ impl AudioProcessor for BiquadFilterRenderer {
                 });
 
             // store channel state for next block
-            self.x1[channel_number] = x1;
-            self.x2[channel_number] = x2;
-            self.y1[channel_number] = y1;
-            self.y2[channel_number] = y2;
+            self.xy[channel_number] = [x1, x2, y1, y2];
         }
 
         true

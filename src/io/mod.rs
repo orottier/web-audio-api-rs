@@ -112,7 +112,10 @@ pub(crate) fn build_output(
 }
 
 /// Set up an input stream (microphone) bases on the selected features (cubeb/cpal/none)
-pub(crate) fn build_input(options: AudioContextOptions) -> MediaStream {
+pub(crate) fn build_input(
+    options: AudioContextOptions,
+    number_of_channels: Option<u32>,
+) -> MediaStream {
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
     {
         panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
@@ -123,12 +126,12 @@ pub(crate) fn build_input(options: AudioContextOptions) -> MediaStream {
         let (backend, receiver) = {
             #[cfg(feature = "cubeb")]
             {
-                cubeb::CubebBackend::build_input(options)
+                cubeb::CubebBackend::build_input(options, number_of_channels)
             }
 
             #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
             {
-                cpal::CpalBackend::build_input(options)
+                cpal::CpalBackend::build_input(options, number_of_channels)
             }
         };
 
@@ -151,7 +154,10 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
         Self: Sized;
 
     /// Setup a new input stream (microphone capture)
-    fn build_input(options: AudioContextOptions) -> (Self, Receiver<AudioBuffer>)
+    fn build_input(
+        options: AudioContextOptions,
+        number_of_channels: Option<u32>,
+    ) -> (Self, Receiver<AudioBuffer>)
     where
         Self: Sized;
 
@@ -204,12 +210,11 @@ fn buffer_size_for_latency_category(
         #[allow(clippy::cast_sign_loss)]
         #[allow(clippy::cast_possible_truncation)]
         AudioContextLatencyCategory::Custom(latency) => {
-            if latency <= 0. {
-                panic!(
-                    "RangeError - Invalid custom latency: {:?}, should be strictly positive",
-                    latency
-                );
-            }
+            assert!(
+                latency > 0.,
+                "RangeError - Invalid custom latency: {:?}, should be strictly positive",
+                latency
+            );
 
             let buffer_size = (latency * sample_rate as f64) as usize;
             buffer_size.next_power_of_two()

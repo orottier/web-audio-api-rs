@@ -204,9 +204,11 @@ impl MediaRecorder {
     ///
     /// Will panic when the recorder has already started
     pub fn start(&self) {
-        if self.inner.active.swap(true, Ordering::Relaxed) {
-            panic!("InvalidStateError: recorder has already started")
-        }
+        let prev_active = self.inner.active.swap(true, Ordering::Relaxed);
+        assert!(
+            !prev_active,
+            "InvalidStateError - recorder has already started"
+        );
 
         let inner = Arc::clone(&self.inner);
         let blob = Vec::with_capacity(128 * 1024);

@@ -95,7 +95,7 @@ fn test_none_sink_id() {
     });
 
     // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(5));
+    std::thread::sleep(Duration::from_millis(50));
     assert_eq!(state_changes.load(Ordering::Relaxed), 1); // started
 
     // changing sink_id to 'none' again should make no changes
@@ -110,14 +110,14 @@ fn test_none_sink_id() {
     assert_eq!(context.state(), AudioContextState::Suspended);
 
     // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(5));
+    std::thread::sleep(Duration::from_millis(50));
     assert_eq!(state_changes.load(Ordering::Relaxed), 2); // suspended
 
     context.resume_sync();
     assert_eq!(context.state(), AudioContextState::Running);
 
     // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(5));
+    std::thread::sleep(Duration::from_millis(50));
     assert_eq!(state_changes.load(Ordering::Relaxed), 3); // resumed
 
     context.close_sync();
@@ -125,7 +125,7 @@ fn test_none_sink_id() {
     assert!(sink_stable.load(Ordering::SeqCst));
 
     // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(5));
+    std::thread::sleep(Duration::from_millis(50));
     assert_eq!(state_changes.load(Ordering::Relaxed), 4); // closed
 }
 

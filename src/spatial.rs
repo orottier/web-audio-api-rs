@@ -6,7 +6,7 @@ use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
-use crate::param::{AudioParam, AudioParamDescriptor, AudioParamRaw, AutomationRate};
+use crate::param::{AudioParam, AudioParamDescriptor, AudioParamInner, AutomationRate};
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
 use std::f32::consts::PI;
@@ -108,13 +108,13 @@ impl AudioNode for AudioListenerNode {
     }
 
     fn set_channel_count(&self, _v: usize) {
-        panic!("AudioListenerNode has channel count constraints");
+        panic!("NotSupportedError - AudioListenerNode has channel count constraints");
     }
     fn set_channel_count_mode(&self, _v: ChannelCountMode) {
-        panic!("AudioListenerNode has channel count mode constraints");
+        panic!("NotSupportedError - AudioListenerNode has channel count mode constraints");
     }
     fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
-        panic!("AudioListenerNode has channel interpretation constraints");
+        panic!("NotSupportedError - AudioListenerNode has channel interpretation constraints");
     }
 }
 
@@ -183,15 +183,15 @@ impl AudioProcessor for ListenerRenderer {
 
 /// Data holder for the BaseAudioContext so it can reconstruct the AudioListener on request
 pub(crate) struct AudioListenerParams {
-    pub position_x: AudioParamRaw,
-    pub position_y: AudioParamRaw,
-    pub position_z: AudioParamRaw,
-    pub forward_x: AudioParamRaw,
-    pub forward_y: AudioParamRaw,
-    pub forward_z: AudioParamRaw,
-    pub up_x: AudioParamRaw,
-    pub up_y: AudioParamRaw,
-    pub up_z: AudioParamRaw,
+    pub position_x: AudioParamInner,
+    pub position_y: AudioParamInner,
+    pub position_z: AudioParamInner,
+    pub forward_x: AudioParamInner,
+    pub forward_y: AudioParamInner,
+    pub forward_z: AudioParamInner,
+    pub up_x: AudioParamInner,
+    pub up_y: AudioParamInner,
+    pub up_z: AudioParamInner,
 }
 
 use vecmath::{
@@ -256,8 +256,8 @@ pub fn azimuth_and_elevation(
     }
 
     // Make azimuth relative to "forward" and not "right" listener vector.
-    let max270 = std::ops::RangeInclusive::new(0., 270.);
-    if max270.contains(&azimuth) {
+    #[allow(clippy::manual_range_contains)]
+    if azimuth >= 0. && azimuth <= 270. {
         azimuth = 90. - azimuth;
     } else {
         azimuth = 450. - azimuth;

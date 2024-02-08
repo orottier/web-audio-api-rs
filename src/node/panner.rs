@@ -15,6 +15,22 @@ use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 
+/// Assert that the given value number is a valid value for coneOuterGain
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - the given value is not finite and lower than zero
+#[track_caller]
+#[inline(always)]
+#[allow(clippy::manual_range_contains)]
+pub(crate) fn assert_valid_cone_outer_gain(value: f64) {
+    assert!(
+        value >= 0. && value <= 1.,
+        "InvalidStateError - coneOuterGain must be in the range [0, 1]"
+    );
+}
+
 /// Load the HRTF processor for the given sample_rate
 ///
 /// The included data contains the impulse responses at 44100 Hertz, so it needs to be resampled
@@ -173,9 +189,10 @@ enum ControlMessage {
 #[track_caller]
 #[inline(always)]
 fn assert_valid_channel_count(count: usize) {
-    if count > 2 {
-        panic!("NotSupportedError - PannerNode channel count cannot be greater than two");
-    }
+    assert!(
+        count <= 2,
+        "NotSupportedError - PannerNode channel count cannot be greater than two"
+    );
 }
 
 /// Assert that the channel count is valid for the PannerNode
@@ -188,9 +205,11 @@ fn assert_valid_channel_count(count: usize) {
 #[track_caller]
 #[inline(always)]
 fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
-    if mode == ChannelCountMode::Max {
-        panic!("NotSupportedError - PannerNode channel count mode cannot be set to max");
-    }
+    assert_ne!(
+        mode,
+        ChannelCountMode::Max,
+        "NotSupportedError - PannerNode channel count mode cannot be set to max"
+    );
 }
 
 /// Internal state of the HRTF renderer
@@ -391,13 +410,29 @@ impl PannerNode {
                 panning_model,
             } = options;
 
+            assert!(
+                ref_distance >= 0.,
+                "RangeError - refDistance cannot be negative"
+            );
+            assert!(
+                max_distance > 0.,
+                "RangeError - maxDistance must be positive"
+            );
+            assert!(
+                rolloff_factor >= 0.,
+                "RangeError - rolloffFactor cannot be negative"
+            );
+            assert_valid_cone_outer_gain(cone_outer_gain);
+            assert_valid_channel_count(channel_config.count);
+            assert_valid_channel_count_mode(channel_config.count_mode);
+
             // position params
             let (param_px, render_px) = context.create_audio_param(PARAM_OPTS, &registration);
             let (param_py, render_py) = context.create_audio_param(PARAM_OPTS, &registration);
             let (param_pz, render_pz) = context.create_audio_param(PARAM_OPTS, &registration);
-            param_px.set_value_at_time(position_x, 0.);
-            param_py.set_value_at_time(position_y, 0.);
-            param_pz.set_value_at_time(position_z, 0.);
+            param_px.set_value(position_x);
+            param_py.set_value(position_y);
+            param_pz.set_value(position_z);
 
             // orientation params
             let orientation_x_opts = AudioParamDescriptor {
@@ -408,9 +443,9 @@ impl PannerNode {
                 context.create_audio_param(orientation_x_opts, &registration);
             let (param_oy, render_oy) = context.create_audio_param(PARAM_OPTS, &registration);
             let (param_oz, render_oz) = context.create_audio_param(PARAM_OPTS, &registration);
-            param_ox.set_value_at_time(orientation_x, 0.);
-            param_oy.set_value_at_time(orientation_y, 0.);
-            param_oz.set_value_at_time(orientation_z, 0.);
+            param_ox.set_value(orientation_x);
+            param_oy.set_value(orientation_y);
+            param_oz.set_value(orientation_z);
 
             let render = PannerRenderer {
                 position_x: render_px,
@@ -522,9 +557,7 @@ impl PannerNode {
     ///
     /// Panics if the provided value is negative.
     pub fn set_ref_distance(&mut self, value: f64) {
-        if value < 0. {
-            panic!("RangeError - refDistance cannot be negative");
-        }
+        assert!(value >= 0., "RangeError - refDistance cannot be negative");
         self.ref_distance = value;
         self.registration
             .post_message(ControlMessage::RefDistance(value));
@@ -540,9 +573,7 @@ impl PannerNode {
     ///
     /// Panics if the provided value is negative.
     pub fn set_max_distance(&mut self, value: f64) {
-        if value < 0. {
-            panic!("RangeError - maxDistance cannot be negative");
-        }
+        assert!(value > 0., "RangeError - maxDistance must be positive");
         self.max_distance = value;
         self.registration
             .post_message(ControlMessage::MaxDistance(value));
@@ -558,9 +589,7 @@ impl PannerNode {
     ///
     /// Panics if the provided value is negative.
     pub fn set_rolloff_factor(&mut self, value: f64) {
-        if value < 0. {
-            panic!("RangeError - rolloffFactor cannot be negative");
-        }
+        assert!(value >= 0., "RangeError - rolloffFactor cannot be negative");
         self.rolloff_factor = value;
         self.registration
             .post_message(ControlMessage::RollOffFactor(value));
@@ -596,10 +625,7 @@ impl PannerNode {
     ///
     /// Panics if the provided value is not in the range [0, 1]
     pub fn set_cone_outer_gain(&mut self, value: f64) {
-        #[allow(clippy::manual_range_contains)]
-        if value < 0. || value > 1. {
-            panic!("InvalidStateError - coneOuterGain must be in the range [0, 1]");
-        }
+        assert_valid_cone_outer_gain(value);
         self.cone_outer_gain = value;
         self.registration
             .post_message(ControlMessage::ConeOuterGain(value));
@@ -1035,6 +1061,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_audioparam_value_applies_immediately() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let options = PannerOptions {
+            position_x: 12.,
+            ..Default::default()
+        };
+        let src = PannerNode::new(&context, options);
+        assert_float_eq!(src.position_x.value(), 12., abs_all <= 0.);
+    }
+
+    #[test]
     fn test_equal_power_mono_to_stereo() {
         let sample_rate = 44100.;
         let length = RENDER_QUANTUM_SIZE * 4;
@@ -1106,7 +1143,6 @@ mod tests {
         let panner = PannerNode::new(&context, options);
         assert_eq!(panner.panning_model(), PanningModelType::EqualPower);
         panner.position_y().set_value(1.); // sound comes from above
-        panner.set_channel_count(1);
 
         src.connect(&panner);
         panner.connect(&context.destination());
@@ -1145,8 +1181,11 @@ mod tests {
         listener.up_y().set_value(0.);
         listener.up_z().set_value(1.);
 
-        // 128 input samples of value 1.
-        let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
+        // 128 input samples of value 1, stereo
+        let input = AudioBuffer::from(
+            vec![vec![1.; RENDER_QUANTUM_SIZE], vec![1.; RENDER_QUANTUM_SIZE]],
+            sample_rate,
+        );
         let mut src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
         src.set_buffer(input);
         src.start();

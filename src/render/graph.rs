@@ -427,14 +427,6 @@ impl Graph {
             // acquire a mutable borrow of the current processing node
             let mut node = nodes[*index].borrow_mut();
 
-            // make sure all input buffers have the correct number of channels, this might not be
-            // the case if the node has no inputs connected or the channel count has just changed
-            let interpretation = node.channel_config.interpretation;
-            let count = node.channel_config.count;
-            node.inputs
-                .iter_mut()
-                .for_each(|i| i.mix(count, interpretation));
-
             // let the current node process (catch any panics that may occur)
             let params = AudioParamValues::from(nodes);
             scope.node_id.set(*index);

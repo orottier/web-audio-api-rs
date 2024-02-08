@@ -52,24 +52,30 @@ impl AudioNode for AudioDestinationNode {
     }
 
     fn set_channel_count(&self, v: usize) {
-        if self.registration.context().offline() && v != self.max_channel_count() {
-            panic!("NotSupportedError: not allowed to change OfflineAudioContext destination channel count");
-        }
-        if v > self.max_channel_count() {
-            panic!(
-                "IndexSizeError: channel count cannot be greater than maxChannelCount ({})",
-                self.max_channel_count()
-            );
-        }
+        assert!(
+            !self.registration.context().offline() || v == self.max_channel_count(),
+            "NotSupportedError - not allowed to change OfflineAudioContext destination channel count"
+        );
+
+        assert!(
+            v <= self.max_channel_count(),
+            "IndexSizeError - channel count cannot be greater than maxChannelCount ({})",
+            self.max_channel_count()
+        );
+
         self.channel_config.set_count(v, self.registration());
     }
-    fn set_channel_count_mode(&self, _v: ChannelCountMode) {
+
+    fn set_channel_count_mode(&self, v: ChannelCountMode) {
         // [spec] If the AudioDestinationNode is the destination node of an
         // OfflineAudioContext, then the channel count mode cannot be changed.
         // An InvalidStateError exception MUST be thrown for any attempt to change the value.
-        if self.registration.context().offline() {
-            panic!("InvalidStateError: AudioDestinationNode has channel count mode constraints");
-        }
+        assert!(
+            !self.registration.context().offline(),
+            "InvalidStateError - AudioDestinationNode has channel count mode constraints",
+        );
+
+        self.channel_config.set_count_mode(v);
     }
 }
 

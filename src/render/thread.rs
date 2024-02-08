@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
 use dasp_sample::FromSample;
-use futures::channel;
-use futures::stream::StreamExt;
+use futures_channel::{mpsc, oneshot};
+use futures_util::StreamExt as _;
 
 use super::AudioRenderQuantum;
 use crate::buffer::{AudioBuffer, AudioBufferOptions};
@@ -268,8 +268,8 @@ impl RenderThread {
     pub async fn render_audiobuffer(
         mut self,
         length: usize,
-        mut suspend_callbacks: Vec<(usize, channel::oneshot::Sender<()>)>,
-        mut resume_receiver: channel::mpsc::Receiver<()>,
+        mut suspend_callbacks: Vec<(usize, oneshot::Sender<()>)>,
+        mut resume_receiver: mpsc::Receiver<()>,
     ) -> AudioBuffer {
         let options = AudioBufferOptions {
             number_of_channels: self.number_of_channels,

@@ -1,8 +1,8 @@
 //! AudioParam interface
 use std::any::Any;
 use std::slice::{Iter, IterMut};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use arrayvec::ArrayVec;
 
@@ -20,45 +20,42 @@ const SNAP_TO_TARGET: f32 = 1e-10;
 
 #[track_caller]
 fn assert_is_finite(value: f32) {
-    if !value.is_finite() {
-        panic!("TypeError - The provided value is non-finite.");
-    }
+    assert!(
+        value.is_finite(),
+        "TypeError - The provided value is non-finite."
+    );
 }
 
 #[track_caller]
 fn assert_strictly_positive(value: f64) {
-    if !value.is_finite() {
-        panic!("TypeError - The provided value is non-finite.");
-    }
-
-    if value <= 0. {
-        panic!(
-            "RangeError - duration ({:?}) should be strictly positive",
-            value
-        );
-    }
+    assert!(
+        value.is_finite(),
+        "TypeError - The provided value is non-finite."
+    );
+    assert!(
+        value > 0.,
+        "RangeError - duration ({:?}) should be strictly positive",
+        value
+    );
 }
 
 #[track_caller]
 fn assert_not_zero(value: f32) {
     assert_is_finite(value);
-
-    if value == 0. {
-        panic!(
-            "RangeError - value ({:?}) should not be equal to zero",
-            value,
-        )
-    }
+    assert_ne!(
+        value, 0.,
+        "RangeError - value ({:?}) should not be equal to zero",
+        value
+    );
 }
 
 #[track_caller]
 fn assert_sequence_length(values: &[f32]) {
-    if values.len() < 2 {
-        panic!(
-            "InvalidStateError - sequence length ({:?}) should not be less than 2",
-            values.len()
-        )
-    }
+    assert!(
+        values.len() >= 2,
+        "InvalidStateError - sequence length ({:?}) should not be less than 2",
+        values.len()
+    );
 }
 
 // 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
@@ -233,16 +230,18 @@ impl AudioParamEventTimeline {
 
     // panic if dirty, we are doing something wrong here
     fn peek(&self) -> Option<&AudioParamEvent> {
-        if self.dirty {
-            panic!("`AudioParamEventTimeline`: Invalid `.peek()` call, the queue is dirty");
-        }
+        assert!(
+            !self.dirty,
+            "`AudioParamEventTimeline`: Invalid `.peek()` call, the queue is dirty"
+        );
         self.inner.first()
     }
 
     fn next(&self) -> Option<&AudioParamEvent> {
-        if self.dirty {
-            panic!("`AudioParamEventTimeline`: Invalid `.next()` call, the queue is dirty");
-        }
+        assert!(
+            !self.dirty,
+            "`AudioParamEventTimeline`: Invalid `.next()` call, the queue is dirty"
+        );
         self.inner.get(1)
     }
 
@@ -265,18 +264,18 @@ impl AudioParamEventTimeline {
 #[derive(Clone)] // for the node bindings, see #378
 pub struct AudioParam {
     registration: Arc<AudioContextRegistration>,
-    raw_parts: AudioParamRaw,
+    raw_parts: AudioParamInner,
 }
 
 // helper struct to attach / detach to context (for borrow reasons)
 #[derive(Clone)]
-pub(crate) struct AudioParamRaw {
-    default_value: f32, // immutable
-    min_value: f32,     // immutable
-    max_value: f32,     // immutable
-    automation_rate_constrained: bool,
-    // TODO Use `Weak` instead of `Arc`. The `AudioParamProcessor` is the owner.
-    shared_parts: Arc<AudioParamShared>,
+pub(crate) struct AudioParamInner {
+    default_value: f32,                          // immutable
+    min_value: f32,                              // immutable
+    max_value: f32,                              // immutable
+    automation_rate_constrained: bool,           // effectively immutable
+    automation_rate: Arc<Mutex<AutomationRate>>, // shared with clones
+    current_value: Arc<AtomicF32>,               // shared with clones and with render thread
 }
 
 impl AudioNode for AudioParam {
@@ -305,20 +304,21 @@ impl AudioNode for AudioParam {
     }
 
     fn set_channel_count(&self, _v: usize) {
-        panic!("AudioParam has channel count constraints");
+        panic!("NotSupportedError - AudioParam has channel count constraints");
     }
     fn set_channel_count_mode(&self, _v: ChannelCountMode) {
-        panic!("AudioParam has channel count mode constraints");
+        panic!("NotSupportedError - AudioParam has channel count mode constraints");
     }
     fn set_channel_interpretation(&self, _v: ChannelInterpretation) {
-        panic!("AudioParam has channel interpretation constraints");
+        panic!("NotSupportedError - AudioParam has channel interpretation constraints");
     }
 }
 
 impl AudioParam {
     /// Current value of the automation rate of the AudioParam
+    #[allow(clippy::missing_panics_doc)]
     pub fn automation_rate(&self) -> AutomationRate {
-        self.raw_parts.shared_parts.load_automation_rate()
+        *self.raw_parts.automation_rate.lock().unwrap()
     }
 
     /// Update the current value of the automation rate of the AudioParam
@@ -327,11 +327,16 @@ impl AudioParam {
     ///
     /// Some nodes have automation rate constraints and may panic when updating the value.
     pub fn set_automation_rate(&self, value: AutomationRate) {
-        if self.raw_parts.automation_rate_constrained && value != self.automation_rate() {
-            panic!("InvalidStateError: automation rate cannot be changed for this param");
-        }
+        assert!(
+            !self.raw_parts.automation_rate_constrained || value == self.automation_rate(),
+            "InvalidStateError - automation rate cannot be changed for this param"
+        );
 
+        let mut guard = self.raw_parts.automation_rate.lock().unwrap();
+        *guard = value;
         self.registration().post_message(value);
+        drop(guard); // drop guard after sending message to prevent out of order arrivals on
+                     // concurrent access
     }
 
     pub(crate) fn set_automation_rate_constrained(&mut self, value: bool) {
@@ -362,7 +367,7 @@ impl AudioParam {
     //      test_exponential_ramp_a_rate_multiple_blocks
     //      test_exponential_ramp_k_rate_multiple_blocks
     pub fn value(&self) -> f32 {
-        self.raw_parts.shared_parts.load_current_value()
+        self.raw_parts.current_value.load(Ordering::Acquire)
     }
 
     /// Set the value of the `AudioParam`.
@@ -384,7 +389,9 @@ impl AudioParam {
         assert_is_finite(value);
         // current_value should always be clamped
         let clamped = value.clamp(self.raw_parts.min_value, self.raw_parts.max_value);
-        self.raw_parts.shared_parts.store_current_value(clamped);
+        self.raw_parts
+            .current_value
+            .store(clamped, Ordering::Release);
 
         // this event is meant to update param intrinsic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
@@ -610,7 +617,7 @@ impl AudioParam {
     }
 
     // helper function to detach from context (for borrow reasons)
-    pub(crate) fn into_raw_parts(self) -> AudioParamRaw {
+    pub(crate) fn into_raw_parts(self) -> AudioParamInner {
         let Self {
             registration: _,
             raw_parts,
@@ -621,7 +628,7 @@ impl AudioParam {
     // helper function to attach to context (for borrow reasons)
     pub(crate) fn from_raw_parts(
         registration: AudioContextRegistration,
-        raw_parts: AudioParamRaw,
+        raw_parts: AudioParamInner,
     ) -> Self {
         Self {
             registration: registration.into(),
@@ -632,47 +639,6 @@ impl AudioParam {
     fn send_event(&self, event: AudioParamEvent) -> &Self {
         self.registration().post_message(event);
         self
-    }
-}
-
-// Atomic fields of `AudioParam` that could be safely shared between threads
-// when wrapped into an `Arc`.
-//
-// Uses the canonical ordering for handover of values, i.e. `Acquire` on load
-// and `Release` on store.
-#[derive(Debug)]
-pub(crate) struct AudioParamShared {
-    current_value: AtomicF32,
-    is_a_rate: AtomicBool,
-}
-
-impl AudioParamShared {
-    pub(crate) fn new(current_value: f32, automation_rate: AutomationRate) -> Self {
-        Self {
-            current_value: AtomicF32::new(current_value),
-            is_a_rate: AtomicBool::new(automation_rate.is_a_rate()),
-        }
-    }
-
-    pub(crate) fn load_current_value(&self) -> f32 {
-        self.current_value.load(Ordering::Acquire)
-    }
-
-    pub(crate) fn store_current_value(&self, value: f32) {
-        self.current_value.store(value, Ordering::Release);
-    }
-
-    pub(crate) fn load_automation_rate(&self) -> AutomationRate {
-        if self.is_a_rate.load(Ordering::Acquire) {
-            AutomationRate::A
-        } else {
-            AutomationRate::K
-        }
-    }
-
-    pub(crate) fn store_automation_rate(&self, automation_rate: AutomationRate) {
-        self.is_a_rate
-            .store(automation_rate.is_a_rate(), Ordering::Release);
     }
 }
 
@@ -691,7 +657,7 @@ pub(crate) struct AudioParamProcessor {
     max_value: f32,     // immutable
     intrinsic_value: f32,
     automation_rate: AutomationRate,
-    shared_parts: Arc<AudioParamShared>,
+    current_value: Arc<AtomicF32>,
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
     buffer: ArrayVec<f32, RENDER_QUANTUM_SIZE>,
@@ -719,7 +685,6 @@ impl AudioProcessor for AudioParamProcessor {
     fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(automation_rate) = msg.downcast_ref::<AutomationRate>() {
             self.automation_rate = *automation_rate;
-            self.shared_parts.store_automation_rate(*automation_rate);
             return;
         }
 
@@ -956,13 +921,11 @@ impl AudioParamProcessor {
             let end_time = start_time + event.duration.unwrap();
 
             for queued in self.event_timeline.iter() {
-                if queued.time > start_time && queued.time < end_time {
-                    panic!(
-                        "NotSupportedError: scheduling SetValueCurveAtTime ({:?}) at
-                            time of another automation event ({:?})",
-                        event, queued,
-                    );
-                }
+                assert!(
+                    queued.time <= start_time || queued.time >= end_time,
+                    "NotSupportedError - scheduling SetValueCurveAtTime ({:?}) at time of another automation event ({:?})",
+                    event, queued,
+                );
             }
         }
 
@@ -981,13 +944,11 @@ impl AudioParamProcessor {
                     let start_time = queued.time;
                     let end_time = start_time + queued.duration.unwrap();
 
-                    if event.time > start_time && event.time < end_time {
-                        panic!(
-                            "NotSupportedError: scheduling automation event ({:?})
-                                during SetValueCurveAtTime ({:?})",
-                            event, queued,
-                        );
-                    }
+                    assert!(
+                        event.time <= start_time || event.time >= end_time,
+                        "NotSupportedError - scheduling automation event ({:?}) during SetValueCurveAtTime ({:?})",
+                        event, queued,
+                    );
                 }
             }
         }
@@ -1509,7 +1470,7 @@ impl AudioParamProcessor {
         // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
         let clamped = self.intrinsic_value.clamp(self.min_value, self.max_value);
-        self.shared_parts.store_current_value(clamped);
+        self.current_value.store(clamped, Ordering::Release);
 
         // clear the buffer for this block
         self.buffer.clear();
@@ -1614,26 +1575,27 @@ pub(crate) fn audio_param_pair(
         ..
     } = descriptor;
 
-    let shared_parts = Arc::new(AudioParamShared::new(default_value, automation_rate));
+    let current_value = Arc::new(AtomicF32::new(default_value));
 
     let param = AudioParam {
         registration: registration.into(),
-        raw_parts: AudioParamRaw {
+        raw_parts: AudioParamInner {
             default_value,
             max_value,
             min_value,
             automation_rate_constrained: false,
-            shared_parts: Arc::clone(&shared_parts),
+            automation_rate: Arc::new(Mutex::new(automation_rate)),
+            current_value: Arc::clone(&current_value),
         },
     };
 
     let processor = AudioParamProcessor {
         intrinsic_value: default_value,
+        current_value,
         default_value,
         min_value,
         max_value,
         automation_rate,
-        shared_parts,
         event_timeline: AudioParamEventTimeline::new(),
         last_event: None,
         buffer: ArrayVec::new(),
@@ -1703,6 +1665,52 @@ mod tests {
         assert_float_eq!(param.min_value(), -10., abs_all <= 0.);
         assert_float_eq!(param.max_value(), 10., abs_all <= 0.);
         assert_float_eq!(param.value(), 0., abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_automation_rate_synchronicity_on_control_thread() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_automation_rate(AutomationRate::K);
+        assert_eq!(param.automation_rate(), AutomationRate::K);
+    }
+
+    #[test]
+    fn test_audioparam_clones_in_sync() {
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -10.,
+            max_value: 10.,
+        };
+        let (param1, mut render) = audio_param_pair(opts, context.mock_registration());
+        let param2 = param1.clone();
+
+        // changing automation rate on param1 should reflect in param2
+        param1.set_automation_rate(AutomationRate::K);
+        assert_eq!(param2.automation_rate(), AutomationRate::K);
+
+        // setting value on param1 should reflect in param2
+        render.handle_incoming_event(param1.set_value_raw(2.));
+        assert_float_eq!(param1.value(), 2., abs_all <= 0.);
+        assert_float_eq!(param2.value(), 2., abs_all <= 0.);
+
+        // setting value on param2 should reflect in param1
+        render.handle_incoming_event(param2.set_value_raw(3.));
+        assert_float_eq!(param1.value(), 3., abs_all <= 0.);
+        assert_float_eq!(param2.value(), 3., abs_all <= 0.);
     }
 
     #[test]

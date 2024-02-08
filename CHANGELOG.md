@@ -1,9 +1,25 @@
 # Version History
 
+## Version 0.42.0 (2024-02-05)
+
+- Added MediaTrackConstraints.channelCount for multi-channel microphone input
+- Fix: needless upmixing of AudioNode input channels for `max` and `clampedMax` interpretation
+- Fix: AudioParam value not returned correctly before rendering has started
+- Fix: eagerly panic for invalid AudioNode settings in constructors
+
+## Version 0.41.1 (2024-01-11)
+
+- Unified panic messages to format `<JsErrorType> - <Actual message>`
+- Unified README.md and crate level docs
+- Fix: minimize floating point errors in AudioBufferSourceNode currentTime calculation
+- Fix: AudioParam automationRate does not instantly update on the control thread
+- Fix: AudioParam better handling of non finite values in arguments
+- Fix: Panic at Analyser initialization for some combinations of min/maxDecibel
+
 ## Version 0.41.0 (2024-01-04)
 
 - Fix BaseAudioContext onChangeState to signal device readiness
-- Fix OfflineAudioContext::state is not updated when calling supend and resume
+- Fix OfflineAudioContext::state is not updated when calling suspend and resume
 - Fix AudioContext resume_sync, suspend_sync, close_sync now block until completion
 - Added async versions of AudioContext suspend/resume/close
 

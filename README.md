@@ -18,7 +18,7 @@ use it in desktop apps, command line utilities, headless execution, etc.
 
 ## Example usage
 
-```rust
+```rust,no_run
 use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
@@ -46,7 +46,7 @@ biquad.connect(&context.destination());
 src.start();
 
 // enjoy listening
-loop { }
+std::thread::sleep(std::time::Duration::from_secs(4));
 ```
 
 Check out the [docs](https://docs.rs/web-audio-api) for more info.
@@ -59,7 +59,6 @@ deviations could not be avoided:
 - naming: snake_case instead of CamelCase
 - getters/setters methods instead of exposed attributes
 - introduced some namespacing
-- AudioWorklet functionality is provided in a more rust-friendly way
 - inheritance is modelled with traits
 - ...
 

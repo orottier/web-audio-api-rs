@@ -148,7 +148,7 @@ pub struct MediaTrackConstraints {
     // ConstrainBoolean autoGainControl;
     // ConstrainBoolean noiseSuppression;
     pub latency: Option<f64>,
-    //ConstrainULong channelCount;
+    pub channel_count: Option<u32>, // TODO model as ConstrainULong;
     pub device_id: Option<String>,
     // ConstrainDOMString groupId;
 }
@@ -218,9 +218,9 @@ fn is_valid_device_id(device_id: &str) -> bool {
 /// std::thread::sleep(std::time::Duration::from_secs(4));
 /// ```
 pub fn get_user_media_sync(constraints: MediaStreamConstraints) -> MediaStream {
-    let mut options = match constraints {
-        MediaStreamConstraints::Audio => AudioContextOptions::default(),
-        MediaStreamConstraints::AudioWithConstraints(cs) => cs.into(),
+    let (channel_count, mut options) = match constraints {
+        MediaStreamConstraints::Audio => (None, AudioContextOptions::default()),
+        MediaStreamConstraints::AudioWithConstraints(cs) => (cs.channel_count, cs.into()),
     };
 
     if !is_valid_device_id(&options.sink_id) {
@@ -228,5 +228,5 @@ pub fn get_user_media_sync(constraints: MediaStreamConstraints) -> MediaStream {
         options.sink_id = String::from("");
     }
 
-    crate::io::build_input(options)
+    crate::io::build_input(options, channel_count)
 }

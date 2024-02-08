@@ -109,27 +109,32 @@ impl PeriodicWave {
 
         let (real, imag) = match (real, imag) {
             (Some(r), Some(i)) => {
-                if r.len() != i.len() {
-                    panic!("IndexSizeError: `real` and `imag` length should be equal");
-                } else if r.len() < 2 {
-                    // i and r have same length
-                    panic!("IndexSizeError: `real` and `imag` length should at least 2");
-                }
+                assert_eq!(
+                    r.len(),
+                    i.len(),
+                    "IndexSizeError - `real` and `imag` length should be equal"
+                );
+                assert!(
+                    r.len() >= 2,
+                    "IndexSizeError - `real` and `imag` length should at least 2"
+                );
 
                 (r, i)
             }
             (Some(r), None) => {
-                if r.len() < 2 {
-                    panic!("IndexSizeError: `real` and `imag` length should at least 2");
-                }
+                assert!(
+                    r.len() >= 2,
+                    "IndexSizeError - `real` and `imag` length should at least 2"
+                );
 
                 let len = r.len();
                 (r, vec![0.; len])
             }
             (None, Some(i)) => {
-                if i.len() < 2 {
-                    panic!("IndexSizeError: `real` and `imag` length should at least 2");
-                }
+                assert!(
+                    i.len() >= 2,
+                    "IndexSizeError - `real` and `imag` length should at least 2"
+                );
 
                 let len = i.len();
                 (vec![0.; len], i)

@@ -49,3 +49,6 @@ jobs:
       # run tests
       - name: Run tests
         run: cargo test --verbose --all-features
+
+      - name: Build package
+        run: cargo package --locked --verbose --all-features

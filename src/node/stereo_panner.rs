@@ -43,9 +43,10 @@ impl Default for StereoPannerOptions {
 #[track_caller]
 #[inline(always)]
 fn assert_valid_channel_count(count: usize) {
-    if count > 2 {
-        panic!("NotSupportedError - StereoPannerNode channel count cannot be greater than two");
-    }
+    assert!(
+        count <= 2,
+        "NotSupportedError - StereoPannerNode channel count cannot be greater than two"
+    );
 }
 
 /// Assert that the channel count is valid for the StereoPannerNode
@@ -58,9 +59,11 @@ fn assert_valid_channel_count(count: usize) {
 #[track_caller]
 #[inline(always)]
 fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
-    if mode == ChannelCountMode::Max {
-        panic!("NotSupportedError - StereoPannerNode channel count mode cannot be set to max");
-    }
+    assert_ne!(
+        mode,
+        ChannelCountMode::Max,
+        "NotSupportedError - StereoPannerNode channel count mode cannot be set to max",
+    );
 }
 
 /// Generates the stereo gains for a specific x ∈ [0, 1] derived from pan.
@@ -137,10 +140,6 @@ impl AudioNode for StereoPannerNode {
 
     fn number_of_outputs(&self) -> usize {
         1
-    }
-
-    fn channel_count_mode(&self) -> ChannelCountMode {
-        ChannelCountMode::ClampedMax
     }
 
     fn set_channel_count_mode(&self, mode: ChannelCountMode) {
@@ -354,6 +353,24 @@ mod tests {
             let pan = panner.pan.value();
             assert_float_eq!(pan, default_pan, abs_all <= 0.);
         }
+    }
+
+    #[test]
+    fn test_init_with_channel_count_mode() {
+        let context = OfflineAudioContext::new(2, 1, 44_100.);
+        let options = StereoPannerOptions {
+            channel_config: ChannelConfigOptions {
+                count_mode: ChannelCountMode::Explicit,
+                ..ChannelConfigOptions::default()
+            },
+            ..StereoPannerOptions::default()
+        };
+        let panner = StereoPannerNode::new(&context, options);
+        assert_eq!(
+            panner.channel_config().count_mode(),
+            ChannelCountMode::Explicit
+        );
+        assert_eq!(panner.channel_count_mode(), ChannelCountMode::Explicit);
     }
 
     #[test]
