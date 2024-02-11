@@ -77,6 +77,7 @@ impl Default for AnalyserOptions {
 /// - `cargo run --release --example analyser`
 /// - `cd showcase/mic_playback && cargo run --release`
 ///
+#[derive(Debug)]
 pub struct AnalyserNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

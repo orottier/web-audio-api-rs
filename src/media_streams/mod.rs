@@ -32,6 +32,14 @@ pub struct MediaStreamTrack {
     inner: Arc<MediaStreamTrackInner>,
 }
 
+impl std::fmt::Debug for MediaStreamTrack {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MediaStreamTrack")
+            .field("ended", &self.inner.ended)
+            .finish_non_exhaustive()
+    }
+}
+
 struct MediaStreamTrackInner {
     data: ArcSwap<FallibleBuffer>,
     position: AtomicU64,
@@ -119,7 +127,7 @@ impl Iterator for MediaStreamTrackIter {
 ///
 /// A stream consists of several tracks, such as video or audio tracks. Each track is specified as
 /// an instance of [`MediaStreamTrack`].
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MediaStream {
     tracks: Vec<MediaStreamTrack>,
 }
