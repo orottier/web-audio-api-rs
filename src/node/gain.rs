@@ -24,6 +24,7 @@ impl Default for GainOptions {
 }
 
 /// AudioNode for volume control
+#[derive(Debug)]
 pub struct GainNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

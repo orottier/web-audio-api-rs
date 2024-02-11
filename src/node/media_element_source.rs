@@ -48,6 +48,7 @@ pub struct MediaElementAudioSourceOptions<'a> {
 /// # Examples
 ///
 /// - `cargo run --release --example media_element`
+#[derive(Debug)]
 pub struct MediaElementAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

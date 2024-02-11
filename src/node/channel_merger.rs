@@ -63,6 +63,7 @@ impl Default for ChannelMergerOptions {
 }
 
 /// AudioNode for combining channels from multiple audio streams into a single audio stream.
+#[derive(Debug)]
 pub struct ChannelMergerNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

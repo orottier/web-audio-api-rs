@@ -106,6 +106,7 @@ pub struct ConvolverOptions {
 ///
 /// - `cargo run --release --example convolution`
 ///
+#[derive(Debug)]
 pub struct ConvolverNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,

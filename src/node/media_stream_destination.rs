@@ -53,7 +53,6 @@ use crossbeam_channel::{self, Receiver, Sender};
 /// # Examples
 ///
 /// - `cargo run --release --example recorder`
-
 pub struct MediaStreamAudioDestinationNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

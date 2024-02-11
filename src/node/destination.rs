@@ -30,6 +30,7 @@ use super::{
 /// osc.start();
 /// ```
 ///
+#[derive(Debug)]
 pub struct AudioDestinationNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

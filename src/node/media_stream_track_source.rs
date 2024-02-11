@@ -57,6 +57,7 @@ pub struct MediaStreamTrackAudioSourceOptions<'a> {
 ///
 /// loop {}
 /// ```
+#[derive(Debug)]
 pub struct MediaStreamTrackAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

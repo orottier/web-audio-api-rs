@@ -23,6 +23,7 @@ pub struct MediaStreamAudioSourceOptions<'a> {
 /// iterator never blocks. Use a
 /// [`MediaElementAudioSourceNode`](crate::node::MediaElementAudioSourceNode) for real time safe
 /// media playback.
+#[derive(Debug)]
 pub struct MediaStreamAudioSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

@@ -115,6 +115,7 @@ fn get_stereo_gains(sine_table: &[f32], x: f32) -> [f32; 2] {
 ///
 /// - `cargo run --release --example stereo_panner`
 ///
+#[derive(Debug)]
 pub struct StereoPannerNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,

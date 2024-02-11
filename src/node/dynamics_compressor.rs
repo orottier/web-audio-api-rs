@@ -96,6 +96,7 @@ impl Default for DynamicsCompressorOptions {
 ///
 /// - `cargo run --release --example compressor`
 ///
+#[derive(Debug)]
 pub struct DynamicsCompressorNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

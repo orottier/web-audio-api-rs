@@ -63,6 +63,7 @@ impl Default for ChannelSplitterOptions {
 }
 
 /// AudioNode for accessing the individual channels of an audio stream in the routing graph
+#[derive(Debug)]
 pub struct ChannelSplitterNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

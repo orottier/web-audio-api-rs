@@ -292,6 +292,7 @@ impl Default for BiquadFilterOptions {
 ///
 /// - `cargo run --release --example biquad`
 ///
+#[derive(Debug)]
 pub struct BiquadFilterNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
