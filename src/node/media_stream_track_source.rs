@@ -13,6 +13,7 @@ use super::{AudioNode, ChannelConfig, MediaStreamRenderer};
 // @note - Does not extend AudioNodeOptions because AudioNodeOptions are
 // useless for source nodes as they instruct how to upmix the inputs.
 // This is a common source of confusion, see e.g. https://github.com/mdn/content/pull/18472
+#[derive(Debug)]
 pub struct MediaStreamTrackAudioSourceOptions<'a> {
     pub media_stream_track: &'a MediaStreamTrack,
 }
