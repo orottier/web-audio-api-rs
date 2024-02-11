@@ -1,7 +1,5 @@
 //! The `BaseAudioContext` interface and the `AudioContext` and `OfflineAudioContext` types
 
-#![deny(missing_debug_implementations)]
-
 use std::{any::Any, ops::Range};
 
 mod base;

@@ -3,8 +3,6 @@
 //! See `examples/worklet.rs` or `examples/worklet_bitcrusher.rs` for an example implementation of
 //! user defined nodes.
 
-#![deny(missing_debug_implementations)]
-
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamDescriptor};

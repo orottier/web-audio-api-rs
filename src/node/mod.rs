@@ -1,7 +1,5 @@
 //! The AudioNode interface and concrete types
 
-#![deny(missing_debug_implementations)]
-
 use std::f32::consts::PI;
 use std::sync::{Arc, Mutex, OnceLock};
 

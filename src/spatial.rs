@@ -28,6 +28,7 @@ pub(crate) const PARAM_OPTS: AudioParamDescriptor = AudioParamDescriptor {
 /// # Usage
 ///
 /// For example usage, check the [`PannerNode`](crate::node::PannerNode) docs.
+#[derive(Debug)]
 pub struct AudioListener {
     pub(crate) position_x: AudioParam,
     pub(crate) position_y: AudioParam,

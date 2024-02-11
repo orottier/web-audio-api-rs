@@ -149,6 +149,15 @@ pub struct MediaRecorder {
     inner: Arc<MediaRecorderInner>,
 }
 
+impl std::fmt::Debug for MediaRecorder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MediaRecorder")
+            .field("stream", &self.inner.stream)
+            .field("active", &self.inner.active)
+            .finish_non_exhaustive()
+    }
+}
+
 impl MediaRecorder {
     /// Creates a new `MediaRecorder` object, given a [`MediaStream`] to record.
     ///

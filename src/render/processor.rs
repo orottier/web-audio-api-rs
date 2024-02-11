@@ -26,6 +26,17 @@ pub struct RenderScope {
     pub(crate) event_sender: Option<Sender<EventDispatch>>,
 }
 
+impl std::fmt::Debug for RenderScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut format = f.debug_struct("RenderScope");
+        format
+            .field("current_frame", &self.current_frame)
+            .field("current_time", &self.current_time)
+            .field("sample_rate", &self.sample_rate)
+            .finish_non_exhaustive()
+    }
+}
+
 impl RenderScope {
     pub(crate) fn send_ended_event(&self) {
         if let Some(sender) = self.event_sender.as_ref() {
@@ -152,6 +163,12 @@ impl Deref for DerefAudioRenderQuantumChannel<'_> {
 /// Provided to implementations of [`AudioProcessor`] in the render thread
 pub struct AudioParamValues<'a> {
     nodes: &'a NodeCollection,
+}
+
+impl<'a> std::fmt::Debug for AudioParamValues<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioParamValues").finish_non_exhaustive()
+    }
 }
 
 impl<'a> AudioParamValues<'a> {

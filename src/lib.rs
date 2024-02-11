@@ -4,6 +4,7 @@
 #![warn(clippy::missing_panics_doc)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![deny(trivial_numeric_casts)]
+#![deny(missing_debug_implementations)]
 
 use std::error::Error;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};

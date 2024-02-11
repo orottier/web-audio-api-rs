@@ -5,13 +5,14 @@ use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
 use crate::events::{EventDispatch, EventHandler, EventPayload, EventType};
 use crate::Event;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) struct AudioRenderCapacityLoad {
     pub render_timestamp: f64,
     pub load_value: f64,
 }
 
 /// Options for constructing an `AudioRenderCapacity`
+#[derive(Clone, Debug)]
 pub struct AudioRenderCapacityOptions {
     /// An update interval (in seconds) for dispatching [`AudioRenderCapacityEvent`]s
     pub update_interval: f64,
@@ -68,6 +69,17 @@ pub struct AudioRenderCapacity {
     context: ConcreteBaseAudioContext,
     receiver: Receiver<AudioRenderCapacityLoad>,
     stop_send: Arc<Mutex<Option<Sender<()>>>>,
+}
+
+impl std::fmt::Debug for AudioRenderCapacity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioRenderCapacity")
+            .field(
+                "context",
+                &format!("BaseAudioContext@{}", self.context.address()),
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 impl AudioRenderCapacity {
