@@ -261,14 +261,30 @@ impl AudioParamEventTimeline {
 }
 
 /// AudioParam controls an individual aspect of an AudioNode's functionality, such as volume.
-#[derive(Clone)] // for the node bindings, see #378
+#[derive(Clone)] // `Clone` for the node bindings, see #378
 pub struct AudioParam {
     registration: Arc<AudioContextRegistration>,
     raw_parts: AudioParamInner,
 }
 
+impl std::fmt::Debug for AudioParam {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioParam")
+            .field("registration", &self.registration())
+            .field("automation_rate", &self.automation_rate())
+            .field(
+                "automation_rate_constrained",
+                &self.raw_parts.automation_rate_constrained,
+            )
+            .field("default_value", &self.default_value())
+            .field("min_value", &self.min_value())
+            .field("max_value", &self.max_value())
+            .finish()
+    }
+}
+
 // helper struct to attach / detach to context (for borrow reasons)
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct AudioParamInner {
     default_value: f32,                          // immutable
     min_value: f32,                              // immutable

@@ -94,6 +94,18 @@ pub struct AudioContextRegistration {
     id: AudioNodeId,
 }
 
+impl std::fmt::Debug for AudioContextRegistration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioContextRegistration")
+            .field("id", &self.id)
+            .field(
+                "context",
+                &format!("BaseAudioContext@{}", self.context.address()),
+            )
+            .finish()
+    }
+}
+
 impl AudioContextRegistration {
     /// Get the audio node id of the registration
     #[must_use]

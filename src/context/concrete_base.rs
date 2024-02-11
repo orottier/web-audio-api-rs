@@ -52,12 +52,11 @@ impl AudioNodeIdProvider {
 /// [`OfflineAudioContext`](crate::context::OfflineAudioContext), and the `context()` method on
 /// `AudioNode`s.
 ///
-/// The `ConcreteBaseAudioContext` allows for cheap cloning (using an `Arc` internally).
+/// The `ConcreteBaseAudioContext` allows for shallow cloning (using an `Arc` internally).
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
 #[doc(hidden)]
 pub struct ConcreteBaseAudioContext {
-    /// inner makes `ConcreteBaseAudioContext` cheap to clone
     inner: Arc<ConcreteBaseAudioContextInner>,
 }
 
@@ -255,6 +254,10 @@ impl ConcreteBaseAudioContext {
         }
 
         base
+    }
+
+    pub(crate) fn address(&self) -> usize {
+        Arc::as_ptr(&self.inner) as usize
     }
 
     /// Send a control message to the render thread

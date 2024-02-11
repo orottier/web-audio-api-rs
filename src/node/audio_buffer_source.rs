@@ -102,6 +102,7 @@ enum ControlMessage {
 /// - `cargo run --release --example trigger_soundfile`
 /// - `cargo run --release --example granular`
 ///
+#[derive(Debug)]
 pub struct AudioBufferSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
