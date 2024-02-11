@@ -66,6 +66,19 @@ impl PartialEq for ConcreteBaseAudioContext {
     }
 }
 
+impl std::fmt::Debug for ConcreteBaseAudioContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BaseAudioContext")
+            .field("id", &self.address())
+            .field("state", &self.state())
+            .field("sample_rate", &self.sample_rate())
+            .field("current_time", &self.current_time())
+            .field("max_channel_count", &self.max_channel_count())
+            .field("offline", &self.offline())
+            .finish_non_exhaustive()
+    }
+}
+
 /// Inner representation of the `ConcreteBaseAudioContext`
 ///
 /// These fields are wrapped inside an `Arc` in the actual `ConcreteBaseAudioContext`.
