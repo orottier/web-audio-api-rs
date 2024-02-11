@@ -3,6 +3,8 @@
 //! See `examples/worklet.rs` or `examples/worklet_bitcrusher.rs` for an example implementation of
 //! user defined nodes.
 
+#![deny(missing_debug_implementations)]
+
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamDescriptor};
@@ -16,6 +18,12 @@ use std::ops::{Deref, DerefMut};
 pub struct AudioParamValues<'a> {
     values: crate::render::AudioParamValues<'a>,
     map: &'a HashMap<String, AudioParamId>,
+}
+
+impl<'a> std::fmt::Debug for AudioParamValues<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioParamValues").finish_non_exhaustive()
+    }
 }
 
 impl<'a> AudioParamValues<'a> {
@@ -128,6 +136,7 @@ impl<C: Default> Default for AudioWorkletNodeOptions<C> {
 /// - `cargo run --release --example worklet`
 /// - `cargo run --release --example worklet_bitcrusher`
 ///
+#[derive(Debug)]
 pub struct AudioWorkletNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
