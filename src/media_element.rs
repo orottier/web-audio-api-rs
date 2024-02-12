@@ -19,6 +19,14 @@ pub(crate) struct RTSStream {
     playback_rate: Arc<AtomicF64>,
 }
 
+impl std::fmt::Debug for RTSStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RTSStream")
+            .field("number_of_channels", &self.number_of_channels)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Controller actions for a media element
 pub(crate) enum MediaElementAction {
     /// Seek to the given timestamp
@@ -44,6 +52,18 @@ pub struct MediaElement {
     loop_: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     playback_rate: Arc<AtomicF64>,
+}
+
+impl std::fmt::Debug for MediaElement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MediaElement")
+            .field("stream", &self.stream)
+            .field("current_time", &self.current_time())
+            .field("loop", &self.loop_())
+            .field("paused", &self.paused())
+            .field("playback_rate", &self.playback_rate())
+            .finish_non_exhaustive()
+    }
 }
 
 impl MediaElement {

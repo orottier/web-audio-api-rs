@@ -118,6 +118,7 @@ impl Default for WaveShaperOptions {
 /// # Example
 ///
 /// - `cargo run --release --example waveshaper`
+#[derive(Debug)]
 pub struct WaveShaperNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,

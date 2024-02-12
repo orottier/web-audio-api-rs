@@ -127,13 +127,14 @@ impl MediaDeviceInfo {
 
 /// Dictionary used to instruct what sort of tracks to include in the [`MediaStream`] returned by
 /// [`get_user_media_sync`]
+#[derive(Clone, Debug)]
 pub enum MediaStreamConstraints {
     Audio,
     AudioWithConstraints(MediaTrackConstraints),
 }
 
 /// Desired media stream track settings for [`MediaTrackConstraints`]
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 #[non_exhaustive]
 pub struct MediaTrackConstraints {
     // ConstrainULong width;

@@ -66,6 +66,7 @@ fn assert_valid_feedback_coefs(coefs: &[f64]) {
 //   required sequence<double> feedforward;
 //   required sequence<double> feedback;
 // };
+#[derive(Clone, Debug)]
 pub struct IIRFilterOptions {
     /// audio node options
     pub channel_config: ChannelConfigOptions,
@@ -134,6 +135,7 @@ pub struct IIRFilterOptions {
 ///
 /// - `cargo run --release --example iir`
 ///
+#[derive(Debug)]
 pub struct IIRFilterNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,

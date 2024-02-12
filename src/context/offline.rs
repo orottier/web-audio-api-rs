@@ -29,6 +29,15 @@ pub struct OfflineAudioContext {
     resume_sender: mpsc::Sender<()>,
 }
 
+impl std::fmt::Debug for OfflineAudioContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OfflineAudioContext")
+            .field("length", &self.length())
+            .field("base", &self.base())
+            .finish_non_exhaustive()
+    }
+}
+
 struct OfflineAudioContextRenderer {
     /// the rendering 'thread', fully controlled by the offline context
     renderer: RenderThread,

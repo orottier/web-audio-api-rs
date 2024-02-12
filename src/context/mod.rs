@@ -1,4 +1,5 @@
 //! The `BaseAudioContext` interface and the `AudioContext` and `OfflineAudioContext` types
+
 use std::{any::Any, ops::Range};
 
 mod base;
@@ -92,6 +93,18 @@ pub struct AudioContextRegistration {
     context: ConcreteBaseAudioContext,
     /// identify a specific `AudioNode`
     id: AudioNodeId,
+}
+
+impl std::fmt::Debug for AudioContextRegistration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioContextRegistration")
+            .field("id", &self.id)
+            .field(
+                "context",
+                &format!("BaseAudioContext@{}", self.context.address()),
+            )
+            .finish()
+    }
 }
 
 impl AudioContextRegistration {

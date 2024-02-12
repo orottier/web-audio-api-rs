@@ -118,6 +118,17 @@ pub struct AudioContext {
     render_thread_init: RenderThreadInit,
 }
 
+impl std::fmt::Debug for AudioContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioContext")
+            .field("sink_id", &self.sink_id())
+            .field("base_latency", &self.base_latency())
+            .field("output_latency", &self.output_latency())
+            .field("base", &self.base())
+            .finish_non_exhaustive()
+    }
+}
+
 impl BaseAudioContext for AudioContext {
     fn base(&self) -> &ConcreteBaseAudioContext {
         &self.base

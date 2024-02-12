@@ -69,6 +69,7 @@ enum Schedule {
 ///
 /// - `cargo run --release --example constant_source`
 ///
+#[derive(Debug)]
 pub struct ConstantSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

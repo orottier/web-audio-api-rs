@@ -94,6 +94,7 @@ struct PlaybackInfo {
  * > no need to make this cancellable, once in a cycle the node behaves like that
  * even if the cycle is broken later (user have to know what they are doing)
  */
+#[derive(Debug)]
 pub struct DelayNode {
     reader_registration: AudioContextRegistration,
     writer_registration: AudioContextRegistration,

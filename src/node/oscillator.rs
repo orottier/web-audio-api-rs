@@ -120,6 +120,7 @@ enum Schedule {
 /// - `cargo run --release --example many_oscillators_with_env`
 /// - `cargo run --release --example amplitude_modulation`
 ///
+#[derive(Debug)]
 pub struct OscillatorNode {
     /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,

@@ -321,6 +321,7 @@ impl HrtfState {
 ///
 /// - `cargo run --release --example spatial`
 /// - `cargo run --release --example panner_cone`
+#[derive(Debug)]
 pub struct PannerNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,

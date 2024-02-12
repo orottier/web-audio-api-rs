@@ -4,6 +4,7 @@
 #![warn(clippy::missing_panics_doc)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![deny(trivial_numeric_casts)]
+#![deny(missing_debug_implementations)]
 
 use std::error::Error;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -56,10 +57,15 @@ pub use media_element::MediaElement;
 mod resampling;
 pub mod worklet;
 
-#[derive(Debug)]
 #[repr(transparent)]
 pub(crate) struct AtomicF32 {
     bits: AtomicU32,
+}
+
+impl std::fmt::Debug for AtomicF32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}", self.load(Ordering::Relaxed)))
+    }
 }
 
 impl AtomicF32 {
@@ -81,10 +87,15 @@ impl AtomicF32 {
 }
 
 /// Atomic float 64, only `load` and `store` are supported, no arithmetic
-#[derive(Debug)]
 #[repr(transparent)]
 pub(crate) struct AtomicF64 {
     bits: AtomicU64,
+}
+
+impl std::fmt::Debug for AtomicF64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}", self.load(Ordering::Relaxed)))
+    }
 }
 
 impl AtomicF64 {

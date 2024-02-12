@@ -52,18 +52,30 @@ impl AudioNodeIdProvider {
 /// [`OfflineAudioContext`](crate::context::OfflineAudioContext), and the `context()` method on
 /// `AudioNode`s.
 ///
-/// The `ConcreteBaseAudioContext` allows for cheap cloning (using an `Arc` internally).
+/// The `ConcreteBaseAudioContext` allows for shallow cloning (using an `Arc` internally).
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone)]
 #[doc(hidden)]
 pub struct ConcreteBaseAudioContext {
-    /// inner makes `ConcreteBaseAudioContext` cheap to clone
     inner: Arc<ConcreteBaseAudioContextInner>,
 }
 
 impl PartialEq for ConcreteBaseAudioContext {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl std::fmt::Debug for ConcreteBaseAudioContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BaseAudioContext")
+            .field("id", &self.address())
+            .field("state", &self.state())
+            .field("sample_rate", &self.sample_rate())
+            .field("current_time", &self.current_time())
+            .field("max_channel_count", &self.max_channel_count())
+            .field("offline", &self.offline())
+            .finish_non_exhaustive()
     }
 }
 
@@ -255,6 +267,10 @@ impl ConcreteBaseAudioContext {
         }
 
         base
+    }
+
+    pub(crate) fn address(&self) -> usize {
+        Arc::as_ptr(&self.inner) as usize
     }
 
     /// Send a control message to the render thread

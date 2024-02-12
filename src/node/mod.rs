@@ -1,4 +1,5 @@
 //! The AudioNode interface and concrete types
+
 use std::f32::consts::PI;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -151,7 +152,7 @@ impl Default for ChannelConfigOptions {
 ///     interpretation: ChannelInterpretation::Discrete,
 /// };
 /// let _: ChannelConfig = opts.into();
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ChannelConfig {
     inner: Arc<Mutex<ChannelConfigInner>>,
 }
@@ -166,6 +167,16 @@ pub(crate) struct ChannelConfigInner {
 impl Default for ChannelConfig {
     fn default() -> Self {
         ChannelConfigOptions::default().into()
+    }
+}
+
+impl std::fmt::Debug for ChannelConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChannelConfig")
+            .field("count", &self.count())
+            .field("count_mode", &self.count_mode())
+            .field("interpretation", &self.interpretation())
+            .finish()
     }
 }
 
