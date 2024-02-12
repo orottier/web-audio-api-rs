@@ -1,5 +1,10 @@
 # Version History
 
+## Version 0.42.1 (2024-02-12)
+
+- Add `Debug` implementation for all public facing items
+- Fix: return proper channelCountMode for StereoPannerNode
+
 ## Version 0.42.0 (2024-02-05)
 
 - Added MediaTrackConstraints.channelCount for multi-channel microphone input
