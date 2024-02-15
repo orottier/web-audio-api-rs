@@ -558,7 +558,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 {
                     let dt = (self.stop_time - block_time).min(self.duration - buffer_time);
                     let end_buffer_time = buffer_time + dt;
-                    (end_buffer_time * sample_rate).round() as usize
+                    let end_index = (end_buffer_time * sample_rate).round() as usize;
+                    end_index.min(buffer.length())
                 } else {
                     buffer.length()
                 };
