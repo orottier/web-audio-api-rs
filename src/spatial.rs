@@ -121,7 +121,7 @@ impl AudioNode for AudioListenerNode {
 
 impl AudioListenerNode {
     pub fn new<C: BaseAudioContext>(context: &C) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let forward_z_opts = AudioParamDescriptor {
                 default_value: -1.,
                 ..PARAM_OPTS

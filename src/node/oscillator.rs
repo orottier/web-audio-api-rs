@@ -192,7 +192,7 @@ impl OscillatorNode {
             periodic_wave,
         } = options;
 
-        let mut node = context.register(move |registration| {
+        let mut node = context.base().register(move |registration| {
             let sample_rate = context.sample_rate();
             let nyquist = sample_rate / 2.;
 

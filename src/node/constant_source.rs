@@ -118,7 +118,7 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 
 impl ConstantSourceNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let ConstantSourceOptions { offset } = options;
 
             let param_options = AudioParamDescriptor {

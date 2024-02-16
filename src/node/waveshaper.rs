@@ -162,7 +162,7 @@ impl WaveShaperNode {
             channel_config,
         } = options;
 
-        let mut node = context.register(move |registration| {
+        let mut node = context.base().register(move |registration| {
             let sample_rate = context.sample_rate() as usize;
 
             let renderer = WaveShaperRenderer::new(RendererConfig {

@@ -390,7 +390,7 @@ impl PannerNode {
     /// Can panic when loading HRIR-sphere
     #[allow(clippy::missing_panics_doc)]
     pub fn new<C: BaseAudioContext>(context: &C, options: PannerOptions) -> Self {
-        let mut node = context.register(|registration| {
+        let mut node = context.base().register(|registration| {
             use crate::spatial::PARAM_OPTS;
 
             let PannerOptions {

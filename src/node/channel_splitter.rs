@@ -109,7 +109,7 @@ impl AudioNode for ChannelSplitterNode {
 
 impl ChannelSplitterNode {
     pub fn new<C: BaseAudioContext>(context: &C, mut options: ChannelSplitterOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             crate::assert_valid_number_of_channels(options.number_of_outputs);
             options.channel_config.count = options.number_of_outputs;
 

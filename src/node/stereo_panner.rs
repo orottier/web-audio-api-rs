@@ -171,7 +171,7 @@ impl StereoPannerNode {
     /// * `options.channel_config.mode` is `ChannelCountMode::Max`
     ///
     pub fn new<C: BaseAudioContext>(context: &C, options: StereoPannerOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             assert_valid_channel_count_mode(options.channel_config.count_mode);
             assert_valid_channel_count(options.channel_config.count);
 

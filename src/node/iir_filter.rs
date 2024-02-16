@@ -181,7 +181,7 @@ impl IIRFilterNode {
     /// - feedback first coef is zero
     ///
     pub fn new<C: BaseAudioContext>(context: &C, options: IIRFilterOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let IIRFilterOptions {
                 feedforward,
                 feedback,

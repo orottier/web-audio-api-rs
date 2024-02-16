@@ -340,7 +340,7 @@ impl BiquadFilterNode {
     /// * `context` - audio context in which the audio node will live.
     /// * `options` - biquad filter options
     pub fn new<C: BaseAudioContext>(context: &C, options: BiquadFilterOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let sample_rate = context.sample_rate();
 
             let BiquadFilterOptions {

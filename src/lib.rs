@@ -39,7 +39,7 @@ pub use param::*;
 mod periodic_wave;
 pub use periodic_wave::*;
 
-pub mod render;
+mod render;
 
 mod spatial;
 pub use spatial::AudioListener;

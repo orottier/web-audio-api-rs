@@ -104,7 +104,7 @@ impl AudioNode for AnalyserNode {
 
 impl AnalyserNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: AnalyserOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let fft_size = options.fft_size;
             let smoothing_time_constant = options.smoothing_time_constant;
             let min_decibels = options.min_decibels;

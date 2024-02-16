@@ -170,7 +170,7 @@ impl AudioBufferSourceNode {
             playback_rate,
         } = options;
 
-        let mut node = context.register(move |registration| {
+        let mut node = context.base().register(move |registration| {
             // these parameters can't be changed to a-rate
             // @see - <https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints>
             let detune_param_options = AudioParamDescriptor {

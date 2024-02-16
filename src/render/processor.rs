@@ -78,7 +78,7 @@ impl RenderScope {
 ///
 /// Note that the AudioProcessor is typically constructed together with an
 /// [`AudioNode`](crate::node::AudioNode) (the user facing object that lives in the control
-/// thread). See [`BaseAudioContext::register`](crate::context::BaseAudioContext::register).
+/// thread). See [`ConcreteBaseAudioContext::register`](crate::context::ConcreteBaseAudioContext::register).
 ///
 /// Check the `examples/worklet.rs` file for example usage of this trait.
 pub trait AudioProcessor: Send {

@@ -226,8 +226,8 @@ impl DelayNode {
         let latest_frame_written = Rc::new(Cell::new(u64::MAX));
         let latest_frame_written_clone = Rc::clone(&latest_frame_written);
 
-        let node = context.register(move |writer_registration| {
-            let node = context.register(move |reader_registration| {
+        let node = context.base().register(move |writer_registration| {
+            let node = context.base().register(move |reader_registration| {
                 let param_opts = AudioParamDescriptor {
                     name: String::new(),
                     min_value: 0.,

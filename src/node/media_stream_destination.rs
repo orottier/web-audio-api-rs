@@ -81,7 +81,7 @@ impl AudioNode for MediaStreamAudioDestinationNode {
 impl MediaStreamAudioDestinationNode {
     /// Create a new MediaStreamAudioDestinationNode
     pub fn new<C: BaseAudioContext>(context: &C, options: ChannelConfigOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let (send, recv) = crossbeam_channel::bounded(1);
 
             let iter = AudioDestinationNodeStream {

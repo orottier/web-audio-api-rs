@@ -280,8 +280,8 @@ impl From<ChannelConfigOptions> for ChannelConfig {
 /// These modules can be connected together to form processing graphs for rendering audio
 /// to the audio hardware. Each node can have inputs and/or outputs.
 ///
-/// Note that the AudioNode is typically constructed together with an [`AudioProcessor`]
-/// (the object that lives the render thread). See [`BaseAudioContext::register`](crate::context::BaseAudioContext::register).
+/// Note that the AudioNode is typically constructed together with an `AudioWorkletProcessor`
+/// (the object that lives the render thread). See the [`crate::worklet`] mod.
 pub trait AudioNode {
     fn registration(&self) -> &AudioContextRegistration;
 

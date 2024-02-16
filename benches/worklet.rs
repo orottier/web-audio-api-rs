@@ -1,5 +1,4 @@
-use web_audio_api::render::RenderScope;
-use web_audio_api::worklet::{AudioParamValues, AudioWorkletProcessor};
+use web_audio_api::worklet::{AudioParamValues, AudioWorkletProcessor, RenderScope};
 use web_audio_api::{AudioParamDescriptor, AutomationRate};
 
 pub struct GainProcessor;

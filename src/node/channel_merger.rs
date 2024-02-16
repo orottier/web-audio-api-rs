@@ -101,7 +101,7 @@ impl AudioNode for ChannelMergerNode {
 
 impl ChannelMergerNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: ChannelMergerOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             crate::assert_valid_number_of_channels(options.number_of_inputs);
 
             assert_valid_channel_count(options.channel_config.count);

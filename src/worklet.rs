@@ -3,10 +3,12 @@
 //! See `examples/worklet.rs` or `examples/worklet_bitcrusher.rs` for an example implementation of
 //! user defined nodes.
 
+pub use crate::render::RenderScope;
+
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{AudioProcessor, AudioRenderQuantum};
 use crate::MAX_CHANNELS;
 
 use std::collections::HashMap;
@@ -174,7 +176,7 @@ impl AudioWorkletNode {
         context: &impl BaseAudioContext,
         options: AudioWorkletNodeOptions<P::ProcessorOptions>,
     ) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let AudioWorkletNodeOptions {
                 number_of_inputs,
                 number_of_outputs,

@@ -128,7 +128,7 @@ impl AudioNode for DynamicsCompressorNode {
 
 impl DynamicsCompressorNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: DynamicsCompressorOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             // attack, knee, ratio, release and threshold have automation rate constraints
             // https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints
             let attack_param_opts = AudioParamDescriptor {

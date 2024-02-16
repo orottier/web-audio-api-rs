@@ -1,4 +1,8 @@
 //! The audio graph topology and render algorithm
+
+#[cfg(test)]
+mod test;
+
 use std::any::Any;
 use std::cell::RefCell;
 use std::panic::{self, AssertUnwindSafe};
