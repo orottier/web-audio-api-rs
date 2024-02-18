@@ -558,7 +558,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 {
                     let dt = (self.stop_time - block_time).min(self.duration - buffer_time);
                     let end_buffer_time = buffer_time + dt;
-                    (end_buffer_time * sample_rate).round() as usize
+                    let end_index = (end_buffer_time * sample_rate).round() as usize;
+                    end_index.min(buffer.length())
                 } else {
                     buffer.length()
                 };
@@ -1413,5 +1414,35 @@ mod tests {
                 abs_all <= 0.
             );
         }
+    }
+
+    #[test]
+    // regression test for #452
+    // - fast track
+    // - duration not set so `self.duration` is `f64::MAX`
+    // - stop time is > buffer length
+    fn test_end_of_file_fast_track_2() {
+        let sample_rate = 48_000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+
+        let mut buffer = context.create_buffer(1, 5, sample_rate);
+        let data = vec![1.; 1];
+        buffer.copy_to_channel(&data, 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        // play in fast track
+        src.start_at(0.);
+        // stop after end of buffer but before the end of render quantum
+        src.stop_at(125. / sample_rate as f64);
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; 128];
+        expected[0] = 1.;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
 }
