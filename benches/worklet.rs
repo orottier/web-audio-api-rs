@@ -1,4 +1,5 @@
 use web_audio_api::worklet::{AudioParamValues, AudioWorkletProcessor, RenderScope};
+use web_audio_api::MessagePort;
 use web_audio_api::{AudioParamDescriptor, AutomationRate};
 
 pub struct GainProcessor;
@@ -6,7 +7,7 @@ pub struct GainProcessor;
 impl AudioWorkletProcessor for GainProcessor {
     type ProcessorOptions = ();
 
-    fn constructor(_opts: Self::ProcessorOptions) -> Self {
+    fn constructor(_opts: Self::ProcessorOptions, _port: MessagePort<'_>) -> Self {
         Self {}
     }
 

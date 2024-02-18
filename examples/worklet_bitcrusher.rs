@@ -7,7 +7,7 @@ use web_audio_api::node::{
 use web_audio_api::worklet::{
     AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor, RenderScope,
 };
-use web_audio_api::{AudioParamDescriptor, AutomationRate};
+use web_audio_api::{AudioParamDescriptor, AutomationRate, MessagePort};
 
 // AudioWorkletNode example - BitCrusher
 //
@@ -58,7 +58,7 @@ impl AudioWorkletProcessor for BitCrusher {
         ]
     }
 
-    fn constructor(_opts: Self::ProcessorOptions) -> Self {
+    fn constructor(_opts: Self::ProcessorOptions, _port: MessagePort<'_>) -> Self {
         Self {
             phase: 0.,
             last_sample_value: 0.,

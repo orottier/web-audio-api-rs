@@ -5,14 +5,16 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 use web_audio_api::worklet::{
     AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor, RenderScope,
 };
-use web_audio_api::{AudioParamDescriptor, AutomationRate};
+use web_audio_api::{AudioParamDescriptor, AutomationRate, MessagePort};
 
 struct MyProcessor;
 
 impl AudioWorkletProcessor for MyProcessor {
     type ProcessorOptions = ();
 
-    fn constructor(_opts: Self::ProcessorOptions) -> Self {
+    fn constructor(_opts: Self::ProcessorOptions, port: MessagePort<'_>) -> Self {
+        port.set_onmessage(|_| println!("rec from processor"));
+        port.post_message(1234);
         Self {}
     }
 
@@ -34,7 +36,7 @@ impl AudioWorkletProcessor for MyProcessor {
         inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
-        _scope: &'b RenderScope,
+        scope: &'b RenderScope,
     ) -> bool {
         // passthrough with gain
         inputs[0]
@@ -46,6 +48,10 @@ impl AudioWorkletProcessor for MyProcessor {
                     *os = is * g;
                 }
             });
+
+        if scope.current_frame % 12800 == 0 {
+            scope.port().post_message(Box::new(1234));
+        }
 
         false
     }
@@ -89,7 +95,14 @@ fn main() {
     osc.connect(&worklet);
     osc.start();
 
+    worklet.port().set_onmessage(|_| println!("rec from main"));
+
+    // TODO this message is lost because the message handler has not been set up yet for this
+    // AudioWorkletProcessor (constructor will run on first `process` call)
     worklet.port().post_message(123);
 
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
+    worklet.port().post_message(123);
     std::thread::sleep(std::time::Duration::from_millis(5000));
 }

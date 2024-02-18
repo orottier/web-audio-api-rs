@@ -6,11 +6,13 @@
 pub use crate::render::RenderScope;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
+use crate::message_port::{MessageHandler, MessagePort};
 use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioProcessor, AudioRenderQuantum};
-use crate::{MessagePort, MAX_CHANNELS};
+use crate::MAX_CHANNELS;
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
@@ -49,7 +51,7 @@ pub trait AudioWorkletProcessor {
     type ProcessorOptions: Send;
 
     /// Constructor of the [`AudioWorkletProcessor`] instance (to be executed in the render thread)
-    fn constructor(opts: Self::ProcessorOptions) -> Self;
+    fn constructor(_opts: Self::ProcessorOptions, port: MessagePort<'_>) -> Self;
 
     /// List of [`AudioParam`]s for this audio processor
     ///
@@ -239,14 +241,19 @@ impl AudioWorkletNode {
             } else {
                 output_channel_count.iter().sum::<usize>()
             };
+
             let render = AudioWorkletRenderer {
                 processor: Box::new(move |i, o, p, s| {
+                    let port = MessagePort::from_processor(s);
+
                     if proc.is_none() {
                         let opts = processor_options.take().unwrap();
-                        proc = Some(P::constructor(opts));
+                        proc = Some(P::constructor(opts, port));
                     }
+
                     proc.as_mut().unwrap().process(i, o, p, s)
                 }),
+                message_handler: None,
                 audio_param_map: processor_param_map,
                 output_channel_count,
                 inputs_flat: Vec::with_capacity(number_of_inputs * MAX_CHANNELS),
@@ -277,6 +284,7 @@ type ProcessCallback = dyn for<'a, 'b> FnMut(
 
 struct AudioWorkletRenderer {
     processor: Box<ProcessCallback>,
+    message_handler: MessageHandler,
     audio_param_map: HashMap<String, AudioParamId>,
     output_channel_count: Vec<usize>,
 
@@ -372,6 +380,8 @@ impl AudioProcessor for AudioWorkletRenderer {
             map: &self.audio_param_map,
         };
 
+        scope.set_message_handler(self.message_handler.take());
+
         let tail_time = (self.processor)(
             &self.inputs_grouped[..],
             &mut self.outputs_grouped[..],
@@ -379,12 +389,20 @@ impl AudioProcessor for AudioWorkletRenderer {
             scope,
         );
 
+        self.message_handler = scope.clear_message_handler();
+
         self.inputs_grouped.clear();
         self.inputs_flat.clear();
         self.outputs_grouped.clear();
         self.outputs_flat.clear();
 
         tail_time
+    }
+
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        if let Some(f) = self.message_handler.as_mut() {
+            (f)(msg)
+        }
     }
 }
 
@@ -399,7 +417,7 @@ mod tests {
     impl AudioWorkletProcessor for TestProcessor {
         type ProcessorOptions = ();
 
-        fn constructor(_opts: Self::ProcessorOptions) -> Self {
+        fn constructor(_opts: Self::ProcessorOptions, _port: MessagePort<'_>) -> Self {
             TestProcessor {}
         }
 
@@ -501,7 +519,7 @@ mod tests {
         impl AudioWorkletProcessor for RcProcessor {
             type ProcessorOptions = ();
 
-            fn constructor(_opts: Self::ProcessorOptions) -> Self {
+            fn constructor(_opts: Self::ProcessorOptions, _port: MessagePort<'_>) -> Self {
                 Self::default()
             }
 

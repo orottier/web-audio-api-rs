@@ -1,12 +1,13 @@
 //! Audio processing code that runs on the audio rendering thread
 use crate::context::{AudioNodeId, AudioParamId};
 use crate::events::{ErrorEvent, EventDispatch};
+use crate::message_port::{MessageHandler, MessagePort};
 use crate::{Event, RENDER_QUANTUM_SIZE};
 
 use super::{graph::Node, AudioRenderQuantum, NodeCollection};
 
 use crossbeam_channel::Sender;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use std::any::Any;
 use std::ops::Deref;
@@ -24,6 +25,7 @@ pub struct RenderScope {
 
     pub(crate) node_id: Cell<AudioNodeId>,
     pub(crate) event_sender: Option<Sender<EventDispatch>>,
+    pub(crate) message_handler: RefCell<MessageHandler>,
 }
 
 impl std::fmt::Debug for RenderScope {
@@ -42,6 +44,13 @@ impl RenderScope {
         if let Some(sender) = self.event_sender.as_ref() {
             // sending could fail if the channel is saturated or the main thread is shutting down
             let _ = sender.try_send(EventDispatch::ended(self.node_id.get()));
+        }
+    }
+
+    pub(crate) fn post_message(&self, msg: Box<dyn Any + Send + 'static>) {
+        if let Some(sender) = self.event_sender.as_ref() {
+            // sending could fail if the channel is saturated or the main thread is shutting down
+            let _ = sender.try_send(EventDispatch::message(self.node_id.get(), msg));
         }
     }
 
@@ -71,6 +80,18 @@ impl RenderScope {
             };
             let _ = sender.try_send(EventDispatch::processor_error(self.node_id.get(), event));
         }
+    }
+
+    pub(crate) fn set_message_handler(&self, handler: MessageHandler) {
+        *self.message_handler.borrow_mut() = handler;
+    }
+
+    pub(crate) fn clear_message_handler(&self) -> MessageHandler {
+        self.message_handler.borrow_mut().take()
+    }
+
+    pub fn port(&self) -> MessagePort<'_> {
+        MessagePort::from_processor(self)
     }
 }
 

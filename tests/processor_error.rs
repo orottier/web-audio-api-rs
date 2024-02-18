@@ -5,13 +5,14 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 use web_audio_api::worklet::{
     AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor, RenderScope,
 };
+use web_audio_api::MessagePort;
 
 struct PanicProcessor;
 
 impl AudioWorkletProcessor for PanicProcessor {
     type ProcessorOptions = ();
 
-    fn constructor(_opts: Self::ProcessorOptions) -> Self {
+    fn constructor(_opts: Self::ProcessorOptions, _port: MessagePort<'_>) -> Self {
         Self {}
     }
 

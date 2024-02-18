@@ -1,7 +1,7 @@
 //! Communicates with the control thread and ships audio samples to the hardware
 
 use std::any::Any;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
@@ -314,6 +314,7 @@ impl RenderThread {
             sample_rate: self.sample_rate,
             event_sender: self.event_sender.clone(),
             node_id: Cell::new(AudioNodeId(0)), // placeholder value
+            message_handler: RefCell::new(None),
         };
 
         // Render audio graph
@@ -424,6 +425,7 @@ impl RenderThread {
                 sample_rate: self.sample_rate,
                 event_sender: self.event_sender.clone(),
                 node_id: Cell::new(AudioNodeId(0)), // placeholder value
+                message_handler: RefCell::new(None),
             };
 
             // render audio graph, clone it in case we need to mutate/store the value later

@@ -541,6 +541,7 @@ impl Graph {
 mod tests {
     use super::*;
     use crate::context::DESTINATION_NODE_ID;
+    use std::cell::Cell;
 
     #[derive(Debug, Clone)]
     struct TestNode {
@@ -745,8 +746,9 @@ mod tests {
             current_frame: 0,
             current_time: 0.,
             sample_rate: 48000.,
-            node_id: std::cell::Cell::new(AudioNodeId(0)),
+            node_id: Cell::new(AudioNodeId(0)),
             event_sender: None,
+            message_handler: RefCell::new(None),
         };
         graph.render(&scope);
 
@@ -796,8 +798,9 @@ mod tests {
             current_frame: 0,
             current_time: 0.,
             sample_rate: 48000.,
-            node_id: std::cell::Cell::new(AudioNodeId(0)),
+            node_id: Cell::new(AudioNodeId(0)),
             event_sender: None,
+            message_handler: RefCell::new(None),
         };
         graph.render(&scope);
 
@@ -835,8 +838,9 @@ mod tests {
             current_frame: 0,
             current_time: 0.,
             sample_rate: 48000.,
-            node_id: std::cell::Cell::new(AudioNodeId(0)),
+            node_id: Cell::new(AudioNodeId(0)),
             event_sender: None,
+            message_handler: RefCell::new(None),
         };
         graph.render(&scope);
 

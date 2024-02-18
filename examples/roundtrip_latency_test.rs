@@ -11,6 +11,7 @@ use web_audio_api::node::AudioNode;
 use web_audio_api::worklet::{
     AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor, RenderScope,
 };
+use web_audio_api::MessagePort;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -80,7 +81,7 @@ struct LatencyTesterProcessor {
 impl AudioWorkletProcessor for LatencyTesterProcessor {
     type ProcessorOptions = Arc<AtomicF64>;
 
-    fn constructor(estimated_latency: Self::ProcessorOptions) -> Self {
+    fn constructor(estimated_latency: Self::ProcessorOptions, _port: MessagePort<'_>) -> Self {
         Self {
             estimated_latency,
             send_time: 0.,
