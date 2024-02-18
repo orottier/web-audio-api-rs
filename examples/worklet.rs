@@ -90,5 +90,7 @@ fn main() {
     osc.connect(&worklet);
     osc.start();
 
+    worklet.port().post_message(123);
+
     std::thread::sleep(std::time::Duration::from_millis(5000));
 }
