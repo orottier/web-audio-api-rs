@@ -33,6 +33,9 @@ pub mod node;
 mod events;
 pub use events::{ErrorEvent, Event};
 
+mod message_port;
+pub use message_port::MessagePort;
+
 mod param;
 pub use param::*;
 

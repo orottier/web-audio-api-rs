@@ -4,11 +4,10 @@ use std::f32::consts::PI;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
-use crate::events::{ErrorEvent, EventHandler, EventPayload, EventType};
+use crate::events::{ErrorEvent, Event, EventHandler, EventPayload, EventType};
 use crate::message::ControlMessage;
 use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 use crate::AudioBufferIter;
-use crate::Event;
 
 mod analyser;
 pub use analyser::*;

@@ -9,7 +9,7 @@ use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioProcessor, AudioRenderQuantum};
-use crate::MAX_CHANNELS;
+use crate::{MessagePort, MAX_CHANNELS};
 
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
@@ -261,6 +261,10 @@ impl AudioWorkletNode {
 
     pub fn parameters(&self) -> &HashMap<String, AudioParam> {
         &self.audio_param_map
+    }
+
+    pub fn port(&self) -> MessagePort<'_> {
+        MessagePort::from_node(self)
     }
 }
 

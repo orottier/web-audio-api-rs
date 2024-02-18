@@ -23,6 +23,7 @@ pub(crate) enum EventType {
     RenderCapacity,
     ProcessorError(AudioNodeId),
     Diagnostics,
+    Message(AudioNodeId),
 }
 
 /// The Error Event interface
@@ -43,6 +44,7 @@ pub(crate) enum EventPayload {
     RenderCapacity(AudioRenderCapacityEvent),
     ProcessorError(ErrorEvent),
     Diagnostics(Vec<u8>),
+    Message(Box<dyn Any + Send + 'static>),
 }
 
 #[derive(Debug)]
@@ -91,6 +93,13 @@ impl EventDispatch {
         EventDispatch {
             type_: EventType::Diagnostics,
             payload: EventPayload::Diagnostics(value),
+        }
+    }
+
+    pub fn message(id: AudioNodeId, value: Box<dyn Any + Send + 'static>) -> Self {
+        EventDispatch {
+            type_: EventType::Message(id),
+            payload: EventPayload::Message(value),
         }
     }
 }
