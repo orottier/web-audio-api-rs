@@ -20,6 +20,7 @@ impl AudioWorkletProcessor for MyProcessor {
     where
         Self: Sized,
     {
+        // Audio param controlling the volume (for educational purpose, use a GainNode otherwise)
         vec![AudioParamDescriptor {
             name: String::from("gain"),
             min_value: f32::MIN,
