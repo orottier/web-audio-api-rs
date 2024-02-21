@@ -155,7 +155,7 @@ impl ConvolverNode {
             channel_config,
         } = options;
 
-        let mut node = context.base().base().register(move |registration| {
+        let mut node = context.base().register(move |registration| {
             let renderer = ConvolverRenderer { inner: None };
 
             let node = Self {
