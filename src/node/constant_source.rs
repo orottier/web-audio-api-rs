@@ -74,6 +74,7 @@ pub struct ConstantSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     offset: AudioParam,
+    start_stop_count: u8,
 }
 
 impl AudioNode for ConstantSourceNode {
@@ -102,6 +103,12 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 
     fn start_at(&mut self, when: f64) {
         assert_valid_time_value(when);
+        assert_eq!(
+            self.start_stop_count, 0,
+            "InvalidStateError - Cannot call `start` twice"
+        );
+
+        self.start_stop_count += 1;
         self.registration.post_message(Schedule::Start(when));
     }
 
@@ -112,6 +119,12 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 
     fn stop_at(&mut self, when: f64) {
         assert_valid_time_value(when);
+        assert_eq!(
+            self.start_stop_count, 1,
+            "InvalidStateError cannot stop before start"
+        );
+
+        self.start_stop_count += 1;
         self.registration.post_message(Schedule::Stop(when));
     }
 }
@@ -142,6 +155,7 @@ impl ConstantSourceNode {
                 registration,
                 channel_config: ChannelConfig::default(),
                 offset: param,
+                start_stop_count: 0,
             };
 
             (node, Box::new(render))
@@ -296,5 +310,32 @@ mod tests {
         // 1rst block should be silence
         assert_float_eq!(channel[0..128], vec![0.; 128][..], abs_all <= 0.);
         assert_float_eq!(channel[128..], vec![1.; 128][..], abs_all <= 0.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_start_twice() {
+        let context = OfflineAudioContext::new(2, 1, 44_100.);
+        let mut src = context.create_constant_source();
+        src.start();
+        src.start();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_stop_before_start() {
+        let context = OfflineAudioContext::new(2, 1, 44_100.);
+        let mut src = context.create_constant_source();
+        src.stop();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_stop_twice() {
+        let context = OfflineAudioContext::new(2, 1, 44_100.);
+        let mut src = context.create_constant_source();
+        src.start();
+        src.stop();
+        src.stop();
     }
 }

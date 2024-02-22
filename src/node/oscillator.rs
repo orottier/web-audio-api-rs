@@ -132,6 +132,8 @@ pub struct OscillatorNode {
     detune: AudioParam,
     /// Waveform of an oscillator
     type_: OscillatorType,
+    /// Number of start/stop actions, node can only be started and stopped once
+    start_stop_count: u8,
 }
 
 impl AudioNode for OscillatorNode {
@@ -162,6 +164,12 @@ impl AudioScheduledSourceNode for OscillatorNode {
 
     fn start_at(&mut self, when: f64) {
         assert_valid_time_value(when);
+        assert_eq!(
+            self.start_stop_count, 0,
+            "InvalidStateError - Cannot call `start` twice"
+        );
+
+        self.start_stop_count += 1;
         self.registration.post_message(Schedule::Start(when));
     }
 
@@ -172,6 +180,12 @@ impl AudioScheduledSourceNode for OscillatorNode {
 
     fn stop_at(&mut self, when: f64) {
         assert_valid_time_value(when);
+        assert_eq!(
+            self.start_stop_count, 1,
+            "InvalidStateError cannot stop before start"
+        );
+
+        self.start_stop_count += 1;
         self.registration.post_message(Schedule::Stop(when));
     }
 }
@@ -238,6 +252,7 @@ impl OscillatorNode {
                 frequency: f_param,
                 detune: det_param,
                 type_,
+                start_stop_count: 0,
             };
 
             (node, Box::new(renderer))
@@ -1181,5 +1196,32 @@ mod tests {
         }
 
         assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_start_twice() {
+        let context = OfflineAudioContext::new(2, 1, 44_100.);
+        let mut osc = context.create_oscillator();
+        osc.start();
+        osc.start();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_stop_before_start() {
+        let context = OfflineAudioContext::new(2, 1, 44_100.);
+        let mut osc = context.create_oscillator();
+        osc.stop();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_stop_twice() {
+        let context = OfflineAudioContext::new(2, 1, 44_100.);
+        let mut osc = context.create_oscillator();
+        osc.start();
+        osc.stop();
+        osc.stop();
     }
 }
