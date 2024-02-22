@@ -111,7 +111,7 @@ pub struct AudioBufferSourceNode {
     buffer_time: Arc<AtomicF64>,
     buffer: Option<AudioBuffer>,
     loop_state: LoopState,
-    source_started: bool,
+    start_stop_count: u8,
 }
 
 impl AudioNode for AudioBufferSourceNode {
@@ -149,11 +149,12 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
 
     fn stop_at(&mut self, when: f64) {
         assert_valid_time_value(when);
-        assert!(
-            self.source_started,
+        assert_eq!(
+            self.start_stop_count, 1,
             "InvalidStateError cannot stop before start"
         );
 
+        self.start_stop_count += 1;
         self.registration.post_message(ControlMessage::Stop(when));
     }
 }
@@ -224,7 +225,7 @@ impl AudioBufferSourceNode {
                 buffer_time: Arc::clone(&renderer.render_state.buffer_time),
                 buffer: None,
                 loop_state,
-                source_started: false,
+                start_stop_count: 0,
             };
 
             (node, Box::new(renderer))
@@ -256,13 +257,12 @@ impl AudioBufferSourceNode {
         assert_valid_time_value(start);
         assert_valid_time_value(offset);
         assert_valid_time_value(duration);
-        assert!(
-            !self.source_started,
+        assert_eq!(
+            self.start_stop_count, 0,
             "InvalidStateError - Cannot call `start` twice"
         );
 
-        self.source_started = true;
-
+        self.start_stop_count += 1;
         let control = ControlMessage::StartWithOffsetAndDuration(start, offset, duration);
         self.registration.post_message(control);
     }
@@ -1444,5 +1444,32 @@ mod tests {
         expected[0] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_start_twice() {
+        let context = OfflineAudioContext::new(2, 1, 44_100.);
+        let mut src = context.create_buffer_source();
+        src.start();
+        src.start();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_stop_before_start() {
+        let context = OfflineAudioContext::new(2, 1, 44_100.);
+        let mut src = context.create_buffer_source();
+        src.stop();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_stop_twice() {
+        let context = OfflineAudioContext::new(2, 1, 44_100.);
+        let mut src = context.create_buffer_source();
+        src.start();
+        src.stop();
+        src.stop();
     }
 }
