@@ -319,6 +319,7 @@ pub trait BaseAudioContext {
         );
     }
 
+    /// Unset the callback to run when the state of the AudioContext has changed
     fn clear_onstatechange(&self) {
         self.base().clear_event_handler(EventType::StateChange);
     }

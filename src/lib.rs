@@ -31,7 +31,7 @@ pub mod media_streams;
 pub mod node;
 
 mod events;
-pub use events::{ErrorEvent, Event};
+pub use events::{ErrorEvent, Event, OfflineAudioCompletionEvent};
 
 mod param;
 pub use param::*;

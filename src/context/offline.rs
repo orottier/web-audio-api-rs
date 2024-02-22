@@ -7,6 +7,7 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
 use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
+use crate::{Event, OfflineAudioCompletionEvent};
 
 use futures_channel::{mpsc, oneshot};
 use futures_util::SinkExt as _;
@@ -47,6 +48,8 @@ struct OfflineAudioContextRenderer {
     suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
     /// channel to listen for `resume` calls on a suspended context
     resume_receiver: mpsc::Receiver<()>,
+    /// event handler for oncomplete event
+    oncomplete_handler: Option<Box<dyn FnOnce(OfflineAudioCompletionEvent) + Send + 'static>>,
 }
 
 impl BaseAudioContext for OfflineAudioContext {
@@ -111,6 +114,7 @@ impl OfflineAudioContext {
             suspend_promises: Vec::new(),
             suspend_callbacks: Vec::new(),
             resume_receiver,
+            oncomplete_handler: None,
         };
 
         Self {
@@ -143,12 +147,15 @@ impl OfflineAudioContext {
         let OfflineAudioContextRenderer {
             renderer,
             suspend_callbacks,
+            mut oncomplete_handler,
             ..
         } = renderer;
 
         self.base.set_state(AudioContextState::Running);
         let result = renderer.render_audiobuffer_sync(self.length, suspend_callbacks, self);
         self.base.set_state(AudioContextState::Closed);
+
+        Self::emit_oncomplete(&mut oncomplete_handler, &result);
 
         result
     }
@@ -177,6 +184,7 @@ impl OfflineAudioContext {
             renderer,
             suspend_promises,
             resume_receiver,
+            mut oncomplete_handler,
             ..
         } = renderer;
 
@@ -188,7 +196,22 @@ impl OfflineAudioContext {
 
         self.base.set_state(AudioContextState::Closed);
 
+        Self::emit_oncomplete(&mut oncomplete_handler, &result);
+
         result
+    }
+
+    fn emit_oncomplete(
+        oncomplete_handler: &mut Option<Box<dyn FnOnce(OfflineAudioCompletionEvent) + Send>>,
+        result: &AudioBuffer,
+    ) {
+        if let Some(callback) = oncomplete_handler.take() {
+            let event = OfflineAudioCompletionEvent {
+                rendered_buffer: result.clone(),
+                event: Event { type_: "complete" },
+            };
+            (callback)(event);
+        }
     }
 
     /// get the length of rendering audio buffer
@@ -357,12 +380,35 @@ impl OfflineAudioContext {
         self.base().set_state(AudioContextState::Running);
         self.resume_sender.clone().send(()).await.unwrap()
     }
+
+    /// Register callback to run when the rendering has completed
+    ///
+    /// Only a single event handler is active at any time. Calling this method multiple times will
+    /// override the previous event handler.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn set_oncomplete<F: FnOnce(OfflineAudioCompletionEvent) + Send + 'static>(
+        &mut self,
+        callback: F,
+    ) {
+        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
+            renderer.oncomplete_handler = Some(Box::new(callback));
+        }
+    }
+
+    /// Unset the callback to run when the rendering has completed
+    #[allow(clippy::missing_panics_doc)]
+    pub fn clear_oncomplete(&mut self) {
+        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
+            renderer.oncomplete_handler = None;
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use float_eq::assert_float_eq;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use crate::node::AudioNode;
     use crate::node::AudioScheduledSourceNode;
@@ -492,5 +538,21 @@ mod tests {
         let mut context = OfflineAudioContext::new(2, 128, 44_100.);
         context.suspend_sync(0.0, |_| ());
         context.suspend_sync(0.0, |_| ());
+    }
+
+    #[test]
+    fn test_oncomplete() {
+        let mut context = OfflineAudioContext::new(2, 555, 44_100.);
+
+        let complete = Arc::new(AtomicBool::new(false));
+        let complete_clone = Arc::clone(&complete);
+        context.set_oncomplete(move |event| {
+            assert_eq!(event.rendered_buffer.length(), 555);
+            complete_clone.store(true, Ordering::Relaxed);
+        });
+
+        let _ = context.start_rendering_sync();
+
+        assert!(complete.load(Ordering::Relaxed));
     }
 }
