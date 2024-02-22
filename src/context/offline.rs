@@ -48,13 +48,27 @@ struct OfflineAudioContextRenderer {
     suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
     /// channel to listen for `resume` calls on a suspended context
     resume_receiver: mpsc::Receiver<()>,
-    /// event handler for oncomplete event
+    /// event handler for statechange event
+    onstatechange_handler: Option<Box<dyn FnMut(Event) + Send + 'static>>,
+    /// event handler for complete event
     oncomplete_handler: Option<Box<dyn FnOnce(OfflineAudioCompletionEvent) + Send + 'static>>,
 }
 
 impl BaseAudioContext for OfflineAudioContext {
     fn base(&self) -> &ConcreteBaseAudioContext {
         &self.base
+    }
+
+    fn set_onstatechange<F: FnMut(Event) + Send + 'static>(&self, callback: F) {
+        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
+            renderer.onstatechange_handler = Some(Box::new(callback));
+        }
+    }
+
+    fn clear_onstatechange(&self) {
+        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
+            renderer.onstatechange_handler = None;
+        }
     }
 }
 
@@ -114,6 +128,7 @@ impl OfflineAudioContext {
             suspend_promises: Vec::new(),
             suspend_callbacks: Vec::new(),
             resume_receiver,
+            onstatechange_handler: None,
             oncomplete_handler: None,
         };
 
@@ -147,15 +162,20 @@ impl OfflineAudioContext {
         let OfflineAudioContextRenderer {
             renderer,
             suspend_callbacks,
-            mut oncomplete_handler,
+            oncomplete_handler,
+            mut onstatechange_handler,
             ..
         } = renderer;
 
         self.base.set_state(AudioContextState::Running);
-        let result = renderer.render_audiobuffer_sync(self.length, suspend_callbacks, self);
-        self.base.set_state(AudioContextState::Closed);
+        Self::emit_statechange(&mut onstatechange_handler);
 
-        Self::emit_oncomplete(&mut oncomplete_handler, &result);
+        let result = renderer.render_audiobuffer_sync(self.length, suspend_callbacks, self);
+
+        self.base.set_state(AudioContextState::Closed);
+        Self::emit_statechange(&mut onstatechange_handler);
+
+        Self::emit_complete(oncomplete_handler, &result);
 
         result
     }
@@ -184,31 +204,43 @@ impl OfflineAudioContext {
             renderer,
             suspend_promises,
             resume_receiver,
-            mut oncomplete_handler,
+            oncomplete_handler,
+            mut onstatechange_handler,
             ..
         } = renderer;
 
         self.base.set_state(AudioContextState::Running);
+        Self::emit_statechange(&mut onstatechange_handler);
 
         let result = renderer
             .render_audiobuffer(self.length, suspend_promises, resume_receiver)
             .await;
 
         self.base.set_state(AudioContextState::Closed);
+        Self::emit_statechange(&mut onstatechange_handler);
 
-        Self::emit_oncomplete(&mut oncomplete_handler, &result);
+        Self::emit_complete(oncomplete_handler, &result);
 
         result
     }
 
-    fn emit_oncomplete(
-        oncomplete_handler: &mut Option<Box<dyn FnOnce(OfflineAudioCompletionEvent) + Send>>,
+    fn emit_complete(
+        oncomplete_handler: Option<Box<dyn FnOnce(OfflineAudioCompletionEvent) + Send>>,
         result: &AudioBuffer,
     ) {
-        if let Some(callback) = oncomplete_handler.take() {
+        if let Some(callback) = oncomplete_handler {
             let event = OfflineAudioCompletionEvent {
                 rendered_buffer: result.clone(),
                 event: Event { type_: "complete" },
+            };
+            (callback)(event);
+        }
+    }
+
+    fn emit_statechange(onstatechange_handler: &mut Option<Box<dyn FnMut(Event) + Send>>) {
+        if let Some(callback) = onstatechange_handler.as_mut() {
+            let event = Event {
+                type_: "statechange",
             };
             (callback)(event);
         }
@@ -538,6 +570,21 @@ mod tests {
         let mut context = OfflineAudioContext::new(2, 128, 44_100.);
         context.suspend_sync(0.0, |_| ());
         context.suspend_sync(0.0, |_| ());
+    }
+
+    #[test]
+    fn test_onstatechange() {
+        let mut context = OfflineAudioContext::new(2, 555, 44_100.);
+
+        let changed = Arc::new(AtomicBool::new(false));
+        let changed_clone = Arc::clone(&changed);
+        context.set_onstatechange(move |_event| {
+            changed_clone.store(true, Ordering::Relaxed);
+        });
+
+        let _ = context.start_rendering_sync();
+
+        assert!(changed.load(Ordering::Relaxed));
     }
 
     #[test]
