@@ -246,7 +246,7 @@ impl Analyser {
         assert_valid_decibels(min, max);
 
         self.min_decibels = min;
-        self.min_decibels = max;
+        self.max_decibels = max;
     }
 
     pub fn frequency_bin_count(&self) -> usize {
@@ -593,6 +593,14 @@ mod tests {
 
             assert_float_eq!(&read_buffer, &[1., 2., 3., 4.], abs_all <= 1e-12);
         }
+    }
+
+    #[test]
+    fn test_set_decibels() {
+        let mut analyser = Analyser::new();
+        analyser.set_decibels(-20., 10.);
+        assert_eq!(analyser.min_decibels(), -20.);
+        assert_eq!(analyser.max_decibels(), 10.);
     }
 
     #[test]
