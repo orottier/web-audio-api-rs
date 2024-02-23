@@ -419,7 +419,7 @@ impl OfflineAudioContext {
     /// override the previous event handler.
     #[allow(clippy::missing_panics_doc)]
     pub fn set_oncomplete<F: FnOnce(OfflineAudioCompletionEvent) + Send + 'static>(
-        &mut self,
+        &self,
         callback: F,
     ) {
         if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
@@ -429,7 +429,7 @@ impl OfflineAudioContext {
 
     /// Unset the callback to run when the rendering has completed
     #[allow(clippy::missing_panics_doc)]
-    pub fn clear_oncomplete(&mut self) {
+    pub fn clear_oncomplete(&self) {
         if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
             renderer.oncomplete_handler = None;
         }
