@@ -38,6 +38,18 @@ impl std::fmt::Debug for RenderScope {
 }
 
 impl RenderScope {
+    /// Send a message to the corresponding AudioWorkletNode of this processor
+    ///
+    /// This method is just a shim of the full
+    /// [`MessagePort`](https://webaudio.github.io/web-audio-api/#dom-audioworkletprocessor-port)
+    /// `onmessage` functionality of the AudioWorkletProcessor.
+    pub fn post_message(&self, msg: Box<dyn Any + Send + 'static>) {
+        if let Some(sender) = self.event_sender.as_ref() {
+            // sending could fail if the channel is saturated or the main thread is shutting down
+            let _ = sender.try_send(EventDispatch::message(self.node_id.get(), msg));
+        }
+    }
+
     pub(crate) fn send_ended_event(&self) {
         if let Some(sender) = self.event_sender.as_ref() {
             // sending could fail if the channel is saturated or the main thread is shutting down

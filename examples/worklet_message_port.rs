@@ -75,7 +75,7 @@ impl AudioWorkletProcessor for WhiteNoiseProcessor {
         _inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        scope: &RenderScope,
     ) -> bool {
         // edit the output buffer in place
         outputs[0].iter_mut().for_each(|buf| {
@@ -92,6 +92,10 @@ impl AudioWorkletProcessor for WhiteNoiseProcessor {
                 *output_sample = value
             })
         });
+
+        if scope.current_frame % 12800 == 0 {
+            scope.post_message(Box::new(scope.current_frame));
+        }
 
         true // tail time, source node will always be active
     }
@@ -124,6 +128,12 @@ fn main() {
 
     // connect to speakers
     noise.node().connect(&context.destination());
+
+    // add event handling for the heartbeat events from the render thread
+    noise.node().port().set_onmessage(|m| {
+        let frame = m.downcast::<u64>().unwrap();
+        println!("rendered frame {frame}");
+    });
 
     // enjoy listening
     println!("White noise");
