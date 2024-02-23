@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
 use crate::events::{ErrorEvent, Event, EventHandler, EventPayload, EventType};
 use crate::message::ControlMessage;
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::AudioBufferIter;
 
 mod analyser;
@@ -502,7 +504,7 @@ impl<R: AudioBufferIter> AudioProcessor for MediaStreamRenderer<R> {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

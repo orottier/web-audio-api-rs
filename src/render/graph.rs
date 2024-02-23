@@ -12,7 +12,7 @@ use smallvec::{smallvec, SmallVec};
 
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeCollection};
 use crate::node::{ChannelConfigInner, ChannelCountMode, ChannelInterpretation};
-use crate::render::RenderScope;
+use crate::render::AudioWorkletGlobalScope;
 
 /// Connection between two audio nodes
 struct OutgoingEdge {
@@ -76,7 +76,7 @@ impl std::fmt::Debug for Node {
 
 impl Node {
     /// Render an audio quantum
-    fn process(&mut self, params: AudioParamValues<'_>, scope: &RenderScope) -> bool {
+    fn process(&mut self, params: AudioParamValues<'_>, scope: &AudioWorkletGlobalScope) -> bool {
         self.processor
             .process(&self.inputs[..], &mut self.outputs[..], params, scope)
     }
@@ -414,7 +414,7 @@ impl Graph {
     }
 
     /// Render a single audio quantum by traversing the node list
-    pub fn render(&mut self, scope: &RenderScope) -> &AudioRenderQuantum {
+    pub fn render(&mut self, scope: &AudioWorkletGlobalScope) -> &AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
         if self.ordered.is_empty() {
             self.order_nodes();
@@ -553,7 +553,7 @@ mod tests {
             _inputs: &[AudioRenderQuantum],
             _outputs: &mut [AudioRenderQuantum],
             _params: AudioParamValues<'_>,
-            _scope: &RenderScope,
+            _scope: &AudioWorkletGlobalScope,
         ) -> bool {
             self.tail_time
         }
@@ -741,7 +741,7 @@ mod tests {
         add_edge(&mut graph, 2, 0);
 
         // Render a single quantum
-        let scope = RenderScope {
+        let scope = AudioWorkletGlobalScope {
             current_frame: 0,
             current_time: 0.,
             sample_rate: 48000.,
@@ -792,7 +792,7 @@ mod tests {
         add_audioparam(&mut graph, 3, 2);
 
         // Render a single quantum
-        let scope = RenderScope {
+        let scope = AudioWorkletGlobalScope {
             current_frame: 0,
             current_time: 0.,
             sample_rate: 48000.,
@@ -831,7 +831,7 @@ mod tests {
         graph.nodes[AudioNodeId(2)].get_mut().free_when_finished = true;
 
         // Render a single quantum
-        let scope = RenderScope {
+        let scope = AudioWorkletGlobalScope {
             current_frame: 0,
             current_time: 0.,
             sample_rate: 48000.,

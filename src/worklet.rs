@@ -5,7 +5,7 @@
 //! - `examples/worklet_message_port.rs` (basics with message port)
 //! - `examples/worklet_bitcrusher.rs` (real world example)
 
-pub use crate::render::RenderScope;
+pub use crate::render::AudioWorkletGlobalScope;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
@@ -89,7 +89,7 @@ pub trait AudioWorkletProcessor {
         inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
-        scope: &'b RenderScope,
+        scope: &'b AudioWorkletGlobalScope,
     ) -> bool;
 
     /// Handle incoming messages from the linked AudioNode
@@ -338,7 +338,7 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: crate::render::AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
         let processor = self.processor.load();
 
@@ -453,7 +453,7 @@ mod tests {
             _inputs: &'b [&'a [&'a [f32]]],
             _outputs: &'b mut [&'a mut [&'a mut [f32]]],
             _params: AudioParamValues<'b>,
-            _scope: &'b RenderScope,
+            _scope: &'b AudioWorkletGlobalScope,
         ) -> bool {
             true
         }
@@ -555,7 +555,7 @@ mod tests {
                 _inputs: &'b [&'a [&'a [f32]]],
                 _outputs: &'b mut [&'a mut [&'a mut [f32]]],
                 _params: AudioParamValues<'b>,
-                _scope: &'b RenderScope,
+                _scope: &'b AudioWorkletGlobalScope,
             ) -> bool {
                 true
             }

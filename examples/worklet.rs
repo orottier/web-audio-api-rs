@@ -3,7 +3,8 @@ use web_audio_api::context::{
 };
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 use web_audio_api::worklet::{
-    AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor, RenderScope,
+    AudioParamValues, AudioWorkletGlobalScope, AudioWorkletNode, AudioWorkletNodeOptions,
+    AudioWorkletProcessor,
 };
 use web_audio_api::{AudioParamDescriptor, AutomationRate};
 
@@ -35,7 +36,7 @@ impl AudioWorkletProcessor for MyProcessor {
         inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
-        _scope: &'b RenderScope,
+        _scope: &'b AudioWorkletGlobalScope,
     ) -> bool {
         // passthrough with gain
         inputs[0]

@@ -7,7 +7,9 @@ use num_complex::Complex;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
@@ -557,7 +559,7 @@ impl AudioProcessor for BiquadFilterRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

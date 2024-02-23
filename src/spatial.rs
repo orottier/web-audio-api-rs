@@ -7,7 +7,9 @@ use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
 use crate::param::{AudioParam, AudioParamDescriptor, AudioParamInner, AutomationRate};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 
 use std::f32::consts::PI;
 use std::sync::OnceLock;
@@ -174,7 +176,7 @@ impl AudioProcessor for ListenerRenderer {
         _inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // do nothing, the Listener is just here to make sure the position/forward/up params render in order
 

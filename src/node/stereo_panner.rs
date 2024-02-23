@@ -1,7 +1,9 @@
 //! The stereo panner control and renderer parts
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 
 use super::{
     precomputed_sine_table, AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode,
@@ -228,7 +230,7 @@ impl AudioProcessor for StereoPannerRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

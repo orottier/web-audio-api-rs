@@ -9,7 +9,8 @@ use web_audio_api::media_devices::{
 };
 use web_audio_api::node::AudioNode;
 use web_audio_api::worklet::{
-    AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor, RenderScope,
+    AudioParamValues, AudioWorkletGlobalScope, AudioWorkletNode, AudioWorkletNodeOptions,
+    AudioWorkletProcessor,
 };
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -92,7 +93,7 @@ impl AudioWorkletProcessor for LatencyTesterProcessor {
         inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         _params: AudioParamValues<'b>,
-        scope: &'b RenderScope,
+        scope: &'b AudioWorkletGlobalScope,
     ) -> bool {
         // send a dirac every second
         // 48000 / 128 = 375

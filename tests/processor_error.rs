@@ -3,7 +3,8 @@ use float_eq::assert_float_eq;
 use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 use web_audio_api::worklet::{
-    AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor, RenderScope,
+    AudioParamValues, AudioWorkletGlobalScope, AudioWorkletNode, AudioWorkletNodeOptions,
+    AudioWorkletProcessor,
 };
 
 struct PanicProcessor;
@@ -20,7 +21,7 @@ impl AudioWorkletProcessor for PanicProcessor {
         _inputs: &'b [&'a [&'a [f32]]],
         _outputs: &'b mut [&'a mut [&'a mut [f32]]],
         _params: AudioParamValues<'b>,
-        _scope: &'b RenderScope,
+        _scope: &'b AudioWorkletGlobalScope,
     ) -> bool {
         panic!("panic message");
     }

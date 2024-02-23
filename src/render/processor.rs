@@ -17,7 +17,7 @@ use std::ops::Deref;
 /// This struct currently only contains information about the progress of time. In a future
 /// version, it should be possible to add arbitrary data. For example, multiple processors might
 /// share a buffer defining a wavetable or an impulse response.
-pub struct RenderScope {
+pub struct AudioWorkletGlobalScope {
     pub current_frame: u64,
     pub current_time: f64,
     pub sample_rate: f32,
@@ -26,7 +26,7 @@ pub struct RenderScope {
     pub(crate) event_sender: Option<Sender<EventDispatch>>,
 }
 
-impl std::fmt::Debug for RenderScope {
+impl std::fmt::Debug for AudioWorkletGlobalScope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut format = f.debug_struct("RenderScope");
         format
@@ -37,7 +37,7 @@ impl std::fmt::Debug for RenderScope {
     }
 }
 
-impl RenderScope {
+impl AudioWorkletGlobalScope {
     /// Send a message to the corresponding AudioWorkletNode of this processor
     ///
     /// This method is just a shim of the full
@@ -118,7 +118,7 @@ pub trait AudioProcessor: Send {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool;
 
     /// Handle incoming messages from the linked AudioNode
@@ -215,7 +215,7 @@ mod tests {
             _inputs: &[AudioRenderQuantum],
             _outputs: &mut [AudioRenderQuantum],
             _params: AudioParamValues<'_>,
-            _scope: &RenderScope,
+            _scope: &AudioWorkletGlobalScope,
         ) -> bool {
             todo!()
         }

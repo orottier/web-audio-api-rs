@@ -3,7 +3,9 @@ use crate::analysis::{
     DEFAULT_SMOOTHING_TIME_CONSTANT,
 };
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
 
@@ -266,7 +268,7 @@ impl AudioProcessor for AnalyserRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

@@ -20,7 +20,7 @@ use crate::context::{
 use crate::events::EventDispatch;
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
-use crate::render::RenderScope;
+use crate::render::AudioWorkletGlobalScope;
 use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
 use super::graph::Graph;
@@ -308,7 +308,7 @@ impl RenderThread {
             .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
         let current_time = current_frame as f64 / self.sample_rate as f64;
 
-        let scope = RenderScope {
+        let scope = AudioWorkletGlobalScope {
             current_frame,
             current_time,
             sample_rate: self.sample_rate,
@@ -418,7 +418,7 @@ impl RenderThread {
                 .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
             let current_time = current_frame as f64 / self.sample_rate as f64;
 
-            let scope = RenderScope {
+            let scope = AudioWorkletGlobalScope {
                 current_frame,
                 current_time,
                 sample_rate: self.sample_rate,

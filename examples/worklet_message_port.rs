@@ -9,7 +9,8 @@ use web_audio_api::context::{
 use web_audio_api::node::{AudioNode, ChannelConfigOptions};
 
 use web_audio_api::worklet::{
-    AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor, RenderScope,
+    AudioParamValues, AudioWorkletGlobalScope, AudioWorkletNode, AudioWorkletNodeOptions,
+    AudioWorkletProcessor,
 };
 
 // Showcase how to create your own audio node with message passing
@@ -75,7 +76,7 @@ impl AudioWorkletProcessor for WhiteNoiseProcessor {
         _inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         _params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // edit the output buffer in place
         outputs[0].iter_mut().for_each(|buf| {

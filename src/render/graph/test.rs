@@ -1,6 +1,8 @@
 use crate::context::{AudioContextRegistration, BaseAudioContext, OfflineAudioContext};
 use crate::node::{AudioNode, ChannelConfig};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -115,7 +117,7 @@ impl AudioProcessor for DebugProcessor {
         _inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         self.collect.lock().unwrap().push(self.name);
         true

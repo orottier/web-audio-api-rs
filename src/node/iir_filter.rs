@@ -5,7 +5,9 @@ use num_complex::Complex;
 use std::f64::consts::PI;
 
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::MAX_CHANNELS;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
@@ -315,7 +317,7 @@ impl AudioProcessor for IirFilterRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

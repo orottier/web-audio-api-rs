@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
@@ -278,7 +280,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single input/output node
         let input = inputs[0].clone();
