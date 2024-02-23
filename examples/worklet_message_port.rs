@@ -1,5 +1,6 @@
-use crossbeam_channel::{self, Receiver, Sender};
 use rand::Rng;
+
+use std::any::Any;
 use std::collections::HashMap;
 
 use web_audio_api::context::{
@@ -30,25 +31,21 @@ enum NoiseColor {
 /// Audio source node emitting white noise (random samples)
 struct WhiteNoiseNode {
     node: AudioWorkletNode,
-    sender: Sender<NoiseColor>,
 }
 
 impl WhiteNoiseNode {
     fn new(context: &AudioContext) -> Self {
-        // use a bounded channel for real-time safety
-        let (sender, receiver) = crossbeam_channel::bounded(16);
-
         let options = AudioWorkletNodeOptions {
             number_of_inputs: 0,
             number_of_outputs: 1,
             output_channel_count: vec![1],
             parameter_data: HashMap::new(),
-            processor_options: receiver,
+            processor_options: (),
             channel_config: ChannelConfigOptions::default(),
         };
 
         let node = AudioWorkletNode::new::<WhiteNoiseProcessor>(context.base(), options);
-        Self { node, sender }
+        Self { node }
     }
 
     fn node(&self) -> &AudioWorkletNode {
@@ -56,22 +53,20 @@ impl WhiteNoiseNode {
     }
 
     fn set_noise_color(&self, color: NoiseColor) {
-        self.sender.send(color).unwrap();
+        self.node.port().post_message(color);
     }
 }
 
 struct WhiteNoiseProcessor {
     color: NoiseColor,
-    receiver: Receiver<NoiseColor>,
 }
 
 impl AudioWorkletProcessor for WhiteNoiseProcessor {
-    type ProcessorOptions = Receiver<NoiseColor>;
+    type ProcessorOptions = ();
 
-    fn constructor(opts: Self::ProcessorOptions) -> Self {
+    fn constructor(_opts: Self::ProcessorOptions) -> Self {
         Self {
             color: NoiseColor::White,
-            receiver: opts,
         }
     }
 
@@ -82,11 +77,6 @@ impl AudioWorkletProcessor for WhiteNoiseProcessor {
         _params: AudioParamValues<'_>,
         _scope: &RenderScope,
     ) -> bool {
-        // handle incoming messages
-        if let Ok(color) = self.receiver.try_recv() {
-            self.color = color;
-        }
-
         // edit the output buffer in place
         outputs[0].iter_mut().for_each(|buf| {
             let mut rng = rand::thread_rng();
@@ -104,6 +94,15 @@ impl AudioWorkletProcessor for WhiteNoiseProcessor {
         });
 
         true // tail time, source node will always be active
+    }
+
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        if let Some(&color) = msg.downcast_ref::<NoiseColor>() {
+            self.color = color;
+            return;
+        }
+
+        log::warn!("WhiteNoiseProcessor: Ignoring incoming message");
     }
 }
 
