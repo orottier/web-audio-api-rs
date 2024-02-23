@@ -1,7 +1,9 @@
 //! User-defined audio nodes and processors
 //!
-//! See `examples/worklet.rs` or `examples/worklet_bitcrusher.rs` for an example implementation of
-//! user defined nodes.
+//! See the following files for an example implementation of user defined nodes:
+//! - `examples/worklet.rs` (basics with an audio param)
+//! - `examples/worklet_message_port.rs` (basics with message port)
+//! - `examples/worklet_bitcrusher.rs` (real world example)
 
 pub use crate::render::RenderScope;
 
@@ -153,6 +155,7 @@ impl<C: Default> Default for AudioWorkletNodeOptions<C> {
 /// # Examples
 ///
 /// - `cargo run --release --example worklet`
+/// - `cargo run --release --example worklet_message_port`
 /// - `cargo run --release --example worklet_bitcrusher`
 ///
 #[derive(Debug)]
@@ -272,10 +275,19 @@ impl AudioWorkletNode {
         node
     }
 
+    /// Collection of AudioParam objects with associated names of this node
+    ///
+    /// This map is populated from a list of [`AudioParamDescriptor`]s in the
+    /// [`AudioWorkletProcessor`] class constructor at the instantiation.
     pub fn parameters(&self) -> &HashMap<String, AudioParam> {
         &self.audio_param_map
     }
 
+    /// Message port to the processor in the render thread
+    ///
+    /// Every AudioWorkletNode has an associated port which is the [`MessagePort`]. It is connected
+    /// to the port on the corresponding [`AudioWorkletProcessor`] object allowing bidirectional
+    /// communication between the AudioWorkletNode and its AudioWorkletProcessor.
     pub fn port(&self) -> MessagePort<'_> {
         MessagePort::from_node(self)
     }
