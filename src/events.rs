@@ -1,5 +1,5 @@
 use crate::context::AudioNodeId;
-use crate::AudioRenderCapacityEvent;
+use crate::{AudioBuffer, AudioRenderCapacityEvent};
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -33,6 +33,16 @@ pub struct ErrorEvent {
     pub message: String,
     /// The object with which panic was originally invoked.
     pub error: Box<dyn Any + Send>,
+    /// Inherits from this base Event
+    pub event: Event,
+}
+
+/// The OfflineAudioCompletionEvent Event interface
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct OfflineAudioCompletionEvent {
+    /// The rendered AudioBuffer
+    pub rendered_buffer: AudioBuffer,
     /// Inherits from this base Event
     pub event: Event,
 }

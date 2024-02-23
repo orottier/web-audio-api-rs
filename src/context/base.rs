@@ -21,6 +21,7 @@ use crate::{node, AudioListener};
 #[allow(clippy::module_name_repetitions)]
 pub trait BaseAudioContext {
     /// Returns the [`BaseAudioContext`] concrete type associated with this `AudioContext`
+    #[doc(hidden)] // we'd rather not expose the ConcreteBaseAudioContext
     fn base(&self) -> &ConcreteBaseAudioContext;
 
     /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]
@@ -319,6 +320,7 @@ pub trait BaseAudioContext {
         );
     }
 
+    /// Unset the callback to run when the state of the AudioContext has changed
     fn clear_onstatechange(&self) {
         self.base().clear_event_handler(EventType::StateChange);
     }

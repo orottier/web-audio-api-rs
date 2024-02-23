@@ -7,6 +7,7 @@ use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::render::RenderThread;
 use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
+use crate::{Event, OfflineAudioCompletionEvent};
 
 use futures_channel::{mpsc, oneshot};
 use futures_util::SinkExt as _;
@@ -47,11 +48,27 @@ struct OfflineAudioContextRenderer {
     suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
     /// channel to listen for `resume` calls on a suspended context
     resume_receiver: mpsc::Receiver<()>,
+    /// event handler for statechange event
+    onstatechange_handler: Option<Box<dyn FnMut(Event) + Send + 'static>>,
+    /// event handler for complete event
+    oncomplete_handler: Option<Box<dyn FnOnce(OfflineAudioCompletionEvent) + Send + 'static>>,
 }
 
 impl BaseAudioContext for OfflineAudioContext {
     fn base(&self) -> &ConcreteBaseAudioContext {
         &self.base
+    }
+
+    fn set_onstatechange<F: FnMut(Event) + Send + 'static>(&self, callback: F) {
+        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
+            renderer.onstatechange_handler = Some(Box::new(callback));
+        }
+    }
+
+    fn clear_onstatechange(&self) {
+        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
+            renderer.onstatechange_handler = None;
+        }
     }
 }
 
@@ -111,6 +128,8 @@ impl OfflineAudioContext {
             suspend_promises: Vec::new(),
             suspend_callbacks: Vec::new(),
             resume_receiver,
+            onstatechange_handler: None,
+            oncomplete_handler: None,
         };
 
         Self {
@@ -143,12 +162,20 @@ impl OfflineAudioContext {
         let OfflineAudioContextRenderer {
             renderer,
             suspend_callbacks,
+            oncomplete_handler,
+            mut onstatechange_handler,
             ..
         } = renderer;
 
         self.base.set_state(AudioContextState::Running);
+        Self::emit_statechange(&mut onstatechange_handler);
+
         let result = renderer.render_audiobuffer_sync(self.length, suspend_callbacks, self);
+
         self.base.set_state(AudioContextState::Closed);
+        Self::emit_statechange(&mut onstatechange_handler);
+
+        Self::emit_complete(oncomplete_handler, &result);
 
         result
     }
@@ -177,18 +204,46 @@ impl OfflineAudioContext {
             renderer,
             suspend_promises,
             resume_receiver,
+            oncomplete_handler,
+            mut onstatechange_handler,
             ..
         } = renderer;
 
         self.base.set_state(AudioContextState::Running);
+        Self::emit_statechange(&mut onstatechange_handler);
 
         let result = renderer
             .render_audiobuffer(self.length, suspend_promises, resume_receiver)
             .await;
 
         self.base.set_state(AudioContextState::Closed);
+        Self::emit_statechange(&mut onstatechange_handler);
+
+        Self::emit_complete(oncomplete_handler, &result);
 
         result
+    }
+
+    fn emit_complete(
+        oncomplete_handler: Option<Box<dyn FnOnce(OfflineAudioCompletionEvent) + Send>>,
+        result: &AudioBuffer,
+    ) {
+        if let Some(callback) = oncomplete_handler {
+            let event = OfflineAudioCompletionEvent {
+                rendered_buffer: result.clone(),
+                event: Event { type_: "complete" },
+            };
+            (callback)(event);
+        }
+    }
+
+    fn emit_statechange(onstatechange_handler: &mut Option<Box<dyn FnMut(Event) + Send>>) {
+        if let Some(callback) = onstatechange_handler.as_mut() {
+            let event = Event {
+                type_: "statechange",
+            };
+            (callback)(event);
+        }
     }
 
     /// get the length of rendering audio buffer
@@ -357,12 +412,35 @@ impl OfflineAudioContext {
         self.base().set_state(AudioContextState::Running);
         self.resume_sender.clone().send(()).await.unwrap()
     }
+
+    /// Register callback to run when the rendering has completed
+    ///
+    /// Only a single event handler is active at any time. Calling this method multiple times will
+    /// override the previous event handler.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn set_oncomplete<F: FnOnce(OfflineAudioCompletionEvent) + Send + 'static>(
+        &mut self,
+        callback: F,
+    ) {
+        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
+            renderer.oncomplete_handler = Some(Box::new(callback));
+        }
+    }
+
+    /// Unset the callback to run when the rendering has completed
+    #[allow(clippy::missing_panics_doc)]
+    pub fn clear_oncomplete(&mut self) {
+        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
+            renderer.oncomplete_handler = None;
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use float_eq::assert_float_eq;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use crate::node::AudioNode;
     use crate::node::AudioScheduledSourceNode;
@@ -492,5 +570,36 @@ mod tests {
         let mut context = OfflineAudioContext::new(2, 128, 44_100.);
         context.suspend_sync(0.0, |_| ());
         context.suspend_sync(0.0, |_| ());
+    }
+
+    #[test]
+    fn test_onstatechange() {
+        let mut context = OfflineAudioContext::new(2, 555, 44_100.);
+
+        let changed = Arc::new(AtomicBool::new(false));
+        let changed_clone = Arc::clone(&changed);
+        context.set_onstatechange(move |_event| {
+            changed_clone.store(true, Ordering::Relaxed);
+        });
+
+        let _ = context.start_rendering_sync();
+
+        assert!(changed.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_oncomplete() {
+        let mut context = OfflineAudioContext::new(2, 555, 44_100.);
+
+        let complete = Arc::new(AtomicBool::new(false));
+        let complete_clone = Arc::clone(&complete);
+        context.set_oncomplete(move |event| {
+            assert_eq!(event.rendered_buffer.length(), 555);
+            complete_clone.store(true, Ordering::Relaxed);
+        });
+
+        let _ = context.start_rendering_sync();
+
+        assert!(complete.load(Ordering::Relaxed));
     }
 }
