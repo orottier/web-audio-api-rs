@@ -8,7 +8,9 @@ use hrtf::{HrirSphere, HrtfContext, HrtfProcessor, Vec3};
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{
@@ -390,7 +392,7 @@ impl PannerNode {
     /// Can panic when loading HRIR-sphere
     #[allow(clippy::missing_panics_doc)]
     pub fn new<C: BaseAudioContext>(context: &C, options: PannerOptions) -> Self {
-        let mut node = context.register(|registration| {
+        let mut node = context.base().register(|registration| {
             use crate::spatial::PARAM_OPTS;
 
             let PannerOptions {
@@ -685,7 +687,7 @@ impl AudioProcessor for PannerRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // Single input/output node
         let input = &inputs[0];

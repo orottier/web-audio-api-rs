@@ -33,13 +33,16 @@ pub mod node;
 mod events;
 pub use events::{ErrorEvent, Event, OfflineAudioCompletionEvent};
 
+mod message_port;
+pub use message_port::MessagePort;
+
 mod param;
 pub use param::*;
 
 mod periodic_wave;
 pub use periodic_wave::*;
 
-pub mod render;
+mod render;
 
 mod spatial;
 pub use spatial::AudioListener;

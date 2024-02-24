@@ -58,7 +58,7 @@ impl MediaStreamAudioSourceNode {
         context: &C,
         options: MediaStreamAudioSourceOptions<'_>,
     ) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let node = MediaStreamAudioSourceNode {
                 registration,
                 channel_config: ChannelConfig::default(),

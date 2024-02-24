@@ -2,9 +2,9 @@ use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
-use web_audio_api::render::RenderScope;
 use web_audio_api::worklet::{
-    AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor,
+    AudioParamValues, AudioWorkletGlobalScope, AudioWorkletNode, AudioWorkletNodeOptions,
+    AudioWorkletProcessor,
 };
 use web_audio_api::{AudioParamDescriptor, AutomationRate};
 
@@ -21,6 +21,7 @@ impl AudioWorkletProcessor for MyProcessor {
     where
         Self: Sized,
     {
+        // Audio param controlling the volume (for educational purpose, use a GainNode otherwise)
         vec![AudioParamDescriptor {
             name: String::from("gain"),
             min_value: f32::MIN,
@@ -35,7 +36,7 @@ impl AudioWorkletProcessor for MyProcessor {
         inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
-        _scope: &'b RenderScope,
+        _scope: &'b AudioWorkletGlobalScope,
     ) -> bool {
         // passthrough with gain
         inputs[0]

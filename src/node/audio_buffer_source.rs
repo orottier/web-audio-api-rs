@@ -5,7 +5,9 @@ use std::sync::Arc;
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::{assert_valid_time_value, AtomicF64, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
@@ -171,7 +173,7 @@ impl AudioBufferSourceNode {
             playback_rate,
         } = options;
 
-        let mut node = context.register(move |registration| {
+        let mut node = context.base().register(move |registration| {
             // these parameters can't be changed to a-rate
             // @see - <https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints>
             let detune_param_options = AudioParamDescriptor {
@@ -407,7 +409,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         _inputs: &[AudioRenderQuantum], // no input...
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

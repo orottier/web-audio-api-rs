@@ -5,7 +5,9 @@ use realfft::{num_complex::Complex, ComplexToReal, RealFftPlanner, RealToComplex
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
@@ -417,7 +419,7 @@ impl AudioProcessor for ConvolverRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

@@ -1,14 +1,19 @@
 //! User-defined audio nodes and processors
 //!
-//! See `examples/worklet.rs` or `examples/worklet_bitcrusher.rs` for an example implementation of
-//! user defined nodes.
+//! See the following files for an example implementation of user defined nodes:
+//! - `examples/worklet.rs` (basics with an audio param)
+//! - `examples/worklet_message_port.rs` (basics with message port)
+//! - `examples/worklet_bitcrusher.rs` (real world example)
+
+pub use crate::render::AudioWorkletGlobalScope;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioProcessor, AudioRenderQuantum, RenderScope};
-use crate::MAX_CHANNELS;
+use crate::render::{AudioProcessor, AudioRenderQuantum};
+use crate::{MessagePort, MAX_CHANNELS};
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
@@ -47,7 +52,9 @@ pub trait AudioWorkletProcessor {
     type ProcessorOptions: Send;
 
     /// Constructor of the [`AudioWorkletProcessor`] instance (to be executed in the render thread)
-    fn constructor(opts: Self::ProcessorOptions) -> Self;
+    fn constructor(opts: Self::ProcessorOptions) -> Self
+    where
+        Self: Sized;
 
     /// List of [`AudioParam`]s for this audio processor
     ///
@@ -82,8 +89,24 @@ pub trait AudioWorkletProcessor {
         inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
-        scope: &'b RenderScope,
+        scope: &'b AudioWorkletGlobalScope,
     ) -> bool;
+
+    /// Handle incoming messages from the linked AudioNode
+    ///
+    /// By overriding this method you can add a handler for messages sent from the control thread
+    /// via the AudioWorkletNode MessagePort.
+    ///
+    /// Receivers are supposed to consume the content of `msg`. The content of `msg` might
+    /// also be replaced by cruft that needs to be deallocated outside of the render thread
+    /// afterwards, e.g. when replacing an internal buffer.
+    ///
+    /// This method is just a shim of the full
+    /// [`MessagePort`](https://webaudio.github.io/web-audio-api/#dom-audioworkletprocessor-port)
+    /// `onmessage` functionality of the AudioWorkletProcessor.
+    fn onmessage(&mut self, _msg: &mut dyn Any) {
+        log::warn!("AudioWorkletProcessor: Ignoring incoming message");
+    }
 }
 
 /// Options for constructing an [`AudioWorkletNode`]
@@ -132,6 +155,7 @@ impl<C: Default> Default for AudioWorkletNodeOptions<C> {
 /// # Examples
 ///
 /// - `cargo run --release --example worklet`
+/// - `cargo run --release --example worklet_message_port`
 /// - `cargo run --release --example worklet_bitcrusher`
 ///
 #[derive(Debug)]
@@ -174,40 +198,46 @@ impl AudioWorkletNode {
         context: &impl BaseAudioContext,
         options: AudioWorkletNodeOptions<P::ProcessorOptions>,
     ) -> Self {
-        context.register(move |registration| {
-            let AudioWorkletNodeOptions {
-                number_of_inputs,
-                number_of_outputs,
-                output_channel_count,
-                parameter_data,
-                processor_options,
-                channel_config,
-            } = options;
+        let AudioWorkletNodeOptions {
+            number_of_inputs,
+            number_of_outputs,
+            output_channel_count,
+            parameter_data,
+            processor_options,
+            channel_config,
+        } = options;
 
-            assert!(
-                number_of_inputs != 0 || number_of_outputs != 0,
-                "NotSupportedError: number of inputs and outputs cannot both be zero"
-            );
+        assert!(
+            number_of_inputs != 0 || number_of_outputs != 0,
+            "NotSupportedError: number of inputs and outputs cannot both be zero"
+        );
 
-            let output_channel_count = if output_channel_count.is_empty() {
-                if number_of_inputs == 1 && number_of_outputs == 1 {
-                    vec![] // special case
-                } else {
-                    vec![1; number_of_outputs]
-                }
+        let output_channel_count = if output_channel_count.is_empty() {
+            if number_of_inputs == 1 && number_of_outputs == 1 {
+                vec![] // special case
             } else {
-                output_channel_count
-                    .iter()
-                    .copied()
-                    .for_each(crate::assert_valid_number_of_channels);
-                assert_eq!(
-                    output_channel_count.len(),
-                    number_of_outputs,
-                    "IndexSizeError: outputChannelCount.length should equal numberOfOutputs"
-                );
-                output_channel_count
-            };
+                vec![1; number_of_outputs]
+            }
+        } else {
+            output_channel_count
+                .iter()
+                .copied()
+                .for_each(crate::assert_valid_number_of_channels);
+            assert_eq!(
+                output_channel_count.len(),
+                number_of_outputs,
+                "IndexSizeError: outputChannelCount.length should equal numberOfOutputs"
+            );
+            output_channel_count
+        };
 
+        let number_of_output_channels = if output_channel_count.is_empty() {
+            MAX_CHANNELS
+        } else {
+            output_channel_count.iter().sum::<usize>()
+        };
+
+        let node = context.base().register(move |registration| {
             // Setup audio params, set initial values when supplied via parameter_data
             let mut node_param_map = HashMap::new();
             let mut processor_param_map = HashMap::new();
@@ -229,22 +259,8 @@ impl AudioWorkletNode {
                 audio_param_map: node_param_map,
             };
 
-            // TODO make initialization of proc nicer
-            let mut proc = None;
-            let mut processor_options = Some(processor_options);
-            let number_of_output_channels = if output_channel_count.is_empty() {
-                MAX_CHANNELS
-            } else {
-                output_channel_count.iter().sum::<usize>()
-            };
-            let render = AudioWorkletRenderer {
-                processor: Box::new(move |i, o, p, s| {
-                    if proc.is_none() {
-                        let opts = processor_options.take().unwrap();
-                        proc = Some(P::constructor(opts));
-                    }
-                    proc.as_mut().unwrap().process(i, o, p, s)
-                }),
+            let render: AudioWorkletRenderer<P> = AudioWorkletRenderer {
+                processor: Processor::new(processor_options),
                 audio_param_map: processor_param_map,
                 output_channel_count,
                 inputs_flat: Vec::with_capacity(number_of_inputs * MAX_CHANNELS),
@@ -254,23 +270,53 @@ impl AudioWorkletNode {
             };
 
             (node, Box::new(render))
-        })
+        });
+
+        node
     }
 
+    /// Collection of AudioParam objects with associated names of this node
+    ///
+    /// This map is populated from a list of [`AudioParamDescriptor`]s in the
+    /// [`AudioWorkletProcessor`] class constructor at the instantiation.
     pub fn parameters(&self) -> &HashMap<String, AudioParam> {
         &self.audio_param_map
     }
+
+    /// Message port to the processor in the render thread
+    ///
+    /// Every AudioWorkletNode has an associated port which is the [`MessagePort`]. It is connected
+    /// to the port on the corresponding [`AudioWorkletProcessor`] object allowing bidirectional
+    /// communication between the AudioWorkletNode and its AudioWorkletProcessor.
+    pub fn port(&self) -> MessagePort<'_> {
+        MessagePort::from_node(self)
+    }
 }
 
-type ProcessCallback = dyn for<'a, 'b> FnMut(
-    &'b [&'a [&'a [f32]]],
-    &'b mut [&'a mut [&'a mut [f32]]],
-    AudioParamValues<'b>,
-    &'b RenderScope,
-) -> bool;
+enum Processor<P: AudioWorkletProcessor> {
+    Uninit(Option<P::ProcessorOptions>),
+    Init(P),
+}
 
-struct AudioWorkletRenderer {
-    processor: Box<ProcessCallback>,
+impl<P: AudioWorkletProcessor> Processor<P> {
+    fn new(opts: P::ProcessorOptions) -> Self {
+        Self::Uninit(Some(opts))
+    }
+
+    fn load(&mut self) -> &mut dyn AudioWorkletProcessor<ProcessorOptions = P::ProcessorOptions> {
+        if let Processor::Uninit(opts) = self {
+            *self = Self::Init(P::constructor(opts.take().unwrap()));
+        }
+
+        match self {
+            Self::Init(p) => p,
+            Self::Uninit(_) => unreachable!(),
+        }
+    }
+}
+
+struct AudioWorkletRenderer<P: AudioWorkletProcessor> {
+    processor: Processor<P>,
     audio_param_map: HashMap<String, AudioParamId>,
     output_channel_count: Vec<usize>,
 
@@ -282,19 +328,20 @@ struct AudioWorkletRenderer {
 }
 
 // SAFETY:
-// The concrete AudioWorkletProcessor is instantiated inside the render thread and won't be sent
-// elsewhere. TODO how to express this in safe rust? Can we remove the Send bound from
-// AudioProcessor?
-unsafe impl Send for AudioWorkletRenderer {}
+// The concrete AudioWorkletProcessor is instantiated inside the render thread and won't be
+// sent elsewhere.
+unsafe impl<P: AudioWorkletProcessor> Send for AudioWorkletRenderer<P> {}
 
-impl AudioProcessor for AudioWorkletRenderer {
+impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
     fn process(
         &mut self,
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: crate::render::AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
+        let processor = self.processor.load();
+
         // Bear with me, to construct a &[&[&[f32]]] we first build a backing vector of all the
         // individual sample slices. Then we chop it up to get to the right sub-slice structure.
         inputs
@@ -366,7 +413,7 @@ impl AudioProcessor for AudioWorkletRenderer {
             map: &self.audio_param_map,
         };
 
-        let tail_time = (self.processor)(
+        let tail_time = processor.process(
             &self.inputs_grouped[..],
             &mut self.outputs_grouped[..],
             param_getter,
@@ -379,6 +426,10 @@ impl AudioProcessor for AudioWorkletRenderer {
         self.outputs_flat.clear();
 
         tail_time
+    }
+
+    fn onmessage(&mut self, msg: &mut dyn Any) {
+        self.processor.load().onmessage(msg)
     }
 }
 
@@ -402,7 +453,7 @@ mod tests {
             _inputs: &'b [&'a [&'a [f32]]],
             _outputs: &'b mut [&'a mut [&'a mut [f32]]],
             _params: AudioParamValues<'b>,
-            _scope: &'b RenderScope,
+            _scope: &'b AudioWorkletGlobalScope,
         ) -> bool {
             true
         }
@@ -504,7 +555,7 @@ mod tests {
                 _inputs: &'b [&'a [&'a [f32]]],
                 _outputs: &'b mut [&'a mut [&'a mut [f32]]],
                 _params: AudioParamValues<'b>,
-                _scope: &'b RenderScope,
+                _scope: &'b AudioWorkletGlobalScope,
             ) -> bool {
                 true
             }

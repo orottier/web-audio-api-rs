@@ -11,7 +11,9 @@ use crate::context::AudioContextRegistration;
 use crate::node::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::{assert_valid_time_value, AtomicF32, RENDER_QUANTUM_SIZE};
 
 /// For SetTargetAtTime event, that theoretically cannot end, if the diff between
@@ -686,7 +688,7 @@ impl AudioProcessor for AudioParamProcessor {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
         let period = 1. / scope.sample_rate as f64;
 

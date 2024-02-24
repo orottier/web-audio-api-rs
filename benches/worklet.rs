@@ -1,5 +1,4 @@
-use web_audio_api::render::RenderScope;
-use web_audio_api::worklet::{AudioParamValues, AudioWorkletProcessor};
+use web_audio_api::worklet::{AudioParamValues, AudioWorkletGlobalScope, AudioWorkletProcessor};
 use web_audio_api::{AudioParamDescriptor, AutomationRate};
 
 pub struct GainProcessor;
@@ -29,7 +28,7 @@ impl AudioWorkletProcessor for GainProcessor {
         inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
-        _scope: &'b RenderScope,
+        _scope: &'b AudioWorkletGlobalScope,
     ) -> bool {
         let gain = params.get("gain");
         let io_zip = inputs[0].iter().zip(outputs[0].iter_mut());

@@ -1,56 +1,27 @@
 use float_eq::assert_float_eq;
-use web_audio_api::context::{AudioContextRegistration, BaseAudioContext, OfflineAudioContext};
-use web_audio_api::node::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
-use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
 
-struct PanicNode {
-    registration: AudioContextRegistration,
-    channel_config: ChannelConfig,
-}
+use web_audio_api::context::{BaseAudioContext, OfflineAudioContext};
+use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+use web_audio_api::worklet::{
+    AudioParamValues, AudioWorkletGlobalScope, AudioWorkletNode, AudioWorkletNodeOptions,
+    AudioWorkletProcessor,
+};
 
-impl AudioNode for PanicNode {
-    fn registration(&self) -> &AudioContextRegistration {
-        &self.registration
+struct PanicProcessor;
+
+impl AudioWorkletProcessor for PanicProcessor {
+    type ProcessorOptions = ();
+
+    fn constructor(_opts: Self::ProcessorOptions) -> Self {
+        Self {}
     }
 
-    fn channel_config(&self) -> &ChannelConfig {
-        &self.channel_config
-    }
-
-    fn number_of_inputs(&self) -> usize {
-        1
-    }
-
-    fn number_of_outputs(&self) -> usize {
-        1
-    }
-}
-
-impl PanicNode {
-    /// Construct a new WhiteNoiseNode
-    fn new<C: BaseAudioContext>(context: &C) -> Self {
-        context.register(move |registration| {
-            let render = PanicProcessor {};
-
-            let node = PanicNode {
-                registration,
-                channel_config: ChannelConfig::default(),
-            };
-
-            (node, Box::new(render))
-        })
-    }
-}
-
-struct PanicProcessor {}
-
-impl AudioProcessor for PanicProcessor {
-    fn process(
+    fn process<'a, 'b>(
         &mut self,
-        _inputs: &[AudioRenderQuantum],
-        _outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _inputs: &'b [&'a [&'a [f32]]],
+        _outputs: &'b mut [&'a mut [&'a mut [f32]]],
+        _params: AudioParamValues<'b>,
+        _scope: &'b AudioWorkletGlobalScope,
     ) -> bool {
         panic!("panic message");
     }
@@ -70,7 +41,8 @@ fn test_processor_error() {
         // create constant source with value 2, connect to error processor
         let mut source2 = context.create_constant_source();
         source2.offset().set_value(2.);
-        let panic = PanicNode::new(&context);
+        let options = AudioWorkletNodeOptions::default();
+        let panic = AudioWorkletNode::new::<PanicProcessor>(&context, options);
         source2.connect(&panic);
         panic.connect(&context.destination());
         source2.start();

@@ -1,6 +1,8 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
@@ -51,7 +53,7 @@ impl AudioNode for GainNode {
 
 impl GainNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: GainOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let param_opts = AudioParamDescriptor {
                 name: String::new(),
                 min_value: f32::MIN,
@@ -90,7 +92,7 @@ impl AudioProcessor for GainRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

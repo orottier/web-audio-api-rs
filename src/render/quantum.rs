@@ -86,14 +86,6 @@ impl AllocInner {
 /// Audio buffers are managed with a dedicated allocator per render thread, hence there are no
 /// public constructors available. If you must create a new instance, copy an existing one and
 /// mutate it from there.
-///
-/// ```
-/// use web_audio_api::render::AudioRenderQuantumChannel;
-///
-/// fn apply_gain(channel: &mut AudioRenderQuantumChannel, gain: f32) {
-///     channel.iter_mut().for_each(|s| *s *= gain)
-/// }
-/// ```
 #[derive(Clone, Debug)]
 pub struct AudioRenderQuantumChannel {
     data: Rc<[f32; RENDER_QUANTUM_SIZE]>,
@@ -183,16 +175,6 @@ impl std::ops::Drop for AudioRenderQuantumChannel {
 /// Audio buffers are managed with a dedicated allocator per render thread, hence there are no
 /// public constructors available. If you must create a new instance, copy an existing one and
 /// mutate it from there.
-///
-/// ```
-/// use web_audio_api::render::AudioRenderQuantum;
-///
-/// fn apply_gain(buffer: &mut AudioRenderQuantum, gain: f32) {
-///     buffer.channels_mut()
-///         .iter_mut()
-///         .for_each(|ch| ch.iter_mut().for_each(|s| *s *= gain))
-/// }
-/// ```
 #[derive(Clone, Debug)]
 pub struct AudioRenderQuantum {
     channels: ArrayVec<AudioRenderQuantumChannel, MAX_CHANNELS>,

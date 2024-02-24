@@ -84,7 +84,7 @@ impl MediaElementAudioSourceNode {
         context: &C,
         options: MediaElementAudioSourceOptions<'_>,
     ) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let node = MediaElementAudioSourceNode {
                 registration,
                 channel_config: ChannelConfig::default(),

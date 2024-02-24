@@ -3,7 +3,9 @@ use std::fmt::Debug;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::PeriodicWave;
 use crate::{assert_valid_time_value, RENDER_QUANTUM_SIZE};
 
@@ -206,7 +208,7 @@ impl OscillatorNode {
             periodic_wave,
         } = options;
 
-        let mut node = context.register(move |registration| {
+        let mut node = context.base().register(move |registration| {
             let sample_rate = context.sample_rate();
             let nyquist = sample_rate / 2.;
 
@@ -357,7 +359,7 @@ impl AudioProcessor for OscillatorRenderer {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

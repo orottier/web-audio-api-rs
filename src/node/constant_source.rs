@@ -2,7 +2,9 @@ use std::any::Any;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::{assert_valid_time_value, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, AudioScheduledSourceNode, ChannelConfig};
@@ -131,7 +133,7 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 
 impl ConstantSourceNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let ConstantSourceOptions { offset } = options;
 
             let param_options = AudioParamDescriptor {
@@ -180,7 +182,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

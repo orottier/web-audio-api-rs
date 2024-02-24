@@ -2,7 +2,9 @@ use std::error::Error;
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
@@ -81,7 +83,7 @@ impl AudioNode for MediaStreamAudioDestinationNode {
 impl MediaStreamAudioDestinationNode {
     /// Create a new MediaStreamAudioDestinationNode
     pub fn new<C: BaseAudioContext>(context: &C, options: ChannelConfigOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let (send, recv) = crossbeam_channel::bounded(1);
 
             let iter = AudioDestinationNodeStream {
@@ -120,7 +122,7 @@ impl AudioProcessor for DestinationRenderer {
         inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single input, no output
         let input = &inputs[0];

@@ -4,9 +4,9 @@ use web_audio_api::context::{
 use web_audio_api::node::{
     AudioNode, AudioScheduledSourceNode, OscillatorNode, OscillatorOptions, OscillatorType,
 };
-use web_audio_api::render::RenderScope;
 use web_audio_api::worklet::{
-    AudioParamValues, AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor,
+    AudioParamValues, AudioWorkletGlobalScope, AudioWorkletNode, AudioWorkletNodeOptions,
+    AudioWorkletProcessor,
 };
 use web_audio_api::{AudioParamDescriptor, AutomationRate};
 
@@ -71,7 +71,7 @@ impl AudioWorkletProcessor for BitCrusher {
         inputs: &'b [&'a [&'a [f32]]],
         outputs: &'b mut [&'a mut [&'a mut [f32]]],
         params: AudioParamValues<'b>,
-        _scope: &'b RenderScope,
+        _scope: &'b AudioWorkletGlobalScope,
     ) -> bool {
         let bit_depth = params.get("bit_depth");
         let frequency_reduction = params.get("frequency_reduction");

@@ -1,6 +1,8 @@
-use web_audio_api::context::{AudioContextRegistration, BaseAudioContext, OfflineAudioContext};
-use web_audio_api::node::{AudioNode, ChannelConfig};
-use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::context::{AudioContextRegistration, BaseAudioContext, OfflineAudioContext};
+use crate::node::{AudioNode, ChannelConfig};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -37,7 +39,7 @@ fn test_ordering_with_cycle_breakers(
                 let cycle_breaker = cycle_breakers.iter().any(|&c| c == label);
                 (
                     label,
-                    DebugNode::new(&context, label, collect.clone(), cycle_breaker),
+                    DebugNode::new(&context, label, Arc::clone(&collect), cycle_breaker),
                 )
             })
             .collect();
@@ -85,7 +87,7 @@ impl DebugNode {
         collect: Arc<Mutex<Vec<Label>>>,
         cycle_breaker: bool,
     ) -> Self {
-        let node = context.register(move |registration| {
+        let node = context.base().register(move |registration| {
             let render = DebugProcessor { name, collect };
 
             let node = DebugNode {
@@ -115,7 +117,7 @@ impl AudioProcessor for DebugProcessor {
         _inputs: &[AudioRenderQuantum],
         _outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         self.collect.lock().unwrap().push(self.name);
         true

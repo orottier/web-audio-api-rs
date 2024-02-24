@@ -17,7 +17,7 @@ use std::ops::Deref;
 /// This struct currently only contains information about the progress of time. In a future
 /// version, it should be possible to add arbitrary data. For example, multiple processors might
 /// share a buffer defining a wavetable or an impulse response.
-pub struct RenderScope {
+pub struct AudioWorkletGlobalScope {
     pub current_frame: u64,
     pub current_time: f64,
     pub sample_rate: f32,
@@ -26,7 +26,7 @@ pub struct RenderScope {
     pub(crate) event_sender: Option<Sender<EventDispatch>>,
 }
 
-impl std::fmt::Debug for RenderScope {
+impl std::fmt::Debug for AudioWorkletGlobalScope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut format = f.debug_struct("RenderScope");
         format
@@ -37,7 +37,19 @@ impl std::fmt::Debug for RenderScope {
     }
 }
 
-impl RenderScope {
+impl AudioWorkletGlobalScope {
+    /// Send a message to the corresponding AudioWorkletNode of this processor
+    ///
+    /// This method is just a shim of the full
+    /// [`MessagePort`](https://webaudio.github.io/web-audio-api/#dom-audioworkletprocessor-port)
+    /// `postMessage` functionality of the AudioWorkletProcessor.
+    pub fn post_message(&self, msg: Box<dyn Any + Send + 'static>) {
+        if let Some(sender) = self.event_sender.as_ref() {
+            // sending could fail if the channel is saturated or the main thread is shutting down
+            let _ = sender.try_send(EventDispatch::message(self.node_id.get(), msg));
+        }
+    }
+
     pub(crate) fn send_ended_event(&self) {
         if let Some(sender) = self.event_sender.as_ref() {
             // sending could fail if the channel is saturated or the main thread is shutting down
@@ -78,7 +90,7 @@ impl RenderScope {
 ///
 /// Note that the AudioProcessor is typically constructed together with an
 /// [`AudioNode`](crate::node::AudioNode) (the user facing object that lives in the control
-/// thread). See [`BaseAudioContext::register`](crate::context::BaseAudioContext::register).
+/// thread). See [`ConcreteBaseAudioContext::register`](crate::context::ConcreteBaseAudioContext::register).
 ///
 /// Check the `examples/worklet.rs` file for example usage of this trait.
 pub trait AudioProcessor: Send {
@@ -106,7 +118,7 @@ pub trait AudioProcessor: Send {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool;
 
     /// Handle incoming messages from the linked AudioNode
@@ -203,7 +215,7 @@ mod tests {
             _inputs: &[AudioRenderQuantum],
             _outputs: &mut [AudioRenderQuantum],
             _params: AudioParamValues<'_>,
-            _scope: &RenderScope,
+            _scope: &AudioWorkletGlobalScope,
         ) -> bool {
             todo!()
         }

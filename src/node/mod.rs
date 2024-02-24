@@ -4,11 +4,12 @@ use std::f32::consts::PI;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
-use crate::events::{ErrorEvent, EventHandler, EventPayload, EventType};
+use crate::events::{ErrorEvent, Event, EventHandler, EventPayload, EventType};
 use crate::message::ControlMessage;
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::AudioBufferIter;
-use crate::Event;
 
 mod analyser;
 pub use analyser::*;
@@ -280,8 +281,8 @@ impl From<ChannelConfigOptions> for ChannelConfig {
 /// These modules can be connected together to form processing graphs for rendering audio
 /// to the audio hardware. Each node can have inputs and/or outputs.
 ///
-/// Note that the AudioNode is typically constructed together with an [`AudioProcessor`]
-/// (the object that lives the render thread). See [`BaseAudioContext::register`](crate::context::BaseAudioContext::register).
+/// Note that the AudioNode is typically constructed together with an `AudioWorkletProcessor`
+/// (the object that lives the render thread). See the [`crate::worklet`] mod.
 pub trait AudioNode {
     fn registration(&self) -> &AudioContextRegistration;
 
@@ -503,7 +504,7 @@ impl<R: AudioBufferIter> AudioProcessor for MediaStreamRenderer<R> {
         _inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

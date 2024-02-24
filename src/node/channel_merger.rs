@@ -1,7 +1,9 @@
 use std::fmt::Debug;
 
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
@@ -101,7 +103,7 @@ impl AudioNode for ChannelMergerNode {
 
 impl ChannelMergerNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: ChannelMergerOptions) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             crate::assert_valid_number_of_channels(options.number_of_inputs);
 
             assert_valid_channel_count(options.channel_config.count);
@@ -129,7 +131,7 @@ impl AudioProcessor for ChannelMergerRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single output node
         let output = &mut outputs[0];

@@ -86,8 +86,8 @@ impl From<u8> for AudioContextState {
 /// Handle of the [`AudioNode`](crate::node::AudioNode) to its associated [`BaseAudioContext`].
 ///
 /// This allows for communication with the render thread and lifetime management.
-///
-/// The only way to construct this object is by calling [`BaseAudioContext::register`]
+//
+// The only way to construct this object is by calling [`BaseAudioContext::register`]
 pub struct AudioContextRegistration {
     /// the audio context in which nodes and connections lives
     context: ConcreteBaseAudioContext,
@@ -124,7 +124,7 @@ impl AudioContextRegistration {
     ///
     /// The message will be handled by
     /// [`AudioProcessor::onmessage`](crate::render::AudioProcessor::onmessage).
-    pub fn post_message<M: Any + Send + 'static>(&self, msg: M) {
+    pub(crate) fn post_message<M: Any + Send + 'static>(&self, msg: M) {
         let wrapped = crate::message::ControlMessage::NodeMessage {
             id: self.id,
             msg: llq::Node::new(Box::new(msg)),

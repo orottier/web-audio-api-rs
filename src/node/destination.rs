@@ -1,5 +1,7 @@
 use crate::context::{AudioContextRegistration, BaseAudioContext};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
@@ -82,7 +84,7 @@ impl AudioNode for AudioDestinationNode {
 
 impl AudioDestinationNode {
     pub(crate) fn new<C: BaseAudioContext>(context: &C, channel_count: usize) -> Self {
-        context.register(move |registration| {
+        context.base().register(move |registration| {
             let channel_config = ChannelConfigOptions {
                 count: channel_count,
                 count_mode: ChannelCountMode::Explicit,
@@ -128,7 +130,7 @@ impl AudioProcessor for DestinationRenderer {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        _scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single input/output node
         let input = &inputs[0];

@@ -1,6 +1,8 @@
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor};
-use crate::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use crate::render::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+};
 use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
@@ -226,8 +228,8 @@ impl DelayNode {
         let latest_frame_written = Rc::new(Cell::new(u64::MAX));
         let latest_frame_written_clone = Rc::clone(&latest_frame_written);
 
-        let node = context.register(move |writer_registration| {
-            let node = context.register(move |reader_registration| {
+        let node = context.base().register(move |writer_registration| {
+            let node = context.base().register(move |reader_registration| {
                 let param_opts = AudioParamDescriptor {
                     name: String::new(),
                     min_value: 0.,
@@ -344,7 +346,7 @@ impl AudioProcessor for DelayWriter {
         inputs: &[AudioRenderQuantum],
         outputs: &mut [AudioRenderQuantum],
         _params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single input/output node
         let input = inputs[0].clone();
@@ -427,7 +429,7 @@ impl AudioProcessor for DelayReader {
         _inputs: &[AudioRenderQuantum], // cannot be used
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
-        scope: &RenderScope,
+        scope: &AudioWorkletGlobalScope,
     ) -> bool {
         // single input/output node
         let output = &mut outputs[0];
