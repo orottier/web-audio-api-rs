@@ -2,7 +2,7 @@
 
 ## Version 1.0.0-rc.1 (2024-02-24)
 
-- Breaking: the AudioProcessor trait is now superseeded by AudioWorkletProcessor
+- Breaking: the AudioProcessor trait is now superseded by AudioWorkletProcessor
 - Breaking: the RenderScope struct is renamed to AudioWorkletGlobalScope
 - Added message port functionality to AudioWorkletNode and AudioWorkletProcessor
 - Added OfflineAudioContext event handlers
