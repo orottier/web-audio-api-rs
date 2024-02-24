@@ -1,5 +1,15 @@
 # Version History
 
+## Version 1.0.0-rc.1 (2024-02-24)
+
+- Breaking: the AudioProcessor trait is now superseeded by AudioWorkletProcessor
+- Breaking: the RenderScope struct is renamed to AudioWorkletGlobalScope
+- Added message port functionality to AudioWorkletNode and AudioWorkletProcessor
+- Added OfflineAudioContext event handlers
+- Added validation of AudioScheduledSourceNode start/stop actions
+- Fixed a bug with min/max decibels in the AnalyserNode
+- Fixed panic in AudioBufferSourceNode when duration exceeds buffer length
+
 ## Version 0.42.1 (2024-02-12)
 
 - Add `Debug` implementation for all public facing items
