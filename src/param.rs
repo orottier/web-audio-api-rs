@@ -1060,7 +1060,7 @@ impl AudioParamProcessor {
 
         // fill buffer with current intrinsic value until `event.time`
         if infos.is_a_rate {
-            let end_index = ((time - infos.block_time).max(0.) / infos.dt) as usize;
+            let end_index = ((time - infos.block_time).max(0.) / infos.dt).round() as usize;
             let end_index_clipped = end_index.min(infos.count);
 
             for _ in self.buffer.len()..end_index_clipped {
