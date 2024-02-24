@@ -1110,9 +1110,9 @@ impl AudioParamProcessor {
 
         if infos.is_a_rate {
             let start_index = self.buffer.len();
-            // we need to `ceil()` because if `end_time` is between two samples
+            // we need to `round()` because if `end_time` is between two samples
             // we actually want the sample before `end_time` to be computed
-            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).ceil() as usize;
+            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
             let end_index_clipped = end_index.min(infos.count);
 
             // compute "real" value according to `t` then clamp it
@@ -1212,10 +1212,9 @@ impl AudioParamProcessor {
 
         if infos.is_a_rate {
             let start_index = self.buffer.len();
-            // we need to `ceil()` because if `end_time` is between two samples
+            // we need to `round()` because if `end_time` is between two samples
             // we actually want the sample before `end_time` to be computed
-            // @todo - more tests
-            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).ceil() as usize;
+            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
             let end_index_clipped = end_index.min(infos.count);
 
             if end_index_clipped > start_index {
@@ -1338,10 +1337,9 @@ impl AudioParamProcessor {
 
         if infos.is_a_rate {
             let start_index = self.buffer.len();
-            // we need to `ceil()` because if `end_time` is between two samples
+            // we need to `round()` because if `end_time` is between two samples
             // we actually want the sample before `end_time` to be computed
-            // @todo - more tests
-            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).ceil() as usize;
+            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
             let end_index_clipped = end_index.min(infos.count);
 
             if end_index_clipped > start_index {
@@ -1439,10 +1437,9 @@ impl AudioParamProcessor {
 
         if infos.is_a_rate {
             let start_index = self.buffer.len();
-            // we need to `ceil()` because if `end_time` is between two samples
+            // we need to `round()` because if `end_time` is between two samples
             // we actually want the sample before `end_time` to be computed
-            // @todo - more tests
-            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).ceil() as usize;
+            let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
             let end_index_clipped = end_index.min(infos.count);
 
             if end_index_clipped > start_index {
