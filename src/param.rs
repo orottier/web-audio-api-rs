@@ -740,30 +740,46 @@ impl AudioParamProcessor {
         #[cfg(test)]
         assert!(self.buffer.len() == 1 || self.buffer.len() == RENDER_QUANTUM_SIZE);
 
-        if self.buffer.len() == 1 && input.is_silent() {
+        // handle all k-rate and inactive a-rate processing
+        if self.buffer.len() == 1 || !self.automation_rate.is_a_rate() {
             let mut value = self.buffer[0];
 
-            if value.is_nan() {
-                value = self.default_value;
+            // we can return a 1-sized buffer if either
+            // - the input signal is zero, or
+            // - if this is k-rate processing
+            if input.is_silent() || !self.automation_rate.is_a_rate() {
+                output.set_single_valued(true);
+
+                value += input.channel_data(0)[0];
+
+                if value.is_nan() {
+                    value = self.default_value;
+                }
+
+                output.channel_data_mut(0)[0] = value.clamp(self.min_value, self.max_value);
+            } else {
+                // a-rate processing and input non-zero
+                output.set_single_valued(false);
+                *output = input.clone();
+                output.channel_data_mut(0).iter_mut().for_each(|o| {
+                    *o += value;
+
+                    if o.is_nan() {
+                        *o = self.default_value;
+                    }
+
+                    *o = o.clamp(self.min_value, self.max_value)
+                });
             }
-
-            output.set_single_valued(true);
-
-            let output_channel = output.channel_data_mut(0);
-            output_channel[0] = value.clamp(self.min_value, self.max_value);
         } else {
-            // @note: we could add two other optimizations here:
-            // - when buffer.len() == 1 and buffer[0] == 0., then we don't need to
-            //   zip and add, but we still need to clamp
-            // - when input.is_silent(), then we can copy_from_slice the buffer into
-            //   output and then just clamp
+            // a-rate processing
             *output = input.clone();
             output.set_single_valued(false);
 
             output
                 .channel_data_mut(0)
                 .iter_mut()
-                .zip(self.buffer.iter().cycle())
+                .zip(self.buffer.iter())
                 .for_each(|(o, p)| {
                     *o += p;
 
@@ -3431,6 +3447,41 @@ mod tests {
             assert!(!output.single_valued());
             assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
         }
+    }
+
+    #[test]
+    fn test_k_rate_makes_input_single_valued() {
+        let alloc = Alloc::with_capacity(1);
+        let context = OfflineAudioContext::new(1, 0, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::K,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 10.,
+        };
+        let (_param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        // no event in timeline, buffer length is 1
+        let vs = render.compute_intrinsic_values(0., 1., 128);
+        assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
+
+        // mix to output step, input is not silence
+        let signal = alloc.silence();
+        let mut input = AudioRenderQuantum::from(signal);
+        input.channel_data_mut(0)[0] = 1.;
+        input.channel_data_mut(0)[1] = 2.;
+        input.channel_data_mut(0)[2] = 3.;
+
+        let signal = alloc.silence();
+        let mut output = AudioRenderQuantum::from(signal);
+
+        render.mix_to_output(&input, &mut output);
+
+        // expect only 1, not the other values
+        assert!(output.single_valued());
+        assert_float_eq!(output.channel_data(0)[0], 1., abs <= 0.);
     }
 
     #[test]
