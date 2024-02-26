@@ -733,12 +733,8 @@ mod tests {
 
     #[test]
     fn test_resample_from_empty() {
-        let options = AudioBufferOptions {
-            number_of_channels: 1,
-            length: 0,
-            sample_rate: 48000.,
-        };
-        let mut buffer = AudioBuffer::new(options);
+        let channel = ChannelData::from(vec![]);
+        let mut buffer = AudioBuffer::from_channels(vec![channel], 48000.);
         buffer.resample(48000.);
 
         assert_eq!(buffer.length(), 0);
