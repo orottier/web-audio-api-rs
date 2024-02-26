@@ -55,7 +55,7 @@ struct PlaybackInfo {
     k: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct LoopState {
     pub is_looping: bool,
     pub start: f64,
@@ -214,7 +214,7 @@ impl AudioBufferSourceNode {
                 buffer: None,
                 detune: d_proc,
                 playback_rate: pr_proc,
-                loop_state: loop_state.clone(),
+                loop_state,
                 render_state: AudioBufferRendererState::default(),
                 ended_triggered: false,
             };
@@ -423,7 +423,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             is_looping,
             start: loop_start,
             end: loop_end,
-        } = self.loop_state.clone();
+        } = self.loop_state;
 
         // these will only be used if `loop_` is true, so no need for `Option`
         let mut actual_loop_start = 0.;
