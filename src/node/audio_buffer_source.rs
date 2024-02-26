@@ -411,7 +411,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         params: AudioParamValues<'_>,
         scope: &AudioWorkletGlobalScope,
     ) -> bool {
-        // single output node
+        // Single output node
         let output = &mut outputs[0];
 
         let sample_rate = scope.sample_rate as f64;
@@ -419,17 +419,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let block_duration = dt * RENDER_QUANTUM_SIZE as f64;
         let next_block_time = scope.current_time + block_duration;
 
-        let LoopState {
-            is_looping,
-            start: loop_start,
-            end: loop_end,
-        } = self.loop_state;
-
-        // these will only be used if `loop_` is true, so no need for `Option`
-        let mut actual_loop_start = 0.;
-        let mut actual_loop_end = 0.;
-
-        // return early if start_time is beyond this block
+        // Return early if start_time is beyond this block
         if self.start_time >= next_block_time {
             output.make_silent();
             return true;
@@ -444,6 +434,16 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             Some(b) => b,
         };
 
+        let LoopState {
+            is_looping,
+            start: loop_start,
+            end: loop_end,
+        } = self.loop_state;
+
+        // these will only be used if `loop_` is true, so no need for `Option`
+        let mut actual_loop_start = 0.;
+        let mut actual_loop_end = 0.;
+
         // compute compound parameter at k-rate, these parameters have constraints
         // https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints
         let detune = params.get(&self.detune)[0];
@@ -456,15 +456,20 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // we just linearly interpolate, thus favoring performance vs quality
         let sampling_ratio = buffer.sample_rate() as f64 / sample_rate;
 
-        // In addition, if the buffer has more than one channel, then the
-        // AudioBufferSourceNode output must change to a single channel of silence
-        // at the beginning of a render quantum after the time at which any one of
-        // the following conditions holds:
+        // Load the buffer time from the render state.
+        // The render state has to be updated before leaving this method!
+        let mut buffer_time = self.render_state.buffer_time.load(Ordering::Relaxed);
 
+        // The output must change to a single channel of silence at the beginning of a render
+        // quantum after the time at which any one of the following conditions holds:
         // 1. the stop time has been reached.
         // 2. the duration has been reached.
+        // 3. the end of the buffer has been reached.
         if scope.current_time >= self.stop_time
             || self.render_state.buffer_time_elapsed >= self.duration
+            || !is_looping
+                && (computed_playback_rate > 0. && buffer_time >= buffer_duration
+                    || computed_playback_rate < 0. && buffer_time < 0.)
         {
             output.make_silent(); // also converts to mono
 
@@ -475,31 +480,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 self.ended_triggered = true;
             }
             return false;
-        }
-
-        // Load the buffer time from the render state.
-        // The render state has to be updated before leaving this method!
-        let mut buffer_time = self.render_state.buffer_time.load(Ordering::Relaxed);
-
-        // 3. the end of the buffer has been reached.
-        if !is_looping {
-            if computed_playback_rate > 0. && buffer_time >= buffer_duration {
-                output.make_silent(); // also converts to mono
-                if !self.ended_triggered {
-                    scope.send_ended_event();
-                    self.ended_triggered = true;
-                }
-                return false;
-            }
-
-            if computed_playback_rate < 0. && buffer_time < 0. {
-                output.make_silent(); // also converts to mono
-                if !self.ended_triggered {
-                    scope.send_ended_event();
-                    self.ended_triggered = true;
-                }
-                return false;
-            }
         }
 
         output.set_number_of_channels(buffer.number_of_channels());
