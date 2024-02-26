@@ -1110,8 +1110,8 @@ impl AudioParamProcessor {
 
         if infos.is_a_rate {
             let start_index = self.buffer.len();
-            // we need to `round()` because if `end_time` is between two samples
-            // we actually want the sample before `end_time` to be computed
+            // TODO use ceil() or round() when `end_time` is between two samples?
+            // <https://github.com/orottier/web-audio-api-rs/pull/460>
             let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
             let end_index_clipped = end_index.min(infos.count);
 
@@ -1212,8 +1212,8 @@ impl AudioParamProcessor {
 
         if infos.is_a_rate {
             let start_index = self.buffer.len();
-            // we need to `round()` because if `end_time` is between two samples
-            // we actually want the sample before `end_time` to be computed
+            // TODO use ceil() or round() when `end_time` is between two samples?
+            // <https://github.com/orottier/web-audio-api-rs/pull/460>
             let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
             let end_index_clipped = end_index.min(infos.count);
 
@@ -1337,8 +1337,8 @@ impl AudioParamProcessor {
 
         if infos.is_a_rate {
             let start_index = self.buffer.len();
-            // we need to `round()` because if `end_time` is between two samples
-            // we actually want the sample before `end_time` to be computed
+            // TODO use ceil() or round() when `end_time` is between two samples?
+            // <https://github.com/orottier/web-audio-api-rs/pull/460>
             let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
             let end_index_clipped = end_index.min(infos.count);
 
@@ -1437,8 +1437,8 @@ impl AudioParamProcessor {
 
         if infos.is_a_rate {
             let start_index = self.buffer.len();
-            // we need to `round()` because if `end_time` is between two samples
-            // we actually want the sample before `end_time` to be computed
+            // TODO use ceil() or round() when `end_time` is between two samples?
+            // <https://github.com/orottier/web-audio-api-rs/pull/460>
             let end_index = ((end_time - infos.block_time).max(0.) / infos.dt).round() as usize;
             let end_index_clipped = end_index.min(infos.count);
 
