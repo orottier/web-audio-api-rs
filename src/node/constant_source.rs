@@ -192,7 +192,9 @@ impl AudioProcessor for ConstantSourceRenderer {
 
         if self.start_time >= next_block_time {
             output.make_silent();
-            return true;
+            // #462 AudioScheduledSourceNodes that have not been scheduled to start can safely
+            // return tail_time false in order to be collected if their control handle drops.
+            return self.start_time != f64::MAX;
         }
 
         output.force_mono();
@@ -312,6 +314,23 @@ mod tests {
         // 1rst block should be silence
         assert_float_eq!(channel[0..128], vec![0.; 128][..], abs_all <= 0.);
         assert_float_eq!(channel[128..], vec![1.; 128][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_start_in_the_future_while_dropped() {
+        let sample_rate = 48000.;
+        let mut context = OfflineAudioContext::new(1, 4 * 128, sample_rate);
+
+        let mut src = context.create_constant_source();
+        src.connect(&context.destination());
+        src.start_at(258. / sample_rate as f64); // in 3rd block
+        drop(src); // explicit drop
+
+        let buffer = context.start_rendering_sync();
+        let channel = buffer.get_channel_data(0);
+
+        assert_float_eq!(channel[0..258], vec![0.; 258][..], abs_all <= 0.);
+        assert_float_eq!(channel[258..], vec![1.; 254][..], abs_all <= 0.);
     }
 
     #[test]
