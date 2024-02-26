@@ -486,7 +486,6 @@ mod tests {
         AudioBuffer::from(samples, sample_rate); // should panic
     }
 
-
     #[test]
     #[should_panic]
     fn test_invalid_length() {
