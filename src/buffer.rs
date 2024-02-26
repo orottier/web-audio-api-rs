@@ -5,6 +5,16 @@ use crate::{
     assert_valid_channel_number, assert_valid_number_of_channels, assert_valid_sample_rate,
 };
 
+#[track_caller]
+#[inline(always)]
+pub(crate) fn assert_valid_length(length: usize) {
+    assert!(
+        length > 0,
+        "NotSupportedError - Invalid length: {:?} is less than or equal to minimum bound (0)",
+        length,
+    );
+}
+
 /// Options for constructing an [`AudioBuffer`]
 // dictionary AudioBufferOptions {
 //   unsigned long numberOfChannels = 1;
@@ -81,6 +91,7 @@ impl AudioBuffer {
     /// 32 being defined by the MAX_CHANNELS constant.
     pub fn new(options: AudioBufferOptions) -> Self {
         assert_valid_sample_rate(options.sample_rate);
+        assert_valid_length(options.length);
         assert_valid_number_of_channels(options.number_of_channels);
 
         let silence = ChannelData::new(options.length);
@@ -476,6 +487,18 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn test_invalid_length() {
+        let options = AudioBufferOptions {
+            number_of_channels: 1,
+            length: 0,
+            sample_rate: 48000.,
+        };
+
+        AudioBuffer::new(options); // should panic
+    }
+
+    #[test]
     fn test_channel_data_get_set() {
         let options = AudioBufferOptions {
             number_of_channels: 1,
@@ -710,12 +733,8 @@ mod tests {
 
     #[test]
     fn test_resample_from_empty() {
-        let options = AudioBufferOptions {
-            number_of_channels: 1,
-            length: 0,
-            sample_rate: 48000.,
-        };
-        let mut buffer = AudioBuffer::new(options);
+        let channel = ChannelData::from(vec![]);
+        let mut buffer = AudioBuffer::from_channels(vec![channel], 48000.);
         buffer.resample(48000.);
 
         assert_eq!(buffer.length(), 0);
