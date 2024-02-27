@@ -160,11 +160,6 @@ impl AudioBackendManager for NoneBackend {
         "none"
     }
 
-    /// Clone the stream reference
-    fn boxed_clone(&self) -> Box<dyn AudioBackendManager> {
-        Box::new(self.clone())
-    }
-
     fn enumerate_devices_sync() -> Vec<MediaDeviceInfo>
     where
         Self: Sized,

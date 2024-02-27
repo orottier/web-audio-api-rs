@@ -185,9 +185,6 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// The audio output device - `""` means the default device
     fn sink_id(&self) -> &str;
 
-    /// Clone the stream reference
-    fn boxed_clone(&self) -> Box<dyn AudioBackendManager>;
-
     fn enumerate_devices_sync() -> Vec<MediaDeviceInfo>
     where
         Self: Sized;
