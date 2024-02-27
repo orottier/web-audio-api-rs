@@ -54,7 +54,7 @@ pub struct Node {
     /// Outgoing edges: tuple of outcoming node reference, our output index and their input index
     outgoing_edges: SmallVec<[OutgoingEdge; 2]>,
     /// Indicates if the control thread has dropped this Node
-    free_when_finished: bool,
+    control_handle_dropped: bool,
     /// Indicates if the node has any incoming connections (for lifecycle management)
     has_inputs_connected: bool,
     /// Indicates if the node can act as a cycle breaker (only DelayNode for now)
@@ -68,7 +68,7 @@ impl std::fmt::Debug for Node {
             .field("processor", &self.processor)
             .field("channel_config", &self.channel_config)
             .field("outgoing_edges", &self.outgoing_edges)
-            .field("free_when_finished", &self.free_when_finished)
+            .field("control_handle_dropped", &self.control_handle_dropped)
             .field("cycle_breaker", &self.cycle_breaker)
             .finish_non_exhaustive()
     }
@@ -85,7 +85,7 @@ impl Node {
     fn can_free(&self, tail_time: bool) -> bool {
         // Only drop when the Control thread has dropped its handle.
         // Otherwise the node can be reconnected/restarted etc.
-        if !self.free_when_finished {
+        if !self.control_handle_dropped {
             return false;
         }
 
@@ -185,7 +185,7 @@ impl Graph {
                 outputs,
                 channel_config,
                 outgoing_edges: smallvec![],
-                free_when_finished: false,
+                control_handle_dropped: false,
                 has_inputs_connected: false,
                 cycle_breaker: false,
             }),
@@ -231,12 +231,12 @@ impl Graph {
         self.ordered.clear(); // void current ordering
     }
 
-    pub fn mark_free_when_finished(&mut self, index: AudioNodeId) {
+    pub fn mark_control_handle_dropped(&mut self, index: AudioNodeId) {
         // Issue #92, a race condition can occur for AudioParams. They may have already been
         // removed from the audio graph if the node they feed into was dropped.
         // Therefore, do not assume this node still exists:
         if let Some(node) = self.nodes.get_mut(index) {
-            node.get_mut().free_when_finished = true;
+            node.get_mut().control_handle_dropped = true;
         }
     }
 
@@ -509,7 +509,7 @@ impl Graph {
                     // - special node (destination = id 0, listener = id 1), or
                     // - not connected to this dropped node, or
                     // - if the control thread still has a handle to it.
-                    let retain = id.0 < 2 || !was_connected || !node.free_when_finished;
+                    let retain = id.0 < 2 || !was_connected || !node.control_handle_dropped;
 
                     if !retain {
                         self.reclaim_id_channel
@@ -735,7 +735,7 @@ mod tests {
         // dropped and the AudioNodeId(3) should be reclaimed
         add_node(&mut graph, 2, node.clone());
         // Mark the node as 'detached from the control thread', so it is allowed to drop
-        graph.nodes[AudioNodeId(2)].get_mut().free_when_finished = true;
+        graph.nodes[AudioNodeId(2)].get_mut().control_handle_dropped = true;
 
         // Connect the regular node to the AudioDestinationNode
         add_edge(&mut graph, 2, 0);
@@ -777,7 +777,7 @@ mod tests {
         // dropped and the AudioNodeId(3) should be reclaimed
         add_node(&mut graph, 2, node.clone());
         // Mark the node as 'detached from the control thread', so it is allowed to drop
-        graph.nodes[AudioNodeId(2)].get_mut().free_when_finished = true;
+        graph.nodes[AudioNodeId(2)].get_mut().control_handle_dropped = true;
 
         // Connect the regular node to the AudioDestinationNode
         add_edge(&mut graph, 2, 0);
@@ -786,7 +786,7 @@ mod tests {
         let param = Box::new(TestNode { tail_time: true }); // audio params have tail time true
         add_node(&mut graph, 3, param);
         // Mark the node as 'detached from the control thread', so it is allowed to drop
-        graph.nodes[AudioNodeId(3)].get_mut().free_when_finished = true;
+        graph.nodes[AudioNodeId(3)].get_mut().control_handle_dropped = true;
 
         // Connect the audioparam to the regular node
         add_audioparam(&mut graph, 3, 2);
@@ -828,7 +828,7 @@ mod tests {
         add_node(&mut graph, 2, node);
 
         // Mark the node as 'detached from the control thread', so it is allowed to drop
-        graph.nodes[AudioNodeId(2)].get_mut().free_when_finished = true;
+        graph.nodes[AudioNodeId(2)].get_mut().control_handle_dropped = true;
 
         // Render a single quantum
         let scope = AudioWorkletGlobalScope {
