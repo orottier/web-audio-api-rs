@@ -34,7 +34,7 @@ pub(crate) enum ControlMessage {
     DisconnectAll { from: AudioNodeId },
 
     /// Notify the render thread this node is dropped in the control thread
-    FreeWhenFinished { id: AudioNodeId },
+    ControlHandleDropped { id: AudioNodeId },
 
     /// Mark node as a cycle breaker (DelayNode only)
     MarkCycleBreaker { id: AudioNodeId },

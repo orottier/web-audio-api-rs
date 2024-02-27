@@ -306,7 +306,7 @@ impl ConcreteBaseAudioContext {
             || LISTENER_PARAM_IDS.contains(&id.0);
 
         if !magic {
-            let message = ControlMessage::FreeWhenFinished { id };
+            let message = ControlMessage::ControlHandleDropped { id };
             self.send_control_msg(message);
         }
     }

@@ -150,8 +150,8 @@ impl RenderThread {
                 DisconnectAll { from } => {
                     self.graph.as_mut().unwrap().remove_edges_from(from);
                 }
-                FreeWhenFinished { id } => {
-                    self.graph.as_mut().unwrap().mark_free_when_finished(id);
+                ControlHandleDropped { id } => {
+                    self.graph.as_mut().unwrap().mark_control_handle_dropped(id);
                 }
                 MarkCycleBreaker { id } => {
                     self.graph.as_mut().unwrap().mark_cycle_breaker(id);

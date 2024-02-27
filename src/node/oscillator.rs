@@ -373,7 +373,9 @@ impl AudioProcessor for OscillatorRenderer {
 
         if self.start_time >= next_block_time {
             output.make_silent();
-            return true;
+            // #462 AudioScheduledSourceNodes that have not been scheduled to start can safely
+            // return tail_time false in order to be collected if their control handle drops.
+            return self.start_time != f64::MAX;
         } else if self.stop_time < scope.current_time {
             output.make_silent();
 
