@@ -461,7 +461,7 @@ impl RenderThread {
     fn set_state(&self, state: AudioContextState) {
         self.state.store(state as u8, Ordering::Relaxed);
         if let Some(sender) = self.event_sender.as_ref() {
-            sender.try_send(EventDispatch::state_change()).ok();
+            sender.try_send(EventDispatch::state_change(state)).ok();
         }
     }
 }
