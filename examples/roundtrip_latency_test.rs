@@ -138,7 +138,7 @@ fn main() {
 
     let estimated_latency = Arc::new(AtomicF64::new(0.));
 
-    let _context = if test {
+    if test {
         // emulate loopback
         let latency: f32 = 0.017;
         println!(
@@ -169,8 +169,6 @@ fn main() {
 
         latency_tester.connect(&delay);
         delay.connect(&latency_tester);
-
-        context
     } else {
         // full round trip
         let devices = enumerate_devices_sync();
@@ -221,8 +219,6 @@ fn main() {
         // create media stream source node with mic stream
         let stream_source = context.create_media_stream_source(&mic);
         stream_source.connect(&latency_tester);
-
-        context
     };
 
     loop {

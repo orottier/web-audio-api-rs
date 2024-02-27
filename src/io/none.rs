@@ -23,6 +23,16 @@ pub(crate) struct NoneBackend {
     sample_rate: f32,
 }
 
+impl NoneBackend {
+    /// Creates a mock backend to be used as tombstones
+    pub(crate) fn void() -> Self {
+        Self {
+            sample_rate: 0.,
+            sender: crossbeam_channel::bounded(0).0,
+        }
+    }
+}
+
 struct Callback {
     receiver: Receiver<NoneBackendMessage>,
     render_thread: RenderThread,
