@@ -374,6 +374,10 @@ impl AudioProcessor for DelayWriter {
         // let the node be decommisioned if it has no input left
         false
     }
+
+    fn has_side_effects(&self) -> bool {
+        true // message passing
+    }
 }
 
 impl DelayWriter {

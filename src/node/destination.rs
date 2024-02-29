@@ -141,4 +141,8 @@ impl AudioProcessor for DestinationRenderer {
 
         true
     }
+
+    fn has_side_effects(&self) -> bool {
+        true // speaker output
+    }
 }

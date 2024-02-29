@@ -141,9 +141,20 @@ pub trait AudioProcessor: Send {
     }
 
     /// Return the name of the actual AudioProcessor type
-    #[doc(hidden)] // not meant to be user facing
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
+    }
+
+    /// Indicates if this processor has 'side effects' other than producing output
+    ///
+    /// Processors without side effects can not be dropped when there are no outputs connected, and
+    /// when the control side handle no longer exists
+    ///
+    /// Side effects could include
+    /// - IO (e.g. speaker output of the destination node)
+    /// - Message passing (e.g. worklet nodes)
+    fn has_side_effects(&self) -> bool {
+        false
     }
 }
 

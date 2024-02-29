@@ -89,19 +89,26 @@ impl Node {
             return false;
         }
 
-        // Drop when the node does not have any inputs and outputs
-        if !self.has_inputs_connected && self.outgoing_edges.is_empty() {
-            return true;
+        // When the nodes has no incoming connections:
+        if !self.has_inputs_connected {
+            // Drop when the processor reports it won't yield output.
+            if !tail_time {
+                return true;
+            }
+
+            // Drop when the node does not have any inputs and outputs
+            if self.outgoing_edges.is_empty() {
+                return true;
+            }
         }
 
-        // Drop when the node does not have any inputs connected,
-        // and if the processor reports it won't yield output.
-        if !self.has_inputs_connected && !tail_time {
+        // Node has no control handle and does have inputs connected.
+        // Drop when the processor when it has no outpus connected and does not have side effects
+        if !self.processor.has_side_effects() && self.outgoing_edges.is_empty() {
             return true;
         }
 
         // Otherwise, do not drop the node.
-        // (Even if it has no outputs connected, it may have side effects)
         false
     }
 
@@ -503,31 +510,14 @@ impl Graph {
 
                 // Nodes are only dropped when they do not have incoming connections.
                 // But they may have AudioParams feeding into them, these can de dropped too.
-                self.nodes.retain(|id, node| {
-                    let node = node.get_mut(); // unwrap the RefCell
-
+                self.nodes.values_mut().for_each(|node| {
                     // Check if this node was connected to the dropped node. In that case, it is
-                    // either an AudioParam (which can be dropped), or the AudioListener that feeds
-                    // into a PannerNode (which can be disconnected).
-                    let was_connected = {
-                        let outgoing_edges = &mut node.outgoing_edges;
-                        let prev_len = outgoing_edges.len();
-                        outgoing_edges.retain(|e| e.other_id != *index);
-                        outgoing_edges.len() != prev_len
-                    };
-
-                    // Retain when
-                    // - special node (destination = id 0, listener = id 1), or
-                    // - not connected to this dropped node, or
-                    // - if the control thread still has a handle to it.
-                    let retain = id.0 < 2 || !was_connected || !node.control_handle_dropped;
-
-                    if !retain {
-                        self.reclaim_id_channel
-                            .push(node.reclaim_id.take().unwrap());
-                    }
-                    retain
-                })
+                    // either an AudioParam or the AudioListener that feeds into a PannerNode.
+                    // These should be disconnected
+                    node.get_mut()
+                        .outgoing_edges
+                        .retain(|e| e.other_id != *index);
+                });
             }
         });
 
@@ -819,7 +809,10 @@ mod tests {
             node_id: std::cell::Cell::new(AudioNodeId(0)),
             event_sender: None,
         };
-        graph.render(&scope);
+
+        // render twice
+        graph.render(&scope); // node is dropped
+        graph.render(&scope); // param is dropped
 
         // First the regular node should be dropped, then the audioparam
         assert_eq!(node_id_consumer.pop().unwrap().0, 2);
@@ -870,6 +863,11 @@ mod tests {
         let signal = Box::new(TestNode { tail_time: true });
         add_node(&mut graph, 4, signal);
         add_edge(&mut graph, 4, 3);
+        // Mark the node as 'detached from the control thread', so it is allowed to drop
+        graph
+            .nodes
+            .get_unchecked_mut(AudioNodeId(4))
+            .control_handle_dropped = true;
 
         // Render a single quantum
         let scope = AudioWorkletGlobalScope {
@@ -879,7 +877,10 @@ mod tests {
             node_id: std::cell::Cell::new(AudioNodeId(0)),
             event_sender: None,
         };
-        graph.render(&scope);
+
+        // render twice
+        graph.render(&scope); // node is dropped
+        graph.render(&scope); // param is dropped
 
         // First the regular node should be dropped, then the audioparam
         assert_eq!(node_id_consumer.pop().unwrap().0, 2);
@@ -889,7 +890,8 @@ mod tests {
         assert!(node_id_consumer.pop().is_none());
 
         // Render again
-        graph.render(&scope);
+        graph.render(&scope); // param signal source is dropped
+        assert_eq!(node_id_consumer.pop().unwrap().0, 4);
     }
 
     #[test]

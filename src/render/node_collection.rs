@@ -67,20 +67,6 @@ impl NodeCollection {
         self.nodes[index.0 as usize].as_mut()
     }
 
-    #[inline(always)]
-    pub fn retain<F>(&mut self, mut f: F)
-    where
-        F: FnMut(AudioNodeId, &mut RefCell<Node>) -> bool,
-    {
-        self.nodes.iter_mut().enumerate().for_each(|(i, opt)| {
-            if let Some(v) = opt.as_mut() {
-                if !f(AudioNodeId(i as u64), v) {
-                    *opt = None;
-                }
-            }
-        })
-    }
-
     #[track_caller]
     #[inline(always)]
     pub fn get_unchecked(&self, index: AudioNodeId) -> &RefCell<Node> {
