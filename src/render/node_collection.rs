@@ -2,7 +2,6 @@ use crate::context::{AudioNodeId, DESTINATION_NODE_ID};
 use crate::render::graph::Node;
 
 use std::cell::RefCell;
-use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
 pub(crate) struct NodeCollection {
@@ -59,8 +58,8 @@ impl NodeCollection {
     }
 
     #[inline(always)]
-    pub fn get(&self, index: AudioNodeId) -> Option<&RefCell<Node>> {
-        self.nodes[index.0 as usize].as_ref()
+    pub fn contains(&self, index: AudioNodeId) -> bool {
+        self.nodes[index.0 as usize].is_some()
     }
 
     #[inline(always)]
@@ -81,31 +80,17 @@ impl NodeCollection {
             }
         })
     }
-}
-
-impl Index<AudioNodeId> for NodeCollection {
-    type Output = RefCell<Node>;
 
     #[track_caller]
     #[inline(always)]
-    fn index(&self, index: AudioNodeId) -> &Self::Output {
-        self.nodes
-            .get(index.0 as usize)
-            .unwrap_or_else(|| panic!("Unexpected index {} for NodeCollection", index.0))
-            .as_ref()
-            .unwrap_or_else(|| panic!("Index {} for dropped Node in NodeCollection", index.0))
+    pub fn get_unchecked(&self, index: AudioNodeId) -> &RefCell<Node> {
+        self.nodes[index.0 as usize].as_ref().unwrap()
     }
-}
 
-impl IndexMut<AudioNodeId> for NodeCollection {
     #[track_caller]
     #[inline(always)]
-    fn index_mut(&mut self, index: AudioNodeId) -> &mut Self::Output {
-        self.nodes
-            .get_mut(index.0 as usize)
-            .unwrap_or_else(|| panic!("Unexpected index {} for NodeCollection", index.0))
-            .as_mut()
-            .unwrap_or_else(|| panic!("Index {} for dropped Node in NodeCollection", index.0))
+    pub fn get_unchecked_mut(&mut self, index: AudioNodeId) -> &mut Node {
+        self.nodes[index.0 as usize].as_mut().unwrap().get_mut()
     }
 }
 
