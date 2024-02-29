@@ -830,6 +830,69 @@ mod tests {
     }
 
     #[test]
+    fn test_audio_param_with_signal_lifecycle() {
+        let (node_id_producer, mut node_id_consumer) = llq::Queue::new().split();
+        let mut graph = Graph::new(node_id_producer);
+
+        let node = Box::new(TestNode { tail_time: false });
+
+        // Destination Node is always node id 0, and should never drop
+        add_node(&mut graph, 0, node.clone());
+
+        // AudioListener Node is always node id 1, and should never drop
+        add_node(&mut graph, 1, node.clone());
+
+        // Add a regular node at id 3, it has tail time false so after rendering it should be
+        // dropped and the AudioNodeId(3) should be reclaimed
+        add_node(&mut graph, 2, node.clone());
+        // Mark the node as 'detached from the control thread', so it is allowed to drop
+        graph
+            .nodes
+            .get_unchecked_mut(AudioNodeId(2))
+            .control_handle_dropped = true;
+
+        // Connect the regular node to the AudioDestinationNode
+        add_edge(&mut graph, 2, 0);
+
+        // Add an AudioParam at id 4, it should be dropped alongside the regular node
+        let param = Box::new(TestNode { tail_time: true }); // audio params have tail time true
+        add_node(&mut graph, 3, param);
+        // Mark the node as 'detached from the control thread', so it is allowed to drop
+        graph
+            .nodes
+            .get_unchecked_mut(AudioNodeId(3))
+            .control_handle_dropped = true;
+
+        // Connect the audioparam to the regular node
+        add_audioparam(&mut graph, 3, 2);
+
+        // Add a source node to feed into the AudioParam
+        let signal = Box::new(TestNode { tail_time: true });
+        add_node(&mut graph, 4, signal);
+        add_edge(&mut graph, 4, 3);
+
+        // Render a single quantum
+        let scope = AudioWorkletGlobalScope {
+            current_frame: 0,
+            current_time: 0.,
+            sample_rate: 48000.,
+            node_id: std::cell::Cell::new(AudioNodeId(0)),
+            event_sender: None,
+        };
+        graph.render(&scope);
+
+        // First the regular node should be dropped, then the audioparam
+        assert_eq!(node_id_consumer.pop().unwrap().0, 2);
+        assert_eq!(node_id_consumer.pop().unwrap().0, 3);
+
+        // No other dropped nodes
+        assert!(node_id_consumer.pop().is_none());
+
+        // Render again
+        graph.render(&scope);
+    }
+
+    #[test]
     fn test_release_orphaned_source_nodes() {
         let (node_id_producer, mut node_id_consumer) = llq::Queue::new().split();
         let mut graph = Graph::new(node_id_producer);
