@@ -14,6 +14,7 @@ use crate::message::ControlMessage;
 use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
 
 mod none;
+pub(crate) use none::NoneBackend;
 
 #[cfg(feature = "cpal")]
 mod cpal;
@@ -91,7 +92,7 @@ pub(crate) fn build_output(
     render_thread_init: RenderThreadInit,
 ) -> Box<dyn AudioBackendManager> {
     if options.sink_id == "none" {
-        let backend = none::NoneBackend::build_output(options, render_thread_init);
+        let backend = NoneBackend::build_output(options, render_thread_init);
         return Box::new(backend);
     }
 
@@ -185,9 +186,6 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// The audio output device - `""` means the default device
     fn sink_id(&self) -> &str;
 
-    /// Clone the stream reference
-    fn boxed_clone(&self) -> Box<dyn AudioBackendManager>;
-
     fn enumerate_devices_sync() -> Vec<MediaDeviceInfo>
     where
         Self: Sized;
@@ -225,12 +223,12 @@ fn buffer_size_for_latency_category(
 pub(crate) fn enumerate_devices_sync() -> Vec<MediaDeviceInfo> {
     #[cfg(feature = "cubeb")]
     {
-        crate::io::cubeb::CubebBackend::enumerate_devices_sync()
+        cubeb::CubebBackend::enumerate_devices_sync()
     }
 
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        crate::io::cpal::CpalBackend::enumerate_devices_sync()
+        cpal::CpalBackend::enumerate_devices_sync()
     }
 
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]

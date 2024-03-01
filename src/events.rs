@@ -1,4 +1,4 @@
-use crate::context::AudioNodeId;
+use crate::context::{AudioContextState, AudioNodeId};
 use crate::{AudioBuffer, AudioRenderCapacityEvent};
 
 use std::any::Any;
@@ -55,6 +55,7 @@ pub(crate) enum EventPayload {
     ProcessorError(ErrorEvent),
     Diagnostics(Vec<u8>),
     Message(Box<dyn Any + Send + 'static>),
+    AudioContextState(AudioContextState),
 }
 
 #[derive(Debug)]
@@ -78,10 +79,10 @@ impl EventDispatch {
         }
     }
 
-    pub fn state_change() -> Self {
+    pub fn state_change(state: AudioContextState) -> Self {
         EventDispatch {
             type_: EventType::StateChange,
-            payload: EventPayload::None,
+            payload: EventPayload::AudioContextState(state),
         }
     }
 
@@ -130,11 +131,22 @@ impl EventLoop {
     }
 
     pub fn run(&self, event_channel: Receiver<EventDispatch>) {
+        log::debug!("Entering event loop");
         let self_clone = self.clone();
 
-        std::thread::spawn(move || loop {
-            // this thread is dedicated to event handling so we can block
-            for event in event_channel.iter() {
+        std::thread::spawn(move || {
+            // This thread is dedicated to event handling so we can block
+            for mut event in event_channel.iter() {
+                // Terminate the event loop when the audio context is closing
+                let mut terminate = false;
+                if matches!(
+                    event.payload,
+                    EventPayload::AudioContextState(AudioContextState::Closed)
+                ) {
+                    event.payload = EventPayload::None; // the statechange handler takes no argument
+                    terminate = true;
+                }
+
                 let mut event_handler_lock = self_clone.event_handlers.lock().unwrap();
                 let callback_option = event_handler_lock.remove(&event.type_);
                 drop(event_handler_lock); // release Mutex while running callback
@@ -152,7 +164,13 @@ impl EventLoop {
                         }
                     };
                 }
+
+                if terminate {
+                    break;
+                }
             }
+
+            log::debug!("Event loop has terminated");
         });
     }
 

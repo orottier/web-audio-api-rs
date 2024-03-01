@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::events::{EventDispatch, EventHandler, EventPayload, EventType};
-use crate::io::{self, AudioBackendManager, ControlThreadInit, RenderThreadInit};
+use crate::io::{self, AudioBackendManager, ControlThreadInit, NoneBackend, RenderThreadInit};
 use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::{ControlMessage, OneshotNotify};
@@ -126,6 +126,17 @@ impl std::fmt::Debug for AudioContext {
             .field("output_latency", &self.output_latency())
             .field("base", &self.base())
             .finish_non_exhaustive()
+    }
+}
+
+impl Drop for AudioContext {
+    fn drop(&mut self) {
+        // Continue playing the stream if the AudioContext goes out of scope
+        if self.state() == AudioContextState::Running {
+            let tombstone = Box::new(NoneBackend::void());
+            let original = std::mem::replace(self.backend_manager.get_mut().unwrap(), tombstone);
+            Box::leak(original);
+        }
     }
 }
 
