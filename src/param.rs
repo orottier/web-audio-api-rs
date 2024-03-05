@@ -1607,6 +1607,18 @@ pub(crate) fn audio_param_pair(
         ..
     } = descriptor;
 
+    assert_is_finite(default_value);
+    assert_is_finite(min_value);
+    assert_is_finite(max_value);
+    assert!(
+        min_value <= default_value,
+        "InvalidStateError - AudioParam minValue should be <= defaultValue"
+    );
+    assert!(
+        default_value <= max_value,
+        "InvalidStateError - AudioParam defaultValue should be <= maxValue"
+    );
+
     let current_value = Arc::new(AtomicF32::new(default_value));
 
     let param = AudioParam {
