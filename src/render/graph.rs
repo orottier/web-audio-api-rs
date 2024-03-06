@@ -103,7 +103,7 @@ impl Node {
         }
 
         // Node has no control handle and does have inputs connected.
-        // Drop when the processor when it has no outpus connected and does not have side effects
+        // Drop when the processor when it has no outputs connected and does not have side effects
         if !self.processor.has_side_effects() && self.outgoing_edges.is_empty() {
             return true;
         }
