@@ -404,6 +404,8 @@ impl AudioProcessor for OscillatorRenderer {
             self.start_time = current_time;
         }
 
+        let nyquist = scope.sample_rate / 2.;
+
         channel_data
             .iter_mut()
             .zip(frequency_values.iter().cycle())
@@ -418,6 +420,7 @@ impl AudioProcessor for OscillatorRenderer {
 
                 // @todo: we could avoid recompute that if both param lengths are 1
                 let computed_frequency = frequency * (detune / 1200.).exp2();
+                let computed_frequency = computed_frequency.clamp(-nyquist, nyquist);
 
                 // first sample to render
                 if !self.started {
