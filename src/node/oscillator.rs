@@ -14,6 +14,12 @@ use super::{
     ChannelConfigOptions, TABLE_LENGTH_USIZE,
 };
 
+fn get_fase_incr(freq: f32, detune: f32, sample_rate: f64) -> f64 {
+    let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
+    let clamped = computed_freq.clamp(-sample_rate / 2., sample_rate / 2.);
+    clamped / sample_rate
+}
+
 /// Options for constructing an [`OscillatorNode`]
 // dictionary OscillatorOptions : AudioNodeOptions {
 //   OscillatorType type = "sine";
@@ -404,52 +410,21 @@ impl AudioProcessor for OscillatorRenderer {
             self.start_time = current_time;
         }
 
-        channel_data
-            .iter_mut()
-            .zip(frequency_values.iter().cycle())
-            .zip(detune_values.iter().cycle())
-            .for_each(|((o, &frequency), &detune)| {
-                if current_time < self.start_time || current_time >= self.stop_time {
-                    *o = 0.;
-                    current_time += dt;
-
-                    return;
-                }
-
-                // @todo: we could avoid recompute that if both param lengths are 1
-                let computed_frequency = frequency * (detune / 1200.).exp2();
-
-                // first sample to render
-                if !self.started {
-                    // if start time was between last frame and current frame
-                    // we need to adjust the phase first
-                    if current_time > self.start_time {
-                        let phase_incr = computed_frequency as f64 / sample_rate;
-                        let ratio = (current_time - self.start_time) / dt;
-                        self.phase = Self::unroll_phase(phase_incr * ratio);
-                    }
-
-                    self.started = true;
-                }
-
-                let phase_incr = computed_frequency as f64 / sample_rate;
-
-                // @note: per spec all default oscillators should be rendered from a
-                // wavetable, define if it worth the assle...
-                // e.g. for now `generate_sine` and `generate_custom` are almost the sames
-                // cf. https://webaudio.github.io/web-audio-api/#oscillator-coefficients
-                *o = match self.type_ {
-                    OscillatorType::Sine => self.generate_sine(),
-                    OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
-                    OscillatorType::Square => self.generate_square(phase_incr),
-                    OscillatorType::Triangle => self.generate_triangle(),
-                    OscillatorType::Custom => self.generate_custom(),
-                };
-
-                current_time += dt;
-
-                self.phase = Self::unroll_phase(self.phase + phase_incr);
-            });
+        if frequency_values.len() == 1 && detune_values.len() == 1 {
+            let phase_incr = get_fase_incr(frequency_values[0], detune_values[0], sample_rate);
+            channel_data
+                .iter_mut()
+                .for_each(|output| self.generate_sample(output, phase_incr, &mut current_time, dt));
+        } else {
+            channel_data
+                .iter_mut()
+                .zip(frequency_values.iter().cycle())
+                .zip(detune_values.iter().cycle())
+                .for_each(|((output, &f), &d)| {
+                    let phase_incr = get_fase_incr(f, d, sample_rate);
+                    self.generate_sample(output, phase_incr, &mut current_time, dt)
+                });
+        }
 
         true
     }
@@ -485,6 +460,50 @@ impl AudioProcessor for OscillatorRenderer {
 }
 
 impl OscillatorRenderer {
+    #[inline]
+    fn generate_sample(
+        &mut self,
+        output: &mut f32,
+        phase_incr: f64,
+        current_time: &mut f64,
+        dt: f64,
+    ) {
+        if *current_time < self.start_time || *current_time >= self.stop_time {
+            *output = 0.;
+            *current_time += dt;
+
+            return;
+        }
+
+        // first sample to render
+        if !self.started {
+            // if start time was between last frame and current frame
+            // we need to adjust the phase first
+            if *current_time > self.start_time {
+                let ratio = (*current_time - self.start_time) / dt;
+                self.phase = Self::unroll_phase(phase_incr * ratio);
+            }
+
+            self.started = true;
+        }
+
+        // @note: per spec all default oscillators should be rendered from a
+        // wavetable, define if it worth the assle...
+        // e.g. for now `generate_sine` and `generate_custom` are almost the sames
+        // cf. https://webaudio.github.io/web-audio-api/#oscillator-coefficients
+        *output = match self.type_ {
+            OscillatorType::Sine => self.generate_sine(),
+            OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
+            OscillatorType::Square => self.generate_square(phase_incr),
+            OscillatorType::Triangle => self.generate_triangle(),
+            OscillatorType::Custom => self.generate_custom(),
+        };
+
+        *current_time += dt;
+
+        self.phase = Self::unroll_phase(self.phase + phase_incr);
+    }
+
     #[inline]
     fn generate_sine(&mut self) -> f32 {
         let position = self.phase * TABLE_LENGTH_USIZE as f64;

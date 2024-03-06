@@ -754,9 +754,11 @@ impl AudioParamProcessor {
 
                 if value.is_nan() {
                     value = self.default_value;
+                } else {
+                    // do not use `clamp` because it has extra branches for NaN or when max < min
+                    value = value.max(self.min_value).min(self.max_value);
                 }
-
-                output.channel_data_mut(0)[0] = value.clamp(self.min_value, self.max_value);
+                output.channel_data_mut(0)[0] = value;
             } else {
                 // a-rate processing and input non-zero
                 output.set_single_valued(false);
@@ -766,9 +768,10 @@ impl AudioParamProcessor {
 
                     if o.is_nan() {
                         *o = self.default_value;
+                    } else {
+                        // do not use `clamp` because it has extra branches for NaN or when max < min
+                        *o = o.max(self.min_value).min(self.max_value);
                     }
-
-                    *o = o.clamp(self.min_value, self.max_value)
                 });
             }
         } else {
@@ -785,9 +788,10 @@ impl AudioParamProcessor {
 
                     if o.is_nan() {
                         *o = self.default_value;
+                    } else {
+                        // do not use `clamp` because it has extra branches for NaN or when max < min
+                        *o = o.max(self.min_value).min(self.max_value);
                     }
-
-                    *o = o.clamp(self.min_value, self.max_value)
                 });
         }
     }
@@ -1120,15 +1124,14 @@ impl AudioParamProcessor {
             if end_index_clipped > start_index {
                 let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
 
+                let mut value = 0.;
                 for _ in start_index..end_index_clipped {
-                    let value =
+                    value =
                         compute_linear_ramp_sample(start_time, duration, start_value, diff, time);
-
                     self.buffer.push(value);
-
                     time += infos.dt;
-                    self.intrinsic_value = value;
                 }
+                self.intrinsic_value = value;
             }
         }
 
@@ -1220,8 +1223,9 @@ impl AudioParamProcessor {
             if end_index_clipped > start_index {
                 let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
 
+                let mut value = 0.;
                 for _ in start_index..end_index_clipped {
-                    let value = compute_exponential_ramp_sample(
+                    value = compute_exponential_ramp_sample(
                         start_time,
                         duration,
                         start_value,
@@ -1230,10 +1234,10 @@ impl AudioParamProcessor {
                     );
 
                     self.buffer.push(value);
-                    self.intrinsic_value = value;
 
                     time += infos.dt;
                 }
+                self.intrinsic_value = value;
             }
         }
 
@@ -1345,18 +1349,19 @@ impl AudioParamProcessor {
             if end_index_clipped > start_index {
                 let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
 
+                let mut value = 0.;
                 for _ in start_index..end_index_clipped {
                     // check if we have reached start_time
-                    let value = if time - start_time < 0. {
+                    value = if time - start_time < 0. {
                         self.intrinsic_value
                     } else {
                         compute_set_target_sample(start_time, time_constant, end_value, diff, time)
                     };
 
                     self.buffer.push(value);
-                    self.intrinsic_value = value;
                     time += infos.dt;
                 }
+                self.intrinsic_value = value;
             }
         }
 
@@ -1445,19 +1450,20 @@ impl AudioParamProcessor {
             if end_index_clipped > start_index {
                 let mut time = (start_index as f64).mul_add(infos.dt, infos.block_time);
 
+                let mut value = 0.;
                 for _ in start_index..end_index_clipped {
                     // check if we have reached start_time
-                    let value = if time - start_time < 0. {
+                    value = if time < start_time {
                         self.intrinsic_value
                     } else {
                         compute_set_value_curve_sample(start_time, duration, values, time)
                     };
 
                     self.buffer.push(value);
-                    self.intrinsic_value = value;
 
                     time += infos.dt;
                 }
+                self.intrinsic_value = value;
             }
         }
 
@@ -1606,6 +1612,18 @@ pub(crate) fn audio_param_pair(
         min_value,
         ..
     } = descriptor;
+
+    assert_is_finite(default_value);
+    assert_is_finite(min_value);
+    assert_is_finite(max_value);
+    assert!(
+        min_value <= default_value,
+        "InvalidStateError - AudioParam minValue should be <= defaultValue"
+    );
+    assert!(
+        default_value <= max_value,
+        "InvalidStateError - AudioParam defaultValue should be <= maxValue"
+    );
 
     let current_value = Arc::new(AtomicF32::new(default_value));
 

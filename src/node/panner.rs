@@ -841,26 +841,28 @@ impl AudioProcessor for PannerRenderer {
                 && listener_up_z.len() == 1;
 
             if single_valued {
+                let param_value = a_rate_params.next().unwrap();
                 match input.number_of_channels() {
                     1 => {
                         *output = input.clone();
                         output.mix(2, ChannelInterpretation::Speakers);
                         let [left, right] = output.stereo_mut();
-                        std::iter::repeat(a_rate_params.next().unwrap())
-                            .zip(&mut left[..])
+                        left.iter_mut()
                             .zip(&mut right[..])
-                            .for_each(|((p, l), r)| apply_mono_to_stereo_gain(p, l, r));
+                            .for_each(|(l, r)| apply_mono_to_stereo_gain(param_value, l, r));
                     }
                     2 => {
                         output.set_number_of_channels(2);
                         let [left, right] = output.stereo_mut();
-                        std::iter::repeat(a_rate_params.next().unwrap())
-                            .zip(input.channel_data(0).iter().copied())
+                        input
+                            .channel_data(0)
+                            .iter()
+                            .copied()
                             .zip(input.channel_data(1).iter().copied())
                             .zip(&mut left[..])
                             .zip(&mut right[..])
-                            .for_each(|((((p, il), ir), ol), or)| {
-                                apply_stereo_to_stereo_gain(p, il, ir, ol, or)
+                            .for_each(|(((il, ir), ol), or)| {
+                                apply_stereo_to_stereo_gain(param_value, il, ir, ol, or)
                             });
                     }
                     _ => unreachable!(),

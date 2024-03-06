@@ -14,8 +14,8 @@ use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 
-fn get_computed_freq(freq: f32, detune: f32) -> f32 {
-    freq * (detune / 1200.).exp2()
+fn get_computed_freq(freq: f32, detune: f32, sample_rate: f32) -> f32 {
+    freq * (detune / 1200.).exp2().clamp(0., sample_rate / 2.)
 }
 
 /// Biquad filter coefficients normalized against a0
@@ -490,7 +490,8 @@ impl BiquadFilterNode {
         let q = self.q().value();
 
         // get coefs
-        let computed_freq = get_computed_freq(frequency, detune);
+        let computed_freq = get_computed_freq(frequency, detune, sample_rate);
+
         let Coefficients { b0, b1, b2, a1, a2 } = calculate_coefs(
             type_,
             sample_rate as f64,
@@ -614,7 +615,7 @@ impl AudioProcessor for BiquadFilterRenderer {
         let gain = params.get(&self.gain);
         let sample_rate_f64 = f64::from(sample_rate);
         // compute first coef and fill the coef list with this value
-        let computed_freq = get_computed_freq(frequency[0], detune[0]);
+        let computed_freq = get_computed_freq(frequency[0], detune[0], sample_rate);
         let coef = calculate_coefs(
             type_,
             sample_rate_f64,
@@ -635,7 +636,7 @@ impl AudioProcessor for BiquadFilterRenderer {
                 .zip(gain.iter().cycle())
                 .skip(1)
                 .for_each(|((((coefs, &f), &d), &q), &g)| {
-                    let computed_freq = get_computed_freq(f, d);
+                    let computed_freq = get_computed_freq(f, d, sample_rate);
                     *coefs = calculate_coefs(
                         type_,
                         sample_rate_f64,
@@ -703,15 +704,16 @@ mod tests {
 
     #[test]
     fn test_computed_freq() {
+        let sample_rate = 48000.;
         let g_sharp = 415.3;
         let a = 440.;
         let b_flat = 466.16;
 
         // 100 cents is 1 semi tone up
-        let res = get_computed_freq(a, 100.);
+        let res = get_computed_freq(a, 100., sample_rate);
         assert_float_eq!(res, b_flat, abs <= 0.01);
         // -100 cents is 1 semi tone below
-        let res = get_computed_freq(a, -100.);
+        let res = get_computed_freq(a, -100., sample_rate);
         assert_float_eq!(res, g_sharp, abs <= 0.01);
     }
 

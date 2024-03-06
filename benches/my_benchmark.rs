@@ -50,6 +50,17 @@ pub fn bench_audio_buffer_decode() {
     assert_eq!(buffer.length(), 101129);
 }
 
+pub fn bench_constant_source() {
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut src = ctx.create_constant_source();
+
+    src.connect(&ctx.destination());
+    src.start_at(1.);
+    src.stop_at(9.);
+
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
+}
+
 pub fn bench_sine() {
     let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let mut osc = ctx.create_oscillator();
@@ -301,6 +312,7 @@ macro_rules! iai_or_criterion {
 iai_or_criterion!(
     bench_ctor,
     bench_audio_buffer_decode,
+    bench_constant_source,
     bench_sine,
     bench_sine_gain,
     bench_sine_gain_delay,
