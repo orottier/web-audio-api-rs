@@ -205,7 +205,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         // fast path
         if offset.len() == 1
             && self.start_time <= scope.current_time
-            && self.stop_time > next_block_time
+            && self.stop_time >= next_block_time
         {
             output_channel.fill(offset[0]);
         } else {
