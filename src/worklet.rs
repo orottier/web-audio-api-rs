@@ -431,6 +431,10 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
     fn onmessage(&mut self, msg: &mut dyn Any) {
         self.processor.load().onmessage(msg)
     }
+
+    fn has_side_effects(&self) -> bool {
+        true // could be IO, message passing, ..
+    }
 }
 
 #[cfg(test)]

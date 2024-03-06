@@ -141,9 +141,20 @@ pub trait AudioProcessor: Send {
     }
 
     /// Return the name of the actual AudioProcessor type
-    #[doc(hidden)] // not meant to be user facing
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
+    }
+
+    /// Indicates if this processor has 'side effects' other than producing output
+    ///
+    /// Processors without side effects can not be dropped when there are no outputs connected, and
+    /// when the control side handle no longer exists
+    ///
+    /// Side effects could include
+    /// - IO (e.g. speaker output of the destination node)
+    /// - Message passing (e.g. worklet nodes)
+    fn has_side_effects(&self) -> bool {
+        false
     }
 }
 
@@ -195,7 +206,7 @@ impl<'a> AudioParamValues<'a> {
     /// provide a slice of length equal to the render quantum size (default: 128)
     #[allow(clippy::missing_panics_doc)]
     pub fn get(&self, index: &AudioParamId) -> impl Deref<Target = [f32]> + '_ {
-        DerefAudioRenderQuantumChannel(self.nodes[index.into()].borrow())
+        DerefAudioRenderQuantumChannel(self.nodes.get_unchecked(index.into()).borrow())
     }
 
     pub(crate) fn listener_params(&self) -> [impl Deref<Target = [f32]> + '_; 9] {
