@@ -1,5 +1,15 @@
 # Version History
 
+## Version 1.0.0-rc.2 (2024-03-07)
+
+- Changed: the AudioContext will continue playing if it is dropped (use `close()` instead)
+- Apply AudioParamDescriptor validations
+- Apply limits of compound AudioParams
+- Fix AudioParam rounding errors
+- Fix k-rate AudioParams not always delivering constant value
+- Fixed a panic while rendering AudioParams with dynamic lifetimes
+- Disallow constructing an AudioBuffer with length zero
+
 ## Version 1.0.0-rc.1 (2024-02-24)
 
 - Breaking: the AudioProcessor trait is now superseded by AudioWorkletProcessor
