@@ -20,7 +20,6 @@ rust-version = "1.70"
 [dependencies]
 arc-swap = "1.6"
 arrayvec = "0.7"
-cpal = { version = "0.15", optional = true }
 creek = "1.2"
 crossbeam-channel = "0.5"
 cubeb = { version = "0.12", optional = true }
@@ -44,6 +43,12 @@ vecmath = "1.0"
 
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
 no_denormals = "0.1.2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+cpal = { version = "0.15", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+cpal = { version = "0.15", optional = true, features = ["wasm-bindgen"] }
 
 [dev-dependencies]
 futures = { version = "0.3.30", features = ["executor"] }
