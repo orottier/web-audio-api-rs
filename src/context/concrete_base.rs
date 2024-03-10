@@ -223,7 +223,7 @@ impl ConcreteBaseAudioContext {
         // (we don't do this for offline rendering because it makes little sense, the graph cannot
         // be mutated once rendering has started anyway)
         if let Some(event_channel) = event_recv {
-            event_loop.run(event_channel);
+            //event_loop.run(event_channel);
         }
 
         base

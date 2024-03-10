@@ -339,9 +339,6 @@ impl RenderThread {
     }
 
     pub fn render<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
-        // Collect timing information
-        let render_start = Instant::now();
-
         // Perform actual rendering
 
         // For x64 and aarch, process with denormal floats disabled (for performance, #194)
@@ -349,20 +346,6 @@ impl RenderThread {
         no_denormals::no_denormals(|| self.render_inner(output_buffer));
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
         self.render_inner(output_buffer);
-
-        // calculate load value and ship to control thread
-        if let Some(load_value_sender) = &self.load_value_sender {
-            let duration = render_start.elapsed().as_micros() as f64 / 1E6;
-            let max_duration = RENDER_QUANTUM_SIZE as f64 / self.sample_rate as f64;
-            let load_value = duration / max_duration;
-            let render_timestamp =
-                self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64;
-            let load_value_data = AudioRenderCapacityLoad {
-                render_timestamp,
-                load_value,
-            };
-            let _ = load_value_sender.try_send(load_value_data);
-        }
     }
 
     fn render_inner<S: FromSample<f32> + Clone>(&mut self, mut output_buffer: &mut [S]) {
@@ -484,7 +467,7 @@ struct TerminateGarbageCollectorThread;
 
 // Spawns a sidecar thread of the `RenderThread` for dropping resources.
 fn spawn_garbage_collector_thread(consumer: llq::Consumer<Box<dyn Any + Send>>) {
-    let _join_handle = std::thread::spawn(move || run_garbage_collector_thread(consumer));
+    //let _join_handle = std::thread::spawn(move || run_garbage_collector_thread(consumer));
 }
 
 fn run_garbage_collector_thread(mut consumer: llq::Consumer<Box<dyn Any + Send>>) {

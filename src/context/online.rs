@@ -549,7 +549,7 @@ impl AudioContext {
 
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
-        receiver.recv().ok();
+        //receiver.recv().ok();
 
         // Then ask the audio host to close the stream
         self.backend_manager.lock().unwrap().close();
