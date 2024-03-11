@@ -55,7 +55,11 @@ pub(crate) fn load_hrtf_processor(sample_rate: u32) -> (HrtfProcessor, usize) {
     }
 
     // The following snippet might panic
+    #[cfg(target_arch = "wasm32")]
+    let resource = b"";
+    #[cfg(not(target_arch = "wasm32"))]
     let resource = include_bytes!("../../resources/IRC_1003_C.bin");
+
     let hrir_sphere = HrirSphere::new(&resource[..], sample_rate).unwrap();
     let len = hrir_sphere.len();
 
