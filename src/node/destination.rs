@@ -74,7 +74,7 @@ impl AudioNode for AudioDestinationNode {
         // OfflineAudioContext, then the channel count mode cannot be changed.
         // An InvalidStateError exception MUST be thrown for any attempt to change the value.
         assert!(
-            !self.registration.context().offline(),
+            !self.registration.context().offline() || v == ChannelCountMode::Explicit,
             "InvalidStateError - AudioDestinationNode has channel count mode constraints",
         );
 
