@@ -60,7 +60,6 @@ deviations could not be avoided:
 - getters/setters methods instead of exposed attributes
 - introduced some namespacing
 - inheritance is modelled with traits
-- ...
 
 ## Bindings
 
@@ -68,9 +67,10 @@ We provide NodeJS bindings to this library over at
 <https://github.com/ircam-ismm/node-web-audio-api> so you can use this library
 by simply writing native NodeJS code.
 
-It is a work in progress, but eventually we should be able to run the official
-[WebAudioAPI test harness](https://github.com/web-platform-tests/wpt/tree/master/webaudio)
-and track our spec compliance improvements over time.
+This enables us to run the official [WebAudioAPI test
+harness](https://github.com/web-platform-tests/wpt/tree/master/webaudio) and
+[track our spec compliance
+score](https://github.com/ircam-ismm/node-web-audio-api/issues/57).
 
 ## Audio backends
 
@@ -112,11 +112,10 @@ microphone`.
 
 ### Targeting the browser
 
-We could go full circle and pipe the Rust WebAudio output back into the browser
-via `cpal`'s `wasm-bindgen` backend. However, this project is currently not
-compatible for compiling to WebAssembly. Please read up on the [wasm tracking
-issue](https://github.com/orottier/web-audio-api-rs/issues/265) for alternative
-solutions.
+We can go full circle and pipe the Rust WebAudio output back into the browser
+via `cpal`'s `wasm-bindgen` backend. Check out [an example WASM
+project](https://github.com/orottier/wasm-web-audio-rs).
+Warning: experimental!
 
 ## Contributing
 
