@@ -4,10 +4,30 @@ use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::render::{
     AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
 };
+use crate::MAX_CHANNELS;
 
 use super::{
     AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
 };
+
+/// Assert that the given number of channels is valid for a ChannelMergerNode
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - the given number of channels is outside the [1, 32] range,
+/// 32 being defined by the MAX_CHANNELS constant.
+///
+#[track_caller]
+#[inline(always)]
+pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
+    assert!(
+        number_of_channels > 0 && number_of_channels <= MAX_CHANNELS,
+        "IndexSizeError - Invalid number of channels: {:?} is outside range [1, {:?}]",
+        number_of_channels,
+        MAX_CHANNELS
+    );
+}
 
 /// Assert that the channel count is valid for the ChannelMergerNode
 /// see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
@@ -104,7 +124,7 @@ impl AudioNode for ChannelMergerNode {
 impl ChannelMergerNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: ChannelMergerOptions) -> Self {
         context.base().register(move |registration| {
-            crate::assert_valid_number_of_channels(options.number_of_inputs);
+            assert_valid_number_of_channels(options.number_of_inputs);
 
             assert_valid_channel_count(options.channel_config.count);
             assert_valid_channel_count_mode(options.channel_config.count_mode);
