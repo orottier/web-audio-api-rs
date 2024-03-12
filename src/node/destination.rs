@@ -55,11 +55,24 @@ impl AudioNode for AudioDestinationNode {
     }
 
     fn set_channel_count(&self, v: usize) {
+        // <https://webaudio.github.io/web-audio-api/#AudioDestinationNode>
+        // numberOfChannels is the number of channels specified when constructing the
+        // OfflineAudioContext. This value may not be changed; a NotSupportedError exception MUST
+        // be thrown if channelCount is changed to a different value.
+        //
+        // <https://webaudio.github.io/web-audio-api/#dom-audionode-channelcount>
+        // The channel count cannot be changed. An InvalidStateError exception MUST be thrown for
+        // any attempt to change the value.
+        //
+        // TODO spec issue: NotSupportedError or InvalidStateError?
         assert!(
             !self.registration.context().offline() || v == self.max_channel_count(),
             "NotSupportedError - not allowed to change OfflineAudioContext destination channel count"
         );
 
+        // <https://webaudio.github.io/web-audio-api/#dom-audionode-channelcount>
+        // The channel count MUST be between 1 and maxChannelCount. An IndexSizeError exception
+        // MUST be thrown for any attempt to set the count outside this range.
         assert!(
             v <= self.max_channel_count(),
             "IndexSizeError - channel count cannot be greater than maxChannelCount ({})",
@@ -70,11 +83,15 @@ impl AudioNode for AudioDestinationNode {
     }
 
     fn set_channel_count_mode(&self, v: ChannelCountMode) {
-        // [spec] If the AudioDestinationNode is the destination node of an
+        // <https://webaudio.github.io/web-audio-api/#AudioDestinationNode>
+        // For an OfflineAudioContext, the defaults are [..] channelCountMode: "explicit"
+        //
+        // <https://webaudio.github.io/web-audio-api/#dom-audionode-channelcountmode>
+        // If the AudioDestinationNode is the destination node of an
         // OfflineAudioContext, then the channel count mode cannot be changed.
         // An InvalidStateError exception MUST be thrown for any attempt to change the value.
         assert!(
-            !self.registration.context().offline(),
+            !self.registration.context().offline() || v == ChannelCountMode::Explicit,
             "InvalidStateError - AudioDestinationNode has channel count mode constraints",
         );
 
