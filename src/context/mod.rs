@@ -90,6 +90,7 @@ impl From<u8> for AudioContextState {
 /// This object allows for communication with the render thread and dynamic lifetime management.
 //
 // The only way to construct this object is by calling [`BaseAudioContext::register`]
+#[derive(Clone)]
 pub struct AudioContextRegistration {
     /// the audio context in which nodes and connections lives
     context: ConcreteBaseAudioContext,

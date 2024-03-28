@@ -47,6 +47,8 @@ mod oscillator;
 pub use oscillator::*;
 mod panner;
 pub use panner::*;
+mod script_processor;
+pub use script_processor::*;
 mod stereo_panner;
 pub use stereo_panner::*;
 mod waveshaper;

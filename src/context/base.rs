@@ -214,6 +214,22 @@ pub trait BaseAudioContext {
         PeriodicWave::new(self.base(), options)
     }
 
+    /// Creates an `ScriptProcessorNode` for custom audio processing (deprecated);
+    #[must_use]
+    fn create_script_processor(
+        &self,
+        buffer_size: usize,
+        number_of_input_channels: usize,
+        number_of_output_channels: usize,
+    ) -> node::ScriptProcessorNode {
+        node::ScriptProcessorNode::new(
+            self.base(),
+            buffer_size,
+            number_of_input_channels,
+            number_of_output_channels,
+        )
+    }
+
     /// Creates an `StereoPannerNode` to pan a stereo output
     #[must_use]
     fn create_stereo_panner(&self) -> node::StereoPannerNode {

@@ -26,6 +26,7 @@ pub(crate) enum EventType {
     Diagnostics,
     Message(AudioNodeId),
     Complete,
+    AudioProcessing(AudioNodeId),
 }
 
 /// The Error Event interface
@@ -38,6 +39,19 @@ pub struct ErrorEvent {
     pub error: Box<dyn Any + Send>,
     /// Inherits from this base Event
     pub event: Event,
+}
+
+/// The AudioProcessingEvent interface
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct AudioProcessingEvent {
+    /// The input buffer
+    pub input_buffer: AudioBuffer,
+    /// The output buffer
+    pub output_buffer: AudioBuffer,
+    /// The time when the audio will be played in the same time coordinate system as the
+    /// AudioContext's currentTime.
+    pub playback_time: f64,
 }
 
 /// The OfflineAudioCompletionEvent Event interface
@@ -59,6 +73,7 @@ pub(crate) enum EventPayload {
     Message(Box<dyn Any + Send + 'static>),
     AudioContextState(AudioContextState),
     Complete(AudioBuffer),
+    AudioProcessing(AudioProcessingEvent),
 }
 
 #[derive(Debug)]
@@ -121,6 +136,13 @@ impl EventDispatch {
         EventDispatch {
             type_: EventType::Complete,
             payload: EventPayload::Complete(buffer),
+        }
+    }
+
+    pub fn audio_processing(id: AudioNodeId, value: AudioProcessingEvent) -> Self {
+        EventDispatch {
+            type_: EventType::AudioProcessing(id),
+            payload: EventPayload::AudioProcessing(value),
         }
     }
 }
