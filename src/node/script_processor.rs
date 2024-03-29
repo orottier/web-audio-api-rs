@@ -50,7 +50,9 @@ impl ScriptProcessorNode {
 
         context.base().register(move |registration| {
             let render = ScriptProcessorRenderer {
-                buffer: None,
+                input_buffer: Vec::with_capacity(buffer_size / RENDER_QUANTUM_SIZE),
+                output_buffer: Vec::with_capacity(buffer_size / RENDER_QUANTUM_SIZE),
+                next_output_buffer: Vec::with_capacity(buffer_size / RENDER_QUANTUM_SIZE),
                 buffer_size,
                 number_of_output_channels,
             };
@@ -111,14 +113,16 @@ impl ScriptProcessorNode {
 }
 
 struct ScriptProcessorRenderer {
-    buffer: Option<AudioRenderQuantum>, // TODO buffer_size
+    input_buffer: Vec<AudioRenderQuantum>,
+    output_buffer: Vec<AudioRenderQuantum>,
+    next_output_buffer: Vec<AudioRenderQuantum>,
     buffer_size: usize,
     number_of_output_channels: usize,
 }
 
 // SAFETY:
-// AudioRenderQuantums are not Send but we promise the `buffer` is None before we ship it to the
-// render thread.
+// AudioRenderQuantums are not Send but we promise the `buffer` VecDeque is empty before we ship it
+// to the render thread.
 #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for ScriptProcessorRenderer {}
 
@@ -134,34 +138,66 @@ impl AudioProcessor for ScriptProcessorRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        let mut silence = input.clone();
-        silence.make_silent();
-        if let Some(buffer) = self.buffer.replace(silence) {
-            *output = buffer;
+        output.make_silent();
+
+        let number_of_quanta = self.input_buffer.capacity();
+
+        self.input_buffer.push(input.clone());
+        if self.input_buffer.len() == number_of_quanta {
+            // convert self.input_buffer to an AudioBuffer
+            let number_of_input_channels = self
+                .input_buffer
+                .iter()
+                .map(|i| i.number_of_channels())
+                .max()
+                .unwrap();
+            let mut input_samples = vec![vec![0.; self.buffer_size]; number_of_input_channels];
+            self.input_buffer.iter().enumerate().for_each(|(i, b)| {
+                let offset = RENDER_QUANTUM_SIZE * i;
+                b.channels()
+                    .iter()
+                    .zip(input_samples.iter_mut())
+                    .for_each(|(c, o)| {
+                        o[offset..(offset + RENDER_QUANTUM_SIZE)].copy_from_slice(c);
+                    });
+            });
+            let input_buffer = AudioBuffer::from(input_samples, scope.sample_rate);
+
+            // create a suitable output AudioBuffer
+            let output_samples = vec![vec![0.; self.buffer_size]; self.number_of_output_channels];
+            let output_buffer = AudioBuffer::from(output_samples, scope.sample_rate);
+
+            // emit event to control thread
+            let playback_time =
+                scope.current_time + self.buffer_size as f64 / scope.sample_rate as f64;
+            scope.send_audio_processing_event(input_buffer, output_buffer, playback_time);
+
+            // clear existing input buffer
+            self.input_buffer.clear();
+
+            // move next output buffer into current output buffer
+            std::mem::swap(&mut self.output_buffer, &mut self.next_output_buffer);
+            // fill next output buffer with silence
+            self.next_output_buffer.clear();
+            let silence = output.clone();
+            self.next_output_buffer.resize(number_of_quanta, silence);
         }
 
-        // TODO buffer_size
-        let input_samples = input.channels().iter().map(|c| c.to_vec()).collect();
-        let input_buffer = AudioBuffer::from(input_samples, scope.sample_rate);
-        let output_samples = vec![vec![0.; RENDER_QUANTUM_SIZE]; self.number_of_output_channels];
-        let output_buffer = AudioBuffer::from(output_samples, scope.sample_rate);
-
-        let playback_time =
-            scope.current_time + (RENDER_QUANTUM_SIZE as f32 / scope.sample_rate) as f64; // TODO
-        scope.send_audio_processing_event(input_buffer, output_buffer, playback_time);
+        if !self.output_buffer.is_empty() {
+            *output = self.output_buffer.remove(0);
+        }
 
         true // TODO - spec says false but that seems weird
     }
 
     fn onmessage(&mut self, msg: &mut dyn Any) {
         if let Some(buffer) = msg.downcast_mut::<AudioBuffer>() {
-            if let Some(render_quantum) = &mut self.buffer {
-                buffer
-                    .channels()
-                    .iter()
-                    .zip(render_quantum.channels_mut())
-                    .for_each(|(i, o)| o.copy_from_slice(i.as_slice())); // TODO bounds check
-            }
+            buffer.channels().iter().enumerate().for_each(|(i, c)| {
+                c.as_slice()
+                    .chunks(RENDER_QUANTUM_SIZE)
+                    .zip(self.next_output_buffer.iter_mut())
+                    .for_each(|(s, o)| o.channel_data_mut(i).copy_from_slice(s))
+            });
             return;
         };
 

@@ -27,7 +27,7 @@ fn main() {
         ..AudioContextOptions::default()
     });
 
-    let node = context.create_script_processor(128, 1, 1);
+    let node = context.create_script_processor(512, 1, 1);
     node.set_onaudioprocess(|e| {
         let mut rng = rand::thread_rng();
         e.output_buffer
