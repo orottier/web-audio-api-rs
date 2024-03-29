@@ -15,7 +15,6 @@ use std::any::Any;
 pub struct ScriptProcessorNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
-    //  bufferSize MUST be one of the following values: 256, 512, 1024, 2048, 4096, 8192, 16384
     buffer_size: usize,
 }
 
@@ -36,7 +35,24 @@ impl AudioNode for ScriptProcessorNode {
         1
     }
 
-    // TODO channel config constraints
+    fn set_channel_count_mode(&self, mode: ChannelCountMode) {
+        assert_eq!(
+            mode,
+            ChannelCountMode::Explicit,
+            "NotSupportedError - ScriptProcessorNode channel count mode must be 'explicit'",
+        );
+        self.channel_config
+            .set_count_mode(mode, self.registration());
+    }
+
+    fn set_channel_count(&self, count: usize) {
+        assert_eq!(
+            count,
+            self.channel_config.count(),
+            "NotSupportedError - ScriptProcessorNode channel count must equal numberOfInputChannels"
+        );
+        self.channel_config.set_count(count, self.registration());
+    }
 }
 
 impl ScriptProcessorNode {
@@ -46,7 +62,19 @@ impl ScriptProcessorNode {
         number_of_input_channels: usize,
         number_of_output_channels: usize,
     ) -> Self {
-        // TODO assert valid arguments
+        assert!(
+            (buffer_size / 256).is_power_of_two() && buffer_size <= 16384,
+            "IndexSizeError - bufferSize must be one of: 256, 512, 1024, 2048, 4096, 8192, 16384",
+        );
+
+        match (number_of_input_channels, number_of_output_channels) {
+            (0, 0) => panic!("IndexSizeError - numberOfInputChannels and numberOfOutputChannels cannot both be zero"),
+            (0, c) | (c, 0) => crate::assert_valid_number_of_channels(c),
+            (c, d) => {
+                crate::assert_valid_number_of_channels(c);
+                crate::assert_valid_number_of_channels(d);
+            }
+        };
 
         context.base().register(move |registration| {
             let render = ScriptProcessorRenderer {
@@ -209,10 +237,15 @@ impl AudioProcessor for ScriptProcessorRenderer {
 mod tests {
     use super::*;
     use crate::context::OfflineAudioContext;
-    use float_eq::assert_float_eq;
 
     #[test]
-    fn test() {
-        // TODO how to test?
+    fn test_constructor() {
+        let mut context = OfflineAudioContext::new(2, 1024, 48000.);
+        let node = context.create_script_processor(512, 1, 1);
+        node.set_channel_count(1);
+        node.set_channel_count_mode(ChannelCountMode::Explicit);
+        node.connect(&context.destination());
+        let _ = context.start_rendering_sync();
+        // TODO - does not work with OfflineAudioContext due to lack of event loop
     }
 }
