@@ -8,7 +8,7 @@ use crate::{
     RENDER_QUANTUM_SIZE,
 };
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig};
 
 /// enumerates the oversampling rate available for `WaveShaperNode`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +51,7 @@ pub struct WaveShaperOptions {
     /// Oversampling rate - default to `None`
     pub oversample: OverSampleType,
     /// audio node options
-    pub channel_config: ChannelConfigOptions,
+    pub channel_config: AudioNodeOptions,
 }
 
 impl Default for WaveShaperOptions {
@@ -59,7 +59,7 @@ impl Default for WaveShaperOptions {
         Self {
             oversample: OverSampleType::None,
             curve: None,
-            channel_config: ChannelConfigOptions::default(),
+            channel_config: AudioNodeOptions::default(),
         }
     }
 }

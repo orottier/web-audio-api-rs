@@ -4,7 +4,7 @@ use crate::render::{
     AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
 };
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig};
 
 /// Options for constructing a [`GainNode`]
 // dictionary GainOptions : AudioNodeOptions {
@@ -13,14 +13,14 @@ use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
 #[derive(Clone, Debug)]
 pub struct GainOptions {
     pub gain: f32,
-    pub channel_config: ChannelConfigOptions,
+    pub channel_config: AudioNodeOptions,
 }
 
 impl Default for GainOptions {
     fn default() -> Self {
         Self {
             gain: 1.,
-            channel_config: ChannelConfigOptions::default(),
+            channel_config: AudioNodeOptions::default(),
         }
     }
 }

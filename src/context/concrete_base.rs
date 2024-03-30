@@ -6,7 +6,7 @@ use crate::context::{
 };
 use crate::events::{EventDispatch, EventHandler, EventLoop, EventType};
 use crate::message::ControlMessage;
-use crate::node::{AudioDestinationNode, AudioNode, ChannelConfig, ChannelConfigOptions};
+use crate::node::{AudioDestinationNode, AudioNode, AudioNodeOptions, ChannelConfig};
 use crate::param::AudioParam;
 use crate::render::AudioProcessor;
 use crate::spatial::AudioListenerParams;
@@ -144,7 +144,7 @@ impl ConcreteBaseAudioContext {
             render_channel: RwLock::new(render_channel),
             queued_messages: Mutex::new(Vec::new()),
             audio_node_id_provider,
-            destination_channel_config: ChannelConfigOptions::default().into(),
+            destination_channel_config: AudioNodeOptions::default().into(),
             frames_played,
             queued_audio_listener_msgs: Mutex::new(Vec::new()),
             listener_params: None,

@@ -9,7 +9,7 @@ use arrayvec::ArrayVec;
 
 use crate::context::AudioContextRegistration;
 use crate::node::{
-    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+    AudioNode, AudioNodeOptions, ChannelConfig, ChannelCountMode, ChannelInterpretation,
 };
 use crate::render::{
     AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
@@ -305,10 +305,10 @@ impl AudioNode for AudioParam {
     fn channel_config(&self) -> &'static ChannelConfig {
         static INSTANCE: OnceLock<ChannelConfig> = OnceLock::new();
         INSTANCE.get_or_init(|| {
-            ChannelConfigOptions {
-                count: 1,
-                count_mode: ChannelCountMode::Explicit,
-                interpretation: ChannelInterpretation::Discrete,
+            AudioNodeOptions {
+                channel_count: 1,
+                channel_count_mode: ChannelCountMode::Explicit,
+                channel_interpretation: ChannelInterpretation::Discrete,
             }
             .into()
         })

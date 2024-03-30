@@ -8,7 +8,7 @@ use crate::io::{self, AudioBackendManager, ControlThreadInit, NoneBackend, Rende
 use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::{ControlMessage, OneshotNotify};
-use crate::node::{self, ChannelConfigOptions};
+use crate::node::{self, AudioNodeOptions};
 use crate::render::graph::Graph;
 use crate::MediaElement;
 use crate::{AudioRenderCapacity, Event};
@@ -576,7 +576,7 @@ impl AudioContext {
     /// Creates a [`MediaStreamAudioDestinationNode`](node::MediaStreamAudioDestinationNode)
     #[must_use]
     pub fn create_media_stream_destination(&self) -> node::MediaStreamAudioDestinationNode {
-        let opts = ChannelConfigOptions::default();
+        let opts = AudioNodeOptions::default();
         node::MediaStreamAudioDestinationNode::new(self, opts)
     }
 

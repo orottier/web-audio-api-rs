@@ -8,7 +8,7 @@
 pub use crate::render::AudioWorkletGlobalScope;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
-use crate::node::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use crate::node::{AudioNode, AudioNodeOptions, ChannelConfig};
 use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::{AudioProcessor, AudioRenderQuantum};
 use crate::{MessagePort, MAX_CHANNELS};
@@ -131,7 +131,7 @@ pub struct AudioWorkletNodeOptions<C> {
     /// This holds any user-defined data that may be used to initialize custom properties in an
     /// AudioWorkletProcessor instance that is associated with the AudioWorkletNode.
     pub processor_options: C,
-    pub channel_config: ChannelConfigOptions,
+    pub channel_config: AudioNodeOptions,
 }
 
 impl<C: Default> Default for AudioWorkletNodeOptions<C> {
@@ -142,7 +142,7 @@ impl<C: Default> Default for AudioWorkletNodeOptions<C> {
             output_channel_count: Vec::new(),
             parameter_data: HashMap::new(),
             processor_options: C::default(),
-            channel_config: ChannelConfigOptions::default(),
+            channel_config: AudioNodeOptions::default(),
         }
     }
 }

@@ -7,7 +7,7 @@ use crate::context::{
 };
 use crate::decoding::MediaDecoder;
 use crate::events::{Event, EventHandler, EventType};
-use crate::node::{AudioNode, ChannelConfigOptions};
+use crate::node::{AudioNode, AudioNodeOptions};
 use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::{node, AudioListener};
@@ -186,7 +186,7 @@ pub trait BaseAudioContext {
     #[must_use]
     fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IIRFilterNode {
         let options = node::IIRFilterOptions {
-            channel_config: ChannelConfigOptions::default(),
+            channel_config: AudioNodeOptions::default(),
             feedforward,
             feedback,
         };

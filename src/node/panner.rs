@@ -13,9 +13,7 @@ use crate::render::{
 };
 use crate::RENDER_QUANTUM_SIZE;
 
-use super::{
-    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
-};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelCountMode, ChannelInterpretation};
 
 /// Assert that the given value number is a valid value for coneOuterGain
 ///
@@ -140,7 +138,7 @@ pub struct PannerOptions {
     pub cone_inner_angle: f64,
     pub cone_outer_angle: f64,
     pub cone_outer_gain: f64,
-    pub channel_config: ChannelConfigOptions,
+    pub channel_config: AudioNodeOptions,
 }
 
 impl Default for PannerOptions {
@@ -160,10 +158,10 @@ impl Default for PannerOptions {
             cone_inner_angle: 360.,
             cone_outer_angle: 360.,
             cone_outer_gain: 0.,
-            channel_config: ChannelConfigOptions {
-                count: 2,
-                count_mode: ChannelCountMode::ClampedMax,
-                interpretation: ChannelInterpretation::Speakers,
+            channel_config: AudioNodeOptions {
+                channel_count: 2,
+                channel_count_mode: ChannelCountMode::ClampedMax,
+                channel_interpretation: ChannelInterpretation::Speakers,
             },
         }
     }
@@ -426,8 +424,8 @@ impl PannerNode {
                 "RangeError - rolloffFactor cannot be negative"
             );
             assert_valid_cone_outer_gain(cone_outer_gain);
-            assert_valid_channel_count(channel_config.count);
-            assert_valid_channel_count_mode(channel_config.count_mode);
+            assert_valid_channel_count(channel_config.channel_count);
+            assert_valid_channel_count_mode(channel_config.channel_count_mode);
 
             // position params
             let (param_px, render_px) = context.create_audio_param(PARAM_OPTS, &registration);

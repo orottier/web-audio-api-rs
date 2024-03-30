@@ -8,7 +8,7 @@ use crate::render::{
 };
 use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig};
 
 // Converting a value 𝑣 in decibels to linear gain unit means returning 10𝑣/20.
 fn db_to_lin(val: f32) -> f32 {
@@ -42,7 +42,7 @@ pub struct DynamicsCompressorOptions {
     pub ratio: f32,
     pub release: f32,
     pub threshold: f32,
-    pub channel_config: ChannelConfigOptions,
+    pub channel_config: AudioNodeOptions,
 }
 
 impl Default for DynamicsCompressorOptions {
@@ -53,7 +53,7 @@ impl Default for DynamicsCompressorOptions {
             ratio: 12.,      // unit less
             release: 0.25,   // seconds
             threshold: -24., // dB
-            channel_config: ChannelConfigOptions::default(),
+            channel_config: AudioNodeOptions::default(),
         }
     }
 }

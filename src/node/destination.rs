@@ -3,9 +3,7 @@ use crate::render::{
     AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
 };
 
-use super::{
-    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
-};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelCountMode, ChannelInterpretation};
 
 /// The AudioDestinationNode interface represents the terminal node of an audio
 /// graph in a given context. usually the speakers of your device, or the node that
@@ -102,10 +100,10 @@ impl AudioNode for AudioDestinationNode {
 impl AudioDestinationNode {
     pub(crate) fn new<C: BaseAudioContext>(context: &C, channel_count: usize) -> Self {
         context.base().register(move |registration| {
-            let channel_config = ChannelConfigOptions {
-                count: channel_count,
-                count_mode: ChannelCountMode::Explicit,
-                interpretation: ChannelInterpretation::Speakers,
+            let channel_config = AudioNodeOptions {
+                channel_count,
+                channel_count_mode: ChannelCountMode::Explicit,
+                channel_interpretation: ChannelInterpretation::Speakers,
             }
             .into();
             let node = Self {

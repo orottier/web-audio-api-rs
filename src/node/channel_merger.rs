@@ -6,9 +6,7 @@ use crate::render::{
 };
 use crate::MAX_CHANNELS;
 
-use super::{
-    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
-};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelCountMode, ChannelInterpretation};
 
 /// Assert that the given number of channels is valid for a ChannelMergerNode
 ///
@@ -68,17 +66,17 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
 #[derive(Clone, Debug)]
 pub struct ChannelMergerOptions {
     pub number_of_inputs: usize,
-    pub channel_config: ChannelConfigOptions,
+    pub channel_config: AudioNodeOptions,
 }
 
 impl Default for ChannelMergerOptions {
     fn default() -> Self {
         Self {
             number_of_inputs: 6,
-            channel_config: ChannelConfigOptions {
-                count: 1,
-                count_mode: ChannelCountMode::Explicit,
-                interpretation: ChannelInterpretation::Speakers,
+            channel_config: AudioNodeOptions {
+                channel_count: 1,
+                channel_count_mode: ChannelCountMode::Explicit,
+                channel_interpretation: ChannelInterpretation::Speakers,
             },
         }
     }
@@ -126,8 +124,8 @@ impl ChannelMergerNode {
         context.base().register(move |registration| {
             assert_valid_number_of_channels(options.number_of_inputs);
 
-            assert_valid_channel_count(options.channel_config.count);
-            assert_valid_channel_count_mode(options.channel_config.count_mode);
+            assert_valid_channel_count(options.channel_config.channel_count);
+            assert_valid_channel_count_mode(options.channel_config.channel_count_mode);
 
             let node = ChannelMergerNode {
                 registration,

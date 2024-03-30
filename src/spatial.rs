@@ -4,7 +4,7 @@
 
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::node::{
-    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+    AudioNode, AudioNodeOptions, ChannelConfig, ChannelCountMode, ChannelInterpretation,
 };
 use crate::param::{AudioParam, AudioParamDescriptor, AudioParamInner, AutomationRate};
 use crate::render::{
@@ -93,10 +93,10 @@ impl AudioNode for AudioListenerNode {
     fn channel_config(&self) -> &ChannelConfig {
         static INSTANCE: OnceLock<ChannelConfig> = OnceLock::new();
         INSTANCE.get_or_init(|| {
-            ChannelConfigOptions {
-                count: 1,
-                count_mode: ChannelCountMode::Explicit,
-                interpretation: ChannelInterpretation::Discrete,
+            AudioNodeOptions {
+                channel_count: 1,
+                channel_count_mode: ChannelCountMode::Explicit,
+                channel_interpretation: ChannelInterpretation::Discrete,
             }
             .into()
         })

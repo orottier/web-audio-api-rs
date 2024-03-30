@@ -12,7 +12,7 @@ use crate::render::{
 };
 use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig};
 
 fn get_computed_freq(freq: f32, detune: f32, sample_rate: f32) -> f32 {
     freq * (detune / 1200.).exp2().clamp(0., sample_rate / 2.)
@@ -235,7 +235,7 @@ pub struct BiquadFilterOptions {
     pub frequency: f32,
     pub gain: f32,
     pub type_: BiquadFilterType,
-    pub channel_config: ChannelConfigOptions,
+    pub channel_config: AudioNodeOptions,
 }
 
 impl Default for BiquadFilterOptions {
@@ -246,7 +246,7 @@ impl Default for BiquadFilterOptions {
             frequency: 350.,
             gain: 0.,
             type_: BiquadFilterType::default(),
-            channel_config: ChannelConfigOptions::default(),
+            channel_config: AudioNodeOptions::default(),
         }
     }
 }

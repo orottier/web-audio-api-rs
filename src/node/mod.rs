@@ -117,21 +117,21 @@ impl From<u32> for ChannelInterpretation {
 
 /// Options that can be used in constructing all AudioNodes.
 #[derive(Clone, Debug)]
-pub struct ChannelConfigOptions {
+pub struct AudioNodeOptions {
     /// Desired number of channels for the [`AudioNode::channel_count`] attribute.
-    pub count: usize,
+    pub channel_count: usize,
     /// Desired mode for the [`AudioNode::channel_count_mode`] attribute.
-    pub count_mode: ChannelCountMode,
+    pub channel_count_mode: ChannelCountMode,
     /// Desired mode for the [`AudioNode::channel_interpretation`] attribute.
-    pub interpretation: ChannelInterpretation,
+    pub channel_interpretation: ChannelInterpretation,
 }
 
-impl Default for ChannelConfigOptions {
+impl Default for AudioNodeOptions {
     fn default() -> Self {
         Self {
-            count: 2,
-            count_mode: ChannelCountMode::Max,
-            interpretation: ChannelInterpretation::Speakers,
+            channel_count: 2,
+            channel_count_mode: ChannelCountMode::Max,
+            channel_interpretation: ChannelInterpretation::Speakers,
         }
     }
 }
@@ -142,15 +142,15 @@ impl Default for ChannelConfigOptions {
 /// methods `set_channel_count`, `set_channel_count_mode` and `set_channel_interpretation` from the
 /// audio node interface will use this struct to sync the required info to the render thread.
 ///
-/// The only way to construct an instance is with [`ChannelConfigOptions`]
+/// The only way to construct an instance is with [`AudioNodeOptions`]
 ///
 /// ```
-/// use web_audio_api::node::{ChannelConfigOptions, ChannelConfig, ChannelInterpretation, ChannelCountMode};
+/// use web_audio_api::node::{AudioNodeOptions, ChannelConfig, ChannelInterpretation, ChannelCountMode};
 ///
-/// let opts = ChannelConfigOptions {
-///     count: 1,
-///     count_mode: ChannelCountMode::Explicit,
-///     interpretation: ChannelInterpretation::Discrete,
+/// let opts = AudioNodeOptions {
+///     channel_count: 1,
+///     channel_count_mode: ChannelCountMode::Explicit,
+///     channel_interpretation: ChannelInterpretation::Discrete,
 /// };
 /// let _: ChannelConfig = opts.into();
 #[derive(Clone)]
@@ -167,7 +167,7 @@ pub(crate) struct ChannelConfigInner {
 
 impl Default for ChannelConfig {
     fn default() -> Self {
-        ChannelConfigOptions::default().into()
+        AudioNodeOptions::default().into()
     }
 }
 
@@ -260,14 +260,14 @@ impl ChannelConfig {
     }
 }
 
-impl From<ChannelConfigOptions> for ChannelConfig {
-    fn from(opts: ChannelConfigOptions) -> Self {
-        crate::assert_valid_number_of_channels(opts.count);
+impl From<AudioNodeOptions> for ChannelConfig {
+    fn from(opts: AudioNodeOptions) -> Self {
+        crate::assert_valid_number_of_channels(opts.channel_count);
 
         let inner = ChannelConfigInner {
-            count: opts.count,
-            count_mode: opts.count_mode,
-            interpretation: opts.interpretation,
+            count: opts.channel_count,
+            count_mode: opts.channel_count_mode,
+            interpretation: opts.channel_interpretation,
         };
         Self {
             inner: Arc::new(Mutex::new(inner)),
