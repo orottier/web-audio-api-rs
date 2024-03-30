@@ -138,7 +138,7 @@ impl Default for AudioNodeOptions {
 
 /// Config for up/down-mixing of input channels for audio nodes
 ///
-/// Only when implementing the [`AudioNode`] trait manually, is this struct of any concern. The
+/// Only when implementing the [`AudioNode`] trait manually, this struct is of any concern. The
 /// methods `set_channel_count`, `set_channel_count_mode` and `set_channel_interpretation` from the
 /// audio node interface will use this struct to sync the required info to the render thread.
 ///
@@ -284,8 +284,14 @@ impl From<AudioNodeOptions> for ChannelConfig {
 /// Note that the AudioNode is typically constructed together with an `AudioWorkletProcessor`
 /// (the object that lives the render thread). See the [`crate::worklet`] mod.
 pub trait AudioNode {
+    /// Handle of the associated [`BaseAudioContext`](crate::context::BaseAudioContext).
+    ///
+    /// Only when implementing the AudioNode trait manually, this struct is of any concern.
     fn registration(&self) -> &AudioContextRegistration;
 
+    /// Config for up/down-mixing of input channels for this node.
+    ///
+    /// Only when implementing the [`AudioNode`] trait manually, this struct is of any concern.
     fn channel_config(&self) -> &ChannelConfig;
 
     /// The [`BaseAudioContext`](crate::context::BaseAudioContext) concrete type which owns this

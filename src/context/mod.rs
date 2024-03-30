@@ -85,7 +85,9 @@ impl From<u8> for AudioContextState {
 
 /// Handle of the [`AudioNode`](crate::node::AudioNode) to its associated [`BaseAudioContext`].
 ///
-/// This allows for communication with the render thread and lifetime management.
+/// Only when implementing the AudioNode trait manually, this struct is of any concern.
+///
+/// This object allows for communication with the render thread and dynamic lifetime management.
 //
 // The only way to construct this object is by calling [`BaseAudioContext::register`]
 pub struct AudioContextRegistration {
