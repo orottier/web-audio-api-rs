@@ -393,11 +393,6 @@ impl AudioProcessor for WaveShaperRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        if input.is_silent() {
-            output.make_silent();
-            return false;
-        }
-
         *output = input.clone();
 
         if let Some(curve) = &self.curve {
