@@ -396,7 +396,7 @@ impl AudioProcessor for WaveShaperRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        if input.is_silent() & self.can_propagate_silence {
+        if input.is_silent() && self.can_propagate_silence {
             output.make_silent();
             return false;
         }
