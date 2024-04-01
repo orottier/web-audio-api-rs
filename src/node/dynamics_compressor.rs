@@ -8,7 +8,9 @@ use crate::render::{
 };
 use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{
+    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
+};
 
 // Converting a value 𝑣 in decibels to linear gain unit means returning 10𝑣/20.
 fn db_to_lin(val: f32) -> f32 {
@@ -53,9 +55,46 @@ impl Default for DynamicsCompressorOptions {
             ratio: 12.,      // unit less
             release: 0.25,   // seconds
             threshold: -24., // dB
-            channel_config: ChannelConfigOptions::default(),
+            channel_config: ChannelConfigOptions {
+                count: 2,
+                count_mode: ChannelCountMode::ClampedMax,
+                interpretation: ChannelInterpretation::Speakers,
+            },
         }
     }
+}
+
+/// Assert that the channel count is valid for the DynamicsCompressorNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count is greater than 2
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count(count: usize) {
+    assert!(
+        count <= 2,
+        "NotSupportedError - DynamicsCompressorNode channel count cannot be greater than two"
+    );
+}
+
+/// Assert that the channel count is valid for the DynamicsCompressorNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count mode is [`ChannelCountMode::Max`]
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
+    assert_ne!(
+        mode,
+        ChannelCountMode::Max,
+        "NotSupportedError - DynamicsCompressorNode channel count mode cannot be set to max"
+    );
 }
 
 /// `DynamicsCompressorNode` provides a compression effect.
@@ -126,11 +165,27 @@ impl AudioNode for DynamicsCompressorNode {
     fn number_of_outputs(&self) -> usize {
         1
     }
+
+    // see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
+    fn set_channel_count(&self, count: usize) {
+        assert_valid_channel_count(count);
+        self.channel_config.set_count(count, self.registration());
+    }
+
+    // see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+    fn set_channel_count_mode(&self, mode: ChannelCountMode) {
+        assert_valid_channel_count_mode(mode);
+        self.channel_config
+            .set_count_mode(mode, self.registration());
+    }
 }
 
 impl DynamicsCompressorNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: DynamicsCompressorOptions) -> Self {
         context.base().register(move |registration| {
+            assert_valid_channel_count(options.channel_config.count);
+            assert_valid_channel_count_mode(options.channel_config.count_mode);
+
             // attack, knee, ratio, release and threshold have automation rate constraints
             // https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints
             let attack_param_opts = AudioParamDescriptor {
