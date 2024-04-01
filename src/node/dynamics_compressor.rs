@@ -42,7 +42,7 @@ pub struct DynamicsCompressorOptions {
     pub ratio: f32,
     pub release: f32,
     pub threshold: f32,
-    pub channel_config: AudioNodeOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for DynamicsCompressorOptions {
@@ -53,7 +53,7 @@ impl Default for DynamicsCompressorOptions {
             ratio: 12.,      // unit less
             release: 0.25,   // seconds
             threshold: -24., // dB
-            channel_config: AudioNodeOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         }
     }
 }
@@ -215,7 +215,7 @@ impl DynamicsCompressorNode {
 
             let node = DynamicsCompressorNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config: options.audio_node_options.into(),
                 attack: attack_param,
                 knee: knee_param,
                 ratio: ratio_param,

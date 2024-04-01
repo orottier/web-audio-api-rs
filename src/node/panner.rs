@@ -138,7 +138,7 @@ pub struct PannerOptions {
     pub cone_inner_angle: f64,
     pub cone_outer_angle: f64,
     pub cone_outer_gain: f64,
-    pub channel_config: AudioNodeOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for PannerOptions {
@@ -158,7 +158,7 @@ impl Default for PannerOptions {
             cone_inner_angle: 360.,
             cone_outer_angle: 360.,
             cone_outer_gain: 0.,
-            channel_config: AudioNodeOptions {
+            audio_node_options: AudioNodeOptions {
                 channel_count: 2,
                 channel_count_mode: ChannelCountMode::ClampedMax,
                 channel_interpretation: ChannelInterpretation::Speakers,
@@ -407,7 +407,7 @@ impl PannerNode {
                 cone_inner_angle,
                 cone_outer_angle,
                 cone_outer_gain,
-                channel_config,
+                audio_node_options: channel_config,
                 panning_model,
             } = options;
 

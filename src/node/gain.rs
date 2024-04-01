@@ -13,14 +13,14 @@ use super::{AudioNode, AudioNodeOptions, ChannelConfig};
 #[derive(Clone, Debug)]
 pub struct GainOptions {
     pub gain: f32,
-    pub channel_config: AudioNodeOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for GainOptions {
     fn default() -> Self {
         Self {
             gain: 1.,
-            channel_config: AudioNodeOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         }
     }
 }
@@ -69,7 +69,7 @@ impl GainNode {
 
             let node = GainNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config: options.audio_node_options.into(),
                 gain: param,
             };
 

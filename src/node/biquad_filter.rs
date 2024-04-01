@@ -235,7 +235,7 @@ pub struct BiquadFilterOptions {
     pub frequency: f32,
     pub gain: f32,
     pub type_: BiquadFilterType,
-    pub channel_config: AudioNodeOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for BiquadFilterOptions {
@@ -246,7 +246,7 @@ impl Default for BiquadFilterOptions {
             frequency: 350.,
             gain: 0.,
             type_: BiquadFilterType::default(),
-            channel_config: AudioNodeOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         }
     }
 }
@@ -351,7 +351,7 @@ impl BiquadFilterNode {
                 frequency,
                 gain,
                 type_,
-                channel_config,
+                audio_node_options: channel_config,
             } = options;
 
             let q_param_options = AudioParamDescriptor {

@@ -186,7 +186,7 @@ pub trait BaseAudioContext {
     #[must_use]
     fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IIRFilterNode {
         let options = node::IIRFilterOptions {
-            channel_config: AudioNodeOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
             feedforward,
             feedback,
         };

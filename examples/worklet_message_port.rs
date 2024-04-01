@@ -42,7 +42,7 @@ impl WhiteNoiseNode {
             output_channel_count: vec![1],
             parameter_data: HashMap::new(),
             processor_options: (),
-            channel_config: AudioNodeOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         };
 
         let node = AudioWorkletNode::new::<WhiteNoiseProcessor>(context.base(), options);

@@ -19,7 +19,7 @@ use std::rc::Rc;
 pub struct DelayOptions {
     pub max_delay_time: f64,
     pub delay_time: f64,
-    pub channel_config: AudioNodeOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for DelayOptions {
@@ -27,7 +27,7 @@ impl Default for DelayOptions {
         Self {
             max_delay_time: 1.,
             delay_time: 0.,
-            channel_config: AudioNodeOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         }
     }
 }
@@ -254,7 +254,7 @@ impl DelayNode {
                 let node = DelayNode {
                     reader_registration,
                     writer_registration,
-                    channel_config: options.channel_config.into(),
+                    channel_config: options.audio_node_options.into(),
                     delay_time: param,
                 };
 

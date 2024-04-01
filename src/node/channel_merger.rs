@@ -66,14 +66,14 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
 #[derive(Clone, Debug)]
 pub struct ChannelMergerOptions {
     pub number_of_inputs: usize,
-    pub channel_config: AudioNodeOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for ChannelMergerOptions {
     fn default() -> Self {
         Self {
             number_of_inputs: 6,
-            channel_config: AudioNodeOptions {
+            audio_node_options: AudioNodeOptions {
                 channel_count: 1,
                 channel_count_mode: ChannelCountMode::Explicit,
                 channel_interpretation: ChannelInterpretation::Speakers,
@@ -124,12 +124,12 @@ impl ChannelMergerNode {
         context.base().register(move |registration| {
             assert_valid_number_of_channels(options.number_of_inputs);
 
-            assert_valid_channel_count(options.channel_config.channel_count);
-            assert_valid_channel_count_mode(options.channel_config.channel_count_mode);
+            assert_valid_channel_count(options.audio_node_options.channel_count);
+            assert_valid_channel_count_mode(options.audio_node_options.channel_count_mode);
 
             let node = ChannelMergerNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config: options.audio_node_options.into(),
                 number_of_inputs: options.number_of_inputs,
             };
 

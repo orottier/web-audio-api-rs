@@ -131,7 +131,8 @@ pub struct AudioWorkletNodeOptions<C> {
     /// This holds any user-defined data that may be used to initialize custom properties in an
     /// AudioWorkletProcessor instance that is associated with the AudioWorkletNode.
     pub processor_options: C,
-    pub channel_config: AudioNodeOptions,
+    /// Channel config options
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl<C: Default> Default for AudioWorkletNodeOptions<C> {
@@ -142,7 +143,7 @@ impl<C: Default> Default for AudioWorkletNodeOptions<C> {
             output_channel_count: Vec::new(),
             parameter_data: HashMap::new(),
             processor_options: C::default(),
-            channel_config: AudioNodeOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         }
     }
 }
@@ -204,7 +205,7 @@ impl AudioWorkletNode {
             output_channel_count,
             parameter_data,
             processor_options,
-            channel_config,
+            audio_node_options: channel_config,
         } = options;
 
         assert!(

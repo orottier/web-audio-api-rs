@@ -43,7 +43,7 @@ pub struct OscillatorOptions {
     /// Optional custom waveform, if specified (set `type` to "custom")
     pub periodic_wave: Option<PeriodicWave>,
     /// channel config options
-    pub channel_config: AudioNodeOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for OscillatorOptions {
@@ -53,7 +53,7 @@ impl Default for OscillatorOptions {
             frequency: 440.,
             detune: 0.,
             periodic_wave: None,
-            channel_config: AudioNodeOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         }
     }
 }
@@ -210,7 +210,7 @@ impl OscillatorNode {
             type_,
             frequency,
             detune,
-            channel_config,
+            audio_node_options: channel_config,
             periodic_wave,
         } = options;
 

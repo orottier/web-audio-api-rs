@@ -66,14 +66,14 @@ fn assert_valid_channel_interpretation(interpretation: ChannelInterpretation) {
 #[derive(Clone, Debug)]
 pub struct ChannelSplitterOptions {
     pub number_of_outputs: usize,
-    pub channel_config: AudioNodeOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for ChannelSplitterOptions {
     fn default() -> Self {
         Self {
             number_of_outputs: 6,
-            channel_config: AudioNodeOptions {
+            audio_node_options: AudioNodeOptions {
                 channel_count: 6, // must be same as number_of_outputs
                 channel_count_mode: ChannelCountMode::Explicit,
                 channel_interpretation: ChannelInterpretation::Discrete,
@@ -131,14 +131,14 @@ impl ChannelSplitterNode {
     pub fn new<C: BaseAudioContext>(context: &C, mut options: ChannelSplitterOptions) -> Self {
         context.base().register(move |registration| {
             assert_valid_number_of_channels(options.number_of_outputs);
-            options.channel_config.channel_count = options.number_of_outputs;
+            options.audio_node_options.channel_count = options.number_of_outputs;
 
-            assert_valid_channel_count_mode(options.channel_config.channel_count_mode);
-            assert_valid_channel_interpretation(options.channel_config.channel_interpretation);
+            assert_valid_channel_count_mode(options.audio_node_options.channel_count_mode);
+            assert_valid_channel_interpretation(options.audio_node_options.channel_interpretation);
 
             let node = ChannelSplitterNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config: options.audio_node_options.into(),
             };
 
             let render = ChannelSplitterRenderer {

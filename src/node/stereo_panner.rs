@@ -19,14 +19,14 @@ pub struct StereoPannerOptions {
     /// initial value for the pan parameter
     pub pan: f32,
     /// audio node options
-    pub channel_config: AudioNodeOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for StereoPannerOptions {
     fn default() -> Self {
         Self {
             pan: 0.,
-            channel_config: AudioNodeOptions {
+            audio_node_options: AudioNodeOptions {
                 channel_count: 2,
                 channel_count_mode: ChannelCountMode::ClampedMax,
                 channel_interpretation: ChannelInterpretation::Speakers,
@@ -174,8 +174,8 @@ impl StereoPannerNode {
     ///
     pub fn new<C: BaseAudioContext>(context: &C, options: StereoPannerOptions) -> Self {
         context.base().register(move |registration| {
-            assert_valid_channel_count_mode(options.channel_config.channel_count_mode);
-            assert_valid_channel_count(options.channel_config.channel_count);
+            assert_valid_channel_count_mode(options.audio_node_options.channel_count_mode);
+            assert_valid_channel_count(options.audio_node_options.channel_count);
 
             let pan_options = AudioParamDescriptor {
                 name: String::new(),
@@ -192,7 +192,7 @@ impl StereoPannerNode {
 
             let node = Self {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config: options.audio_node_options.into(),
                 pan: pan_param,
             };
 
@@ -362,7 +362,7 @@ mod tests {
     fn test_init_with_channel_count_mode() {
         let context = OfflineAudioContext::new(2, 1, 44_100.);
         let options = StereoPannerOptions {
-            channel_config: AudioNodeOptions {
+            audio_node_options: AudioNodeOptions {
                 channel_count_mode: ChannelCountMode::Explicit,
                 ..AudioNodeOptions::default()
             },
@@ -417,7 +417,7 @@ mod tests {
             let panner = StereoPannerNode::new(
                 &context,
                 StereoPannerOptions {
-                    channel_config: AudioNodeOptions {
+                    audio_node_options: AudioNodeOptions {
                         channel_count: 1,
                         channel_count_mode: ChannelCountMode::ClampedMax,
                         ..AudioNodeOptions::default()
@@ -445,7 +445,7 @@ mod tests {
             let panner = StereoPannerNode::new(
                 &context,
                 StereoPannerOptions {
-                    channel_config: AudioNodeOptions {
+                    audio_node_options: AudioNodeOptions {
                         channel_count: 1,
                         channel_count_mode: ChannelCountMode::ClampedMax,
                         ..AudioNodeOptions::default()
@@ -473,7 +473,7 @@ mod tests {
             let panner = StereoPannerNode::new(
                 &context,
                 StereoPannerOptions {
-                    channel_config: AudioNodeOptions {
+                    audio_node_options: AudioNodeOptions {
                         channel_count: 1,
                         channel_count_mode: ChannelCountMode::ClampedMax,
                         ..AudioNodeOptions::default()
