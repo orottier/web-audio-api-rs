@@ -209,7 +209,7 @@ impl AudioContext {
             state,
             frames_played,
             ctrl_msg_send,
-            Some((event_send, event_recv)),
+            (event_send, event_recv),
             false,
             node_id_consumer,
         );

@@ -100,6 +100,10 @@ impl OfflineAudioContext {
         let state = Arc::new(AtomicU8::new(AudioContextState::Suspended as u8));
         let state_clone = Arc::clone(&state);
 
+        // Communication channel for events from the render thread to the control thread.
+        // Use an unbounded channel because we do not require real-time safety.
+        let event_channel = crossbeam_channel::unbounded();
+
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
             sample_rate,
@@ -116,7 +120,7 @@ impl OfflineAudioContext {
             state,
             frames_played,
             sender,
-            None,
+            event_channel,
             true,
             node_id_consumer,
         );

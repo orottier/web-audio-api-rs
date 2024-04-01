@@ -108,7 +108,7 @@ struct ConcreteBaseAudioContextInner {
     /// Stores the event handlers
     event_loop: EventLoop,
     /// Sender for events that will be handled by the EventLoop
-    event_send: Option<Sender<EventDispatch>>,
+    event_send: Sender<EventDispatch>,
 }
 
 impl BaseAudioContext for ConcreteBaseAudioContext {
@@ -126,15 +126,12 @@ impl ConcreteBaseAudioContext {
         state: Arc<AtomicU8>,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
-        event_channel: Option<(Sender<EventDispatch>, Receiver<EventDispatch>)>,
+        event_channel: (Sender<EventDispatch>, Receiver<EventDispatch>),
         offline: bool,
         node_id_consumer: llq::Consumer<AudioNodeId>,
     ) -> Self {
         let event_loop = EventLoop::new();
-        let (event_send, event_recv) = match event_channel {
-            None => (None, None),
-            Some((send, recv)) => (Some(send), Some(recv)),
-        };
+        let (event_send, event_recv) = event_channel;
 
         let audio_node_id_provider = AudioNodeIdProvider::new(node_id_consumer);
 
@@ -220,11 +217,7 @@ impl ConcreteBaseAudioContext {
         }
 
         // Boot the event loop thread that handles the events spawned by the render thread
-        // (we don't do this for offline rendering because it makes little sense, the graph cannot
-        // be mutated once rendering has started anyway)
-        if let Some(event_channel) = event_recv {
-            event_loop.run(event_channel);
-        }
+        event_loop.run(event_recv);
 
         base
     }
@@ -288,10 +281,7 @@ impl ConcreteBaseAudioContext {
     }
 
     pub(crate) fn send_event(&self, msg: EventDispatch) -> Result<(), SendError<EventDispatch>> {
-        match self.inner.event_send.as_ref() {
-            Some(s) => s.send(msg),
-            None => Err(SendError(msg)),
-        }
+        self.inner.event_send.send(msg)
     }
 
     pub(crate) fn lock_control_msg_sender(&self) -> RwLockWriteGuard<'_, Sender<ControlMessage>> {
