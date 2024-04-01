@@ -379,6 +379,9 @@ struct WaveShaperRenderer {
     downsampler_x2: Resampler,
     // down sampler configured to divide by 4 the upsampled signal
     downsampler_x4: Resampler,
+    // check if silence can be propagated, i.e. if curve if None or if
+    // it's output value for zero signal is zero (i.e. < 1e-9)
+    can_propagate_silence: bool,
 }
 
 impl AudioProcessor for WaveShaperRenderer {
@@ -393,7 +396,7 @@ impl AudioProcessor for WaveShaperRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
-        if input.is_silent() {
+        if input.is_silent() && self.can_propagate_silence {
             output.make_silent();
             return false;
         }
@@ -495,6 +498,19 @@ impl AudioProcessor for WaveShaperRenderer {
 
         if let Some(curve) = msg.downcast_mut::<Option<Vec<f32>>>() {
             std::mem::swap(&mut self.curve, curve);
+
+            self.can_propagate_silence = if let Some(curve) = &self.curve {
+                if curve.len() % 2 == 1 {
+                    curve[curve.len() / 2].abs() < 1e-9
+                } else {
+                    let a = curve[curve.len() / 2 - 1];
+                    let b = curve[curve.len() / 2];
+                    ((a + b) / 2.).abs() < 1e-9
+                }
+            } else {
+                true
+            };
+
             return;
         }
 
@@ -534,6 +550,7 @@ impl WaveShaperRenderer {
             upsampler_x4,
             downsampler_x2,
             downsampler_x4,
+            can_propagate_silence: true,
         }
     }
 }
