@@ -6,7 +6,7 @@ use crate::render::{
     AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
 };
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig};
 
 use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crossbeam_channel::{self, Receiver, Sender};
@@ -82,7 +82,7 @@ impl AudioNode for MediaStreamAudioDestinationNode {
 
 impl MediaStreamAudioDestinationNode {
     /// Create a new MediaStreamAudioDestinationNode
-    pub fn new<C: BaseAudioContext>(context: &C, options: ChannelConfigOptions) -> Self {
+    pub fn new<C: BaseAudioContext>(context: &C, options: AudioNodeOptions) -> Self {
         context.base().register(move |registration| {
             let (send, recv) = crossbeam_channel::bounded(1);
 

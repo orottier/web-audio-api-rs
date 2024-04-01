@@ -7,7 +7,7 @@ use crate::render::{
     AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
 };
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelInterpretation};
 
 /// Options for constructing an [`AnalyserNode`]
 // dictionary AnalyserOptions : AudioNodeOptions {
@@ -22,7 +22,7 @@ pub struct AnalyserOptions {
     pub max_decibels: f64,
     pub min_decibels: f64,
     pub smoothing_time_constant: f64,
-    pub channel_config: ChannelConfigOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for AnalyserOptions {
@@ -32,7 +32,7 @@ impl Default for AnalyserOptions {
             max_decibels: DEFAULT_MAX_DECIBELS,
             min_decibels: DEFAULT_MIN_DECIBELS,
             smoothing_time_constant: DEFAULT_SMOOTHING_TIME_CONSTANT,
-            channel_config: ChannelConfigOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         }
     }
 }
@@ -123,7 +123,7 @@ impl AnalyserNode {
 
             let node = AnalyserNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config: options.audio_node_options.into(),
                 analyser,
             };
 

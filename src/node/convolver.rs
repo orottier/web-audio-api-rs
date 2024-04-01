@@ -10,7 +10,7 @@ use crate::render::{
 };
 use crate::RENDER_QUANTUM_SIZE;
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions, ChannelInterpretation};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelInterpretation};
 
 /// Scale buffer by an equal-power normalization
 // see - <https://webaudio.github.io/web-audio-api/#dom-convolvernode-normalize>
@@ -65,7 +65,7 @@ pub struct ConvolverOptions {
     /// The opposite of the desired initial value for the normalize attribute
     pub disable_normalization: bool,
     /// AudioNode options
-    pub channel_config: ChannelConfigOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 /// Processing node which applies a linear convolution effect given an impulse response.
@@ -154,7 +154,7 @@ impl ConvolverNode {
         let ConvolverOptions {
             buffer,
             disable_normalization,
-            channel_config,
+            audio_node_options: channel_config,
         } = options;
 
         let mut node = context.base().register(move |registration| {

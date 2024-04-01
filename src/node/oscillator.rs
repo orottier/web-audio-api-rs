@@ -10,8 +10,8 @@ use crate::PeriodicWave;
 use crate::{assert_valid_time_value, RENDER_QUANTUM_SIZE};
 
 use super::{
-    precomputed_sine_table, AudioNode, AudioScheduledSourceNode, ChannelConfig,
-    ChannelConfigOptions, TABLE_LENGTH_USIZE,
+    precomputed_sine_table, AudioNode, AudioNodeOptions, AudioScheduledSourceNode, ChannelConfig,
+    TABLE_LENGTH_USIZE,
 };
 
 fn get_fase_incr(freq: f32, detune: f32, sample_rate: f64) -> f64 {
@@ -43,7 +43,7 @@ pub struct OscillatorOptions {
     /// Optional custom waveform, if specified (set `type` to "custom")
     pub periodic_wave: Option<PeriodicWave>,
     /// channel config options
-    pub channel_config: ChannelConfigOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for OscillatorOptions {
@@ -53,7 +53,7 @@ impl Default for OscillatorOptions {
             frequency: 440.,
             detune: 0.,
             periodic_wave: None,
-            channel_config: ChannelConfigOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         }
     }
 }
@@ -210,7 +210,7 @@ impl OscillatorNode {
             type_,
             frequency,
             detune,
-            channel_config,
+            audio_node_options: channel_config,
             periodic_wave,
         } = options;
 

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
-use web_audio_api::node::{AudioNode, ChannelConfigOptions};
+use web_audio_api::node::{AudioNode, AudioNodeOptions};
 
 use web_audio_api::worklet::{
     AudioParamValues, AudioWorkletGlobalScope, AudioWorkletNode, AudioWorkletNodeOptions,
@@ -42,7 +42,7 @@ impl WhiteNoiseNode {
             output_channel_count: vec![1],
             parameter_data: HashMap::new(),
             processor_options: (),
-            channel_config: ChannelConfigOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         };
 
         let node = AudioWorkletNode::new::<WhiteNoiseProcessor>(context.base(), options);

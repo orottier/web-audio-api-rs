@@ -10,7 +10,7 @@ use crate::render::{
 };
 use crate::MAX_CHANNELS;
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig};
 
 /// Filter order is limited to 20
 const MAX_IIR_COEFFS_LEN: usize = 20;
@@ -71,7 +71,7 @@ fn assert_valid_feedback_coefs(coefs: &[f64]) {
 #[derive(Clone, Debug)]
 pub struct IIRFilterOptions {
     /// audio node options
-    pub channel_config: ChannelConfigOptions,
+    pub audio_node_options: AudioNodeOptions,
     /// feedforward coefficients
     pub feedforward: Vec<f64>, // go for Option<Vec<f32>> w/ default to None?
     /// feedback coefficients
@@ -187,7 +187,7 @@ impl IIRFilterNode {
             let IIRFilterOptions {
                 feedforward,
                 feedback,
-                channel_config,
+                audio_node_options: channel_config,
             } = options;
 
             assert_valid_feedforward_coefs(&feedforward);
@@ -418,7 +418,7 @@ mod tests {
             let options = IIRFilterOptions {
                 feedback: vec![1.; 3],
                 feedforward: vec![1.; 3],
-                channel_config: ChannelConfigOptions::default(),
+                audio_node_options: AudioNodeOptions::default(),
             };
 
             let _biquad = IIRFilterNode::new(&context, options);
@@ -481,7 +481,7 @@ mod tests {
         let options = IIRFilterOptions {
             feedback: vec![1.; 10],
             feedforward: vec![1.; 10],
-            channel_config: ChannelConfigOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         };
         let iir = IIRFilterNode::new(&context, options);
 
@@ -499,7 +499,7 @@ mod tests {
         let options = IIRFilterOptions {
             feedback: vec![1.; 10],
             feedforward: vec![1.; 10],
-            channel_config: ChannelConfigOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         };
         let iir = IIRFilterNode::new(&context, options);
 
@@ -738,7 +738,7 @@ mod tests {
         let options = IIRFilterOptions {
             feedback,
             feedforward,
-            channel_config: ChannelConfigOptions::default(),
+            audio_node_options: AudioNodeOptions::default(),
         };
         let iir = IIRFilterNode::new(&context, options);
 

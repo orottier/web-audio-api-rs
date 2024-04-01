@@ -8,9 +8,7 @@ use crate::render::{
 };
 use crate::{AtomicF32, RENDER_QUANTUM_SIZE};
 
-use super::{
-    AudioNode, ChannelConfig, ChannelConfigOptions, ChannelCountMode, ChannelInterpretation,
-};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelCountMode, ChannelInterpretation};
 
 // Converting a value 𝑣 in decibels to linear gain unit means returning 10𝑣/20.
 fn db_to_lin(val: f32) -> f32 {
@@ -44,7 +42,7 @@ pub struct DynamicsCompressorOptions {
     pub ratio: f32,
     pub release: f32,
     pub threshold: f32,
-    pub channel_config: ChannelConfigOptions,
+    pub audio_node_options: AudioNodeOptions,
 }
 
 impl Default for DynamicsCompressorOptions {
@@ -55,10 +53,10 @@ impl Default for DynamicsCompressorOptions {
             ratio: 12.,      // unit less
             release: 0.25,   // seconds
             threshold: -24., // dB
-            channel_config: ChannelConfigOptions {
-                count: 2,
-                count_mode: ChannelCountMode::ClampedMax,
-                interpretation: ChannelInterpretation::Speakers,
+            audio_node_options: AudioNodeOptions {
+                channel_count: 2,
+                channel_count_mode: ChannelCountMode::ClampedMax,
+                channel_interpretation: ChannelInterpretation::Speakers,
             },
         }
     }
@@ -183,8 +181,8 @@ impl AudioNode for DynamicsCompressorNode {
 impl DynamicsCompressorNode {
     pub fn new<C: BaseAudioContext>(context: &C, options: DynamicsCompressorOptions) -> Self {
         context.base().register(move |registration| {
-            assert_valid_channel_count(options.channel_config.count);
-            assert_valid_channel_count_mode(options.channel_config.count_mode);
+            assert_valid_channel_count(options.audio_node_options.channel_count);
+            assert_valid_channel_count_mode(options.audio_node_options.channel_count_mode);
 
             // attack, knee, ratio, release and threshold have automation rate constraints
             // https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints
@@ -270,7 +268,7 @@ impl DynamicsCompressorNode {
 
             let node = DynamicsCompressorNode {
                 registration,
-                channel_config: options.channel_config.into(),
+                channel_config: options.audio_node_options.into(),
                 attack: attack_param,
                 knee: knee_param,
                 ratio: ratio_param,
