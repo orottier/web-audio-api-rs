@@ -6,7 +6,7 @@ use crate::render::{
 };
 use crate::{AudioBuffer, RENDER_QUANTUM_SIZE};
 
-use super::{AudioNode, ChannelConfig, ChannelConfigOptions};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig};
 
 use std::any::Any;
 
@@ -85,15 +85,20 @@ impl ScriptProcessorNode {
                 number_of_output_channels,
             };
 
-            let channel_config = ChannelConfigOptions {
-                count: number_of_input_channels,
-                count_mode: ChannelCountMode::Explicit,
-                interpretation: ChannelInterpretation::Speakers,
+            let upmix_input_channels = if number_of_input_channels == 0 {
+                1 // any value will do, because upmixing is not performed
+            } else {
+                number_of_input_channels
+            };
+            let audio_node_options = AudioNodeOptions {
+                channel_count: upmix_input_channels,
+                channel_count_mode: ChannelCountMode::Explicit,
+                channel_interpretation: ChannelInterpretation::Speakers,
             };
 
             let node = ScriptProcessorNode {
                 registration,
-                channel_config: channel_config.into(),
+                channel_config: audio_node_options.into(),
                 buffer_size,
             };
 
@@ -237,6 +242,7 @@ impl AudioProcessor for ScriptProcessorRenderer {
 mod tests {
     use super::*;
     use crate::context::OfflineAudioContext;
+    use float_eq::assert_float_eq;
 
     #[test]
     fn test_constructor() {
@@ -247,5 +253,47 @@ mod tests {
         node.connect(&context.destination());
         let _ = context.start_rendering_sync();
         // TODO - does not work with OfflineAudioContext due to lack of event loop
+    }
+
+    #[test]
+    fn test_constructor_zero_inputs() {
+        let context = OfflineAudioContext::new(2, 1024, 48000.);
+        let _ = context.create_script_processor(512, 0, 1); // should not panic
+    }
+
+    #[test]
+    fn test_constructor_zero_outputs() {
+        let context = OfflineAudioContext::new(2, 1024, 48000.);
+        let _ = context.create_script_processor(512, 1, 0); // should not panic
+    }
+
+    #[test]
+    fn test_rendering() {
+        const BUFFER_SIZE: usize = 256;
+
+        let mut context = OfflineAudioContext::new(1, BUFFER_SIZE * 3, 48000.);
+
+        let node = context.create_script_processor(BUFFER_SIZE, 0, 1);
+        node.connect(&context.destination());
+        node.set_onaudioprocess(|e| {
+            e.output_buffer.get_channel_data_mut(0).fill(1.); // set all samples to 1.
+        });
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        // first `2 * BUFFER_SIZE` samples should be silent due to buffering
+        assert_float_eq!(
+            channel[..2 * BUFFER_SIZE],
+            &[0.; 2 * BUFFER_SIZE][..],
+            abs_all <= 0.
+        );
+
+        // rest of the samples should be 1.
+        assert_float_eq!(
+            channel[2 * BUFFER_SIZE..],
+            &[1.; BUFFER_SIZE][..],
+            abs_all <= 0.
+        );
     }
 }
