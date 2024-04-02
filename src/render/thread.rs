@@ -39,7 +39,7 @@ pub(crate) struct RenderThread {
     receiver: Option<Receiver<ControlMessage>>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
-    event_sender: Option<Sender<EventDispatch>>,
+    event_sender: Sender<EventDispatch>,
     garbage_collector: Option<llq::Producer<Box<dyn Any + Send>>>,
 }
 
@@ -72,6 +72,7 @@ impl RenderThread {
         receiver: Receiver<ControlMessage>,
         state: Arc<AtomicU8>,
         frames_played: Arc<AtomicU64>,
+        event_sender: Sender<EventDispatch>,
     ) -> Self {
         Self {
             graph: None,
@@ -84,18 +85,16 @@ impl RenderThread {
             receiver: Some(receiver),
             buffer_offset: None,
             load_value_sender: None,
-            event_sender: None,
+            event_sender,
             garbage_collector: None,
         }
     }
 
-    pub(crate) fn set_event_channels(
+    pub(crate) fn set_load_value_sender(
         &mut self,
         load_value_sender: Sender<AudioRenderCapacityLoad>,
-        event_sender: Sender<EventDispatch>,
     ) {
         self.load_value_sender = Some(load_value_sender);
-        self.event_sender = Some(event_sender);
     }
 
     pub(crate) fn spawn_garbage_collector_thread(&mut self) {
@@ -174,14 +173,12 @@ impl RenderThread {
                     }
                 }
                 RunDiagnostics { mut buffer } => {
-                    if let Some(sender) = self.event_sender.as_ref() {
-                        use std::io::Write;
-                        writeln!(&mut buffer, "{:#?}", &self).ok();
-                        writeln!(&mut buffer, "{:?}", &self.graph).ok();
-                        sender
-                            .try_send(EventDispatch::diagnostics(buffer))
-                            .expect("Unable to send diagnostics - channel is full");
-                    }
+                    use std::io::Write;
+                    writeln!(&mut buffer, "{:#?}", &self).ok();
+                    writeln!(&mut buffer, "{:?}", &self.graph).ok();
+                    self.event_sender
+                        .try_send(EventDispatch::diagnostics(buffer))
+                        .expect("Unable to send diagnostics - channel is full");
                 }
                 Suspend { notify } => {
                     self.suspended = true;
@@ -460,9 +457,9 @@ impl RenderThread {
 
     fn set_state(&self, state: AudioContextState) {
         self.state.store(state as u8, Ordering::Relaxed);
-        if let Some(sender) = self.event_sender.as_ref() {
-            sender.try_send(EventDispatch::state_change(state)).ok();
-        }
+        self.event_sender
+            .try_send(EventDispatch::state_change(state))
+            .ok();
     }
 }
 

@@ -102,7 +102,7 @@ impl OfflineAudioContext {
 
         // Communication channel for events from the render thread to the control thread.
         // Use an unbounded channel because we do not require real-time safety.
-        let event_channel = crossbeam_channel::unbounded();
+        let (event_send, event_recv) = crossbeam_channel::unbounded();
 
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
@@ -111,6 +111,7 @@ impl OfflineAudioContext {
             receiver,
             state_clone,
             frames_played_clone,
+            event_send.clone(),
         );
 
         // first, setup the base audio context
@@ -120,7 +121,7 @@ impl OfflineAudioContext {
             state,
             frames_played,
             sender,
-            event_channel,
+            (event_send, event_recv),
             true,
             node_id_consumer,
         );

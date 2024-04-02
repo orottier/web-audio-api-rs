@@ -23,7 +23,7 @@ pub struct AudioWorkletGlobalScope {
     pub sample_rate: f32,
 
     pub(crate) node_id: Cell<AudioNodeId>,
-    pub(crate) event_sender: Option<Sender<EventDispatch>>,
+    pub(crate) event_sender: Sender<EventDispatch>,
 }
 
 impl std::fmt::Debug for AudioWorkletGlobalScope {
@@ -44,17 +44,17 @@ impl AudioWorkletGlobalScope {
     /// [`MessagePort`](https://webaudio.github.io/web-audio-api/#dom-audioworkletprocessor-port)
     /// `postMessage` functionality of the AudioWorkletProcessor.
     pub fn post_message(&self, msg: Box<dyn Any + Send + 'static>) {
-        if let Some(sender) = self.event_sender.as_ref() {
-            // sending could fail if the channel is saturated or the main thread is shutting down
-            let _ = sender.try_send(EventDispatch::message(self.node_id.get(), msg));
-        }
+        // sending could fail if the channel is saturated or the main thread is shutting down
+        let _ = self
+            .event_sender
+            .try_send(EventDispatch::message(self.node_id.get(), msg));
     }
 
     pub(crate) fn send_ended_event(&self) {
-        if let Some(sender) = self.event_sender.as_ref() {
-            // sending could fail if the channel is saturated or the main thread is shutting down
-            let _ = sender.try_send(EventDispatch::ended(self.node_id.get()));
-        }
+        // sending could fail if the channel is saturated or the main thread is shutting down
+        let _ = self
+            .event_sender
+            .try_send(EventDispatch::ended(self.node_id.get()));
     }
 
     pub(crate) fn report_error(&self, error: Box<dyn Any + Send>) {
@@ -73,16 +73,16 @@ impl AudioWorkletGlobalScope {
             &message
         );
 
-        if let Some(sender) = self.event_sender.as_ref() {
-            let event = ErrorEvent {
-                message,
-                error,
-                event: Event {
-                    type_: "ErrorEvent",
-                },
-            };
-            let _ = sender.try_send(EventDispatch::processor_error(self.node_id.get(), event));
-        }
+        let event = ErrorEvent {
+            message,
+            error,
+            event: Event {
+                type_: "ErrorEvent",
+            },
+        };
+        let _ = self
+            .event_sender
+            .try_send(EventDispatch::processor_error(self.node_id.get(), event));
     }
 }
 

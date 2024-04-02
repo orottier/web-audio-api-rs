@@ -191,8 +191,9 @@ impl AudioBackendManager for CubebBackend {
             ctrl_msg_recv,
             state,
             frames_played,
+            event_send,
         );
-        renderer.set_event_channels(load_value_send, event_send);
+        renderer.set_load_value_sender(load_value_send);
         renderer.spawn_garbage_collector_thread();
 
         let params = cubeb::StreamParamsBuilder::new()
