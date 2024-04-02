@@ -1,5 +1,12 @@
 # Version History
 
+## Version 1.0.0-rc.3 (2024-04-02)
+
+- Breaking: ChannelConfigOptions is renamed to AudioNodeOptions
+- Fix WaveShaperNode: do not emit silence for non-centric curve
+- Fix DynamicsCompressorNode: handle channel constraints
+- Fixed error messages and constraints for DestinationNode and ChannelSplitter/MergerNode
+
 ## Version 1.0.0-rc.2 (2024-03-07)
 
 - Changed: the AudioContext will continue playing if it is dropped (use `close()` instead)
