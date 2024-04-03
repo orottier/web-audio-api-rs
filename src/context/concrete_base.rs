@@ -13,7 +13,7 @@ use crate::spatial::AudioListenerParams;
 
 use crate::AudioListener;
 
-use crossbeam_channel::{Receiver, SendError, Sender};
+use crossbeam_channel::{SendError, Sender};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 
@@ -126,13 +126,11 @@ impl ConcreteBaseAudioContext {
         state: Arc<AtomicU8>,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
-        event_channel: (Sender<EventDispatch>, Receiver<EventDispatch>),
+        event_send: Sender<EventDispatch>,
+        event_loop: EventLoop,
         offline: bool,
         node_id_consumer: llq::Consumer<AudioNodeId>,
     ) -> Self {
-        let event_loop = EventLoop::new();
-        let (event_send, event_recv) = event_channel;
-
         let audio_node_id_provider = AudioNodeIdProvider::new(node_id_consumer);
 
         let base_inner = ConcreteBaseAudioContextInner {
@@ -147,7 +145,7 @@ impl ConcreteBaseAudioContext {
             listener_params: None,
             offline,
             state,
-            event_loop: event_loop.clone(),
+            event_loop,
             event_send,
         };
         let base = Self {
@@ -215,9 +213,6 @@ impl ConcreteBaseAudioContext {
         if !offline {
             crate::node::load_hrtf_processor(sample_rate as u32);
         }
-
-        // Boot the event loop thread that handles the events spawned by the render thread
-        event_loop.run(event_recv);
 
         base
     }

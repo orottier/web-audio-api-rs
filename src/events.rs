@@ -4,6 +4,7 @@ use crate::{AudioBuffer, AudioRenderCapacityEvent};
 use std::any::Any;
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex};
 
 use crossbeam_channel::Receiver;
@@ -120,52 +121,69 @@ pub(crate) enum EventHandler {
     Multiple(Box<dyn FnMut(EventPayload) + Send + 'static>),
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct EventLoop {
+    event_recv: Receiver<EventDispatch>,
     event_handlers: Arc<Mutex<HashMap<EventType, EventHandler>>>,
 }
 
 impl EventLoop {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(event_recv: Receiver<EventDispatch>) -> Self {
+        Self {
+            event_recv,
+            event_handlers: Default::default(),
+        }
     }
 
-    pub fn run(&self, event_channel: Receiver<EventDispatch>) {
-        log::debug!("Entering event loop");
+    fn handle_event(&self, mut event: EventDispatch) -> ControlFlow<()> {
+        // Terminate the event loop when the audio context is closing
+        let mut result = ControlFlow::Continue(());
+        if matches!(
+            event.payload,
+            EventPayload::AudioContextState(AudioContextState::Closed)
+        ) {
+            event.payload = EventPayload::None; // the statechange handler takes no argument
+            result = ControlFlow::Break(());
+        }
+
+        let mut event_handler_lock = self.event_handlers.lock().unwrap();
+        let callback_option = event_handler_lock.remove(&event.type_);
+        drop(event_handler_lock); // release Mutex while running callback
+
+        if let Some(callback) = callback_option {
+            match callback {
+                EventHandler::Once(f) => (f)(event.payload),
+                EventHandler::Multiple(mut f) => {
+                    (f)(event.payload);
+                    self.event_handlers
+                        .lock()
+                        .unwrap()
+                        .insert(event.type_, EventHandler::Multiple(f));
+                }
+            };
+        }
+
+        result
+    }
+
+    pub fn handle_pending_events(&self) {
+        // try_iter will yield all pending events, but does not block
+        for event in self.event_recv.try_iter() {
+            self.handle_event(event);
+        }
+    }
+
+    pub fn run_in_thread(&self) {
+        log::debug!("Entering event thread");
+
+        // split borrows to help compiler
         let self_clone = self.clone();
 
         std::thread::spawn(move || {
-            // This thread is dedicated to event handling so we can block
-            for mut event in event_channel.iter() {
-                // Terminate the event loop when the audio context is closing
-                let mut terminate = false;
-                if matches!(
-                    event.payload,
-                    EventPayload::AudioContextState(AudioContextState::Closed)
-                ) {
-                    event.payload = EventPayload::None; // the statechange handler takes no argument
-                    terminate = true;
-                }
-
-                let mut event_handler_lock = self_clone.event_handlers.lock().unwrap();
-                let callback_option = event_handler_lock.remove(&event.type_);
-                drop(event_handler_lock); // release Mutex while running callback
-
-                if let Some(callback) = callback_option {
-                    match callback {
-                        EventHandler::Once(f) => (f)(event.payload),
-                        EventHandler::Multiple(mut f) => {
-                            (f)(event.payload);
-                            self_clone
-                                .event_handlers
-                                .lock()
-                                .unwrap()
-                                .insert(event.type_, EventHandler::Multiple(f));
-                        }
-                    };
-                }
-
-                if terminate {
+            // This thread is dedicated to event handling, so we can block
+            for event in self_clone.event_recv.iter() {
+                let result = self_clone.handle_event(event);
+                if result.is_break() {
                     break;
                 }
             }

@@ -17,7 +17,7 @@ use crate::buffer::{AudioBuffer, AudioBufferOptions};
 use crate::context::{
     AudioContextState, AudioNodeId, OfflineAudioContext, OfflineAudioContextCallback,
 };
-use crate::events::EventDispatch;
+use crate::events::{EventDispatch, EventLoop};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::AudioWorkletGlobalScope;
@@ -225,10 +225,12 @@ impl RenderThread {
     // cf. https://webaudio.github.io/web-audio-api/#dom-offlineaudiocontext-startrendering
     pub fn render_audiobuffer_sync(
         mut self,
-        length: usize,
-        mut suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
         context: &mut OfflineAudioContext,
+        mut suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
+        event_loop: EventLoop,
     ) -> AudioBuffer {
+        let length = context.length();
+
         let options = AudioBufferOptions {
             number_of_channels: self.number_of_channels,
             length,
@@ -246,12 +248,14 @@ impl RenderThread {
             if suspend_callbacks.first().map(|&(q, _)| q) == Some(quantum) {
                 let callback = suspend_callbacks.remove(0).1;
                 (callback)(context);
-
-                // Handle addition/removal of nodes/edges
-                self.handle_control_messages();
             }
 
+            // Handle addition/removal of nodes/edges
+            self.handle_control_messages();
+
             self.render_offline_quantum(&mut buffer);
+
+            event_loop.handle_pending_events();
         }
 
         buffer

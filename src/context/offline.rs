@@ -9,6 +9,7 @@ use crate::render::RenderThread;
 use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
 use crate::{Event, OfflineAudioCompletionEvent};
 
+use crate::events::EventLoop;
 use futures_channel::{mpsc, oneshot};
 use futures_util::SinkExt as _;
 
@@ -52,6 +53,8 @@ struct OfflineAudioContextRenderer {
     onstatechange_handler: Option<Box<dyn FnMut(Event) + Send + 'static>>,
     /// event handler for complete event
     oncomplete_handler: Option<Box<dyn FnOnce(OfflineAudioCompletionEvent) + Send + 'static>>,
+    /// event loop to run after each render quantum
+    event_loop: EventLoop,
 }
 
 impl BaseAudioContext for OfflineAudioContext {
@@ -103,6 +106,7 @@ impl OfflineAudioContext {
         // Communication channel for events from the render thread to the control thread.
         // Use an unbounded channel because we do not require real-time safety.
         let (event_send, event_recv) = crossbeam_channel::unbounded();
+        let event_loop = EventLoop::new(event_recv);
 
         // setup the render 'thread', which will run inside the control thread
         let renderer = RenderThread::new(
@@ -121,7 +125,8 @@ impl OfflineAudioContext {
             state,
             frames_played,
             sender,
-            (event_send, event_recv),
+            event_send,
+            event_loop.clone(),
             true,
             node_id_consumer,
         );
@@ -135,6 +140,7 @@ impl OfflineAudioContext {
             resume_receiver,
             onstatechange_handler: None,
             oncomplete_handler: None,
+            event_loop,
         };
 
         Self {
@@ -169,13 +175,14 @@ impl OfflineAudioContext {
             suspend_callbacks,
             oncomplete_handler,
             mut onstatechange_handler,
+            event_loop,
             ..
         } = renderer;
 
         self.base.set_state(AudioContextState::Running);
         Self::emit_statechange(&mut onstatechange_handler);
 
-        let result = renderer.render_audiobuffer_sync(self.length, suspend_callbacks, self);
+        let result = renderer.render_audiobuffer_sync(self, suspend_callbacks, event_loop);
 
         self.base.set_state(AudioContextState::Closed);
         Self::emit_statechange(&mut onstatechange_handler);

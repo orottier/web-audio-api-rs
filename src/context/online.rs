@@ -3,7 +3,7 @@ use std::error::Error;
 use std::sync::Mutex;
 
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::events::{EventDispatch, EventHandler, EventPayload, EventType};
+use crate::events::{EventDispatch, EventHandler, EventLoop, EventPayload, EventType};
 use crate::io::{self, AudioBackendManager, ControlThreadInit, NoneBackend, RenderThreadInit};
 use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
@@ -181,11 +181,13 @@ impl AudioContext {
     #[allow(clippy::needless_pass_by_value)]
     #[must_use]
     pub fn new(mut options: AudioContextOptions) -> Self {
+        // Log, but ignore invalid sinks
         if !is_valid_sink_id(&options.sink_id) {
             log::error!("NotFoundError: invalid sinkId {:?}", options.sink_id);
             options.sink_id = String::from("");
         }
 
+        // Set up the audio output thread
         let (control_thread_init, render_thread_init) = io::thread_init();
         let backend = io::build_output(options, render_thread_init.clone());
 
@@ -198,25 +200,36 @@ impl AudioContext {
             event_recv,
         } = control_thread_init;
 
+        // Construct the audio Graph and hand it to the render thread
         let (node_id_producer, node_id_consumer) = llq::Queue::new().split();
         let graph = Graph::new(node_id_producer);
         let message = ControlMessage::Startup { graph };
         ctrl_msg_send.send(message).unwrap();
 
+        // Set up the event loop thread that handles the events spawned by the render thread
+        let event_loop = EventLoop::new(event_recv);
+
+        // Put everything together in the BaseAudioContext (shared with offline context)
         let base = ConcreteBaseAudioContext::new(
             backend.sample_rate(),
             backend.number_of_channels(),
             state,
             frames_played,
             ctrl_msg_send,
-            (event_send, event_recv),
+            event_send,
+            event_loop.clone(),
             false,
             node_id_consumer,
         );
 
-        // setup AudioRenderCapacity for this context
+        // Setup AudioRenderCapacity for this context
         let base_clone = base.clone();
         let render_capacity = AudioRenderCapacity::new(base_clone, load_value_recv);
+
+        // As the final step, spawn a thread for the event loop. If we do this earlier we may miss
+        // event handling of the initial events that are emitted right after render thread
+        // construction.
+        event_loop.run_in_thread();
 
         Self {
             base,
