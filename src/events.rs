@@ -166,11 +166,15 @@ impl EventLoop {
         result
     }
 
-    pub fn handle_pending_events(&self) {
+    #[inline(always)]
+    pub fn handle_pending_events(&self) -> bool {
+        let mut events_were_handled = false;
         // try_iter will yield all pending events, but does not block
         for event in self.event_recv.try_iter() {
             self.handle_event(event);
+            events_were_handled = true;
         }
+        events_were_handled
     }
 
     pub fn run_in_thread(&self) {
