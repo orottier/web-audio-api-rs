@@ -77,10 +77,11 @@ impl ScriptProcessorNode {
         };
 
         context.base().register(move |registration| {
+            let number_of_quanta = buffer_size / RENDER_QUANTUM_SIZE;
             let render = ScriptProcessorRenderer {
-                input_buffer: Vec::with_capacity(buffer_size / RENDER_QUANTUM_SIZE),
-                output_buffer: Vec::with_capacity(buffer_size / RENDER_QUANTUM_SIZE),
-                next_output_buffer: Vec::with_capacity(buffer_size / RENDER_QUANTUM_SIZE),
+                input_buffer: Vec::with_capacity(number_of_quanta),
+                output_buffer: Vec::with_capacity(number_of_quanta),
+                next_output_buffer: Vec::with_capacity(number_of_quanta),
                 buffer_size,
                 number_of_output_channels,
             };
@@ -171,11 +172,20 @@ impl AudioProcessor for ScriptProcessorRenderer {
         let input = &inputs[0];
         let output = &mut outputs[0];
 
+        // default to silent output
         output.make_silent();
+        let silence = output.clone();
 
+        // when there are output buffers lined up, emit the first one
+        if !self.output_buffer.is_empty() {
+            *output = self.output_buffer.remove(0);
+        }
+
+        // buffer inputs
         let number_of_quanta = self.input_buffer.capacity();
-
         self.input_buffer.push(input.clone());
+
+        // check if we need to emit an event (input buffer is full)
         if self.input_buffer.len() == number_of_quanta {
             // convert self.input_buffer to an AudioBuffer
             let number_of_input_channels = self
@@ -210,17 +220,16 @@ impl AudioProcessor for ScriptProcessorRenderer {
 
             // move next output buffer into current output buffer
             std::mem::swap(&mut self.output_buffer, &mut self.next_output_buffer);
+
             // fill next output buffer with silence
             self.next_output_buffer.clear();
-            let silence = output.clone();
             self.next_output_buffer.resize(number_of_quanta, silence);
         }
 
-        if !self.output_buffer.is_empty() {
-            *output = self.output_buffer.remove(0);
-        }
-
-        true // TODO - spec says false but that seems weird
+        // TODO, spec says to return false but we actually need true because of 'actively
+        // processing' requirements
+        // <https://webaudio.github.io/web-audio-api/#AudioNode-actively-processing>
+        true
     }
 
     fn onmessage(&mut self, msg: &mut dyn Any) {

@@ -63,16 +63,14 @@ impl AudioWorkletGlobalScope {
         output_buffer: AudioBuffer,
         playback_time: f64,
     ) {
-        if let Some(sender) = self.event_sender.as_ref() {
-            // sending could fail if the channel is saturated or the main thread is shutting down
-            let event = AudioProcessingEvent {
-                input_buffer,
-                output_buffer,
-                playback_time,
-            };
-            let dispatch = EventDispatch::audio_processing(self.node_id.get(), event);
-            let _ = sender.try_send(dispatch);
-        }
+        // sending could fail if the channel is saturated or the main thread is shutting down
+        let event = AudioProcessingEvent {
+            input_buffer,
+            output_buffer,
+            playback_time,
+        };
+        let dispatch = EventDispatch::audio_processing(self.node_id.get(), event);
+        let _ = self.event_sender.try_send(dispatch);
     }
 
     pub(crate) fn report_error(&self, error: Box<dyn Any + Send>) {
