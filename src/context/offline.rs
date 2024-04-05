@@ -5,9 +5,11 @@ use std::sync::{Arc, Mutex};
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
+use crate::events::{
+    Event, EventDispatch, EventHandler, EventPayload, EventType, OfflineAudioCompletionEvent,
+};
 use crate::render::RenderThread;
 use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
-use crate::{Event, OfflineAudioCompletionEvent};
 
 use crate::events::EventLoop;
 use futures_channel::{mpsc, oneshot};
@@ -49,10 +51,6 @@ struct OfflineAudioContextRenderer {
     suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
     /// channel to listen for `resume` calls on a suspended context
     resume_receiver: mpsc::Receiver<()>,
-    /// event handler for statechange event
-    onstatechange_handler: Option<Box<dyn FnMut(Event) + Send + 'static>>,
-    /// event handler for complete event
-    oncomplete_handler: Option<Box<dyn FnOnce(OfflineAudioCompletionEvent) + Send + 'static>>,
     /// event loop to run after each render quantum
     event_loop: EventLoop,
 }
@@ -60,18 +58,6 @@ struct OfflineAudioContextRenderer {
 impl BaseAudioContext for OfflineAudioContext {
     fn base(&self) -> &ConcreteBaseAudioContext {
         &self.base
-    }
-
-    fn set_onstatechange<F: FnMut(Event) + Send + 'static>(&self, callback: F) {
-        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
-            renderer.onstatechange_handler = Some(Box::new(callback));
-        }
-    }
-
-    fn clear_onstatechange(&self) {
-        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
-            renderer.onstatechange_handler = None;
-        }
     }
 }
 
@@ -138,8 +124,6 @@ impl OfflineAudioContext {
             suspend_promises: Vec::new(),
             suspend_callbacks: Vec::new(),
             resume_receiver,
-            onstatechange_handler: None,
-            oncomplete_handler: None,
             event_loop,
         };
 
@@ -170,24 +154,25 @@ impl OfflineAudioContext {
             .unwrap()
             .take()
             .expect("InvalidStateError - Cannot call `startRendering` twice");
+
         let OfflineAudioContextRenderer {
             renderer,
             suspend_callbacks,
-            oncomplete_handler,
-            mut onstatechange_handler,
             event_loop,
             ..
         } = renderer;
 
         self.base.set_state(AudioContextState::Running);
-        Self::emit_statechange(&mut onstatechange_handler);
 
-        let result = renderer.render_audiobuffer_sync(self, suspend_callbacks, event_loop);
+        let result = renderer.render_audiobuffer_sync(self, suspend_callbacks, &event_loop);
 
         self.base.set_state(AudioContextState::Closed);
-        Self::emit_statechange(&mut onstatechange_handler);
+        let _ = self
+            .base
+            .send_event(EventDispatch::complete(result.clone()));
 
-        Self::emit_complete(oncomplete_handler, &result);
+        // spin the event loop once more to handle the statechange/complete events
+        event_loop.handle_pending_events();
 
         result
     }
@@ -216,46 +201,25 @@ impl OfflineAudioContext {
             renderer,
             suspend_promises,
             resume_receiver,
-            oncomplete_handler,
-            mut onstatechange_handler,
+            event_loop,
             ..
         } = renderer;
 
         self.base.set_state(AudioContextState::Running);
-        Self::emit_statechange(&mut onstatechange_handler);
 
         let result = renderer
-            .render_audiobuffer(self.length, suspend_promises, resume_receiver)
+            .render_audiobuffer(self.length, suspend_promises, resume_receiver, &event_loop)
             .await;
 
         self.base.set_state(AudioContextState::Closed);
-        Self::emit_statechange(&mut onstatechange_handler);
+        let _ = self
+            .base
+            .send_event(EventDispatch::complete(result.clone()));
 
-        Self::emit_complete(oncomplete_handler, &result);
+        // spin the event loop once more to handle the statechange/complete events
+        event_loop.handle_pending_events();
 
         result
-    }
-
-    fn emit_complete(
-        oncomplete_handler: Option<Box<dyn FnOnce(OfflineAudioCompletionEvent) + Send>>,
-        result: &AudioBuffer,
-    ) {
-        if let Some(callback) = oncomplete_handler {
-            let event = OfflineAudioCompletionEvent {
-                rendered_buffer: result.clone(),
-                event: Event { type_: "complete" },
-            };
-            (callback)(event);
-        }
-    }
-
-    fn emit_statechange(onstatechange_handler: &mut Option<Box<dyn FnMut(Event) + Send>>) {
-        if let Some(callback) = onstatechange_handler.as_mut() {
-            let event = Event {
-                type_: "statechange",
-            };
-            (callback)(event);
-        }
     }
 
     /// get the length of rendering audio buffer
@@ -434,17 +398,24 @@ impl OfflineAudioContext {
         &self,
         callback: F,
     ) {
-        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
-            renderer.oncomplete_handler = Some(Box::new(callback));
-        }
+        let callback = move |v| match v {
+            EventPayload::Complete(v) => {
+                let event = OfflineAudioCompletionEvent {
+                    rendered_buffer: v,
+                    event: Event { type_: "complete" },
+                };
+                callback(event)
+            }
+            _ => unreachable!(),
+        };
+
+        self.base()
+            .set_event_handler(EventType::Complete, EventHandler::Once(Box::new(callback)));
     }
 
     /// Unset the callback to run when the rendering has completed
-    #[allow(clippy::missing_panics_doc)]
     pub fn clear_oncomplete(&self) {
-        if let Some(renderer) = self.renderer.lock().unwrap().as_mut() {
-            renderer.oncomplete_handler = None;
-        }
+        self.base().clear_event_handler(EventType::Complete);
     }
 }
 
@@ -600,6 +571,23 @@ mod tests {
     }
 
     #[test]
+    fn test_onstatechange_async() {
+        use futures::executor;
+
+        let context = OfflineAudioContext::new(2, 555, 44_100.);
+
+        let changed = Arc::new(AtomicBool::new(false));
+        let changed_clone = Arc::clone(&changed);
+        context.set_onstatechange(move |_event| {
+            changed_clone.store(true, Ordering::Relaxed);
+        });
+
+        let _ = executor::block_on(context.start_rendering());
+
+        assert!(changed.load(Ordering::Relaxed));
+    }
+
+    #[test]
     fn test_oncomplete() {
         let mut context = OfflineAudioContext::new(2, 555, 44_100.);
 
@@ -611,6 +599,24 @@ mod tests {
         });
 
         let _ = context.start_rendering_sync();
+
+        assert!(complete.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_oncomplete_async() {
+        use futures::executor;
+
+        let context = OfflineAudioContext::new(2, 555, 44_100.);
+
+        let complete = Arc::new(AtomicBool::new(false));
+        let complete_clone = Arc::clone(&complete);
+        context.set_oncomplete(move |event| {
+            assert_eq!(event.rendered_buffer.length(), 555);
+            complete_clone.store(true, Ordering::Relaxed);
+        });
+
+        let _ = executor::block_on(context.start_rendering());
 
         assert!(complete.load(Ordering::Relaxed));
     }

@@ -25,6 +25,7 @@ pub(crate) enum EventType {
     ProcessorError(AudioNodeId),
     Diagnostics,
     Message(AudioNodeId),
+    Complete,
 }
 
 /// The Error Event interface
@@ -57,6 +58,7 @@ pub(crate) enum EventPayload {
     Diagnostics(Vec<u8>),
     Message(Box<dyn Any + Send + 'static>),
     AudioContextState(AudioContextState),
+    Complete(AudioBuffer),
 }
 
 #[derive(Debug)]
@@ -112,6 +114,13 @@ impl EventDispatch {
         EventDispatch {
             type_: EventType::Message(id),
             payload: EventPayload::Message(value),
+        }
+    }
+
+    pub fn complete(buffer: AudioBuffer) -> Self {
+        EventDispatch {
+            type_: EventType::Complete,
+            payload: EventPayload::Complete(buffer),
         }
     }
 }

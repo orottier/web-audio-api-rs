@@ -236,7 +236,7 @@ impl RenderThread {
         mut self,
         context: &mut OfflineAudioContext,
         mut suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
-        event_loop: EventLoop,
+        event_loop: &EventLoop,
     ) -> AudioBuffer {
         let length = context.length();
 
@@ -284,6 +284,7 @@ impl RenderThread {
         length: usize,
         mut suspend_callbacks: Vec<(usize, oneshot::Sender<()>)>,
         mut resume_receiver: mpsc::Receiver<()>,
+        event_loop: &EventLoop,
     ) -> AudioBuffer {
         let options = AudioBufferOptions {
             number_of_channels: self.number_of_channels,
@@ -309,6 +310,12 @@ impl RenderThread {
             }
 
             self.render_offline_quantum(&mut buffer);
+
+            let events_were_handled = event_loop.handle_pending_events();
+            if events_were_handled {
+                // Handle any control messages that may have been submitted by the handler
+                self.handle_control_messages();
+            }
         }
 
         buffer
