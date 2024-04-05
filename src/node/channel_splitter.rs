@@ -29,12 +29,12 @@ pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
     );
 }
 
-/// Assert that the channel count is valid for the ChannelMergerNode
+/// Assert that the channel count is valid for the ChannelSplitterNode
 /// see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
 ///
 /// # Panics
 ///
-/// This function panics if given count is greater than 2
+/// This function panics if given count is not equal to number of outputs
 ///
 #[track_caller]
 #[inline(always)]
