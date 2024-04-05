@@ -147,7 +147,8 @@ impl ChannelSplitterNode {
         context.base().register(move |registration| {
             assert_valid_number_of_channels(options.number_of_outputs);
 
-            // if channel count has been explicitely set, we need to check its value against number of outputs
+            // if channel count has been explicitly set, we need to check
+            // its value against number of outputs
             if options.audio_node_options.channel_count != DEFAULT_NUMBER_OF_OUTPUTS {
                 assert_valid_channel_count(
                     options.audio_node_options.channel_count,

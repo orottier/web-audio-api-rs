@@ -14,7 +14,7 @@ use super::{
     TABLE_LENGTH_USIZE,
 };
 
-fn get_fase_incr(freq: f32, detune: f32, sample_rate: f64) -> f64 {
+fn get_phase_incr(freq: f32, detune: f32, sample_rate: f64) -> f64 {
     let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
     let clamped = computed_freq.clamp(-sample_rate / 2., sample_rate / 2.);
     clamped / sample_rate
@@ -411,7 +411,7 @@ impl AudioProcessor for OscillatorRenderer {
         }
 
         if frequency_values.len() == 1 && detune_values.len() == 1 {
-            let phase_incr = get_fase_incr(frequency_values[0], detune_values[0], sample_rate);
+            let phase_incr = get_phase_incr(frequency_values[0], detune_values[0], sample_rate);
             channel_data
                 .iter_mut()
                 .for_each(|output| self.generate_sample(output, phase_incr, &mut current_time, dt));
@@ -421,7 +421,7 @@ impl AudioProcessor for OscillatorRenderer {
                 .zip(frequency_values.iter().cycle())
                 .zip(detune_values.iter().cycle())
                 .for_each(|((output, &f), &d)| {
-                    let phase_incr = get_fase_incr(f, d, sample_rate);
+                    let phase_incr = get_phase_incr(f, d, sample_rate);
                     self.generate_sample(output, phase_incr, &mut current_time, dt)
                 });
         }
