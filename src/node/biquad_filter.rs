@@ -1209,8 +1209,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::excessive_precision)]
-    fn test_frequency_responses_invalid_frequencies() {
+    fn test_frequency_response_invalid_frequencies() {
         let context = OfflineAudioContext::new(1, 128, 44_100.);
 
         let frequency = 2000.;
