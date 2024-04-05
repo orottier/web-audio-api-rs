@@ -8,6 +8,8 @@ use crate::MAX_CHANNELS;
 
 use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelCountMode, ChannelInterpretation};
 
+const DEFAULT_NUMBER_OF_OUTPUTS: usize = 6;
+
 /// Assert that the given number of channels is valid for a ChannelMergerNode
 ///
 /// # Panics
@@ -24,6 +26,22 @@ pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
         "IndexSizeError - Invalid number of channels: {:?} is outside range [1, {:?}]",
         number_of_channels,
         MAX_CHANNELS
+    );
+}
+
+/// Assert that the channel count is valid for the ChannelMergerNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count is greater than 2
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count(count: usize, number_of_outputs: usize) {
+    assert!(
+        count == number_of_outputs,
+        "InvalidStateError - channel count of ChannelSplitterNode must be equal to number of outputs"
     );
 }
 
@@ -72,9 +90,9 @@ pub struct ChannelSplitterOptions {
 impl Default for ChannelSplitterOptions {
     fn default() -> Self {
         Self {
-            number_of_outputs: 6,
+            number_of_outputs: DEFAULT_NUMBER_OF_OUTPUTS,
             audio_node_options: AudioNodeOptions {
-                channel_count: 6, // must be same as number_of_outputs
+                channel_count: DEFAULT_NUMBER_OF_OUTPUTS, // must be same as number_of_outputs
                 channel_count_mode: ChannelCountMode::Explicit,
                 channel_interpretation: ChannelInterpretation::Discrete,
             },
@@ -87,6 +105,7 @@ impl Default for ChannelSplitterOptions {
 pub struct ChannelSplitterNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
+    number_of_outputs: usize,
 }
 
 impl AudioNode for ChannelSplitterNode {
@@ -99,11 +118,7 @@ impl AudioNode for ChannelSplitterNode {
     }
 
     fn set_channel_count(&self, count: usize) {
-        assert_eq!(
-            count,
-            self.channel_count(),
-            "InvalidStateError - Cannot edit channel count of ChannelSplitterNode"
-        );
+        assert_valid_channel_count(count, self.number_of_outputs);
     }
 
     fn set_channel_count_mode(&self, mode: ChannelCountMode) {
@@ -123,7 +138,7 @@ impl AudioNode for ChannelSplitterNode {
     }
 
     fn number_of_outputs(&self) -> usize {
-        self.channel_count()
+        self.number_of_outputs
     }
 }
 
@@ -131,6 +146,14 @@ impl ChannelSplitterNode {
     pub fn new<C: BaseAudioContext>(context: &C, mut options: ChannelSplitterOptions) -> Self {
         context.base().register(move |registration| {
             assert_valid_number_of_channels(options.number_of_outputs);
+
+            // if channel count has been explicitely set, we need to check its value against number of outputs
+            if options.audio_node_options.channel_count != DEFAULT_NUMBER_OF_OUTPUTS {
+                assert_valid_channel_count(
+                    options.audio_node_options.channel_count,
+                    options.number_of_outputs,
+                );
+            }
             options.audio_node_options.channel_count = options.number_of_outputs;
 
             assert_valid_channel_count_mode(options.audio_node_options.channel_count_mode);
@@ -139,10 +162,11 @@ impl ChannelSplitterNode {
             let node = ChannelSplitterNode {
                 registration,
                 channel_config: options.audio_node_options.into(),
+                number_of_outputs: options.number_of_outputs,
             };
 
             let render = ChannelSplitterRenderer {
-                number_of_outputs: node.channel_count(),
+                number_of_outputs: options.number_of_outputs,
             };
 
             (node, Box::new(render))
@@ -186,11 +210,51 @@ impl AudioProcessor for ChannelSplitterRenderer {
 
 #[cfg(test)]
 mod tests {
+    use float_eq::assert_float_eq;
+
     use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::node::{AudioNode, AudioScheduledSourceNode};
     use crate::AudioBuffer;
 
-    use float_eq::assert_float_eq;
+    use super::*;
+
+    #[test]
+    fn test_valid_constructor_options() {
+        let sample_rate = 48000.;
+        let context = OfflineAudioContext::new(1, 128, sample_rate);
+
+        let options = ChannelSplitterOptions {
+            number_of_outputs: 2,
+            ..Default::default()
+        };
+
+        let splitter = ChannelSplitterNode::new(&context, options);
+        assert_eq!(splitter.number_of_outputs(), 2);
+        assert_eq!(splitter.channel_count(), 2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_constructor_options() {
+        let sample_rate = 48000.;
+        let context = OfflineAudioContext::new(1, 128, sample_rate);
+
+        let mut options = ChannelSplitterOptions::default();
+        options.audio_node_options.channel_count = 7;
+
+        let _splitter = ChannelSplitterNode::new(&context, options);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_set_channel_count() {
+        let sample_rate = 48000.;
+        let context = OfflineAudioContext::new(1, 128, sample_rate);
+
+        let options = ChannelSplitterOptions::default();
+        let splitter = ChannelSplitterNode::new(&context, options);
+        splitter.set_channel_count(3);
+    }
 
     #[test]
     fn test_splitter() {
@@ -198,6 +262,7 @@ mod tests {
         let mut context = OfflineAudioContext::new(1, 128, sample_rate);
 
         let splitter = context.create_channel_splitter(2);
+
         // connect the 2nd output to the destination
         splitter.connect_at(&context.destination(), 1, 0);
 

@@ -101,7 +101,6 @@ impl AudioNode for ChannelMergerNode {
 
     fn set_channel_count(&self, count: usize) {
         assert_valid_channel_count(count);
-        self.channel_config.set_count(count, self.registration());
     }
 
     fn set_channel_count_mode(&self, mode: ChannelCountMode) {
@@ -174,10 +173,35 @@ impl AudioProcessor for ChannelMergerRenderer {
 
 #[cfg(test)]
 mod tests {
+    use float_eq::assert_float_eq;
+
     use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::node::{AudioNode, AudioScheduledSourceNode};
 
-    use float_eq::assert_float_eq;
+    use super::*;
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_constructor_options() {
+        let sample_rate = 48000.;
+        let context = OfflineAudioContext::new(1, 128, sample_rate);
+
+        let mut options = ChannelMergerOptions::default();
+        options.audio_node_options.channel_count = 2;
+
+        let _merger = ChannelMergerNode::new(&context, options);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_set_channel_count() {
+        let sample_rate = 48000.;
+        let context = OfflineAudioContext::new(1, 128, sample_rate);
+
+        let options = ChannelMergerOptions::default();
+        let merger = ChannelMergerNode::new(&context, options);
+        merger.set_channel_count(3);
+    }
 
     #[test]
     fn test_merge() {
