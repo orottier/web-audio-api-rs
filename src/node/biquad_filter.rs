@@ -518,18 +518,28 @@ impl BiquadFilterNode {
         //
         // with z1 = 1/z and z = exp(j*pi*frequency). Hence z1 = exp(-j*pi*frequency)
         for (i, freq) in frequency_hz.iter().enumerate() {
-            // clamp and normalize frequency
-            let f = freq.clamp(0., n_quist) / n_quist;
+            let freq = *freq;
+            // <https://webaudio.github.io/web-audio-api/#dom-biquadfilternode-getfrequencyresponse>
+            // > If a value in the frequencyHz parameter is not within [0, sampleRate/2],
+            // > where sampleRate is the value of the sampleRate property of the AudioContext,
+            // > the corresponding value at the same index of the magResponse/phaseResponse
+            // > array MUST be NaN.
+            if freq < 0. || freq > n_quist {
+                mag_response[i] = f32::NAN;
+                phase_response[i] = f32::NAN;
+            } else {
+                let f = freq / n_quist;
 
-            let omega = -1. * PI * f64::from(f);
-            let z = Complex::new(omega.cos(), omega.sin());
-            let numerator = b0 + (b1 + b2 * z) * z;
-            let denominator = Complex::new(1., 0.) + (a1 + a2 * z) * z;
-            let response = numerator / denominator;
+                let omega = -1. * PI * f64::from(f);
+                let z = Complex::new(omega.cos(), omega.sin());
+                let numerator = b0 + (b1 + b2 * z) * z;
+                let denominator = Complex::new(1., 0.) + (a1 + a2 * z) * z;
+                let response = numerator / denominator;
 
-            let (mag, phase) = response.to_polar();
-            mag_response[i] = mag as f32;
-            phase_response[i] = phase as f32;
+                let (mag, phase) = response.to_polar();
+                mag_response[i] = mag as f32;
+                phase_response[i] = phase as f32;
+            }
         }
     }
 }
@@ -787,7 +797,7 @@ mod tests {
     // @note: expected values retrieved from chrome and firefox, both being coherent
     #[test]
     #[allow(clippy::excessive_precision)]
-    fn test_frequency_responses() {
+    fn test_frequency_responses_lowpass() {
         let context = OfflineAudioContext::new(1, 128, 44_100.);
 
         let frequency = 2000.;
@@ -796,330 +806,430 @@ mod tests {
         let freqs = [
             400., 800., 1200., 1600., 2000., 2400., 2800., 3200., 3600., 4000.,
         ];
+        let type_ = BiquadFilterType::Lowpass;
 
-        {
-            let type_ = BiquadFilterType::Lowpass;
-            let expected_mags = [
-                1.023848056793213,
-                1.0948060750961304,
-                1.19772469997406,
-                1.2522060871124268,
-                1.1220184564590454,
-                0.8600019216537476,
-                0.6262584328651428,
-                0.46187180280685425,
-                0.3505324125289917,
-                0.27358654141426086,
-            ];
-            let expected_phases = [
-                -0.18232205510139465,
-                -0.3985414505004883,
-                -0.691506564617157,
-                -1.0987391471862793,
-                -1.5707963705062866,
-                -1.9669616222381592,
-                -2.236342191696167,
-                -2.4131083488464355,
-                -2.533737897872925,
-                -2.6204006671905518,
-            ];
+        let expected_mags = [
+            1.023848056793213,
+            1.0948060750961304,
+            1.19772469997406,
+            1.2522060871124268,
+            1.1220184564590454,
+            0.8600019216537476,
+            0.6262584328651428,
+            0.46187180280685425,
+            0.3505324125289917,
+            0.27358654141426086,
+        ];
+        let expected_phases = [
+            -0.18232205510139465,
+            -0.3985414505004883,
+            -0.691506564617157,
+            -1.0987391471862793,
+            -1.5707963705062866,
+            -1.9669616222381592,
+            -2.236342191696167,
+            -2.4131083488464355,
+            -2.533737897872925,
+            -2.6204006671905518,
+        ];
 
-            let mut filter = context.create_biquad_filter();
-            filter.set_type(type_);
-            filter.frequency().set_value(frequency);
-            filter.q().set_value(q);
-            filter.gain().set_value(gain);
+        let mut filter = context.create_biquad_filter();
+        filter.set_type(type_);
+        filter.frequency().set_value(frequency);
+        filter.q().set_value(q);
+        filter.gain().set_value(gain);
 
-            let mut mags = [0.; 10];
-            let mut phases = [0.; 10];
+        let mut mags = [0.; 10];
+        let mut phases = [0.; 10];
 
-            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+        filter.get_frequency_response(&freqs, &mut mags, &mut phases);
 
-            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
-            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
-        }
+        assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+        assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+    }
 
-        {
-            let type_ = BiquadFilterType::Highpass;
-            let expected_mags = [
-                0.0404227040708065,
-                0.17317812144756317,
-                0.42743849754333496,
-                0.7974866628646851,
-                1.1220184564590454,
-                1.2458853721618652,
-                1.2437469959259033,
-                1.208056092262268,
-                1.1714074611663818,
-                1.1408127546310425,
-            ];
-            let expected_phases = [
-                2.959270715713501,
-                2.743051290512085,
-                2.4500861167907715,
-                2.042853593826294,
-                1.570796251296997,
-                1.1746309995651245,
-                0.9052504897117615,
-                0.7284843325614929,
-                0.6078547239303589,
-                0.5211920142173767,
-            ];
+    #[test]
+    #[allow(clippy::excessive_precision)]
+    fn test_frequency_responses_highpass() {
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
 
-            let mut filter = context.create_biquad_filter();
-            filter.set_type(type_);
-            filter.frequency().set_value(frequency);
-            filter.q().set_value(q);
-            filter.gain().set_value(gain);
+        let frequency = 2000.;
+        let q = 1.;
+        let gain = 3.;
+        let freqs = [
+            400., 800., 1200., 1600., 2000., 2400., 2800., 3200., 3600., 4000.,
+        ];
+        let type_ = BiquadFilterType::Highpass;
 
-            let mut mags = [0.; 10];
-            let mut phases = [0.; 10];
+        let expected_mags = [
+            0.0404227040708065,
+            0.17317812144756317,
+            0.42743849754333496,
+            0.7974866628646851,
+            1.1220184564590454,
+            1.2458853721618652,
+            1.2437469959259033,
+            1.208056092262268,
+            1.1714074611663818,
+            1.1408127546310425,
+        ];
+        let expected_phases = [
+            2.959270715713501,
+            2.743051290512085,
+            2.4500861167907715,
+            2.042853593826294,
+            1.570796251296997,
+            1.1746309995651245,
+            0.9052504897117615,
+            0.7284843325614929,
+            0.6078547239303589,
+            0.5211920142173767,
+        ];
 
-            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+        let mut filter = context.create_biquad_filter();
+        filter.set_type(type_);
+        filter.frequency().set_value(frequency);
+        filter.q().set_value(q);
+        filter.gain().set_value(gain);
 
-            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
-            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
-        }
+        let mut mags = [0.; 10];
+        let mut phases = [0.; 10];
 
-        {
-            let type_ = BiquadFilterType::Bandpass;
-            let expected_mags = [
-                0.2025768756866455,
-                0.4271776080131531,
-                0.6805755496025085,
-                0.9101988673210144,
-                1.,
-                0.9370073676109314,
-                0.8193633556365967,
-                0.7074796557426453,
-                0.6153367757797241,
-                0.5415573716163635,
-            ];
-            let expected_phases = [
-                1.3668076992034912,
-                1.129427433013916,
-                0.8222484588623047,
-                0.42703235149383545,
-                -6.948182118549084e-8,
-                -0.3568341135978699,
-                -0.6104966998100281,
-                -0.7848706841468811,
-                -0.9079831838607788,
-                -0.9985077977180481,
-            ];
+        filter.get_frequency_response(&freqs, &mut mags, &mut phases);
 
-            let mut filter = context.create_biquad_filter();
-            filter.set_type(type_);
-            filter.frequency().set_value(frequency);
-            filter.q().set_value(q);
-            filter.gain().set_value(gain);
+        assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+        assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+    }
 
-            let mut mags = [0.; 10];
-            let mut phases = [0.; 10];
+    #[test]
+    #[allow(clippy::excessive_precision)]
+    fn test_frequency_responses_bandpass() {
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
 
-            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+        let frequency = 2000.;
+        let q = 1.;
+        let gain = 3.;
+        let freqs = [
+            400., 800., 1200., 1600., 2000., 2400., 2800., 3200., 3600., 4000.,
+        ];
+        let type_ = BiquadFilterType::Bandpass;
 
-            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
-            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
-        }
+        let expected_mags = [
+            0.2025768756866455,
+            0.4271776080131531,
+            0.6805755496025085,
+            0.9101988673210144,
+            1.,
+            0.9370073676109314,
+            0.8193633556365967,
+            0.7074796557426453,
+            0.6153367757797241,
+            0.5415573716163635,
+        ];
+        let expected_phases = [
+            1.3668076992034912,
+            1.129427433013916,
+            0.8222484588623047,
+            0.42703235149383545,
+            -6.948182118549084e-8,
+            -0.3568341135978699,
+            -0.6104966998100281,
+            -0.7848706841468811,
+            -0.9079831838607788,
+            -0.9985077977180481,
+        ];
 
-        {
-            let type_ = BiquadFilterType::Notch;
-            let expected_mags = [
-                0.979266345500946,
-                0.9041677117347717,
-                0.7326779365539551,
-                0.4141714870929718,
-                6.948182118549084e-8,
-                0.3493095338344574,
-                0.573274552822113,
-                0.7067337036132812,
-                0.7882643342018127,
-                0.8406637907028198,
-            ];
-            let expected_phases = [
-                -0.20398865640163422,
-                -0.4413689076900482,
-                -0.7485478520393372,
-                -1.1437640190124512,
-                1.570796251296997,
-                1.213962197303772,
-                0.9602996110916138,
-                0.7859256267547607,
-                0.662813127040863,
-                0.5722885727882385,
-            ];
+        let mut filter = context.create_biquad_filter();
+        filter.set_type(type_);
+        filter.frequency().set_value(frequency);
+        filter.q().set_value(q);
+        filter.gain().set_value(gain);
 
-            let mut filter = context.create_biquad_filter();
-            filter.set_type(type_);
-            filter.frequency().set_value(frequency);
-            filter.q().set_value(q);
-            filter.gain().set_value(gain);
+        let mut mags = [0.; 10];
+        let mut phases = [0.; 10];
 
-            let mut mags = [0.; 10];
-            let mut phases = [0.; 10];
+        filter.get_frequency_response(&freqs, &mut mags, &mut phases);
 
-            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+        assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+        assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+    }
 
-            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
-            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
-        }
+    #[test]
+    #[allow(clippy::excessive_precision)]
+    fn test_frequency_responses_notch() {
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
 
-        {
-            let type_ = BiquadFilterType::Allpass;
-            let expected_mags = [1., 1., 1., 1., 1., 1., 1., 1., 1., 1.];
-            let expected_phases = [
-                -0.40797731280326843,
-                -0.8827378153800964,
-                -1.4970957040786743,
-                -2.2875280380249023,
-                3.141592502593994,
-                2.427924394607544,
-                1.9205992221832275,
-                1.5718512535095215,
-                1.325626254081726,
-                1.144577145576477,
-            ];
+        let frequency = 2000.;
+        let q = 1.;
+        let gain = 3.;
+        let freqs = [
+            400., 800., 1200., 1600., 2000., 2400., 2800., 3200., 3600., 4000.,
+        ];
+        let type_ = BiquadFilterType::Notch;
 
-            let mut filter = context.create_biquad_filter();
-            filter.set_type(type_);
-            filter.frequency().set_value(frequency);
-            filter.q().set_value(q);
-            filter.gain().set_value(gain);
+        let expected_mags = [
+            0.979266345500946,
+            0.9041677117347717,
+            0.7326779365539551,
+            0.4141714870929718,
+            6.948182118549084e-8,
+            0.3493095338344574,
+            0.573274552822113,
+            0.7067337036132812,
+            0.7882643342018127,
+            0.8406637907028198,
+        ];
+        let expected_phases = [
+            -0.20398865640163422,
+            -0.4413689076900482,
+            -0.7485478520393372,
+            -1.1437640190124512,
+            1.570796251296997,
+            1.213962197303772,
+            0.9602996110916138,
+            0.7859256267547607,
+            0.662813127040863,
+            0.5722885727882385,
+        ];
 
-            let mut mags = [0.; 10];
-            let mut phases = [0.; 10];
+        let mut filter = context.create_biquad_filter();
+        filter.set_type(type_);
+        filter.frequency().set_value(frequency);
+        filter.q().set_value(q);
+        filter.gain().set_value(gain);
 
-            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+        let mut mags = [0.; 10];
+        let mut phases = [0.; 10];
 
-            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
-            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
-        }
+        filter.get_frequency_response(&freqs, &mut mags, &mut phases);
 
-        {
-            let type_ = BiquadFilterType::Peaking;
-            let expected_mags = [
-                1.0145272016525269,
-                1.0657449960708618,
-                1.1736305952072144,
-                1.330430030822754,
-                1.4125374555587769,
-                1.3534939289093018,
-                1.2603179216384888,
-                1.1887166500091553,
-                1.1401562690734863,
-                1.107250690460205,
-            ];
-            let expected_phases = [
-                0.06874943524599075,
-                0.13327200710773468,
-                0.17138442397117615,
-                0.13011260330677032,
-                -2.411762878296031e-8,
-                -0.1131250336766243,
-                -0.16162104904651642,
-                -0.17184172570705414,
-                -0.16679927706718445,
-                -0.1567305326461792,
-            ];
+        assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+        assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+    }
 
-            let mut filter = context.create_biquad_filter();
-            filter.set_type(type_);
-            filter.frequency().set_value(frequency);
-            filter.q().set_value(q);
-            filter.gain().set_value(gain);
+    #[test]
+    #[allow(clippy::excessive_precision)]
+    fn test_frequency_responses_allpass() {
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
 
-            let mut mags = [0.; 10];
-            let mut phases = [0.; 10];
+        let frequency = 2000.;
+        let q = 1.;
+        let gain = 3.;
+        let freqs = [
+            400., 800., 1200., 1600., 2000., 2400., 2800., 3200., 3600., 4000.,
+        ];
+        let type_ = BiquadFilterType::Allpass;
 
-            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+        let expected_mags = [1., 1., 1., 1., 1., 1., 1., 1., 1., 1.];
+        let expected_phases = [
+            -0.40797731280326843,
+            -0.8827378153800964,
+            -1.4970957040786743,
+            -2.2875280380249023,
+            3.141592502593994,
+            2.427924394607544,
+            1.9205992221832275,
+            1.5718512535095215,
+            1.325626254081726,
+            1.144577145576477,
+        ];
 
-            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
-            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
-        }
+        let mut filter = context.create_biquad_filter();
+        filter.set_type(type_);
+        filter.frequency().set_value(frequency);
+        filter.q().set_value(q);
+        filter.gain().set_value(gain);
 
-        {
-            let type_ = BiquadFilterType::Lowshelf;
-            let expected_mags = [
-                1.411763310432434,
-                1.4004594087600708,
-                1.3577604293823242,
-                1.2777900695800781,
-                1.1885021924972534,
-                1.1184993982315063,
-                1.07305908203125,
-                1.045626163482666,
-                1.029238224029541,
-                1.0192826986312866,
-            ];
-            let expected_phases = [
-                -0.050444066524505615,
-                -0.10995279997587204,
-                -0.17566977441310883,
-                -0.22642207145690918,
-                -0.24332194030284882,
-                -0.23164276778697968,
-                -0.2076151967048645,
-                -0.18214666843414307,
-                -0.15946431457996368,
-                -0.1404205560684204,
-            ];
+        let mut mags = [0.; 10];
+        let mut phases = [0.; 10];
 
-            let mut filter = context.create_biquad_filter();
-            filter.set_type(type_);
-            filter.frequency().set_value(frequency);
-            filter.q().set_value(q);
-            filter.gain().set_value(gain);
+        filter.get_frequency_response(&freqs, &mut mags, &mut phases);
 
-            let mut mags = [0.; 10];
-            let mut phases = [0.; 10];
+        assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+        assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+    }
 
-            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+    #[test]
+    #[allow(clippy::excessive_precision)]
+    fn test_frequency_responses_peaking() {
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
 
-            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
-            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
-        }
+        let frequency = 2000.;
+        let q = 1.;
+        let gain = 3.;
+        let freqs = [
+            400., 800., 1200., 1600., 2000., 2400., 2800., 3200., 3600., 4000.,
+        ];
+        let type_ = BiquadFilterType::Peaking;
 
-        {
-            let type_ = BiquadFilterType::Highshelf;
-            let expected_mags = [
-                1.0005483627319336,
-                1.0086243152618408,
-                1.0403436422348022,
-                1.1054534912109375,
-                1.1885021924972534,
-                1.2628861665725708,
-                1.3163650035858154,
-                1.3509010076522827,
-                1.3724106550216675,
-                1.385815143585205,
-            ];
-            let expected_phases = [
-                0.050444066524505615,
-                0.10995279997587204,
-                0.17566977441310883,
-                0.22642207145690918,
-                0.24332194030284882,
-                0.23164276778697968,
-                0.2076151967048645,
-                0.18214666843414307,
-                0.15946431457996368,
-                0.1404205560684204,
-            ];
+        let expected_mags = [
+            1.0145272016525269,
+            1.0657449960708618,
+            1.1736305952072144,
+            1.330430030822754,
+            1.4125374555587769,
+            1.3534939289093018,
+            1.2603179216384888,
+            1.1887166500091553,
+            1.1401562690734863,
+            1.107250690460205,
+        ];
+        let expected_phases = [
+            0.06874943524599075,
+            0.13327200710773468,
+            0.17138442397117615,
+            0.13011260330677032,
+            -2.411762878296031e-8,
+            -0.1131250336766243,
+            -0.16162104904651642,
+            -0.17184172570705414,
+            -0.16679927706718445,
+            -0.1567305326461792,
+        ];
 
-            let mut filter = context.create_biquad_filter();
-            filter.set_type(type_);
-            filter.frequency().set_value(frequency);
-            filter.q().set_value(q);
-            filter.gain().set_value(gain);
+        let mut filter = context.create_biquad_filter();
+        filter.set_type(type_);
+        filter.frequency().set_value(frequency);
+        filter.q().set_value(q);
+        filter.gain().set_value(gain);
 
-            let mut mags = [0.; 10];
-            let mut phases = [0.; 10];
+        let mut mags = [0.; 10];
+        let mut phases = [0.; 10];
 
-            filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+        filter.get_frequency_response(&freqs, &mut mags, &mut phases);
 
-            assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
-            assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
-        }
+        assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+        assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+    }
+
+    #[test]
+    #[allow(clippy::excessive_precision)]
+    fn test_frequency_responses_lowshelf() {
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
+
+        let frequency = 2000.;
+        let q = 1.;
+        let gain = 3.;
+        let freqs = [
+            400., 800., 1200., 1600., 2000., 2400., 2800., 3200., 3600., 4000.,
+        ];
+        let type_ = BiquadFilterType::Lowshelf;
+
+        let expected_mags = [
+            1.411763310432434,
+            1.4004594087600708,
+            1.3577604293823242,
+            1.2777900695800781,
+            1.1885021924972534,
+            1.1184993982315063,
+            1.07305908203125,
+            1.045626163482666,
+            1.029238224029541,
+            1.0192826986312866,
+        ];
+        let expected_phases = [
+            -0.050444066524505615,
+            -0.10995279997587204,
+            -0.17566977441310883,
+            -0.22642207145690918,
+            -0.24332194030284882,
+            -0.23164276778697968,
+            -0.2076151967048645,
+            -0.18214666843414307,
+            -0.15946431457996368,
+            -0.1404205560684204,
+        ];
+
+        let mut filter = context.create_biquad_filter();
+        filter.set_type(type_);
+        filter.frequency().set_value(frequency);
+        filter.q().set_value(q);
+        filter.gain().set_value(gain);
+
+        let mut mags = [0.; 10];
+        let mut phases = [0.; 10];
+
+        filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+
+        assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+        assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+    }
+
+    #[test]
+    #[allow(clippy::excessive_precision)]
+    fn test_frequency_responses_highshelf() {
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
+
+        let frequency = 2000.;
+        let q = 1.;
+        let gain = 3.;
+        let freqs = [
+            400., 800., 1200., 1600., 2000., 2400., 2800., 3200., 3600., 4000.,
+        ];
+        let type_ = BiquadFilterType::Highshelf;
+
+        let expected_mags = [
+            1.0005483627319336,
+            1.0086243152618408,
+            1.0403436422348022,
+            1.1054534912109375,
+            1.1885021924972534,
+            1.2628861665725708,
+            1.3163650035858154,
+            1.3509010076522827,
+            1.3724106550216675,
+            1.385815143585205,
+        ];
+        let expected_phases = [
+            0.050444066524505615,
+            0.10995279997587204,
+            0.17566977441310883,
+            0.22642207145690918,
+            0.24332194030284882,
+            0.23164276778697968,
+            0.2076151967048645,
+            0.18214666843414307,
+            0.15946431457996368,
+            0.1404205560684204,
+        ];
+
+        let mut filter = context.create_biquad_filter();
+        filter.set_type(type_);
+        filter.frequency().set_value(frequency);
+        filter.q().set_value(q);
+        filter.gain().set_value(gain);
+
+        let mut mags = [0.; 10];
+        let mut phases = [0.; 10];
+
+        filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+
+        assert_float_eq!(mags, expected_mags, abs_all <= 1e-6);
+        assert_float_eq!(phases, expected_phases, abs_all <= 1e-6);
+    }
+
+    #[test]
+    #[allow(clippy::excessive_precision)]
+    fn test_frequency_responses_invalid_frequencies() {
+        let context = OfflineAudioContext::new(1, 128, 44_100.);
+
+        let frequency = 2000.;
+        let q = 1.;
+        let gain = 3.;
+        let freqs = [-1., 22_051.];
+        let type_ = BiquadFilterType::Highshelf;
+
+        let mut filter = context.create_biquad_filter();
+        filter.set_type(type_);
+        filter.frequency().set_value(frequency);
+        filter.q().set_value(q);
+        filter.gain().set_value(gain);
+
+        let mut mags = [0.; 2];
+        let mut phases = [0.; 2];
+
+        filter.get_frequency_response(&freqs, &mut mags, &mut phases);
+        mags.iter().for_each(|v| assert!(v.is_nan()));
+        phases.iter().for_each(|v| assert!(v.is_nan()));
     }
 }
