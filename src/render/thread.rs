@@ -252,22 +252,31 @@ impl RenderThread {
         // Handle initial control messages
         self.handle_control_messages();
 
-        for quantum in 0..num_frames {
-            // Suspend at given times and run callbacks
-            if suspend_callbacks.first().map(|&(q, _)| q) == Some(quantum) {
-                let callback = suspend_callbacks.remove(0).1;
-                (callback)(context);
-
-                // Handle any control messages that may have been submitted by the callback
-                self.handle_control_messages();
+        // Fast path when
+        // - no suspensions scheduled
+        // - no script processor (so no event handling needed during rendering)
+        if suspend_callbacks.is_empty() {
+            for _ in 0..num_frames {
+                self.render_offline_quantum(&mut buffer);
             }
+        } else {
+            for quantum in 0..num_frames {
+                // Suspend at given times and run callbacks
+                if suspend_callbacks.first().map(|&(q, _)| q) == Some(quantum) {
+                    let callback = suspend_callbacks.remove(0).1;
+                    (callback)(context);
 
-            self.render_offline_quantum(&mut buffer);
+                    // Handle any control messages that may have been submitted by the callback
+                    self.handle_control_messages();
+                }
 
-            let events_were_handled = event_loop.handle_pending_events();
-            if events_were_handled {
-                // Handle any control messages that may have been submitted by the handler
-                self.handle_control_messages();
+                self.render_offline_quantum(&mut buffer);
+
+                let events_were_handled = event_loop.handle_pending_events();
+                if events_were_handled {
+                    // Handle any control messages that may have been submitted by the handler
+                    self.handle_control_messages();
+                }
             }
         }
 
