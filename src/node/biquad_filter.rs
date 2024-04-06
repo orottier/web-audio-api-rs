@@ -517,8 +517,7 @@ impl BiquadFilterNode {
         // 1 + (a1 + a2*z1)*z1
         //
         // with z1 = 1/z and z = exp(j*pi*frequency). Hence z1 = exp(-j*pi*frequency)
-        for (i, freq) in frequency_hz.iter().enumerate() {
-            let freq = *freq;
+        for (i, &freq) in frequency_hz.iter().enumerate() {
             // <https://webaudio.github.io/web-audio-api/#dom-biquadfilternode-getfrequencyresponse>
             // > If a value in the frequencyHz parameter is not within [0, sampleRate/2],
             // > where sampleRate is the value of the sampleRate property of the AudioContext,
