@@ -233,24 +233,34 @@ impl IIRFilterNode {
         let nquist = sample_rate / 2.;
 
         for (i, &f) in frequency_hz.iter().enumerate() {
-            let freq = f64::from(f).clamp(0., nquist);
-            let z = -2.0 * PI * freq / sample_rate;
-            let mut num: Complex<f64> = Complex::new(0., 0.);
-            let mut denom: Complex<f64> = Complex::new(0., 0.);
+            let freq = f64::from(f);
+            // <https://webaudio.github.io/web-audio-api/#dom-iirfilternode-getfrequencyresponse>
+            // > If a value in the frequencyHz parameter is not within [0, sampleRate/2],
+            // > where sampleRate is the value of the sampleRate property of the AudioContext,
+            // > the corresponding value at the same index of the magResponse/phaseResponse
+            // > array MUST be NaN.
+            if freq < 0. || freq > nquist {
+                mag_response[i] = f32::NAN;
+                phase_response[i] = f32::NAN;
+            } else {
+                let z = -2.0 * PI * freq / sample_rate;
+                let mut num: Complex<f64> = Complex::new(0., 0.);
+                let mut denom: Complex<f64> = Complex::new(0., 0.);
 
-            for (idx, &b) in self.feedforward.iter().enumerate() {
-                num += Complex::from_polar(b, idx as f64 * z);
+                for (idx, &b) in self.feedforward.iter().enumerate() {
+                    num += Complex::from_polar(b, idx as f64 * z);
+                }
+
+                for (idx, &a) in self.feedback.iter().enumerate() {
+                    denom += Complex::from_polar(a, idx as f64 * z);
+                }
+
+                let response = num / denom;
+
+                let (mag, phase) = response.to_polar();
+                mag_response[i] = mag as f32;
+                phase_response[i] = phase as f32;
             }
-
-            for (idx, &a) in self.feedback.iter().enumerate() {
-                denom += Complex::from_polar(a, idx as f64 * z);
-            }
-
-            let response = num / denom;
-
-            let (mag, phase) = response.to_polar();
-            mag_response[i] = mag as f32;
-            phase_response[i] = phase as f32;
         }
     }
 }
@@ -896,5 +906,24 @@ mod tests {
         let feedback = vec![a0, a1, a2];
         let feedforward = vec![b0, b1, b2];
         compare_frequency_response(BiquadFilterType::Highshelf, feedback, feedforward);
+    }
+
+    #[test]
+    fn test_frequency_response_invalid_frequencies() {
+        let context = OfflineAudioContext::new(2, 555, 44_100.);
+        let options = IIRFilterOptions {
+            feedback: vec![1.; 10],
+            feedforward: vec![1.; 10],
+            audio_node_options: AudioNodeOptions::default(),
+        };
+        let iir = IIRFilterNode::new(&context, options);
+
+        let frequency_hz = [-1., 22_051.];
+        let mut mags = [0.; 2];
+        let mut phases = [0.; 2];
+
+        iir.get_frequency_response(&frequency_hz, &mut mags, &mut phases);
+        mags.iter().for_each(|v| assert!(v.is_nan()));
+        phases.iter().for_each(|v| assert!(v.is_nan()));
     }
 }
