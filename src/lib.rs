@@ -137,10 +137,12 @@ impl AtomicF64 {
 #[track_caller]
 #[inline(always)]
 pub(crate) fn assert_valid_sample_rate(sample_rate: f32) {
+    // Arbitrary cutoffs defined as:
+    // min_sample_rate = min_required_in_spec / 2
+    // max_sample_rate = max_required_in_spec * 2
     let min_sample_rate = 4_000.;
     let max_sample_rate = 192_000.;
-    // 1000 Hertz is a just a random cutoff, but it helps a if someone accidentally puts a
-    // timestamp in the sample_rate variable
+
     assert!(
         sample_rate >= min_sample_rate && sample_rate <= max_sample_rate,
         "NotSupportedError - Invalid sample rate: {:?}, should be in the range [{:?}, {:?}]",
