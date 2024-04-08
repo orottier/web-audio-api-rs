@@ -197,24 +197,20 @@ impl DelayNode {
             "NotSupportedError - maxDelayTime MUST be greater than zero and less than three minutes",
         );
 
-        // we internally clamp max delay to quantum duration because the current
-        // implementation doesn't allow sub-quantum delays. Later, this will
-        // ensure that even if the declared max_delay_time and max_delay are smaller
+        // wW internally clamp max delay to quantum duration. This ensure
+        // that even if the declared max_delay_time and max_delay are smaller
         // than quantum duration, the node, if found in a loop, will gracefully
-        // fallback to the clamped behavior. (e.g. we ensure that ring buffer size
-        // is always >= 2)
+        // fallback to the clamped behavior. (e.g. we ensure that ring buffer
+        // size is always >= 2)
         let quantum_duration = 1. / sample_rate * RENDER_QUANTUM_SIZE as f64;
         let max_delay_time = options.max_delay_time.max(quantum_duration);
 
-        // allocate large enough buffer to store all delayed samples
-        //
-        // we add 1 here so that in edge cases where num_samples is a multiple of
-        // RENDER_QUANTUM_SIZE and delay_time == max_delay_time we are sure to
-        // enough room for history. (see. test_max_delay_multiple_of_quantum_size)
-        let num_samples = max_delay_time * sample_rate + 1.;
-        let num_quanta =
-            (num_samples.ceil() as usize + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
-        let ring_buffer = Vec::with_capacity(num_quanta);
+        // Allocate large enough buffer to store all delayed samples.
+        // We add one extra buffer in the ring buffer so that reader never read the
+        // same entry in history as the writer, even if `delay_time === max_delay_time`
+        // cf. test_max_delay_multiple_of_quantum_size and test_max_delay
+        let num_quanta = (max_delay_time * sample_rate / RENDER_QUANTUM_SIZE as f64).ceil() as usize;
+        let ring_buffer = Vec::with_capacity(num_quanta + 1);
 
         let shared_ring_buffer = Rc::new(RefCell::new(ring_buffer));
         let shared_ring_buffer_clone = Rc::clone(&shared_ring_buffer);
@@ -707,60 +703,59 @@ mod tests {
     }
 
     #[test]
-    fn test_sub_sample_accurate() {
-        {
-            let delay_in_samples = 128.5;
-            let sample_rate = 48000.;
-            let mut context = OfflineAudioContext::new(1, 256, sample_rate);
+    fn test_sub_sample_accurate_1() {
+        let delay_in_samples = 128.5;
+        let sample_rate = 48000.;
+        let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
-            let delay = context.create_delay(2.);
-            delay.delay_time.set_value(delay_in_samples / sample_rate);
-            delay.connect(&context.destination());
+        let delay = context.create_delay(2.);
+        delay.delay_time.set_value(delay_in_samples / sample_rate);
+        delay.connect(&context.destination());
 
-            let mut dirac = context.create_buffer(1, 1, sample_rate);
-            dirac.copy_to_channel(&[1.], 0);
+        let mut dirac = context.create_buffer(1, 1, sample_rate);
+        dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
-            src.connect(&delay);
-            src.set_buffer(dirac);
-            src.start_at(0.);
+        let mut src = context.create_buffer_source();
+        src.connect(&delay);
+        src.set_buffer(dirac);
+        src.start_at(0.);
 
-            let result = context.start_rendering_sync();
-            let channel = result.get_channel_data(0);
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
 
-            let mut expected = vec![0.; 256];
-            expected[128] = 0.5;
-            expected[129] = 0.5;
+        let mut expected = vec![0.; 256];
+        expected[128] = 0.5;
+        expected[129] = 0.5;
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 0.00001);
-        }
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.00001);
+    }
 
-        {
-            let delay_in_samples = 128.8;
-            let sample_rate = 48000.;
-            let mut context = OfflineAudioContext::new(1, 256, sample_rate);
+    #[test]
+    fn test_sub_sample_accurate_2() {
+        let delay_in_samples = 128.8;
+        let sample_rate = 48000.;
+        let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
-            let delay = context.create_delay(2.);
-            delay.delay_time.set_value(delay_in_samples / sample_rate);
-            delay.connect(&context.destination());
+        let delay = context.create_delay(2.);
+        delay.delay_time.set_value(delay_in_samples / sample_rate);
+        delay.connect(&context.destination());
 
-            let mut dirac = context.create_buffer(1, 1, sample_rate);
-            dirac.copy_to_channel(&[1.], 0);
+        let mut dirac = context.create_buffer(1, 1, sample_rate);
+        dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
-            src.connect(&delay);
-            src.set_buffer(dirac);
-            src.start_at(0.);
+        let mut src = context.create_buffer_source();
+        src.connect(&delay);
+        src.set_buffer(dirac);
+        src.start_at(0.);
 
-            let result = context.start_rendering_sync();
-            let channel = result.get_channel_data(0);
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
 
-            let mut expected = vec![0.; 256];
-            expected[128] = 0.2;
-            expected[129] = 0.8;
+        let mut expected = vec![0.; 256];
+        expected[128] = 0.2;
+        expected[129] = 0.8;
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 1e-5);
-        }
+        assert_float_eq!(channel[..], expected[..], abs_all <= 1e-5);
     }
 
     #[test]
@@ -935,6 +930,60 @@ mod tests {
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
 
+    // reproduce wpt tests from
+    // - the-delaynode-interface/delaynode-max-default-delay.html
+    // - the-delaynode-interface/delaynode-max-nondefault-delay.html
+    #[test]
+    fn test_max_delay() {
+        use std::f32::consts::PI;
+
+        for &delay_time_seconds in [1., 1.5].iter() {
+            let sample_rate = 44100.0;
+            let render_length = 4 * sample_rate as usize;
+
+            let mut context = OfflineAudioContext::new(1, render_length, sample_rate);
+
+            // create 2 seconds tone buffer at 20Hz
+            let tone_frequency = 20.;
+            let tone_length_seconds = 2.;
+            let tone_length = tone_length_seconds as usize * sample_rate as usize;
+            let mut tone_buffer = context.create_buffer(1, tone_length, sample_rate);
+            let tone_data = tone_buffer.get_channel_data_mut(0);
+
+            for i in 0..tone_data.len() {
+                tone_data[i] = (tone_frequency * 2.0 * PI * i as f32 / sample_rate).sin();
+            }
+
+            let mut buffer_source = context.create_buffer_source();
+            buffer_source.set_buffer(tone_buffer.clone());
+
+            let delay = context.create_delay(delay_time_seconds); // max delay defaults to 1 second
+            delay.delay_time.set_value(delay_time_seconds as f32);
+
+            buffer_source.connect(&delay);
+            delay.connect(&context.destination());
+            buffer_source.start_at(0.);
+
+            let output = context.start_rendering_sync();
+            let source = tone_buffer.get_channel_data(0);
+            let rendered = output.get_channel_data(0);
+
+            let delay_time_frames = (delay_time_seconds * sample_rate as f64) as usize;
+            let tone_length_frames = (tone_length_seconds * sample_rate as f64) as usize;
+
+            for i in 0..rendered.len() {
+                if i < delay_time_frames {
+                    assert_eq!(rendered[i], 0.);
+                } else if i >= delay_time_frames && i < delay_time_frames + tone_length_frames {
+                    let j = i - delay_time_frames;
+                    assert_eq!(rendered[i], source[j]);
+                } else {
+                    assert_eq!(rendered[i], 0.);
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_max_delay_smaller_than_quantum_size() {
         // regression test that even if the declared max_delay_time is smaller than
@@ -975,66 +1024,65 @@ mod tests {
         }
     }
 
+    // test_max_delay_multiple_of_quantum_size_x
+    // are regression test that delay node has always enough internal buffer size
+    // when max_delay is a multiple of quantum size and delay == max_delay.
+    // This bug only occurs when the Writer is called before than the Reader,
+    // which is the case when not in a loop
     #[test]
-    fn test_max_delay_multiple_of_quantum_size() {
-        // regression test that delay node has always enough internal buffer size
-        // when max_delay is a multiple of quantum size and delay == max_delay.
-        // This bug only occurs when the Writer is called before than the Reader,
-        // which is the case when not in a loop
-
+    fn test_max_delay_multiple_of_quantum_size_1() {
         // set delay and max delay time exactly 1 render quantum
-        {
-            let sample_rate = 48000.;
-            let mut context = OfflineAudioContext::new(1, 256, sample_rate);
+        let sample_rate = 48000.;
+        let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
-            let max_delay = 128. / sample_rate;
-            let delay = context.create_delay(max_delay.into());
-            delay.delay_time.set_value(max_delay);
-            delay.connect(&context.destination());
+        let max_delay = 128. / sample_rate;
+        let delay = context.create_delay(max_delay.into());
+        delay.delay_time.set_value(max_delay);
+        delay.connect(&context.destination());
 
-            let mut dirac = context.create_buffer(1, 1, sample_rate);
-            dirac.copy_to_channel(&[1.], 0);
+        let mut dirac = context.create_buffer(1, 1, sample_rate);
+        dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
-            src.connect(&delay);
-            src.set_buffer(dirac);
-            src.start_at(0.);
+        let mut src = context.create_buffer_source();
+        src.connect(&delay);
+        src.set_buffer(dirac);
+        src.start_at(0.);
 
-            let result = context.start_rendering_sync();
-            let channel = result.get_channel_data(0);
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
 
-            let mut expected = vec![0.; 256];
-            expected[128] = 1.;
+        let mut expected = vec![0.; 256];
+        expected[128] = 1.;
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 1e-5);
-        }
+        assert_float_eq!(channel[..], expected[..], abs_all <= 1e-5);
+    }
 
+    #[test]
+    fn test_max_delay_multiple_of_quantum_size_2() {
         // set delay and max delay time exactly 2 render quantum
-        {
-            let sample_rate = 48_000.;
-            let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
+        let sample_rate = 48_000.;
+        let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
 
-            let max_delay = 128. * 2. / sample_rate;
-            let delay = context.create_delay(max_delay.into());
-            delay.delay_time.set_value(max_delay);
-            delay.connect(&context.destination());
+        let max_delay = 128. * 2. / sample_rate;
+        let delay = context.create_delay(max_delay.into());
+        delay.delay_time.set_value(max_delay);
+        delay.connect(&context.destination());
 
-            let mut dirac = context.create_buffer(1, 1, sample_rate);
-            dirac.copy_to_channel(&[1.], 0);
+        let mut dirac = context.create_buffer(1, 1, sample_rate);
+        dirac.copy_to_channel(&[1.], 0);
 
-            let mut src = context.create_buffer_source();
-            src.connect(&delay);
-            src.set_buffer(dirac);
-            src.start_at(0.);
+        let mut src = context.create_buffer_source();
+        src.connect(&delay);
+        src.set_buffer(dirac);
+        src.start_at(0.);
 
-            let result = context.start_rendering_sync();
-            let channel = result.get_channel_data(0);
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
 
-            let mut expected = vec![0.; 3 * 128];
-            expected[256] = 1.;
+        let mut expected = vec![0.; 3 * 128];
+        expected[256] = 1.;
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 1e-5);
-        }
+        assert_float_eq!(channel[..], expected[..], abs_all <= 1e-5);
     }
 
     #[test]
