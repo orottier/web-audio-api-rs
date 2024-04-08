@@ -138,10 +138,10 @@ impl AtomicF64 {
 #[inline(always)]
 pub(crate) fn assert_valid_sample_rate(sample_rate: f32) {
     // Arbitrary cutoffs defined as:
-    // min_sample_rate = min_required_in_spec / 2
-    // max_sample_rate = max_required_in_spec * 2
-    let min_sample_rate = 4_000.;
-    let max_sample_rate = 192_000.;
+    // min_sample_rate = min_required_in_spec / 4
+    // max_sample_rate = max_required_in_spec * 4
+    let min_sample_rate = 2_000.;
+    let max_sample_rate = 384_000.;
 
     assert!(
         sample_rate >= min_sample_rate && sample_rate <= max_sample_rate,
@@ -237,13 +237,17 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_invalid_sample_rate_too_small() {
-        assert_valid_sample_rate(3_000.);
+        // invalid lower value used in wpt check
+        // <the-audio-api/the-audiocontext-interface/audiocontextoptions.html>
+        assert_valid_sample_rate(1.);
     }
 
     #[test]
     #[should_panic]
     fn test_invalid_sample_rate_too_big() {
-        assert_valid_sample_rate(300_000.);
+        // invalid upper value used in wpt check
+        // <the-audio-api/the-audiocontext-interface/audiocontextoptions.html>
+        assert_valid_sample_rate(1_000_000.);
     }
 
     #[test]
