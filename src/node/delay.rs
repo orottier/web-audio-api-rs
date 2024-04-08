@@ -987,8 +987,9 @@ mod tests {
             let sample_rate = 48000.;
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
-            let delay = context.create_delay(1.);
-            delay.delay_time.set_value(128. / sample_rate);
+            let max_delay = 128. / sample_rate;
+            let delay = context.create_delay(max_delay.into());
+            delay.delay_time.set_value(max_delay);
             delay.connect(&context.destination());
 
             let mut dirac = context.create_buffer(1, 1, sample_rate);
@@ -1010,11 +1011,12 @@ mod tests {
 
         // set delay and max delay time exactly 2 render quantum
         {
-            let sample_rate = 48000.;
+            let sample_rate = 48_000.;
             let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
 
-            let delay = context.create_delay(2.);
-            delay.delay_time.set_value(128. * 2. / sample_rate);
+            let max_delay = 128. * 2. / sample_rate;
+            let delay = context.create_delay(max_delay.into());
+            delay.delay_time.set_value(max_delay);
             delay.connect(&context.destination());
 
             let mut dirac = context.create_buffer(1, 1, sample_rate);
