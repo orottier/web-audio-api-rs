@@ -13,7 +13,7 @@ use futures_channel::{mpsc, oneshot};
 use futures_util::StreamExt as _;
 
 use super::AudioRenderQuantum;
-use crate::buffer::{AudioBuffer, AudioBufferOptions};
+use crate::buffer::AudioBuffer;
 use crate::context::{
     AudioContextState, AudioNodeId, OfflineAudioContext, OfflineAudioContextCallback,
 };
@@ -240,13 +240,10 @@ impl RenderThread {
     ) -> AudioBuffer {
         let length = context.length();
 
-        let options = AudioBufferOptions {
-            number_of_channels: self.number_of_channels,
-            length,
-            sample_rate: self.sample_rate,
-        };
+        // construct a properly sized output buffer
+        let mut buffer = Vec::with_capacity(self.number_of_channels);
+        buffer.resize_with(buffer.capacity(), || Vec::with_capacity(length));
 
-        let mut buffer = AudioBuffer::new(options);
         let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
 
         // Handle initial control messages
@@ -271,7 +268,7 @@ impl RenderThread {
             }
         }
 
-        buffer
+        AudioBuffer::from(buffer, self.sample_rate)
     }
 
     // Render method of the `OfflineAudioContext::start_rendering`
@@ -286,13 +283,10 @@ impl RenderThread {
         mut resume_receiver: mpsc::Receiver<()>,
         event_loop: &EventLoop,
     ) -> AudioBuffer {
-        let options = AudioBufferOptions {
-            number_of_channels: self.number_of_channels,
-            length,
-            sample_rate: self.sample_rate,
-        };
+        // construct a properly sized output buffer
+        let mut buffer = Vec::with_capacity(self.number_of_channels);
+        buffer.resize_with(buffer.capacity(), || Vec::with_capacity(length));
 
-        let mut buffer = AudioBuffer::new(options);
         let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
 
         // Handle addition/removal of nodes/edges
@@ -318,11 +312,11 @@ impl RenderThread {
             }
         }
 
-        buffer
+        AudioBuffer::from(buffer, self.sample_rate)
     }
 
     /// Render a single quantum into an AudioBuffer
-    fn render_offline_quantum(&mut self, buffer: &mut AudioBuffer) {
+    fn render_offline_quantum(&mut self, buffer: &mut [Vec<f32>]) {
         // Update time
         let current_frame = self
             .frames_played
@@ -346,17 +340,18 @@ impl RenderThread {
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
         let rendered = graph.render(&scope);
 
-        rendered
-            .channels()
-            .iter()
-            .enumerate()
-            .for_each(|(channel_number, rendered_channel)| {
-                buffer.copy_to_channel_with_offset(
-                    rendered_channel,
-                    channel_number,
-                    current_frame as usize,
-                );
-            });
+        // Use a specialized copyToChannel implementation for performance
+        let remaining = (buffer[0].capacity() - buffer[0].len()).min(RENDER_QUANTUM_SIZE);
+        let channels = rendered.channels();
+        buffer.iter_mut().enumerate().for_each(|(i, b)| {
+            let c = channels
+                .get(i)
+                .map(AsRef::as_ref)
+                // When there are no input nodes for the destination, only a single silent channel
+                // is emitted. So manually pad the missing channels with silence
+                .unwrap_or(&[0.; RENDER_QUANTUM_SIZE]);
+            b.extend_from_slice(&c[..remaining]);
+        });
     }
 
     pub fn render<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
