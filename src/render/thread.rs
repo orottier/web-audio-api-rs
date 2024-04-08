@@ -2,7 +2,7 @@
 
 use std::any::Any;
 use std::cell::Cell;
-
+use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -13,11 +13,11 @@ use futures_channel::{mpsc, oneshot};
 use futures_util::StreamExt as _;
 
 use super::AudioRenderQuantum;
-use crate::buffer::{AudioBuffer, AudioBufferOptions};
+use crate::buffer::AudioBuffer;
 use crate::context::{
     AudioContextState, AudioNodeId, OfflineAudioContext, OfflineAudioContextCallback,
 };
-use crate::events::EventDispatch;
+use crate::events::{EventDispatch, EventLoop};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::AudioWorkletGlobalScope;
@@ -39,7 +39,7 @@ pub(crate) struct RenderThread {
     receiver: Option<Receiver<ControlMessage>>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
-    event_sender: Option<Sender<EventDispatch>>,
+    event_sender: Sender<EventDispatch>,
     garbage_collector: Option<llq::Producer<Box<dyn Any + Send>>>,
 }
 
@@ -72,6 +72,7 @@ impl RenderThread {
         receiver: Receiver<ControlMessage>,
         state: Arc<AtomicU8>,
         frames_played: Arc<AtomicU64>,
+        event_sender: Sender<EventDispatch>,
     ) -> Self {
         Self {
             graph: None,
@@ -84,18 +85,16 @@ impl RenderThread {
             receiver: Some(receiver),
             buffer_offset: None,
             load_value_sender: None,
-            event_sender: None,
+            event_sender,
             garbage_collector: None,
         }
     }
 
-    pub(crate) fn set_event_channels(
+    pub(crate) fn set_load_value_sender(
         &mut self,
         load_value_sender: Sender<AudioRenderCapacityLoad>,
-        event_sender: Sender<EventDispatch>,
     ) {
         self.load_value_sender = Some(load_value_sender);
-        self.event_sender = Some(event_sender);
     }
 
     pub(crate) fn spawn_garbage_collector_thread(&mut self) {
@@ -106,118 +105,125 @@ impl RenderThread {
         }
     }
 
+    #[inline(always)]
     fn handle_control_messages(&mut self) {
-        let receiver = match &self.receiver {
-            None => return,
-            Some(receiver) => receiver,
-        };
+        if self.receiver.is_none() {
+            return;
+        }
 
-        for msg in receiver.try_iter() {
-            use ControlMessage::*;
+        while let Ok(msg) = self.receiver.as_ref().unwrap().try_recv() {
+            let result = self.handle_control_message(msg);
+            if result.is_break() {
+                return; // stop processing
+            }
+        }
+    }
 
-            match msg {
-                RegisterNode {
-                    id: node_id,
+    fn handle_control_message(&mut self, msg: ControlMessage) -> ControlFlow<()> {
+        use ControlMessage::*;
+
+        match msg {
+            RegisterNode {
+                id: node_id,
+                reclaim_id,
+                node,
+                inputs,
+                outputs,
+                channel_config,
+            } => {
+                self.graph.as_mut().unwrap().add_node(
+                    node_id,
                     reclaim_id,
                     node,
                     inputs,
                     outputs,
                     channel_config,
-                } => {
-                    self.graph.as_mut().unwrap().add_node(
-                        node_id,
-                        reclaim_id,
-                        node,
-                        inputs,
-                        outputs,
-                        channel_config,
-                    );
-                }
-                ConnectNode {
-                    from,
-                    to,
-                    output,
-                    input,
-                } => {
-                    self.graph
-                        .as_mut()
-                        .unwrap()
-                        .add_edge((from, output), (to, input));
-                }
-                DisconnectNode { from, to } => {
-                    self.graph.as_mut().unwrap().remove_edge(from, to);
-                }
-                DisconnectAll { from } => {
-                    self.graph.as_mut().unwrap().remove_edges_from(from);
-                }
-                ControlHandleDropped { id } => {
-                    self.graph.as_mut().unwrap().mark_control_handle_dropped(id);
-                }
-                MarkCycleBreaker { id } => {
-                    self.graph.as_mut().unwrap().mark_cycle_breaker(id);
-                }
-                CloseAndRecycle { sender } => {
-                    self.set_state(AudioContextState::Suspended);
-                    let _ = sender.send(self.graph.take().unwrap());
-                    self.receiver = None;
-                    return; // no further handling of ctrl msgs
-                }
-                Startup { graph } => {
-                    debug_assert!(self.graph.is_none());
-                    self.graph = Some(graph);
-                    self.set_state(AudioContextState::Running);
-                }
-                NodeMessage { id, mut msg } => {
-                    self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
-                    if let Some(gc) = self.garbage_collector.as_mut() {
-                        gc.push(msg)
-                    }
-                }
-                RunDiagnostics { mut buffer } => {
-                    if let Some(sender) = self.event_sender.as_ref() {
-                        use std::io::Write;
-                        writeln!(&mut buffer, "{:#?}", &self).ok();
-                        writeln!(&mut buffer, "{:?}", &self.graph).ok();
-                        sender
-                            .try_send(EventDispatch::diagnostics(buffer))
-                            .expect("Unable to send diagnostics - channel is full");
-                    }
-                }
-                Suspend { notify } => {
-                    self.suspended = true;
-                    self.set_state(AudioContextState::Suspended);
-                    notify.send();
-                }
-                Resume { notify } => {
-                    self.suspended = false;
-                    self.set_state(AudioContextState::Running);
-                    notify.send();
-                }
-                Close { notify } => {
-                    self.suspended = true;
-                    self.set_state(AudioContextState::Closed);
-                    notify.send();
-                }
-
-                SetChannelCount { id, count } => {
-                    self.graph.as_mut().unwrap().set_channel_count(id, count);
-                }
-
-                SetChannelCountMode { id, mode } => {
-                    self.graph
-                        .as_mut()
-                        .unwrap()
-                        .set_channel_count_mode(id, mode);
-                }
-
-                SetChannelInterpretation { id, interpretation } => {
-                    self.graph
-                        .as_mut()
-                        .unwrap()
-                        .set_channel_interpretation(id, interpretation);
+                );
+            }
+            ConnectNode {
+                from,
+                to,
+                output,
+                input,
+            } => {
+                self.graph
+                    .as_mut()
+                    .unwrap()
+                    .add_edge((from, output), (to, input));
+            }
+            DisconnectNode { from, to } => {
+                self.graph.as_mut().unwrap().remove_edge(from, to);
+            }
+            DisconnectAll { from } => {
+                self.graph.as_mut().unwrap().remove_edges_from(from);
+            }
+            ControlHandleDropped { id } => {
+                self.graph.as_mut().unwrap().mark_control_handle_dropped(id);
+            }
+            MarkCycleBreaker { id } => {
+                self.graph.as_mut().unwrap().mark_cycle_breaker(id);
+            }
+            CloseAndRecycle { sender } => {
+                self.set_state(AudioContextState::Suspended);
+                let _ = sender.send(self.graph.take().unwrap());
+                self.receiver = None;
+                return ControlFlow::Break(()); // no further handling of ctrl msgs
+            }
+            Startup { graph } => {
+                debug_assert!(self.graph.is_none());
+                self.graph = Some(graph);
+                self.set_state(AudioContextState::Running);
+            }
+            NodeMessage { id, mut msg } => {
+                self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
+                if let Some(gc) = self.garbage_collector.as_mut() {
+                    gc.push(msg)
                 }
             }
+            RunDiagnostics { mut buffer } => {
+                use std::io::Write;
+                writeln!(&mut buffer, "{:#?}", &self).ok();
+                writeln!(&mut buffer, "{:?}", &self.graph).ok();
+                self.event_sender
+                    .try_send(EventDispatch::diagnostics(buffer))
+                    .expect("Unable to send diagnostics - channel is full");
+            }
+            Suspend { notify } => {
+                self.suspended = true;
+                self.set_state(AudioContextState::Suspended);
+                notify.send();
+            }
+            Resume { notify } => {
+                self.suspended = false;
+                self.set_state(AudioContextState::Running);
+                notify.send();
+            }
+            Close { notify } => {
+                self.suspended = true;
+                self.set_state(AudioContextState::Closed);
+                notify.send();
+            }
+
+            SetChannelCount { id, count } => {
+                self.graph.as_mut().unwrap().set_channel_count(id, count);
+            }
+
+            SetChannelCountMode { id, mode } => {
+                self.graph
+                    .as_mut()
+                    .unwrap()
+                    .set_channel_count_mode(id, mode);
+            }
+
+            SetChannelInterpretation { id, interpretation } => {
+                self.graph
+                    .as_mut()
+                    .unwrap()
+                    .set_channel_interpretation(id, interpretation);
+            }
         }
+
+        ControlFlow::Continue(()) // continue handling more messages
     }
 
     // Render method of the `OfflineAudioContext::start_rendering_sync`
@@ -228,20 +234,19 @@ impl RenderThread {
     // cf. https://webaudio.github.io/web-audio-api/#dom-offlineaudiocontext-startrendering
     pub fn render_audiobuffer_sync(
         mut self,
-        length: usize,
-        mut suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
         context: &mut OfflineAudioContext,
+        mut suspend_callbacks: Vec<(usize, Box<OfflineAudioContextCallback>)>,
+        event_loop: &EventLoop,
     ) -> AudioBuffer {
-        let options = AudioBufferOptions {
-            number_of_channels: self.number_of_channels,
-            length,
-            sample_rate: self.sample_rate,
-        };
+        let length = context.length();
 
-        let mut buffer = AudioBuffer::new(options);
+        // construct a properly sized output buffer
+        let mut buffer = Vec::with_capacity(self.number_of_channels);
+        buffer.resize_with(buffer.capacity(), || Vec::with_capacity(length));
+
         let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
 
-        // Handle addition/removal of nodes/edges
+        // Handle initial control messages
         self.handle_control_messages();
 
         for quantum in 0..num_frames {
@@ -250,14 +255,20 @@ impl RenderThread {
                 let callback = suspend_callbacks.remove(0).1;
                 (callback)(context);
 
-                // Handle addition/removal of nodes/edges
+                // Handle any control messages that may have been submitted by the callback
                 self.handle_control_messages();
             }
 
             self.render_offline_quantum(&mut buffer);
+
+            let events_were_handled = event_loop.handle_pending_events();
+            if events_were_handled {
+                // Handle any control messages that may have been submitted by the handler
+                self.handle_control_messages();
+            }
         }
 
-        buffer
+        AudioBuffer::from(buffer, self.sample_rate)
     }
 
     // Render method of the `OfflineAudioContext::start_rendering`
@@ -270,14 +281,12 @@ impl RenderThread {
         length: usize,
         mut suspend_callbacks: Vec<(usize, oneshot::Sender<()>)>,
         mut resume_receiver: mpsc::Receiver<()>,
+        event_loop: &EventLoop,
     ) -> AudioBuffer {
-        let options = AudioBufferOptions {
-            number_of_channels: self.number_of_channels,
-            length,
-            sample_rate: self.sample_rate,
-        };
+        // construct a properly sized output buffer
+        let mut buffer = Vec::with_capacity(self.number_of_channels);
+        buffer.resize_with(buffer.capacity(), || Vec::with_capacity(length));
 
-        let mut buffer = AudioBuffer::new(options);
         let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
 
         // Handle addition/removal of nodes/edges
@@ -295,13 +304,19 @@ impl RenderThread {
             }
 
             self.render_offline_quantum(&mut buffer);
+
+            let events_were_handled = event_loop.handle_pending_events();
+            if events_were_handled {
+                // Handle any control messages that may have been submitted by the handler
+                self.handle_control_messages();
+            }
         }
 
-        buffer
+        AudioBuffer::from(buffer, self.sample_rate)
     }
 
     /// Render a single quantum into an AudioBuffer
-    fn render_offline_quantum(&mut self, buffer: &mut AudioBuffer) {
+    fn render_offline_quantum(&mut self, buffer: &mut [Vec<f32>]) {
         // Update time
         let current_frame = self
             .frames_played
@@ -325,17 +340,18 @@ impl RenderThread {
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
         let rendered = graph.render(&scope);
 
-        rendered
-            .channels()
-            .iter()
-            .enumerate()
-            .for_each(|(channel_number, rendered_channel)| {
-                buffer.copy_to_channel_with_offset(
-                    rendered_channel,
-                    channel_number,
-                    current_frame as usize,
-                );
-            });
+        // Use a specialized copyToChannel implementation for performance
+        let remaining = (buffer[0].capacity() - buffer[0].len()).min(RENDER_QUANTUM_SIZE);
+        let channels = rendered.channels();
+        buffer.iter_mut().enumerate().for_each(|(i, b)| {
+            let c = channels
+                .get(i)
+                .map(AsRef::as_ref)
+                // When there are no input nodes for the destination, only a single silent channel
+                // is emitted. So manually pad the missing channels with silence
+                .unwrap_or(&[0.; RENDER_QUANTUM_SIZE]);
+            b.extend_from_slice(&c[..remaining]);
+        });
     }
 
     pub fn render<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
@@ -460,9 +476,9 @@ impl RenderThread {
 
     fn set_state(&self, state: AudioContextState) {
         self.state.store(state as u8, Ordering::Relaxed);
-        if let Some(sender) = self.event_sender.as_ref() {
-            sender.try_send(EventDispatch::state_change(state)).ok();
-        }
+        self.event_sender
+            .try_send(EventDispatch::state_change(state))
+            .ok();
     }
 }
 

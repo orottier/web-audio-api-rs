@@ -13,7 +13,7 @@ use crate::spatial::AudioListenerParams;
 
 use crate::AudioListener;
 
-use crossbeam_channel::{Receiver, SendError, Sender};
+use crossbeam_channel::{SendError, Sender};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 
@@ -108,7 +108,7 @@ struct ConcreteBaseAudioContextInner {
     /// Stores the event handlers
     event_loop: EventLoop,
     /// Sender for events that will be handled by the EventLoop
-    event_send: Option<Sender<EventDispatch>>,
+    event_send: Sender<EventDispatch>,
 }
 
 impl BaseAudioContext for ConcreteBaseAudioContext {
@@ -126,16 +126,11 @@ impl ConcreteBaseAudioContext {
         state: Arc<AtomicU8>,
         frames_played: Arc<AtomicU64>,
         render_channel: Sender<ControlMessage>,
-        event_channel: Option<(Sender<EventDispatch>, Receiver<EventDispatch>)>,
+        event_send: Sender<EventDispatch>,
+        event_loop: EventLoop,
         offline: bool,
         node_id_consumer: llq::Consumer<AudioNodeId>,
     ) -> Self {
-        let event_loop = EventLoop::new();
-        let (event_send, event_recv) = match event_channel {
-            None => (None, None),
-            Some((send, recv)) => (Some(send), Some(recv)),
-        };
-
         let audio_node_id_provider = AudioNodeIdProvider::new(node_id_consumer);
 
         let base_inner = ConcreteBaseAudioContextInner {
@@ -150,7 +145,7 @@ impl ConcreteBaseAudioContext {
             listener_params: None,
             offline,
             state,
-            event_loop: event_loop.clone(),
+            event_loop,
             event_send,
         };
         let base = Self {
@@ -219,13 +214,6 @@ impl ConcreteBaseAudioContext {
             crate::node::load_hrtf_processor(sample_rate as u32);
         }
 
-        // Boot the event loop thread that handles the events spawned by the render thread
-        // (we don't do this for offline rendering because it makes little sense, the graph cannot
-        // be mutated once rendering has started anyway)
-        if let Some(event_channel) = event_recv {
-            event_loop.run(event_channel);
-        }
-
         base
     }
 
@@ -288,10 +276,7 @@ impl ConcreteBaseAudioContext {
     }
 
     pub(crate) fn send_event(&self, msg: EventDispatch) -> Result<(), SendError<EventDispatch>> {
-        match self.inner.event_send.as_ref() {
-            Some(s) => s.send(msg),
-            None => Err(SendError(msg)),
-        }
+        self.inner.event_send.send(msg)
     }
 
     pub(crate) fn lock_control_msg_sender(&self) -> RwLockWriteGuard<'_, Sender<ControlMessage>> {

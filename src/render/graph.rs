@@ -750,7 +750,7 @@ mod tests {
             current_time: 0.,
             sample_rate: 48000.,
             node_id: std::cell::Cell::new(AudioNodeId(0)),
-            event_sender: None,
+            event_sender: crossbeam_channel::unbounded().0,
         };
         graph.render(&scope);
 
@@ -807,7 +807,7 @@ mod tests {
             current_time: 0.,
             sample_rate: 48000.,
             node_id: std::cell::Cell::new(AudioNodeId(0)),
-            event_sender: None,
+            event_sender: crossbeam_channel::unbounded().0,
         };
 
         // render twice
@@ -875,7 +875,7 @@ mod tests {
             current_time: 0.,
             sample_rate: 48000.,
             node_id: std::cell::Cell::new(AudioNodeId(0)),
-            event_sender: None,
+            event_sender: crossbeam_channel::unbounded().0,
         };
 
         // render twice
@@ -924,7 +924,7 @@ mod tests {
             current_time: 0.,
             sample_rate: 48000.,
             node_id: std::cell::Cell::new(AudioNodeId(0)),
-            event_sender: None,
+            event_sender: crossbeam_channel::unbounded().0,
         };
         graph.render(&scope);
 
