@@ -209,7 +209,8 @@ impl DelayNode {
         // We add one extra buffer in the ring buffer so that reader never read the
         // same entry in history as the writer, even if `delay_time === max_delay_time`
         // cf. test_max_delay_multiple_of_quantum_size and test_max_delay
-        let num_quanta = (max_delay_time * sample_rate / RENDER_QUANTUM_SIZE as f64).ceil() as usize;
+        let num_quanta =
+            (max_delay_time * sample_rate / RENDER_QUANTUM_SIZE as f64).ceil() as usize;
         let ring_buffer = Vec::with_capacity(num_quanta + 1);
 
         let shared_ring_buffer = Rc::new(RefCell::new(ring_buffer));
@@ -665,7 +666,7 @@ mod tests {
 
     #[test]
     fn test_audioparam_value_applies_immediately() {
-        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let context = OfflineAudioContext::new(1, 128, 48_000.);
         let options = DelayOptions {
             delay_time: 0.12,
             ..Default::default()
@@ -677,7 +678,7 @@ mod tests {
     #[test]
     fn test_sample_accurate() {
         for delay_in_samples in [128., 131., 197.].iter() {
-            let sample_rate = 48000.;
+            let sample_rate = 48_000.;
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             let delay = context.create_delay(2.);
@@ -705,7 +706,7 @@ mod tests {
     #[test]
     fn test_sub_sample_accurate_1() {
         let delay_in_samples = 128.5;
-        let sample_rate = 48000.;
+        let sample_rate = 48_000.;
         let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
         let delay = context.create_delay(2.);
@@ -733,7 +734,7 @@ mod tests {
     #[test]
     fn test_sub_sample_accurate_2() {
         let delay_in_samples = 128.8;
-        let sample_rate = 48000.;
+        let sample_rate = 48_000.;
         let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
         let delay = context.create_delay(2.);
@@ -761,7 +762,7 @@ mod tests {
     #[test]
     fn test_multichannel() {
         let delay_in_samples = 128.;
-        let sample_rate = 48000.;
+        let sample_rate = 48_000.;
         let mut context = OfflineAudioContext::new(2, 2 * 128, sample_rate);
 
         let delay = context.create_delay(2.);
@@ -794,7 +795,7 @@ mod tests {
     #[test]
     fn test_input_number_of_channels_change() {
         let delay_in_samples = 128.;
-        let sample_rate = 48000.;
+        let sample_rate = 48_000.;
         let mut context = OfflineAudioContext::new(2, 3 * 128, sample_rate);
 
         let delay = context.create_delay(2.);
@@ -838,7 +839,7 @@ mod tests {
     fn test_node_stays_alive_long_enough() {
         // make sure there are no hidden order problem
         for _ in 0..10 {
-            let sample_rate = 48000.;
+            let sample_rate = 48_000.;
             let mut context = OfflineAudioContext::new(1, 5 * 128, sample_rate);
 
             // Set up a source that starts only after 5 render quanta.
@@ -873,7 +874,7 @@ mod tests {
     #[test]
     fn test_subquantum_delay() {
         for i in 0..128 {
-            let sample_rate = 48000.;
+            let sample_rate = 48_000.;
             let mut context = OfflineAudioContext::new(1, 128, sample_rate);
 
             let delay = context.create_delay(1.);
@@ -900,7 +901,7 @@ mod tests {
 
     #[test]
     fn test_min_delay_when_in_loop() {
-        let sample_rate = 480000.;
+        let sample_rate = 48_000.;
         let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
         let delay = context.create_delay(1.);
@@ -950,8 +951,8 @@ mod tests {
             let mut tone_buffer = context.create_buffer(1, tone_length, sample_rate);
             let tone_data = tone_buffer.get_channel_data_mut(0);
 
-            for i in 0..tone_data.len() {
-                tone_data[i] = (tone_frequency * 2.0 * PI * i as f32 / sample_rate).sin();
+            for (i, s) in tone_data.iter_mut().enumerate() {
+                *s = (tone_frequency * 2.0 * PI * i as f32 / sample_rate).sin();
             }
 
             let mut buffer_source = context.create_buffer_source();
@@ -971,14 +972,14 @@ mod tests {
             let delay_time_frames = (delay_time_seconds * sample_rate as f64) as usize;
             let tone_length_frames = (tone_length_seconds * sample_rate as f64) as usize;
 
-            for i in 0..rendered.len() {
+            for (i, s) in rendered.iter().enumerate() {
                 if i < delay_time_frames {
-                    assert_eq!(rendered[i], 0.);
+                    assert_eq!(*s, 0.);
                 } else if i >= delay_time_frames && i < delay_time_frames + tone_length_frames {
                     let j = i - delay_time_frames;
-                    assert_eq!(rendered[i], source[j]);
+                    assert_eq!(*s, source[j]);
                 } else {
-                    assert_eq!(rendered[i], 0.);
+                    assert_eq!(*s, 0.);
                 }
             }
         }
@@ -991,7 +992,7 @@ mod tests {
         // that everything works even if order of processing is not guaranteed
         // (i.e. when delay is in a loop)
         for _ in 0..10 {
-            let sample_rate = 480000.;
+            let sample_rate = 48_000.;
             let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
             // this will be internally clamped to 128 * sample_rate
@@ -1032,7 +1033,7 @@ mod tests {
     #[test]
     fn test_max_delay_multiple_of_quantum_size_1() {
         // set delay and max delay time exactly 1 render quantum
-        let sample_rate = 48000.;
+        let sample_rate = 48_000.;
         let mut context = OfflineAudioContext::new(1, 256, sample_rate);
 
         let max_delay = 128. / sample_rate;
@@ -1087,7 +1088,7 @@ mod tests {
 
     #[test]
     fn test_subquantum_delay_dynamic_lifetime() {
-        let sample_rate = 48000.;
+        let sample_rate = 48_000.;
         let mut context = OfflineAudioContext::new(1, 3 * 128, sample_rate);
 
         // Setup a source that emits for 120 frames, so it deallocates after the first render

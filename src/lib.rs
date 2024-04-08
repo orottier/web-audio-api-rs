@@ -125,22 +125,30 @@ impl AtomicF64 {
 /// voice based applications, e.g. see phone bandwidth) and 96000Hz (for very high
 /// quality audio applications and spectrum manipulation).
 /// Most common sample rates for musical applications are 44100 and 48000.
-/// - see <https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createbuffer-samplerate>
+///
+/// - see <https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-samplerate>
+/// > An implementation MUST support sample rates in at least the range 8000 to 96000.
 ///
 /// # Panics
 ///
 /// This function will panic if:
-/// - the given sample rate is zero
+/// - the given sample rate is lower than 4000 or greater than 192000
 ///
 #[track_caller]
 #[inline(always)]
 pub(crate) fn assert_valid_sample_rate(sample_rate: f32) {
-    // 1000 Hertz is a just a random cutoff, but it helps a if someone accidentally puts a
-    // timestamp in the sample_rate variable
+    // Arbitrary cutoffs defined as:
+    // min_sample_rate = min_required_in_spec / 4
+    // max_sample_rate = max_required_in_spec * 4
+    let min_sample_rate = 2_000.;
+    let max_sample_rate = 384_000.;
+
     assert!(
-        sample_rate > 1000.,
-        "NotSupportedError - Invalid sample rate: {:?}, should be greater than 1000",
-        sample_rate
+        sample_rate >= min_sample_rate && sample_rate <= max_sample_rate,
+        "NotSupportedError - Invalid sample rate: {:?}, should be in the range [{:?}, {:?}]",
+        sample_rate,
+        min_sample_rate,
+        max_sample_rate,
     );
 }
 
@@ -228,20 +236,18 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn test_invalid_sample_rate_zero() {
-        assert_valid_sample_rate(0.);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_invalid_sample_rate_subzero() {
-        assert_valid_sample_rate(-48000.);
-    }
-
-    #[test]
-    #[should_panic]
     fn test_invalid_sample_rate_too_small() {
-        assert_valid_sample_rate(100.);
+        // invalid lower value used in wpt check
+        // <the-audio-api/the-audiocontext-interface/audiocontextoptions.html>
+        assert_valid_sample_rate(1.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_sample_rate_too_big() {
+        // invalid upper value used in wpt check
+        // <the-audio-api/the-audiocontext-interface/audiocontextoptions.html>
+        assert_valid_sample_rate(1_000_000.);
     }
 
     #[test]
