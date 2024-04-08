@@ -197,18 +197,11 @@ impl DelayNode {
             "NotSupportedError - maxDelayTime MUST be greater than zero and less than three minutes",
         );
 
-        // wW internally clamp max delay to quantum duration. This ensure
-        // that even if the declared max_delay_time and max_delay are smaller
-        // than quantum duration, the node, if found in a loop, will gracefully
-        // fallback to the clamped behavior. (e.g. we ensure that ring buffer
-        // size is always >= 2)
-        let quantum_duration = 1. / sample_rate * RENDER_QUANTUM_SIZE as f64;
-        let max_delay_time = options.max_delay_time.max(quantum_duration);
-
-        // Allocate large enough buffer to store all delayed samples.
-        // We add one extra buffer in the ring buffer so that reader never read the
-        // same entry in history as the writer, even if `delay_time === max_delay_time`
-        // cf. test_max_delay_multiple_of_quantum_size and test_max_delay
+        // Allocate large enough ring buffer to store all delayed samples.
+        // We add one extra slot in the ring buffer so that reader never reads the
+        // same entry in history as the writer, even if `delay_time == max_delay_time`
+        // of if `max_delay_time < quantum duration`
+        let max_delay_time = options.max_delay_time;
         let num_quanta =
             (max_delay_time * sample_rate / RENDER_QUANTUM_SIZE as f64).ceil() as usize;
         let ring_buffer = Vec::with_capacity(num_quanta + 1);
