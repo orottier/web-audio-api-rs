@@ -387,7 +387,7 @@ impl BiquadFilterNode {
             let gain_options = AudioParamDescriptor {
                 name: String::new(),
                 min_value: f32::MIN,
-                max_value: f32::MAX,
+                max_value: 40. * f32::MAX.log10(),
                 default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
