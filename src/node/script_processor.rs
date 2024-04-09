@@ -246,10 +246,7 @@ impl AudioProcessor for ScriptProcessorRenderer {
             self.next_output_buffer.resize(number_of_quanta, silence);
         }
 
-        // TODO, spec says to return false but we actually need true because of 'actively
-        // processing' requirements
-        // <https://webaudio.github.io/web-audio-api/#AudioNode-actively-processing>
-        true
+        false // node is kept alive as long as the handle in the event loop still exists
     }
 
     fn onmessage(&mut self, msg: &mut dyn Any) {
