@@ -74,7 +74,7 @@ impl ScriptProcessorNode {
     /// This function panics if:
     /// - `buffer_size` is not 256, 512, 1024, 2048, 4096, 8192, or 16384
     /// - the number of input and output channels are both zero
-    /// - either of the channel counts exceed [`MAX_CHANNELS`]
+    /// - either of the channel counts exceed [`crate::MAX_CHANNELS`]
     pub fn new<C: BaseAudioContext>(context: &C, options: ScriptProcessorOptions) -> Self {
         let ScriptProcessorOptions {
             buffer_size,
