@@ -215,6 +215,13 @@ pub trait BaseAudioContext {
     }
 
     /// Creates an `ScriptProcessorNode` for custom audio processing (deprecated);
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `buffer_size` is not 256, 512, 1024, 2048, 4096, 8192, or 16384
+    /// - the number of input and output channels are both zero
+    /// - either of the channel counts exceed [`MAX_CHANNELS`]
     #[must_use]
     fn create_script_processor(
         &self,
@@ -222,12 +229,13 @@ pub trait BaseAudioContext {
         number_of_input_channels: usize,
         number_of_output_channels: usize,
     ) -> node::ScriptProcessorNode {
-        node::ScriptProcessorNode::new(
-            self.base(),
+        let options = node::ScriptProcessorOptions {
             buffer_size,
             number_of_input_channels,
             number_of_output_channels,
-        )
+        };
+
+        node::ScriptProcessorNode::new(self.base(), options)
     }
 
     /// Creates an `StereoPannerNode` to pan a stereo output

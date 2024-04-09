@@ -1,14 +1,20 @@
+use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelCountMode, ChannelInterpretation};
 use crate::context::{AudioContextRegistration, BaseAudioContext};
 use crate::events::{AudioProcessingEvent, EventHandler, EventPayload, EventType};
-use crate::node::{ChannelCountMode, ChannelInterpretation};
 use crate::render::{
     AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
 };
 use crate::{AudioBuffer, RENDER_QUANTUM_SIZE};
 
-use super::{AudioNode, AudioNodeOptions, ChannelConfig};
-
 use std::any::Any;
+
+/// Options for constructing an [`ScriptProcessorNode`]
+#[derive(Clone, Debug)]
+pub struct ScriptProcessorOptions {
+    pub buffer_size: usize,
+    pub number_of_input_channels: usize,
+    pub number_of_output_channels: usize,
+}
 
 /// An AudioNode which can generate, process, or analyse audio directly using a script (deprecated)
 #[derive(Debug)]
@@ -56,12 +62,26 @@ impl AudioNode for ScriptProcessorNode {
 }
 
 impl ScriptProcessorNode {
-    pub(crate) fn new<C: BaseAudioContext>(
-        context: &C,
-        buffer_size: usize,
-        number_of_input_channels: usize,
-        number_of_output_channels: usize,
-    ) -> Self {
+    /// Creates a `ScriptProcessorNode`
+    ///
+    /// # Arguments
+    ///
+    /// - `context` - Audio context in which the node will live
+    /// - `options` - node options
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `buffer_size` is not 256, 512, 1024, 2048, 4096, 8192, or 16384
+    /// - the number of input and output channels are both zero
+    /// - either of the channel counts exceed [`MAX_CHANNELS`]
+    pub fn new<C: BaseAudioContext>(context: &C, options: ScriptProcessorOptions) -> Self {
+        let ScriptProcessorOptions {
+            buffer_size,
+            number_of_input_channels,
+            number_of_output_channels,
+        } = options;
+
         assert!(
             (buffer_size / 256).is_power_of_two() && buffer_size <= 16384,
             "IndexSizeError - bufferSize must be one of: 256, 512, 1024, 2048, 4096, 8192, 16384",
