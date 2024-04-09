@@ -1,7 +1,7 @@
 //! Audio processing code that runs on the audio rendering thread
 use crate::context::{AudioNodeId, AudioParamId};
-use crate::events::{ErrorEvent, EventDispatch};
-use crate::{Event, RENDER_QUANTUM_SIZE};
+use crate::events::{AudioProcessingEvent, ErrorEvent, EventDispatch};
+use crate::{AudioBuffer, Event, RENDER_QUANTUM_SIZE};
 
 use super::{graph::Node, AudioRenderQuantum, NodeCollection};
 
@@ -55,6 +55,22 @@ impl AudioWorkletGlobalScope {
         let _ = self
             .event_sender
             .try_send(EventDispatch::ended(self.node_id.get()));
+    }
+
+    pub(crate) fn send_audio_processing_event(
+        &self,
+        input_buffer: AudioBuffer,
+        output_buffer: AudioBuffer,
+        playback_time: f64,
+    ) {
+        // sending could fail if the channel is saturated or the main thread is shutting down
+        let event = AudioProcessingEvent {
+            input_buffer,
+            output_buffer,
+            playback_time,
+        };
+        let dispatch = EventDispatch::audio_processing(self.node_id.get(), event);
+        let _ = self.event_sender.try_send(dispatch);
     }
 
     pub(crate) fn report_error(&self, error: Box<dyn Any + Send>) {

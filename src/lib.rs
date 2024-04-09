@@ -31,7 +31,7 @@ pub mod media_streams;
 pub mod node;
 
 mod events;
-pub use events::{ErrorEvent, Event, OfflineAudioCompletionEvent};
+pub use events::*;
 
 mod message_port;
 pub use message_port::MessagePort;
