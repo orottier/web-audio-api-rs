@@ -172,6 +172,8 @@ pub trait AudioProcessor: Send {
     fn has_side_effects(&self) -> bool {
         false
     }
+
+    fn before_drop(&mut self, _scope: &AudioWorkletGlobalScope) {}
 }
 
 impl std::fmt::Debug for dyn AudioProcessor {

@@ -503,6 +503,7 @@ impl Graph {
                 let mut node = self.nodes.remove(*index).into_inner();
                 self.reclaim_id_channel
                     .push(node.reclaim_id.take().unwrap());
+                node.processor.before_drop(scope);
                 drop(node);
 
                 // And remove it from the ordering after we have processed all nodes
@@ -535,6 +536,13 @@ impl Graph {
 
         // Return the output buffer of destination node
         &self.nodes.get_unchecked_mut(AudioNodeId(0)).outputs[0]
+    }
+
+    pub fn before_drop(&mut self, scope: &AudioWorkletGlobalScope) {
+        self.nodes.iter_mut().for_each(|(id, node)| {
+            scope.node_id.set(id);
+            node.get_mut().processor.before_drop(scope);
+        });
     }
 }
 

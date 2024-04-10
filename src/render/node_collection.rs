@@ -58,6 +58,14 @@ impl NodeCollection {
     }
 
     #[inline(always)]
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (AudioNodeId, &mut RefCell<Node>)> {
+        self.nodes
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, v)| v.as_mut().map(|m| (AudioNodeId(i as u64), m)))
+    }
+
+    #[inline(always)]
     pub fn contains(&self, index: AudioNodeId) -> bool {
         self.nodes[index.0 as usize].is_some()
     }
