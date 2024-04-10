@@ -320,7 +320,7 @@ impl RenderThread {
         // Update time
         let current_frame = self
             .frames_played
-            .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
+            .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::Relaxed);
         let current_time = current_frame as f64 / self.sample_rate as f64;
 
         let scope = AudioWorkletGlobalScope {
@@ -372,7 +372,7 @@ impl RenderThread {
             let max_duration = RENDER_QUANTUM_SIZE as f64 / self.sample_rate as f64;
             let load_value = duration / max_duration;
             let render_timestamp =
-                self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64;
+                self.frames_played.load(Ordering::Relaxed) as f64 / self.sample_rate as f64;
             let load_value_data = AudioRenderCapacityLoad {
                 render_timestamp,
                 load_value,
@@ -431,7 +431,7 @@ impl RenderThread {
             // update time
             let current_frame = self
                 .frames_played
-                .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
+                .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::Relaxed);
             let current_time = current_frame as f64 / self.sample_rate as f64;
 
             let scope = AudioWorkletGlobalScope {
