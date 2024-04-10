@@ -327,6 +327,7 @@ impl AudioBufferSourceNode {
     }
 
     pub fn set_loop(&mut self, value: bool) {
+        log::debug!("set_loop {} for node {:?}", value, self.registration().id());
         self.loop_state.is_looping = value;
         self.registration.post_message(ControlMessage::Loop(value));
     }
@@ -337,6 +338,11 @@ impl AudioBufferSourceNode {
     }
 
     pub fn set_loop_start(&mut self, value: f64) {
+        log::debug!(
+            "set_loop_start {} for node {:?}",
+            value,
+            self.registration().id()
+        );
         self.loop_state.start = value;
         self.registration
             .post_message(ControlMessage::LoopStart(value));
@@ -348,12 +354,18 @@ impl AudioBufferSourceNode {
     }
 
     pub fn set_loop_end(&mut self, value: f64) {
+        log::debug!(
+            "set_loop_end {} for node {:?}",
+            value,
+            self.registration().id()
+        );
         self.loop_state.end = value;
         self.registration
             .post_message(ControlMessage::LoopEnd(value));
     }
 }
 
+#[derive(Debug)]
 struct AudioBufferRendererState {
     buffer_time: Arc<AtomicF64>,
     started: bool,
@@ -374,6 +386,7 @@ impl Default for AudioBufferRendererState {
     }
 }
 
+#[derive(Debug)]
 struct AudioBufferSourceRenderer {
     start_time: f64,
     stop_time: f64,
@@ -480,6 +493,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             // @note: we need this check because this is called a until the program
             // ends, such as if the node was never removed from the graph
             if !self.ended_triggered {
+                log::debug!("stop time reached for {:?}, ending", scope.node_id.get());
                 scope.send_ended_event();
                 self.ended_triggered = true;
             }
@@ -508,11 +522,15 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // - no detune or playback_rate changes are made
         // - loop boundaries have not been changed
         if self.start_time == block_time && self.offset == 0. {
+            log::debug!("set aligned for {:?} due to start", scope.node_id.get());
             self.render_state.is_aligned = true;
         }
 
         // these two case imply resampling
         if sampling_ratio != 1. || computed_playback_rate != 1. {
+            if self.render_state.is_aligned {
+                log::debug!("set not aligned for {:?} due to ratio", scope.node_id.get());
+            }
             self.render_state.is_aligned = false;
         }
 
@@ -523,6 +541,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // by default loop_end is 0., see AudioBufferSourceOptions
         // but loop_start = 0 && loop_end = buffer.duration should go to fast track
         if loop_start != 0. || (loop_end != 0. && loop_end != self.duration) {
+            if self.render_state.is_aligned {
+                log::debug!("set not aligned for {:?} due to loop", scope.node_id.get());
+            }
             self.render_state.is_aligned = false;
         }
 
@@ -539,6 +560,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 || buffer_time + block_duration > self.duration
                 || block_time + block_duration > self.stop_time
             {
+                log::debug!(
+                    "fast path, buffer ends this block for {:?}",
+                    scope.node_id.get()
+                );
                 let end_index = if block_time + block_duration > self.stop_time
                     || buffer_time + block_duration > self.duration
                 {
@@ -669,24 +694,49 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 if !self.render_state.entered_loop {
                     // playback began before or within loop, and playhead is now past loop start
                     if self.offset < actual_loop_end && buffer_time >= actual_loop_start {
+                        log::debug!("past loop start for {:?}", scope.node_id.get());
                         self.render_state.entered_loop = true;
                     }
 
                     // playback began after loop, and playhead is now prior to the loop end
                     // @note - only possible when playback_rate < 0 (?)
                     if self.offset >= actual_loop_end && buffer_time < actual_loop_end {
+                        log::debug!("prior loop end for {:?}", scope.node_id.get());
                         self.render_state.entered_loop = true;
                     }
                 }
 
                 // check loop boundaries
                 if self.render_state.entered_loop {
+                    let mut changed = false;
+                    let actual_loop_duration = actual_loop_end - actual_loop_start;
+
                     while buffer_time >= actual_loop_end {
-                        buffer_time -= actual_loop_end - actual_loop_start;
+                        changed = true;
+                        log::debug!(
+                            "looping decrease time for {:?}, {:.3} - {:.3} = {:.3}",
+                            scope.node_id.get(),
+                            buffer_time,
+                            actual_loop_duration,
+                            buffer_time - actual_loop_duration,
+                        );
+                        buffer_time -= actual_loop_duration;
                     }
 
                     while buffer_time < actual_loop_start {
-                        buffer_time += actual_loop_end - actual_loop_start;
+                        changed = true;
+                        log::debug!(
+                            "looping increase time for {:?}, {:.3} + {:.3} = {:.3}",
+                            scope.node_id.get(),
+                            buffer_time,
+                            actual_loop_duration,
+                            buffer_time + actual_loop_duration,
+                        );
+                        buffer_time += actual_loop_duration;
+                    }
+
+                    if changed {
+                        log::debug!("AudioBufferSourceRenderer time jump: {:?}", &self);
                     }
                 }
             }
@@ -770,6 +820,12 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         };
 
         log::warn!("AudioBufferSourceRenderer: Dropping incoming message {msg:?}");
+    }
+}
+
+impl Drop for AudioBufferSourceRenderer {
+    fn drop(&mut self) {
+        log::debug!("AudioBufferSourceRenderer is dropped: {:?}", self);
     }
 }
 
