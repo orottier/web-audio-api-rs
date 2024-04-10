@@ -30,7 +30,7 @@ fn main() {
     // create a 1 second buffer filled with a sine at 200Hz
     println!("> Play sine at 200Hz created manually in an AudioBuffer");
 
-    let length = context.sample_rate() as usize;
+    let length = 4 * context.sample_rate() as usize;
     let sample_rate = context.sample_rate();
     let mut buffer = context.create_buffer(1, length, sample_rate);
     let mut sine = vec![];
@@ -44,22 +44,15 @@ fn main() {
 
     // play the buffer in a loop
     let mut src = context.create_buffer_source();
-    src.set_buffer(buffer.clone());
+    src.set_buffer(buffer);
+
     src.set_loop(true);
+    src.set_loop_start(1.1);
+    src.set_loop_end(1.15);
+    src.start();
+
     src.connect(&context.destination());
-    src.start_at(context.current_time());
-    src.stop_at(context.current_time() + 3.);
+    drop(src);
 
-    std::thread::sleep(std::time::Duration::from_millis(3500));
-
-    // play a sine at 200Hz
-    println!("> Play sine at 200Hz from an OscillatorNode");
-
-    let mut osc = context.create_oscillator();
-    osc.frequency().set_value(200.);
-    osc.connect(&context.destination());
-    osc.start_at(context.current_time());
-    osc.stop_at(context.current_time() + 3.);
-
-    std::thread::sleep(std::time::Duration::from_millis(3500));
+    std::thread::sleep(std::time::Duration::from_secs(35));
 }
