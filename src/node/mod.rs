@@ -4,13 +4,18 @@ use std::f32::consts::PI;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::context::{AudioContextRegistration, ConcreteBaseAudioContext};
-use crate::events::{ErrorEvent, Event, EventHandler, EventPayload, EventType};
+use crate::events::{ErrorEvent, EventHandler, EventPayload, EventType};
 use crate::message::ControlMessage;
 use crate::render::{
     AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
 };
 use crate::AudioBufferIter;
 
+// traits
+mod scheduled_source;
+pub use scheduled_source::*;
+
+// nodes
 mod analyser;
 pub use analyser::*;
 mod audio_buffer_source;
@@ -53,7 +58,6 @@ mod stereo_panner;
 pub use stereo_panner::*;
 mod waveshaper;
 pub use waveshaper::*;
-//use worklet::*;
 
 pub(crate) const TABLE_LENGTH_USIZE: usize = 8192;
 pub(crate) const TABLE_LENGTH_BY_4_USIZE: usize = TABLE_LENGTH_USIZE / 4;
@@ -431,61 +435,6 @@ pub trait AudioNode {
     fn clear_onprocessorerror(&self) {
         self.context()
             .clear_event_handler(EventType::ProcessorError(self.registration().id()));
-    }
-}
-
-/// Interface of source nodes, controlling start and stop times.
-/// The node will emit silence before it is started, and after it has ended.
-pub trait AudioScheduledSourceNode: AudioNode {
-    /// Play immediately
-    ///
-    /// # Panics
-    ///
-    /// Panics if the source was already started
-    fn start(&mut self);
-
-    /// Schedule playback start at given timestamp
-    ///
-    /// # Panics
-    ///
-    /// Panics if the source was already started
-    fn start_at(&mut self, when: f64);
-
-    /// Stop immediately
-    ///
-    /// # Panics
-    ///
-    /// Panics if the source was already stopped
-    fn stop(&mut self);
-
-    /// Schedule playback stop at given timestamp
-    ///
-    /// # Panics
-    ///
-    /// Panics if the source was already stopped
-    fn stop_at(&mut self, when: f64);
-
-    /// Register callback to run when the source node has stopped playing
-    ///
-    /// For all [`AudioScheduledSourceNode`]s, the ended event is dispatched when the stop time
-    /// determined by stop() is reached. For an [`AudioBufferSourceNode`], the event is also
-    /// dispatched because the duration has been reached or if the entire buffer has been played.
-    ///
-    /// Only a single event handler is active at any time. Calling this method multiple times will
-    /// override the previous event handler.
-    fn set_onended<F: FnOnce(Event) + Send + 'static>(&self, callback: F) {
-        let callback = move |_| callback(Event { type_: "ended" });
-
-        self.context().set_event_handler(
-            EventType::Ended(self.registration().id()),
-            EventHandler::Once(Box::new(callback)),
-        );
-    }
-
-    /// Unset the callback to run when the source node has stopped playing
-    fn clear_onended(&self) {
-        self.context()
-            .clear_event_handler(EventType::Ended(self.registration().id()));
     }
 }
 
