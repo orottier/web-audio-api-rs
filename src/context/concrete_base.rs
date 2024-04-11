@@ -14,6 +14,7 @@ use crate::spatial::AudioListenerParams;
 use crate::AudioListener;
 
 use crossbeam_channel::{SendError, Sender};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 
@@ -109,6 +110,8 @@ struct ConcreteBaseAudioContextInner {
     event_loop: EventLoop,
     /// Sender for events that will be handled by the EventLoop
     event_send: Sender<EventDispatch>,
+    /// Current audio graph connections
+    connections: Mutex<HashSet<(AudioNodeId, usize, AudioNodeId, usize)>>,
 }
 
 impl BaseAudioContext for ConcreteBaseAudioContext {
@@ -147,6 +150,7 @@ impl ConcreteBaseAudioContext {
             state,
             event_loop,
             event_send,
+            connections: Mutex::new(HashSet::new()),
         };
         let base = Self {
             inner: Arc::new(base_inner),
@@ -393,6 +397,11 @@ impl ConcreteBaseAudioContext {
 
     /// Connects the output of the `from` audio node to the input of the `to` audio node
     pub(crate) fn connect(&self, from: AudioNodeId, to: AudioNodeId, output: usize, input: usize) {
+        self.inner
+            .connections
+            .lock()
+            .unwrap()
+            .insert((from, output, to, input));
         let message = ControlMessage::ConnectNode {
             from,
             to,
@@ -406,6 +415,8 @@ impl ConcreteBaseAudioContext {
     ///
     /// It is not performed immediately as the `AudioNode` is not registered at this point.
     pub(super) fn queue_audio_param_connect(&self, param: &AudioParam, audio_node: AudioNodeId) {
+        // no need to store these type of connections in self.inner.connections
+
         let message = ControlMessage::ConnectNode {
             from: param.registration().id(),
             to: audio_node,
@@ -416,13 +427,32 @@ impl ConcreteBaseAudioContext {
     }
 
     /// Disconnects all outputs of the audio node that go to a specific destination node.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this node was not connected to the target node
     pub(crate) fn disconnect_from(&self, from: AudioNodeId, to: AudioNodeId) {
+        // check if the node was connected, otherwise panic
+        let mut connections = self.inner.connections.lock().unwrap();
+        let prev_len = connections.len();
+        connections.retain(|c| c.0 != from || c.2 != to);
+        let len = connections.len();
+        drop(connections);
+        if prev_len == len {
+            panic!("InvalidAccessError - attempting to disconnect unconnected nodes");
+        }
+
         let message = ControlMessage::DisconnectNode { from, to };
         self.send_control_msg(message);
     }
 
     /// Disconnects all outgoing connections from the audio node.
     pub(crate) fn disconnect(&self, from: AudioNodeId) {
+        self.inner
+            .connections
+            .lock()
+            .unwrap()
+            .retain(|c| c.0 != from);
         let message = ControlMessage::DisconnectAll { from };
         self.send_control_msg(message);
     }
@@ -470,6 +500,7 @@ impl ConcreteBaseAudioContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::OfflineAudioContext;
 
     #[test]
     fn test_provide_node_id() {
@@ -480,5 +511,30 @@ mod tests {
         id_producer.push(llq::Node::new(AudioNodeId(0)));
         assert_eq!(provider.get().0, 0); // reused
         assert_eq!(provider.get().0, 2); // newly assigned
+    }
+
+    #[test]
+    fn test_connect_disconnect() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let node1 = context.create_constant_source();
+        let node2 = context.create_gain();
+
+        node1.disconnect(); // never panic for plain disconnect calls
+
+        node1.connect(&node2);
+        node1.disconnect();
+
+        node1.connect(&node2);
+        node1.disconnect_from(&node2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_disconnect_not_existing() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let node1 = context.create_constant_source();
+        let node2 = context.create_gain();
+
+        node1.disconnect_from(&node2);
     }
 }
