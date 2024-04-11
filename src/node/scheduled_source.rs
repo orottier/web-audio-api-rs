@@ -35,8 +35,9 @@ pub trait AudioScheduledSourceNode: AudioNode {
     /// Register callback to run when the source node has stopped playing
     ///
     /// For all [`AudioScheduledSourceNode`]s, the ended event is dispatched when the stop time
-    /// determined by stop() is reached. For an [`AudioBufferSourceNode`], the event is also
-    /// dispatched because the duration has been reached or if the entire buffer has been played.
+    /// determined by stop() is reached. For an
+    /// [`AudioBufferSourceNode`](crate::node::AudioBufferSourceNode), the event is also dispatched
+    /// because the duration has been reached or if the entire buffer has been played.
     ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
