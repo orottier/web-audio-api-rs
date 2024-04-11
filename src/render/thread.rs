@@ -239,6 +239,7 @@ impl RenderThread {
         event_loop: &EventLoop,
     ) -> AudioBuffer {
         let length = context.length();
+        let sample_rate = self.sample_rate;
 
         // construct a properly sized output buffer
         let mut buffer = Vec::with_capacity(self.number_of_channels);
@@ -268,7 +269,11 @@ impl RenderThread {
             }
         }
 
-        AudioBuffer::from(buffer, self.sample_rate)
+        // call destructors of all alive nodes and handle any resulting events
+        self.unload_graph();
+        event_loop.handle_pending_events();
+
+        AudioBuffer::from(buffer, sample_rate)
     }
 
     // Render method of the `OfflineAudioContext::start_rendering`
@@ -283,6 +288,8 @@ impl RenderThread {
         mut resume_receiver: mpsc::Receiver<()>,
         event_loop: &EventLoop,
     ) -> AudioBuffer {
+        let sample_rate = self.sample_rate;
+
         // construct a properly sized output buffer
         let mut buffer = Vec::with_capacity(self.number_of_channels);
         buffer.resize_with(buffer.capacity(), || Vec::with_capacity(length));
@@ -312,7 +319,11 @@ impl RenderThread {
             }
         }
 
-        AudioBuffer::from(buffer, self.sample_rate)
+        // call destructors of all alive nodes and handle any resulting events
+        self.unload_graph();
+        event_loop.handle_pending_events();
+
+        AudioBuffer::from(buffer, sample_rate)
     }
 
     /// Render a single quantum into an AudioBuffer
@@ -320,7 +331,7 @@ impl RenderThread {
         // Update time
         let current_frame = self
             .frames_played
-            .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
+            .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::Relaxed);
         let current_time = current_frame as f64 / self.sample_rate as f64;
 
         let scope = AudioWorkletGlobalScope {
@@ -354,6 +365,21 @@ impl RenderThread {
         });
     }
 
+    /// Run destructors of all alive nodes in the audio graph
+    fn unload_graph(mut self) {
+        let current_frame = self.frames_played.load(Ordering::Relaxed);
+        let current_time = current_frame as f64 / self.sample_rate as f64;
+
+        let scope = AudioWorkletGlobalScope {
+            current_frame,
+            current_time,
+            sample_rate: self.sample_rate,
+            event_sender: self.event_sender.clone(),
+            node_id: Cell::new(AudioNodeId(0)), // placeholder value
+        };
+        self.graph.take().unwrap().before_drop(&scope);
+    }
+
     pub fn render<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
         // Collect timing information
         let render_start = Instant::now();
@@ -372,7 +398,7 @@ impl RenderThread {
             let max_duration = RENDER_QUANTUM_SIZE as f64 / self.sample_rate as f64;
             let load_value = duration / max_duration;
             let render_timestamp =
-                self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64;
+                self.frames_played.load(Ordering::Relaxed) as f64 / self.sample_rate as f64;
             let load_value_data = AudioRenderCapacityLoad {
                 render_timestamp,
                 load_value,
@@ -431,7 +457,7 @@ impl RenderThread {
             // update time
             let current_frame = self
                 .frames_played
-                .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::SeqCst);
+                .fetch_add(RENDER_QUANTUM_SIZE as u64, Ordering::Relaxed);
             let current_time = current_frame as f64 / self.sample_rate as f64;
 
             let scope = AudioWorkletGlobalScope {

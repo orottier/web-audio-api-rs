@@ -771,12 +771,22 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         log::warn!("AudioBufferSourceRenderer: Dropping incoming message {msg:?}");
     }
+
+    fn before_drop(&mut self, scope: &AudioWorkletGlobalScope) {
+        if !self.ended_triggered && scope.current_time >= self.start_time {
+            scope.send_ended_event();
+            self.ended_triggered = true;
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
     use std::f32::consts::PI;
+
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::RENDER_QUANTUM_SIZE;
@@ -1457,5 +1467,73 @@ mod tests {
         src.start();
         src.stop();
         src.stop();
+    }
+
+    #[test]
+    fn test_ended_event() {
+        let mut context = OfflineAudioContext::new(2, 44_100, 44_100.);
+        let mut src = context.create_buffer_source();
+        src.start_at(0.);
+        src.stop_at(0.5);
+
+        let ended = Arc::new(AtomicBool::new(false));
+        let ended_clone = Arc::clone(&ended);
+        src.set_onended(move |_event| {
+            ended_clone.store(true, Ordering::Relaxed);
+        });
+
+        let _ = context.start_rendering_sync();
+        assert!(ended.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_no_ended_event() {
+        let mut context = OfflineAudioContext::new(2, 44_100, 44_100.);
+        let src = context.create_constant_source();
+
+        // do not start the node
+
+        let ended = Arc::new(AtomicBool::new(false));
+        let ended_clone = Arc::clone(&ended);
+        src.set_onended(move |_event| {
+            ended_clone.store(true, Ordering::Relaxed);
+        });
+
+        let _ = context.start_rendering_sync();
+        assert!(!ended.load(Ordering::Relaxed)); // should not have triggered
+    }
+
+    #[test]
+    fn test_exact_ended_event() {
+        let mut context = OfflineAudioContext::new(2, 44_100, 44_100.);
+        let mut src = context.create_buffer_source();
+        src.start_at(0.);
+        src.stop_at(1.); // end right at the end of the offline buffer
+
+        let ended = Arc::new(AtomicBool::new(false));
+        let ended_clone = Arc::clone(&ended);
+        src.set_onended(move |_event| {
+            ended_clone.store(true, Ordering::Relaxed);
+        });
+
+        let _ = context.start_rendering_sync();
+        assert!(ended.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_implicit_ended_event() {
+        let mut context = OfflineAudioContext::new(2, 44_100, 44_100.);
+        let mut src = context.create_buffer_source();
+        src.start_at(0.);
+        // no explicit stop, so we stop at end of offline context
+
+        let ended = Arc::new(AtomicBool::new(false));
+        let ended_clone = Arc::clone(&ended);
+        src.set_onended(move |_event| {
+            ended_clone.store(true, Ordering::Relaxed);
+        });
+
+        let _ = context.start_rendering_sync();
+        assert!(ended.load(Ordering::Relaxed));
     }
 }
