@@ -426,24 +426,29 @@ impl ConcreteBaseAudioContext {
         self.inner.queued_messages.lock().unwrap().push(message);
     }
 
-    /// Disconnects all outputs of the audio node that go to a specific destination node.
-    ///
-    /// # Panics
-    ///
-    /// Panics if this node was not connected to the target node
-    pub(crate) fn disconnect_from(&self, from: AudioNodeId, to: AudioNodeId) {
+    /// Disconnects outputs of the audio node, possibly filtered by output node, input, output.
+    pub(crate) fn disconnect(
+        &self,
+        from: AudioNodeId,
+        output: Option<usize>,
+        to: Option<AudioNodeId>,
+        input: Option<usize>,
+    ) {
         // check if the node was connected, otherwise panic
         let mut has_disconnected = false;
         let mut connections = self.inner.connections.lock().unwrap();
-        connections.retain(|&(c_from, output, c_to, input)| {
-            let retain = c_from != from || c_to != to;
+        connections.retain(|&(c_from, c_output, c_to, c_input)| {
+            let retain = c_from != from
+                || c_output != output.unwrap_or(c_output)
+                || c_to != to.unwrap_or(c_to)
+                || c_input != input.unwrap_or(c_input);
             if !retain {
                 has_disconnected = true;
                 let message = ControlMessage::DisconnectNode {
                     from,
-                    to,
-                    input,
-                    output,
+                    to: c_to,
+                    input: c_input,
+                    output: c_output,
                 };
                 self.send_control_msg(message);
             }
@@ -453,51 +458,9 @@ impl ConcreteBaseAudioContext {
         // make sure to drop the MutexGuard before the panic to avoid poisoning
         drop(connections);
 
-        if !has_disconnected {
+        if !has_disconnected && to.is_some() {
             panic!("InvalidAccessError - attempting to disconnect unconnected nodes");
         }
-    }
-
-    /// Disconnects all outgoing connections from the audio node.
-    pub(crate) fn disconnect(&self, from: AudioNodeId) {
-        self.inner
-            .connections
-            .lock()
-            .unwrap()
-            .retain(|&(c_from, output, to, input)| {
-                let retain = c_from != from;
-                if !retain {
-                    let message = ControlMessage::DisconnectNode {
-                        from,
-                        to,
-                        input,
-                        output,
-                    };
-                    self.send_control_msg(message);
-                }
-                retain
-            });
-    }
-
-    /// Disconnects all outgoing connections at the given output port from the audio node.
-    pub(crate) fn disconnect_at(&self, from: AudioNodeId, output: usize) {
-        self.inner
-            .connections
-            .lock()
-            .unwrap()
-            .retain(|&(c_from, c_output, to, input)| {
-                let retain = c_from != from || c_output != output;
-                if !retain {
-                    let message = ControlMessage::DisconnectNode {
-                        from,
-                        to,
-                        input,
-                        output,
-                    };
-                    self.send_control_msg(message);
-                }
-                retain
-            });
     }
 
     /// Connect the `AudioListener` to a `PannerNode`
@@ -568,7 +531,7 @@ mod tests {
         node1.disconnect();
 
         node1.connect(&node2);
-        node1.disconnect_from(&node2);
+        node1.disconnect_dest(&node2);
     }
 
     #[test]
@@ -578,6 +541,6 @@ mod tests {
         let node1 = context.create_constant_source();
         let node2 = context.create_gain();
 
-        node1.disconnect_from(&node2);
+        node1.disconnect_dest(&node2);
     }
 }
