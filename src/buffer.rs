@@ -2,18 +2,9 @@
 use std::sync::Arc;
 
 use crate::{
-    assert_valid_channel_number, assert_valid_number_of_channels, assert_valid_sample_rate,
+    assert_valid_buffer_length, assert_valid_channel_number, assert_valid_number_of_channels,
+    assert_valid_sample_rate,
 };
-
-#[track_caller]
-#[inline(always)]
-pub(crate) fn assert_valid_length(length: usize) {
-    assert!(
-        length > 0,
-        "NotSupportedError - Invalid length: {:?} is less than or equal to minimum bound (0)",
-        length,
-    );
-}
 
 /// Options for constructing an [`AudioBuffer`]
 // dictionary AudioBufferOptions {
@@ -91,7 +82,7 @@ impl AudioBuffer {
     /// 32 being defined by the MAX_CHANNELS constant.
     pub fn new(options: AudioBufferOptions) -> Self {
         assert_valid_sample_rate(options.sample_rate);
-        assert_valid_length(options.length);
+        assert_valid_buffer_length(options.length);
         assert_valid_number_of_channels(options.number_of_channels);
 
         let silence = ChannelData::new(options.length);

@@ -190,6 +190,23 @@ pub(crate) fn assert_valid_channel_number(channel_number: usize, number_of_chann
     );
 }
 
+/// Assert that the given value number is a valid buffer length, i.e. greater than zero
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - the given value is not lower than or equal to zero
+///
+#[track_caller]
+#[inline(always)]
+pub(crate) fn assert_valid_buffer_length(length: usize) {
+    assert!(
+        length > 0,
+        "NotSupportedError - Invalid length: {:?} is less than or equal to minimum bound (0)",
+        length,
+    );
+}
+
 /// Assert that the given value number is a valid time information, i.e. greater
 /// than or equal to zero and finite.
 ///

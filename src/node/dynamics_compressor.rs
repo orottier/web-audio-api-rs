@@ -488,38 +488,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_constructor() {
-        {
-            let context = OfflineAudioContext::new(1, 0, 44_100.);
-            let compressor = DynamicsCompressorNode::new(&context, Default::default());
+    fn test_constructor_default() {
+        let context = OfflineAudioContext::new(1, 1, 44_100.);
+        let compressor = DynamicsCompressorNode::new(&context, Default::default());
 
-            assert_float_eq!(compressor.attack().value(), 0.003, abs <= 0.);
-            assert_float_eq!(compressor.knee().value(), 30., abs <= 0.);
-            assert_float_eq!(compressor.ratio().value(), 12., abs <= 0.);
-            assert_float_eq!(compressor.release().value(), 0.25, abs <= 0.);
-            assert_float_eq!(compressor.threshold().value(), -24., abs <= 0.);
-        }
+        assert_float_eq!(compressor.attack().value(), 0.003, abs <= 0.);
+        assert_float_eq!(compressor.knee().value(), 30., abs <= 0.);
+        assert_float_eq!(compressor.ratio().value(), 12., abs <= 0.);
+        assert_float_eq!(compressor.release().value(), 0.25, abs <= 0.);
+        assert_float_eq!(compressor.threshold().value(), -24., abs <= 0.);
+    }
 
-        {
-            let context = OfflineAudioContext::new(1, 0, 44_100.);
-            let compressor = DynamicsCompressorNode::new(
-                &context,
-                DynamicsCompressorOptions {
-                    attack: 0.5,
-                    knee: 12.,
-                    ratio: 1.,
-                    release: 0.75,
-                    threshold: -60.,
-                    ..DynamicsCompressorOptions::default()
-                },
-            );
+    #[test]
+    fn test_constructor_non_default() {
+        let context = OfflineAudioContext::new(1, 1, 44_100.);
+        let compressor = DynamicsCompressorNode::new(
+            &context,
+            DynamicsCompressorOptions {
+                attack: 0.5,
+                knee: 12.,
+                ratio: 1.,
+                release: 0.75,
+                threshold: -60.,
+                ..DynamicsCompressorOptions::default()
+            },
+        );
 
-            assert_float_eq!(compressor.attack().value(), 0.5, abs <= 0.);
-            assert_float_eq!(compressor.knee().value(), 12., abs <= 0.);
-            assert_float_eq!(compressor.ratio().value(), 1., abs <= 0.);
-            assert_float_eq!(compressor.release().value(), 0.75, abs <= 0.);
-            assert_float_eq!(compressor.threshold().value(), -60., abs <= 0.);
-        }
+        assert_float_eq!(compressor.attack().value(), 0.5, abs <= 0.);
+        assert_float_eq!(compressor.knee().value(), 12., abs <= 0.);
+        assert_float_eq!(compressor.ratio().value(), 1., abs <= 0.);
+        assert_float_eq!(compressor.release().value(), 0.75, abs <= 0.);
+        assert_float_eq!(compressor.threshold().value(), -60., abs <= 0.);
     }
 
     #[test]
