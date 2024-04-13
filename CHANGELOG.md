@@ -1,5 +1,13 @@
 # Version History
 
+## Version 1.0.0-rc.4 (2024-04-13)
+
+- Changed: enfore minimum 2k and maximum 384k Hertz sample rate for audio contexts
+- Added the ScriptProcessorNode
+- Fix: all events are now dispatched for OfflineAudioContext
+- Fix: BiquadFilter/IIRFilterNode freq response return NaN for invalid frequencies
+- Fix: do not allow length 0 for OfflineAudioContext and AudioBuffer
+
 ## Version 1.0.0-rc.3 (2024-04-02)
 
 - Breaking: ChannelConfigOptions is renamed to AudioNodeOptions
