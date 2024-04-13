@@ -306,6 +306,12 @@ pub trait AudioNode {
         self.context().disconnect(self.registration().id());
     }
 
+    /// Disconnects all outgoing connections at the given output port from the AudioNode.
+    fn disconnect_at(&self, output: usize) {
+        self.context()
+            .disconnect_at(self.registration().id(), output);
+    }
+
     /// The number of inputs feeding into the AudioNode. For source nodes, this will be 0.
     fn number_of_inputs(&self) -> usize;
 

@@ -151,11 +151,16 @@ impl RenderThread {
                     .unwrap()
                     .add_edge((from, output), (to, input));
             }
-            DisconnectNode { from, to } => {
-                self.graph.as_mut().unwrap().remove_edge(from, to);
-            }
-            DisconnectAll { from } => {
-                self.graph.as_mut().unwrap().remove_edges_from(from);
+            DisconnectNode {
+                from,
+                output,
+                to,
+                input,
+            } => {
+                self.graph
+                    .as_mut()
+                    .unwrap()
+                    .remove_edge((from, output), (to, input));
             }
             ControlHandleDropped { id } => {
                 self.graph.as_mut().unwrap().mark_control_handle_dropped(id);

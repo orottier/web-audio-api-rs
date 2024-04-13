@@ -459,21 +459,26 @@ mod tests {
 
     #[test]
     fn test_suspend_sync() {
+        use crate::node::ConstantSourceNode;
+        use std::sync::OnceLock;
+
         let len = RENDER_QUANTUM_SIZE * 4;
         let sample_rate = 48000_f64;
 
         let mut context = OfflineAudioContext::new(1, len, sample_rate as f32);
+        static SOURCE: OnceLock<ConstantSourceNode> = OnceLock::new();
 
         context.suspend_sync(RENDER_QUANTUM_SIZE as f64 / sample_rate, |context| {
             assert_eq!(context.state(), AudioContextState::Suspended);
             let mut src = context.create_constant_source();
             src.connect(&context.destination());
             src.start();
+            SOURCE.set(src).unwrap();
         });
 
         context.suspend_sync((3 * RENDER_QUANTUM_SIZE) as f64 / sample_rate, |context| {
             assert_eq!(context.state(), AudioContextState::Suspended);
-            context.destination().disconnect();
+            SOURCE.get().unwrap().disconnect();
         });
 
         let output = context.start_rendering_sync();

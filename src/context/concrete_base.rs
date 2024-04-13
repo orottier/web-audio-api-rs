@@ -110,7 +110,7 @@ struct ConcreteBaseAudioContextInner {
     event_loop: EventLoop,
     /// Sender for events that will be handled by the EventLoop
     event_send: Sender<EventDispatch>,
-    /// Current audio graph connections
+    /// Current audio graph connections (from node, output port, to node, input port)
     connections: Mutex<HashSet<(AudioNodeId, usize, AudioNodeId, usize)>>,
 }
 
@@ -433,17 +433,29 @@ impl ConcreteBaseAudioContext {
     /// Panics if this node was not connected to the target node
     pub(crate) fn disconnect_from(&self, from: AudioNodeId, to: AudioNodeId) {
         // check if the node was connected, otherwise panic
+        let mut has_disconnected = false;
         let mut connections = self.inner.connections.lock().unwrap();
-        let prev_len = connections.len();
-        connections.retain(|c| c.0 != from || c.2 != to);
-        let len = connections.len();
+        connections.retain(|&(c_from, output, c_to, input)| {
+            let retain = c_from != from || c_to != to;
+            if !retain {
+                has_disconnected = true;
+                let message = ControlMessage::DisconnectNode {
+                    from,
+                    to,
+                    input,
+                    output,
+                };
+                self.send_control_msg(message);
+            }
+            retain
+        });
+
+        // make sure to drop the MutexGuard before the panic to avoid poisoning
         drop(connections);
-        if prev_len == len {
+
+        if !has_disconnected {
             panic!("InvalidAccessError - attempting to disconnect unconnected nodes");
         }
-
-        let message = ControlMessage::DisconnectNode { from, to };
-        self.send_control_msg(message);
     }
 
     /// Disconnects all outgoing connections from the audio node.
@@ -452,9 +464,40 @@ impl ConcreteBaseAudioContext {
             .connections
             .lock()
             .unwrap()
-            .retain(|c| c.0 != from);
-        let message = ControlMessage::DisconnectAll { from };
-        self.send_control_msg(message);
+            .retain(|&(c_from, output, to, input)| {
+                let retain = c_from != from;
+                if !retain {
+                    let message = ControlMessage::DisconnectNode {
+                        from,
+                        to,
+                        input,
+                        output,
+                    };
+                    self.send_control_msg(message);
+                }
+                retain
+            });
+    }
+
+    /// Disconnects all outgoing connections at the given output port from the audio node.
+    pub(crate) fn disconnect_at(&self, from: AudioNodeId, output: usize) {
+        self.inner
+            .connections
+            .lock()
+            .unwrap()
+            .retain(|&(c_from, c_output, to, input)| {
+                let retain = c_from != from || c_output != output;
+                if !retain {
+                    let message = ControlMessage::DisconnectNode {
+                        from,
+                        to,
+                        input,
+                        output,
+                    };
+                    self.send_control_msg(message);
+                }
+                retain
+            });
     }
 
     /// Connect the `AudioListener` to a `PannerNode`
