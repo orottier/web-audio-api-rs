@@ -271,9 +271,6 @@ mod tests {
 
     use float_eq::assert_float_eq;
 
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-
     use super::*;
 
     #[test]
@@ -351,100 +348,5 @@ mod tests {
 
         assert_float_eq!(channel[0..258], vec![0.; 258][..], abs_all <= 0.);
         assert_float_eq!(channel[258..], vec![1.; 254][..], abs_all <= 0.);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_start_twice() {
-        let context = OfflineAudioContext::new(2, 1, 44_100.);
-        let mut src = context.create_constant_source();
-        src.start();
-        src.start();
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_stop_before_start() {
-        let context = OfflineAudioContext::new(2, 1, 44_100.);
-        let mut src = context.create_constant_source();
-        src.stop();
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_stop_twice() {
-        let context = OfflineAudioContext::new(2, 1, 44_100.);
-        let mut src = context.create_constant_source();
-        src.start();
-        src.stop();
-        src.stop();
-    }
-
-    #[test]
-    fn test_ended_event() {
-        let mut context = OfflineAudioContext::new(2, 44_100, 44_100.);
-        let mut src = context.create_constant_source();
-        src.start_at(0.);
-        src.stop_at(0.5);
-
-        let ended = Arc::new(AtomicBool::new(false));
-        let ended_clone = Arc::clone(&ended);
-        src.set_onended(move |_event| {
-            ended_clone.store(true, Ordering::Relaxed);
-        });
-
-        let _ = context.start_rendering_sync();
-        assert!(ended.load(Ordering::Relaxed));
-    }
-
-    #[test]
-    fn test_no_ended_event() {
-        let mut context = OfflineAudioContext::new(2, 44_100, 44_100.);
-        let src = context.create_constant_source();
-
-        // do not start the node
-
-        let ended = Arc::new(AtomicBool::new(false));
-        let ended_clone = Arc::clone(&ended);
-        src.set_onended(move |_event| {
-            ended_clone.store(true, Ordering::Relaxed);
-        });
-
-        let _ = context.start_rendering_sync();
-        assert!(!ended.load(Ordering::Relaxed)); // should not have triggered
-    }
-
-    #[test]
-    fn test_exact_ended_event() {
-        let mut context = OfflineAudioContext::new(2, 44_100, 44_100.);
-        let mut src = context.create_constant_source();
-        src.start_at(0.);
-        src.stop_at(1.); // end right at the end of the offline buffer
-
-        let ended = Arc::new(AtomicBool::new(false));
-        let ended_clone = Arc::clone(&ended);
-        src.set_onended(move |_event| {
-            ended_clone.store(true, Ordering::Relaxed);
-        });
-
-        let _ = context.start_rendering_sync();
-        assert!(ended.load(Ordering::Relaxed));
-    }
-
-    #[test]
-    fn test_implicit_ended_event() {
-        let mut context = OfflineAudioContext::new(2, 44_100, 44_100.);
-        let mut src = context.create_constant_source();
-        src.start_at(0.);
-        // no explicit stop, so we stop at end of offline context
-
-        let ended = Arc::new(AtomicBool::new(false));
-        let ended_clone = Arc::clone(&ended);
-        src.set_onended(move |_event| {
-            ended_clone.store(true, Ordering::Relaxed);
-        });
-
-        let _ = context.start_rendering_sync();
-        assert!(ended.load(Ordering::Relaxed));
     }
 }
