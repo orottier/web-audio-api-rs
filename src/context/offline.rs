@@ -9,7 +9,10 @@ use crate::events::{
     Event, EventDispatch, EventHandler, EventPayload, EventType, OfflineAudioCompletionEvent,
 };
 use crate::render::RenderThread;
-use crate::{assert_valid_sample_rate, RENDER_QUANTUM_SIZE};
+use crate::{
+    assert_valid_buffer_length, assert_valid_number_of_channels, assert_valid_sample_rate,
+    RENDER_QUANTUM_SIZE,
+};
 
 use crate::events::EventLoop;
 use futures_channel::{mpsc, oneshot};
@@ -72,6 +75,8 @@ impl OfflineAudioContext {
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn new(number_of_channels: usize, length: usize, sample_rate: f32) -> Self {
+        assert_valid_number_of_channels(number_of_channels);
+        assert_valid_buffer_length(length);
         assert_valid_sample_rate(sample_rate);
 
         // communication channel to the render thread,

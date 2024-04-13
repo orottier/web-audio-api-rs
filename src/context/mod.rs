@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_audio_context_registration_traits() {
-        let context = OfflineAudioContext::new(1, 0, 44100.);
+        let context = OfflineAudioContext::new(1, 1, 44100.);
         let registration = context.mock_registration();
 
         // we want to be able to ship AudioNodes to another thread, so the Registration should be
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_offline_audio_context_send_sync() {
-        let context = OfflineAudioContext::new(1, 0, 44100.);
+        let context = OfflineAudioContext::new(1, 1, 44100.);
         require_send_sync_static(context);
     }
 
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_decode_audio_data() {
-        let context = OfflineAudioContext::new(1, 0, 44100.);
+        let context = OfflineAudioContext::new(1, 1, 44100.);
         let file = std::fs::File::open("samples/sample.wav").unwrap();
         let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
@@ -195,7 +195,7 @@ mod tests {
     // disabled: symphonia cannot handle empty WAV-files
     #[allow(dead_code)]
     fn test_decode_audio_data_empty() {
-        let context = OfflineAudioContext::new(1, 0, 44100.);
+        let context = OfflineAudioContext::new(1, 1, 44100.);
         let file = std::fs::File::open("samples/empty_2c.wav").unwrap();
         let audio_buffer = context.decode_audio_data_sync(file).unwrap();
         assert_eq!(audio_buffer.length(), 0);
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_decode_audio_data_decoding_error() {
-        let context = OfflineAudioContext::new(1, 0, 44100.);
+        let context = OfflineAudioContext::new(1, 1, 44100.);
         let file = std::fs::File::open("samples/corrupt.wav").unwrap();
         assert!(context.decode_audio_data_sync(file).is_err());
     }
@@ -214,7 +214,7 @@ mod tests {
         let length = 2000;
         let sample_rate = 96_000.;
 
-        let context = OfflineAudioContext::new(1, 0, 44100.);
+        let context = OfflineAudioContext::new(1, 1, 44100.);
         let buffer = context.create_buffer(number_of_channels, length, sample_rate);
 
         assert_eq!(buffer.number_of_channels(), 3);
