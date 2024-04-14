@@ -531,13 +531,24 @@ mod tests {
         let node1 = context.create_constant_source();
         let node2 = context.create_gain();
 
+        // connection list starts empty
+        assert!(context.base().inner.connections.lock().unwrap().is_empty());
+
         node1.disconnect(); // never panic for plain disconnect calls
 
         node1.connect(&node2);
+
+        // connection should be registered
+        assert_eq!(context.base().inner.connections.lock().unwrap().len(), 1);
+
         node1.disconnect();
+        assert!(context.base().inner.connections.lock().unwrap().is_empty());
 
         node1.connect(&node2);
+        assert_eq!(context.base().inner.connections.lock().unwrap().len(), 1);
+
         node1.disconnect_dest(&node2);
+        assert!(context.base().inner.connections.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -548,5 +559,19 @@ mod tests {
         let node2 = context.create_gain();
 
         node1.disconnect_dest(&node2);
+    }
+
+    #[test]
+    fn test_mark_node_dropped() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+
+        let node1 = context.create_constant_source();
+        let node2 = context.create_gain();
+
+        node1.connect(&node2);
+        context.base().mark_node_dropped(node1.registration().id());
+
+        // dropping should clear connections administration
+        assert!(context.base().inner.connections.lock().unwrap().is_empty());
     }
 }
