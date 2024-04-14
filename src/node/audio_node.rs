@@ -245,7 +245,7 @@ pub trait AudioNode {
     /// This function will panic when
     /// - the AudioContext of the source and destination does not match
     fn connect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
-        self.connect_at(dest, 0, 0)
+        self.connect_from_output_to_input(dest, 0, 0)
     }
 
     /// Connect a specific output of this AudioNode to a specific input of another node.
@@ -256,7 +256,7 @@ pub trait AudioNode {
     /// - the AudioContext of the source and destination does not match
     /// - if the input port is out of bounds for the destination node
     /// - if the output port is out of bounds for the source node
-    fn connect_at<'a>(
+    fn connect_from_output_to_input<'a>(
         &self,
         dest: &'a dyn AudioNode,
         output: usize,
@@ -340,7 +340,7 @@ pub trait AudioNode {
     /// - the AudioContext of the source and destination does not match
     /// - if the output port is out of bounds for the source node
     /// - the source node was not connected to the destination node
-    fn disconnect_dest_output(&self, dest: &dyn AudioNode, output: usize) {
+    fn disconnect_dest_from_output(&self, dest: &dyn AudioNode, output: usize) {
         assert!(
             self.context() == dest.context(),
             "InvalidAccessError - Attempting to disconnect nodes from different contexts"
@@ -370,7 +370,12 @@ pub trait AudioNode {
     /// - if the input port is out of bounds for the destination node
     /// - if the output port is out of bounds for the source node
     /// - the source node was not connected to the destination node
-    fn disconnect_dest_output_input(&self, dest: &dyn AudioNode, output: usize, input: usize) {
+    fn disconnect_dest_from_output_to_input(
+        &self,
+        dest: &dyn AudioNode,
+        output: usize,
+        input: usize,
+    ) {
         assert!(
             self.context() == dest.context(),
             "InvalidAccessError - Attempting to disconnect nodes from different contexts"

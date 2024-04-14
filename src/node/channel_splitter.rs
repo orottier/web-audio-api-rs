@@ -265,7 +265,7 @@ mod tests {
         let splitter = context.create_channel_splitter(2);
 
         // connect the 2nd output to the destination
-        splitter.connect_at(&context.destination(), 1, 0);
+        splitter.connect_from_output_to_input(&context.destination(), 1, 0);
 
         // create buffer with sample value 1. left, value -1. right
         let audio_buffer = AudioBuffer::from(vec![vec![1.], vec![-1.]], 48000.);
