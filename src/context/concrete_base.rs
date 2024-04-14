@@ -287,17 +287,23 @@ impl ConcreteBaseAudioContext {
         self.inner.render_channel.write().unwrap()
     }
 
-    /// Inform render thread that the control thread `AudioNode` no langer has any handles
     pub(super) fn mark_node_dropped(&self, id: AudioNodeId) {
-        // do not drop magic nodes
-        let magic = id == DESTINATION_NODE_ID
-            || id == LISTENER_NODE_ID
-            || LISTENER_PARAM_IDS.contains(&id.0);
-
-        if !magic {
-            let message = ControlMessage::ControlHandleDropped { id };
-            self.send_control_msg(message);
+        // Ignore magic nodes
+        if id == DESTINATION_NODE_ID || id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id.0)
+        {
+            return;
         }
+
+        // Inform render thread that the control thread AudioNode no langer has any handles
+        let message = ControlMessage::ControlHandleDropped { id };
+        self.send_control_msg(message);
+
+        // Clear the connection administration for this node, the node id may be recycled later
+        self.inner
+            .connections
+            .lock()
+            .unwrap()
+            .retain(|&(from, _output, to, _input)| from != id && to != id);
     }
 
     /// Inform render thread that this node can act as a cycle breaker
