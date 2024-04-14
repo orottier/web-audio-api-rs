@@ -294,7 +294,7 @@ impl ConcreteBaseAudioContext {
             return;
         }
 
-        // Inform render thread that the control thread AudioNode no langer has any handles
+        // Inform render thread that the control thread AudioNode no longer has any handles
         let message = ControlMessage::ControlHandleDropped { id };
         self.send_control_msg(message);
 
