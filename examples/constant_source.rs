@@ -33,7 +33,7 @@ fn main() {
     // left branch
     let gain_left = context.create_gain();
     gain_left.gain().set_value(0.);
-    gain_left.connect_at(&merger, 0, 0);
+    gain_left.connect_from_output_to_input(&merger, 0, 0);
 
     let mut src_left = context.create_oscillator();
     src_left.frequency().set_value(200.);
@@ -43,7 +43,7 @@ fn main() {
     // right branch
     let gain_right = context.create_gain();
     gain_right.gain().set_value(0.);
-    gain_right.connect_at(&merger, 0, 1);
+    gain_right.connect_from_output_to_input(&merger, 0, 1);
 
     let mut src_right = context.create_oscillator();
     src_right.frequency().set_value(300.);

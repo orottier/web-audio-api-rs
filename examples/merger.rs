@@ -46,9 +46,9 @@ fn main() {
     let merger = context.create_channel_merger(2);
 
     // connect left osc to left input of the merger
-    left.connect_at(&merger, 0, 0);
+    left.connect_from_output_to_input(&merger, 0, 0);
     // connect right osc to left input of the merger
-    right.connect_at(&merger, 0, 1);
+    right.connect_from_output_to_input(&merger, 0, 1);
 
     // Connect the merger to speakers
     merger.connect(&context.destination());

@@ -14,6 +14,7 @@ use crate::spatial::AudioListenerParams;
 use crate::AudioListener;
 
 use crossbeam_channel::{SendError, Sender};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 
@@ -109,6 +110,8 @@ struct ConcreteBaseAudioContextInner {
     event_loop: EventLoop,
     /// Sender for events that will be handled by the EventLoop
     event_send: Sender<EventDispatch>,
+    /// Current audio graph connections (from node, output port, to node, input port)
+    connections: Mutex<HashSet<(AudioNodeId, usize, AudioNodeId, usize)>>,
 }
 
 impl BaseAudioContext for ConcreteBaseAudioContext {
@@ -147,6 +150,7 @@ impl ConcreteBaseAudioContext {
             state,
             event_loop,
             event_send,
+            connections: Mutex::new(HashSet::new()),
         };
         let base = Self {
             inner: Arc::new(base_inner),
@@ -283,17 +287,23 @@ impl ConcreteBaseAudioContext {
         self.inner.render_channel.write().unwrap()
     }
 
-    /// Inform render thread that the control thread `AudioNode` no langer has any handles
     pub(super) fn mark_node_dropped(&self, id: AudioNodeId) {
-        // do not drop magic nodes
-        let magic = id == DESTINATION_NODE_ID
-            || id == LISTENER_NODE_ID
-            || LISTENER_PARAM_IDS.contains(&id.0);
-
-        if !magic {
-            let message = ControlMessage::ControlHandleDropped { id };
-            self.send_control_msg(message);
+        // Ignore magic nodes
+        if id == DESTINATION_NODE_ID || id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id.0)
+        {
+            return;
         }
+
+        // Inform render thread that the control thread AudioNode no longer has any handles
+        let message = ControlMessage::ControlHandleDropped { id };
+        self.send_control_msg(message);
+
+        // Clear the connection administration for this node, the node id may be recycled later
+        self.inner
+            .connections
+            .lock()
+            .unwrap()
+            .retain(|&(from, _output, to, _input)| from != id && to != id);
     }
 
     /// Inform render thread that this node can act as a cycle breaker
@@ -393,6 +403,11 @@ impl ConcreteBaseAudioContext {
 
     /// Connects the output of the `from` audio node to the input of the `to` audio node
     pub(crate) fn connect(&self, from: AudioNodeId, to: AudioNodeId, output: usize, input: usize) {
+        self.inner
+            .connections
+            .lock()
+            .unwrap()
+            .insert((from, output, to, input));
         let message = ControlMessage::ConnectNode {
             from,
             to,
@@ -406,6 +421,8 @@ impl ConcreteBaseAudioContext {
     ///
     /// It is not performed immediately as the `AudioNode` is not registered at this point.
     pub(super) fn queue_audio_param_connect(&self, param: &AudioParam, audio_node: AudioNodeId) {
+        // no need to store these type of connections in self.inner.connections
+
         let message = ControlMessage::ConnectNode {
             from: param.registration().id(),
             to: audio_node,
@@ -415,16 +432,41 @@ impl ConcreteBaseAudioContext {
         self.inner.queued_messages.lock().unwrap().push(message);
     }
 
-    /// Disconnects all outputs of the audio node that go to a specific destination node.
-    pub(crate) fn disconnect_from(&self, from: AudioNodeId, to: AudioNodeId) {
-        let message = ControlMessage::DisconnectNode { from, to };
-        self.send_control_msg(message);
-    }
+    /// Disconnects outputs of the audio node, possibly filtered by output node, input, output.
+    pub(crate) fn disconnect(
+        &self,
+        from: AudioNodeId,
+        output: Option<usize>,
+        to: Option<AudioNodeId>,
+        input: Option<usize>,
+    ) {
+        // check if the node was connected, otherwise panic
+        let mut has_disconnected = false;
+        let mut connections = self.inner.connections.lock().unwrap();
+        connections.retain(|&(c_from, c_output, c_to, c_input)| {
+            let retain = c_from != from
+                || c_output != output.unwrap_or(c_output)
+                || c_to != to.unwrap_or(c_to)
+                || c_input != input.unwrap_or(c_input);
+            if !retain {
+                has_disconnected = true;
+                let message = ControlMessage::DisconnectNode {
+                    from,
+                    to: c_to,
+                    input: c_input,
+                    output: c_output,
+                };
+                self.send_control_msg(message);
+            }
+            retain
+        });
 
-    /// Disconnects all outgoing connections from the audio node.
-    pub(crate) fn disconnect(&self, from: AudioNodeId) {
-        let message = ControlMessage::DisconnectAll { from };
-        self.send_control_msg(message);
+        // make sure to drop the MutexGuard before the panic to avoid poisoning
+        drop(connections);
+
+        if !has_disconnected && to.is_some() {
+            panic!("InvalidAccessError - attempting to disconnect unconnected nodes");
+        }
     }
 
     /// Connect the `AudioListener` to a `PannerNode`
@@ -470,6 +512,7 @@ impl ConcreteBaseAudioContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::OfflineAudioContext;
 
     #[test]
     fn test_provide_node_id() {
@@ -480,5 +523,55 @@ mod tests {
         id_producer.push(llq::Node::new(AudioNodeId(0)));
         assert_eq!(provider.get().0, 0); // reused
         assert_eq!(provider.get().0, 2); // newly assigned
+    }
+
+    #[test]
+    fn test_connect_disconnect() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let node1 = context.create_constant_source();
+        let node2 = context.create_gain();
+
+        // connection list starts empty
+        assert!(context.base().inner.connections.lock().unwrap().is_empty());
+
+        node1.disconnect(); // never panic for plain disconnect calls
+
+        node1.connect(&node2);
+
+        // connection should be registered
+        assert_eq!(context.base().inner.connections.lock().unwrap().len(), 1);
+
+        node1.disconnect();
+        assert!(context.base().inner.connections.lock().unwrap().is_empty());
+
+        node1.connect(&node2);
+        assert_eq!(context.base().inner.connections.lock().unwrap().len(), 1);
+
+        node1.disconnect_dest(&node2);
+        assert!(context.base().inner.connections.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_disconnect_not_existing() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let node1 = context.create_constant_source();
+        let node2 = context.create_gain();
+
+        node1.disconnect_dest(&node2);
+    }
+
+    #[test]
+    fn test_mark_node_dropped() {
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+
+        let node1 = context.create_constant_source();
+        let node2 = context.create_gain();
+
+        node1.connect(&node2);
+        context.base().mark_node_dropped(node1.registration().id());
+
+        // dropping should clear connections administration
+        assert!(context.base().inner.connections.lock().unwrap().is_empty());
     }
 }

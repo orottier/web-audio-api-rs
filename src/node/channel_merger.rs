@@ -213,12 +213,12 @@ mod tests {
 
         let mut src1 = context.create_constant_source();
         src1.offset().set_value(2.);
-        src1.connect_at(&merger, 0, 0);
+        src1.connect_from_output_to_input(&merger, 0, 0);
         src1.start();
 
         let mut src2 = context.create_constant_source();
         src2.offset().set_value(3.);
-        src2.connect_at(&merger, 0, 1);
+        src2.connect_from_output_to_input(&merger, 0, 1);
         src2.start();
 
         let buffer = context.start_rendering_sync();
@@ -242,12 +242,12 @@ mod tests {
 
         let mut src1 = context.create_constant_source();
         src1.offset().set_value(2.);
-        src1.connect_at(&merger, 0, 0);
+        src1.connect_from_output_to_input(&merger, 0, 0);
         src1.start();
 
         let mut src2 = context.create_constant_source();
         src2.offset().set_value(3.);
-        src2.connect_at(&merger, 0, 1);
+        src2.connect_from_output_to_input(&merger, 0, 1);
         src2.start();
 
         context.suspend_sync(disconnect_at, move |_| src2.disconnect());

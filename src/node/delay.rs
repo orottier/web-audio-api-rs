@@ -127,7 +127,7 @@ impl AudioNode for DelayNode {
     }
 
     /// Connect a specific output of this AudioNode to a specific input of another node.
-    fn connect_at<'a>(
+    fn connect_from_output_to_input<'a>(
         &self,
         dest: &'a dyn AudioNode,
         output: usize,
@@ -160,22 +160,117 @@ impl AudioNode for DelayNode {
         dest
     }
 
+    /// Disconnects all outgoing connections from the AudioNode.
+    fn disconnect(&self) {
+        self.context()
+            .disconnect(self.reader_registration.id(), None, None, None);
+    }
+
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
-    fn disconnect_from<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
+    ///
+    /// # Panics
+    ///
+    /// This function will panic when
+    /// - the AudioContext of the source and destination does not match
+    /// - the source node was not connected to the destination node
+    fn disconnect_dest(&self, dest: &dyn AudioNode) {
         assert!(
             self.context() == dest.context(),
             "InvalidAccessError - Attempting to disconnect nodes from different contexts"
         );
 
-        self.context()
-            .disconnect_from(self.reader_registration.id(), dest.registration().id());
-
-        dest
+        self.context().disconnect(
+            self.reader_registration.id(),
+            None,
+            Some(dest.registration().id()),
+            None,
+        );
     }
 
-    /// Disconnects all outgoing connections from the AudioNode.
-    fn disconnect(&self) {
-        self.context().disconnect(self.reader_registration.id());
+    /// Disconnects all outgoing connections at the given output port from the AudioNode.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic when
+    /// - if the output port is out of bounds for this node
+    fn disconnect_output(&self, output: usize) {
+        assert!(
+            self.number_of_outputs() > output,
+            "IndexSizeError - output port {} is out of bounds",
+            output
+        );
+
+        self.context()
+            .disconnect(self.reader_registration.id(), Some(output), None, None);
+    }
+
+    /// Disconnects a specific output of the AudioNode to a specific destination AudioNode
+    ///
+    /// # Panics
+    ///
+    /// This function will panic when
+    /// - the AudioContext of the source and destination does not match
+    /// - if the output port is out of bounds for the source node
+    /// - the source node was not connected to the destination node
+    fn disconnect_dest_from_output(&self, dest: &dyn AudioNode, output: usize) {
+        assert!(
+            self.context() == dest.context(),
+            "InvalidAccessError - Attempting to disconnect nodes from different contexts"
+        );
+
+        assert!(
+            self.number_of_outputs() > output,
+            "IndexSizeError - output port {} is out of bounds",
+            output
+        );
+
+        self.context().disconnect(
+            self.reader_registration.id(),
+            Some(output),
+            Some(dest.registration().id()),
+            None,
+        );
+    }
+
+    /// Disconnects a specific output of the AudioNode to a specific input of some destination
+    /// AudioNode
+    ///
+    /// # Panics
+    ///
+    /// This function will panic when
+    /// - the AudioContext of the source and destination does not match
+    /// - if the input port is out of bounds for the destination node
+    /// - if the output port is out of bounds for the source node
+    /// - the source node was not connected to the destination node
+    fn disconnect_dest_from_output_to_input(
+        &self,
+        dest: &dyn AudioNode,
+        output: usize,
+        input: usize,
+    ) {
+        assert!(
+            self.context() == dest.context(),
+            "InvalidAccessError - Attempting to disconnect nodes from different contexts"
+        );
+
+        assert!(
+            self.number_of_outputs() > output,
+            "IndexSizeError - output port {} is out of bounds",
+            output
+        );
+
+        assert!(
+            dest.number_of_inputs() > input,
+            "IndexSizeError - input port {} is out of bounds",
+            input
+        );
+
+        self.context().disconnect(
+            self.reader_registration.id(),
+            Some(output),
+            Some(dest.registration().id()),
+            Some(input),
+        );
     }
 }
 

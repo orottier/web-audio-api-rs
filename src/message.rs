@@ -28,10 +28,12 @@ pub(crate) enum ControlMessage {
     },
 
     /// Clear the connection between two given nodes in the audio graph
-    DisconnectNode { from: AudioNodeId, to: AudioNodeId },
-
-    /// Disconnect this node from the audio graph (drop all its connections)
-    DisconnectAll { from: AudioNodeId },
+    DisconnectNode {
+        from: AudioNodeId,
+        to: AudioNodeId,
+        input: usize,
+        output: usize,
+    },
 
     /// Notify the render thread this node is dropped in the control thread
     ControlHandleDropped { id: AudioNodeId },

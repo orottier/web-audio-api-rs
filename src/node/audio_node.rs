@@ -245,7 +245,7 @@ pub trait AudioNode {
     /// This function will panic when
     /// - the AudioContext of the source and destination does not match
     fn connect<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
-        self.connect_at(dest, 0, 0)
+        self.connect_from_output_to_input(dest, 0, 0)
     }
 
     /// Connect a specific output of this AudioNode to a specific input of another node.
@@ -256,7 +256,7 @@ pub trait AudioNode {
     /// - the AudioContext of the source and destination does not match
     /// - if the input port is out of bounds for the destination node
     /// - if the output port is out of bounds for the source node
-    fn connect_at<'a>(
+    fn connect_from_output_to_input<'a>(
         &self,
         dest: &'a dyn AudioNode,
         output: usize,
@@ -288,22 +288,117 @@ pub trait AudioNode {
         dest
     }
 
+    /// Disconnects all outgoing connections from the AudioNode.
+    fn disconnect(&self) {
+        self.context()
+            .disconnect(self.registration().id(), None, None, None);
+    }
+
     /// Disconnects all outputs of the AudioNode that go to a specific destination AudioNode.
-    fn disconnect_from<'a>(&self, dest: &'a dyn AudioNode) -> &'a dyn AudioNode {
+    ///
+    /// # Panics
+    ///
+    /// This function will panic when
+    /// - the AudioContext of the source and destination does not match
+    /// - the source node was not connected to the destination node
+    fn disconnect_dest(&self, dest: &dyn AudioNode) {
         assert!(
             self.context() == dest.context(),
             "InvalidAccessError - Attempting to disconnect nodes from different contexts"
         );
 
-        self.context()
-            .disconnect_from(self.registration().id(), dest.registration().id());
-
-        dest
+        self.context().disconnect(
+            self.registration().id(),
+            None,
+            Some(dest.registration().id()),
+            None,
+        );
     }
 
-    /// Disconnects all outgoing connections from the AudioNode.
-    fn disconnect(&self) {
-        self.context().disconnect(self.registration().id());
+    /// Disconnects all outgoing connections at the given output port from the AudioNode.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic when
+    /// - if the output port is out of bounds for this node
+    fn disconnect_output(&self, output: usize) {
+        assert!(
+            self.number_of_outputs() > output,
+            "IndexSizeError - output port {} is out of bounds",
+            output
+        );
+
+        self.context()
+            .disconnect(self.registration().id(), Some(output), None, None);
+    }
+
+    /// Disconnects a specific output of the AudioNode to a specific destination AudioNode
+    ///
+    /// # Panics
+    ///
+    /// This function will panic when
+    /// - the AudioContext of the source and destination does not match
+    /// - if the output port is out of bounds for the source node
+    /// - the source node was not connected to the destination node
+    fn disconnect_dest_from_output(&self, dest: &dyn AudioNode, output: usize) {
+        assert!(
+            self.context() == dest.context(),
+            "InvalidAccessError - Attempting to disconnect nodes from different contexts"
+        );
+
+        assert!(
+            self.number_of_outputs() > output,
+            "IndexSizeError - output port {} is out of bounds",
+            output
+        );
+
+        self.context().disconnect(
+            self.registration().id(),
+            Some(output),
+            Some(dest.registration().id()),
+            None,
+        );
+    }
+
+    /// Disconnects a specific output of the AudioNode to a specific input of some destination
+    /// AudioNode
+    ///
+    /// # Panics
+    ///
+    /// This function will panic when
+    /// - the AudioContext of the source and destination does not match
+    /// - if the input port is out of bounds for the destination node
+    /// - if the output port is out of bounds for the source node
+    /// - the source node was not connected to the destination node
+    fn disconnect_dest_from_output_to_input(
+        &self,
+        dest: &dyn AudioNode,
+        output: usize,
+        input: usize,
+    ) {
+        assert!(
+            self.context() == dest.context(),
+            "InvalidAccessError - Attempting to disconnect nodes from different contexts"
+        );
+
+        assert!(
+            self.number_of_outputs() > output,
+            "IndexSizeError - output port {} is out of bounds",
+            output
+        );
+
+        assert!(
+            dest.number_of_inputs() > input,
+            "IndexSizeError - input port {} is out of bounds",
+            input
+        );
+
+        self.context().disconnect(
+            self.registration().id(),
+            Some(output),
+            Some(dest.registration().id()),
+            Some(input),
+        );
     }
 
     /// The number of inputs feeding into the AudioNode. For source nodes, this will be 0.

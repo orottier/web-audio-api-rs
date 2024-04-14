@@ -212,28 +212,13 @@ impl Graph {
         self.ordered.clear(); // void current ordering
     }
 
-    pub fn remove_edge(&mut self, source: AudioNodeId, dest: AudioNodeId) {
+    pub fn remove_edge(&mut self, source: (AudioNodeId, usize), dest: (AudioNodeId, usize)) {
         self.nodes
-            .get_unchecked_mut(source)
+            .get_unchecked_mut(source.0)
             .outgoing_edges
-            .retain(|edge| edge.other_id != dest);
-
-        self.ordered.clear(); // void current ordering
-    }
-
-    pub fn remove_edges_from(&mut self, source: AudioNodeId) {
-        // Remove outgoing edges
-        self.nodes.get_unchecked_mut(source).outgoing_edges.clear();
-
-        // Remove incoming edges - we need to traverse all nodes
-        self.nodes.values_mut().for_each(|node| {
-            // Retain edge when
-            // - not connected to this node, or
-            // - when this is an audioparam edge (only disconnect true audio nodes)
-            node.get_mut()
-                .outgoing_edges
-                .retain(|edge| edge.other_id != source || edge.other_index == usize::MAX);
-        });
+            .retain(|edge| {
+                edge.other_id != dest.0 || edge.self_index != source.1 || edge.other_index != dest.1
+            });
 
         self.ordered.clear(); // void current ordering
     }
@@ -635,7 +620,7 @@ mod tests {
         assert!(pos2 < pos1); // node 1 depends on node 2
 
         // Detach node 1 (and thus node 2) from the root node
-        graph.remove_edge(AudioNodeId(1), AudioNodeId(0));
+        graph.remove_edge((AudioNodeId(1), 0), (AudioNodeId(0), 0));
         graph.order_nodes();
 
         // sorting is not deterministic, but this should uphold:
@@ -651,45 +636,6 @@ mod tests {
             .position(|&n| n == AudioNodeId(2))
             .unwrap();
         assert!(pos2 < pos1); // node 1 depends on node 2
-    }
-
-    #[test]
-    fn test_remove_all() {
-        let mut graph = Graph::new(llq::Queue::new().split().0);
-
-        let node = Box::new(TestNode { tail_time: false });
-        add_node(&mut graph, 0, node.clone());
-        add_node(&mut graph, 1, node.clone());
-        add_node(&mut graph, 2, node);
-
-        // link 1->0, 1->2 and 2->0
-        add_edge(&mut graph, 1, 0);
-        add_edge(&mut graph, 1, 2);
-        add_edge(&mut graph, 2, 0);
-
-        graph.order_nodes();
-
-        assert_eq!(
-            graph.ordered,
-            vec![AudioNodeId(1), AudioNodeId(2), AudioNodeId(0)]
-        );
-
-        graph.remove_edges_from(AudioNodeId(1));
-        graph.order_nodes();
-
-        // sorting is not deterministic, but this should uphold:
-        assert_eq!(graph.ordered.len(), 3); // all nodes present
-        let pos0 = graph
-            .ordered
-            .iter()
-            .position(|&n| n == AudioNodeId(0))
-            .unwrap();
-        let pos2 = graph
-            .ordered
-            .iter()
-            .position(|&n| n == AudioNodeId(2))
-            .unwrap();
-        assert!(pos2 < pos0); // node 1 depends on node 0
     }
 
     #[test]
