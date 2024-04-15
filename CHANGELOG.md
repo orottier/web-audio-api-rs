@@ -1,5 +1,13 @@
 # Version History
 
+## Version 0.43.0 / 1.0.0-rc.5 (2024-04-15)
+
+- Changed: renamed AudioNode::connect_at to connect_from_output_to_input
+- Changed: renamed AudioNode::disconnect_from to disconnect_dest
+- Added AudioNode::disconnect_output and disconnect_dest_from_output(to_input)
+- Fix: AudioNode::disconnect() would clear all connections instead of only outgoing ones
+- Fix: A panic is now thrown when attempting to disconnect an unconnected node
+
 ## Version 1.0.0-rc.4 (2024-04-13)
 
 - Changed: enforce minimum 2k and maximum 384k Hertz sample rate for audio contexts
