@@ -367,10 +367,18 @@ impl RenderThread {
         self.render_inner(output_buffer);
 
         // calculate load value and ship to control thread
+        let duration = render_start.elapsed().as_micros() as f64 / 1E6;
+        let max_duration = RENDER_QUANTUM_SIZE as f64 / self.sample_rate as f64;
+        let load_value = duration / max_duration;
+
+        if load_value > 1.0 {
+            println!("Excessive load in render thread: {}", load_value);
+            println!("{:#?}", &self);
+            println!("{:?}", &self.graph);
+            panic!("abort render thread due to load");
+        }
+
         if let Some(load_value_sender) = &self.load_value_sender {
-            let duration = render_start.elapsed().as_micros() as f64 / 1E6;
-            let max_duration = RENDER_QUANTUM_SIZE as f64 / self.sample_rate as f64;
-            let load_value = duration / max_duration;
             let render_timestamp =
                 self.frames_played.load(Ordering::SeqCst) as f64 / self.sample_rate as f64;
             let load_value_data = AudioRenderCapacityLoad {
