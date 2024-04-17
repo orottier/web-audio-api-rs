@@ -52,6 +52,15 @@ pub struct AudioProcessingEvent {
     /// The time when the audio will be played in the same time coordinate system as the
     /// AudioContext's currentTime.
     pub playback_time: f64,
+    pub(crate) registration: Option<Arc<crate::context::AudioContextRegistration>>,
+}
+
+impl Drop for AudioProcessingEvent {
+    fn drop(&mut self) {
+        if let Some(registration) = self.registration.take() {
+            registration.post_message(self.output_buffer.clone());
+        }
+    }
 }
 
 /// The OfflineAudioCompletionEvent Event interface

@@ -7,6 +7,7 @@ use crate::render::{
 use crate::{AudioBuffer, RENDER_QUANTUM_SIZE};
 
 use std::any::Any;
+use std::sync::Arc;
 
 /// Options for constructing an [`ScriptProcessorNode`]
 #[derive(Clone, Debug)]
@@ -139,18 +140,19 @@ impl ScriptProcessorNode {
     ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
-    pub fn set_onaudioprocess<F: FnMut(&mut AudioProcessingEvent) + Send + 'static>(
+    pub fn set_onaudioprocess<F: FnMut(AudioProcessingEvent) + Send + 'static>(
         &self,
         mut callback: F,
     ) {
-        let registration = self.registration.clone();
+        // TODO, hack: use Arc to prevent drop of AudioContextRegistration
+        let registration = Arc::new(self.registration.clone());
         let callback = move |v| {
             let mut payload = match v {
                 EventPayload::AudioProcessing(v) => v,
                 _ => unreachable!(),
             };
-            callback(&mut payload);
-            registration.post_message(payload.output_buffer);
+            payload.registration = Some(Arc::clone(&registration));
+            callback(payload);
         };
 
         self.context().set_event_handler(
@@ -301,7 +303,7 @@ mod tests {
 
         let node = context.create_script_processor(BUFFER_SIZE, 0, 1);
         node.connect(&context.destination());
-        node.set_onaudioprocess(|e| {
+        node.set_onaudioprocess(|mut e| {
             e.output_buffer.get_channel_data_mut(0).fill(1.); // set all samples to 1.
         });
 
