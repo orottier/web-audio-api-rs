@@ -422,6 +422,7 @@ impl AudioContext {
     /// * The audio device is not available
     /// * For a `BackendSpecificError`
     pub async fn suspend(&self) {
+        log::debug!("suspend called");
         // First, pause rendering via a control message
         let (sender, receiver) = oneshot::channel();
         let notify = OneshotNotify::Async(sender);
@@ -430,10 +431,13 @@ impl AudioContext {
 
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
+        log::debug!("Supending audio graph, waiting for signal..");
         receiver.await.unwrap();
 
         // Then ask the audio host to suspend the stream
+        log::debug!("Supended audio graph. Suspending audio stream..");
         self.backend_manager.lock().unwrap().suspend();
+        log::debug!("Supended audio stream");
     }
 
     /// Resumes the progression of time in an audio context that has previously been
@@ -502,6 +506,7 @@ impl AudioContext {
     /// * The audio device is not available
     /// * For a `BackendSpecificError`
     pub fn suspend_sync(&self) {
+        log::debug!("suspend_sync called");
         // First, pause rendering via a control message
         let (sender, receiver) = crossbeam_channel::bounded(0);
         let notify = OneshotNotify::Sync(sender);
@@ -510,10 +515,13 @@ impl AudioContext {
 
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
+        log::debug!("Supending audio graph, waiting for signal..");
         receiver.recv().ok();
+        log::debug!("Supended audio graph. Suspending audio stream..");
 
         // Then ask the audio host to suspend the stream
         self.backend_manager.lock().unwrap().suspend();
+        log::debug!("Supended audio stream");
     }
 
     /// Resumes the progression of time in an audio context that has previously been

@@ -13,7 +13,7 @@ use crate::spatial::AudioListenerParams;
 
 use crate::AudioListener;
 
-use crossbeam_channel::{SendError, Sender};
+use crossbeam_channel::{SendError, Sender, TrySendError};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
@@ -272,9 +272,14 @@ impl ConcreteBaseAudioContext {
     /// emitted.
     pub(crate) fn send_control_msg(&self, msg: ControlMessage) {
         if self.state() != AudioContextState::Closed {
-            let result = self.inner.render_channel.read().unwrap().send(msg);
-            if result.is_err() {
-                log::warn!("Discarding control message - render thread is closed");
+            match self.inner.render_channel.read().unwrap().try_send(msg) {
+                Ok(()) => {}
+                Err(TrySendError::Full(_m)) => {
+                    panic!("Aborting control thread, message channel full")
+                }
+                Err(TrySendError::Disconnected(_m)) => {
+                    log::warn!("Discarding control message - render thread is closed");
+                }
             }
         }
     }
