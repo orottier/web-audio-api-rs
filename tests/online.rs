@@ -285,6 +285,7 @@ fn test_double_close() {
 #[test]
 fn test_suspend_then_close() {
     let options = AudioContextOptions {
+        sink_id: "none".into(),
         ..AudioContextOptions::default()
     };
     let context = AudioContext::new(options);
