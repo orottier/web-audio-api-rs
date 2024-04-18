@@ -351,10 +351,8 @@ impl ConcreteBaseAudioContext {
 
     /// Updates state of current context
     pub(super) fn set_state(&self, state: AudioContextState) {
-        // Only to be used from OfflineAudioContext, the online one should emit the state changes
-        // from the render thread
-        debug_assert!(self.offline());
-
+        // Only used from OfflineAudioContext or suspended AudioContext, otherwise the state
+        // changed ar spawned from the render thread
         let current_state = self.state();
         if current_state != state {
             self.inner.state.store(state as u8, Ordering::Release);

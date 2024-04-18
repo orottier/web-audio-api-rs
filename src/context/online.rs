@@ -435,8 +435,15 @@ impl AudioContext {
     /// * The audio device is not available
     /// * For a `BackendSpecificError`
     pub async fn suspend(&self) {
+        // Don't lock the backend manager because we can't hold is across the await point
         log::debug!("Suspend called");
-        // First, pause rendering via a control message
+
+        if self.state() != AudioContextState::Running {
+            log::debug!("Suspend no-op - context is not running");
+            return;
+        }
+
+        // Pause rendering via a control message
         let (sender, receiver) = oneshot::channel();
         let notify = OneshotNotify::Async(sender);
         self.base
@@ -450,6 +457,7 @@ impl AudioContext {
         // Then ask the audio host to suspend the stream
         log::debug!("Suspended audio graph. Suspending audio stream..");
         self.backend_manager.lock().unwrap().suspend();
+
         log::debug!("Suspended audio stream");
     }
 
@@ -462,10 +470,19 @@ impl AudioContext {
     ///
     /// * The audio device is not available
     /// * For a `BackendSpecificError`
+    #[allow(clippy::await_holding_lock)] // false positive due to explicit drop
     pub async fn resume(&self) {
-        log::debug!("Resume called");
-        // First ask the audio host to resume the stream
-        self.backend_manager.lock().unwrap().resume();
+        // Lock the backend manager mutex to avoid concurrent calls
+        log::debug!("Resume called, locking backend manager");
+        let backend_manager_guard = self.backend_manager.lock().unwrap();
+
+        if self.state() != AudioContextState::Suspended {
+            log::debug!("Resume no-op - context is not suspended");
+            return;
+        }
+
+        // Ask the audio host to resume the stream
+        backend_manager_guard.resume();
 
         // Then, ask to resume rendering via a control message
         log::debug!("Resumed audio stream, waking audio graph");
@@ -473,6 +490,9 @@ impl AudioContext {
         let notify = OneshotNotify::Async(sender);
         self.base
             .send_control_msg(ControlMessage::Resume { notify });
+
+        // Drop the Mutex guard so we won't hold it across an await
+        drop(backend_manager_guard);
 
         // Wait for the render thread to have processed the resume message
         // The AudioContextState will be updated by the render thread.
@@ -489,17 +509,28 @@ impl AudioContext {
     ///
     /// Will panic when this function is called multiple times
     pub async fn close(&self) {
+        // Don't lock the backend manager because we can't hold is across the await point
         log::debug!("Close called");
 
-        // First, stop rendering via a control message
-        let (sender, receiver) = oneshot::channel();
-        let notify = OneshotNotify::Async(sender);
-        self.base.send_control_msg(ControlMessage::Close { notify });
+        if self.state() == AudioContextState::Closed {
+            log::debug!("Close no-op - context is already closed");
+            return;
+        }
 
-        // Wait for the render thread to have processed the suspend message.
-        // The AudioContextState will be updated by the render thread.
-        log::debug!("Suspending audio graph, waiting for signal..");
-        receiver.await.unwrap();
+        if self.state() == AudioContextState::Running {
+            // First, stop rendering via a control message
+            let (sender, receiver) = oneshot::channel();
+            let notify = OneshotNotify::Async(sender);
+            self.base.send_control_msg(ControlMessage::Close { notify });
+
+            // Wait for the render thread to have processed the suspend message.
+            // The AudioContextState will be updated by the render thread.
+            log::debug!("Suspending audio graph, waiting for signal..");
+            receiver.await.unwrap();
+        } else {
+            // if the context is not running, change the state manually
+            self.base.set_state(AudioContextState::Closed);
+        }
 
         // Then ask the audio host to close the stream
         log::debug!("Suspended audio graph. Closing audio stream..");
@@ -526,8 +557,16 @@ impl AudioContext {
     /// * The audio device is not available
     /// * For a `BackendSpecificError`
     pub fn suspend_sync(&self) {
-        log::debug!("Suspend_sync called");
-        // First, pause rendering via a control message
+        // Lock the backend manager mutex to avoid concurrent calls
+        log::debug!("Suspend_sync called, locking backend manager");
+        let backend_manager_guard = self.backend_manager.lock().unwrap();
+
+        if self.state() != AudioContextState::Running {
+            log::debug!("Suspend_sync no-op - context is not running");
+            return;
+        }
+
+        // Pause rendering via a control message
         let (sender, receiver) = crossbeam_channel::bounded(0);
         let notify = OneshotNotify::Sync(sender);
         self.base
@@ -537,10 +576,11 @@ impl AudioContext {
         // The AudioContextState will be updated by the render thread.
         log::debug!("Suspending audio graph, waiting for signal..");
         receiver.recv().ok();
-        log::debug!("Suspended audio graph. Suspending audio stream..");
 
         // Then ask the audio host to suspend the stream
-        self.backend_manager.lock().unwrap().suspend();
+        log::debug!("Suspended audio graph. Suspending audio stream..");
+        backend_manager_guard.suspend();
+
         log::debug!("Suspended audio stream");
     }
 
@@ -557,9 +597,17 @@ impl AudioContext {
     /// * The audio device is not available
     /// * For a `BackendSpecificError`
     pub fn resume_sync(&self) {
-        log::debug!("Resume_sync called");
-        // First ask the audio host to resume the stream
-        self.backend_manager.lock().unwrap().resume();
+        // Lock the backend manager mutex to avoid concurrent calls
+        log::debug!("Resume_sync called, locking backend manager");
+        let backend_manager_guard = self.backend_manager.lock().unwrap();
+
+        if self.state() != AudioContextState::Suspended {
+            log::debug!("Resume no-op - context is not suspended");
+            return;
+        }
+
+        // Ask the audio host to resume the stream
+        backend_manager_guard.resume();
 
         // Then, ask to resume rendering via a control message
         log::debug!("Resumed audio stream, waking audio graph");
@@ -586,21 +634,33 @@ impl AudioContext {
     ///
     /// Will panic when this function is called multiple times
     pub fn close_sync(&self) {
-        log::debug!("Close_sync called");
+        // Lock the backend manager mutex to avoid concurrent calls
+        log::debug!("Close_sync called, locking backend manager");
+        let backend_manager_guard = self.backend_manager.lock().unwrap();
+
+        if self.state() == AudioContextState::Closed {
+            log::debug!("Close no-op - context is already closed");
+            return;
+        }
 
         // First, stop rendering via a control message
-        let (sender, receiver) = crossbeam_channel::bounded(0);
-        let notify = OneshotNotify::Sync(sender);
-        self.base.send_control_msg(ControlMessage::Close { notify });
+        if self.state() == AudioContextState::Running {
+            let (sender, receiver) = crossbeam_channel::bounded(0);
+            let notify = OneshotNotify::Sync(sender);
+            self.base.send_control_msg(ControlMessage::Close { notify });
 
-        // Wait for the render thread to have processed the suspend message.
-        // The AudioContextState will be updated by the render thread.
-        log::debug!("Suspending audio graph, waiting for signal..");
-        receiver.recv().ok();
+            // Wait for the render thread to have processed the suspend message.
+            // The AudioContextState will be updated by the render thread.
+            log::debug!("Suspending audio graph, waiting for signal..");
+            receiver.recv().ok();
+        } else {
+            // if the context is not running, change the state manually
+            self.base.set_state(AudioContextState::Closed);
+        }
 
         // Then ask the audio host to close the stream
         log::debug!("Suspended audio graph. Closing audio stream..");
-        self.backend_manager.lock().unwrap().close();
+        backend_manager_guard.close();
 
         // Stop the AudioRenderCapacity collection thread
         self.render_capacity.stop();
