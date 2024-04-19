@@ -219,12 +219,79 @@ fn test_closed() {
     let context = AudioContext::new(options);
     let node = context.create_gain();
 
-    // close the context, and drop it as well (otherwise the comms channel is kept alive)
+    // Close the context
     context.close_sync();
+    assert_eq!(context.state(), AudioContextState::Closed);
+
+    // Should not be able to resume
+    context.resume_sync();
+    assert_eq!(context.state(), AudioContextState::Closed);
+
+    // Drop the context (otherwise the comms channel is kept alive)
     drop(context);
 
     // allow some time for the render thread to drop
     std::thread::sleep(Duration::from_millis(10));
 
     node.disconnect(); // should not panic
+}
+
+#[test]
+fn test_double_suspend() {
+    let options = AudioContextOptions {
+        sink_id: "none".into(),
+        ..AudioContextOptions::default()
+    };
+    let context = AudioContext::new(options);
+
+    context.suspend_sync();
+    assert_eq!(context.state(), AudioContextState::Suspended);
+    context.suspend_sync();
+    assert_eq!(context.state(), AudioContextState::Suspended);
+    context.resume_sync();
+    assert_eq!(context.state(), AudioContextState::Running);
+}
+
+#[test]
+fn test_double_resume() {
+    let options = AudioContextOptions {
+        sink_id: "none".into(),
+        ..AudioContextOptions::default()
+    };
+    let context = AudioContext::new(options);
+
+    context.suspend_sync();
+    assert_eq!(context.state(), AudioContextState::Suspended);
+    context.resume_sync();
+    assert_eq!(context.state(), AudioContextState::Running);
+    context.resume_sync();
+    assert_eq!(context.state(), AudioContextState::Running);
+}
+
+#[test]
+fn test_double_close() {
+    let options = AudioContextOptions {
+        sink_id: "none".into(),
+        ..AudioContextOptions::default()
+    };
+    let context = AudioContext::new(options);
+
+    context.close_sync();
+    assert_eq!(context.state(), AudioContextState::Closed);
+    context.close_sync();
+    assert_eq!(context.state(), AudioContextState::Closed);
+}
+
+#[test]
+fn test_suspend_then_close() {
+    let options = AudioContextOptions {
+        sink_id: "none".into(),
+        ..AudioContextOptions::default()
+    };
+    let context = AudioContext::new(options);
+
+    context.suspend_sync();
+    assert_eq!(context.state(), AudioContextState::Suspended);
+    context.close_sync();
+    assert_eq!(context.state(), AudioContextState::Closed);
 }
