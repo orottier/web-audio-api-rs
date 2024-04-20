@@ -247,9 +247,12 @@ impl AudioProcessor for ScriptProcessorRenderer {
             // move next output buffer into current output buffer
             std::mem::swap(&mut self.output_buffer, &mut self.next_output_buffer);
 
-            // fill next output buffer with silence
+            // fill next output buffer with silence (with the right channel count)
+            let mut silent_quantum = silence;
+            silent_quantum.set_number_of_channels(self.number_of_output_channels);
             self.next_output_buffer.clear();
-            self.next_output_buffer.resize(number_of_quanta, silence);
+            self.next_output_buffer
+                .resize(number_of_quanta, silent_quantum);
         }
 
         false // node is kept alive as long as the handle in the event loop still exists
@@ -274,6 +277,7 @@ impl AudioProcessor for ScriptProcessorRenderer {
 mod tests {
     use super::*;
     use crate::context::OfflineAudioContext;
+    use crate::node::scheduled_source::AudioScheduledSourceNode;
     use float_eq::assert_float_eq;
 
     #[test]
@@ -325,6 +329,66 @@ mod tests {
         assert_float_eq!(
             channel[2 * BUFFER_SIZE..],
             &[1.; BUFFER_SIZE][..],
+            abs_all <= 0.
+        );
+    }
+
+    #[test]
+    fn test_multiple_channels() {
+        const BUFFER_SIZE: usize = 256;
+
+        let mut context = OfflineAudioContext::new(2, BUFFER_SIZE * 3, 48000.);
+
+        // 2 input channels, 2 output channels
+        let node = context.create_script_processor(BUFFER_SIZE, 2, 2);
+        node.connect(&context.destination());
+        node.set_onaudioprocess(|e| {
+            // left output buffer is left input * 2
+            e.output_buffer
+                .get_channel_data_mut(0)
+                .iter_mut()
+                .zip(e.input_buffer.get_channel_data(0))
+                .for_each(|(o, i)| *o = *i * 2.);
+
+            // right output buffer is right input * 3
+            e.output_buffer
+                .get_channel_data_mut(1)
+                .iter_mut()
+                .zip(e.input_buffer.get_channel_data(1))
+                .for_each(|(o, i)| *o = *i * 3.);
+        });
+
+        // let the input be a mono constant source, it will be upmixed to two channels
+        let mut src = context.create_constant_source();
+        src.start();
+        src.connect(&node);
+
+        let result = context.start_rendering_sync();
+        let channel1 = result.get_channel_data(0);
+        let channel2 = result.get_channel_data(1);
+
+        // first `2 * BUFFER_SIZE` samples should be silent due to buffering
+        assert_float_eq!(
+            channel1[..2 * BUFFER_SIZE],
+            &[0.; 2 * BUFFER_SIZE][..],
+            abs_all <= 0.
+        );
+        assert_float_eq!(
+            channel2[..2 * BUFFER_SIZE],
+            &[0.; 2 * BUFFER_SIZE][..],
+            abs_all <= 0.
+        );
+
+        // rest of the samples should be 2. for left buffer
+        assert_float_eq!(
+            channel1[2 * BUFFER_SIZE..],
+            &[2.; BUFFER_SIZE][..],
+            abs_all <= 0.
+        );
+        // rest of the samples should be 3. for right buffer
+        assert_float_eq!(
+            channel2[2 * BUFFER_SIZE..],
+            &[3.; BUFFER_SIZE][..],
             abs_all <= 0.
         );
     }
