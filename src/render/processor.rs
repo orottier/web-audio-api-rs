@@ -68,6 +68,7 @@ impl AudioWorkletGlobalScope {
             input_buffer,
             output_buffer,
             playback_time,
+            registration: None,
         };
         let dispatch = EventDispatch::audio_processing(self.node_id.get(), event);
         let _ = self.event_sender.try_send(dispatch);

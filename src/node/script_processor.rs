@@ -137,20 +137,26 @@ impl ScriptProcessorNode {
     /// the inputBuffer attribute. The audio data which is the result of the processing (or the
     /// synthesized data if there are no inputs) is then placed into the outputBuffer.
     ///
+    /// The output buffer is shipped back to the render thread when the AudioProcessingEvent goes
+    /// out of scope, so be sure not to store it somewhere.
+    ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
-    pub fn set_onaudioprocess<F: FnMut(&mut AudioProcessingEvent) + Send + 'static>(
+    pub fn set_onaudioprocess<F: FnMut(AudioProcessingEvent) + Send + 'static>(
         &self,
         mut callback: F,
     ) {
-        let registration = self.registration.clone();
+        // We need these fields to ship the output buffer to the render thread
+        let base = self.registration().context().clone();
+        let id = self.registration().id();
+
         let callback = move |v| {
             let mut payload = match v {
                 EventPayload::AudioProcessing(v) => v,
                 _ => unreachable!(),
             };
-            callback(&mut payload);
-            registration.post_message(payload.output_buffer);
+            payload.registration = Some((base.clone(), id));
+            callback(payload);
         };
 
         self.context().set_event_handler(
@@ -305,7 +311,7 @@ mod tests {
 
         let node = context.create_script_processor(BUFFER_SIZE, 0, 1);
         node.connect(&context.destination());
-        node.set_onaudioprocess(|e| {
+        node.set_onaudioprocess(|mut e| {
             e.output_buffer.get_channel_data_mut(0).fill(1.); // set all samples to 1.
         });
 
@@ -336,7 +342,7 @@ mod tests {
         // 2 input channels, 2 output channels
         let node = context.create_script_processor(BUFFER_SIZE, 2, 2);
         node.connect(&context.destination());
-        node.set_onaudioprocess(|e| {
+        node.set_onaudioprocess(|mut e| {
             // left output buffer is left input * 2
             e.output_buffer
                 .get_channel_data_mut(0)

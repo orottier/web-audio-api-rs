@@ -28,7 +28,7 @@ fn main() {
     });
 
     let node = context.create_script_processor(512, 1, 1);
-    node.set_onaudioprocess(|e| {
+    node.set_onaudioprocess(|mut e| {
         let mut rng = rand::thread_rng();
         e.output_buffer
             .get_channel_data_mut(0)

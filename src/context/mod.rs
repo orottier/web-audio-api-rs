@@ -88,9 +88,8 @@ impl From<u8> for AudioContextState {
 /// Only when implementing the AudioNode trait manually, this struct is of any concern.
 ///
 /// This object allows for communication with the render thread and dynamic lifetime management.
-//
-// The only way to construct this object is by calling [`BaseAudioContext::register`]
-#[derive(Clone)]
+// The only way to construct this object is by calling [`BaseAudioContext::register`].
+// This struct should not derive Clone because of the Drop handler.
 pub struct AudioContextRegistration {
     /// the audio context in which nodes and connections lives
     context: ConcreteBaseAudioContext,
