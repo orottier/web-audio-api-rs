@@ -100,6 +100,8 @@ pub trait BaseAudioContext {
     /// # Errors
     ///
     /// This method returns an Error in various cases (IO, mime sniffing, decoding).
+    // Use of `async fn` in public traits is discouraged as auto trait bounds cannot be specified,
+    // hence we use `-> impl Future + ..` instead.
     fn decode_audio_data<R: std::io::Read + Send + Sync + 'static>(
         &self,
         input: R,
