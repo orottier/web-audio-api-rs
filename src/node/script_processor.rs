@@ -7,7 +7,6 @@ use crate::render::{
 use crate::{AudioBuffer, RENDER_QUANTUM_SIZE};
 
 use std::any::Any;
-use std::sync::Arc;
 
 /// Options for constructing an [`ScriptProcessorNode`]
 #[derive(Clone, Debug)]
@@ -138,20 +137,25 @@ impl ScriptProcessorNode {
     /// the inputBuffer attribute. The audio data which is the result of the processing (or the
     /// synthesized data if there are no inputs) is then placed into the outputBuffer.
     ///
+    /// The output buffer is shipped back to the render thread when the AudioProcessingEvent goes
+    /// out of scope, so be sure not to store it somewhere.
+    ///
     /// Only a single event handler is active at any time. Calling this method multiple times will
     /// override the previous event handler.
     pub fn set_onaudioprocess<F: FnMut(AudioProcessingEvent) + Send + 'static>(
         &self,
         mut callback: F,
     ) {
-        // TODO, hack: use Arc to prevent drop of AudioContextRegistration
-        let registration = Arc::new(self.registration.clone());
+        // We need these fields to ship the output buffer to the render thread
+        let base = self.registration().context().clone();
+        let id = self.registration().id();
+
         let callback = move |v| {
             let mut payload = match v {
                 EventPayload::AudioProcessing(v) => v,
                 _ => unreachable!(),
             };
-            payload.registration = Some(Arc::clone(&registration));
+            payload.registration = Some((base.clone(), id));
             callback(payload);
         };
 

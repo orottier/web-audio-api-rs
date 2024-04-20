@@ -1,3 +1,4 @@
+use crate::context::ConcreteBaseAudioContext;
 use crate::context::{AudioContextState, AudioNodeId};
 use crate::{AudioBuffer, AudioRenderCapacityEvent};
 
@@ -52,13 +53,17 @@ pub struct AudioProcessingEvent {
     /// The time when the audio will be played in the same time coordinate system as the
     /// AudioContext's currentTime.
     pub playback_time: f64,
-    pub(crate) registration: Option<Arc<crate::context::AudioContextRegistration>>,
+    pub(crate) registration: Option<(ConcreteBaseAudioContext, AudioNodeId)>,
 }
 
 impl Drop for AudioProcessingEvent {
     fn drop(&mut self) {
-        if let Some(registration) = self.registration.take() {
-            registration.post_message(self.output_buffer.clone());
+        if let Some((context, id)) = self.registration.take() {
+            let wrapped = crate::message::ControlMessage::NodeMessage {
+                id,
+                msg: llq::Node::new(Box::new(self.output_buffer.clone())),
+            };
+            context.send_control_msg(wrapped);
         }
     }
 }
