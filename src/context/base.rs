@@ -12,6 +12,8 @@ use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::{node, AudioListener};
 
+use std::future::Future;
+
 /// The interface representing an audio-processing graph built from audio modules linked together,
 /// each represented by an `AudioNode`.
 ///
@@ -29,11 +31,11 @@ pub trait BaseAudioContext {
     ///
     /// In addition to the official spec, the input parameter can be any byte stream (not just an
     /// array). This means you can decode audio data from a file, network stream, or in memory
-    /// buffer, and any other [`std::io::Read`] implementer. The data if buffered internally so you
+    /// buffer, and any other [`std::io::Read`] implementer. The data is buffered internally so you
     /// should not wrap the source in a `BufReader`.
     ///
     /// This function operates synchronously, which may be undesirable on the control thread. The
-    /// example shows how to avoid this. An async version is currently not implemented.
+    /// example shows how to avoid this. See also the async method [`Self::decode_audio_data`].
     ///
     /// # Errors
     ///
@@ -80,6 +82,48 @@ pub trait BaseAudioContext {
         buffer.resample(self.sample_rate());
 
         Ok(buffer)
+    }
+
+    /// Decode an [`AudioBuffer`] from a given input stream.
+    ///
+    /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
+    ///
+    /// In addition to the official spec, the input parameter can be any byte stream (not just an
+    /// array). This means you can decode audio data from a file, network stream, or in memory
+    /// buffer, and any other [`std::io::Read`] implementer. The data is buffered internally so you
+    /// should not wrap the source in a `BufReader`.
+    ///
+    /// Warning, the current implementation still uses blocking IO so it's best to use Tokio's
+    /// `spawn_blocking` to run the decoding on a thread dedicated to blocking operations. See also
+    /// the async method [`Self::decode_audio_data_sync`].
+    ///
+    /// # Errors
+    ///
+    /// This method returns an Error in various cases (IO, mime sniffing, decoding).
+    fn decode_audio_data<R: std::io::Read + Send + Sync + 'static>(
+        &self,
+        input: R,
+    ) -> impl Future<Output = Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>>>
+           + Send
+           + 'static {
+        let sample_rate = self.sample_rate();
+        async move {
+            // Set up a media decoder, consume the stream in full and construct a single buffer out of it
+            let mut buffer = MediaDecoder::try_new(input)?
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .reduce(|mut accum, item| {
+                    accum.extend(&item);
+                    accum
+                })
+                // if there are no samples decoded, return an empty buffer
+                .unwrap_or_else(|| AudioBuffer::from(vec![vec![]], sample_rate));
+
+            // resample to desired rate (no-op if already matching)
+            buffer.resample(sample_rate);
+
+            Ok(buffer)
+        }
     }
 
     /// Create an new "in-memory" `AudioBuffer` with the given number of channels,
@@ -347,11 +391,40 @@ mod tests {
 
     use float_eq::assert_float_eq;
 
+    fn require_send_sync_static<T: Send + Sync + 'static>(_: T) {}
+
     #[test]
     fn test_decode_audio_data_sync() {
         let context = OfflineAudioContext::new(1, 1, 44100.);
         let file = std::fs::File::open("samples/sample.wav").unwrap();
         let audio_buffer = context.decode_audio_data_sync(file).unwrap();
+
+        assert_eq!(audio_buffer.sample_rate(), 44100.);
+        assert_eq!(audio_buffer.length(), 142_187);
+        assert_eq!(audio_buffer.number_of_channels(), 2);
+        assert_float_eq!(audio_buffer.duration(), 3.224, abs_all <= 0.001);
+
+        let left_start = &audio_buffer.get_channel_data(0)[0..100];
+        let right_start = &audio_buffer.get_channel_data(1)[0..100];
+        // assert distinct two channel data
+        assert!(left_start != right_start);
+    }
+
+    #[test]
+    fn test_decode_audio_data_future_send_static() {
+        let context = OfflineAudioContext::new(1, 1, 44100.);
+        let file = std::fs::File::open("samples/sample.wav").unwrap();
+        let future = context.decode_audio_data(file);
+        require_send_sync_static(future);
+    }
+
+    #[test]
+    fn test_decode_audio_data_async() {
+        use futures::executor;
+        let context = OfflineAudioContext::new(1, 1, 44100.);
+        let file = std::fs::File::open("samples/sample.wav").unwrap();
+        let future = context.decode_audio_data(file);
+        let audio_buffer = executor::block_on(future).unwrap();
 
         assert_eq!(audio_buffer.sample_rate(), 44100.);
         assert_eq!(audio_buffer.length(), 142_187);
