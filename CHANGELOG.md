@@ -1,5 +1,11 @@
 # Version History
 
+## Version 1.0.0-rc.6 (2024-04-20)
+
+- Breaking: the ScriptProcessorNode::set_onaudioprocess no longer takes a ref to the event
+- Fixed a panic for multi-channel output with the ScriptProcessorNode
+- Fixed an issue when calling suspend/close on an already suspended context
+
 ## Version 0.43.0 / 1.0.0-rc.5 (2024-04-15)
 
 - Changed: renamed AudioNode::connect_at to connect_from_output_to_input
