@@ -339,3 +339,59 @@ pub trait BaseAudioContext {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::OfflineAudioContext;
+
+    use float_eq::assert_float_eq;
+
+    #[test]
+    fn test_decode_audio_data_sync() {
+        let context = OfflineAudioContext::new(1, 1, 44100.);
+        let file = std::fs::File::open("samples/sample.wav").unwrap();
+        let audio_buffer = context.decode_audio_data_sync(file).unwrap();
+
+        assert_eq!(audio_buffer.sample_rate(), 44100.);
+        assert_eq!(audio_buffer.length(), 142_187);
+        assert_eq!(audio_buffer.number_of_channels(), 2);
+        assert_float_eq!(audio_buffer.duration(), 3.224, abs_all <= 0.001);
+
+        let left_start = &audio_buffer.get_channel_data(0)[0..100];
+        let right_start = &audio_buffer.get_channel_data(1)[0..100];
+        // assert distinct two channel data
+        assert!(left_start != right_start);
+    }
+
+    // #[test]
+    // disabled: symphonia cannot handle empty WAV-files
+    #[allow(dead_code)]
+    fn test_decode_audio_data_empty() {
+        let context = OfflineAudioContext::new(1, 1, 44100.);
+        let file = std::fs::File::open("samples/empty_2c.wav").unwrap();
+        let audio_buffer = context.decode_audio_data_sync(file).unwrap();
+        assert_eq!(audio_buffer.length(), 0);
+    }
+
+    #[test]
+    fn test_decode_audio_data_decoding_error() {
+        let context = OfflineAudioContext::new(1, 1, 44100.);
+        let file = std::fs::File::open("samples/corrupt.wav").unwrap();
+        assert!(context.decode_audio_data_sync(file).is_err());
+    }
+
+    #[test]
+    fn test_create_buffer() {
+        let number_of_channels = 3;
+        let length = 2000;
+        let sample_rate = 96_000.;
+
+        let context = OfflineAudioContext::new(1, 1, 44100.);
+        let buffer = context.create_buffer(number_of_channels, length, sample_rate);
+
+        assert_eq!(buffer.number_of_channels(), 3);
+        assert_eq!(buffer.length(), 2000);
+        assert_float_eq!(buffer.sample_rate(), 96000., abs_all <= 0.);
+    }
+}
