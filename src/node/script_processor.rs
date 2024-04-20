@@ -342,7 +342,7 @@ mod tests {
         // 2 input channels, 2 output channels
         let node = context.create_script_processor(BUFFER_SIZE, 2, 2);
         node.connect(&context.destination());
-        node.set_onaudioprocess(|e| {
+        node.set_onaudioprocess(|mut e| {
             // left output buffer is left input * 2
             e.output_buffer
                 .get_channel_data_mut(0)
