@@ -1,5 +1,9 @@
 # Version History
 
+## Version 0.44.0 (2024-04-22)
+
+- Fix regression: ensure all async fns return a Send + Sync Future object
+
 ## Version 1.0.0-rc.6 (2024-04-20)
 
 - Breaking: the ScriptProcessorNode::set_onaudioprocess no longer takes a ref to the event
