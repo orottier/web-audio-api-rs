@@ -470,29 +470,30 @@ impl AudioContext {
     ///
     /// * The audio device is not available
     /// * For a `BackendSpecificError`
-    #[allow(clippy::await_holding_lock)] // false positive due to explicit drop
     pub async fn resume(&self) {
-        // Lock the backend manager mutex to avoid concurrent calls
-        log::debug!("Resume called, locking backend manager");
-        let backend_manager_guard = self.backend_manager.lock().unwrap();
-
-        if self.state() != AudioContextState::Suspended {
-            log::debug!("Resume no-op - context is not suspended");
-            return;
-        }
-
-        // Ask the audio host to resume the stream
-        backend_manager_guard.resume();
-
-        // Then, ask to resume rendering via a control message
-        log::debug!("Resumed audio stream, waking audio graph");
         let (sender, receiver) = oneshot::channel();
-        let notify = OneshotNotify::Async(sender);
-        self.base
-            .send_control_msg(ControlMessage::Resume { notify });
 
-        // Drop the Mutex guard so we won't hold it across an await
-        drop(backend_manager_guard);
+        {
+            // Lock the backend manager mutex to avoid concurrent calls
+            log::debug!("Resume called, locking backend manager");
+            let backend_manager_guard = self.backend_manager.lock().unwrap();
+
+            if self.state() != AudioContextState::Suspended {
+                log::debug!("Resume no-op - context is not suspended");
+                return;
+            }
+
+            // Ask the audio host to resume the stream
+            backend_manager_guard.resume();
+
+            // Then, ask to resume rendering via a control message
+            log::debug!("Resumed audio stream, waking audio graph");
+            let notify = OneshotNotify::Async(sender);
+            self.base
+                .send_control_msg(ControlMessage::Resume { notify });
+
+            // Drop the Mutex guard so we won't hold it across an await point
+        }
 
         // Wait for the render thread to have processed the resume message
         // The AudioContextState will be updated by the render thread.
@@ -766,5 +767,20 @@ mod tests {
 
         let time5 = context.current_time();
         assert_eq!(time5, time4); // no progression of time
+    }
+
+    fn require_send_sync<T: Send + Sync>(_: T) {}
+
+    #[test]
+    fn test_all_futures_thread_safe() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+
+        require_send_sync(context.suspend());
+        require_send_sync(context.resume());
+        require_send_sync(context.close());
     }
 }
