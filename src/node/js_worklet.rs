@@ -11,7 +11,12 @@ use std::sync::{Mutex, OnceLock};
 
 fn js_runtime() -> &'static Mutex<NodeRuntime> {
     static INSTANCE: OnceLock<Mutex<NodeRuntime>> = OnceLock::new();
-    INSTANCE.get_or_init(|| Mutex::new(NodeRuntime::new().unwrap()))
+    INSTANCE.get_or_init(|| {
+        let mut runtime = NodeRuntime::new().unwrap();
+        let init_code = "class AudioWorkletProcessor { }\n";
+        runtime.eval(&init_code).unwrap();
+        Mutex::new(runtime)
+    })
 }
 
 fn incremental_id() -> u32 {
@@ -39,7 +44,8 @@ impl JsWorkletNode {
         let mut runtime = js_runtime().lock().unwrap();
         runtime.eval_file(module).unwrap();
         let code = format!(
-            "const proc{} = new WhiteNoiseProcessor(); console.log('Done123');\n",
+            "const proc{} = new Bitcrusher();
+            console.log('Done123');\n",
             id
         );
         runtime.eval(&code).unwrap();

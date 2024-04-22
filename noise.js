@@ -1,7 +1,3 @@
-console.log("Reading test.js");
-
-class AudioWorkletProcessor { }
-
 class WhiteNoiseProcessor extends AudioWorkletProcessor {
   process(inputs, outputs, parameters) {
     const output = outputs[0];
