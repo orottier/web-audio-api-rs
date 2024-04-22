@@ -630,4 +630,15 @@ mod tests {
 
         assert!(complete.load(Ordering::Relaxed));
     }
+
+    fn require_send_sync<T: Send + Sync>(_: T) {}
+
+    #[test]
+    fn test_all_futures_thread_safe() {
+        let context = OfflineAudioContext::new(2, 555, 44_100.);
+
+        require_send_sync(context.start_rendering());
+        require_send_sync(context.suspend(1.));
+        require_send_sync(context.resume());
+    }
 }
