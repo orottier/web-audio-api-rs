@@ -6,11 +6,16 @@ use web_audio_api::AudioRenderCapacityOptions;
 
 fn main() {
     let context = AudioContext::default();
+
+    JsWorkletNode::add_module("crush.js");
+    JsWorkletNode::add_module("noise.js");
+
     let mut src = context.create_oscillator();
     src.frequency().set_value(5000.);
     src.start();
 
-    let node = JsWorkletNode::new(&context, "crush.js", AudioWorkletNodeOptions::default());
+    // let src = JsWorkletNode::new(&context, "white-noise", AudioWorkletNodeOptions::default());
+    let node = JsWorkletNode::new(&context, "bitcrusher", AudioWorkletNodeOptions::default());
 
     let param_bit_depth = node.parameters().get("bitDepth").unwrap();
     let param_reduction = node.parameters().get("frequencyReduction").unwrap();

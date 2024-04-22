@@ -61,3 +61,5 @@ class Bitcrusher extends AudioWorkletProcessor {
         // input connections.
     }
 }
+
+registerProcessor('bitcrusher', Bitcrusher);

@@ -16,7 +16,7 @@ fn js_runtime() -> &'static Mutex<NodeRuntime> {
     static INSTANCE: OnceLock<Mutex<NodeRuntime>> = OnceLock::new();
     INSTANCE.get_or_init(|| {
         let mut runtime = NodeRuntime::new().unwrap();
-        let init_code = "class AudioWorkletProcessor { }\n";
+        let init_code = "class AudioWorkletProcessor { }\nfunction registerProcessor(name, cls) { console.log('REGISTER', name, cls.name); }\n";
         runtime.eval(&init_code).unwrap();
         Mutex::new(runtime)
     })
@@ -25,7 +25,13 @@ fn js_runtime() -> &'static Mutex<NodeRuntime> {
 // Horrible hack to use a singleton for all AudioParamDescriptors - TODO
 fn dynamic_param_descriptors() -> &'static Mutex<Vec<AudioParamDescriptor>> {
     static INSTANCE: OnceLock<Mutex<Vec<AudioParamDescriptor>>> = OnceLock::new();
-    INSTANCE.get_or_init(|| Mutex::new(Vec::new()))
+    INSTANCE.get_or_init(|| Default::default())
+}
+
+// todo, this should be handled per AudioContext, not globally
+fn registered_processors() -> &'static Mutex<HashMap<String, String>> {
+    static INSTANCE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    INSTANCE.get_or_init(|| Default::default())
 }
 
 fn incremental_id() -> u32 {
@@ -41,16 +47,47 @@ pub struct JsWorkletNode {
 }
 
 impl JsWorkletNode {
-    pub fn new(
-        context: &impl BaseAudioContext,
-        module: &str,
-        options: AudioWorkletNodeOptions<()>,
-    ) -> Self {
-        let id = incremental_id();
-
+    pub fn add_module(module: &str) {
         let mut runtime = js_runtime().lock().unwrap();
         runtime.eval_file(module).unwrap();
-        let class = "Bitcrusher"; // TODO
+        runtime.eval("console.log('Done999')\n").unwrap();
+
+        'outer: loop {
+            for o in runtime.output() {
+                println!("{o}");
+                if o.contains("REGISTER") {
+                    let mut pieces = o.split(" ");
+                    pieces.next().unwrap();
+                    pieces.next().unwrap();
+                    let register_name = pieces.next().unwrap().to_string();
+                    let register_class = pieces.next().unwrap().to_string();
+                    registered_processors()
+                        .lock()
+                        .unwrap()
+                        .insert(register_name, register_class);
+                }
+                if o.contains("> Done999") {
+                    break 'outer;
+                }
+            }
+        }
+    }
+
+    pub fn new(
+        context: &impl BaseAudioContext,
+        node_name: &str,
+        options: AudioWorkletNodeOptions<()>,
+    ) -> Self {
+        let mut runtime = js_runtime().lock().unwrap();
+        let id = incremental_id();
+
+        let class = registered_processors()
+            .lock()
+            .unwrap()
+            .get(node_name)
+            .unwrap_or_else(|| panic!("Unknown node {}, not registered", node_name))
+            .clone();
+
         let code = format!(
             "const proc{} = new {}();
             console.log(JSON.stringify({}.parameterDescriptors));
@@ -64,6 +101,17 @@ impl JsWorkletNode {
         'outer: loop {
             for o in runtime.output() {
                 println!("{o}");
+                if o.contains("REGISTER") {
+                    let mut pieces = o.split(" ");
+                    pieces.next().unwrap();
+                    pieces.next().unwrap();
+                    let register_name = pieces.next().unwrap().to_string();
+                    let register_class = pieces.next().unwrap().to_string();
+                    registered_processors()
+                        .lock()
+                        .unwrap()
+                        .insert(register_name, register_class);
+                }
                 if o.contains("> Done123") {
                     break 'outer;
                 }
@@ -71,7 +119,13 @@ impl JsWorkletNode {
                 prev = o;
             }
         }
-        let params: Vec<AudioParamDescriptor> = serde_json::from_str(&pprev[2..]).unwrap();
+
+        let descriptors_js = if pprev == "> undefined" {
+            "[]"
+        } else {
+            &pprev[2..]
+        };
+        let params: Vec<AudioParamDescriptor> = serde_json::from_str(descriptors_js).unwrap();
         let param_names: Vec<_> = params.iter().map(|d| &d.name).cloned().collect();
         dbg!(&param_names);
         *dynamic_param_descriptors().lock().unwrap() = params;
