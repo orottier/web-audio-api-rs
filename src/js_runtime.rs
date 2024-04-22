@@ -2,7 +2,7 @@ use crossbeam_channel::Receiver;
 use std::io::{self, BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 
-pub struct NodeRuntime {
+pub(crate) struct NodeRuntime {
     stdin: ChildStdin,
     stdout_recv: Receiver<String>,
     process: Child,
@@ -30,12 +30,9 @@ impl NodeRuntime {
             stdout_send.send(String::new()).unwrap(); // signal ready
             let stdout = BufReader::new(stdout);
             for line in stdout.lines() {
-                match stdout_send.send(line.unwrap()) {
-                    Err(e) => {
-                        println!("js_runtime send error {:?}", e);
-                        break;
-                    }
-                    _ => (),
+                if let Err(e) = stdout_send.send(line.unwrap()) {
+                    println!("js_runtime send error {:?}", e);
+                    break;
                 }
             }
         });

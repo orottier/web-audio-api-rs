@@ -17,7 +17,7 @@ fn js_runtime() -> &'static Mutex<NodeRuntime> {
     INSTANCE.get_or_init(|| {
         let mut runtime = NodeRuntime::new().unwrap();
         let init_code = "class AudioWorkletProcessor { }\nfunction registerProcessor(name, cls) { console.log('REGISTER', name, cls.name); }\n";
-        runtime.eval(&init_code).unwrap();
+        runtime.eval(init_code).unwrap();
         Mutex::new(runtime)
     })
 }
@@ -25,13 +25,13 @@ fn js_runtime() -> &'static Mutex<NodeRuntime> {
 // Horrible hack to use a singleton for all AudioParamDescriptors - TODO
 fn dynamic_param_descriptors() -> &'static Mutex<Vec<AudioParamDescriptor>> {
     static INSTANCE: OnceLock<Mutex<Vec<AudioParamDescriptor>>> = OnceLock::new();
-    INSTANCE.get_or_init(|| Default::default())
+    INSTANCE.get_or_init(Default::default)
 }
 
 // todo, this should be handled per AudioContext, not globally
 fn registered_processors() -> &'static Mutex<HashMap<String, String>> {
     static INSTANCE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-    INSTANCE.get_or_init(|| Default::default())
+    INSTANCE.get_or_init(Default::default)
 }
 
 fn incremental_id() -> u32 {
@@ -47,6 +47,7 @@ pub struct JsWorkletNode {
 }
 
 impl JsWorkletNode {
+    #[allow(clippy::missing_panics_doc)]
     pub fn add_module(module: &str) {
         let mut runtime = js_runtime().lock().unwrap();
         runtime.eval_file(module).unwrap();
@@ -56,7 +57,7 @@ impl JsWorkletNode {
             for o in runtime.output() {
                 println!("{o}");
                 if o.contains("REGISTER") {
-                    let mut pieces = o.split(" ");
+                    let mut pieces = o.split(' ');
                     pieces.next().unwrap();
                     pieces.next().unwrap();
                     let register_name = pieces.next().unwrap().to_string();
@@ -73,6 +74,7 @@ impl JsWorkletNode {
         }
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn new(
         context: &impl BaseAudioContext,
         node_name: &str,
@@ -102,7 +104,7 @@ impl JsWorkletNode {
             for o in runtime.output() {
                 println!("{o}");
                 if o.contains("REGISTER") {
-                    let mut pieces = o.split(" ");
+                    let mut pieces = o.split(' ');
                     pieces.next().unwrap();
                     pieces.next().unwrap();
                     let register_name = pieces.next().unwrap().to_string();
@@ -158,7 +160,7 @@ impl JsWorkletNode {
     /// This map is populated from a list of [`AudioParamDescriptor`]s in the
     /// [`AudioWorkletProcessor`] class constructor at the instantiation.
     pub fn parameters(&self) -> &HashMap<String, AudioParam> {
-        &self.node.parameters()
+        self.node.parameters()
     }
 
     /// Message port to the processor in the render thread
