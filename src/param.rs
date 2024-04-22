@@ -120,8 +120,9 @@ fn compute_set_value_curve_sample(
 }
 
 /// Precision of AudioParam value calculation per render quantum
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, serde::Deserialize, serde::Serialize, Default)]
 pub enum AutomationRate {
+    #[default]
     /// Audio Rate - sampled for each sample-frame of the block
     A,
     /// Control Rate - sampled at the time of the very first sample-frame,
@@ -139,12 +140,17 @@ impl AutomationRate {
 }
 
 /// Options for constructing an [`AudioParam`]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct AudioParamDescriptor {
     pub name: String,
+    #[serde(default)]
+    #[serde(rename = "automationRate")]
     pub automation_rate: AutomationRate,
+    #[serde(rename = "defaultValue")]
     pub default_value: f32,
+    #[serde(rename = "minValue")]
     pub min_value: f32,
+    #[serde(rename = "maxValue")]
     pub max_value: f32,
 }
 

@@ -23,8 +23,8 @@ class Bitcrusher extends AudioWorkletProcessor {
     process (inputs, outputs, parameters) {
         const input = inputs[0];
         const output = outputs[0];
-        const bitDepth = [1.]; // parameters.bitDepth;
-        const frequencyReduction = [0.5]; //parameters.frequencyReduction;
+        const bitDepth = parameters.bitDepth;
+        const frequencyReduction = parameters.frequencyReduction;
         if (bitDepth.length > 1) {
             for (let channel = 0; channel < output.length; ++channel) {
                 for (let i = 0; i < output[channel].length; ++i) {

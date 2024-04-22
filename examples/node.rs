@@ -7,9 +7,17 @@ use web_audio_api::AudioRenderCapacityOptions;
 fn main() {
     let context = AudioContext::default();
     let mut src = context.create_oscillator();
+    src.frequency().set_value(5000.);
     src.start();
 
     let node = JsWorkletNode::new(&context, "crush.js", AudioWorkletNodeOptions::default());
+
+    let param_bit_depth = node.parameters().get("bitDepth").unwrap();
+    let param_reduction = node.parameters().get("frequencyReduction").unwrap();
+    param_bit_depth.set_value_at_time(1., 0.);
+    param_reduction.set_value_at_time(0.01, 0.);
+    param_reduction.linear_ramp_to_value_at_time(0.1, 4.);
+    param_reduction.exponential_ramp_to_value_at_time(0.01, 8.);
 
     src.connect(&node);
     node.connect(&context.destination());
@@ -20,5 +28,5 @@ fn main() {
         update_interval: 1.,
     });
 
-    std::thread::sleep(std::time::Duration::from_secs(6));
+    std::thread::sleep(std::time::Duration::from_secs(8));
 }
