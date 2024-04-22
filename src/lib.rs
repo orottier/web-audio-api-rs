@@ -24,6 +24,9 @@ pub use capacity::*;
 
 pub mod context;
 
+// TODO mark non-pub before release
+pub mod js_runtime;
+
 pub mod media_devices;
 pub mod media_recorder;
 pub mod media_streams;
