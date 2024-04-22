@@ -6,7 +6,7 @@ use crate::worklet::{
     AudioParamValues, AudioWorkletGlobalScope, AudioWorkletNode, AudioWorkletNodeOptions,
     AudioWorkletProcessor,
 };
-use crate::MessagePort;
+use crate::{MessagePort, RENDER_QUANTUM_SIZE};
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -117,8 +117,10 @@ impl JsWorkletNode {
             &pprev[2..]
         };
         let params: Vec<AudioParamDescriptor> = serde_json::from_str(descriptors_js).unwrap();
-        let param_names: Vec<_> = params.iter().map(|d| &d.name).cloned().collect();
-        dbg!(&param_names);
+        let param_values: HashMap<_, _> = params
+            .iter()
+            .map(|d| (d.name.clone(), vec![0.; RENDER_QUANTUM_SIZE]))
+            .collect();
         *dynamic_param_descriptors().lock().unwrap() = params;
 
         // Remap the constructor options to include our processor options
@@ -136,7 +138,7 @@ impl JsWorkletNode {
             output_channel_count,
             parameter_data,
             audio_node_options,
-            processor_options: (id, param_names),
+            processor_options: (id, param_values),
         };
 
         let node = AudioWorkletNode::new::<JsWorkletProcessor>(context, options);
@@ -182,16 +184,20 @@ impl AudioNode for JsWorkletNode {
 
 struct JsWorkletProcessor {
     id: u32,
-    param_names: Vec<String>,
+    params: HashMap<String, Vec<f32>>,
+    prev: String,
+    pprev: String,
 }
 
 impl AudioWorkletProcessor for JsWorkletProcessor {
-    type ProcessorOptions = (u32, Vec<String>);
+    type ProcessorOptions = (u32, HashMap<String, Vec<f32>>);
 
     fn constructor(opts: Self::ProcessorOptions) -> Self {
         Self {
             id: opts.0,
-            param_names: opts.1,
+            params: opts.1,
+            prev: String::new(),
+            pprev: String::new(),
         }
     }
 
@@ -211,12 +217,14 @@ impl AudioWorkletProcessor for JsWorkletProcessor {
     ) -> bool {
         let input_json = serde_json::to_string(&inputs).unwrap();
         let output_json = serde_json::to_string(&outputs).unwrap();
-        let params: HashMap<String, Vec<f32>> = self
-            .param_names
-            .iter()
-            .map(|n| (n.clone(), params.get(n).to_vec()))
-            .collect();
-        let params_json = serde_json::to_string(&params).unwrap();
+
+        // Fill current parameter arrays
+        self.params.iter_mut().for_each(|(k, v)| {
+            v.clear();
+            v.extend_from_slice(&params.get(k));
+        });
+        let params_json = serde_json::to_string(&self.params).unwrap();
+
         let code = format!(
             // the last value is echoed back by the repl, so put some scalar value last:
             "inputs = {}, outputs = {}, params = {}, currentFrame = {}, currentTime = {}, sampleRate = {};
@@ -224,9 +232,7 @@ proc{}.process(inputs, outputs, params);
 console.log(JSON.stringify(outputs));
 console.log('Done123');
 ",
-            input_json,
-            output_json,
-            params_json,
+input_json, output_json, params_json,
             scope.current_time,
             scope.current_frame,
             scope.sample_rate,
@@ -237,21 +243,21 @@ console.log('Done123');
         let mut runtime = js_runtime().lock().unwrap();
         runtime.eval(&code).unwrap();
 
-        let mut prev = String::new();
-        let mut pprev = String::new();
+        self.prev.clear();
+        self.pprev.clear();
         'outer: loop {
             for o in runtime.output() {
                 // println!("{o}");
                 if o == "> Done123" {
                     break 'outer;
                 }
-                std::mem::swap(&mut prev, &mut pprev);
-                prev = o;
+                std::mem::swap(&mut self.prev, &mut self.pprev);
+                self.prev = o;
             }
         }
 
         // dbg!(&pprev[2..]);
-        let node_outputs: Vec<Vec<Vec<f32>>> = serde_json::from_str(&pprev[2..]).unwrap();
+        let node_outputs: Vec<Vec<Vec<f32>>> = serde_json::from_str(&self.pprev[2..]).unwrap();
 
         for i in 0..outputs.len() {
             for c in 0..outputs[i].len() {
