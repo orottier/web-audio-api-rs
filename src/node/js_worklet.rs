@@ -38,7 +38,6 @@ fn incremental_id() -> u32 {
 #[derive(Debug)]
 pub struct JsWorkletNode {
     node: AudioWorkletNode,
-    id: u32,
 }
 
 impl JsWorkletNode {
@@ -73,12 +72,31 @@ impl JsWorkletNode {
             }
         }
         let params: Vec<AudioParamDescriptor> = serde_json::from_str(&pprev[2..]).unwrap();
-        dbg!(&params);
+        let param_names: Vec<_> = params.iter().map(|d| &d.name).cloned().collect();
+        dbg!(&param_names);
         *dynamic_param_descriptors().lock().unwrap() = params;
+
+        // Remap the constructor options to include our processor options
+        let AudioWorkletNodeOptions {
+            number_of_inputs,
+            number_of_outputs,
+            output_channel_count,
+            parameter_data,
+            processor_options: _processor_options,
+            audio_node_options,
+        } = options;
+        let options = AudioWorkletNodeOptions {
+            number_of_inputs,
+            number_of_outputs,
+            output_channel_count,
+            parameter_data,
+            audio_node_options,
+            processor_options: (id, param_names),
+        };
 
         let node = AudioWorkletNode::new::<JsWorkletProcessor>(context, options);
 
-        Self { node, id }
+        Self { node }
     }
 
     /// Collection of AudioParam objects with associated names of this node
@@ -123,13 +141,13 @@ struct JsWorkletProcessor {
 }
 
 impl AudioWorkletProcessor for JsWorkletProcessor {
-    type ProcessorOptions = ();
+    type ProcessorOptions = (u32, Vec<String>);
 
-    fn constructor(_opts: Self::ProcessorOptions) -> Self {
+    fn constructor(opts: Self::ProcessorOptions) -> Self {
         Self {
-            id: 0,
-            param_names: vec!["bitDepth".to_string(), "frequencyReduction".to_string()],
-        } // TODO
+            id: opts.0,
+            param_names: opts.1,
+        }
     }
 
     fn parameter_descriptors() -> Vec<AudioParamDescriptor>
