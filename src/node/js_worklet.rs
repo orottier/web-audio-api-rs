@@ -218,18 +218,18 @@ impl AudioWorkletProcessor for JsWorkletProcessor {
             .collect();
         let params_json = serde_json::to_string(&params).unwrap();
         let code = format!(
-            "
-currentFrame = {}, currentTime = {}, sampleRate = {}, inputs = {}, outputs = {}, params = {};
+            // the last value is echoed back by the repl, so put some scalar value last:
+            "inputs = {}, outputs = {}, params = {}, currentFrame = {}, currentTime = {}, sampleRate = {};
 proc{}.process(inputs, outputs, params);
 console.log(JSON.stringify(outputs));
 console.log('Done123');
 ",
-            scope.current_time,
-            scope.current_frame,
-            scope.sample_rate,
             input_json,
             output_json,
             params_json,
+            scope.current_time,
+            scope.current_frame,
+            scope.sample_rate,
             self.id
         );
 
