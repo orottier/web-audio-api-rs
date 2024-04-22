@@ -13,5 +13,3 @@ class WhiteNoiseProcessor extends AudioWorkletProcessor {
     return true;
   }
 }
-
-const proc = new WhiteNoiseProcessor();

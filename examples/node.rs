@@ -1,29 +1,18 @@
-use web_audio_api::js_runtime::NodeRuntime;
+use web_audio_api::context::{AudioContext, BaseAudioContext};
+use web_audio_api::node::{AudioNode, JsWorkletNode};
+use web_audio_api::worklet::AudioWorkletNodeOptions;
+use web_audio_api::AudioRenderCapacityOptions;
 
-fn main() -> std::io::Result<()> {
-    println!("CWD: {:?}", std::env::current_dir().unwrap());
+fn main() {
+    let context = AudioContext::default();
+    let node = JsWorkletNode::new(&context, "test.js", AudioWorkletNodeOptions::default());
+    node.connect(&context.destination());
 
-    let mut runtime = NodeRuntime::new()?;
-    runtime.eval_file("test.js")?;
-    runtime.output().for_each(|o| println!("{o}"));
+    let cap = context.render_capacity();
+    cap.set_onupdate(|e| println!("{e:?}"));
+    cap.start(AudioRenderCapacityOptions {
+        update_interval: 1.,
+    });
 
-    let code = "
-let inputs = [[[]]];
-let outputs = [[[0.0]]];
-let parameters = {};
-proc.process(inputs, outputs, parameters);
-console.log(outputs);
-console.log('Done123');
-";
-    runtime.eval(code)?;
-    'outer: loop {
-        for o in runtime.output() {
-            println!("{o}");
-            if o.contains("> Done123") {
-                break 'outer;
-            }
-        }
-    }
-
-    Ok(())
+    std::thread::sleep(std::time::Duration::from_secs(6));
 }
