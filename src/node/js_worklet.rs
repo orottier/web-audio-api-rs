@@ -56,7 +56,7 @@ impl JsWorkletNode {
         'outer: loop {
             for o in runtime.output() {
                 println!("{o}");
-                if o.contains("REGISTER") {
+                if o.starts_with("> REGISTER") {
                     let mut pieces = o.split(' ');
                     pieces.next().unwrap();
                     pieces.next().unwrap();
@@ -67,7 +67,7 @@ impl JsWorkletNode {
                         .unwrap()
                         .insert(register_name, register_class);
                 }
-                if o.contains("> Done999") {
+                if o == "> > Done999" {
                     break 'outer;
                 }
             }
@@ -103,18 +103,7 @@ impl JsWorkletNode {
         'outer: loop {
             for o in runtime.output() {
                 println!("{o}");
-                if o.contains("REGISTER") {
-                    let mut pieces = o.split(' ');
-                    pieces.next().unwrap();
-                    pieces.next().unwrap();
-                    let register_name = pieces.next().unwrap().to_string();
-                    let register_class = pieces.next().unwrap().to_string();
-                    registered_processors()
-                        .lock()
-                        .unwrap()
-                        .insert(register_name, register_class);
-                }
-                if o.contains("> Done123") {
+                if o == "> Done123" {
                     break 'outer;
                 }
                 std::mem::swap(&mut prev, &mut pprev);
@@ -253,7 +242,7 @@ console.log('Done123');
         'outer: loop {
             for o in runtime.output() {
                 // println!("{o}");
-                if o.contains("> Done123") {
+                if o == "> Done123" {
                     break 'outer;
                 }
                 std::mem::swap(&mut prev, &mut pprev);
