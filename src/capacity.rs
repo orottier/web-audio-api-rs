@@ -65,6 +65,7 @@ impl AudioRenderCapacityEvent {
 /// Ideally the load value is below 1.0, meaning that it took less time to render the audio than it
 /// took to play it out. An audio buffer underrun happens when this load value is greater than 1.0: the
 /// system could not render audio fast enough for real-time.
+#[derive(Clone)]
 pub struct AudioRenderCapacity {
     context: ConcreteBaseAudioContext,
     receiver: Receiver<AudioRenderCapacityLoad>,
