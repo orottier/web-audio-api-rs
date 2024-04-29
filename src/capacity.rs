@@ -65,6 +65,7 @@ impl AudioRenderCapacityEvent {
 /// Ideally the load value is below 1.0, meaning that it took less time to render the audio than it
 /// took to play it out. An audio buffer underrun happens when this load value is greater than 1.0: the
 /// system could not render audio fast enough for real-time.
+#[derive(Clone)]
 pub struct AudioRenderCapacity {
     context: ConcreteBaseAudioContext,
     receiver: Receiver<AudioRenderCapacityLoad>,
@@ -192,5 +193,69 @@ impl AudioRenderCapacity {
     /// Unset the EventHandler for [`AudioRenderCapacityEvent`].
     pub fn clear_onupdate(&self) {
         self.context.clear_event_handler(EventType::RenderCapacity);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::{AudioContext, AudioContextOptions};
+
+    #[test]
+    fn test_same_instance() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+
+        let rc1 = context.render_capacity();
+        let rc2 = context.render_capacity();
+        let rc3 = rc2.clone();
+
+        // assert all items are actually the same instance
+        assert!(Arc::ptr_eq(&rc1.stop_send, &rc2.stop_send));
+        assert!(Arc::ptr_eq(&rc1.stop_send, &rc3.stop_send));
+    }
+
+    #[test]
+    fn test_stop_when_not_running() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+
+        let rc = context.render_capacity();
+        rc.stop();
+    }
+
+    #[test]
+    fn test_render_capacity() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+
+        let rc = context.render_capacity();
+        let (send, recv) = crossbeam_channel::bounded(1);
+        rc.set_onupdate(move |e| send.send(e).unwrap());
+        rc.start(AudioRenderCapacityOptions {
+            update_interval: 0.05,
+        });
+        let event = recv.recv().unwrap();
+
+        assert!(event.timestamp >= 0.);
+        assert!(event.average_load >= 0.);
+        assert!(event.peak_load >= 0.);
+        assert!(event.underrun_ratio >= 0.);
+
+        assert!(event.timestamp.is_finite());
+        assert!(event.average_load.is_finite());
+        assert!(event.peak_load.is_finite());
+        assert!(event.underrun_ratio.is_finite());
+
+        assert_eq!(event.event.type_, "AudioRenderCapacityEvent");
     }
 }

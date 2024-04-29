@@ -268,6 +268,12 @@ impl AudioContext {
         self.backend_manager.lock().unwrap().sink_id().to_owned()
     }
 
+    /// Returns an [`AudioRenderCapacity`] instance associated with an AudioContext.
+    #[must_use]
+    pub fn render_capacity(&self) -> AudioRenderCapacity {
+        self.render_capacity.clone()
+    }
+
     /// Update the current audio output device.
     ///
     /// The provided `sink_id` string must match a device name `enumerate_devices_sync`.
@@ -711,12 +717,6 @@ impl AudioContext {
     ) -> node::MediaElementAudioSourceNode {
         let opts = node::MediaElementAudioSourceOptions { media_element };
         node::MediaElementAudioSourceNode::new(self, opts)
-    }
-
-    /// Returns an [`AudioRenderCapacity`] instance associated with an AudioContext.
-    #[must_use]
-    pub fn render_capacity(&self) -> &AudioRenderCapacity {
-        &self.render_capacity
     }
 }
 
