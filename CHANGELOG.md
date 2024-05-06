@@ -1,5 +1,10 @@
 # Version History
 
+## Version 0.45.0 (2024-05-06)
+
+- Changed: AudioContext::render_capacity now returns owned AudioRenderCapacity instead of ref
+- Added AudioParamValues.keys iterator
+
 ## Version 0.44.0 (2024-04-22)
 
 - Fix regression: ensure all async fns return a Send + Sync Future object
