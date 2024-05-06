@@ -40,6 +40,10 @@ impl<'a> AudioParamValues<'a> {
         let id = self.map.get(name).unwrap();
         self.values.get(id)
     }
+
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.map.keys().map(|s| s.as_ref())
+    }
 }
 
 /// Audio processing code that runs on the audio rendering thread.
