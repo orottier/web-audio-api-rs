@@ -9,12 +9,7 @@ use crate::assert_valid_number_of_channels;
 use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
 // object pool for `AudioRenderQuantumChannel`s, only allocate if the pool is empty
-pub(crate) struct Alloc {
-    inner: Rc<AllocInner>,
-}
-
-#[derive(Debug)]
-struct AllocInner {}
+pub(crate) struct Alloc;
 
 thread_local! {
     static POOL: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>> = RefCell::new(Vec::with_capacity(32));
@@ -23,26 +18,17 @@ thread_local! {
 
 impl Alloc {
     pub fn with_capacity(n: usize) -> Self {
-        let pool: Vec<_> = (0..n).map(|_| Rc::new([0.; RENDER_QUANTUM_SIZE])).collect();
-        POOL.set(pool);
-
-        Self {
-            inner: Rc::new(AllocInner {}),
-        }
+        Self {}
     }
 
     #[cfg(test)]
     pub fn allocate(&self) -> AudioRenderQuantumChannel {
-        AudioRenderQuantumChannel {
-            data: self.inner.allocate(),
-            alloc: Rc::clone(&self.inner),
-        }
+        AudioRenderQuantumChannel { data: allocate() }
     }
 
     pub fn silence(&self) -> AudioRenderQuantumChannel {
         AudioRenderQuantumChannel {
             data: ZEROES.with(Rc::clone),
-            alloc: Rc::clone(&self.inner),
         }
     }
 
@@ -52,20 +38,18 @@ impl Alloc {
     }
 }
 
-impl AllocInner {
-    fn allocate(&self) -> Rc<[f32; RENDER_QUANTUM_SIZE]> {
-        if let Some(rc) = POOL.with_borrow_mut(|p| p.pop()) {
-            // reuse from pool
-            rc
-        } else {
-            // allocate
-            Rc::new([0.; RENDER_QUANTUM_SIZE])
-        }
+fn allocate() -> Rc<[f32; RENDER_QUANTUM_SIZE]> {
+    if let Some(rc) = POOL.with_borrow_mut(|p| p.pop()) {
+        // reuse from pool
+        rc
+    } else {
+        // allocate
+        Rc::new([0.; RENDER_QUANTUM_SIZE])
     }
+}
 
-    fn push(&self, data: Rc<[f32; RENDER_QUANTUM_SIZE]>) {
-        POOL.with_borrow_mut(|p| p.push(data));
-    }
+fn push(data: Rc<[f32; RENDER_QUANTUM_SIZE]>) {
+    POOL.with_borrow_mut(|p| p.push(data));
 }
 
 /// Render thread channel buffer
@@ -84,13 +68,12 @@ impl AllocInner {
 #[derive(Clone, Debug)]
 pub struct AudioRenderQuantumChannel {
     data: Rc<[f32; RENDER_QUANTUM_SIZE]>,
-    alloc: Rc<AllocInner>,
 }
 
 impl AudioRenderQuantumChannel {
     fn make_mut(&mut self) -> &mut [f32; RENDER_QUANTUM_SIZE] {
         if Rc::strong_count(&self.data) != 1 {
-            let mut new = self.alloc.allocate();
+            let mut new = allocate();
             Rc::make_mut(&mut new).copy_from_slice(self.data.deref());
             self.data = new;
         }
@@ -117,7 +100,6 @@ impl AudioRenderQuantumChannel {
     pub(crate) fn silence(&self) -> Self {
         Self {
             data: ZEROES.with(Rc::clone),
-            alloc: Rc::clone(&self.alloc),
         }
     }
 }
@@ -149,7 +131,7 @@ impl std::ops::Drop for AudioRenderQuantumChannel {
         if Rc::strong_count(&self.data) == 1 {
             let zeroes = ZEROES.with(Rc::clone);
             let rc = std::mem::replace(&mut self.data, zeroes);
-            self.alloc.push(rc);
+            push(rc);
         }
     }
 }
