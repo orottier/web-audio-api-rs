@@ -14,23 +14,20 @@ pub(crate) struct Alloc {
 }
 
 #[derive(Debug)]
-struct AllocInner {
-    pool: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>>,
-    zeroes: Rc<[f32; RENDER_QUANTUM_SIZE]>,
+struct AllocInner {}
+
+thread_local! {
+    static POOL: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>> = RefCell::new(Vec::with_capacity(32));
+    static ZEROES: Rc<[f32; RENDER_QUANTUM_SIZE]> = Rc::new([0.; RENDER_QUANTUM_SIZE]);
 }
 
 impl Alloc {
     pub fn with_capacity(n: usize) -> Self {
         let pool: Vec<_> = (0..n).map(|_| Rc::new([0.; RENDER_QUANTUM_SIZE])).collect();
-        let zeroes = Rc::new([0.; RENDER_QUANTUM_SIZE]);
-
-        let inner = AllocInner {
-            pool: RefCell::new(pool),
-            zeroes,
-        };
+        POOL.set(pool);
 
         Self {
-            inner: Rc::new(inner),
+            inner: Rc::new(AllocInner {}),
         }
     }
 
@@ -44,20 +41,20 @@ impl Alloc {
 
     pub fn silence(&self) -> AudioRenderQuantumChannel {
         AudioRenderQuantumChannel {
-            data: Rc::clone(&self.inner.zeroes),
+            data: ZEROES.with(Rc::clone),
             alloc: Rc::clone(&self.inner),
         }
     }
 
     #[cfg(test)]
     pub fn pool_size(&self) -> usize {
-        self.inner.pool.borrow().len()
+        POOL.with_borrow(|p| p.len())
     }
 }
 
 impl AllocInner {
     fn allocate(&self) -> Rc<[f32; RENDER_QUANTUM_SIZE]> {
-        if let Some(rc) = self.pool.borrow_mut().pop() {
+        if let Some(rc) = POOL.with_borrow_mut(|p| p.pop()) {
             // reuse from pool
             rc
         } else {
@@ -67,9 +64,7 @@ impl AllocInner {
     }
 
     fn push(&self, data: Rc<[f32; RENDER_QUANTUM_SIZE]>) {
-        self.pool
-            .borrow_mut() // infallible when single threaded
-            .push(data);
+        POOL.with_borrow_mut(|p| p.push(data));
     }
 }
 
@@ -107,7 +102,7 @@ impl AudioRenderQuantumChannel {
     ///
     /// If this function returns false, it is still possible for all samples to be zero.
     pub(crate) fn is_silent(&self) -> bool {
-        Rc::ptr_eq(&self.data, &self.alloc.zeroes)
+        ZEROES.with(|z| Rc::ptr_eq(&self.data, z))
     }
 
     /// Sum two channels
@@ -121,7 +116,7 @@ impl AudioRenderQuantumChannel {
 
     pub(crate) fn silence(&self) -> Self {
         Self {
-            data: Rc::clone(&self.alloc.zeroes),
+            data: ZEROES.with(Rc::clone),
             alloc: Rc::clone(&self.alloc),
         }
     }
@@ -152,7 +147,7 @@ impl AsRef<[f32]> for AudioRenderQuantumChannel {
 impl std::ops::Drop for AudioRenderQuantumChannel {
     fn drop(&mut self) {
         if Rc::strong_count(&self.data) == 1 {
-            let zeroes = Rc::clone(&self.alloc.zeroes);
+            let zeroes = ZEROES.with(Rc::clone);
             let rc = std::mem::replace(&mut self.data, zeroes);
             self.alloc.push(rc);
         }
