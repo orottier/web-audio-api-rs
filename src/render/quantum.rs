@@ -13,23 +13,15 @@ pub(crate) struct Alloc;
 
 thread_local! {
     static POOL: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>> = RefCell::new(Vec::with_capacity(32));
-    static ZEROES: Rc<[f32; RENDER_QUANTUM_SIZE]> = Rc::new([0.; RENDER_QUANTUM_SIZE]);
 }
 
 impl Alloc {
-    pub fn with_capacity(n: usize) -> Self {
+    pub fn with_capacity(_n: usize) -> Self {
         Self {}
     }
 
-    #[cfg(test)]
-    pub fn allocate(&self) -> AudioRenderQuantumChannel {
-        AudioRenderQuantumChannel { data: allocate() }
-    }
-
     pub fn silence(&self) -> AudioRenderQuantumChannel {
-        AudioRenderQuantumChannel {
-            data: ZEROES.with(Rc::clone),
-        }
+        AudioRenderQuantumChannel { data: None }
     }
 
     #[cfg(test)]
@@ -67,25 +59,35 @@ fn push(data: Rc<[f32; RENDER_QUANTUM_SIZE]>) {
 /// mutate it from there.
 #[derive(Clone, Debug)]
 pub struct AudioRenderQuantumChannel {
-    data: Rc<[f32; RENDER_QUANTUM_SIZE]>,
+    data: Option<Rc<[f32; RENDER_QUANTUM_SIZE]>>,
 }
 
 impl AudioRenderQuantumChannel {
     fn make_mut(&mut self) -> &mut [f32; RENDER_QUANTUM_SIZE] {
-        if Rc::strong_count(&self.data) != 1 {
-            let mut new = allocate();
-            Rc::make_mut(&mut new).copy_from_slice(self.data.deref());
-            self.data = new;
+        if self.data.is_none() {
+            self.data = Some(allocate());
+            Rc::make_mut(self.data.as_mut().unwrap()).fill(0.);
         }
 
-        Rc::make_mut(&mut self.data)
+        match &mut self.data {
+            Some(data) => {
+                if Rc::strong_count(data) != 1 {
+                    let mut new = allocate();
+                    Rc::make_mut(&mut new).copy_from_slice(&data[..]);
+                    *data = new;
+                }
+
+                return Rc::make_mut(data);
+            }
+            None => unreachable!(),
+        }
     }
 
     /// `O(1)` check if this buffer is equal to the 'silence buffer'
     ///
     /// If this function returns false, it is still possible for all samples to be zero.
     pub(crate) fn is_silent(&self) -> bool {
-        ZEROES.with(|z| Rc::ptr_eq(&self.data, z))
+        self.data.is_none()
     }
 
     /// Sum two channels
@@ -98,9 +100,7 @@ impl AudioRenderQuantumChannel {
     }
 
     pub(crate) fn silence(&self) -> Self {
-        Self {
-            data: ZEROES.with(Rc::clone),
-        }
+        Self { data: None }
     }
 }
 
@@ -110,7 +110,10 @@ impl Deref for AudioRenderQuantumChannel {
     type Target = [f32];
 
     fn deref(&self) -> &Self::Target {
-        self.data.as_slice()
+        match &self.data {
+            Some(data) => data.as_slice(),
+            None => &[0.; RENDER_QUANTUM_SIZE],
+        }
     }
 }
 
@@ -122,16 +125,22 @@ impl DerefMut for AudioRenderQuantumChannel {
 
 impl AsRef<[f32]> for AudioRenderQuantumChannel {
     fn as_ref(&self) -> &[f32] {
-        &self.data[..]
+        match &self.data {
+            Some(data) => data.as_slice(),
+            None => &[0.; RENDER_QUANTUM_SIZE],
+        }
     }
 }
 
 impl std::ops::Drop for AudioRenderQuantumChannel {
     fn drop(&mut self) {
-        if Rc::strong_count(&self.data) == 1 {
-            let zeroes = ZEROES.with(Rc::clone);
-            let rc = std::mem::replace(&mut self.data, zeroes);
-            push(rc);
+        let data = match self.data.take() {
+            None => return,
+            Some(data) => data,
+        };
+
+        if Rc::strong_count(&data) == 1 {
+            push(data);
         }
     }
 }
@@ -626,8 +635,15 @@ impl AudioRenderQuantum {
         let mut channels = self.channels.iter();
         let first = channels.next().unwrap();
         for c in channels {
-            if !Rc::ptr_eq(&first.data, &c.data) {
-                return false;
+            match (&first.data, &c.data) {
+                (None, None) => (),
+                (None, _) => return false,
+                (_, None) => return false,
+                (Some(d1), Some(d2)) => {
+                    if !Rc::ptr_eq(d1, d2) {
+                        return false;
+                    }
+                }
             }
         }
 
@@ -650,7 +666,7 @@ mod tests {
         alloc_counter::deny_alloc(|| {
             {
                 // take a buffer out of the pool
-                let a = alloc.allocate();
+                let a = alloc.silence();
 
                 assert_float_eq!(&a[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
                 assert_eq!(alloc.pool_size(), 1);
@@ -675,12 +691,12 @@ mod tests {
             assert_eq!(alloc.pool_size(), 2);
 
             let c = {
-                let a = alloc.allocate();
-                let b = alloc.allocate();
+                let a = alloc.silence();
+                let b = alloc.silence();
 
                 let c = alloc_counter::allow_alloc(|| {
                     // we can allocate beyond the pool size
-                    let c = alloc.allocate();
+                    let c = alloc.silence();
                     assert_eq!(alloc.pool_size(), 0);
                     c
                 });
@@ -757,7 +773,7 @@ mod tests {
         let mut signal1 = alloc.silence();
         signal1.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-        let mut signal2 = alloc.allocate();
+        let mut signal2 = alloc.silence();
         signal2.copy_from_slice(&[2.; RENDER_QUANTUM_SIZE]);
 
         // test add silence to signal
