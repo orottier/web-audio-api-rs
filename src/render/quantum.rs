@@ -1,6 +1,5 @@
 //! Optimized audio signal data structures, used in `AudioProcessors`
 use arrayvec::ArrayVec;
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::node::{ChannelConfigInner, ChannelCountMode, ChannelInterpretation};
@@ -8,29 +7,41 @@ use crate::node::{ChannelConfigInner, ChannelCountMode, ChannelInterpretation};
 use crate::assert_valid_number_of_channels;
 use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
-thread_local! {
-    static POOL: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>> = RefCell::new(Vec::with_capacity(32));
-}
-
+/// A sample slice containing only zeroes
 const ZEROES: [f32; RENDER_QUANTUM_SIZE] = [0.; RENDER_QUANTUM_SIZE];
 
-#[cfg(test)]
-fn pool_size() -> usize {
-    POOL.with_borrow(|p| p.len())
-}
+mod pool {
+    //! Thread local allocator for sample slices
 
-fn allocate() -> Rc<[f32; RENDER_QUANTUM_SIZE]> {
-    if let Some(rc) = POOL.with_borrow_mut(|p| p.pop()) {
-        // reuse from pool
-        rc
-    } else {
-        // allocate
-        Rc::new(ZEROES)
+    use super::*;
+    use std::cell::RefCell;
+
+    thread_local! {
+        /// Thread local pool of pre-allocated sample slice that can be reused after being dropped
+        static POOL: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>> = RefCell::new(Vec::with_capacity(32));
     }
-}
 
-fn push(data: Rc<[f32; RENDER_QUANTUM_SIZE]>) {
-    POOL.with_borrow_mut(|p| p.push(data));
+    #[cfg(test)]
+    /// Number of pre-allocated items available in the pool
+    pub(super) fn size() -> usize {
+        POOL.with_borrow(|p| p.len())
+    }
+
+    /// Obtain a new sample slice, either reused from the pool, or newly allocated
+    pub(super) fn allocate() -> Rc<[f32; RENDER_QUANTUM_SIZE]> {
+        if let Some(rc) = POOL.with_borrow_mut(|p| p.pop()) {
+            // reuse from pool
+            rc
+        } else {
+            // allocate
+            Rc::new(ZEROES)
+        }
+    }
+
+    /// Reclaim a sample slice into the thread local pool
+    pub(super) fn push(data: Rc<[f32; RENDER_QUANTUM_SIZE]>) {
+        POOL.with_borrow_mut(|p| p.push(data));
+    }
 }
 
 /// Render thread channel buffer
@@ -54,14 +65,14 @@ pub struct AudioRenderQuantumChannel {
 impl AudioRenderQuantumChannel {
     fn make_mut(&mut self) -> &mut [f32; RENDER_QUANTUM_SIZE] {
         if self.data.is_none() {
-            self.data = Some(allocate());
+            self.data = Some(pool::allocate());
             Rc::make_mut(self.data.as_mut().unwrap()).copy_from_slice(&ZEROES);
         }
 
         match &mut self.data {
             Some(data) => {
                 if Rc::strong_count(data) != 1 {
-                    let mut new = allocate();
+                    let mut new = pool::allocate();
                     Rc::make_mut(&mut new).copy_from_slice(&data[..]);
                     *data = new;
                 }
@@ -129,7 +140,7 @@ impl std::ops::Drop for AudioRenderQuantumChannel {
         };
 
         if Rc::strong_count(&data) == 1 {
-            push(data);
+            pool::push(data);
         }
     }
 }
@@ -654,7 +665,7 @@ mod tests {
             let _b = b.make_mut();
         }
 
-        let pool_size_start = dbg!(pool_size());
+        let pool_size_start = pool::size();
         assert!(pool_size_start >= 2); // due to allocation, pool size is nonzero
 
         {
@@ -662,26 +673,26 @@ mod tests {
             let a = AudioRenderQuantumChannel::silence();
 
             assert_float_eq!(&a[..], &ZEROES[..], abs_all <= 0.);
-            assert_eq!(pool_size(), pool_size_start);
+            assert_eq!(pool::size(), pool_size_start);
 
             // mutating this buffer will take from the pool
             let mut a = a;
             a.iter_mut().for_each(|v| *v += 1.);
             assert_float_eq!(&a[..], &[1.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
-            assert_eq!(pool_size(), pool_size_start - 1);
+            assert_eq!(pool::size(), pool_size_start - 1);
 
             // clone this buffer, should not allocate
             #[allow(clippy::redundant_clone)]
             let mut b: AudioRenderQuantumChannel = a.clone();
-            assert_eq!(pool_size(), pool_size_start - 1);
+            assert_eq!(pool::size(), pool_size_start - 1);
 
             // mutate cloned buffer, this will allocate
             b.iter_mut().for_each(|v| *v += 1.);
-            assert_eq!(pool_size(), pool_size_start - 2);
+            assert_eq!(pool::size(), pool_size_start - 2);
         }
 
         // all buffers are reclaimed
-        assert_eq!(pool_size(), pool_size_start);
+        assert_eq!(pool::size(), pool_size_start);
     }
 
     #[test]
