@@ -10,7 +10,9 @@ use std::panic::{self, AssertUnwindSafe};
 use crate::context::AudioNodeId;
 use smallvec::{smallvec, SmallVec};
 
-use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeCollection};
+use super::{
+    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioRenderQuantumChannel, NodeCollection,
+};
 use crate::node::{ChannelConfigInner, ChannelCountMode, ChannelInterpretation};
 use crate::render::AudioWorkletGlobalScope;
 
@@ -122,8 +124,6 @@ impl Node {
 pub(crate) struct Graph {
     /// Processing Nodes
     nodes: NodeCollection,
-    /// Allocator for audio buffers
-    alloc: Alloc,
     /// Message channel to notify control thread of reclaimable AudioNodeIds
     reclaim_id_channel: llq::Producer<AudioNodeId>,
     /// Topological ordering of the nodes
@@ -151,7 +151,6 @@ impl Graph {
     pub fn new(reclaim_id_channel: llq::Producer<AudioNodeId>) -> Self {
         Graph {
             nodes: NodeCollection::new(),
-            alloc: Alloc::with_capacity(64),
             reclaim_id_channel,
             ordered: vec![],
             marked: vec![],
@@ -180,8 +179,10 @@ impl Graph {
 
         // set input and output buffers to single channel of silence, will be upmixed when
         // necessary
-        let inputs = vec![AudioRenderQuantum::from(self.alloc.silence()); number_of_inputs];
-        let outputs = vec![AudioRenderQuantum::from(self.alloc.silence()); number_of_outputs];
+        let inputs =
+            vec![AudioRenderQuantum::from(AudioRenderQuantumChannel::silence()); number_of_inputs];
+        let outputs =
+            vec![AudioRenderQuantum::from(AudioRenderQuantumChannel::silence()); number_of_outputs];
 
         self.nodes.insert(
             index,
