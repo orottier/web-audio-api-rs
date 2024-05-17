@@ -12,6 +12,8 @@ thread_local! {
     static POOL: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>> = RefCell::new(Vec::with_capacity(32));
 }
 
+const ZEROES: [f32; RENDER_QUANTUM_SIZE] = [0.; RENDER_QUANTUM_SIZE];
+
 #[cfg(test)]
 fn pool_size() -> usize {
     POOL.with_borrow(|p| p.len())
@@ -23,7 +25,7 @@ fn allocate() -> Rc<[f32; RENDER_QUANTUM_SIZE]> {
         rc
     } else {
         // allocate
-        Rc::new([0.; RENDER_QUANTUM_SIZE])
+        Rc::new(ZEROES)
     }
 }
 
@@ -53,7 +55,7 @@ impl AudioRenderQuantumChannel {
     fn make_mut(&mut self) -> &mut [f32; RENDER_QUANTUM_SIZE] {
         if self.data.is_none() {
             self.data = Some(allocate());
-            Rc::make_mut(self.data.as_mut().unwrap()).fill(0.);
+            Rc::make_mut(self.data.as_mut().unwrap()).copy_from_slice(&ZEROES);
         }
 
         match &mut self.data {
@@ -99,7 +101,7 @@ impl Deref for AudioRenderQuantumChannel {
     fn deref(&self) -> &Self::Target {
         match &self.data {
             Some(data) => data.as_slice(),
-            None => &[0.; RENDER_QUANTUM_SIZE],
+            None => &ZEROES,
         }
     }
 }
@@ -114,7 +116,7 @@ impl AsRef<[f32]> for AudioRenderQuantumChannel {
     fn as_ref(&self) -> &[f32] {
         match &self.data {
             Some(data) => data.as_slice(),
-            None => &[0.; RENDER_QUANTUM_SIZE],
+            None => &ZEROES,
         }
     }
 }
@@ -659,7 +661,7 @@ mod tests {
             // take a buffer out of the pool
             let a = AudioRenderQuantumChannel::silence();
 
-            assert_float_eq!(&a[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
+            assert_float_eq!(&a[..], &ZEROES[..], abs_all <= 0.);
             assert_eq!(pool_size(), pool_size_start);
 
             // mutating this buffer will take from the pool
@@ -686,7 +688,7 @@ mod tests {
     fn test_silence() {
         let silence = AudioRenderQuantumChannel::silence();
 
-        assert_float_eq!(&silence[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
+        assert_float_eq!(&silence[..], &ZEROES[..], abs_all <= 0.);
         assert!(silence.is_silent());
 
         // changing silence is possible
@@ -697,7 +699,7 @@ mod tests {
 
         // but should not alter new silence
         let silence = AudioRenderQuantumChannel::silence();
-        assert_float_eq!(&silence[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
+        assert_float_eq!(&silence[..], &ZEROES[..], abs_all <= 0.);
         assert!(silence.is_silent());
     }
 
@@ -766,11 +768,7 @@ mod tests {
             &[1.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
-        assert_float_eq!(
-            &buffer.channel_data(1)[..],
-            &[0.; RENDER_QUANTUM_SIZE][..],
-            abs_all <= 0.
-        );
+        assert_float_eq!(&buffer.channel_data(1)[..], &ZEROES[..], abs_all <= 0.);
 
         buffer.mix(1, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 1);
@@ -851,16 +849,8 @@ mod tests {
                 &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
-            assert_float_eq!(
-                &buffer.channel_data(2)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(2)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(3)[..], &ZEROES[..], abs_all <= 0.);
         }
 
         {
@@ -874,36 +864,16 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 6);
 
             // left and right equal
-            assert_float_eq!(
-                &buffer.channel_data(0)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(1)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(0)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(1)[..], &ZEROES[..], abs_all <= 0.);
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
                 &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(4)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(5)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(3)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(4)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(5)[..], &ZEROES[..], abs_all <= 0.);
         }
 
         {
@@ -940,16 +910,8 @@ mod tests {
                 &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
-            assert_float_eq!(
-                &buffer.channel_data(2)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(2)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(3)[..], &ZEROES[..], abs_all <= 0.);
         }
 
         {
@@ -986,26 +948,10 @@ mod tests {
                 &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
-            assert_float_eq!(
-                &buffer.channel_data(2)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(4)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(5)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(2)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(3)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(4)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(5)[..], &ZEROES[..], abs_all <= 0.);
         }
 
         {
@@ -1058,16 +1004,8 @@ mod tests {
                 &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
-            assert_float_eq!(
-                &buffer.channel_data(2)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(2)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(3)[..], &ZEROES[..], abs_all <= 0.);
             assert_float_eq!(
                 &buffer.channel_data(4)[..],
                 &[0.75; RENDER_QUANTUM_SIZE][..],
@@ -1470,16 +1408,8 @@ mod tests {
         let mut buffer = AudioRenderQuantum::from(signal);
         buffer.mix(2, ChannelInterpretation::Speakers);
 
-        assert_float_eq!(
-            &buffer.channel_data(0)[..],
-            &[0.; RENDER_QUANTUM_SIZE][..],
-            abs_all <= 0.
-        );
-        assert_float_eq!(
-            &buffer.channel_data(1)[..],
-            &[0.; RENDER_QUANTUM_SIZE][..],
-            abs_all <= 0.
-        );
+        assert_float_eq!(&buffer.channel_data(0)[..], &ZEROES[..], abs_all <= 0.);
+        assert_float_eq!(&buffer.channel_data(1)[..], &ZEROES[..], abs_all <= 0.);
 
         assert!(buffer.is_silent());
     }
@@ -1497,11 +1427,7 @@ mod tests {
             &[1.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
-        assert_float_eq!(
-            &buffer.channel_data(1)[..],
-            &[0.; RENDER_QUANTUM_SIZE][..],
-            abs_all <= 0.
-        );
+        assert_float_eq!(&buffer.channel_data(1)[..], &ZEROES[..], abs_all <= 0.);
         assert!(!buffer.is_silent());
     }
 }
