@@ -18,7 +18,10 @@ mod pool {
 
     thread_local! {
         /// Thread local pool of pre-allocated sample slice that can be reused after being dropped
-        static POOL: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>> = RefCell::new(Vec::with_capacity(32));
+        static POOL: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>> = {
+            log::debug!("Setting up a new thread local pool of audio quanta");
+            RefCell::new(Vec::with_capacity(32))
+        };
     }
 
     #[cfg(test)]
