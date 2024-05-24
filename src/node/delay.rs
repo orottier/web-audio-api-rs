@@ -301,7 +301,7 @@ impl DelayNode {
             (max_delay_time * sample_rate / RENDER_QUANTUM_SIZE as f64).ceil() as usize;
 
         let quantum = AudioRenderQuantum::new();
-        let ring_buffer = vec![quantum; num_quanta + 1];
+        let ring_buffer = vec![quantum; num_quanta + 1].into_boxed_slice();
 
         let shared_ring_buffer = Rc::new(RefCell::new(ring_buffer));
         let shared_ring_buffer_clone = Rc::clone(&shared_ring_buffer);
@@ -376,7 +376,7 @@ impl DelayNode {
 }
 
 struct DelayWriter {
-    ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
+    ring_buffer: Rc<RefCell<Box<[AudioRenderQuantum]>>>,
     index: usize,
     latest_frame_written: Rc<Cell<u64>>,
     last_written_index: Rc<Cell<Option<usize>>>,
@@ -391,7 +391,7 @@ unsafe impl Send for DelayWriter {}
 impl Drop for DelayWriter {
     fn drop(&mut self) {
         let last_written_index = if self.index == 0 {
-            self.ring_buffer.borrow().capacity() - 1
+            self.ring_buffer.borrow().len() - 1
         } else {
             self.index - 1
         };
@@ -421,7 +421,7 @@ impl AudioProcessor for DelayWriter {
         buffer[self.index] = input;
 
         // increment cursor and last written frame
-        self.index = (self.index + 1) % buffer.capacity();
+        self.index = (self.index + 1) % buffer.len();
         self.latest_frame_written.set(scope.current_frame);
 
         // The writer end does not produce output,
@@ -462,7 +462,7 @@ impl DelayWriter {
 
 struct DelayReader {
     delay_time: AudioParamId,
-    ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
+    ring_buffer: Rc<RefCell<Box<[AudioRenderQuantum]>>>,
     index: usize,
     latest_frame_written: Rc<Cell<u64>>,
     in_cycle: bool,
@@ -639,7 +639,7 @@ impl AudioProcessor for DelayReader {
             self.last_written_index_checked = last_written_index;
         }
         // increment ring buffer cursor
-        self.index = (self.index + 1) % ring_buffer.capacity();
+        self.index = (self.index + 1) % ring_buffer.len();
 
         true
     }
