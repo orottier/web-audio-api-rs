@@ -176,6 +176,17 @@ pub struct AudioRenderQuantum {
 }
 
 impl AudioRenderQuantum {
+    /// Create a new `AudioRenderQuantum` with a single channel of silence
+    pub(crate) fn new() -> Self {
+        let mut channels = ArrayVec::new();
+        channels.push(AudioRenderQuantumChannel::silence());
+
+        Self {
+            channels,
+            single_valued: false,
+        }
+    }
+
     /// Create a new `AudioRenderQuantum` from a single channel buffer
     pub(crate) fn from(channel: AudioRenderQuantumChannel) -> Self {
         let mut channels = ArrayVec::new();
