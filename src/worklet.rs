@@ -371,7 +371,7 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
         }
 
         // Set the proper channel count for the outputs
-        if self.output_channel_count.is_empty() {
+        if !outputs.is_empty() && self.output_channel_count.is_empty() {
             // special case - single input/output - inherit channel count from input
             outputs[0].set_number_of_channels(inputs[0].number_of_channels());
         } else {
@@ -404,13 +404,15 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
             .map(|output_channel| unsafe { std::mem::transmute(output_channel) })
             .for_each(|c| self.outputs_flat.push(c));
 
-        let mut outputs_flat = &mut self.outputs_flat[..];
-        for c in output_channel_count {
-            let (left, right) = outputs_flat.split_at_mut(*c);
-            // SAFETY - see comments above
-            let left_static = unsafe { std::mem::transmute(left) };
-            self.outputs_grouped.push(left_static);
-            outputs_flat = right;
+        if !outputs.is_empty() {
+            let mut outputs_flat = &mut self.outputs_flat[..];
+            for c in output_channel_count {
+                let (left, right) = outputs_flat.split_at_mut(*c);
+                // SAFETY - see comments above
+                let left_static = unsafe { std::mem::transmute(left) };
+                self.outputs_grouped.push(left_static);
+                outputs_flat = right;
+            }
         }
 
         let param_getter = AudioParamValues {
@@ -447,6 +449,8 @@ mod tests {
     use super::*;
     use crate::context::OfflineAudioContext;
     use float_eq::assert_float_eq;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     struct TestProcessor;
 
@@ -509,6 +513,44 @@ mod tests {
             &[0.; 128][..],
             abs_all <= 0.
         );
+    }
+
+    #[test]
+    fn test_worklet_only_input() {
+        struct SetBoolWhenRunProcessor(Arc<AtomicBool>);
+
+        impl AudioWorkletProcessor for SetBoolWhenRunProcessor {
+            type ProcessorOptions = Arc<AtomicBool>;
+
+            fn constructor(opts: Self::ProcessorOptions) -> Self {
+                Self(opts)
+            }
+
+            fn process<'a, 'b>(
+                &mut self,
+                _inputs: &'b [&'a [&'a [f32]]],
+                _outputs: &'b mut [&'a mut [&'a mut [f32]]],
+                _params: AudioParamValues<'b>,
+                _scope: &'b AudioWorkletGlobalScope,
+            ) -> bool {
+                self.0.store(true, Ordering::Relaxed);
+                false
+            }
+        }
+
+        let has_run = Arc::new(AtomicBool::new(false));
+
+        let mut context = OfflineAudioContext::new(1, 128, 48000.);
+        let options = AudioWorkletNodeOptions {
+            number_of_inputs: 1,
+            number_of_outputs: 0,
+            processor_options: Arc::clone(&has_run),
+            ..AudioWorkletNodeOptions::default()
+        };
+        let _ = AudioWorkletNode::new::<SetBoolWhenRunProcessor>(&context, options);
+
+        let _ = context.start_rendering_sync();
+        assert!(has_run.load(Ordering::Relaxed));
     }
 
     #[test]
