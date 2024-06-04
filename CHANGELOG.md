@@ -1,5 +1,9 @@
 # Version History
 
+## Version 0.45.1 (2024-06-04)
+
+- Fixed a crash for AudioWorkletNode with zero outputs
+
 ## Version 0.45.0 (2024-05-06)
 
 - Changed: AudioContext::render_capacity now returns owned AudioRenderCapacity instead of ref
