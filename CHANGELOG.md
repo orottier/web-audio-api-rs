@@ -3,6 +3,7 @@
 ## Version 0.45.1 (2024-06-04)
 
 - Fixed a crash for AudioWorkletNode with zero outputs
+- Increase MSRV to 1.71
 
 ## Version 0.45.0 (2024-05-06)
 
