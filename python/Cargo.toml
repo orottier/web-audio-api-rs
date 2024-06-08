@@ -10,3 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.21.1"
+web-audio-api-rs = { path = "../", package = "web-audio-api" }
