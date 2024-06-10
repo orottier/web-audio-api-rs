@@ -7,6 +7,7 @@ edition = "2021"
 [lib]
 name = "web_audio_api"
 crate-type = ["cdylib"]
+doc = false
 
 [dependencies]
 pyo3 = "0.21.1"
