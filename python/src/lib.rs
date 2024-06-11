@@ -86,7 +86,6 @@ impl OscillatorNode {
 /// A Python module implemented in Rust.
 #[pymodule]
 fn web_audio_api(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
     m.add_class::<AudioContext>()?;
     m.add_class::<AudioNode>()?;
     m.add_class::<OscillatorNode>()?;
