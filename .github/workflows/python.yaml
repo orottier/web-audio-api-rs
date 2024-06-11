@@ -42,7 +42,7 @@ jobs:
           python-version: 3.x
       - name: Install ALSA and Jack dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev libjack-jackd2-dev cmake
+          sudo apt-get update && sudo apt-get install -y pkg-config alsa libasound2-dev libjack-jackd2-dev cmake
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -56,41 +56,41 @@ jobs:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
 
-# Ignore musl for now - issue with pkg-config installed but not found.
-#
-#   musllinux:
-#     runs-on: ${{ matrix.platform.runner }}
-#     strategy:
-#       matrix:
-#         platform:
-#           - runner: ubuntu-latest
-#             target: x86_64
-#           - runner: ubuntu-latest
-#             target: x86
-#           - runner: ubuntu-latest
-#             target: aarch64
-#           - runner: ubuntu-latest
-#             target: armv7
-#     steps:
-#       - uses: actions/checkout@v4
-#       - uses: actions/setup-python@v5
-#         with:
-#           python-version: 3.x
-#       - name: Install ALSA and Jack dependencies
-#         run: |
-#           sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev libjack-jackd2-dev cmake
-#       - name: Build wheels
-#         uses: PyO3/maturin-action@v1
-#         with:
-#           target: ${{ matrix.platform.target }}
-#           args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
-#           sccache: "true"
-#           manylinux: musllinux_1_2
-#       - name: Upload wheels
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: wheels-musllinux-${{ matrix.platform.target }}
-#           path: dist
+  # Ignore musl for now - issue with pkg-config installed but not found.
+  #
+  #   musllinux:
+  #     runs-on: ${{ matrix.platform.runner }}
+  #     strategy:
+  #       matrix:
+  #         platform:
+  #           - runner: ubuntu-latest
+  #             target: x86_64
+  #           - runner: ubuntu-latest
+  #             target: x86
+  #           - runner: ubuntu-latest
+  #             target: aarch64
+  #           - runner: ubuntu-latest
+  #             target: armv7
+  #     steps:
+  #       - uses: actions/checkout@v4
+  #       - uses: actions/setup-python@v5
+  #         with:
+  #           python-version: 3.x
+  #       - name: Install ALSA and Jack dependencies
+  #         run: |
+  #           sudo apt-get update && sudo apt-get install -y pkg-config alsa libasound2-dev libjack-jackd2-dev cmake
+  #       - name: Build wheels
+  #         uses: PyO3/maturin-action@v1
+  #         with:
+  #           target: ${{ matrix.platform.target }}
+  #           args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
+  #           sccache: "true"
+  #           manylinux: musllinux_1_2
+  #       - name: Upload wheels
+  #         uses: actions/upload-artifact@v4
+  #         with:
+  #           name: wheels-musllinux-${{ matrix.platform.target }}
+  #           path: dist
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
