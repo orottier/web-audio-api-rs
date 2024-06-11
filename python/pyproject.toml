@@ -3,13 +3,21 @@ requires = ["maturin>=1.6,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "python"
+name = "web-audio-api"
+version = "0.1.0"
 requires-python = ">=3.8"
+description = "A Rust/Python implementation of the Web Audio API, for use in non-browser contexts"
+license = {text = "MIT License"}
+keywords = ["web-audio-api", "audio", "sound", "dsp"]
 classifiers = [
     "Programming Language :: Rust",
-    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Multimedia :: Sound/Audio",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/orottier/web-audio-api-rs"
+Issues = "https://github.com/orottier/web-audio-api-rs/issues"
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
