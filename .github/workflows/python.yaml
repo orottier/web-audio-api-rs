@@ -46,7 +46,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
           sccache: "true"
-          before-script-linux: apt-get update && apt-get install -y pkg-config libasound2-dev libjack-jackd2-dev cmake
+          before-script-linux: yum update && yum install -y pkg-config libasound2-dev
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -80,7 +80,7 @@ jobs:
   #           target: ${{ matrix.platform.target }}
   #           args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
   #           sccache: "true"
-  #           before-script-linux: apt-get update && apt-get install -y pkg-config libasound2-dev libjack-jackd2-dev cmake
+  #           before-script-linux: yum update && yum install -y pkg-config libasound2-dev
   #           manylinux: musllinux_1_2
   #       - name: Upload wheels
   #         uses: actions/upload-artifact@v4
