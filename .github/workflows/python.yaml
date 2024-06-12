@@ -171,4 +171,4 @@ jobs:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
           command: upload
-          args: --non-interactive --skip-existing wheels-*/* --manifest-path python/Cargo.toml
+          args: --non-interactive --skip-existing wheels-*/*
