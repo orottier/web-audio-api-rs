@@ -46,7 +46,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
           sccache: "true"
-          before-script-linux: yum update -y && yum install --skip-broken -y libasound2-dev libasound2
+          before-script-linux: yum update -y && yum install -y alsa-utils alsa-lib
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -80,7 +80,7 @@ jobs:
   #           target: ${{ matrix.platform.target }}
   #           args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
   #           sccache: "true"
-  #           before-script-linux: yum update -y && yum install --skip-broken -y libasound2-dev libasound2
+  #           before-script-linux: yum update -y && yum install -y alsa-utils alsa-lib
   #           manylinux: musllinux_1_2
   #       - name: Upload wheels
   #         uses: actions/upload-artifact@v4
