@@ -27,10 +27,10 @@ jobs:
             target: x86_64
           - runner: ubuntu-latest
             target: x86
-          - runner: ubuntu-latest
-            target: aarch64
-          - runner: ubuntu-latest
-            target: armv7
+          # - runner: ubuntu-latest
+          #   target: aarch64
+          # - runner: ubuntu-latest
+          #   target: armv7
           # - runner: ubuntu-latest
           #   target: s390x
           # - runner: ubuntu-latest
@@ -46,7 +46,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
           sccache: "true"
-          before-script-linux: yum update -y && yum install -y alsa-utils alsa-lib
+          before-script-linux: yum update -y && yum install -y alsa alsa-dev alsa-utils alsa-lib
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
