@@ -31,10 +31,10 @@ jobs:
             target: aarch64
           - runner: ubuntu-latest
             target: armv7
-          - runner: ubuntu-latest
-            target: s390x
-          - runner: ubuntu-latest
-            target: ppc64le
+          # - runner: ubuntu-latest
+          #   target: s390x
+          # - runner: ubuntu-latest
+          #   target: ppc64le
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -46,7 +46,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
           sccache: "true"
-          before-script-linux: yum update && yum install -y pkg-config libasound2-dev
+          before-script-linux: yum update -y && yum install -y pkg-config libasound2-dev
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
