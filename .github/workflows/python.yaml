@@ -18,42 +18,43 @@ permissions:
   contents: read
 
 jobs:
-  linux:
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      matrix:
-        platform:
-          - runner: ubuntu-latest
-            target: x86_64
-          - runner: ubuntu-latest
-            target: x86
-          # - runner: ubuntu-latest
-          #   target: aarch64
-          # - runner: ubuntu-latest
-          #   target: armv7
-          # - runner: ubuntu-latest
-          #   target: s390x
-          # - runner: ubuntu-latest
-          #   target: ppc64le
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.x
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
-          sccache: "true"
-          before-script-linux: yum update -y && yum install -y alsa-dev alsa-utils alsa-lib
-          manylinux: auto
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-linux-${{ matrix.platform.target }}
-          path: dist
-
+  # Ignore linux for now - cannot install Alsa?
+  #   linux:
+  #     runs-on: ${{ matrix.platform.runner }}
+  #     strategy:
+  #       matrix:
+  #         platform:
+  #           - runner: ubuntu-latest
+  #             target: x86_64
+  #           - runner: ubuntu-latest
+  #             target: x86
+  #           # - runner: ubuntu-latest
+  #           #   target: aarch64
+  #           # - runner: ubuntu-latest
+  #           #   target: armv7
+  #           # - runner: ubuntu-latest
+  #           #   target: s390x
+  #           # - runner: ubuntu-latest
+  #           #   target: ppc64le
+  #     steps:
+  #       - uses: actions/checkout@v4
+  #       - uses: actions/setup-python@v5
+  #         with:
+  #           python-version: 3.x
+  #       - name: Build wheels
+  #         uses: PyO3/maturin-action@v1
+  #         with:
+  #           target: ${{ matrix.platform.target }}
+  #           args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
+  #           sccache: "true"
+  #           before-script-linux: yum update -y && yum install -y alsa-dev alsa-utils alsa-lib
+  #           manylinux: auto
+  #       - name: Upload wheels
+  #         uses: actions/upload-artifact@v4
+  #         with:
+  #           name: wheels-linux-${{ matrix.platform.target }}
+  #           path: dist
+  #
   # Ignore musl for now - issue with pkg-config installed but not found.
   #
   #   musllinux:
@@ -160,8 +161,8 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     if: "startsWith(github.ref, 'refs/tags/')"
-    # needs: [linux, musllinux, windows, macos, sdist] # musl ignored for now
-    needs: [linux, windows, macos, sdist]
+    # needs: [linux, musllinux, windows, macos, sdist] # musl and linux ignored for now
+    needs: [windows, macos, sdist]
     steps:
       - uses: actions/download-artifact@v4
       - name: Publish to PyPI
