@@ -1,5 +1,9 @@
 # Version History
 
+## Version 0.45.2 (2024-06-12)
+
+- Fix excessive buffer size (latency) on Android
+
 ## Version 0.45.1 (2024-06-04)
 
 - Fixed a crash for AudioWorkletNode with zero outputs
