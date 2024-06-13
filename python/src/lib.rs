@@ -42,12 +42,15 @@ struct AudioParam(web_audio_api_rs::AudioParam);
 
 #[pymethods]
 impl AudioParam {
-    fn value(&self) -> f32 {
-        self.0.value()
+    #[getter]
+    fn value(&self) -> PyResult<f32> {
+        Ok(self.0.value())
     }
 
-    fn set_value(&self, value: f32) -> Self {
-        Self(self.0.set_value(value).clone())
+    #[setter]
+    fn set_value(&self, value: f32) -> PyResult<()> {
+        self.0.set_value(value);
+        Ok(())
     }
 }
 
