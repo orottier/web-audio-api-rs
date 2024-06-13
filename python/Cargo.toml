@@ -1,0 +1,14 @@
+[package]
+name = "web_audio_api"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "web_audio_api"
+crate-type = ["cdylib"]
+doc = false
+
+[dependencies]
+pyo3 = "0.21.1"
+web-audio-api-rs = { path = "../", package = "web-audio-api" }
