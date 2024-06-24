@@ -7,7 +7,7 @@ use crate::RENDER_QUANTUM_SIZE;
 
 use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelInterpretation};
 
-use std::cell::{Cell, RefCell, RefMut};
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 /// Options for constructing a [`DelayNode`]
@@ -299,7 +299,9 @@ impl DelayNode {
         let max_delay_time = options.max_delay_time;
         let num_quanta =
             (max_delay_time * sample_rate / RENDER_QUANTUM_SIZE as f64).ceil() as usize;
-        let ring_buffer = Vec::with_capacity(num_quanta + 1);
+
+        let quantum = AudioRenderQuantum::new();
+        let ring_buffer = vec![quantum; num_quanta + 1].into_boxed_slice();
 
         let shared_ring_buffer = Rc::new(RefCell::new(ring_buffer));
         let shared_ring_buffer_clone = Rc::clone(&shared_ring_buffer);
@@ -374,7 +376,7 @@ impl DelayNode {
 }
 
 struct DelayWriter {
-    ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
+    ring_buffer: Rc<RefCell<Box<[AudioRenderQuantum]>>>,
     index: usize,
     latest_frame_written: Rc<Cell<u64>>,
     last_written_index: Rc<Cell<Option<usize>>>,
@@ -386,42 +388,15 @@ struct DelayWriter {
 #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for DelayWriter {}
 
-trait RingBufferChecker {
-    fn ring_buffer_mut(&self) -> RefMut<'_, Vec<AudioRenderQuantum>>;
-
-    // This step guarantees the ring buffer is filled with silence buffers,
-    // This allow to simplify the code in both Writer and Reader as we know
-    // `len() == capacity()` and all inner buffers are initialized with zeros.
-    #[inline(always)]
-    fn check_ring_buffer_size(&self, render_quantum: &AudioRenderQuantum) {
-        let mut ring_buffer = self.ring_buffer_mut();
-
-        if ring_buffer.len() < ring_buffer.capacity() {
-            let len = ring_buffer.capacity();
-            let mut silence = render_quantum.clone();
-            silence.make_silent();
-
-            ring_buffer.resize(len, silence);
-        }
-    }
-}
-
 impl Drop for DelayWriter {
     fn drop(&mut self) {
         let last_written_index = if self.index == 0 {
-            self.ring_buffer.borrow().capacity() - 1
+            self.ring_buffer.borrow().len() - 1
         } else {
             self.index - 1
         };
 
         self.last_written_index.set(Some(last_written_index));
-    }
-}
-
-impl RingBufferChecker for DelayWriter {
-    #[inline(always)]
-    fn ring_buffer_mut(&self) -> RefMut<'_, Vec<AudioRenderQuantum>> {
-        self.ring_buffer.borrow_mut()
     }
 }
 
@@ -437,9 +412,6 @@ impl AudioProcessor for DelayWriter {
         let input = inputs[0].clone();
         let output = &mut outputs[0];
 
-        // We must perform this check on both Writer and Reader as the order of
-        // the rendering between them is not guaranteed.
-        self.check_ring_buffer_size(&input);
         // `check_ring_buffer_up_down_mix` can only be done on the Writer
         // side as Reader do not access the "real" input
         self.check_ring_buffer_up_down_mix(&input);
@@ -449,7 +421,7 @@ impl AudioProcessor for DelayWriter {
         buffer[self.index] = input;
 
         // increment cursor and last written frame
-        self.index = (self.index + 1) % buffer.capacity();
+        self.index = (self.index + 1) % buffer.len();
         self.latest_frame_written.set(scope.current_frame);
 
         // The writer end does not produce output,
@@ -476,7 +448,7 @@ impl DelayWriter {
         // they MUST be upmixed or downmixed before being combined with newly received
         // input so that all internal delay-line mixing takes place using the single
         // prevailing channel layout.
-        let mut ring_buffer = self.ring_buffer_mut();
+        let mut ring_buffer = self.ring_buffer.borrow_mut();
         let buffer_number_of_channels = ring_buffer[0].number_of_channels();
         let input_number_of_channels = input.number_of_channels();
 
@@ -490,7 +462,7 @@ impl DelayWriter {
 
 struct DelayReader {
     delay_time: AudioParamId,
-    ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
+    ring_buffer: Rc<RefCell<Box<[AudioRenderQuantum]>>>,
     index: usize,
     latest_frame_written: Rc<Cell<u64>>,
     in_cycle: bool,
@@ -505,13 +477,6 @@ struct DelayReader {
 #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for DelayReader {}
 
-impl RingBufferChecker for DelayReader {
-    #[inline(always)]
-    fn ring_buffer_mut(&self) -> RefMut<'_, Vec<AudioRenderQuantum>> {
-        self.ring_buffer.borrow_mut()
-    }
-}
-
 impl AudioProcessor for DelayReader {
     fn process(
         &mut self,
@@ -522,9 +487,6 @@ impl AudioProcessor for DelayReader {
     ) -> bool {
         // single input/output node
         let output = &mut outputs[0];
-        // We must perform the checks (buffer size and up/down mix) on both Writer
-        // and Reader as the order of processing between them is not guaranteed.
-        self.check_ring_buffer_size(output);
 
         let ring_buffer = self.ring_buffer.borrow();
 
@@ -677,7 +639,7 @@ impl AudioProcessor for DelayReader {
             self.last_written_index_checked = last_written_index;
         }
         // increment ring buffer cursor
-        self.index = (self.index + 1) % ring_buffer.capacity();
+        self.index = (self.index + 1) % ring_buffer.len();
 
         true
     }

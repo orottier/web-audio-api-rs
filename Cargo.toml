@@ -15,7 +15,7 @@ include = [
     "LICENSE",
     "README.md",
 ]
-rust-version = "1.71"
+rust-version = "1.73"
 
 [dependencies]
 arc-swap = "1.6"
