@@ -104,10 +104,14 @@ impl MediaRecorderInner {
             .duration_since(recorded_data.start_timecode)
             .as_secs_f64();
 
-        let send = std::mem::replace(&mut recorded_data.blob, Vec::with_capacity(128 * 1024));
+        let data = std::mem::replace(&mut recorded_data.blob, Vec::with_capacity(128 * 1024));
         if let Some(f) = self.data_available_callback.lock().unwrap().as_mut() {
+            let blob = Blob {
+                data,
+                type_: "audio/wav",
+            };
             let event = BlobEvent {
-                blob: send,
+                blob,
                 timecode,
                 event: Event { type_: "BlobEvent" },
             };
@@ -147,7 +151,7 @@ pub struct MediaRecorderOptions {
 /// let options = MediaRecorderOptions::default(); // default to audio/wav
 /// let recorder = MediaRecorder::new(output.stream(), options);
 /// recorder.set_ondataavailable(|event| {
-///     println!("Received {} bytes of data", event.blob.len());
+///     println!("Received {} bytes of data", event.blob.size());
 /// });
 /// recorder.start();
 /// ```
@@ -302,13 +306,32 @@ impl MediaRecorder {
 #[non_exhaustive]
 #[derive(Debug)]
 pub struct BlobEvent {
-    /// The encoded data
-    pub blob: Vec<u8>,
+    /// The encoded Blob whose type attribute indicates the encoding of the blob data.
+    pub blob: Blob,
     /// The difference between the timestamp of the first chunk in data and the timestamp of the
     /// first chunk in the first BlobEvent produced by this recorder
     pub timecode: f64,
     /// Inherits from this base Event
     pub event: Event,
+}
+
+#[derive(Debug)]
+pub struct Blob {
+    /// Byte sequence of this blob
+    pub data: Vec<u8>,
+    type_: &'static str,
+}
+
+impl Blob {
+    /// Returns the size of the byte sequence in number of bytes
+    pub fn size(&self) -> usize {
+        self.data.len()
+    }
+
+    /// The ASCII-encoded string in lower case representing the media type
+    pub fn type_(&self) -> &str {
+        self.type_
+    }
 }
 
 #[cfg(test)]
@@ -400,7 +423,7 @@ mod tests {
         {
             let samples = Arc::clone(&samples);
             recorder.set_ondataavailable(move |e| {
-                samples.lock().unwrap().extend_from_slice(&e.blob);
+                samples.lock().unwrap().extend_from_slice(&e.blob.data);
             });
         }
 

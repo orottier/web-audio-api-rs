@@ -48,9 +48,9 @@ fn main() {
         eprintln!(
             "timecode {:.6}, data size {}",
             event.timecode,
-            event.blob.len()
+            event.blob.size()
         );
-        std::io::stdout().write_all(&event.blob).unwrap();
+        std::io::stdout().write_all(&event.blob.data).unwrap();
     });
     recorder.start();
 
