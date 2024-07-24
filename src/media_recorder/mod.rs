@@ -126,16 +126,26 @@ impl MediaRecorderInner {
     }
 }
 
+#[non_exhaustive]
+#[derive(Debug, Clone, Default)]
+/// Dictionary with media recorder options
+pub struct MediaRecorderOptions {
+    /// The container and codec format(s) for the recording, which may include any parameters that
+    /// are defined for the format. Defaults to `""` which means any suitable mimeType is picked.
+    pub mime_type: String,
+}
+
 /// Record and encode media
 ///
 /// ```no_run
 /// use web_audio_api::context::AudioContext;
-/// use web_audio_api::media_recorder::MediaRecorder;
+/// use web_audio_api::media_recorder::{MediaRecorder, MediaRecorderOptions};
 ///
 /// let context = AudioContext::default();
 /// let output = context.create_media_stream_destination();
 ///
-/// let recorder = MediaRecorder::new(output.stream());
+/// let options = MediaRecorderOptions::default(); // default to audio/wav
+/// let recorder = MediaRecorder::new(output.stream(), options);
 /// recorder.set_ondataavailable(|event| {
 ///     println!("Received {} bytes of data", event.blob.len());
 /// });
@@ -163,13 +173,29 @@ impl MediaRecorder {
     /// is supported.
     pub fn is_type_supported(mime_type: &str) -> bool {
         // only WAV supported for now #508
-        mime_type == "audio/wav"
+        match mime_type {
+            "" => true, // we are free to pick a supported mime type
+            "audio/wav" => true,
+            _ => false,
+        }
     }
 
     /// Creates a new `MediaRecorder` object, given a [`MediaStream`] to record.
     ///
-    /// Only supports WAV file format currently.
-    pub fn new(stream: &MediaStream) -> Self {
+    /// Only supports WAV file format currently, so `options.mime_type` should be set to
+    /// `audio/wav` or left empty.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic with a `NotSupportedError` when the provided mime type is not
+    /// supported. Be sure to check [`Self::is_type_supported`] before calling this constructor.
+    pub fn new(stream: &MediaStream, options: MediaRecorderOptions) -> Self {
+        assert!(
+            Self::is_type_supported(&options.mime_type),
+            "NotSupportedError - the provided mime type is not supported"
+        );
+        // TODO #508 actually use options.mime_type
+
         let inner = MediaRecorderInner {
             stream: stream.clone(),
             active: AtomicBool::new(false),
@@ -305,7 +331,7 @@ mod tests {
         ];
         let track = MediaStreamTrack::from_iter(buffers);
         let stream = MediaStream::from_tracks(vec![track]);
-        let recorder = MediaRecorder::new(&stream);
+        let recorder = MediaRecorder::new(&stream, Default::default());
 
         {
             let data_received = Arc::clone(&data_received);
@@ -336,7 +362,7 @@ mod tests {
         ];
         let track = MediaStreamTrack::from_iter(buffers);
         let stream = MediaStream::from_tracks(vec![track]);
-        let recorder = MediaRecorder::new(&stream);
+        let recorder = MediaRecorder::new(&stream, Default::default());
 
         {
             let data_received = Arc::clone(&data_received);
@@ -368,7 +394,7 @@ mod tests {
         ))];
         let track = MediaStreamTrack::from_iter(buffers);
         let stream = MediaStream::from_tracks(vec![track]);
-        let recorder = MediaRecorder::new(&stream);
+        let recorder = MediaRecorder::new(&stream, Default::default());
 
         let samples: Arc<Mutex<Vec<u8>>> = Default::default();
         {
