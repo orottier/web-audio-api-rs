@@ -159,6 +159,13 @@ impl std::fmt::Debug for MediaRecorder {
 }
 
 impl MediaRecorder {
+    /// A static method which returns a true or false value indicating if the given MIME media type
+    /// is supported.
+    pub fn is_type_supported(mime_type: &str) -> bool {
+        // only WAV supported for now #508
+        mime_type == "audio/wav"
+    }
+
     /// Creates a new `MediaRecorder` object, given a [`MediaStream`] to record.
     ///
     /// Only supports WAV file format currently.
