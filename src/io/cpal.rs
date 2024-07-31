@@ -106,6 +106,7 @@ fn get_host() -> cpal::Host {
 
 /// Audio backend using the `cpal` library
 #[derive(Clone)]
+#[allow(unused)]
 pub(crate) struct CpalBackend {
     stream: ThreadSafeClosableStream,
     output_latency: Arc<AtomicF64>,
