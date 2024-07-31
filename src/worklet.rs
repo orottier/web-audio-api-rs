@@ -365,7 +365,7 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
             let c = input.number_of_channels();
             let (left, right) = inputs_flat.split_at(c);
             // SAFETY - see comments above
-            let left_static = unsafe { std::mem::transmute(left) };
+            let left_static = unsafe { std::mem::transmute::<&[&[f32]], &[&[f32]]>(left) };
             self.inputs_grouped.push(left_static);
             inputs_flat = right;
         }
@@ -409,7 +409,8 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
             for c in output_channel_count {
                 let (left, right) = outputs_flat.split_at_mut(*c);
                 // SAFETY - see comments above
-                let left_static = unsafe { std::mem::transmute(left) };
+                let left_static =
+                    unsafe { std::mem::transmute::<&mut [&mut [f32]], &mut [&mut [f32]]>(left) };
                 self.outputs_grouped.push(left_static);
                 outputs_flat = right;
             }

@@ -2,7 +2,7 @@ use std::io::Write;
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
-use web_audio_api::media_recorder::MediaRecorder;
+use web_audio_api::media_recorder::{MediaRecorder, MediaRecorderOptions};
 use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 
 // Example showing how to record audio live from a running AudioContext.
@@ -42,14 +42,15 @@ fn main() {
     // Start playing
     osc.start();
 
-    let recorder = MediaRecorder::new(dest.stream());
+    let options = MediaRecorderOptions::default(); // default to audio/wav
+    let recorder = MediaRecorder::new(dest.stream(), options);
     recorder.set_ondataavailable(move |event| {
         eprintln!(
             "timecode {:.6}, data size {}",
             event.timecode,
-            event.blob.len()
+            event.blob.size()
         );
-        std::io::stdout().write_all(&event.blob).unwrap();
+        std::io::stdout().write_all(&event.blob.data).unwrap();
     });
     recorder.start();
 
