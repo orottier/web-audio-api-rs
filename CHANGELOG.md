@@ -1,5 +1,10 @@
 # Version History
 
+## To be released
+
+- Breaking: MediaRecorder constructor now requires options (e.g. mime type)
+- Added MediaRecorder::is_type_supported to check if recording is supported for this mime type
+
 ## Version 0.45.2 (2024-06-12)
 
 - Fix excessive buffer size (latency) on Android
