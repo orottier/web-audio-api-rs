@@ -126,9 +126,9 @@ pub trait AudioProcessor: Send {
     /// The return value (bool) of this callback controls the lifetime of the processor.
     ///
     /// - return `false` when the node only transforms their inputs, and as such can be removed when
-    /// the inputs are disconnected (e.g. GainNode)
+    ///   the inputs are disconnected (e.g. GainNode)
     /// - return `true` for some time when the node still outputs after the inputs are disconnected
-    /// (e.g. DelayNode)
+    ///   (e.g. DelayNode)
     /// - return `true` as long as this node is a source of output (e.g. OscillatorNode)
     fn process(
         &mut self,

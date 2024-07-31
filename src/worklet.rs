@@ -84,9 +84,9 @@ pub trait AudioWorkletProcessor {
     /// The return value (bool) of this callback controls the lifetime of the processor.
     ///
     /// - return `false` when the node only transforms their inputs, and as such can be removed when
-    /// the inputs are disconnected (e.g. GainNode)
+    ///   the inputs are disconnected (e.g. GainNode)
     /// - return `true` for some time when the node still outputs after the inputs are disconnected
-    /// (e.g. DelayNode)
+    ///   (e.g. DelayNode)
     /// - return `true` as long as this node is a source of output (e.g. OscillatorNode)
     fn process<'a, 'b>(
         &mut self,
@@ -197,7 +197,7 @@ impl AudioWorkletNode {
     ///
     /// This function panics when
     /// - the number of inputs and the number of outputs of the supplied options are both equal to
-    /// zero.
+    ///   zero.
     /// - any of the output channel counts is equal to zero or larger than 32 ([`MAX_CHANNELS`])
     pub fn new<P: AudioWorkletProcessor + 'static>(
         context: &impl BaseAudioContext,

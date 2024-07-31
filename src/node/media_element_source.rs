@@ -21,10 +21,10 @@ pub struct MediaElementAudioSourceOptions<'a> {
 /// An audio source from an `<audio>` element
 ///
 /// - MDN documentation:
-/// <https://developer.mozilla.org/en-US/docs/Web/API/MediaElementAudioSourceNode>
+///   <https://developer.mozilla.org/en-US/docs/Web/API/MediaElementAudioSourceNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#MediaElementAudioSourceNode>
 /// - see also:
-/// [`AudioContext::create_media_element_source`](crate::context::AudioContext::create_media_element_source)
+///   [`AudioContext::create_media_element_source`](crate::context::AudioContext::create_media_element_source)
 ///
 /// # Usage
 ///

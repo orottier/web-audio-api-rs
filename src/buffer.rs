@@ -79,7 +79,7 @@ impl AudioBuffer {
     /// This function will panic if:
     /// - the given sample rate is zero
     /// - the given number of channels is outside the [1, 32] range,
-    /// 32 being defined by the MAX_CHANNELS constant.
+    ///   32 being defined by the MAX_CHANNELS constant.
     pub fn new(options: AudioBufferOptions) -> Self {
         assert_valid_sample_rate(options.sample_rate);
         assert_valid_buffer_length(options.length);
