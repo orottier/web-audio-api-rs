@@ -549,6 +549,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 } else {
                     buffer.length()
                 };
+
                 // in case of a loop point in the middle of the block, this value
                 // will be used to recompute `buffer_time` according
                 // to the actual loop point.
@@ -570,7 +571,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                             *o = if buffer_index < end_index {
                                 buffer_channel[buffer_index]
                             } else {
-                                if is_looping && buffer_index == end_index {
+                                if is_looping && buffer_index >= end_index {
                                     loop_point_index = Some(index);
                                     // reset values for the rest of the block
                                     start_index = 0;
@@ -1434,6 +1435,35 @@ mod tests {
         let channel = result.get_channel_data(0);
 
         let mut expected = vec![0.; 128];
+        expected[0] = 1.;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_loop_no_restart_fast_track() {
+        let sample_rate = 48_000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 2, sample_rate);
+
+        let mut buffer = context.create_buffer(1, 1, sample_rate);
+        let data = vec![1.; 1];
+        buffer.copy_to_channel(&data, 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        // play in fast track
+        src.start_at(0.);
+
+        // set src loop to true after it should have stopped
+        context.suspend_sync(128. / sample_rate as f64, move |_| {
+            src.set_loop(true);
+        });
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = [0.; 256];
         expected[0] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
