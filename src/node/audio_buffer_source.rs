@@ -1322,6 +1322,24 @@ mod tests {
     }
 
     #[test]
+    fn test_offset_larger_than_buffer_duration() {
+        let sample_rate = 48_000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+        let mut buffer = context.create_buffer(1, 13, sample_rate);
+        buffer.copy_to_channel(&[1.; 13], 0);
+
+        let mut src = context.create_buffer_source();
+        src.set_buffer(buffer);
+        src.start_at_with_offset(0., 64. / sample_rate as f64); // offset larger than buffer size
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let expected = [0.; RENDER_QUANTUM_SIZE];
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
     fn test_fast_track_loop_mono() {
         let sample_rate = 48_000.;
         let len = RENDER_QUANTUM_SIZE * 4;
