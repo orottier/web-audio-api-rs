@@ -191,6 +191,13 @@ impl EventLoop {
             result = ControlFlow::Break(());
         }
 
+        // In unit tests, we rethrow panics to avoid missing critical node exceptions
+        // https://github.com/orottier/web-audio-api-rs/issues/522
+        #[cfg(test)]
+        if let EventPayload::ProcessorError(e) = event.payload {
+            panic!("Rethrowing exception during tests: {:?}", e);
+        }
+
         let mut event_handler_lock = self.event_handlers.lock().unwrap();
         let callback_option = event_handler_lock.remove(&event.type_);
         drop(event_handler_lock); // release Mutex while running callback
