@@ -1493,21 +1493,17 @@ mod tests {
         let data = vec![1.; 1];
         buffer.copy_to_channel(&data, 0);
 
-        let src = Arc::new(Mutex::new(context.create_buffer_source()));
-        let mut guard = src.lock().unwrap();
-        guard.connect(&context.destination());
-        guard.set_buffer(buffer);
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
         // play in fast track
-        guard.start_at(0.);
+        src.start_at(0.);
 
+        let src = Arc::new(Mutex::new(src));
         let clone = Arc::clone(&src);
-
-        guard.set_onended(move |_| {
-            let mut guard = clone.lock().unwrap();
-            guard.set_loop(true);
+        src.lock().unwrap().set_onended(move |_| {
+            clone.lock().unwrap().set_loop(true);
         });
-
-        drop(guard);
 
         let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
@@ -1529,21 +1525,17 @@ mod tests {
         let data = vec![1.; 1];
         buffer.copy_to_channel(&data, 0);
 
-        let src = Arc::new(Mutex::new(context.create_buffer_source()));
-        let mut guard = src.lock().unwrap();
-        guard.connect(&context.destination());
-        guard.set_buffer(buffer);
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
         // play in slow track
-        guard.start_at(1. / sample_rate as f64);
+        src.start_at(1. / sample_rate as f64);
 
+        let src = Arc::new(Mutex::new(src));
         let clone = Arc::clone(&src);
-
-        guard.set_onended(move |_| {
-            let mut guard = clone.lock().unwrap();
-            guard.set_loop(true);
+        src.lock().unwrap().set_onended(move |_| {
+            clone.lock().unwrap().set_loop(true);
         });
-
-        drop(guard);
 
         let result = context.start_rendering_sync();
         let channel = result.get_channel_data(0);
