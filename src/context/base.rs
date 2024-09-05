@@ -180,9 +180,9 @@ pub trait BaseAudioContext {
     /// # Arguments
     ///
     /// * `feedforward` - An array of the feedforward (numerator) coefficients for the transfer function of the IIR filter.
-    /// The maximum length of this array is 20
+    ///   The maximum length of this array is 20
     /// * `feedback` - An array of the feedback (denominator) coefficients for the transfer function of the IIR filter.
-    /// The maximum length of this array is 20
+    ///   The maximum length of this array is 20
     #[must_use]
     fn create_iir_filter(&self, feedforward: Vec<f64>, feedback: Vec<f64>) -> node::IIRFilterNode {
         let options = node::IIRFilterOptions {

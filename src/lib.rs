@@ -158,7 +158,7 @@ pub(crate) fn assert_valid_sample_rate(sample_rate: f32) {
 ///
 /// This function will panic if:
 /// - the given number of channels is outside the [1, 32] range,
-/// 32 being defined by the MAX_CHANNELS constant.
+///   32 being defined by the MAX_CHANNELS constant.
 ///
 #[track_caller]
 #[inline(always)]

@@ -84,9 +84,9 @@ pub trait AudioWorkletProcessor {
     /// The return value (bool) of this callback controls the lifetime of the processor.
     ///
     /// - return `false` when the node only transforms their inputs, and as such can be removed when
-    /// the inputs are disconnected (e.g. GainNode)
+    ///   the inputs are disconnected (e.g. GainNode)
     /// - return `true` for some time when the node still outputs after the inputs are disconnected
-    /// (e.g. DelayNode)
+    ///   (e.g. DelayNode)
     /// - return `true` as long as this node is a source of output (e.g. OscillatorNode)
     fn process<'a, 'b>(
         &mut self,
@@ -197,7 +197,7 @@ impl AudioWorkletNode {
     ///
     /// This function panics when
     /// - the number of inputs and the number of outputs of the supplied options are both equal to
-    /// zero.
+    ///   zero.
     /// - any of the output channel counts is equal to zero or larger than 32 ([`MAX_CHANNELS`])
     pub fn new<P: AudioWorkletProcessor + 'static>(
         context: &impl BaseAudioContext,
@@ -365,7 +365,7 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
             let c = input.number_of_channels();
             let (left, right) = inputs_flat.split_at(c);
             // SAFETY - see comments above
-            let left_static = unsafe { std::mem::transmute(left) };
+            let left_static = unsafe { std::mem::transmute::<&[&[f32]], &[&[f32]]>(left) };
             self.inputs_grouped.push(left_static);
             inputs_flat = right;
         }
@@ -409,7 +409,8 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
             for c in output_channel_count {
                 let (left, right) = outputs_flat.split_at_mut(*c);
                 // SAFETY - see comments above
-                let left_static = unsafe { std::mem::transmute(left) };
+                let left_static =
+                    unsafe { std::mem::transmute::<&mut [&mut [f32]], &mut [&mut [f32]]>(left) };
                 self.outputs_grouped.push(left_static);
                 outputs_flat = right;
             }

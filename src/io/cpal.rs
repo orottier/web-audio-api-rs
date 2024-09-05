@@ -13,6 +13,7 @@ use crossbeam_channel::Receiver;
 use super::{AudioBackendManager, RenderThreadInit};
 
 use crate::buffer::AudioBuffer;
+use crate::context::AudioContextLatencyCategory;
 use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
@@ -105,6 +106,7 @@ fn get_host() -> cpal::Host {
 
 /// Audio backend using the `cpal` library
 #[derive(Clone)]
+#[allow(unused)]
 pub(crate) struct CpalBackend {
     stream: ThreadSafeClosableStream,
     output_latency: Arc<AtomicF64>,
@@ -178,6 +180,16 @@ impl AudioBackendManager for CpalBackend {
         };
 
         preferred_config.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
+
+        // On android detected range for the buffer size seems to be too big, use default buffer size instead
+        // See https://github.com/orottier/web-audio-api-rs/issues/515
+        if cfg!(target_os = "android") {
+            if let AudioContextLatencyCategory::Balanced
+            | AudioContextLatencyCategory::Interactive = options.latency_hint
+            {
+                preferred_config.buffer_size = cpal::BufferSize::Default;
+            }
+        }
 
         // report the picked sample rate to the render thread, i.e. if the requested
         // sample rate is not supported by the hardware, it will fallback to the

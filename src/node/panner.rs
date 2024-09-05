@@ -279,7 +279,7 @@ impl HrtfState {
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/PannerNode>
 /// - specification: <https://www.w3.org/TR/webaudio/#pannernode> and
-/// <https://www.w3.org/TR/webaudio/#Spatialization>
+///   <https://www.w3.org/TR/webaudio/#Spatialization>
 /// - see also: [`BaseAudioContext::create_panner`]
 ///
 /// # Usage
