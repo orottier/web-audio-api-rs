@@ -216,7 +216,6 @@ impl AudioBufferSourceNode {
                 playback_rate: pr_proc,
                 loop_state,
                 render_state: AudioBufferRendererState::default(),
-                ended_triggered: false,
             };
 
             let node = Self {
@@ -360,6 +359,7 @@ struct AudioBufferRendererState {
     entered_loop: bool,
     buffer_time_elapsed: f64,
     is_aligned: bool,
+    ended: bool,
 }
 
 impl Default for AudioBufferRendererState {
@@ -370,6 +370,7 @@ impl Default for AudioBufferRendererState {
             entered_loop: false,
             buffer_time_elapsed: 0.,
             is_aligned: false,
+            ended: false,
         }
     }
 }
@@ -384,7 +385,6 @@ struct AudioBufferSourceRenderer {
     playback_rate: AudioParamId,
     loop_state: LoopState,
     render_state: AudioBufferRendererState,
-    ended_triggered: bool,
 }
 
 impl AudioBufferSourceRenderer {
@@ -413,6 +413,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
     ) -> bool {
         // Single output node
         let output = &mut outputs[0];
+
+        if self.render_state.ended {
+            output.make_silent();
+            return false;
+        }
 
         let sample_rate = scope.sample_rate as f64;
         let dt = 1. / sample_rate;
@@ -464,28 +469,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // The render state has to be updated before leaving this method!
         let mut buffer_time = self.render_state.buffer_time.load(Ordering::Relaxed);
 
-        // The output must change to a single channel of silence at the beginning of a render
-        // quantum after the time at which any one of the following conditions holds:
-        // 1. the stop time has been reached.
-        // 2. the duration has been reached.
-        // 3. the end of the buffer has been reached.
-        if scope.current_time >= self.stop_time
-            || self.render_state.buffer_time_elapsed >= self.duration
-            || !is_looping
-                && (computed_playback_rate > 0. && buffer_time >= buffer_duration
-                    || computed_playback_rate < 0. && buffer_time < 0.)
-        {
-            output.make_silent(); // also converts to mono
-
-            // @note: we need this check because this is called a until the program
-            // ends, such as if the node was never removed from the graph
-            if !self.ended_triggered {
-                scope.send_ended_event();
-                self.ended_triggered = true;
-            }
-            return false;
-        }
-
         output.set_number_of_channels(buffer.number_of_channels());
 
         // go through the algorithm described in the spec
@@ -526,10 +509,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             self.render_state.is_aligned = false;
         }
 
-        // ---------------------------------------------------------------
-        // Fast track
-        // ---------------------------------------------------------------
         if self.render_state.is_aligned {
+            // ---------------------------------------------------------------
+            // Fast track
+            // ---------------------------------------------------------------
             if self.start_time == block_time {
                 self.render_state.started = true;
             }
@@ -549,6 +532,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 } else {
                     buffer.length()
                 };
+
                 // in case of a loop point in the middle of the block, this value
                 // will be used to recompute `buffer_time` according
                 // to the actual loop point.
@@ -570,7 +554,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                             *o = if buffer_index < end_index {
                                 buffer_channel[buffer_index]
                             } else {
-                                if is_looping && buffer_index == end_index {
+                                if is_looping && buffer_index >= end_index {
                                     loop_point_index = Some(index);
                                     // reset values for the rest of the block
                                     start_index = 0;
@@ -609,141 +593,152 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 buffer_time += block_duration;
             }
 
-            // update render state
-            self.render_state
-                .buffer_time
-                .store(buffer_time, Ordering::Relaxed);
             self.render_state.buffer_time_elapsed += block_duration;
-
-            return true;
-        }
-
-        // ---------------------------------------------------------------
-        // Slow track
-        // ---------------------------------------------------------------
-        if is_looping {
-            if loop_start >= 0. && loop_end > 0. && loop_start < loop_end {
-                actual_loop_start = loop_start;
-                actual_loop_end = loop_end.min(buffer_duration);
-            } else {
-                actual_loop_start = 0.;
-                actual_loop_end = buffer_duration;
-            }
         } else {
-            self.render_state.entered_loop = false;
-        }
-
-        // internal buffer used to store playback infos to compute the samples
-        // according to the source buffer. (prev_sample_index, k)
-        let mut playback_infos = [None; RENDER_QUANTUM_SIZE];
-
-        // compute position for each sample and store into `self.positions`
-        for (i, playback_info) in playback_infos.iter_mut().enumerate() {
-            let current_time = block_time + i as f64 * dt;
-
-            if current_time < self.start_time
-                || current_time >= self.stop_time
-                || self.render_state.buffer_time_elapsed >= self.duration
-            {
-                continue; // nothing more to do for this sample
-            }
-
-            // we have now reached start time
-            if !self.render_state.started {
-                // handle that start time may be between last sample and this one
-                self.offset += current_time - self.start_time;
-
-                if is_looping && computed_playback_rate >= 0. && self.offset >= actual_loop_end {
-                    self.offset = actual_loop_end;
-                }
-
-                if is_looping && computed_playback_rate < 0. && self.offset < actual_loop_start {
-                    self.offset = actual_loop_start;
-                }
-
-                buffer_time = self.offset;
-                self.render_state.started = true;
-            }
-
+            // ---------------------------------------------------------------
+            // Slow track
+            // ---------------------------------------------------------------
             if is_looping {
-                if !self.render_state.entered_loop {
-                    // playback began before or within loop, and playhead is now past loop start
-                    if self.offset < actual_loop_end && buffer_time >= actual_loop_start {
-                        self.render_state.entered_loop = true;
-                    }
-
-                    // playback began after loop, and playhead is now prior to the loop end
-                    // @note - only possible when playback_rate < 0 (?)
-                    if self.offset >= actual_loop_end && buffer_time < actual_loop_end {
-                        self.render_state.entered_loop = true;
-                    }
+                if loop_start >= 0. && loop_end > 0. && loop_start < loop_end {
+                    actual_loop_start = loop_start;
+                    actual_loop_end = loop_end.min(buffer_duration);
+                } else {
+                    actual_loop_start = 0.;
+                    actual_loop_end = buffer_duration;
                 }
-
-                // check loop boundaries
-                if self.render_state.entered_loop {
-                    while buffer_time >= actual_loop_end {
-                        buffer_time -= actual_loop_end - actual_loop_start;
-                    }
-
-                    while buffer_time < actual_loop_start {
-                        buffer_time += actual_loop_end - actual_loop_start;
-                    }
-                }
+            } else {
+                self.render_state.entered_loop = false;
             }
 
-            if buffer_time >= 0. && buffer_time < buffer_duration {
-                let position = buffer_time * sampling_ratio;
-                let playhead = position * sample_rate;
-                let playhead_floored = playhead.floor();
-                let prev_frame_index = playhead_floored as usize; // can't be < 0.
-                let k = (playhead - playhead_floored) as f32;
+            // internal buffer used to store playback infos to compute the samples
+            // according to the source buffer. (prev_sample_index, k)
+            let mut playback_infos = [None; RENDER_QUANTUM_SIZE];
 
-                *playback_info = Some(PlaybackInfo {
-                    prev_frame_index,
-                    k,
+            // compute position for each sample and store into `self.positions`
+            for (i, playback_info) in playback_infos.iter_mut().enumerate() {
+                let current_time = block_time + i as f64 * dt;
+
+                if current_time < self.start_time
+                    || current_time >= self.stop_time
+                    || self.render_state.buffer_time_elapsed >= self.duration
+                {
+                    continue; // nothing more to do for this sample
+                }
+
+                // we have now reached start time
+                if !self.render_state.started {
+                    // handle that start time may be between last sample and this one
+                    self.offset += current_time - self.start_time;
+
+                    if is_looping && computed_playback_rate >= 0. && self.offset >= actual_loop_end
+                    {
+                        self.offset = actual_loop_end;
+                    }
+
+                    if is_looping && computed_playback_rate < 0. && self.offset < actual_loop_start
+                    {
+                        self.offset = actual_loop_start;
+                    }
+
+                    buffer_time = self.offset;
+                    self.render_state.started = true;
+                }
+
+                if is_looping {
+                    if !self.render_state.entered_loop {
+                        // playback began before or within loop, and playhead is now past loop start
+                        if self.offset < actual_loop_end && buffer_time >= actual_loop_start {
+                            self.render_state.entered_loop = true;
+                        }
+
+                        // playback began after loop, and playhead is now prior to the loop end
+                        // @note - only possible when playback_rate < 0 (?)
+                        if self.offset >= actual_loop_end && buffer_time < actual_loop_end {
+                            self.render_state.entered_loop = true;
+                        }
+                    }
+
+                    // check loop boundaries
+                    if self.render_state.entered_loop {
+                        while buffer_time >= actual_loop_end {
+                            buffer_time -= actual_loop_end - actual_loop_start;
+                        }
+
+                        while buffer_time < actual_loop_start {
+                            buffer_time += actual_loop_end - actual_loop_start;
+                        }
+                    }
+                }
+
+                if buffer_time >= 0. && buffer_time < buffer_duration {
+                    let position = buffer_time * sampling_ratio;
+                    let playhead = position * sample_rate;
+                    let playhead_floored = playhead.floor();
+                    let prev_frame_index = playhead_floored as usize; // can't be < 0.
+                    let k = (playhead - playhead_floored) as f32;
+
+                    *playback_info = Some(PlaybackInfo {
+                        prev_frame_index,
+                        k,
+                    });
+                }
+
+                let time_incr = dt * computed_playback_rate;
+                buffer_time += time_incr;
+                self.render_state.buffer_time_elapsed += time_incr;
+            }
+
+            // fill output according to computed positions
+            buffer
+                .channels()
+                .iter()
+                .zip(output.channels_mut().iter_mut())
+                .for_each(|(buffer_channel, output_channel)| {
+                    let buffer_channel = buffer_channel.as_slice();
+
+                    playback_infos
+                        .iter()
+                        .zip(output_channel.iter_mut())
+                        .for_each(|(playhead, o)| {
+                            *o = match playhead {
+                                Some(PlaybackInfo {
+                                    prev_frame_index,
+                                    k,
+                                }) => {
+                                    // `prev_frame_index` cannot be out of bounds
+                                    let prev_sample = buffer_channel[*prev_frame_index];
+                                    let next_sample = match buffer_channel.get(prev_frame_index + 1)
+                                    {
+                                        Some(val) => *val,
+                                        None => 0.,
+                                    };
+
+                                    (1. - k).mul_add(prev_sample, k * next_sample)
+                                }
+                                None => 0.,
+                            };
+                        });
                 });
-            }
-
-            let time_incr = dt * computed_playback_rate;
-            buffer_time += time_incr;
-            self.render_state.buffer_time_elapsed += time_incr;
         }
 
-        // fill output according to computed positions
-        buffer
-            .channels()
-            .iter()
-            .zip(output.channels_mut().iter_mut())
-            .for_each(|(buffer_channel, output_channel)| {
-                let buffer_channel = buffer_channel.as_slice();
-
-                playback_infos
-                    .iter()
-                    .zip(output_channel.iter_mut())
-                    .for_each(|(playhead, o)| {
-                        *o = match playhead {
-                            Some(PlaybackInfo {
-                                prev_frame_index,
-                                k,
-                            }) => {
-                                // `prev_frame_index` cannot be out of bounds
-                                let prev_sample = buffer_channel[*prev_frame_index];
-                                let next_sample = match buffer_channel.get(prev_frame_index + 1) {
-                                    Some(val) => *val,
-                                    None => 0.,
-                                };
-
-                                (1. - k).mul_add(prev_sample, k * next_sample)
-                            }
-                            None => 0.,
-                        };
-                    });
-            });
-
-        // update render state
+        // Update render state
         self.render_state
             .buffer_time
             .store(buffer_time, Ordering::Relaxed);
+
+        // The buffer has ended within this block, if one of the following conditions holds:
+        // 1. the stop time has been reached.
+        // 2. the duration has been reached.
+        // 3. the end of the buffer has been reached.
+        if next_block_time >= self.stop_time
+            || self.render_state.buffer_time_elapsed >= self.duration
+            || !is_looping
+                && (computed_playback_rate > 0. && buffer_time >= buffer_duration
+                    || computed_playback_rate < 0. && buffer_time < 0.)
+        {
+            self.render_state.ended = true;
+            scope.send_ended_event();
+        }
 
         true
     }
@@ -773,9 +768,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
     }
 
     fn before_drop(&mut self, scope: &AudioWorkletGlobalScope) {
-        if !self.ended_triggered && scope.current_time >= self.start_time {
+        if !self.render_state.ended && scope.current_time >= self.start_time {
             scope.send_ended_event();
-            self.ended_triggered = true;
+            self.render_state.ended = true;
         }
     }
 }
@@ -784,6 +779,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 mod tests {
     use float_eq::assert_float_eq;
     use std::f32::consts::PI;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::RENDER_QUANTUM_SIZE;
@@ -1322,6 +1319,24 @@ mod tests {
     }
 
     #[test]
+    fn test_offset_larger_than_buffer_duration() {
+        let sample_rate = 48_000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+        let mut buffer = context.create_buffer(1, 13, sample_rate);
+        buffer.copy_to_channel(&[1.; 13], 0);
+
+        let mut src = context.create_buffer_source();
+        src.set_buffer(buffer);
+        src.start_at_with_offset(0., 64. / sample_rate as f64); // offset larger than buffer size
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let expected = [0.; RENDER_QUANTUM_SIZE];
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
     fn test_fast_track_loop_mono() {
         let sample_rate = 48_000.;
         let len = RENDER_QUANTUM_SIZE * 4;
@@ -1437,5 +1452,129 @@ mod tests {
         expected[0] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_loop_no_restart_suspend() {
+        let sample_rate = 48_000.;
+        let result_size = RENDER_QUANTUM_SIZE * 2;
+        let mut context = OfflineAudioContext::new(1, result_size, sample_rate);
+
+        let mut buffer = context.create_buffer(1, 1, sample_rate);
+        let data = vec![1.; 1];
+        buffer.copy_to_channel(&data, 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        src.start_at(0.);
+
+        context.suspend_sync(RENDER_QUANTUM_SIZE as f64 / sample_rate as f64, move |_| {
+            src.set_loop(true);
+        });
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; result_size];
+        expected[0] = 1.;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_loop_no_restart_onended_fast_track() {
+        let sample_rate = 48_000.;
+        // ended event is send on second render quantum, let's take a few more to be sure
+        let result_size = RENDER_QUANTUM_SIZE * 4;
+        let mut context = OfflineAudioContext::new(1, result_size, sample_rate);
+
+        let mut buffer = context.create_buffer(1, 1, sample_rate);
+        let data = vec![1.; 1];
+        buffer.copy_to_channel(&data, 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        // play in fast track
+        src.start_at(0.);
+
+        let src = Arc::new(Mutex::new(src));
+        let clone = Arc::clone(&src);
+        src.lock().unwrap().set_onended(move |_| {
+            clone.lock().unwrap().set_loop(true);
+        });
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; result_size];
+        expected[0] = 1.;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_loop_no_restart_onended_slow_track() {
+        let sample_rate = 48_000.;
+        // ended event is send on second render quantum, let's take a few more to be sure
+        let result_size = RENDER_QUANTUM_SIZE * 4;
+        let mut context = OfflineAudioContext::new(1, result_size, sample_rate);
+
+        let mut buffer = context.create_buffer(1, 1, sample_rate);
+        let data = vec![1.; 1];
+        buffer.copy_to_channel(&data, 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        // play in slow track
+        src.start_at(1. / sample_rate as f64);
+
+        let src = Arc::new(Mutex::new(src));
+        let clone = Arc::clone(&src);
+        src.lock().unwrap().set_onended(move |_| {
+            clone.lock().unwrap().set_loop(true);
+        });
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; result_size];
+        expected[1] = 1.;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_onended_before_drop() {
+        let sample_rate = 48_000.;
+        let result_size = RENDER_QUANTUM_SIZE;
+        let mut context = OfflineAudioContext::new(1, result_size, sample_rate);
+        // buffer is larger than context output so it never goes into the ended check condition
+        let mut buffer = context.create_buffer(1, result_size * 2, sample_rate);
+        let data = vec![1.; 1];
+        buffer.copy_to_channel(&data, 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        src.start();
+
+        let onended_called = Arc::new(AtomicBool::new(false));
+        let onended_called_clone = Arc::clone(&onended_called);
+
+        src.set_onended(move |_| {
+            onended_called_clone.store(true, Ordering::SeqCst);
+        });
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; result_size];
+        expected[0] = 1.;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+        assert!(onended_called.load(Ordering::SeqCst));
     }
 }
