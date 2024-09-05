@@ -216,7 +216,6 @@ impl AudioBufferSourceNode {
                 playback_rate: pr_proc,
                 loop_state,
                 render_state: AudioBufferRendererState::default(),
-                ended: false,
                 onended_triggered: false,
             };
 
@@ -361,6 +360,7 @@ struct AudioBufferRendererState {
     entered_loop: bool,
     buffer_time_elapsed: f64,
     is_aligned: bool,
+    ended: bool,
 }
 
 impl Default for AudioBufferRendererState {
@@ -371,6 +371,7 @@ impl Default for AudioBufferRendererState {
             entered_loop: false,
             buffer_time_elapsed: 0.,
             is_aligned: false,
+            ended: false,
         }
     }
 }
@@ -385,7 +386,6 @@ struct AudioBufferSourceRenderer {
     playback_rate: AudioParamId,
     loop_state: LoopState,
     render_state: AudioBufferRendererState,
-    ended: bool,
     onended_triggered: bool,
 }
 
@@ -416,7 +416,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // Single output node
         let output = &mut outputs[0];
 
-        if self.ended {
+        if self.render_state.ended {
             // make sure ended event s sent only once
             if !self.onended_triggered {
                 scope.send_ended_event();
@@ -742,7 +742,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 && (computed_playback_rate > 0. && buffer_time >= buffer_duration
                     || computed_playback_rate < 0. && buffer_time < 0.)
         {
-            self.ended = true;
+            self.render_state.ended = true;
         }
 
         true
@@ -773,9 +773,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
     }
 
     fn before_drop(&mut self, scope: &AudioWorkletGlobalScope) {
-        if !self.ended && scope.current_time >= self.start_time {
+        if !self.onended_triggered && scope.current_time >= self.start_time {
             scope.send_ended_event();
-            self.ended = true;
+            self.render_state.ended = true;
+            self.onended_triggered = true;
         }
     }
 }
@@ -784,6 +785,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 mod tests {
     use float_eq::assert_float_eq;
     use std::f32::consts::PI;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::RENDER_QUANTUM_SIZE;
@@ -1487,8 +1490,6 @@ mod tests {
 
     #[test]
     fn test_loop_no_restart_onended_fast_track() {
-        use std::sync::Mutex;
-
         let sample_rate = 48_000.;
         // ended event is send on second render quantum, let's take a few more to be sure
         let result_size = RENDER_QUANTUM_SIZE * 4;
@@ -1505,7 +1506,7 @@ mod tests {
         // play in fast track
         guard.start_at(0.);
 
-        let clone = src.clone();
+        let clone = Arc::clone(&src);
 
         guard.set_onended(move |_| {
             let mut guard = clone.lock().unwrap();
@@ -1525,8 +1526,6 @@ mod tests {
 
     #[test]
     fn test_loop_no_restart_onended_slow_track() {
-        use std::sync::Mutex;
-
         let sample_rate = 48_000.;
         // ended event is send on second render quantum, let's take a few more to be sure
         let result_size = RENDER_QUANTUM_SIZE * 4;
@@ -1543,7 +1542,7 @@ mod tests {
         // play in slow track
         guard.start_at(1. / sample_rate as f64);
 
-        let clone = src.clone();
+        let clone = Arc::clone(&src);
 
         guard.set_onended(move |_| {
             let mut guard = clone.lock().unwrap();
@@ -1559,5 +1558,39 @@ mod tests {
         expected[1] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_onended_before_drop() {
+        let sample_rate = 48_000.;
+        let result_size = RENDER_QUANTUM_SIZE;
+        let mut context = OfflineAudioContext::new(1, result_size, sample_rate);
+
+        let mut buffer = context.create_buffer(1, 1, sample_rate);
+        let data = vec![1.; 1];
+        buffer.copy_to_channel(&data, 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        src.start();
+
+        let onended_called = Arc::new(AtomicBool::new(false));
+        let onended_called_clone = Arc::clone(&onended_called);
+
+        src.set_onended(move |_| {
+            onended_called_clone.store(true, Ordering::SeqCst);
+        });
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = vec![0.; result_size];
+        expected[0] = 1.;
+
+        // buffer has been rendered
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+        // ended event has been trigerred
+        assert_eq!(onended_called.load(Ordering::SeqCst), true);
     }
 }
