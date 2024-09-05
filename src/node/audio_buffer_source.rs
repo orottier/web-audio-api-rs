@@ -216,7 +216,6 @@ impl AudioBufferSourceNode {
                 playback_rate: pr_proc,
                 loop_state,
                 render_state: AudioBufferRendererState::default(),
-                onended_triggered: false,
             };
 
             let node = Self {
@@ -386,7 +385,6 @@ struct AudioBufferSourceRenderer {
     playback_rate: AudioParamId,
     loop_state: LoopState,
     render_state: AudioBufferRendererState,
-    onended_triggered: bool,
 }
 
 impl AudioBufferSourceRenderer {
@@ -417,12 +415,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let output = &mut outputs[0];
 
         if self.render_state.ended {
-            // make sure ended event s sent only once
-            if !self.onended_triggered {
-                scope.send_ended_event();
-                self.onended_triggered = true;
-            }
-
             output.make_silent();
             return false;
         }
@@ -638,11 +630,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     // handle that start time may be between last sample and this one
                     self.offset += current_time - self.start_time;
 
-                    if is_looping && computed_playback_rate >= 0. && self.offset >= actual_loop_end {
+                    if is_looping && computed_playback_rate >= 0. && self.offset >= actual_loop_end
+                    {
                         self.offset = actual_loop_end;
                     }
 
-                    if is_looping && computed_playback_rate < 0. && self.offset < actual_loop_start {
+                    if is_looping && computed_playback_rate < 0. && self.offset < actual_loop_start
+                    {
                         self.offset = actual_loop_start;
                     }
 
@@ -713,7 +707,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                 }) => {
                                     // `prev_frame_index` cannot be out of bounds
                                     let prev_sample = buffer_channel[*prev_frame_index];
-                                    let next_sample = match buffer_channel.get(prev_frame_index + 1) {
+                                    let next_sample = match buffer_channel.get(prev_frame_index + 1)
+                                    {
                                         Some(val) => *val,
                                         None => 0.,
                                     };
@@ -724,7 +719,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                             };
                         });
                 });
-
         }
 
         // Update render state
@@ -743,6 +737,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     || computed_playback_rate < 0. && buffer_time < 0.)
         {
             self.render_state.ended = true;
+            scope.send_ended_event();
         }
 
         true
@@ -773,10 +768,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
     }
 
     fn before_drop(&mut self, scope: &AudioWorkletGlobalScope) {
-        if !self.onended_triggered && scope.current_time >= self.start_time {
+        if !self.render_state.ended && scope.current_time >= self.start_time {
             scope.send_ended_event();
             self.render_state.ended = true;
-            self.onended_triggered = true;
         }
     }
 }
@@ -1565,8 +1559,8 @@ mod tests {
         let sample_rate = 48_000.;
         let result_size = RENDER_QUANTUM_SIZE;
         let mut context = OfflineAudioContext::new(1, result_size, sample_rate);
-
-        let mut buffer = context.create_buffer(1, 1, sample_rate);
+        // buffer is larger than context output so it never goes into the ended check condition
+        let mut buffer = context.create_buffer(1, result_size * 2, sample_rate);
         let data = vec![1.; 1];
         buffer.copy_to_channel(&data, 0);
 
@@ -1588,9 +1582,7 @@ mod tests {
         let mut expected = vec![0.; result_size];
         expected[0] = 1.;
 
-        // buffer has been rendered
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
-        // ended event has been trigerred
-        assert_eq!(onended_called.load(Ordering::SeqCst), true);
+        assert!(onended_called.load(Ordering::SeqCst));
     }
 }
