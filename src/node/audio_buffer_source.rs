@@ -1425,6 +1425,33 @@ mod tests {
     }
 
     #[test]
+    fn test_loop_hangs() {
+        let sample_rate = 48_000.;
+        let length = sample_rate as usize;
+        let mut context = OfflineAudioContext::new(1, length, sample_rate);
+
+        let mut buffer = context.create_buffer(1, 500, sample_rate);
+        let data = vec![1.; 1];
+        buffer.copy_to_channel(&data, 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+
+        src.set_loop(true);
+        src.set_loop_start(0.5); // outside of buffer duration
+        src.set_loop_end(1.5); // outside of buffer duration
+
+        src.start();
+
+        let result = context.start_rendering_sync(); // should terminate
+        let channel = result.get_channel_data(0);
+
+        assert_float_eq!(channel[0], 1.0, abs_all <= 0.);
+        assert_float_eq!(channel[1..], [0.; 48_000 - 1][..], abs_all <= 0.);
+    }
+
+    #[test]
     // regression test for #452
     // - fast track
     // - duration not set so `self.duration` is `f64::MAX`
