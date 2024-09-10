@@ -243,7 +243,7 @@ struct ResamplerConfig {
 
 impl ResamplerConfig {
     fn upsample_x2(channels: usize, sample_rate: usize) -> Self {
-        let chunk_size_in = RENDER_QUANTUM_SIZE * 2;
+        let chunk_size_in = RENDER_QUANTUM_SIZE;
         let sample_rate_in = sample_rate;
         let sample_rate_out = sample_rate * 2;
         Self {
@@ -255,7 +255,7 @@ impl ResamplerConfig {
     }
 
     fn upsample_x4(channels: usize, sample_rate: usize) -> Self {
-        let chunk_size_in = RENDER_QUANTUM_SIZE * 4;
+        let chunk_size_in = RENDER_QUANTUM_SIZE;
         let sample_rate_in = sample_rate;
         let sample_rate_out = sample_rate * 4;
         Self {
@@ -267,7 +267,7 @@ impl ResamplerConfig {
     }
 
     fn downsample_x2(channels: usize, sample_rate: usize) -> Self {
-        let chunk_size_in = RENDER_QUANTUM_SIZE;
+        let chunk_size_in = RENDER_QUANTUM_SIZE * 2;
         let sample_rate_in = sample_rate * 2;
         let sample_rate_out = sample_rate;
         Self {
@@ -279,7 +279,7 @@ impl ResamplerConfig {
     }
 
     fn downsample_x4(channels: usize, sample_rate: usize) -> Self {
-        let chunk_size_in = RENDER_QUANTUM_SIZE;
+        let chunk_size_in = RENDER_QUANTUM_SIZE * 4;
         let sample_rate_in = sample_rate * 4;
         let sample_rate_out = sample_rate;
         Self {
@@ -375,7 +375,7 @@ struct WaveShaperRenderer {
     upsampler_x2: Resampler,
     // up sampler configured to multiply by 4 the input signal
     upsampler_x4: Resampler,
-    // down sampler configured to divide by 4 the upsampled signal
+    // down sampler configured to divide by 2 the upsampled signal
     downsampler_x2: Resampler,
     // down sampler configured to divide by 4 the upsampled signal
     downsampler_x4: Resampler,
@@ -499,6 +499,7 @@ impl AudioProcessor for WaveShaperRenderer {
         if let Some(curve) = msg.downcast_mut::<Option<Vec<f32>>>() {
             std::mem::swap(&mut self.curve, curve);
 
+            // We can propagate silent input only if the center of the curve is zero
             self.can_propagate_silence = if let Some(curve) = &self.curve {
                 if curve.len() % 2 == 1 {
                     curve[curve.len() / 2].abs() < 1e-9
