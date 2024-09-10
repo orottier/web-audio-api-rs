@@ -1,9 +1,12 @@
 # Version History
 
-## To be released
+## Version 1.0.0 (2024-09-10)
 
 - Breaking: MediaRecorder constructor now requires options (e.g. mime type)
 - Added MediaRecorder::is_type_supported to check if recording is supported for this mime type
+- Fixed the up/down-sampling of the WaveShaperNode
+- Fixed an infinite loop in AudioBufferSourceNode when using out-of-bound loop start/end values
+- Fixed AudioBufferSourceNode crashing or restarting on certain loop value changes
 
 ## Version 0.45.2 (2024-06-12)
 
