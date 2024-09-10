@@ -400,6 +400,25 @@ impl AudioBufferSourceRenderer {
             ControlMessage::LoopStart(loop_start) => self.loop_state.start = *loop_start,
             ControlMessage::LoopEnd(loop_end) => self.loop_state.end = *loop_end,
         }
+
+        self.clamp_loop_boundaries();
+    }
+
+    fn clamp_loop_boundaries(&mut self) {
+        if let Some(buffer) = &self.buffer {
+            let duration = buffer.duration();
+
+            if self.loop_state.start < 0. {
+                self.loop_state.start = 0.;
+            }
+            if self.loop_state.start > duration {
+                self.loop_state.start = duration;
+            }
+
+            if self.loop_state.end <= 0. || self.loop_state.end > duration {
+                self.loop_state.end = 0.;
+            }
+        }
     }
 }
 
@@ -760,6 +779,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     sample_rate: Default::default(),
                 };
                 self.buffer = Some(std::mem::replace(buffer, tombstone_buffer));
+                self.clamp_loop_boundaries();
             }
             return;
         };
