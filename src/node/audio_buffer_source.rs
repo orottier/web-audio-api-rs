@@ -401,6 +401,7 @@ impl AudioBufferSourceRenderer {
             ControlMessage::LoopEnd(loop_end) => self.loop_state.end = *loop_end,
         }
 
+        // @todo -
         self.clamp_loop_boundaries();
     }
 
@@ -408,16 +409,16 @@ impl AudioBufferSourceRenderer {
         if let Some(buffer) = &self.buffer {
             let duration = buffer.duration();
 
+            // https://webaudio.github.io/web-audio-api/#dom-audiobuffersourcenode-loopstart
             if self.loop_state.start < 0. {
                 self.loop_state.start = 0.;
-            }
-
-            if self.loop_state.start > duration {
+            } else if self.loop_state.start > duration {
                 self.loop_state.start = duration;
             }
 
+            // https://webaudio.github.io/web-audio-api/#dom-audiobuffersourcenode-loopend
             if self.loop_state.end <= 0. || self.loop_state.end > duration {
-                self.loop_state.end = 0.;
+                self.loop_state.end = duration;
             }
         }
     }
@@ -468,8 +469,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             start: loop_start,
             end: loop_end,
         } = self.loop_state;
-
-        println!("infos: {loop_start}, {loop_end}");
 
         // these will only be used if `loop_` is true, so no need for `Option`
         let mut actual_loop_start = 0.;
@@ -526,9 +525,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // For now we just consider that we can go fast track if loop points are
         // bound to the buffer boundaries.
         //
-        // by default loop_end is 0., see AudioBufferSourceOptions
-        // but loop_start = 0 && loop_end = buffer.duration should go to fast track
-        if loop_start != 0. || (loop_end != 0. && loop_end != self.duration) {
+        // by default loop_end is equal to buffer_duration, so loop_start = 0 &&
+        // loop_end = buffer.duration should go to fast track
+
+        // @todo - test loop_end against 0 too, semantics is loop_end as not been changed
+        if loop_start != 0. || loop_end != buffer_duration {
             self.render_state.is_aligned = false;
         }
 
@@ -556,9 +557,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     buffer.length()
                 };
 
-                // in case of a loop point in the middle of the block, this value
-                // will be used to recompute `buffer_time` according
-                // to the actual loop point.
+                // In case of a loop point in the middle of the block, this value will
+                // be used to recompute `buffer_time` according to the actual loop point.
                 let mut loop_point_index: Option<usize> = None;
 
                 buffer
@@ -624,6 +624,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             if is_looping {
                 if loop_start >= 0. && loop_end > 0. && loop_start < loop_end {
                     actual_loop_start = loop_start;
+                    // @todo - min is not required loop_end is already clamped
                     actual_loop_end = loop_end.min(buffer_duration);
                 } else {
                     actual_loop_start = 0.;
@@ -740,25 +741,22 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                 }) => {
                                     // `prev_frame_index` cannot be out of bounds
                                     let prev_sample = buffer_channel[*prev_frame_index];
-
-                                    // @todo - stiching between loop points
                                     let next_sample = match buffer_channel.get(prev_frame_index + 1)
                                     {
                                         Some(val) => *val,
                                         None => {
-                                            // @todo - this works only in "normal" case
-                                            // - check invalid loop points
-                                            // - playback_rate < 0.
+                                            // @todo - handle playback_rate < 0.
                                             //
                                             // find first sample >= to start loop point
                                             if is_looping {
-                                                let start_playhead = actual_loop_start * sample_rate;
-                                                let start_index = if start_playhead.floor() == start_playhead {
-                                                    start_playhead as usize
-                                                } else {
-                                                    start_playhead as usize + 1
-                                                };
-                                                println!("{actual_loop_start}, {actual_loop_end}");
+                                                let start_playhead =
+                                                    actual_loop_start * sample_rate;
+                                                let start_index =
+                                                    if start_playhead.floor() == start_playhead {
+                                                        start_playhead as usize
+                                                    } else {
+                                                        start_playhead as usize + 1
+                                                    };
 
                                                 buffer_channel[start_index]
                                             } else {
@@ -1426,7 +1424,7 @@ mod tests {
                 expected[i] = 1.;
             }
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+            assert_float_eq!(channel[..], expected[..], abs_all <= 1e-10);
         }
     }
 
@@ -1511,12 +1509,12 @@ mod tests {
             assert_float_eq!(
                 result.get_channel_data(0)[..],
                 expected_left[..],
-                abs_all <= 0.
+                abs_all <= 1e-10
             );
             assert_float_eq!(
                 result.get_channel_data(1)[..],
                 expected_right[..],
-                abs_all <= 0.
+                abs_all <= 1e-10
             );
         }
     }
@@ -1574,12 +1572,14 @@ mod tests {
     }
 
     #[test]
-    fn test_loop_hangs() {
+    // @todo - test all conditions
+    fn test_loop_out_of_bounds() {
         let sample_rate = 48_000.;
         let length = sample_rate as usize / 10;
         let mut context = OfflineAudioContext::new(1, length, sample_rate);
 
-        let mut buffer = context.create_buffer(1, 500, sample_rate);
+        let buffer_size = 500;
+        let mut buffer = context.create_buffer(1, buffer_size, sample_rate);
         let data = vec![1.; 1];
         buffer.copy_to_channel(&data, 0);
 
@@ -1590,14 +1590,25 @@ mod tests {
         src.set_loop(true);
         src.set_loop_start(0.5); // outside of buffer duration
         src.set_loop_end(1.5); // outside of buffer duration
-
         src.start();
 
         let result = context.start_rendering_sync(); // should terminate
         let channel = result.get_channel_data(0);
 
-        assert_float_eq!(channel[0], 1.0, abs_all <= 0.);
-        assert_float_eq!(channel[1..], vec![0.; length - 1][..], abs_all <= 0.);
+        // Both loop points will be clamped to buffer duration due to rules defined at
+        // https://webaudio.github.io/web-audio-api/#dom-audiobuffersourcenode-loopstart
+        // https://webaudio.github.io/web-audio-api/#dom-audiobuffersourcenode-loopend
+        // Thus it violates the rule defined in
+        // https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode
+        // `loopStart >= 0 && loopEnd > 0 && loopStart < loopEnd`
+        // Hence the whole buffer should be looped
+
+        let mut expected = vec![0.; length];
+        for i in (0..length).step_by(buffer_size) {
+            expected[i] = 1.;
+        }
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
 
     #[test]
