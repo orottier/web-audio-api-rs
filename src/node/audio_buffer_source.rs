@@ -745,23 +745,29 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                     {
                                         Some(val) => *val,
                                         None => {
-                                            // @todo - handle playback_rate < 0.
-                                            //
-                                            // find first sample >= to start loop point
-                                            if is_looping {
-                                                let start_playhead =
-                                                    actual_loop_start * sample_rate;
-                                                let start_index =
-                                                    if start_playhead.floor() == start_playhead {
-                                                        start_playhead as usize
-                                                    } else {
-                                                        start_playhead as usize + 1
-                                                    };
+                                            let sample = if is_looping {
+                                                if playback_rate >= 0. {
+                                                    let start_playhead =
+                                                        actual_loop_start * sample_rate;
+                                                    let start_index =
+                                                        if start_playhead.floor() == start_playhead {
+                                                            start_playhead as usize
+                                                        } else {
+                                                            start_playhead as usize + 1
+                                                        };
 
-                                                buffer_channel[start_index]
+                                                    buffer_channel[start_index]
+                                                } else {
+                                                    let end_playhead =
+                                                        actual_loop_end * sample_rate;
+                                                    let end_index = end_playhead as usize;
+                                                    buffer_channel[end_index]
+                                                }
                                             } else {
                                                 0.
-                                            }
+                                            };
+
+                                            sample
                                         }
                                     };
 
