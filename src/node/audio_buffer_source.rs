@@ -401,7 +401,6 @@ impl AudioBufferSourceRenderer {
             ControlMessage::LoopEnd(loop_end) => self.loop_state.end = *loop_end,
         }
 
-        // @todo -
         self.clamp_loop_boundaries();
     }
 
@@ -427,7 +426,7 @@ impl AudioBufferSourceRenderer {
 impl AudioProcessor for AudioBufferSourceRenderer {
     fn process(
         &mut self,
-        _inputs: &[AudioRenderQuantum], // no input...
+        _inputs: &[AudioRenderQuantum], // This node has no input
         outputs: &mut [AudioRenderQuantum],
         params: AudioParamValues<'_>,
         scope: &AudioWorkletGlobalScope,
@@ -525,10 +524,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // For now we just consider that we can go fast track if loop points are
         // bound to the buffer boundaries.
         //
-        // by default loop_end is equal to buffer_duration, so loop_start = 0 &&
-        // loop_end = buffer.duration should go to fast track
-
-        // @todo - test loop_end against 0 too, semantics is loop_end as not been changed
+        // By default, cf. clamp_loop_boundaries, loop_start == 0 && loop_end == buffer_duration,
         if loop_start != 0. || loop_end != buffer_duration {
             self.render_state.is_aligned = false;
         }
@@ -624,8 +620,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             if is_looping {
                 if loop_start >= 0. && loop_end > 0. && loop_start < loop_end {
                     actual_loop_start = loop_start;
-                    // @todo - min is not required loop_end is already clamped
-                    actual_loop_end = loop_end.min(buffer_duration);
+                    actual_loop_end = loop_end;
                 } else {
                     actual_loop_start = 0.;
                     actual_loop_end = buffer_duration;
