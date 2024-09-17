@@ -647,8 +647,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
                 // we have now reached start time
                 if !self.render_state.started {
+                    let delta = current_time - self.start_time;
                     // handle that start time may be between last sample and this one
-                    self.offset += current_time - self.start_time;
+                    self.offset += delta;
 
                     if is_looping && computed_playback_rate >= 0. && self.offset >= actual_loop_end
                     {
@@ -660,7 +661,8 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                         self.offset = actual_loop_start;
                     }
 
-                    buffer_time = self.offset;
+                    buffer_time = self.offset * computed_playback_rate;
+                    self.render_state.buffer_time_elapsed = delta * computed_playback_rate;
                     self.render_state.started = true;
                 }
 
@@ -672,7 +674,6 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                         }
 
                         // playback began after loop, and playhead is now prior to the loop end
-                        // @note - only possible when playback_rate < 0 (?)
                         if self.offset >= actual_loop_end && buffer_time < actual_loop_end {
                             self.render_state.entered_loop = true;
                         }
@@ -1288,7 +1289,7 @@ mod tests {
     }
 
     #[test]
-    fn test_with_duration_fast_track() {
+    fn test_with_duration_0() {
         let sample_rate = 48_000.;
         let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
@@ -1311,7 +1312,7 @@ mod tests {
     }
 
     #[test]
-    fn test_with_duration_slow_track() {
+    fn test_with_duration_1() {
         let sample_rate = 48_000.;
         let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
 
@@ -1335,6 +1336,49 @@ mod tests {
 
         let mut expected = vec![0.; 128];
         expected[5] = 1.;
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    // port from wpt - sub-sample-scheduling.html / sub-sample-grain
+    fn test_with_duration_2() {
+        let sample_rate = 32_768.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+
+        let mut buffer = context.create_buffer(1, RENDER_QUANTUM_SIZE, sample_rate);
+        buffer.copy_to_channel(&[1.; RENDER_QUANTUM_SIZE], 0);
+
+        let start_grain_index = 3.1;
+        let end_grain_index = 37.2;
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+
+        src.start_at_with_offset_and_duration(
+            start_grain_index / sample_rate as f64,
+            0.,
+            (end_grain_index - start_grain_index) / sample_rate as f64,
+        );
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        let mut expected = [1.; RENDER_QUANTUM_SIZE];
+        for s in expected
+            .iter_mut()
+            .take(start_grain_index.floor() as usize + 1)
+        {
+            *s = 0.;
+        }
+        for s in expected
+            .iter_mut()
+            .take(RENDER_QUANTUM_SIZE)
+            .skip(end_grain_index.ceil() as usize)
+        {
+            *s = 0.;
+        }
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
     }
