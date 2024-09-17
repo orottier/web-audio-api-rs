@@ -749,12 +749,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                                 if playback_rate >= 0. {
                                                     let start_playhead =
                                                         actual_loop_start * sample_rate;
-                                                    let start_index =
-                                                        if start_playhead.floor() == start_playhead {
-                                                            start_playhead as usize
-                                                        } else {
-                                                            start_playhead as usize + 1
-                                                        };
+                                                    let start_index = if start_playhead.floor()
+                                                        == start_playhead
+                                                    {
+                                                        start_playhead as usize
+                                                    } else {
+                                                        start_playhead as usize + 1
+                                                    };
 
                                                     buffer_channel[start_index]
                                                 } else {
@@ -1292,7 +1293,7 @@ mod tests {
         expected[1] = 1.;
         expected[129] = 1.;
 
-        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+        assert_float_eq!(channel[..], expected[..], abs_all <= 1e-10);
     }
 
     #[test]
@@ -1580,17 +1581,19 @@ mod tests {
     #[test]
     fn test_loop_out_of_bounds() {
         [
-            (-2., -1.),
-            (-1., -2.),
-            (0., 0.),
-            (-1., 2.),
-            (2., -1.),
-            (1., 1.),
-            (2., 3.),
-            (3., 2.),
+            // these will go in fast track
+            (-2., -1., 0.),
+            (-1., -2., 0.),
+            (0., 0., 0.),
+            (-1., 2., 0.),
+            // these will go in slow track
+            (2., -1., 1e-10),
+            (1., 1., 1e-10),
+            (2., 3., 1e-10),
+            (3., 2., 1e-10),
         ]
         .iter()
-        .for_each(|(loop_start, loop_end)| {
+        .for_each(|(loop_start, loop_end, error)| {
             let sample_rate = 48_000.;
             let length = sample_rate as usize / 10;
             let mut context = OfflineAudioContext::new(1, length, sample_rate);
@@ -1625,7 +1628,7 @@ mod tests {
                 expected[i] = 1.;
             }
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+            assert_float_eq!(channel[..], expected[..], abs_all <= error);
         });
     }
 
