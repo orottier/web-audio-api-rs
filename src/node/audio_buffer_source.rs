@@ -52,7 +52,7 @@ impl Default for AudioBufferSourceOptions {
 #[derive(Debug, Copy, Clone)]
 struct PlaybackInfo {
     prev_frame_index: usize,
-    k: f32,
+    k: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -704,7 +704,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     let playhead = position * sample_rate;
                     let playhead_floored = playhead.floor();
                     let prev_frame_index = playhead_floored as usize; // can't be < 0.
-                    let k = (playhead - playhead_floored) as f32;
+                    let k = playhead - playhead_floored;
 
                     // Due to how buffer_time is computed, we can still run into
                     // floating point errors and try to access a non existing index
@@ -740,10 +740,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                     k,
                                 }) => {
                                     // `prev_frame_index` cannot be out of bounds
-                                    let prev_sample = buffer_channel[*prev_frame_index];
+                                    let prev_sample = buffer_channel[*prev_frame_index] as f64;
                                     let next_sample = match buffer_channel.get(prev_frame_index + 1)
                                     {
-                                        Some(val) => *val,
+                                        Some(val) => *val as f64,
                                         None => {
                                             let sample = if is_looping {
                                                 if playback_rate >= 0. {
@@ -767,11 +767,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                                 0.
                                             };
 
-                                            sample
+                                            sample as f64
                                         }
                                     };
 
-                                    (1. - k).mul_add(prev_sample, k * next_sample)
+                                    (1. - k).mul_add(prev_sample, k * next_sample) as f32
                                 }
                                 None => 0.,
                             };
