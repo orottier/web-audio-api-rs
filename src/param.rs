@@ -1658,10 +1658,9 @@ pub(crate) fn audio_param_pair(
 mod tests {
     use float_eq::assert_float_eq;
 
-    use crate::context::{BaseAudioContext, OfflineAudioContext};
-    use crate::render::Alloc;
-
     use super::*;
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::render::AudioRenderQuantumChannel;
 
     #[test]
     #[should_panic]
@@ -3397,8 +3396,6 @@ mod tests {
 
     #[test]
     fn test_varying_param_size_modulated() {
-        let alloc = Alloc::with_capacity(1);
-
         // buffer length is 1 and input is silence (no modulation)
         {
             let context = OfflineAudioContext::new(1, 1, 48000.);
@@ -3417,10 +3414,10 @@ mod tests {
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
 
             // mix to output step, input is silence
-            let signal = alloc.silence();
+            let signal = AudioRenderQuantumChannel::silence();
             let input = AudioRenderQuantum::from(signal);
 
-            let signal = alloc.silence();
+            let signal = AudioRenderQuantumChannel::silence();
             let mut output = AudioRenderQuantum::from(signal);
 
             render.mix_to_output(&input, &mut output);
@@ -3447,11 +3444,11 @@ mod tests {
             assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
 
             // mix to output step, input is not silence
-            let signal = alloc.silence();
+            let signal = AudioRenderQuantumChannel::silence();
             let mut input = AudioRenderQuantum::from(signal);
             input.channel_data_mut(0)[0] = 1.;
 
-            let signal = alloc.silence();
+            let signal = AudioRenderQuantumChannel::silence();
             let mut output = AudioRenderQuantum::from(signal);
 
             render.mix_to_output(&input, &mut output);
@@ -3466,7 +3463,6 @@ mod tests {
 
     #[test]
     fn test_k_rate_makes_input_single_valued() {
-        let alloc = Alloc::with_capacity(1);
         let context = OfflineAudioContext::new(1, 1, 48000.);
 
         let opts = AudioParamDescriptor {
@@ -3483,13 +3479,13 @@ mod tests {
         assert_float_eq!(vs, &[0.; 1][..], abs_all <= 0.);
 
         // mix to output step, input is not silence
-        let signal = alloc.silence();
+        let signal = AudioRenderQuantumChannel::silence();
         let mut input = AudioRenderQuantum::from(signal);
         input.channel_data_mut(0)[0] = 1.;
         input.channel_data_mut(0)[1] = 2.;
         input.channel_data_mut(0)[2] = 3.;
 
-        let signal = alloc.silence();
+        let signal = AudioRenderQuantumChannel::silence();
         let mut output = AudioRenderQuantum::from(signal);
 
         render.mix_to_output(&input, &mut output);
@@ -3501,7 +3497,6 @@ mod tests {
 
     #[test]
     fn test_full_render_chain() {
-        let alloc = Alloc::with_capacity(1);
         // prevent regression between the different processing stage
         let context = OfflineAudioContext::new(1, 1, 48000.);
 
@@ -3528,10 +3523,10 @@ mod tests {
         }
         assert_float_eq!(intrinsic_values, &expected[..], abs_all <= 0.);
 
-        let signal = alloc.silence();
+        let signal = AudioRenderQuantumChannel::silence();
         let mut input = AudioRenderQuantum::from(signal);
         input.channel_data_mut(0)[0] = f32::NAN;
-        let signal = alloc.silence();
+        let signal = AudioRenderQuantumChannel::silence();
         let mut output = AudioRenderQuantum::from(signal);
 
         render.mix_to_output(&input, &mut output);

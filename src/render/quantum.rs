@@ -1,6 +1,5 @@
 //! Optimized audio signal data structures, used in `AudioProcessors`
 use arrayvec::ArrayVec;
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::node::{ChannelConfigInner, ChannelCountMode, ChannelInterpretation};
@@ -8,68 +7,46 @@ use crate::node::{ChannelConfigInner, ChannelCountMode, ChannelInterpretation};
 use crate::assert_valid_number_of_channels;
 use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
-// object pool for `AudioRenderQuantumChannel`s, only allocate if the pool is empty
-pub(crate) struct Alloc {
-    inner: Rc<AllocInner>,
-}
+/// A sample slice containing only zeroes
+const ZEROES: [f32; RENDER_QUANTUM_SIZE] = [0.; RENDER_QUANTUM_SIZE];
 
-#[derive(Debug)]
-struct AllocInner {
-    pool: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>>,
-    zeroes: Rc<[f32; RENDER_QUANTUM_SIZE]>,
-}
+mod pool {
+    //! Thread local allocator for sample slices
 
-impl Alloc {
-    pub fn with_capacity(n: usize) -> Self {
-        let pool: Vec<_> = (0..n).map(|_| Rc::new([0.; RENDER_QUANTUM_SIZE])).collect();
-        let zeroes = Rc::new([0.; RENDER_QUANTUM_SIZE]);
+    use super::*;
+    use std::cell::RefCell;
 
-        let inner = AllocInner {
-            pool: RefCell::new(pool),
-            zeroes,
+    thread_local! {
+        /// Thread local pool of pre-allocated sample slice that can be reused after being dropped
+        static POOL: RefCell<Vec<Rc<[f32; RENDER_QUANTUM_SIZE]>>> = {
+            log::debug!("Setting up a new thread local pool of audio quanta");
+
+            const SIZE: usize = 128; // TODO - leak more memory or risk allocations at runtime?
+            let pool: Vec<_> = (0..SIZE).map(|_| Rc::new(ZEROES)).collect();
+            RefCell::new(pool)
         };
-
-        Self {
-            inner: Rc::new(inner),
-        }
     }
 
     #[cfg(test)]
-    pub fn allocate(&self) -> AudioRenderQuantumChannel {
-        AudioRenderQuantumChannel {
-            data: self.inner.allocate(),
-            alloc: Rc::clone(&self.inner),
-        }
+    /// Number of pre-allocated items available in the pool
+    pub(super) fn size() -> usize {
+        POOL.with_borrow(|p| p.len())
     }
 
-    pub fn silence(&self) -> AudioRenderQuantumChannel {
-        AudioRenderQuantumChannel {
-            data: Rc::clone(&self.inner.zeroes),
-            alloc: Rc::clone(&self.inner),
-        }
-    }
-
-    #[cfg(test)]
-    pub fn pool_size(&self) -> usize {
-        self.inner.pool.borrow().len()
-    }
-}
-
-impl AllocInner {
-    fn allocate(&self) -> Rc<[f32; RENDER_QUANTUM_SIZE]> {
-        if let Some(rc) = self.pool.borrow_mut().pop() {
+    /// Obtain a new sample slice, either reused from the pool, or newly allocated
+    pub(super) fn allocate() -> Rc<[f32; RENDER_QUANTUM_SIZE]> {
+        if let Some(rc) = POOL.with_borrow_mut(|p| p.pop()) {
             // reuse from pool
             rc
         } else {
             // allocate
-            Rc::new([0.; RENDER_QUANTUM_SIZE])
+            Rc::new(ZEROES)
         }
     }
 
-    fn push(&self, data: Rc<[f32; RENDER_QUANTUM_SIZE]>) {
-        self.pool
-            .borrow_mut() // infallible when single threaded
-            .push(data);
+    /// Reclaim a sample slice into the thread local pool
+    pub(super) fn push(data: Rc<[f32; RENDER_QUANTUM_SIZE]>) {
+        POOL.with_borrow_mut(|p| p.push(data));
     }
 }
 
@@ -88,26 +65,35 @@ impl AllocInner {
 /// mutate it from there.
 #[derive(Clone, Debug)]
 pub struct AudioRenderQuantumChannel {
-    data: Rc<[f32; RENDER_QUANTUM_SIZE]>,
-    alloc: Rc<AllocInner>,
+    data: Option<Rc<[f32; RENDER_QUANTUM_SIZE]>>,
 }
 
 impl AudioRenderQuantumChannel {
     fn make_mut(&mut self) -> &mut [f32; RENDER_QUANTUM_SIZE] {
-        if Rc::strong_count(&self.data) != 1 {
-            let mut new = self.alloc.allocate();
-            Rc::make_mut(&mut new).copy_from_slice(self.data.deref());
-            self.data = new;
+        if self.data.is_none() {
+            self.data = Some(pool::allocate());
+            Rc::make_mut(self.data.as_mut().unwrap()).copy_from_slice(&ZEROES);
         }
 
-        Rc::make_mut(&mut self.data)
+        match &mut self.data {
+            Some(data) => {
+                if Rc::strong_count(data) != 1 {
+                    let mut new = pool::allocate();
+                    Rc::make_mut(&mut new).copy_from_slice(&data[..]);
+                    *data = new;
+                }
+
+                return Rc::make_mut(data);
+            }
+            None => unreachable!(),
+        }
     }
 
     /// `O(1)` check if this buffer is equal to the 'silence buffer'
     ///
     /// If this function returns false, it is still possible for all samples to be zero.
     pub(crate) fn is_silent(&self) -> bool {
-        Rc::ptr_eq(&self.data, &self.alloc.zeroes)
+        self.data.is_none()
     }
 
     /// Sum two channels
@@ -119,11 +105,8 @@ impl AudioRenderQuantumChannel {
         }
     }
 
-    pub(crate) fn silence(&self) -> Self {
-        Self {
-            data: Rc::clone(&self.alloc.zeroes),
-            alloc: Rc::clone(&self.alloc),
-        }
+    pub(crate) fn silence() -> Self {
+        Self { data: None }
     }
 }
 
@@ -133,7 +116,10 @@ impl Deref for AudioRenderQuantumChannel {
     type Target = [f32];
 
     fn deref(&self) -> &Self::Target {
-        self.data.as_slice()
+        match &self.data {
+            Some(data) => data.as_slice(),
+            None => &ZEROES,
+        }
     }
 }
 
@@ -145,16 +131,22 @@ impl DerefMut for AudioRenderQuantumChannel {
 
 impl AsRef<[f32]> for AudioRenderQuantumChannel {
     fn as_ref(&self) -> &[f32] {
-        &self.data[..]
+        match &self.data {
+            Some(data) => data.as_slice(),
+            None => &ZEROES,
+        }
     }
 }
 
 impl std::ops::Drop for AudioRenderQuantumChannel {
     fn drop(&mut self) {
-        if Rc::strong_count(&self.data) == 1 {
-            let zeroes = Rc::clone(&self.alloc.zeroes);
-            let rc = std::mem::replace(&mut self.data, zeroes);
-            self.alloc.push(rc);
+        let data = match self.data.take() {
+            None => return,
+            Some(data) => data,
+        };
+
+        if Rc::strong_count(&data) == 1 {
+            pool::push(data);
         }
     }
 }
@@ -184,6 +176,17 @@ pub struct AudioRenderQuantum {
 }
 
 impl AudioRenderQuantum {
+    /// Create a new `AudioRenderQuantum` with a single channel of silence
+    pub(crate) fn new() -> Self {
+        let mut channels = ArrayVec::new();
+        channels.push(AudioRenderQuantumChannel::silence());
+
+        Self {
+            channels,
+            single_valued: false,
+        }
+    }
+
     /// Create a new `AudioRenderQuantum` from a single channel buffer
     pub(crate) fn from(channel: AudioRenderQuantumChannel) -> Self {
         let mut channels = ArrayVec::new();
@@ -289,7 +292,7 @@ impl AudioRenderQuantum {
     ) {
         // cf. https://www.w3.org/TR/webaudio/#channel-up-mixing-and-down-mixing
         assert_valid_number_of_channels(computed_number_of_channels);
-        let silence = self.channels[0].silence();
+        let silence = AudioRenderQuantumChannel::silence();
 
         // Handle discrete interpretation or speaker layouts where the initial or desired number of
         // channels is larger than 6 (undefined by the specification)
@@ -582,9 +585,7 @@ impl AudioRenderQuantum {
     /// `O(1)` operation to convert this buffer to the 'silence buffer' which will enable some
     /// optimizations in the graph rendering.
     pub fn make_silent(&mut self) {
-        let silence = self.channels[0].silence();
-
-        self.channels[0] = silence;
+        self.channels[0] = AudioRenderQuantumChannel::silence();
         self.channels.truncate(1);
     }
 
@@ -649,8 +650,15 @@ impl AudioRenderQuantum {
         let mut channels = self.channels.iter();
         let first = channels.next().unwrap();
         for c in channels {
-            if !Rc::ptr_eq(&first.data, &c.data) {
-                return false;
+            match (&first.data, &c.data) {
+                (None, None) => (),
+                (None, _) => return false,
+                (_, None) => return false,
+                (Some(d1), Some(d2)) => {
+                    if !Rc::ptr_eq(d1, d2) {
+                        return false;
+                    }
+                }
             }
         }
 
@@ -666,89 +674,49 @@ mod tests {
 
     #[test]
     fn test_pool() {
-        // Create pool of size 2
-        let alloc = Alloc::with_capacity(2);
-        assert_eq!(alloc.pool_size(), 2);
+        {
+            // allocate and drop
+            let mut a = AudioRenderQuantumChannel::silence();
+            let _a = a.make_mut();
+            let mut b = AudioRenderQuantumChannel::silence();
+            let _b = b.make_mut();
+        }
 
-        alloc_counter::deny_alloc(|| {
-            {
-                // take a buffer out of the pool
-                let a = alloc.allocate();
+        let pool_size_start = pool::size();
+        assert!(pool_size_start >= 2); // due to allocation, pool size is nonzero
 
-                assert_float_eq!(&a[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
-                assert_eq!(alloc.pool_size(), 1);
+        {
+            // take a buffer out of the pool
+            let a = AudioRenderQuantumChannel::silence();
 
-                // mutating this buffer will not allocate
-                let mut a = a;
-                a.iter_mut().for_each(|v| *v += 1.);
-                assert_float_eq!(&a[..], &[1.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
-                assert_eq!(alloc.pool_size(), 1);
+            assert_float_eq!(&a[..], &ZEROES[..], abs_all <= 0.);
+            assert_eq!(pool::size(), pool_size_start);
 
-                // clone this buffer, should not allocate
-                #[allow(clippy::redundant_clone)]
-                let mut b: AudioRenderQuantumChannel = a.clone();
-                assert_eq!(alloc.pool_size(), 1);
+            // mutating this buffer will take from the pool
+            let mut a = a;
+            a.iter_mut().for_each(|v| *v += 1.);
+            assert_float_eq!(&a[..], &[1.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
+            assert_eq!(pool::size(), pool_size_start - 1);
 
-                // mutate cloned buffer, this will allocate
-                b.iter_mut().for_each(|v| *v += 1.);
-                assert_eq!(alloc.pool_size(), 0);
-            }
+            // clone this buffer, should not allocate
+            #[allow(clippy::redundant_clone)]
+            let mut b: AudioRenderQuantumChannel = a.clone();
+            assert_eq!(pool::size(), pool_size_start - 1);
 
-            // all buffers are reclaimed
-            assert_eq!(alloc.pool_size(), 2);
+            // mutate cloned buffer, this will allocate
+            b.iter_mut().for_each(|v| *v += 1.);
+            assert_eq!(pool::size(), pool_size_start - 2);
+        }
 
-            let c = {
-                let a = alloc.allocate();
-                let b = alloc.allocate();
-
-                let c = alloc_counter::allow_alloc(|| {
-                    // we can allocate beyond the pool size
-                    let c = alloc.allocate();
-                    assert_eq!(alloc.pool_size(), 0);
-                    c
-                });
-
-                // dirty allocations
-                assert_float_eq!(&a[..], &[1.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
-                assert_float_eq!(&b[..], &[2.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
-                assert_float_eq!(&c[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
-
-                c
-            };
-
-            // dropping c will cause a re-allocation: the pool capacity is extended
-            alloc_counter::allow_alloc(move || {
-                std::mem::drop(c);
-            });
-
-            // pool size is now 3 due to extra allocations
-            assert_eq!(alloc.pool_size(), 3);
-
-            {
-                // silence will not allocate at first
-                let mut a = alloc.silence();
-                assert!(a.is_silent());
-                assert_eq!(alloc.pool_size(), 3);
-
-                // deref mut will allocate
-                let a_vals = a.deref_mut();
-                assert_eq!(alloc.pool_size(), 2);
-
-                // but should be silent, even though a dirty buffer is taken
-                assert_float_eq!(a_vals, &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
-
-                // is_silent is a superficial ptr check
-                assert!(!a.is_silent());
-            }
-        });
+        // all buffers are reclaimed
+        assert_eq!(pool::size(), pool_size_start);
     }
 
     #[test]
     fn test_silence() {
-        let alloc = Alloc::with_capacity(1);
-        let silence = alloc.silence();
+        let silence = AudioRenderQuantumChannel::silence();
 
-        assert_float_eq!(&silence[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
+        assert_float_eq!(&silence[..], &ZEROES[..], abs_all <= 0.);
         assert!(silence.is_silent());
 
         // changing silence is possible
@@ -758,29 +726,19 @@ mod tests {
         assert!(!changed.is_silent());
 
         // but should not alter new silence
-        let silence = alloc.silence();
-        assert_float_eq!(&silence[..], &[0.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
+        let silence = AudioRenderQuantumChannel::silence();
+        assert_float_eq!(&silence[..], &ZEROES[..], abs_all <= 0.);
         assert!(silence.is_silent());
-
-        // can also create silence from AudioRenderQuantumChannel
-        let from_channel = silence.silence();
-        assert_float_eq!(
-            &from_channel[..],
-            &[0.; RENDER_QUANTUM_SIZE][..],
-            abs_all <= 0.
-        );
-        assert!(from_channel.is_silent());
     }
 
     #[test]
     fn test_channel_add() {
-        let alloc = Alloc::with_capacity(1);
-        let silence = alloc.silence();
+        let silence = AudioRenderQuantumChannel::silence();
 
-        let mut signal1 = alloc.silence();
+        let mut signal1 = AudioRenderQuantumChannel::silence();
         signal1.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
-        let mut signal2 = alloc.allocate();
+        let mut signal2 = AudioRenderQuantumChannel::silence();
         signal2.copy_from_slice(&[2.; RENDER_QUANTUM_SIZE]);
 
         // test add silence to signal
@@ -788,7 +746,7 @@ mod tests {
         assert_float_eq!(&signal1[..], &[1.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
 
         // test add signal to silence
-        let mut silence = alloc.silence();
+        let mut silence = AudioRenderQuantumChannel::silence();
         silence.add(&signal1);
         assert_float_eq!(&silence[..], &[1.; RENDER_QUANTUM_SIZE][..], abs_all <= 0.);
 
@@ -799,8 +757,7 @@ mod tests {
 
     #[test]
     fn test_audiobuffer_channels() {
-        let alloc = Alloc::with_capacity(1);
-        let silence = alloc.silence();
+        let silence = AudioRenderQuantumChannel::silence();
 
         let buffer = AudioRenderQuantum::from(silence);
         assert_eq!(buffer.number_of_channels(), 1);
@@ -816,9 +773,7 @@ mod tests {
 
     #[test]
     fn test_audiobuffer_mix_discrete() {
-        let alloc = Alloc::with_capacity(1);
-
-        let mut signal = alloc.silence();
+        let mut signal = AudioRenderQuantumChannel::silence();
         signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
         let mut buffer = AudioRenderQuantum::from(signal);
@@ -841,11 +796,7 @@ mod tests {
             &[1.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
-        assert_float_eq!(
-            &buffer.channel_data(1)[..],
-            &[0.; RENDER_QUANTUM_SIZE][..],
-            abs_all <= 0.
-        );
+        assert_float_eq!(&buffer.channel_data(1)[..], &ZEROES[..], abs_all <= 0.);
 
         buffer.mix(1, ChannelInterpretation::Discrete);
         assert_eq!(buffer.number_of_channels(), 1);
@@ -858,8 +809,7 @@ mod tests {
 
     #[test]
     fn test_audiobuffer_mix_speakers_all() {
-        let alloc = Alloc::with_capacity(1);
-        let signal = alloc.silence();
+        let signal = AudioRenderQuantumChannel::silence();
         let mut buffer = AudioRenderQuantum::from(signal);
 
         for i in 1..MAX_CHANNELS {
@@ -874,11 +824,9 @@ mod tests {
 
     #[test]
     fn test_audiobuffer_upmix_speakers() {
-        let alloc = Alloc::with_capacity(1);
-
         {
             // 1 -> 2
-            let mut signal = alloc.silence();
+            let mut signal = AudioRenderQuantumChannel::silence();
             signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(signal);
@@ -910,7 +858,7 @@ mod tests {
 
         {
             // 1 -> 4
-            let mut signal = alloc.silence();
+            let mut signal = AudioRenderQuantumChannel::silence();
             signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(signal);
@@ -929,21 +877,13 @@ mod tests {
                 &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
-            assert_float_eq!(
-                &buffer.channel_data(2)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(2)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(3)[..], &ZEROES[..], abs_all <= 0.);
         }
 
         {
             // 1 -> 6
-            let mut signal = alloc.silence();
+            let mut signal = AudioRenderQuantumChannel::silence();
             signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(signal);
@@ -952,43 +892,23 @@ mod tests {
             assert_eq!(buffer.number_of_channels(), 6);
 
             // left and right equal
-            assert_float_eq!(
-                &buffer.channel_data(0)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(1)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(0)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(1)[..], &ZEROES[..], abs_all <= 0.);
             assert_float_eq!(
                 &buffer.channel_data(2)[..],
                 &[1.; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(4)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(5)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(3)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(4)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(5)[..], &ZEROES[..], abs_all <= 0.);
         }
 
         {
             // 2 -> 4
-            let mut left_signal = alloc.silence();
+            let mut left_signal = AudioRenderQuantumChannel::silence();
             left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
-            let mut right_signal = alloc.silence();
+            let mut right_signal = AudioRenderQuantumChannel::silence();
             right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(left_signal);
@@ -1018,23 +938,15 @@ mod tests {
                 &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
-            assert_float_eq!(
-                &buffer.channel_data(2)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(2)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(3)[..], &ZEROES[..], abs_all <= 0.);
         }
 
         {
             // 2 -> 5.1
-            let mut left_signal = alloc.silence();
+            let mut left_signal = AudioRenderQuantumChannel::silence();
             left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
-            let mut right_signal = alloc.silence();
+            let mut right_signal = AudioRenderQuantumChannel::silence();
             right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(left_signal);
@@ -1064,37 +976,21 @@ mod tests {
                 &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
-            assert_float_eq!(
-                &buffer.channel_data(2)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(4)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(5)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(2)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(3)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(4)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(5)[..], &ZEROES[..], abs_all <= 0.);
         }
 
         {
             // 4 -> 5.1
-            let mut left_signal = alloc.silence();
+            let mut left_signal = AudioRenderQuantumChannel::silence();
             left_signal.copy_from_slice(&[0.25; RENDER_QUANTUM_SIZE]);
-            let mut right_signal = alloc.silence();
+            let mut right_signal = AudioRenderQuantumChannel::silence();
             right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
-            let mut s_left_signal = alloc.silence();
+            let mut s_left_signal = AudioRenderQuantumChannel::silence();
             s_left_signal.copy_from_slice(&[0.75; RENDER_QUANTUM_SIZE]);
-            let mut s_right_signal = alloc.silence();
+            let mut s_right_signal = AudioRenderQuantumChannel::silence();
             s_right_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(left_signal);
@@ -1136,16 +1032,8 @@ mod tests {
                 &[0.5; RENDER_QUANTUM_SIZE][..],
                 abs_all <= 0.
             );
-            assert_float_eq!(
-                &buffer.channel_data(2)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
-            assert_float_eq!(
-                &buffer.channel_data(3)[..],
-                &[0.; RENDER_QUANTUM_SIZE][..],
-                abs_all <= 0.
-            );
+            assert_float_eq!(&buffer.channel_data(2)[..], &ZEROES[..], abs_all <= 0.);
+            assert_float_eq!(&buffer.channel_data(3)[..], &ZEROES[..], abs_all <= 0.);
             assert_float_eq!(
                 &buffer.channel_data(4)[..],
                 &[0.75; RENDER_QUANTUM_SIZE][..],
@@ -1161,13 +1049,11 @@ mod tests {
 
     #[test]
     fn test_audiobuffer_downmix_speakers() {
-        let alloc = Alloc::with_capacity(1);
-
         {
             // 2 -> 1
-            let mut left_signal = alloc.silence();
+            let mut left_signal = AudioRenderQuantumChannel::silence();
             left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
-            let mut right_signal = alloc.silence();
+            let mut right_signal = AudioRenderQuantumChannel::silence();
             right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(left_signal);
@@ -1196,13 +1082,13 @@ mod tests {
 
         {
             // 4 -> 1
-            let mut left_signal = alloc.silence();
+            let mut left_signal = AudioRenderQuantumChannel::silence();
             left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
-            let mut right_signal = alloc.silence();
+            let mut right_signal = AudioRenderQuantumChannel::silence();
             right_signal.copy_from_slice(&[0.75; RENDER_QUANTUM_SIZE]);
-            let mut s_left_signal = alloc.silence();
+            let mut s_left_signal = AudioRenderQuantumChannel::silence();
             s_left_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
-            let mut s_right_signal = alloc.silence();
+            let mut s_right_signal = AudioRenderQuantumChannel::silence();
             s_right_signal.copy_from_slice(&[0.25; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(left_signal);
@@ -1243,17 +1129,17 @@ mod tests {
 
         {
             // 6 -> 1
-            let mut left_signal = alloc.silence();
+            let mut left_signal = AudioRenderQuantumChannel::silence();
             left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
-            let mut right_signal = alloc.silence();
+            let mut right_signal = AudioRenderQuantumChannel::silence();
             right_signal.copy_from_slice(&[0.9; RENDER_QUANTUM_SIZE]);
-            let mut center_signal = alloc.silence();
+            let mut center_signal = AudioRenderQuantumChannel::silence();
             center_signal.copy_from_slice(&[0.8; RENDER_QUANTUM_SIZE]);
-            let mut low_freq_signal = alloc.silence();
+            let mut low_freq_signal = AudioRenderQuantumChannel::silence();
             low_freq_signal.copy_from_slice(&[0.7; RENDER_QUANTUM_SIZE]);
-            let mut s_left_signal = alloc.silence();
+            let mut s_left_signal = AudioRenderQuantumChannel::silence();
             s_left_signal.copy_from_slice(&[0.6; RENDER_QUANTUM_SIZE]);
-            let mut s_right_signal = alloc.silence();
+            let mut s_right_signal = AudioRenderQuantumChannel::silence();
             s_right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(left_signal);
@@ -1308,13 +1194,13 @@ mod tests {
 
         {
             // 4 -> 2
-            let mut left_signal = alloc.silence();
+            let mut left_signal = AudioRenderQuantumChannel::silence();
             left_signal.copy_from_slice(&[0.25; RENDER_QUANTUM_SIZE]);
-            let mut right_signal = alloc.silence();
+            let mut right_signal = AudioRenderQuantumChannel::silence();
             right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
-            let mut s_left_signal = alloc.silence();
+            let mut s_left_signal = AudioRenderQuantumChannel::silence();
             s_left_signal.copy_from_slice(&[0.75; RENDER_QUANTUM_SIZE]);
-            let mut s_right_signal = alloc.silence();
+            let mut s_right_signal = AudioRenderQuantumChannel::silence();
             s_right_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(left_signal);
@@ -1360,17 +1246,17 @@ mod tests {
 
         {
             // 6 -> 2
-            let mut left_signal = alloc.silence();
+            let mut left_signal = AudioRenderQuantumChannel::silence();
             left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
-            let mut right_signal = alloc.silence();
+            let mut right_signal = AudioRenderQuantumChannel::silence();
             right_signal.copy_from_slice(&[0.9; RENDER_QUANTUM_SIZE]);
-            let mut center_signal = alloc.silence();
+            let mut center_signal = AudioRenderQuantumChannel::silence();
             center_signal.copy_from_slice(&[0.8; RENDER_QUANTUM_SIZE]);
-            let mut low_freq_signal = alloc.silence();
+            let mut low_freq_signal = AudioRenderQuantumChannel::silence();
             low_freq_signal.copy_from_slice(&[0.7; RENDER_QUANTUM_SIZE]);
-            let mut s_left_signal = alloc.silence();
+            let mut s_left_signal = AudioRenderQuantumChannel::silence();
             s_left_signal.copy_from_slice(&[0.6; RENDER_QUANTUM_SIZE]);
-            let mut s_right_signal = alloc.silence();
+            let mut s_right_signal = AudioRenderQuantumChannel::silence();
             s_right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(left_signal);
@@ -1431,17 +1317,17 @@ mod tests {
 
         {
             // 6 -> 4
-            let mut left_signal = alloc.silence();
+            let mut left_signal = AudioRenderQuantumChannel::silence();
             left_signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
-            let mut right_signal = alloc.silence();
+            let mut right_signal = AudioRenderQuantumChannel::silence();
             right_signal.copy_from_slice(&[0.9; RENDER_QUANTUM_SIZE]);
-            let mut center_signal = alloc.silence();
+            let mut center_signal = AudioRenderQuantumChannel::silence();
             center_signal.copy_from_slice(&[0.8; RENDER_QUANTUM_SIZE]);
-            let mut low_freq_signal = alloc.silence();
+            let mut low_freq_signal = AudioRenderQuantumChannel::silence();
             low_freq_signal.copy_from_slice(&[0.7; RENDER_QUANTUM_SIZE]);
-            let mut s_left_signal = alloc.silence();
+            let mut s_left_signal = AudioRenderQuantumChannel::silence();
             s_left_signal.copy_from_slice(&[0.6; RENDER_QUANTUM_SIZE]);
-            let mut s_right_signal = alloc.silence();
+            let mut s_right_signal = AudioRenderQuantumChannel::silence();
             s_right_signal.copy_from_slice(&[0.5; RENDER_QUANTUM_SIZE]);
 
             let mut buffer = AudioRenderQuantum::from(left_signal);
@@ -1513,14 +1399,12 @@ mod tests {
 
     #[test]
     fn test_audiobuffer_add() {
-        let alloc = Alloc::with_capacity(1);
-
-        let mut signal = alloc.silence();
+        let mut signal = AudioRenderQuantumChannel::silence();
         signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
         let mut buffer = AudioRenderQuantum::from(signal);
         buffer.mix(2, ChannelInterpretation::Speakers);
 
-        let mut signal2 = alloc.silence();
+        let mut signal2 = AudioRenderQuantumChannel::silence();
         signal2.copy_from_slice(&[2.; RENDER_QUANTUM_SIZE]);
         let buffer2 = AudioRenderQuantum::from(signal2);
 
@@ -1547,33 +1431,21 @@ mod tests {
 
     #[test]
     fn test_is_silent_quantum() {
-        let alloc = Alloc::with_capacity(1);
-
         // create 2 channel silent buffer
-        let signal = alloc.silence();
+        let signal = AudioRenderQuantumChannel::silence();
         let mut buffer = AudioRenderQuantum::from(signal);
         buffer.mix(2, ChannelInterpretation::Speakers);
 
-        assert_float_eq!(
-            &buffer.channel_data(0)[..],
-            &[0.; RENDER_QUANTUM_SIZE][..],
-            abs_all <= 0.
-        );
-        assert_float_eq!(
-            &buffer.channel_data(1)[..],
-            &[0.; RENDER_QUANTUM_SIZE][..],
-            abs_all <= 0.
-        );
+        assert_float_eq!(&buffer.channel_data(0)[..], &ZEROES[..], abs_all <= 0.);
+        assert_float_eq!(&buffer.channel_data(1)[..], &ZEROES[..], abs_all <= 0.);
 
         assert!(buffer.is_silent());
     }
 
     #[test]
     fn test_is_not_silent_quantum() {
-        let alloc = Alloc::with_capacity(1);
-
         // create 2 channel silent buffer
-        let mut signal = alloc.silence();
+        let mut signal = AudioRenderQuantumChannel::silence();
         signal.copy_from_slice(&[1.; RENDER_QUANTUM_SIZE]);
         let mut buffer = AudioRenderQuantum::from(signal);
         buffer.mix(2, ChannelInterpretation::Discrete);
@@ -1583,11 +1455,7 @@ mod tests {
             &[1.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.
         );
-        assert_float_eq!(
-            &buffer.channel_data(1)[..],
-            &[0.; RENDER_QUANTUM_SIZE][..],
-            abs_all <= 0.
-        );
+        assert_float_eq!(&buffer.channel_data(1)[..], &ZEROES[..], abs_all <= 0.);
         assert!(!buffer.is_silent());
     }
 }
