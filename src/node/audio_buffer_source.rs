@@ -1572,48 +1572,59 @@ mod tests {
     }
 
     #[test]
-    // @todo - test all conditions
     fn test_loop_out_of_bounds() {
-        let sample_rate = 48_000.;
-        let length = sample_rate as usize / 10;
-        let mut context = OfflineAudioContext::new(1, length, sample_rate);
+        [
+            (-2., -1.),
+            (-1., -2.),
+            (0., 0.),
+            (-1., 2.),
+            (2., -1.),
+            (1., 1.),
+            (2., 3.),
+            (3., 2.),
+        ]
+        .iter()
+        .for_each(|(loop_start, loop_end)| {
+            let sample_rate = 48_000.;
+            let length = sample_rate as usize / 10;
+            let mut context = OfflineAudioContext::new(1, length, sample_rate);
 
-        let buffer_size = 500;
-        let mut buffer = context.create_buffer(1, buffer_size, sample_rate);
-        let data = vec![1.; 1];
-        buffer.copy_to_channel(&data, 0);
+            let buffer_size = 500;
+            let mut buffer = context.create_buffer(1, buffer_size, sample_rate);
+            let data = vec![1.; 1];
+            buffer.copy_to_channel(&data, 0);
 
-        let mut src = context.create_buffer_source();
-        src.connect(&context.destination());
-        src.set_buffer(buffer);
+            let mut src = context.create_buffer_source();
+            src.connect(&context.destination());
+            src.set_buffer(buffer);
 
-        src.set_loop(true);
-        src.set_loop_start(0.5); // outside of buffer duration
-        src.set_loop_end(1.5); // outside of buffer duration
-        src.start();
+            src.set_loop(true);
+            src.set_loop_start(*loop_start); // outside of buffer duration
+            src.set_loop_end(*loop_end); // outside of buffer duration
+            src.start();
 
-        let result = context.start_rendering_sync(); // should terminate
-        let channel = result.get_channel_data(0);
+            let result = context.start_rendering_sync(); // should terminate
+            let channel = result.get_channel_data(0);
 
-        // Both loop points will be clamped to buffer duration due to rules defined at
-        // https://webaudio.github.io/web-audio-api/#dom-audiobuffersourcenode-loopstart
-        // https://webaudio.github.io/web-audio-api/#dom-audiobuffersourcenode-loopend
-        // Thus it violates the rule defined in
-        // https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode
-        // `loopStart >= 0 && loopEnd > 0 && loopStart < loopEnd`
-        // Hence the whole buffer should be looped
+            // Both loop points will be clamped to buffer duration due to rules defined at
+            // https://webaudio.github.io/web-audio-api/#dom-audiobuffersourcenode-loopstart
+            // https://webaudio.github.io/web-audio-api/#dom-audiobuffersourcenode-loopend
+            // Thus it violates the rule defined in
+            // https://webaudio.github.io/web-audio-api/#playback-AudioBufferSourceNode
+            // `loopStart >= 0 && loopEnd > 0 && loopStart < loopEnd`
+            // Hence the whole buffer should be looped
 
-        let mut expected = vec![0.; length];
-        for i in (0..length).step_by(buffer_size) {
-            expected[i] = 1.;
-        }
+            let mut expected = vec![0.; length];
+            for i in (0..length).step_by(buffer_size) {
+                expected[i] = 1.;
+            }
 
-        assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+            assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+        });
     }
 
     #[test]
     // regression test for #452
-    // - fast track
     // - duration not set so `self.duration` is `f64::MAX`
     // - stop time is > buffer length
     fn test_end_of_file_fast_track_2() {
@@ -1643,7 +1654,6 @@ mod tests {
 
     #[test]
     // regression test for #452
-    // - fals track
     // - duration not set so `self.duration` is `f64::MAX`
     // - stop time is > buffer length
     fn test_end_of_file_slow_track_2() {
