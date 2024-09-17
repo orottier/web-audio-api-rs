@@ -529,6 +529,15 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             self.render_state.is_aligned = false;
         }
 
+        // If some user defined end of rendering, i.e. explicit stop_time or duration,
+        // is within this render quantum force slow track as well. It might imply
+        // resampling e.g. if stop_time is between 2 samples
+        if buffer_time + block_duration > self.duration
+            || block_time + block_duration > self.stop_time
+        {
+            self.render_state.is_aligned = false;
+        }
+
         if self.render_state.is_aligned {
             // ---------------------------------------------------------------
             // Fast track
@@ -537,22 +546,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 self.render_state.started = true;
             }
 
-            // check if buffer ends within this block
-            if buffer_time + block_duration > buffer_duration
-                || buffer_time + block_duration > self.duration
-                || block_time + block_duration > self.stop_time
-            {
-                let end_index = if block_time + block_duration > self.stop_time
-                    || buffer_time + block_duration > self.duration
-                {
-                    let dt = (self.stop_time - block_time).min(self.duration - buffer_time);
-                    let end_buffer_time = buffer_time + dt;
-                    let end_index = (end_buffer_time * sample_rate).round() as usize;
-                    end_index.min(buffer.length())
-                } else {
-                    buffer.length()
-                };
-
+            // buffer ends within this block
+            if buffer_time + block_duration > buffer_duration {
+                let end_index = buffer.length();
                 // In case of a loop point in the middle of the block, this value will
                 // be used to recompute `buffer_time` according to the actual loop point.
                 let mut loop_point_index: Option<usize> = None;
