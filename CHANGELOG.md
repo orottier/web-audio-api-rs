@@ -1,5 +1,11 @@
 # Version History
 
+## Version 1.0.1 (2024-09-18)
+
+- AudioBufferSourceNode: handle reverse playback and looping
+- AudioBufferSourceNode: handle sub-sample stop/duration times
+- AudioBufferSourceNode: fix handling of out of bound offsets
+
 ## Version 1.0.0 (2024-09-10)
 
 - Breaking: MediaRecorder constructor now requires options (e.g. mime type)
