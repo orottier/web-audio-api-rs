@@ -644,7 +644,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 // - we are after stop time
                 // - explicit duration (in buffer time reference) has been given and we have reached it
                 // Note that checking against buffer duration is done below to handle looping
-                if (current_time < self.start_time)
+                if current_time < self.start_time
                     || current_time >= self.stop_time
                     || self.render_state.buffer_time_elapsed >= self.duration
                 {
