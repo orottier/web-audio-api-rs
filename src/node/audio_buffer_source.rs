@@ -633,12 +633,20 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             for (i, playback_info) in playback_infos.iter_mut().enumerate() {
                 let current_time = block_time + i as f64 * dt;
 
+                // handle floating point errors due to start time computation
+                // cf. test_subsample_buffer_stitching
+                if !self.render_state.started {
+                    if almost::equal(current_time, self.start_time) {
+                        self.start_time = current_time;
+                    }
+                }
+
                 // Handle following cases:
                 // - we are before start time
                 // - we are after stop time
                 // - explicit duration (in buffer time reference) has been given and we have reached it
                 // Note that checking against buffer duration is done below to handle looping
-                if current_time < self.start_time
+                if (current_time < self.start_time)
                     || current_time >= self.stop_time
                     || self.render_state.buffer_time_elapsed >= self.duration
                 {
@@ -647,6 +655,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
                 // we have now reached start time
                 if !self.render_state.started {
+                    // println!("start, {}, {}, {}", current_time, self.start_time, (current_time - self.start_time).abs());
                     let delta = current_time - self.start_time;
                     // handle that start time may be between last sample and this one
                     self.offset += delta;
@@ -835,6 +844,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::AudioBufferOptions;
     use crate::RENDER_QUANTUM_SIZE;
 
     use super::*;
@@ -1815,6 +1825,49 @@ mod tests {
         expected[1] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    // ported from wpt: the-audiobuffersourcenode-interface/sub-sample-buffer-stitching.html
+    fn test_subsample_buffer_stitching() {
+        let sample_rate = 44_100.;
+        let buffer_rate = 44_100.;
+        let buffer_length = 30;
+        let frequency = 440.;
+
+        let length = buffer_length * 15;
+        let mut context = OfflineAudioContext::new(1, length, sample_rate);
+
+        let mut wave_signal = vec![0.; context.length()];
+        let omega = 2. * PI / buffer_rate * frequency;
+
+        wave_signal.iter_mut().enumerate().for_each(|(i, s)| {
+            *s = (omega * i as f32).sin();
+        });
+
+        // Slice the sine wave into many little buffers to be assigned to ABSNs
+        // that are started at the appropriate times to produce a final sine
+        // wave.
+        for k in (0..context.length()).step_by(buffer_length) {
+            let mut buffer = AudioBuffer::new(AudioBufferOptions {
+                number_of_channels: 1,
+                length: buffer_length,
+                sample_rate,
+            });
+            buffer.copy_to_channel(&wave_signal[k..k + buffer_length], 0);
+
+            let mut src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions {
+                buffer: Some(buffer),
+                ..Default::default()
+            });
+            src.connect(&context.destination());
+            src.start_at(k as f64 / buffer_rate as f64);
+        }
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        assert_float_eq!(channel[..], wave_signal[..], abs_all <= 1e-9);
     }
 
     #[test]
