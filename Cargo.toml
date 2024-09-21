@@ -18,6 +18,7 @@ include = [
 rust-version = "1.71"
 
 [dependencies]
+almost = "0.2.0"
 arc-swap = "1.6"
 arrayvec = "0.7"
 cpal = { version = "0.15", optional = true }

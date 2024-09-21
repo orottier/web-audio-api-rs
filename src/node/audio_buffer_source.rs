@@ -633,6 +633,12 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             for (i, playback_info) in playback_infos.iter_mut().enumerate() {
                 let current_time = block_time + i as f64 * dt;
 
+                // Sticky behavior to handle floating point errors due to start time computation
+                // cf. test_subsample_buffer_stitching
+                if !self.render_state.started && almost::equal(current_time, self.start_time) {
+                    self.start_time = current_time;
+                }
+
                 // Handle following cases:
                 // - we are before start time
                 // - we are after stop time
@@ -736,8 +742,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                     let next_sample = match buffer_channel.get(prev_frame_index + 1)
                                     {
                                         Some(val) => *val as f64,
+                                        // End of buffer
                                         None => {
-                                            let sample = if is_looping {
+                                            if is_looping {
                                                 if playback_rate >= 0. {
                                                     let start_playhead =
                                                         actual_loop_start * sample_rate;
@@ -749,18 +756,31 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                                         start_playhead as usize + 1
                                                     };
 
-                                                    buffer_channel[start_index]
+                                                    buffer_channel[start_index] as f64
                                                 } else {
                                                     let end_playhead =
                                                         actual_loop_end * sample_rate;
                                                     let end_index = end_playhead as usize;
-                                                    buffer_channel[end_index]
+                                                    buffer_channel[end_index] as f64
                                                 }
                                             } else {
-                                                0.
-                                            };
-
-                                            sample as f64
+                                                // Handle 2 edge cases:
+                                                // 1. We are in a case where buffer time is below buffer
+                                                // duration due to floating point errors, but where
+                                                // prev_frame_index is last index and k is near 1. We can't
+                                                // filter this case before, because it might break
+                                                // loops logic.
+                                                // 2. Buffer contains only one sample
+                                                if almost::equal(*k, 1.) || *prev_frame_index == 0 {
+                                                    0.
+                                                } else {
+                                                    // Extrapolate next sample using the last two known samples
+                                                    // cf. https://github.com/WebAudio/web-audio-api/issues/2032
+                                                    let prev_prev_sample =
+                                                        buffer_channel[*prev_frame_index - 1];
+                                                    2. * prev_sample - prev_prev_sample as f64
+                                                }
+                                            }
                                         }
                                     };
 
@@ -835,6 +855,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::AudioBufferOptions;
     use crate::RENDER_QUANTUM_SIZE;
 
     use super::*;
@@ -1120,44 +1141,47 @@ mod tests {
 
     #[test]
     fn test_audio_buffer_resampling() {
-        [22_500, 38_000, 48_000, 96_000].iter().for_each(|sr| {
-            let base_sr = 44_100;
-            let mut context = OfflineAudioContext::new(1, base_sr, base_sr as f32);
+        [22_500, 38_000, 43_800, 48_000, 96_000]
+            .iter()
+            .for_each(|sr| {
+                let freq = 1.;
+                let base_sr = 44_100;
+                let mut context = OfflineAudioContext::new(1, base_sr, base_sr as f32);
 
-            // 1Hz sine at different sample rates
-            let buf_sr = *sr;
-            // safe cast for sample rate, see discussion at #113
-            let sample_rate = buf_sr as f32;
-            let mut buffer = context.create_buffer(1, buf_sr, sample_rate);
-            let mut sine = vec![];
+                // 1Hz sine at different sample rates
+                let buf_sr = *sr;
+                // safe cast for sample rate, see discussion at #113
+                let sample_rate = buf_sr as f32;
+                let mut buffer = context.create_buffer(1, buf_sr, sample_rate);
+                let mut sine = vec![];
 
-            for i in 0..buf_sr {
-                let phase = i as f32 / buf_sr as f32 * 2. * PI;
-                let sample = phase.sin();
-                sine.push(sample);
-            }
+                for i in 0..buf_sr {
+                    let phase = freq * i as f32 / buf_sr as f32 * 2. * PI;
+                    let sample = phase.sin();
+                    sine.push(sample);
+                }
 
-            buffer.copy_to_channel(&sine[..], 0);
+                buffer.copy_to_channel(&sine[..], 0);
 
-            let mut src = context.create_buffer_source();
-            src.connect(&context.destination());
-            src.set_buffer(buffer);
-            src.start_at(0. / sample_rate as f64);
+                let mut src = context.create_buffer_source();
+                src.connect(&context.destination());
+                src.set_buffer(buffer);
+                src.start_at(0. / sample_rate as f64);
 
-            let result = context.start_rendering_sync();
-            let channel = result.get_channel_data(0);
+                let result = context.start_rendering_sync();
+                let channel = result.get_channel_data(0);
 
-            // 1Hz sine at audio context sample rate
-            let mut expected = vec![];
+                // 1Hz sine at audio context sample rate
+                let mut expected = vec![];
 
-            for i in 0..base_sr {
-                let phase = i as f32 / base_sr as f32 * 2. * PI;
-                let sample = phase.sin();
-                expected.push(sample);
-            }
+                for i in 0..base_sr {
+                    let phase = freq * i as f32 / base_sr as f32 * 2. * PI;
+                    let sample = phase.sin();
+                    expected.push(sample);
+                }
 
-            assert_float_eq!(channel[..], expected[..], abs_all <= 1e-6);
-        });
+                assert_float_eq!(channel[..], expected[..], abs_all <= 1e-6);
+            });
     }
 
     #[test]
@@ -1263,7 +1287,7 @@ mod tests {
     }
 
     #[test]
-    fn test_end_of_file_slow_track() {
+    fn test_end_of_file_slow_track_1() {
         let sample_rate = 48_000.;
         let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 2, sample_rate);
 
@@ -1815,6 +1839,64 @@ mod tests {
         expected[1] = 1.;
 
         assert_float_eq!(channel[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
+    // Ported from wpt: the-audiobuffersourcenode-interface/sub-sample-buffer-stitching.html
+    // Note that in wpt, results are tested against an oscillator node, which fails
+    // in the (44_100., 43_800., 3.8986e-3) condition for some (yet) unknown reason
+    fn test_subsample_buffer_stitching() {
+        [(44_100., 44_100., 9.0957e-5), (44_100., 43_800., 3.8986e-3)]
+            .iter()
+            .for_each(|(sample_rate, buffer_rate, error_threshold)| {
+                let sample_rate = *sample_rate;
+                let buffer_rate = *buffer_rate;
+                let buffer_length = 30;
+                let frequency = 440.;
+
+                // let length = sample_rate as usize;
+                let length = buffer_length * 15;
+                let mut context = OfflineAudioContext::new(2, length, sample_rate);
+
+                let mut wave_signal = vec![0.; context.length()];
+                let omega = 2. * PI / buffer_rate * frequency;
+                wave_signal.iter_mut().enumerate().for_each(|(i, s)| {
+                    *s = (omega * i as f32).sin();
+                });
+
+                // Slice the sine wave into many little buffers to be assigned to ABSNs
+                // that are started at the appropriate times to produce a final sine
+                // wave.
+                for k in (0..context.length()).step_by(buffer_length) {
+                    let mut buffer = AudioBuffer::new(AudioBufferOptions {
+                        number_of_channels: 1,
+                        length: buffer_length,
+                        sample_rate: buffer_rate,
+                    });
+                    buffer.copy_to_channel(&wave_signal[k..k + buffer_length], 0);
+
+                    let mut src = AudioBufferSourceNode::new(
+                        &context,
+                        AudioBufferSourceOptions {
+                            buffer: Some(buffer),
+                            ..Default::default()
+                        },
+                    );
+                    src.connect(&context.destination());
+                    src.start_at(k as f64 / buffer_rate as f64);
+                }
+
+                let mut expected = vec![0.; context.length()];
+                let omega = 2. * PI / sample_rate * frequency;
+                expected.iter_mut().enumerate().for_each(|(i, s)| {
+                    *s = (omega * i as f32).sin();
+                });
+
+                let result = context.start_rendering_sync();
+                let actual = result.get_channel_data(0);
+
+                assert_float_eq!(actual[..], expected[..], abs_all <= error_threshold);
+            });
     }
 
     #[test]
