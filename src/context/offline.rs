@@ -434,6 +434,13 @@ mod tests {
     use crate::node::AudioScheduledSourceNode;
 
     #[test]
+    fn test_sample_rate_length() {
+        let context = OfflineAudioContext::new(1, 48000, 96000.);
+        assert_float_eq!(context.sample_rate(), 96000., abs_all <= 0.);
+        assert_eq!(context.length(), 48000);
+    }
+
+    #[test]
     fn render_empty_graph() {
         let mut context = OfflineAudioContext::new(2, 555, 44_100.);
         assert_eq!(context.state(), AudioContextState::Suspended);
