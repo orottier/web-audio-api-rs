@@ -15,7 +15,7 @@ include = [
     "LICENSE",
     "README.md",
 ]
-rust-version = "1.71"
+rust-version = "1.76"
 
 [dependencies]
 almost = "0.2.0"
