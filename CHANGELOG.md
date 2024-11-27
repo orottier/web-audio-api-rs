@@ -1,5 +1,9 @@
 # Version History
 
+## Unreleased
+
+- Implement sub-sample AudioBufferSourceNode stitching
+
 ## Version 1.0.1 (2024-09-18)
 
 - AudioBufferSourceNode: handle reverse playback and looping
