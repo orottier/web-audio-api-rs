@@ -24,7 +24,7 @@ arrayvec = "0.7"
 cpal = { version = "0.15", optional = true }
 creek = "1.2"
 crossbeam-channel = "0.5"
-cubeb = { version = "0.17", optional = true }
+cubeb = { version = "0.13", optional = true }
 dasp_sample = "0.11"
 float_eq = "1.0"
 futures-channel = { version = "0.3.30", features = ["sink"] }
@@ -54,7 +54,6 @@ env_logger = "0.11"
 iai = "0.1.1"
 rand = "0.8"
 paste = "1.0.14"
-clap = "=4.4" # pin transitive dependency to lower version to avoid MSRV issues
 
 # Uncomment the following lines to enable debug symbols
 # during CPU profiling
