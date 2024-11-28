@@ -1,14 +1,17 @@
 // run in release mode
 // `cargo run --release --example mic_playback`
 
-use web_audio_api::context::{AudioContext, AudioContextRegistration, BaseAudioContext};
+use web_audio_api::context::{AudioContext, BaseAudioContext};
 use web_audio_api::media_devices::{self, MediaStreamConstraints};
 use web_audio_api::node::BiquadFilterType;
 use web_audio_api::node::{
     AnalyserNode, AudioBufferSourceNode, AudioNode, AudioScheduledSourceNode, BiquadFilterNode,
-    ChannelConfig, GainNode, MediaStreamAudioSourceNode,
+    GainNode, MediaStreamAudioSourceNode,
 };
-use web_audio_api::render::{AudioParamValues, AudioProcessor, AudioRenderQuantum, RenderScope};
+use web_audio_api::worklet::{
+    AudioParamValues, AudioWorkletGlobalScope, AudioWorkletNode, AudioWorkletNodeOptions,
+    AudioWorkletProcessor,
+};
 use web_audio_api::AudioBuffer;
 
 use std::io::{stdin, stdout, Write};
@@ -30,48 +33,33 @@ const INFO_PANEL_HEIGHT: u16 = 9;
 const LOG_LEN: usize = 10;
 
 struct MediaRecorder {
-    /// handle to the audio context, required for all audio nodes
-    registration: AudioContextRegistration,
-    /// channel configuration (for up/down-mixing of inputs), required for all audio nodes
-    channel_config: ChannelConfig,
+    /// handle to the audio node
+    node: AudioWorkletNode,
     /// receiving end for the samples recorded in the render thread
     receiver: Receiver<Vec<Vec<f32>>>,
-}
-
-// implement required methods for AudioNode trait
-impl AudioNode for MediaRecorder {
-    fn registration(&self) -> &AudioContextRegistration {
-        &self.registration
-    }
-    fn channel_config(&self) -> &ChannelConfig {
-        &self.channel_config
-    }
-    fn number_of_inputs(&self) -> usize {
-        1
-    }
-    fn number_of_outputs(&self) -> usize {
-        0
-    }
 }
 
 impl MediaRecorder {
     /// Construct a new MediaRecorder
     fn new<C: BaseAudioContext>(context: &C) -> Self {
-        context.register(move |registration| {
-            let (sender, receiver) = crossbeam_channel::unbounded();
+        let (sender, receiver) = crossbeam_channel::unbounded();
 
-            // setup the processor, this will run in the render thread
-            let render = MediaRecorderProcessor { sender };
+        // setup the processor, this will run in the render thread
+        let options = AudioWorkletNodeOptions {
+            number_of_inputs: 1,
+            number_of_outputs: 0,
+            output_channel_count: Default::default(),
+            parameter_data: Default::default(),
+            audio_node_options: Default::default(),
+            processor_options: sender,
+        };
+        let node = AudioWorkletNode::new::<MediaRecorderProcessor>(context, options);
 
-            // setup the audio node, this will live in the control thread (user facing)
-            let node = MediaRecorder {
-                registration,
-                channel_config: ChannelConfig::default(),
-                receiver,
-            };
+        MediaRecorder { node, receiver }
+    }
 
-            (node, Box::new(render))
-        })
+    fn node(&self) -> &AudioWorkletNode {
+        &self.node
     }
 
     fn get_data(self, sample_rate: f32) -> Option<AudioBuffer> {
@@ -89,17 +77,23 @@ struct MediaRecorderProcessor {
     sender: Sender<Vec<Vec<f32>>>,
 }
 
-impl AudioProcessor for MediaRecorderProcessor {
-    fn process(
+impl AudioWorkletProcessor for MediaRecorderProcessor {
+    type ProcessorOptions = Sender<Vec<Vec<f32>>>;
+
+    fn constructor(opts: Self::ProcessorOptions) -> Self {
+        Self { sender: opts }
+    }
+
+    fn process<'a, 'b>(
         &mut self,
-        inputs: &[AudioRenderQuantum],
-        _outputs: &mut [AudioRenderQuantum],
-        _params: AudioParamValues<'_>,
-        _scope: &RenderScope,
+        inputs: &'b [&'a [&'a [f32]]],
+        _outputs: &'b mut [&'a mut [&'a mut [f32]]],
+        _params: AudioParamValues<'b>,
+        _scope: &'b AudioWorkletGlobalScope,
     ) -> bool {
         // single input node
         let input = &inputs[0];
-        let data = input.channels().iter().map(|c| c.to_vec()).collect();
+        let data = input.iter().map(|c| c.to_vec()).collect();
 
         let _ = self.sender.send(data);
 
@@ -248,18 +242,19 @@ fn poll_frequency_graph(
             .map(|(i, &f)| (i as f32, f))
             .collect();
 
-        let plot = Chart::new_with_y_range(
+        let mut chart = Chart::new_with_y_range(
             width as u32 * 2,
             (height - 25) as u32 * 4,
             0.0,
             bin_count as f32,
-            -80.,
+            -100.,
             20.,
-        )
-        .lineplot(&Shape::Bars(&points[..]))
-        .to_string();
+        );
+        let bars = Shape::Bars(&points[..]);
+        let plot = chart.lineplot(&bars);
+        plot.figures();
 
-        let event = UiEvent::GraphUpdate(plot);
+        let event = UiEvent::GraphUpdate(plot.to_string());
         let _ = plot_send.send(event); // allowed to fail if the main thread is shutting down
     }
 }
@@ -350,7 +345,7 @@ impl AudioThread {
         self.mic_in.disconnect();
 
         if beep {
-            let osc = self.context.create_oscillator();
+            let mut osc = self.context.create_oscillator();
             osc.connect(&self.context.destination());
             osc.start();
             osc.stop_at(self.context.current_time() + 0.2);
@@ -365,7 +360,7 @@ impl AudioThread {
             .take()
             .and_then(|r| r.get_data(self.context.sample_rate()));
 
-        let buffer_source = self.context.create_buffer_source();
+        let mut buffer_source = self.context.create_buffer_source();
         let playback_rate = Self::PLAYBACK_STEP.powi(self.playback_rate_factor);
         buffer_source.playback_rate().set_value(playback_rate);
         buffer_source.set_loop(true);
@@ -373,7 +368,7 @@ impl AudioThread {
             buffer_source.set_buffer(buf);
         }
 
-        let biquad = self.context.create_biquad_filter();
+        let mut biquad = self.context.create_biquad_filter();
         biquad.set_type((self.biquad_filter_type % 8).into());
 
         let gain = self.context.create_gain();
@@ -396,13 +391,13 @@ impl AudioThread {
         self.buffer_source.stop();
         log::info!("Start recording - press space to stop");
 
-        let osc = self.context.create_oscillator();
+        let mut osc = self.context.create_oscillator();
         osc.connect(&self.context.destination());
         osc.start();
         osc.stop_at(self.context.current_time() + 0.2);
 
         let recorder = MediaRecorder::new(&self.context);
-        self.mic_in.connect(&recorder);
+        self.mic_in.connect(recorder.node());
         self.mic_in.connect(&*self.analyser.lock().unwrap());
 
         self.recorder = Some(recorder);
