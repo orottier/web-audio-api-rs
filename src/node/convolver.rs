@@ -1,7 +1,7 @@
 use std::any::Any;
-use std::sync::Arc;
+// use std::sync::Arc;
 
-use realfft::{num_complex::Complex, ComplexToReal, RealFftPlanner, RealToComplex};
+// use realfft::{num_complex::Complex, ComplexToReal, RealFftPlanner, RealToComplex};
 use fft_convolver::FFTConvolver;
 
 use crate::buffer::AudioBuffer;
@@ -229,8 +229,16 @@ impl ConvolverNode {
         //     })
         //     .collect();
 
+        let mut samples = vec![0.; buffer.length()];
+        samples.iter_mut()
+            .zip(buffer.get_channel_data(0))
+            .for_each(|(o, i)| *o = *i * scale);
+
         let mut convolver = FFTConvolver::<f32>::default();
-        let _ = convolver.init(RENDER_QUANTUM_SIZE, buffer.get_channel_data(0));
+        // Size of the partition changes a lot the perf...
+        // - RENDER_QUANTUM_SIZE     -> 20x (compared to real-time)
+        // - RENDER_QUANTUM_SIZE * 8 -> 134x
+        let _ = convolver.init(RENDER_QUANTUM_SIZE * 8, &samples);
 
         // let padded_buffer = AudioBuffer::from(samples, sample_rate);
         // let convolve = ConvolverRendererInner::new(padded_buffer);
@@ -474,12 +482,12 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_roll_zero() {
-        let mut input = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        roll_zero(&mut input, 3);
-        assert_eq!(&input, &[4, 5, 6, 7, 8, 9, 10, 0, 0, 0]);
-    }
+    // #[test]
+    // fn test_roll_zero() {
+    //     let mut input = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    //     roll_zero(&mut input, 3);
+    //     assert_eq!(&input, &[4, 5, 6, 7, 8, 9, 10, 0, 0, 0]);
+    // }
 
     #[test]
     #[should_panic]
