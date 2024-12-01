@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Increase MSRV to 1.76
 - Implement sub-sample AudioBufferSourceNode stitching
 
 ## Version 1.0.1 (2024-09-18)
