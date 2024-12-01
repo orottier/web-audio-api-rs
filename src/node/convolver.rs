@@ -11,7 +11,7 @@ use crate::render::{
 };
 use crate::RENDER_QUANTUM_SIZE;
 
-use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelInterpretation};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelCountMode, ChannelInterpretation};
 
 /// Scale buffer by an equal-power normalization
 // see - <https://webaudio.github.io/web-audio-api/#dom-convolvernode-normalize>
@@ -59,7 +59,7 @@ fn normalize_buffer(buffer: &AudioBuffer) -> f32 {
 //  AudioBuffer? buffer;
 //  boolean disableNormalization = false;
 //};
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ConvolverOptions {
     /// The desired buffer for the ConvolverNode
     pub buffer: Option<AudioBuffer>,
@@ -67,6 +67,53 @@ pub struct ConvolverOptions {
     pub disable_normalization: bool,
     /// AudioNode options
     pub audio_node_options: AudioNodeOptions,
+}
+
+impl Default for ConvolverOptions {
+    fn default() -> Self {
+        Self {
+            buffer: Default::default(),
+            disable_normalization: Default::default(),
+            audio_node_options: AudioNodeOptions {
+                channel_count: 2,
+                channel_count_mode: ChannelCountMode::ClampedMax,
+                channel_interpretation: ChannelInterpretation::Speakers,
+            },
+        }
+    }
+}
+
+/// Assert that the channel count is valid for the ConvolverNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count is greater than 2
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count(count: usize) {
+    assert!(
+        count <= 2,
+        "NotSupportedError - ConvolverNode channel count cannot be greater than two"
+    );
+}
+
+/// Assert that the channel count mode is valid for the ConvolverNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count mode is [`ChannelCountMode::Max`]
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
+    assert_ne!(
+        mode,
+        ChannelCountMode::Max,
+        "NotSupportedError - ConvolverNode channel count mode cannot be set to max"
+    );
 }
 
 /// Processing node which applies a linear convolution effect given an impulse response.
@@ -137,6 +184,19 @@ impl AudioNode for ConvolverNode {
     fn number_of_outputs(&self) -> usize {
         1
     }
+
+    // see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
+    fn set_channel_count(&self, count: usize) {
+        assert_valid_channel_count(count);
+        self.channel_config.set_count(count, self.registration());
+    }
+
+    // see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+    fn set_channel_count_mode(&self, mode: ChannelCountMode) {
+        assert_valid_channel_count_mode(mode);
+        self.channel_config
+            .set_count_mode(mode, self.registration());
+    }
 }
 
 impl ConvolverNode {
@@ -155,15 +215,18 @@ impl ConvolverNode {
         let ConvolverOptions {
             buffer,
             disable_normalization,
-            audio_node_options: channel_config,
+            audio_node_options,
         } = options;
+
+        assert_valid_channel_count(audio_node_options.channel_count);
+        assert_valid_channel_count_mode(audio_node_options.channel_count_mode);
 
         let mut node = context.base().register(move |registration| {
             let renderer = ConvolverRenderer { inner: None };
 
             let node = Self {
                 registration,
-                channel_config: channel_config.into(),
+                channel_config: audio_node_options.into(),
                 normalize: !disable_normalization,
                 buffer: None,
             };
@@ -273,17 +336,17 @@ impl AudioProcessor for ConvolverRenderer {
             Some(convolver) => convolver,
         };
 
-        // handle tail time
-        // if input.is_silent() {
-        //     return convolver.tail(output);
-        // }
-
         let mut mono = input.clone();
         mono.mix(1, ChannelInterpretation::Speakers);
         let input = &mono.channel_data(0)[..];
         let output = &mut output.channel_data_mut(0)[..];
 
         let _ = convolver.process(input, output);
+
+        // handle tail time
+        // if input.is_silent() {
+        //     return convolver.tail(output);
+        // }
 
         true
     }
