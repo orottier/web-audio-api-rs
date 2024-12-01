@@ -72,8 +72,8 @@ pub struct ConvolverOptions {
 impl Default for ConvolverOptions {
     fn default() -> Self {
         Self {
-            buffer: Default::default(),
-            disable_normalization: Default::default(),
+            buffer: None,
+            disable_normalization: false,
             audio_node_options: AudioNodeOptions {
                 channel_count: 2,
                 channel_count_mode: ChannelCountMode::ClampedMax,
@@ -222,7 +222,11 @@ impl ConvolverNode {
         assert_valid_channel_count_mode(audio_node_options.channel_count_mode);
 
         let mut node = context.base().register(move |registration| {
-            let renderer = ConvolverRenderer { inner: None };
+            let renderer = ConvolverRenderer {
+                convolvers: None,
+                impulse_length: 0,
+                tail_count: 0,
+            };
 
             let node = Self {
                 registration,
@@ -278,24 +282,33 @@ impl ConvolverNode {
             1.
         };
 
-        let mut samples = vec![0.; buffer.length()];
-        samples
-            .iter_mut()
-            .zip(buffer.get_channel_data(0))
-            .for_each(|(o, i)| *o = *i * scale);
-
-        let mut convolver = FFTConvolver::<f32>::default();
+        let mut convolvers = Vec::<FFTConvolver<f32>>::new();
         // Size of the partition changes a lot the perf...
         // - RENDER_QUANTUM_SIZE     -> 20x (compared to real-time)
         // - RENDER_QUANTUM_SIZE * 8 -> 134x
-        convolver
-            .init(RENDER_QUANTUM_SIZE * 8, &samples)
-            .expect("Unable to initialize convolution engine");
+        let partition_size = RENDER_QUANTUM_SIZE * 8;
 
-        // let padded_buffer = AudioBuffer::from(samples, sample_rate);
-        // let convolve = ConvolverRendererInner::new(padded_buffer);
+        [0..buffer.number_of_channels()].iter().for_each(|_| {
+            let mut scaled_channel = vec![0.; buffer.length()];
+            scaled_channel
+                .iter_mut()
+                .zip(buffer.get_channel_data(0))
+                .for_each(|(o, i)| *o = *i * scale);
 
-        self.registration.post_message(Some(convolver));
+            let mut convolver = FFTConvolver::<f32>::default();
+            convolver
+                .init(RENDER_QUANTUM_SIZE * 8, &samples)
+                .expect("Unable to initialize convolution engine");
+
+            convolvers.push(convolver);
+        });
+
+        let msg = ConvolverInfosMessage {
+            convolvers: Some(convolvers),
+            impulse_length: buffer.length(),
+        };
+
+        self.registration.post_message(msg);
         self.buffer = Some(buffer);
     }
 
@@ -310,8 +323,15 @@ impl ConvolverNode {
     }
 }
 
+struct ConvolverInfosMessage {
+    convolvers: Option<Vec<FFTConvolver<f32>>>,
+    impulse_length: usize,
+}
+
 struct ConvolverRenderer {
-    inner: Option<FFTConvolver<f32>>,
+    convolvers: Option<Vec<FFTConvolver<f32>>>,
+    impulse_length: usize,
+    tail_count: usize,
 }
 
 impl AudioProcessor for ConvolverRenderer {
@@ -327,34 +347,49 @@ impl AudioProcessor for ConvolverRenderer {
         let output = &mut outputs[0];
         output.force_mono();
 
-        let convolver = match &mut self.inner {
+        let convolvers = match &mut self.convolvers {
             None => {
                 // no convolution buffer set, passthrough
                 *output = input.clone();
                 return !input.is_silent();
             }
-            Some(convolver) => convolver,
+            Some(convolvers) => convolvers,
         };
 
+        // @todo - https://webaudio.github.io/web-audio-api/#Convolution-channel-configurations
         let mut mono = input.clone();
         mono.mix(1, ChannelInterpretation::Speakers);
-        let input = &mono.channel_data(0)[..];
-        let output = &mut output.channel_data_mut(0)[..];
 
-        let _ = convolver.process(input, output);
+        // let input = &mono.channel_data(0)[..];
+        // let output = &mut output.channel_data_mut(0)[..];
+        let _ = convolvers[0].process(&mono.channel_data(0), &mut output.channel_data_mut(0));
 
         // handle tail time
-        // if input.is_silent() {
-        //     return convolver.tail(output);
-        // }
+        if input.is_silent() {
+            self.tail_count += RENDER_QUANTUM_SIZE;
+
+            if self.tail_count >= self.impulse_length {
+                return false;
+            } else {
+                return true
+            }
+        }
+
+        self.tail_count = 0;
 
         true
     }
 
     fn onmessage(&mut self, msg: &mut dyn Any) {
-        if let Some(convolver) = msg.downcast_mut::<Option<FFTConvolver<f32>>>() {
+        if let Some(msg) = msg.downcast_mut::<ConvolverInfosMessage>() {
+            let ConvolverInfosMessage {
+                convolvers,
+                impulse_length,
+            } = msg;
             // Avoid deallocation in the render thread by swapping the convolver.
-            std::mem::swap(&mut self.inner, convolver);
+            std::mem::swap(&mut self.convolvers, convolvers);
+            self.impulse_length = *impulse_length;
+
             return;
         }
 
