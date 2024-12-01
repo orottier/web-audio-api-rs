@@ -225,7 +225,9 @@ impl ConvolverNode {
         // Size of the partition changes a lot the perf...
         // - RENDER_QUANTUM_SIZE     -> 20x (compared to real-time)
         // - RENDER_QUANTUM_SIZE * 8 -> 134x
-        let _ = convolver.init(RENDER_QUANTUM_SIZE * 8, &samples);
+        convolver
+            .init(RENDER_QUANTUM_SIZE * 8, &samples)
+            .expect("Unable to initialize convolution engine");
 
         // let padded_buffer = AudioBuffer::from(samples, sample_rate);
         // let convolve = ConvolverRendererInner::new(padded_buffer);
