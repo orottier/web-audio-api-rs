@@ -215,22 +215,9 @@ impl ConvolverNode {
             1.
         };
 
-        // Pad the response buffer with zeroes so its size is a power of 2, with 2 * 128 as min size
-        // let length = buffer.length();
-        // let padded_length = length.next_power_of_two().max(2 * RENDER_QUANTUM_SIZE);
-        // let samples: Vec<_> = (0..number_of_channels)
-        //     .map(|_| {
-        //         let mut samples = vec![0.; padded_length];
-        //         samples[..length]
-        //             .iter_mut()
-        //             .zip(buffer.get_channel_data(0))
-        //             .for_each(|(o, i)| *o = *i * scale);
-        //         samples
-        //     })
-        //     .collect();
-
         let mut samples = vec![0.; buffer.length()];
-        samples.iter_mut()
+        samples
+            .iter_mut()
             .zip(buffer.get_channel_data(0))
             .for_each(|(o, i)| *o = *i * scale);
 
@@ -257,169 +244,6 @@ impl ConvolverNode {
         self.normalize = value;
     }
 }
-
-// fn roll_zero<T: Default + Copy>(signal: &mut [T], n: usize) {
-//     // roll array by n elements
-//     // zero out the last n elements
-//     let len = signal.len();
-//     signal.copy_within(n.., 0);
-//     signal[len - n..].fill(T::default());
-// }
-
-// struct Fft {
-//     fft_forward: Arc<dyn RealToComplex<f32>>,
-//     fft_inverse: Arc<dyn ComplexToReal<f32>>,
-//     fft_input: Vec<f32>,
-//     fft_scratch: Vec<Complex<f32>>,
-//     fft_output: Vec<Complex<f32>>,
-// }
-
-// impl Fft {
-//     fn new(length: usize) -> Self {
-//         let mut fft_planner = RealFftPlanner::<f32>::new();
-
-//         let fft_forward = fft_planner.plan_fft_forward(length);
-//         let fft_inverse = fft_planner.plan_fft_inverse(length);
-
-//         let fft_input = fft_forward.make_input_vec();
-//         let fft_scratch = fft_forward.make_scratch_vec();
-//         let fft_output = fft_forward.make_output_vec();
-
-//         Self {
-//             fft_forward,
-//             fft_inverse,
-//             fft_input,
-//             fft_scratch,
-//             fft_output,
-//         }
-//     }
-
-//     fn real(&mut self) -> &mut [f32] {
-//         &mut self.fft_input[..]
-//     }
-
-//     fn complex(&mut self) -> &mut [Complex<f32>] {
-//         &mut self.fft_output[..]
-//     }
-
-//     fn process(&mut self) -> &[Complex<f32>] {
-//         self.fft_forward
-//             .process_with_scratch(
-//                 &mut self.fft_input,
-//                 &mut self.fft_output,
-//                 &mut self.fft_scratch,
-//             )
-//             .unwrap();
-//         &self.fft_output[..]
-//     }
-
-//     fn inverse(&mut self) -> &[f32] {
-//         self.fft_inverse
-//             .process_with_scratch(
-//                 &mut self.fft_output,
-//                 &mut self.fft_input,
-//                 &mut self.fft_scratch,
-//             )
-//             .unwrap();
-//         &self.fft_input[..]
-//     }
-// }
-
-// struct ConvolverRendererInner {
-//     num_ir_blocks: usize,
-//     h: Vec<Complex<f32>>,
-//     fdl: Vec<Complex<f32>>,
-//     out: Vec<f32>,
-//     fft2: Fft,
-// }
-
-// impl ConvolverRendererInner {
-//     fn new(response: AudioBuffer) -> Self {
-//         // mono processing only for now
-//         let response = response.channel_data(0).as_slice();
-
-//         let mut fft2 = Fft::new(2 * RENDER_QUANTUM_SIZE);
-//         let p = response.len();
-
-//         let num_ir_blocks = p / RENDER_QUANTUM_SIZE;
-
-//         let mut h = vec![Complex::default(); num_ir_blocks * 2 * RENDER_QUANTUM_SIZE];
-//         for (resp_fft, resp) in h
-//             .chunks_mut(2 * RENDER_QUANTUM_SIZE)
-//             .zip(response.chunks(RENDER_QUANTUM_SIZE))
-//         {
-//             // fill resp_fft with FFT of resp.zero_pad(RENDER_QUANTUM_SIZE)
-//             fft2.real()[..RENDER_QUANTUM_SIZE].copy_from_slice(resp);
-//             fft2.real()[RENDER_QUANTUM_SIZE..].fill(0.);
-//             resp_fft[..fft2.complex().len()].copy_from_slice(fft2.process());
-//         }
-
-//         let fdl = vec![Complex::default(); 2 * RENDER_QUANTUM_SIZE * num_ir_blocks];
-//         let out = vec![0.; 2 * RENDER_QUANTUM_SIZE - 1];
-
-//         Self {
-//             num_ir_blocks,
-//             h,
-//             fdl,
-//             out,
-//             fft2,
-//         }
-//     }
-
-//     fn process(&mut self, input: &[f32], output: &mut [f32]) {
-//         self.fft2.real()[..RENDER_QUANTUM_SIZE].copy_from_slice(input);
-//         self.fft2.real()[RENDER_QUANTUM_SIZE..].fill(0.);
-//         let spectrum = self.fft2.process();
-
-//         self.fdl
-//             .chunks_mut(2 * RENDER_QUANTUM_SIZE)
-//             .zip(self.h.chunks(2 * RENDER_QUANTUM_SIZE))
-//             .for_each(|(fdl_c, h_c)| {
-//                 fdl_c
-//                     .iter_mut()
-//                     .zip(h_c)
-//                     .zip(spectrum)
-//                     .for_each(|((f, h), s)| *f += h * s)
-//             });
-
-//         let c_len = self.fft2.complex().len();
-//         self.fft2.complex().copy_from_slice(&self.fdl[..c_len]);
-//         let inverse = self.fft2.inverse();
-//         self.out.iter_mut().zip(inverse).for_each(|(o, i)| {
-//             *o += i / (2 * RENDER_QUANTUM_SIZE) as f32;
-//         });
-
-//         output.copy_from_slice(&self.out[..RENDER_QUANTUM_SIZE]);
-
-//         roll_zero(&mut self.fdl[..], 2 * RENDER_QUANTUM_SIZE);
-//         roll_zero(&mut self.out[..], RENDER_QUANTUM_SIZE);
-//     }
-
-//     fn tail(&mut self, output: &mut AudioRenderQuantum) -> bool {
-//         if self.num_ir_blocks == 0 {
-//             output.make_silent();
-//             return false;
-//         }
-
-//         self.num_ir_blocks -= 1;
-
-//         let c_len = self.fft2.complex().len();
-//         self.fft2.complex().copy_from_slice(&self.fdl[..c_len]);
-//         let inverse = self.fft2.inverse();
-//         self.out.iter_mut().zip(inverse).for_each(|(o, i)| {
-//             *o += i / (2 * RENDER_QUANTUM_SIZE) as f32;
-//         });
-
-//         output
-//             .channel_data_mut(0)
-//             .copy_from_slice(&self.out[..RENDER_QUANTUM_SIZE]);
-
-//         roll_zero(&mut self.fdl[..], 2 * RENDER_QUANTUM_SIZE);
-//         roll_zero(&mut self.out[..], RENDER_QUANTUM_SIZE);
-
-//         self.num_ir_blocks > 0
-//     }
-// }
 
 struct ConvolverRenderer {
     inner: Option<FFTConvolver<f32>>,
@@ -481,13 +305,6 @@ mod tests {
     use crate::node::{AudioBufferSourceNode, AudioBufferSourceOptions, AudioScheduledSourceNode};
 
     use super::*;
-
-    // #[test]
-    // fn test_roll_zero() {
-    //     let mut input = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    //     roll_zero(&mut input, 3);
-    //     assert_eq!(&input, &[4, 5, 6, 7, 8, 9, 10, 0, 0, 0]);
-    // }
 
     #[test]
     #[should_panic]
