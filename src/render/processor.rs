@@ -207,7 +207,7 @@ pub struct AudioParamValues<'a> {
     nodes: &'a NodeCollection,
 }
 
-impl<'a> std::fmt::Debug for AudioParamValues<'a> {
+impl std::fmt::Debug for AudioParamValues<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AudioParamValues").finish_non_exhaustive()
     }

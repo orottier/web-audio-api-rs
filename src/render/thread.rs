@@ -250,7 +250,7 @@ impl RenderThread {
         let mut buffer = Vec::with_capacity(self.number_of_channels);
         buffer.resize_with(buffer.capacity(), || Vec::with_capacity(length));
 
-        let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
+        let num_frames = length.div_ceil(RENDER_QUANTUM_SIZE);
 
         // Handle initial control messages
         self.handle_control_messages();
@@ -299,7 +299,7 @@ impl RenderThread {
         let mut buffer = Vec::with_capacity(self.number_of_channels);
         buffer.resize_with(buffer.capacity(), || Vec::with_capacity(length));
 
-        let num_frames = (length + RENDER_QUANTUM_SIZE - 1) / RENDER_QUANTUM_SIZE;
+        let num_frames = length.div_ceil(RENDER_QUANTUM_SIZE);
 
         // Handle addition/removal of nodes/edges
         self.handle_control_messages();
