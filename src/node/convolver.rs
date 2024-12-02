@@ -297,7 +297,7 @@ impl ConvolverNode {
 
             let mut convolver = FFTConvolver::<f32>::default();
             convolver
-                .init(RENDER_QUANTUM_SIZE * 8, &samples)
+                .init(partition_size, &scaled_channel)
                 .expect("Unable to initialize convolution engine");
 
             convolvers.push(convolver);
