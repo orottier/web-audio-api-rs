@@ -21,6 +21,7 @@ rust-version = "1.76"
 almost = "0.2.0"
 arc-swap = "1.6"
 arrayvec = "0.7"
+fft-convolver = "0.2.0"
 cpal = { version = "0.15", optional = true }
 creek = "1.2"
 crossbeam-channel = "0.5"
