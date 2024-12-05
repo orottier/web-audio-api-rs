@@ -1,7 +1,5 @@
 use std::any::Any;
-// use std::sync::Arc;
 
-// use realfft::{num_complex::Complex, ComplexToReal, RealFftPlanner, RealToComplex};
 use fft_convolver::FFTConvolver;
 
 use crate::buffer::AudioBuffer;
@@ -283,16 +281,19 @@ impl ConvolverNode {
         };
 
         let mut convolvers = Vec::<FFTConvolver<f32>>::new();
-        // Size of the partition changes a lot the perf...
-        // - RENDER_QUANTUM_SIZE     -> 20x (compared to real-time)
-        // - RENDER_QUANTUM_SIZE * 8 -> 134x
+        // @note - value defined by "rule of thumb", to be explored further
         let partition_size = RENDER_QUANTUM_SIZE * 8;
+        // @todo - implement multichannel
+        // cf. https://webaudio.github.io/web-audio-api/#Convolution-channel-configurations
+        let num_convolvers = 1;
 
-        [0..buffer.number_of_channels()].iter().for_each(|_| {
+        for index in 0..num_convolvers {
+            let channel = std::cmp::min(buffer.number_of_channels(), index);
+
             let mut scaled_channel = vec![0.; buffer.length()];
             scaled_channel
                 .iter_mut()
-                .zip(buffer.get_channel_data(0))
+                .zip(buffer.get_channel_data(channel))
                 .for_each(|(o, i)| *o = *i * scale);
 
             let mut convolver = FFTConvolver::<f32>::default();
@@ -301,7 +302,7 @@ impl ConvolverNode {
                 .expect("Unable to initialize convolution engine");
 
             convolvers.push(convolver);
-        });
+        }
 
         let msg = ConvolverInfosMessage {
             convolvers: Some(convolvers),
@@ -345,7 +346,7 @@ impl AudioProcessor for ConvolverRenderer {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
-        output.force_mono();
+        output.make_silent();
 
         let convolvers = match &mut self.convolvers {
             None => {
@@ -360,19 +361,14 @@ impl AudioProcessor for ConvolverRenderer {
         let mut mono = input.clone();
         mono.mix(1, ChannelInterpretation::Speakers);
 
-        // let input = &mono.channel_data(0)[..];
-        // let output = &mut output.channel_data_mut(0)[..];
-        let _ = convolvers[0].process(&mono.channel_data(0), &mut output.channel_data_mut(0));
+        let i = &mono.channel_data(0)[..];
+        let o = &mut output.channel_data_mut(0)[..];
+        let _ = convolvers[0].process(i, o);
 
         // handle tail time
         if input.is_silent() {
             self.tail_count += RENDER_QUANTUM_SIZE;
-
-            if self.tail_count >= self.impulse_length {
-                return false;
-            } else {
-                return true
-            }
+            return self.tail_count < self.impulse_length;
         }
 
         self.tail_count = 0;
