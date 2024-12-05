@@ -17,6 +17,9 @@ include = [
 ]
 rust-version = "1.76"
 
+[workspace]
+members = ["python"]
+
 [dependencies]
 almost = "0.2.0"
 arc-swap = "1.6"
