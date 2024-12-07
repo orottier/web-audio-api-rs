@@ -1,7 +1,6 @@
 use std::any::Any;
-use std::sync::Arc;
 
-use realfft::{num_complex::Complex, ComplexToReal, RealFftPlanner, RealToComplex};
+use fft_convolver::FFTConvolver;
 
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextRegistration, BaseAudioContext};
@@ -10,7 +9,7 @@ use crate::render::{
 };
 use crate::RENDER_QUANTUM_SIZE;
 
-use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelInterpretation};
+use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelCountMode, ChannelInterpretation};
 
 /// Scale buffer by an equal-power normalization
 // see - <https://webaudio.github.io/web-audio-api/#dom-convolvernode-normalize>
@@ -58,7 +57,7 @@ fn normalize_buffer(buffer: &AudioBuffer) -> f32 {
 //  AudioBuffer? buffer;
 //  boolean disableNormalization = false;
 //};
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ConvolverOptions {
     /// The desired buffer for the ConvolverNode
     pub buffer: Option<AudioBuffer>,
@@ -66,6 +65,53 @@ pub struct ConvolverOptions {
     pub disable_normalization: bool,
     /// AudioNode options
     pub audio_node_options: AudioNodeOptions,
+}
+
+impl Default for ConvolverOptions {
+    fn default() -> Self {
+        Self {
+            buffer: None,
+            disable_normalization: false,
+            audio_node_options: AudioNodeOptions {
+                channel_count: 2,
+                channel_count_mode: ChannelCountMode::ClampedMax,
+                channel_interpretation: ChannelInterpretation::Speakers,
+            },
+        }
+    }
+}
+
+/// Assert that the channel count is valid for the ConvolverNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count is greater than 2
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count(count: usize) {
+    assert!(
+        count <= 2,
+        "NotSupportedError - ConvolverNode channel count cannot be greater than two"
+    );
+}
+
+/// Assert that the channel count mode is valid for the ConvolverNode
+/// see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+///
+/// # Panics
+///
+/// This function panics if given count mode is [`ChannelCountMode::Max`]
+///
+#[track_caller]
+#[inline(always)]
+fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
+    assert_ne!(
+        mode,
+        ChannelCountMode::Max,
+        "NotSupportedError - ConvolverNode channel count mode cannot be set to max"
+    );
 }
 
 /// Processing node which applies a linear convolution effect given an impulse response.
@@ -136,6 +182,19 @@ impl AudioNode for ConvolverNode {
     fn number_of_outputs(&self) -> usize {
         1
     }
+
+    // see <https://webaudio.github.io/web-audio-api/#audionode-channelcount-constraints>
+    fn set_channel_count(&self, count: usize) {
+        assert_valid_channel_count(count);
+        self.channel_config.set_count(count, self.registration());
+    }
+
+    // see <https://webaudio.github.io/web-audio-api/#audionode-channelcountmode-constraints>
+    fn set_channel_count_mode(&self, mode: ChannelCountMode) {
+        assert_valid_channel_count_mode(mode);
+        self.channel_config
+            .set_count_mode(mode, self.registration());
+    }
 }
 
 impl ConvolverNode {
@@ -154,15 +213,22 @@ impl ConvolverNode {
         let ConvolverOptions {
             buffer,
             disable_normalization,
-            audio_node_options: channel_config,
+            audio_node_options,
         } = options;
 
+        assert_valid_channel_count(audio_node_options.channel_count);
+        assert_valid_channel_count_mode(audio_node_options.channel_count_mode);
+
         let mut node = context.base().register(move |registration| {
-            let renderer = ConvolverRenderer { inner: None };
+            let renderer = ConvolverRenderer {
+                convolvers: None,
+                impulse_length: 0,
+                tail_count: 0,
+            };
 
             let node = Self {
                 registration,
-                channel_config: channel_config.into(),
+                channel_config: audio_node_options.into(),
                 normalize: !disable_normalization,
                 buffer: None,
             };
@@ -214,24 +280,36 @@ impl ConvolverNode {
             1.
         };
 
-        // Pad the response buffer with zeroes so its size is a power of 2, with 2 * 128 as min size
-        let length = buffer.length();
-        let padded_length = length.next_power_of_two().max(2 * RENDER_QUANTUM_SIZE);
-        let samples: Vec<_> = (0..number_of_channels)
-            .map(|_| {
-                let mut samples = vec![0.; padded_length];
-                samples[..length]
-                    .iter_mut()
-                    .zip(buffer.get_channel_data(0))
-                    .for_each(|(o, i)| *o = *i * scale);
-                samples
-            })
-            .collect();
+        let mut convolvers = Vec::<FFTConvolver<f32>>::new();
+        // @note - value defined by "rule of thumb", to be explored further
+        let partition_size = RENDER_QUANTUM_SIZE * 8;
+        // @todo - implement multichannel
+        // cf. https://webaudio.github.io/web-audio-api/#Convolution-channel-configurations
+        let num_convolvers = 1;
 
-        let padded_buffer = AudioBuffer::from(samples, sample_rate);
-        let convolve = ConvolverRendererInner::new(padded_buffer);
+        for index in 0..num_convolvers {
+            let channel = std::cmp::min(buffer.number_of_channels(), index);
 
-        self.registration.post_message(Some(convolve));
+            let mut scaled_channel = vec![0.; buffer.length()];
+            scaled_channel
+                .iter_mut()
+                .zip(buffer.get_channel_data(channel))
+                .for_each(|(o, i)| *o = *i * scale);
+
+            let mut convolver = FFTConvolver::<f32>::default();
+            convolver
+                .init(partition_size, &scaled_channel)
+                .expect("Unable to initialize convolution engine");
+
+            convolvers.push(convolver);
+        }
+
+        let msg = ConvolverInfosMessage {
+            convolvers: Some(convolvers),
+            impulse_length: buffer.length(),
+        };
+
+        self.registration.post_message(msg);
         self.buffer = Some(buffer);
     }
 
@@ -246,171 +324,15 @@ impl ConvolverNode {
     }
 }
 
-fn roll_zero<T: Default + Copy>(signal: &mut [T], n: usize) {
-    // roll array by n elements
-    // zero out the last n elements
-    let len = signal.len();
-    signal.copy_within(n.., 0);
-    signal[len - n..].fill(T::default());
-}
-
-struct Fft {
-    fft_forward: Arc<dyn RealToComplex<f32>>,
-    fft_inverse: Arc<dyn ComplexToReal<f32>>,
-    fft_input: Vec<f32>,
-    fft_scratch: Vec<Complex<f32>>,
-    fft_output: Vec<Complex<f32>>,
-}
-
-impl Fft {
-    fn new(length: usize) -> Self {
-        let mut fft_planner = RealFftPlanner::<f32>::new();
-
-        let fft_forward = fft_planner.plan_fft_forward(length);
-        let fft_inverse = fft_planner.plan_fft_inverse(length);
-
-        let fft_input = fft_forward.make_input_vec();
-        let fft_scratch = fft_forward.make_scratch_vec();
-        let fft_output = fft_forward.make_output_vec();
-
-        Self {
-            fft_forward,
-            fft_inverse,
-            fft_input,
-            fft_scratch,
-            fft_output,
-        }
-    }
-
-    fn real(&mut self) -> &mut [f32] {
-        &mut self.fft_input[..]
-    }
-
-    fn complex(&mut self) -> &mut [Complex<f32>] {
-        &mut self.fft_output[..]
-    }
-
-    fn process(&mut self) -> &[Complex<f32>] {
-        self.fft_forward
-            .process_with_scratch(
-                &mut self.fft_input,
-                &mut self.fft_output,
-                &mut self.fft_scratch,
-            )
-            .unwrap();
-        &self.fft_output[..]
-    }
-
-    fn inverse(&mut self) -> &[f32] {
-        self.fft_inverse
-            .process_with_scratch(
-                &mut self.fft_output,
-                &mut self.fft_input,
-                &mut self.fft_scratch,
-            )
-            .unwrap();
-        &self.fft_input[..]
-    }
-}
-
-struct ConvolverRendererInner {
-    num_ir_blocks: usize,
-    h: Vec<Complex<f32>>,
-    fdl: Vec<Complex<f32>>,
-    out: Vec<f32>,
-    fft2: Fft,
-}
-
-impl ConvolverRendererInner {
-    fn new(response: AudioBuffer) -> Self {
-        // mono processing only for now
-        let response = response.channel_data(0).as_slice();
-
-        let mut fft2 = Fft::new(2 * RENDER_QUANTUM_SIZE);
-        let p = response.len();
-
-        let num_ir_blocks = p / RENDER_QUANTUM_SIZE;
-
-        let mut h = vec![Complex::default(); num_ir_blocks * 2 * RENDER_QUANTUM_SIZE];
-        for (resp_fft, resp) in h
-            .chunks_mut(2 * RENDER_QUANTUM_SIZE)
-            .zip(response.chunks(RENDER_QUANTUM_SIZE))
-        {
-            // fill resp_fft with FFT of resp.zero_pad(RENDER_QUANTUM_SIZE)
-            fft2.real()[..RENDER_QUANTUM_SIZE].copy_from_slice(resp);
-            fft2.real()[RENDER_QUANTUM_SIZE..].fill(0.);
-            resp_fft[..fft2.complex().len()].copy_from_slice(fft2.process());
-        }
-
-        let fdl = vec![Complex::default(); 2 * RENDER_QUANTUM_SIZE * num_ir_blocks];
-        let out = vec![0.; 2 * RENDER_QUANTUM_SIZE - 1];
-
-        Self {
-            num_ir_blocks,
-            h,
-            fdl,
-            out,
-            fft2,
-        }
-    }
-
-    fn process(&mut self, input: &[f32], output: &mut [f32]) {
-        self.fft2.real()[..RENDER_QUANTUM_SIZE].copy_from_slice(input);
-        self.fft2.real()[RENDER_QUANTUM_SIZE..].fill(0.);
-        let spectrum = self.fft2.process();
-
-        self.fdl
-            .chunks_mut(2 * RENDER_QUANTUM_SIZE)
-            .zip(self.h.chunks(2 * RENDER_QUANTUM_SIZE))
-            .for_each(|(fdl_c, h_c)| {
-                fdl_c
-                    .iter_mut()
-                    .zip(h_c)
-                    .zip(spectrum)
-                    .for_each(|((f, h), s)| *f += h * s)
-            });
-
-        let c_len = self.fft2.complex().len();
-        self.fft2.complex().copy_from_slice(&self.fdl[..c_len]);
-        let inverse = self.fft2.inverse();
-        self.out.iter_mut().zip(inverse).for_each(|(o, i)| {
-            *o += i / (2 * RENDER_QUANTUM_SIZE) as f32;
-        });
-
-        output.copy_from_slice(&self.out[..RENDER_QUANTUM_SIZE]);
-
-        roll_zero(&mut self.fdl[..], 2 * RENDER_QUANTUM_SIZE);
-        roll_zero(&mut self.out[..], RENDER_QUANTUM_SIZE);
-    }
-
-    fn tail(&mut self, output: &mut AudioRenderQuantum) -> bool {
-        if self.num_ir_blocks == 0 {
-            output.make_silent();
-            return false;
-        }
-
-        self.num_ir_blocks -= 1;
-
-        let c_len = self.fft2.complex().len();
-        self.fft2.complex().copy_from_slice(&self.fdl[..c_len]);
-        let inverse = self.fft2.inverse();
-        self.out.iter_mut().zip(inverse).for_each(|(o, i)| {
-            *o += i / (2 * RENDER_QUANTUM_SIZE) as f32;
-        });
-
-        output
-            .channel_data_mut(0)
-            .copy_from_slice(&self.out[..RENDER_QUANTUM_SIZE]);
-
-        roll_zero(&mut self.fdl[..], 2 * RENDER_QUANTUM_SIZE);
-        roll_zero(&mut self.out[..], RENDER_QUANTUM_SIZE);
-
-        self.num_ir_blocks > 0
-    }
+struct ConvolverInfosMessage {
+    convolvers: Option<Vec<FFTConvolver<f32>>>,
+    impulse_length: usize,
 }
 
 struct ConvolverRenderer {
-    inner: Option<ConvolverRendererInner>,
+    convolvers: Option<Vec<FFTConvolver<f32>>>,
+    impulse_length: usize,
+    tail_count: usize,
 }
 
 impl AudioProcessor for ConvolverRenderer {
@@ -426,34 +348,44 @@ impl AudioProcessor for ConvolverRenderer {
         let output = &mut outputs[0];
         output.force_mono();
 
-        let convolver = match &mut self.inner {
+        let convolvers = match &mut self.convolvers {
             None => {
                 // no convolution buffer set, passthrough
                 *output = input.clone();
                 return !input.is_silent();
             }
-            Some(convolver) => convolver,
+            Some(convolvers) => convolvers,
         };
+
+        // @todo - https://webaudio.github.io/web-audio-api/#Convolution-channel-configurations
+        let mut mono = input.clone();
+        mono.mix(1, ChannelInterpretation::Speakers);
+
+        let i = &mono.channel_data(0)[..];
+        let o = &mut output.channel_data_mut(0)[..];
+        let _ = convolvers[0].process(i, o);
 
         // handle tail time
         if input.is_silent() {
-            return convolver.tail(output);
+            self.tail_count += RENDER_QUANTUM_SIZE;
+            return self.tail_count < self.impulse_length;
         }
 
-        let mut mono = input.clone();
-        mono.mix(1, ChannelInterpretation::Speakers);
-        let input = &mono.channel_data(0)[..];
-        let output = &mut output.channel_data_mut(0)[..];
-
-        convolver.process(input, output);
+        self.tail_count = 0;
 
         true
     }
 
     fn onmessage(&mut self, msg: &mut dyn Any) {
-        if let Some(convolver) = msg.downcast_mut::<Option<ConvolverRendererInner>>() {
+        if let Some(msg) = msg.downcast_mut::<ConvolverInfosMessage>() {
+            let ConvolverInfosMessage {
+                convolvers,
+                impulse_length,
+            } = msg;
             // Avoid deallocation in the render thread by swapping the convolver.
-            std::mem::swap(&mut self.inner, convolver);
+            std::mem::swap(&mut self.convolvers, convolvers);
+            self.impulse_length = *impulse_length;
+
             return;
         }
 
@@ -469,13 +401,6 @@ mod tests {
     use crate::node::{AudioBufferSourceNode, AudioBufferSourceOptions, AudioScheduledSourceNode};
 
     use super::*;
-
-    #[test]
-    fn test_roll_zero() {
-        let mut input = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        roll_zero(&mut input, 3);
-        assert_eq!(&input, &[4, 5, 6, 7, 8, 9, 10, 0, 0, 0]);
-    }
 
     #[test]
     #[should_panic]
