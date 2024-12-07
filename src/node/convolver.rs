@@ -346,7 +346,7 @@ impl AudioProcessor for ConvolverRenderer {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
-        output.make_silent();
+        output.force_mono();
 
         let convolvers = match &mut self.convolvers {
             None => {
