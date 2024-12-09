@@ -1223,6 +1223,42 @@ mod tests {
     }
 
     #[test]
+    fn test_negative_playback_rate() {
+        let sample_rate = 44_100;
+        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+
+        let mut buffer = context.create_buffer(1, sample_rate, sample_rate as f32);
+        let mut sine = vec![];
+
+        // 1 Hz sine
+        for i in 0..sample_rate {
+            let phase = i as f32 / sample_rate as f32 * 2. * PI;
+            let sample = phase.sin();
+            sine.push(sample);
+        }
+
+        buffer.copy_to_channel(&sine[..], 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer.clone());
+        src.playback_rate.set_value(-1.);
+        src.start_at_with_offset(context.current_time(), buffer.duration());
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        // -1 Hz sine
+        let mut expected: Vec<f32> = sine.into_iter().rev().collect();
+        // offset is at duration (after last sample), then result will start
+        // with a zero value
+        expected.pop();
+        expected.insert(0, 0.);
+
+        assert_float_eq!(channel[..], expected[..], abs_all <= 1e-6);
+    }
+
+    #[test]
     fn test_detune() {
         let sample_rate = 44_100;
         let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
