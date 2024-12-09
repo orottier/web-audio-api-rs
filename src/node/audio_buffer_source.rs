@@ -655,7 +655,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 if !self.render_state.started {
                     let delta = current_time - self.start_time;
                     // handle that start time may be between last sample and this one
-                    self.offset += delta;
+                    self.offset += delta * computed_playback_rate;
 
                     if is_looping && computed_playback_rate >= 0. && self.offset >= actual_loop_end
                     {
@@ -667,7 +667,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                         self.offset = actual_loop_start;
                     }
 
-                    buffer_time = self.offset * computed_playback_rate;
+                    buffer_time = self.offset;
                     self.render_state.buffer_time_elapsed = delta * computed_playback_rate;
                     self.render_state.started = true;
                 }
