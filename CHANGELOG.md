@@ -1,8 +1,10 @@
 # Version History
 
-## Unreleased
+## Version 1.1.0 (2024-12-11)
 
 - Increase MSRV to 1.76
+- Greatly improved the ConvolverNode performance for large impulse responses
+- Fix AudioBufferSourceNode reverse playback
 - Implement sub-sample AudioBufferSourceNode stitching
 
 ## Version 1.0.1 (2024-09-18)
