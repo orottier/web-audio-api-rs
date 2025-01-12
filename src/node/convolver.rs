@@ -422,8 +422,23 @@ impl AudioProcessor for ConvolverRenderer {
                 let o_3 = &mut output.channel_data_mut(3)[..];
                 let _ = convolvers[3].process(i_right, o_3);
 
-                // downmix output back to stereo
-                output.mix(2, ChannelInterpretation::Speakers);
+                // mix output back to stereo
+                let o_2 = output.channel_data(2).clone();
+                let o_3 = output.channel_data(3).clone();
+
+                output
+                    .channel_data_mut(0)
+                    .iter_mut()
+                    .zip(o_2.iter())
+                    .for_each(|(l, sl)| *l += *sl);
+
+                output
+                    .channel_data_mut(1)
+                    .iter_mut()
+                    .zip(o_3.iter())
+                    .for_each(|(r, sr)| *r += *sr);
+
+                output.set_number_of_channels(2);
             }
             (1, 4) => {
                 output.set_number_of_channels(4);
@@ -439,8 +454,23 @@ impl AudioProcessor for ConvolverRenderer {
                 let o_3 = &mut output.channel_data_mut(3)[..];
                 let _ = convolvers[3].process(i, o_3);
 
-                // downmix output back to stereo
-                output.mix(2, ChannelInterpretation::Speakers);
+                // mix output back to stereo
+                let o_2 = output.channel_data(2).clone();
+                let o_3 = output.channel_data(3).clone();
+
+                output
+                    .channel_data_mut(0)
+                    .iter_mut()
+                    .zip(o_2.iter())
+                    .for_each(|(l, sl)| *l += *sl);
+
+                output
+                    .channel_data_mut(1)
+                    .iter_mut()
+                    .zip(o_3.iter())
+                    .for_each(|(r, sr)| *r += *sr);
+
+                output.set_number_of_channels(2);
             }
             _ => unreachable!(),
         }
@@ -875,12 +905,12 @@ mod tests {
         let result = context.start_rendering_sync();
 
         let mut expected_left = [0.; 128];
-        expected_left[1] = 0.5;
-        expected_left[4] = 0.5;
+        expected_left[1] = 1.;
+        expected_left[4] = 1.;
 
         let mut expected_right = [0.; 128];
-        expected_right[2] = 0.5;
-        expected_right[5] = 0.5;
+        expected_right[2] = 1.;
+        expected_right[5] = 1.;
 
         assert_eq!(result.number_of_channels(), 2);
         assert_float_eq!(
@@ -937,12 +967,12 @@ mod tests {
         let result = context.start_rendering_sync();
 
         let mut expected_left = [0.; 128];
-        expected_left[1] = 0.5;
-        expected_left[3] = 0.5;
+        expected_left[1] = 1.;
+        expected_left[3] = 1.;
 
         let mut expected_right = [0.; 128];
-        expected_right[2] = 0.5;
-        expected_right[4] = 0.5;
+        expected_right[2] = 1.;
+        expected_right[4] = 1.;
 
         assert_eq!(result.number_of_channels(), 2);
         assert_float_eq!(
