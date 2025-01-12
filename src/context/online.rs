@@ -178,14 +178,14 @@ impl AudioContext {
     /// The `AudioContext` constructor will panic when an invalid `sinkId` is provided in the
     /// `AudioContextOptions`. In a future version, a `try_new` constructor will be introduced that
     /// never panics.
-    #[allow(clippy::needless_pass_by_value)]
     #[must_use]
-    pub fn new(mut options: AudioContextOptions) -> Self {
-        // Log, but ignore invalid sinks
-        if !is_valid_sink_id(&options.sink_id) {
-            log::error!("NotFoundError: invalid sinkId {:?}", options.sink_id);
-            options.sink_id = String::from("");
-        }
+    pub fn new(options: AudioContextOptions) -> Self {
+        // https://webaudio.github.io/web-audio-api/#validating-sink-identifier
+        assert!(
+            is_valid_sink_id(&options.sink_id),
+            "NotFoundError - Invalid sinkId: {:?}",
+            options.sink_id
+        );
 
         // Set up the audio output thread
         let (control_thread_init, render_thread_init) = io::thread_init();
@@ -782,5 +782,15 @@ mod tests {
         require_send_sync(context.suspend());
         require_send_sync(context.resume());
         require_send_sync(context.close());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_sink_id() {
+        let options = AudioContextOptions {
+            sink_id: "invalid".into(),
+            ..AudioContextOptions::default()
+        };
+        let _ = AudioContext::new(options);
     }
 }
