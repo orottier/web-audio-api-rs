@@ -223,6 +223,7 @@ impl ConvolverNode {
             let renderer = ConvolverRenderer {
                 convolvers: None,
                 impulse_length: 0,
+                impulse_number_of_channels: 0,
                 tail_count: 0,
             };
 
@@ -283,12 +284,13 @@ impl ConvolverNode {
         let mut convolvers = Vec::<FFTConvolver<f32>>::new();
         // @note - value defined by "rule of thumb", to be explored further
         let partition_size = RENDER_QUANTUM_SIZE * 8;
-        // @todo - implement multichannel
-        // cf. https://webaudio.github.io/web-audio-api/#Convolution-channel-configurations
-        let num_convolvers = 1;
 
-        for index in 0..num_convolvers {
-            let channel = std::cmp::min(buffer.number_of_channels(), index);
+        // Handle multichannel IR
+        // cf. https://webaudio.github.io/web-audio-api/#Convolution-channel-configurations
+        // Note that in case of mono IR we create 2 convolvers to properly handle stereo input
+        for index in 0..number_of_channels.max(2) {
+            // make sure we don't try to access an inexisting channel, cf. note above
+            let channel = index.min(number_of_channels - 1);
 
             let mut scaled_channel = vec![0.; buffer.length()];
             scaled_channel
@@ -307,6 +309,7 @@ impl ConvolverNode {
         let msg = ConvolverInfosMessage {
             convolvers: Some(convolvers),
             impulse_length: buffer.length(),
+            impulse_number_of_channels: number_of_channels,
         };
 
         self.registration.post_message(msg);
@@ -327,11 +330,13 @@ impl ConvolverNode {
 struct ConvolverInfosMessage {
     convolvers: Option<Vec<FFTConvolver<f32>>>,
     impulse_length: usize,
+    impulse_number_of_channels: usize,
 }
 
 struct ConvolverRenderer {
     convolvers: Option<Vec<FFTConvolver<f32>>>,
     impulse_length: usize,
+    impulse_number_of_channels: usize,
     tail_count: usize,
 }
 
@@ -357,13 +362,88 @@ impl AudioProcessor for ConvolverRenderer {
             Some(convolvers) => convolvers,
         };
 
-        // @todo - https://webaudio.github.io/web-audio-api/#Convolution-channel-configurations
-        let mut mono = input.clone();
-        mono.mix(1, ChannelInterpretation::Speakers);
+        // https://webaudio.github.io/web-audio-api/#Convolution-channel-configurations
+        // @todo - handle tailtime per channel if input number of channel changes
+        match (input.number_of_channels(), self.impulse_number_of_channels) {
+            (1, 1) => {
+                output.set_number_of_channels(1);
 
-        let i = &mono.channel_data(0)[..];
-        let o = &mut output.channel_data_mut(0)[..];
-        let _ = convolvers[0].process(i, o);
+                let i = &input.channel_data(0)[..];
+                let o = &mut output.channel_data_mut(0)[..];
+                let _ = convolvers[0].process(i, o);
+            }
+            (1, 2) => {
+                output.set_number_of_channels(2);
+
+                let i = &input.channel_data(0)[..];
+
+                let o_left = &mut output.channel_data_mut(0)[..];
+                let _ = convolvers[0].process(i, o_left);
+
+                let o_right = &mut output.channel_data_mut(1)[..];
+                let _ = convolvers[1].process(i, o_right);
+            }
+            (2, 1) => {
+                output.set_number_of_channels(2);
+
+                let i_left = &input.channel_data(0)[..];
+                let o_left = &mut output.channel_data_mut(0)[..];
+                let _ = convolvers[0].process(i_left, o_left);
+
+                let i_right = &input.channel_data(1)[..];
+                let o_right = &mut output.channel_data_mut(1)[..];
+                let _ = convolvers[1].process(i_right, o_right);
+            }
+            (2, 2) => {
+                output.set_number_of_channels(2);
+
+                let i_left = &input.channel_data(0)[..];
+                let o_left = &mut output.channel_data_mut(0)[..];
+                let _ = convolvers[0].process(i_left, o_left);
+
+                let i_right = &input.channel_data(1)[..];
+                let o_right = &mut output.channel_data_mut(1)[..];
+                let _ = convolvers[1].process(i_right, o_right);
+            }
+            (2, 4) => {
+                output.set_number_of_channels(4);
+
+                let i_left = &input.channel_data(0)[..];
+
+                let o_0 = &mut output.channel_data_mut(0)[..];
+                let _ = convolvers[0].process(i_left, o_0);
+                let o_1 = &mut output.channel_data_mut(1)[..];
+                let _ = convolvers[1].process(i_left, o_1);
+
+                let i_right = &input.channel_data(1)[..];
+
+                let o_2 = &mut output.channel_data_mut(2)[..];
+                let _ = convolvers[2].process(i_right, o_2);
+                let o_3 = &mut output.channel_data_mut(3)[..];
+                let _ = convolvers[3].process(i_right, o_3);
+
+                // downmix output back to stereo
+                output.mix(2, ChannelInterpretation::Speakers);
+            }
+            (1, 4) => {
+                output.set_number_of_channels(4);
+
+                let i = &input.channel_data(0)[..];
+
+                let o_0 = &mut output.channel_data_mut(0)[..];
+                let _ = convolvers[0].process(i, o_0);
+                let o_1 = &mut output.channel_data_mut(1)[..];
+                let _ = convolvers[1].process(i, o_1);
+                let o_2 = &mut output.channel_data_mut(2)[..];
+                let _ = convolvers[2].process(i, o_2);
+                let o_3 = &mut output.channel_data_mut(3)[..];
+                let _ = convolvers[3].process(i, o_3);
+
+                // downmix output back to stereo
+                output.mix(2, ChannelInterpretation::Speakers);
+            }
+            _ => unreachable!(),
+        }
 
         // handle tail time
         if input.is_silent() {
@@ -381,10 +461,12 @@ impl AudioProcessor for ConvolverRenderer {
             let ConvolverInfosMessage {
                 convolvers,
                 impulse_length,
+                impulse_number_of_channels,
             } = msg;
             // Avoid deallocation in the render thread by swapping the convolver.
             std::mem::swap(&mut self.convolvers, convolvers);
             self.impulse_length = *impulse_length;
+            self.impulse_number_of_channels = *impulse_number_of_channels;
 
             return;
         }
@@ -550,5 +632,328 @@ mod tests {
         let output = output.channel_data(0).as_slice();
         assert!(!output[..IR_LEN].iter().any(|v| *v <= 1E-6));
         assert_float_eq!(&output[IR_LEN..], &[0.; 512 - IR_LEN][..], abs_all <= 1E-6);
+    }
+
+    #[test]
+    fn test_channel_config_1_chan_in_1_chan_ir() {
+        let number_of_channels = 1;
+        let length = 128;
+        let sample_rate = 44100.;
+        let mut context = OfflineAudioContext::new(number_of_channels, length, sample_rate);
+
+        let input = AudioBuffer::from(vec![vec![1.]], sample_rate);
+        let ir = AudioBuffer::from(vec![vec![0., 1.]], sample_rate);
+
+        let mut src = AudioBufferSourceNode::new(
+            &context,
+            AudioBufferSourceOptions {
+                buffer: Some(input),
+                ..AudioBufferSourceOptions::default()
+            },
+        );
+
+        let conv = ConvolverNode::new(
+            &context,
+            ConvolverOptions {
+                buffer: Some(ir),
+                disable_normalization: true,
+                ..ConvolverOptions::default()
+            },
+        );
+
+        src.connect(&conv);
+        conv.connect(&context.destination());
+        src.start();
+
+        let result = context.start_rendering_sync();
+
+        let mut expected = [0.; 128];
+        expected[1] = 1.;
+
+        assert_float_eq!(
+            result.get_channel_data(0)[..],
+            expected[..],
+            abs_all <= 1e-7
+        );
+    }
+
+    #[test]
+    fn test_channel_config_1_chan_in_2_chan_ir() {
+        let number_of_channels = 2;
+        let length = 128;
+        let sample_rate = 44100.;
+        let mut context = OfflineAudioContext::new(number_of_channels, length, sample_rate);
+
+        let input = AudioBuffer::from(vec![vec![1.]], sample_rate);
+        let ir = AudioBuffer::from(vec![vec![0., 1., 0.], vec![0., 0., 1.]], sample_rate);
+
+        let mut src = AudioBufferSourceNode::new(
+            &context,
+            AudioBufferSourceOptions {
+                buffer: Some(input),
+                ..AudioBufferSourceOptions::default()
+            },
+        );
+
+        let conv = ConvolverNode::new(
+            &context,
+            ConvolverOptions {
+                buffer: Some(ir),
+                disable_normalization: true,
+                ..ConvolverOptions::default()
+            },
+        );
+
+        src.connect(&conv);
+        conv.connect(&context.destination());
+        src.start();
+
+        let result = context.start_rendering_sync();
+
+        let mut expected_left = [0.; 128];
+        expected_left[1] = 1.;
+
+        let mut expected_right = [0.; 128];
+        expected_right[2] = 1.;
+
+        assert_eq!(result.number_of_channels(), 2);
+        assert_float_eq!(
+            result.get_channel_data(0)[..],
+            expected_left[..],
+            abs_all <= 1e-7
+        );
+        assert_float_eq!(
+            result.get_channel_data(1)[..],
+            expected_right[..],
+            abs_all <= 1e-7
+        );
+    }
+
+    #[test]
+    fn test_channel_config_2_chan_in_1_chan_ir() {
+        let number_of_channels = 2;
+        let length = 128;
+        let sample_rate = 44100.;
+        let mut context = OfflineAudioContext::new(number_of_channels, length, sample_rate);
+
+        let input = AudioBuffer::from(vec![vec![1., 0.], vec![0., 1.]], sample_rate);
+        let ir = AudioBuffer::from(vec![vec![0., 1.]], sample_rate);
+
+        let mut src = AudioBufferSourceNode::new(
+            &context,
+            AudioBufferSourceOptions {
+                buffer: Some(input),
+                ..AudioBufferSourceOptions::default()
+            },
+        );
+
+        let conv = ConvolverNode::new(
+            &context,
+            ConvolverOptions {
+                buffer: Some(ir),
+                disable_normalization: true,
+                ..ConvolverOptions::default()
+            },
+        );
+
+        src.connect(&conv);
+        conv.connect(&context.destination());
+        src.start();
+
+        let result = context.start_rendering_sync();
+
+        let mut expected_left = [0.; 128];
+        expected_left[1] = 1.;
+
+        let mut expected_right = [0.; 128];
+        expected_right[2] = 1.;
+
+        assert_eq!(result.number_of_channels(), 2);
+        assert_float_eq!(
+            result.get_channel_data(0)[..],
+            expected_left[..],
+            abs_all <= 1e-7
+        );
+        assert_float_eq!(
+            result.get_channel_data(1)[..],
+            expected_right[..],
+            abs_all <= 1e-7
+        );
+    }
+
+    #[test]
+    fn test_channel_config_2_chan_in_2_chan_ir() {
+        let number_of_channels = 2;
+        let length = 128;
+        let sample_rate = 44100.;
+        let mut context = OfflineAudioContext::new(number_of_channels, length, sample_rate);
+
+        let input = AudioBuffer::from(vec![vec![1., 0.], vec![0., 1.]], sample_rate);
+        let ir = AudioBuffer::from(vec![vec![0., 1., 0.], vec![0., 0., 1.]], sample_rate);
+
+        let mut src = AudioBufferSourceNode::new(
+            &context,
+            AudioBufferSourceOptions {
+                buffer: Some(input),
+                ..AudioBufferSourceOptions::default()
+            },
+        );
+
+        let conv = ConvolverNode::new(
+            &context,
+            ConvolverOptions {
+                buffer: Some(ir),
+                disable_normalization: true,
+                ..ConvolverOptions::default()
+            },
+        );
+
+        src.connect(&conv);
+        conv.connect(&context.destination());
+        src.start();
+
+        let result = context.start_rendering_sync();
+
+        let mut expected_left = [0.; 128];
+        expected_left[1] = 1.;
+
+        let mut expected_right = [0.; 128];
+        expected_right[3] = 1.;
+
+        assert_eq!(result.number_of_channels(), 2);
+        assert_float_eq!(
+            result.get_channel_data(0)[..],
+            expected_left[..],
+            abs_all <= 1e-7
+        );
+        assert_float_eq!(
+            result.get_channel_data(1)[..],
+            expected_right[..],
+            abs_all <= 1e-7
+        );
+    }
+
+    #[test]
+    fn test_channel_config_2_chan_in_4_chan_ir() {
+        let number_of_channels = 2;
+        let length = 128;
+        let sample_rate = 44100.;
+        let mut context = OfflineAudioContext::new(number_of_channels, length, sample_rate);
+
+        let input = AudioBuffer::from(vec![vec![1., 0.], vec![0., 1.]], sample_rate);
+        let ir = AudioBuffer::from(
+            vec![
+                vec![0., 1., 0., 0., 0.], // in 0 -> out 0
+                vec![0., 0., 1., 0., 0.], // in 0 -> out 1
+                vec![0., 0., 0., 1., 0.], // in 1 -> out 0
+                vec![0., 0., 0., 0., 1.], // in 1 -> out 1
+            ],
+            sample_rate,
+        );
+
+        let mut src = AudioBufferSourceNode::new(
+            &context,
+            AudioBufferSourceOptions {
+                buffer: Some(input),
+                ..AudioBufferSourceOptions::default()
+            },
+        );
+
+        let conv = ConvolverNode::new(
+            &context,
+            ConvolverOptions {
+                buffer: Some(ir),
+                disable_normalization: true,
+                ..ConvolverOptions::default()
+            },
+        );
+
+        src.connect(&conv);
+        conv.connect(&context.destination());
+        src.start();
+
+        let result = context.start_rendering_sync();
+
+        let mut expected_left = [0.; 128];
+        expected_left[1] = 0.5;
+        expected_left[4] = 0.5;
+
+        let mut expected_right = [0.; 128];
+        expected_right[2] = 0.5;
+        expected_right[5] = 0.5;
+
+        assert_eq!(result.number_of_channels(), 2);
+        assert_float_eq!(
+            result.get_channel_data(0)[..],
+            expected_left[..],
+            abs_all <= 1e-7
+        );
+        assert_float_eq!(
+            result.get_channel_data(1)[..],
+            expected_right[..],
+            abs_all <= 1e-7
+        );
+    }
+
+    #[test]
+    fn test_channel_config_1_chan_in_4_chan_ir() {
+        let number_of_channels = 2;
+        let length = 128;
+        let sample_rate = 44100.;
+        let mut context = OfflineAudioContext::new(number_of_channels, length, sample_rate);
+
+        let input = AudioBuffer::from(vec![vec![1., 0.]], sample_rate);
+        let ir = AudioBuffer::from(
+            vec![
+                vec![0., 1., 0., 0., 0.], // in 0 -> out 0
+                vec![0., 0., 1., 0., 0.], // in 0 -> out 1
+                vec![0., 0., 0., 1., 0.], // in 0 -> out 0
+                vec![0., 0., 0., 0., 1.], // in 0 -> out 1
+            ],
+            sample_rate,
+        );
+
+        let mut src = AudioBufferSourceNode::new(
+            &context,
+            AudioBufferSourceOptions {
+                buffer: Some(input),
+                ..AudioBufferSourceOptions::default()
+            },
+        );
+
+        let conv = ConvolverNode::new(
+            &context,
+            ConvolverOptions {
+                buffer: Some(ir),
+                disable_normalization: true,
+                ..ConvolverOptions::default()
+            },
+        );
+
+        src.connect(&conv);
+        conv.connect(&context.destination());
+        src.start();
+
+        let result = context.start_rendering_sync();
+
+        let mut expected_left = [0.; 128];
+        expected_left[1] = 0.5;
+        expected_left[3] = 0.5;
+
+        let mut expected_right = [0.; 128];
+        expected_right[2] = 0.5;
+        expected_right[4] = 0.5;
+
+        assert_eq!(result.number_of_channels(), 2);
+        assert_float_eq!(
+            result.get_channel_data(0)[..],
+            expected_left[..],
+            abs_all <= 1e-7
+        );
+        assert_float_eq!(
+            result.get_channel_data(1)[..],
+            expected_right[..],
+            abs_all <= 1e-7
+        );
     }
 }
