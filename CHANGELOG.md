@@ -1,6 +1,6 @@
 # Version History
 
-## Unreleased
+## Version 1.2.0 (2025-01-16)
 
 - ConvolverNode: support multi channel configurations
 - AudioContext construction with invalid sinkId now panics instead of ignoring
