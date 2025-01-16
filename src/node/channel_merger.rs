@@ -32,7 +32,7 @@ pub(crate) fn assert_valid_number_of_channels(number_of_channels: usize) {
 ///
 /// # Panics
 ///
-/// This function panics if given count is greater than 2
+/// This function panics if given count is not equal to 1
 ///
 #[track_caller]
 #[inline(always)]

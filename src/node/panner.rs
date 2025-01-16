@@ -417,7 +417,7 @@ impl PannerNode {
             );
             assert!(
                 max_distance > 0.,
-                "RangeError - maxDistance must be positive"
+                "RangeError - maxDistance must be strictly positive"
             );
             assert!(
                 rolloff_factor >= 0.,
@@ -574,7 +574,10 @@ impl PannerNode {
     ///
     /// Panics if the provided value is negative.
     pub fn set_max_distance(&mut self, value: f64) {
-        assert!(value > 0., "RangeError - maxDistance must be positive");
+        assert!(
+            value > 0.,
+            "RangeError - maxDistance must be strictly positive"
+        );
         self.max_distance = value;
         self.registration
             .post_message(ControlMessage::MaxDistance(value));

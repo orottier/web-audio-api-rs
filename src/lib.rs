@@ -132,7 +132,7 @@ impl AtomicF64 {
 /// # Panics
 ///
 /// This function will panic if:
-/// - the given sample rate is lower than 4000 or greater than 192000
+/// - the given sample rate is lower than 2000 or greater than 384000
 ///
 #[track_caller]
 #[inline(always)]
