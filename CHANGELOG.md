@@ -1,5 +1,10 @@
 # Version History
 
+## Unreleased
+
+- ConvolverNode: support multi channel configurations
+- AudioContext construction with invalid sinkId now panics instead of ignoring
+
 ## Version 1.1.0 (2024-12-11)
 
 - Increase MSRV to 1.76
