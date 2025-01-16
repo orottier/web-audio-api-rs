@@ -352,7 +352,12 @@ impl RenderThread {
 
         // For x64 and aarch, process with denormal floats disabled (for performance, #194)
         #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
-        let rendered = no_denormals::no_denormals(|| graph.render(&scope));
+        let rendered = unsafe {
+            // SAFETY: potentially risky - "modifying the masking flags, rounding mode, or
+            // denormals-are-zero mode flags leads to immediate Undefined Behavior: Rust assumes
+            // that these are always in their default state and will optimize accordingly."
+            no_denormals::no_denormals(|| graph.render(&scope))
+        };
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
         let rendered = graph.render(&scope);
 
@@ -393,7 +398,12 @@ impl RenderThread {
 
         // For x64 and aarch, process with denormal floats disabled (for performance, #194)
         #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
-        no_denormals::no_denormals(|| self.render_inner(output_buffer));
+        unsafe {
+            // SAFETY: potentially risky - "modifying the masking flags, rounding mode, or
+            // denormals-are-zero mode flags leads to immediate Undefined Behavior: Rust assumes
+            // that these are always in their default state and will optimize accordingly."
+            no_denormals::no_denormals(|| self.render_inner(output_buffer))
+        };
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
         self.render_inner(output_buffer);
 
