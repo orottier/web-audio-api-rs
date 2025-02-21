@@ -20,7 +20,7 @@ use super::{AudioNode, AudioNodeOptions, ChannelConfig, ChannelCountMode, Channe
 /// # Panics
 ///
 /// This function will panic if:
-/// - the given value is not finite and lower than zero
+/// - the given value is greater than one and lower than zero
 #[track_caller]
 #[inline(always)]
 #[allow(clippy::manual_range_contains)]
@@ -572,7 +572,7 @@ impl PannerNode {
     ///
     /// # Panics
     ///
-    /// Panics if the provided value is negative.
+    /// Panics if the provided value is not positive.
     pub fn set_max_distance(&mut self, value: f64) {
         assert!(
             value > 0.,
