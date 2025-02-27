@@ -228,7 +228,7 @@ impl AudioRenderQuantum {
     /// Get the samples from this specific channel.
     ///
     /// # Panics
-    /// Panics if the index is greater than the available number of channels
+    /// Panics if index >= self.channels.len()
     pub fn channel_data(&self, index: usize) -> &AudioRenderQuantumChannel {
         &self.channels[index]
     }
@@ -236,7 +236,7 @@ impl AudioRenderQuantum {
     /// Get the samples (mutable) from this specific channel.
     ///
     /// # Panics
-    /// Panics if the index is greater than the available number of channels
+    /// Panics if index >= self.channels.len()
     pub fn channel_data_mut(&mut self, index: usize) -> &mut AudioRenderQuantumChannel {
         &mut self.channels[index]
     }

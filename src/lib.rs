@@ -195,7 +195,7 @@ pub(crate) fn assert_valid_channel_number(channel_number: usize, number_of_chann
 /// # Panics
 ///
 /// This function will panic if:
-/// - the given value is not lower than or equal to zero
+/// - the given length is less than or equal to zero
 ///
 #[track_caller]
 #[inline(always)]
