@@ -258,7 +258,7 @@ impl AudioBuffer {
 
     /// Get the samples from this specific channel.
     ///
-    /// Panics if the index is greater than the available number of channels
+    /// Panics if the index >= self.channels.len()
     // @note - this one is used in
     pub(crate) fn channel_data(&self, index: usize) -> &ChannelData {
         &self.channels[index]
@@ -266,7 +266,7 @@ impl AudioBuffer {
 
     /// Get the samples (mutable) from this specific channel.
     ///
-    /// Panics if the index is greater than the available number of channels
+    /// Panics if the index >= self.channels.len()
     pub(crate) fn channel_data_mut(&mut self, index: usize) -> &mut ChannelData {
         &mut self.channels[index]
     }
