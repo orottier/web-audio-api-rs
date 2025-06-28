@@ -213,7 +213,7 @@ pub(crate) fn assert_valid_buffer_length(length: usize) {
 /// # Panics
 ///
 /// This function will panic if:
-/// - the given value is not finite and lower than zero
+/// - the given value is not finite or lower than zero
 ///
 #[track_caller]
 #[inline(always)]
