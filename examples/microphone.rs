@@ -4,7 +4,12 @@ use web_audio_api::context::{
 use web_audio_api::media_devices;
 use web_audio_api::media_devices::{enumerate_devices_sync, MediaDeviceInfo, MediaDeviceInfoKind};
 use web_audio_api::media_devices::{MediaStreamConstraints, MediaTrackConstraints};
+use web_audio_api::media_recorder::{MediaRecorder, MediaRecorderOptions};
 use web_audio_api::node::AudioNode;
+use std::fs::File;
+use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 // Pipe microphone stream into audio context
 //
@@ -82,13 +87,55 @@ fn main() {
 
     // create media stream source node with mic stream
     let stream_source = context.create_media_stream_source(&mic);
+    
+    // Create a media stream destination to capture audio
+    let dest = context.create_media_stream_destination();
+    stream_source.connect(&dest);
+    
+    // Also connect to speakers so you can hear yourself
     stream_source.connect(&context.destination());
-
-    loop {
-        std::thread::sleep(std::time::Duration::from_secs(1));
+    
+    // Create media recorder
+    let options = MediaRecorderOptions::default(); // default to audio/wav
+    let recorder = MediaRecorder::new(dest.stream(), options);
+    
+    // Create a file to write the recording
+    let mut file = File::create("recording.wav").expect("Failed to create file");
+    
+    recorder.set_ondataavailable(move |event| {
+        eprintln!(
+            "Recording... timecode {:.3}s, chunk size {} bytes",
+            event.timecode,
+            event.blob.size()
+        );
+        file.write_all(&event.blob.data).unwrap();
+    });
+    
+    // Set up signal handler for graceful shutdown
+    let running = Arc::new(AtomicBool::new(true));
+    let running_clone = Arc::clone(&running);
+    
+    ctrlc::set_handler(move || {
+        println!("\nReceived interrupt signal, stopping recording...");
+        running_clone.store(false, Ordering::Relaxed);
+    }).expect("Error setting Ctrl-C handler");
+    
+    // Start recording
+    recorder.start();
+    println!("Recording to 'recording.wav'... Press Ctrl+C to stop.");
+    
+    // Wait for interrupt
+    while running.load(Ordering::Relaxed) {
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
-
-    // println!("Closing microphone");
-    // mic.get_tracks()[0].close();
-    // std::thread::sleep(std::time::Duration::from_secs(2));
+    
+    // Stop recording and wait for final data
+    let (send, recv) = crossbeam_channel::bounded(1);
+    recorder.set_onstop(move |_| {
+        let _ = send.send(());
+    });
+    recorder.stop();
+    let _ = recv.recv();
+    
+    println!("Recording saved successfully!");
 }
