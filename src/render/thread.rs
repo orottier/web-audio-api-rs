@@ -502,6 +502,19 @@ impl RenderThread {
                     *sample = value;
                 }
             }
+            
+            // Send reference audio for echo cancellation
+            #[cfg(any(feature = "cubeb", feature = "cpal"))]
+            {
+                use crate::io::echo_reference::ECHO_REFERENCE_MANAGER;
+                let mut reference_data = Vec::with_capacity(RENDER_QUANTUM_SIZE * self.number_of_channels);
+                for sample_idx in 0..RENDER_QUANTUM_SIZE {
+                    for ch in 0..self.number_of_channels {
+                        reference_data.push(destination_buffer.channel_data(ch)[sample_idx]);
+                    }
+                }
+                ECHO_REFERENCE_MANAGER.send_reference(&reference_data, self.number_of_channels);
+            }
 
             if data.len() != chunk_size {
                 // this is the last chunk, and it contained less than RENDER_QUANTUM_SIZE samples

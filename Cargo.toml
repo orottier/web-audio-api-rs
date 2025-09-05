@@ -43,6 +43,8 @@ rubato = "0.16"
 smallvec = "1.11"
 symphonia = { version = "0.5", default-features = false }
 vecmath = "1.0"
+aec-rs = "1.0.0"
+lazy_static = "1.5.0"
 
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
 no_denormals = "0.2.0"

@@ -25,6 +25,12 @@ mod cubeb;
 #[cfg(any(feature = "cubeb", feature = "cpal"))]
 mod microphone;
 
+#[cfg(any(feature = "cubeb", feature = "cpal"))]
+mod echo_cancellation;
+
+#[cfg(any(feature = "cubeb", feature = "cpal"))]
+pub(crate) mod echo_reference;
+
 #[derive(Debug)]
 pub(crate) struct ControlThreadInit {
     pub state: Arc<AtomicU8>,
@@ -116,6 +122,7 @@ pub(crate) fn build_output(
 pub(crate) fn build_input(
     options: AudioContextOptions,
     number_of_channels: Option<u32>,
+    echo_cancellation: Option<bool>,
 ) -> MediaStream {
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
     {
@@ -124,19 +131,37 @@ pub(crate) fn build_input(
 
     #[cfg(any(feature = "cubeb", feature = "cpal"))]
     {
+        use std::sync::{Arc, Mutex};
+        
         let (backend, receiver) = {
             #[cfg(feature = "cubeb")]
             {
-                cubeb::CubebBackend::build_input(options, number_of_channels)
+                cubeb::CubebBackend::build_input(options.clone(), number_of_channels)
             }
 
             #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
             {
-                cpal::CpalBackend::build_input(options, number_of_channels)
+                cpal::CpalBackend::build_input(options.clone(), number_of_channels)
             }
         };
 
-        let media_iter = microphone::MicrophoneStream::new(receiver, Box::new(backend));
+        let media_iter = if echo_cancellation == Some(true) {
+            // Create echo canceller with appropriate frame size
+            let sample_rate = backend.sample_rate();
+            let frame_size = RENDER_QUANTUM_SIZE;
+            let echo_canceller = Arc::new(Mutex::new(
+                echo_cancellation::EchoCanceller::new(sample_rate, frame_size)
+            ));
+            
+            microphone::MicrophoneStream::with_echo_canceller(
+                receiver, 
+                Box::new(backend),
+                echo_canceller
+            )
+        } else {
+            microphone::MicrophoneStream::new(receiver, Box::new(backend))
+        };
+        
         let track = MediaStreamTrack::from_iter(media_iter);
         MediaStream::from_tracks(vec![track])
     }
