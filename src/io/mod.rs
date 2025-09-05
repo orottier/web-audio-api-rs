@@ -148,7 +148,8 @@ pub(crate) fn build_input(
         let media_iter = if echo_cancellation == Some(true) {
             // Create echo canceller with appropriate frame size
             let sample_rate = backend.sample_rate();
-            let frame_size = RENDER_QUANTUM_SIZE;
+            // Use 20ms frame size (common for echo cancellation)
+            let frame_size = ((sample_rate * 0.02) as usize).max(160);
             let echo_canceller = Arc::new(Mutex::new(
                 echo_cancellation::EchoCanceller::new(sample_rate, frame_size)
             ));
