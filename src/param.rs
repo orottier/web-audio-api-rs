@@ -96,7 +96,7 @@ fn compute_set_target_sample(
     diff: f32, // start_value - end_value
     time: f64,
 ) -> f32 {
-    let exponent = -1. * ((time - start_time) / time_constant);
+    let exponent = -((time - start_time) / time_constant);
     diff.mul_add(exponent.exp() as f32, end_value)
 }
 
@@ -2425,7 +2425,7 @@ mod tests {
 
             let mut res = Vec::<f32>::with_capacity(10);
             for t in 0..10 {
-                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                let val = v1 + (v0 - v1) * (-((t as f64 - t0) / time_constant)).exp() as f32;
                 res.push(val);
             }
 
@@ -2453,7 +2453,7 @@ mod tests {
 
             let mut res = Vec::<f32>::with_capacity(10);
             for t in 0..10 {
-                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                let val = v1 + (v0 - v1) * (-((t as f64 - t0) / time_constant)).exp() as f32;
                 res.push(val);
             }
 
@@ -2481,7 +2481,7 @@ mod tests {
 
             let mut res = Vec::<f32>::with_capacity(10);
             for t in 0..10 {
-                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                let val = v1 + (v0 - v1) * (-((t as f64 - t0) / time_constant)).exp() as f32;
                 res.push(val);
             }
             // start_time is 1.
@@ -2535,7 +2535,7 @@ mod tests {
 
             let mut res = Vec::<f32>::with_capacity(20);
             for t in 0..20 {
-                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                let val = v1 + (v0 - v1) * (-((t as f64 - t0) / time_constant)).exp() as f32;
                 res.push(val);
             }
 
@@ -2573,7 +2573,7 @@ mod tests {
             let mut res = Vec::<f32>::with_capacity(20);
 
             for t in 0..15 {
-                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                let val = v1 + (v0 - v1) * (-((t as f64 - t0) / time_constant)).exp() as f32;
                 res.push(val);
             }
 
@@ -2668,7 +2668,7 @@ mod tests {
 
             for t in 0..11 {
                 // we compute the 10th elements as it will be the start value of the ramp
-                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                let val = v1 + (v0 - v1) * (-((t as f64 - t0) / time_constant)).exp() as f32;
                 res.push(val);
             }
 
@@ -2721,7 +2721,7 @@ mod tests {
 
             let mut res = Vec::<f32>::with_capacity(20);
             for t in 0..20 {
-                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                let val = v1 + (v0 - v1) * (-((t as f64 - t0) / time_constant)).exp() as f32;
                 res.push(val);
             }
 
@@ -2756,7 +2756,7 @@ mod tests {
         let mut res = [0.; 30];
         // 𝑣(𝑡) = 𝑉1 + (𝑉0 − 𝑉1) * 𝑒^−((𝑡−𝑇0) / 𝜏)
         res.iter_mut().enumerate().for_each(|(t, r)| {
-            *r = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+            *r = v1 + (v0 - v1) * (-((t as f64 - t0) / time_constant)).exp() as f32;
         });
 
         let vs = render.compute_intrinsic_values(0., 1., 10);
@@ -2957,7 +2957,7 @@ mod tests {
 
             // compute index 15 to have hold_value
             for t in 0..16 {
-                let val = v1 + (v0 - v1) * (-1. * ((t as f64 - t0) / time_constant)).exp() as f32;
+                let val = v1 + (v0 - v1) * (-((t as f64 - t0) / time_constant)).exp() as f32;
                 res.push(val);
             }
 

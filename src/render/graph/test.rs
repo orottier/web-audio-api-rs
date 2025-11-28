@@ -36,7 +36,7 @@ fn test_ordering_with_cycle_breakers(
         let map: HashMap<_, _> = nodes
             .into_iter()
             .map(|label| {
-                let cycle_breaker = cycle_breakers.iter().any(|&c| c == label);
+                let cycle_breaker = cycle_breakers.contains(&label);
                 (
                     label,
                     DebugNode::new(&context, label, Arc::clone(&collect), cycle_breaker),
