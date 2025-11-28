@@ -13,19 +13,15 @@ use super::{AudioNode, AudioNodeOptions, ChannelConfig};
 /// enumerates the oversampling rate available for `WaveShaperNode`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // the naming comes from the web audio specification
+#[derive(Default)]
 pub enum OverSampleType {
     /// No oversampling is applied
+    #[default]
     None,
     /// Oversampled by a factor of 2
     X2,
     /// Oversampled by a factor of 4
     X4,
-}
-
-impl Default for OverSampleType {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl From<u32> for OverSampleType {

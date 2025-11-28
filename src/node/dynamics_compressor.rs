@@ -437,7 +437,7 @@ impl AudioProcessor for DynamicsCompressorRenderer {
 
             detector_values[i] = detector_value;
             // cdB = -yL + make up gain
-            reduction_gain = -1. * detector_value + makeup_gain;
+            reduction_gain = -detector_value + makeup_gain;
             // convert to lin now, so we just to multiply samples later
             reduction_gains[i] = db_to_lin(reduction_gain);
             // update prev_detector_value for next sample

@@ -65,7 +65,7 @@ fn calculate_coefs(
             let alpha_q_db = sin_w0 / (2. * 10_f64.powf(q / 20.));
 
             b0 = (1. + cos_w0) / 2.;
-            b1 = -1. * (1. + cos_w0);
+            b1 = -(1. + cos_w0);
             b2 = (1. + cos_w0) / 2.;
             a0 = 1. + alpha_q_db;
             a1 = -2. * cos_w0;
@@ -79,7 +79,7 @@ fn calculate_coefs(
 
             b0 = alpha_q;
             b1 = 0.;
-            b2 = -1. * alpha_q;
+            b2 = -alpha_q;
             a0 = 1. + alpha_q;
             a1 = -2. * cos_w0;
             a2 = 1. - alpha_q;
@@ -170,10 +170,11 @@ fn calculate_coefs(
 }
 
 /// Biquad filter types
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BiquadFilterType {
     /// Allows frequencies below the cutoff frequency to pass through and
     /// attenuates frequencies above the cutoff. (12dB/oct rolloff)
+    #[default]
     Lowpass,
     /// Frequencies above the cutoff frequency are passed through, but
     /// frequencies below the cutoff are attenuated. (12dB/oct rolloff)
@@ -195,12 +196,6 @@ pub enum BiquadFilterType {
     /// Allows all frequencies through, but adds a boost (or attenuation) to
     /// the higher frequencies.
     Highshelf,
-}
-
-impl Default for BiquadFilterType {
-    fn default() -> Self {
-        Self::Lowpass
-    }
 }
 
 impl From<u32> for BiquadFilterType {
@@ -529,7 +524,7 @@ impl BiquadFilterNode {
             } else {
                 let f = freq / n_quist;
 
-                let omega = -1. * PI * f64::from(f);
+                let omega = -PI * f64::from(f);
                 let z = Complex::new(omega.cos(), omega.sin());
                 let numerator = b0 + (b1 + b2 * z) * z;
                 let denominator = Complex::new(1., 0.) + (a1 + a2 * z) * z;

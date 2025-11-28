@@ -31,11 +31,12 @@ fn is_valid_sink_id(sink_id: &str) -> bool {
 
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub enum AudioContextLatencyCategory {
     /// Balance audio output latency and power consumption.
     Balanced,
     /// Provide the lowest audio output latency possible without glitching. This is the default.
+    #[default]
     Interactive,
     /// Prioritize sustained playback without interruption over audio output latency.
     ///
@@ -47,26 +48,16 @@ pub enum AudioContextLatencyCategory {
     Custom(f64),
 }
 
-impl Default for AudioContextLatencyCategory {
-    fn default() -> Self {
-        Self::Interactive
-    }
-}
-
 #[derive(Copy, Clone, Debug)]
 #[non_exhaustive]
 /// This allows users to ask for a particular render quantum size.
 ///
 /// Currently, only the default value is available
+#[derive(Default)]
 pub enum AudioContextRenderSizeCategory {
     /// The default value of 128 frames
+    #[default]
     Default,
-}
-
-impl Default for AudioContextRenderSizeCategory {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 /// Specify the playback configuration for the [`AudioContext`] constructor.

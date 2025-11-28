@@ -59,9 +59,10 @@ impl Default for OscillatorOptions {
 }
 
 /// Type of the waveform rendered by an `OscillatorNode`
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum OscillatorType {
     /// Sine wave
+    #[default]
     Sine,
     /// Square wave
     Square,
@@ -71,12 +72,6 @@ pub enum OscillatorType {
     Triangle,
     /// type used when periodic_wave is specified
     Custom,
-}
-
-impl Default for OscillatorType {
-    fn default() -> Self {
-        Self::Sine
-    }
 }
 
 impl From<u32> for OscillatorType {

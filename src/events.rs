@@ -223,7 +223,8 @@ impl EventLoop {
         let mut events_were_handled = false;
         // try_iter will yield all pending events, but does not block
         for event in self.event_recv.try_iter() {
-            self.handle_event(event);
+            // we can ignore the return value, it is only useful in the event thread
+            let _ = self.handle_event(event);
             events_were_handled = true;
         }
         events_were_handled
