@@ -1,5 +1,11 @@
 # Version History
 
+## Unreleased
+
+- Update cpal - raises the minimum Android API version to 26 (Android 8/Oreo).
+- Update MSRV to 1.81 (Sept 2024)
+- Other dependency updates
+
 ## Version 1.2.0 (2025-01-16)
 
 - ConvolverNode: support multi channel configurations
