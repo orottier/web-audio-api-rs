@@ -171,7 +171,13 @@ impl AudioContext {
     /// stream. Use [`Self::try_new`] to handle these errors without panicking.
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
-        Self::try_new(options).unwrap_or_else(|e| panic!("InvalidStateError - {e}"))
+        Self::try_new(options).unwrap_or_else(|e| {
+            let message = e.to_string();
+            if message.starts_with("NotFoundError - ") {
+                panic!("{message}");
+            }
+            panic!("InvalidStateError - {message}");
+        })
     }
 
     /// Creates and returns a new `AudioContext` object.
@@ -271,7 +277,7 @@ impl AudioContext {
     /// # Errors
     ///
     /// Returns an error when the selected audio backend cannot query the output latency.
-    pub fn try_output_latency(&self) -> Result<f64, Box<dyn Error>> {
+    fn try_output_latency(&self) -> Result<f64, Box<dyn Error>> {
         Ok(self.backend_manager.lock().unwrap().output_latency()?)
     }
 
