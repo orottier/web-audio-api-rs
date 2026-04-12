@@ -209,7 +209,7 @@ fn is_valid_device_id(device_id: &str) -> bool {
 ///
 /// This function will panic when the selected audio backend cannot create or start the input
 /// stream. A public `try_get_user_media_sync` could be added in the future to handle these errors
-/// without panicking, similar to [`AudioContext::try_new`].
+/// without panicking, similar to [`AudioContext::try_new`](crate::context::AudioContext::new).
 ///
 /// # Example
 ///
