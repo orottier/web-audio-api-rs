@@ -8,6 +8,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions};
+use crate::io::BackendResult;
 use crate::media_streams::MediaStream;
 
 /// List the available media output devices, such as speakers, headsets, loopbacks, etc
@@ -24,6 +25,13 @@ use crate::media_streams::MediaStream;
 /// assert_eq!(devices[0].label(), "Macbook Pro Builtin Speakers");
 /// ```
 pub fn enumerate_devices_sync() -> Vec<MediaDeviceInfo> {
+    try_enumerate_devices_sync().unwrap_or_else(|e| {
+        log::error!("Unable to enumerate media devices: {e}");
+        vec![]
+    })
+}
+
+pub(crate) fn try_enumerate_devices_sync() -> BackendResult<Vec<MediaDeviceInfo>> {
     crate::io::enumerate_devices_sync()
 }
 
@@ -219,6 +227,12 @@ fn is_valid_device_id(device_id: &str) -> bool {
 /// std::thread::sleep(std::time::Duration::from_secs(4));
 /// ```
 pub fn get_user_media_sync(constraints: MediaStreamConstraints) -> MediaStream {
+    try_get_user_media_sync(constraints).expect("InvalidStateError - Unable to open input stream")
+}
+
+pub(crate) fn try_get_user_media_sync(
+    constraints: MediaStreamConstraints,
+) -> BackendResult<MediaStream> {
     let (channel_count, mut options) = match constraints {
         MediaStreamConstraints::Audio => (None, AudioContextOptions::default()),
         MediaStreamConstraints::AudioWithConstraints(cs) => (cs.channel_count, cs.into()),

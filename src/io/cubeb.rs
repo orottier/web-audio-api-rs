@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use super::{AudioBackendManager, RenderThreadInit};
+use super::{
+    AudioBackendError, AudioBackendErrorKind, AudioBackendManager, BackendResult, RenderThreadInit,
+};
 
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
@@ -52,41 +54,42 @@ mod private {
         }
 
         pub fn close(&self) {
-            self.suspend();
+            let _ = self.suspend();
             self.0.lock().unwrap().take();
         }
 
-        pub fn resume(&self) -> bool {
+        pub fn resume(&self) -> BackendResult<bool> {
             if let Some(s) = self.0.lock().unwrap().as_ref() {
-                if let Err(e) = s.0.delegate_start() {
-                    panic!("Error resuming cubeb stream: {:?}", e);
-                }
-                return true;
+                s.0.delegate_start()
+                    .map(|_| true)
+                    .map_err(|e| map_cubeb_error("resume", e))?;
+                return Ok(true);
             }
 
-            false
+            Ok(false)
         }
 
-        pub fn suspend(&self) -> bool {
+        pub fn suspend(&self) -> BackendResult<bool> {
             if let Some(s) = self.0.lock().unwrap().as_ref() {
-                if let Err(e) = s.0.delegate_stop() {
-                    panic!("Error suspending cubeb stream: {:?}", e);
-                }
-                return true;
+                s.0.delegate_stop()
+                    .map(|_| true)
+                    .map_err(|e| map_cubeb_error("suspend", e))?;
+                return Ok(true);
             }
 
-            false
+            Ok(false)
         }
 
-        pub fn output_latency(&self, sample_rate: f32) -> f64 {
+        pub fn output_latency(&self, sample_rate: f32) -> BackendResult<f64> {
             if let Some(s) = self.0.lock().unwrap().as_ref() {
-                match s.0.delegate_latency() {
-                    Err(e) => panic!("Error getting cubeb latency: {:?}", e),
-                    Ok(frames) => return frames as f64 / sample_rate as f64,
-                }
+                return s
+                    .0
+                    .delegate_latency()
+                    .map(|frames| frames as f64 / sample_rate as f64)
+                    .map_err(|e| map_cubeb_error("output_latency", e));
             }
 
-            0.
+            Ok(0.)
         }
     }
 
@@ -98,13 +101,35 @@ mod private {
 }
 use private::ThreadSafeClosableStream;
 
+fn map_cubeb_error(operation: &'static str, err: cubeb::Error) -> AudioBackendError {
+    let kind = match err.code() {
+        cubeb::ErrorCode::DeviceUnavailable => AudioBackendErrorKind::DeviceUnavailable,
+        cubeb::ErrorCode::InvalidFormat | cubeb::ErrorCode::NotSupported => {
+            AudioBackendErrorKind::NotSupported
+        }
+        cubeb::ErrorCode::InvalidParameter => AudioBackendErrorKind::InvalidArgument,
+        cubeb::ErrorCode::Error => AudioBackendErrorKind::BackendSpecific,
+    };
+
+    AudioBackendError::new(kind, "cubeb", operation, err.to_string())
+}
+
+fn cubeb_backend_error(operation: &'static str, message: impl Into<String>) -> AudioBackendError {
+    AudioBackendError::new(
+        AudioBackendErrorKind::BackendSpecific,
+        "cubeb",
+        operation,
+        message,
+    )
+}
+
 fn init_output_backend<const N: usize>(
     ctx: &Context,
     params: StreamParams,
     buffer_size: u32,
     device: Option<DeviceId>,
     mut renderer: RenderThread,
-) -> ThreadSafeClosableStream {
+) -> BackendResult<ThreadSafeClosableStream> {
     let mut builder = cubeb::StreamBuilder::<[f32; N]>::new();
 
     match device {
@@ -134,8 +159,8 @@ fn init_output_backend<const N: usize>(
 
     let stream = builder
         .init(ctx)
-        .expect("InvalidStateError - Failed to create cubeb stream");
-    ThreadSafeClosableStream::new(stream)
+        .map_err(|e| map_cubeb_error("init_output_stream", e))?;
+    Ok(ThreadSafeClosableStream::new(stream))
 }
 
 /// Audio backend using the `cubeb` library
@@ -148,7 +173,10 @@ pub(crate) struct CubebBackend {
 }
 
 impl AudioBackendManager for CubebBackend {
-    fn build_output(options: AudioContextOptions, render_thread_init: RenderThreadInit) -> Self
+    fn build_output(
+        options: AudioContextOptions,
+        render_thread_init: RenderThreadInit,
+    ) -> BackendResult<Self>
     where
         Self: Sized,
     {
@@ -161,7 +189,7 @@ impl AudioBackendManager for CubebBackend {
         } = render_thread_init;
 
         // Set up cubeb context
-        let ctx = Context::init(None, None).unwrap();
+        let ctx = Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?;
         log::info!("Audio Output Host: cubeb {:?}", ctx.backend_id());
 
         // Use user requested sample rate, or else the device preferred one
@@ -215,10 +243,10 @@ impl AudioBackendManager for CubebBackend {
         let device = if options.sink_id.is_empty() {
             None
         } else {
-            Self::enumerate_devices_sync()
+            Self::enumerate_devices_sync()?
                 .into_iter()
                 .find(|e| e.device_id() == options.sink_id)
-                .map(|e| *e.device().downcast::<DeviceId>().unwrap())
+                .and_then(|e| e.device().downcast::<DeviceId>().ok().map(|e| *e))
         };
 
         let stream = match number_of_channels {
@@ -255,25 +283,28 @@ impl AudioBackendManager for CubebBackend {
             30 => init_output_backend::<30>(&ctx, params, buffer_size, device, renderer),
             31 => init_output_backend::<31>(&ctx, params, buffer_size, device, renderer),
             32 => init_output_backend::<32>(&ctx, params, buffer_size, device, renderer),
-            _ => unreachable!(),
+            _ => Err(cubeb_backend_error(
+                "init_output_stream",
+                "Unexpected channel count",
+            )),
         };
 
         let backend = CubebBackend {
-            stream,
+            stream: stream?,
             number_of_channels,
             sample_rate,
             sink_id: options.sink_id,
         };
 
-        backend.resume();
+        backend.resume()?;
 
-        backend
+        Ok(backend)
     }
 
     fn build_input(
         options: AudioContextOptions,
         _number_of_channels: Option<u32>,
-    ) -> (Self, Receiver<AudioBuffer>)
+    ) -> BackendResult<(Self, Receiver<AudioBuffer>)>
     where
         Self: Sized,
     {
@@ -285,7 +316,7 @@ impl AudioBackendManager for CubebBackend {
          */
 
         // Set up cubeb context
-        let ctx = Context::init(None, None).unwrap();
+        let ctx = Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?;
         log::info!("Audio Input Host: cubeb {:?}", ctx.backend_id());
 
         // Use user requested sample rate, or else the device preferred one
@@ -316,10 +347,10 @@ impl AudioBackendManager for CubebBackend {
         let device = if options.sink_id.is_empty() {
             None
         } else {
-            Self::enumerate_devices_sync()
+            Self::enumerate_devices_sync()?
                 .into_iter()
                 .find(|e| e.device_id() == options.sink_id)
-                .map(|e| *e.device().downcast::<DeviceId>().unwrap())
+                .and_then(|e| e.device().downcast::<DeviceId>().ok().map(|e| *e))
         };
 
         let smoothing = 3; // todo, use buffering to smooth frame drops
@@ -354,9 +385,11 @@ impl AudioBackendManager for CubebBackend {
 
         let stream = builder
             .init(&ctx)
-            .expect("InvalidStateError - Failed to create cubeb stream");
+            .map_err(|e| map_cubeb_error("init_input_stream", e))?;
 
-        stream.start().unwrap();
+        stream
+            .start()
+            .map_err(|e| map_cubeb_error("start_input_stream", e))?;
 
         let backend = CubebBackend {
             stream: ThreadSafeClosableStream::new(stream),
@@ -365,19 +398,20 @@ impl AudioBackendManager for CubebBackend {
             sink_id: options.sink_id,
         };
 
-        (backend, receiver)
+        Ok((backend, receiver))
     }
 
-    fn resume(&self) -> bool {
+    fn resume(&self) -> BackendResult<bool> {
         self.stream.resume()
     }
 
-    fn suspend(&self) -> bool {
+    fn suspend(&self) -> BackendResult<bool> {
         self.stream.suspend()
     }
 
-    fn close(&self) {
-        self.stream.close()
+    fn close(&self) -> BackendResult<()> {
+        self.stream.close();
+        Ok(())
     }
 
     fn sample_rate(&self) -> f32 {
@@ -388,7 +422,7 @@ impl AudioBackendManager for CubebBackend {
         self.number_of_channels
     }
 
-    fn output_latency(&self) -> f64 {
+    fn output_latency(&self) -> BackendResult<f64> {
         self.stream.output_latency(self.sample_rate)
     }
 
@@ -396,16 +430,20 @@ impl AudioBackendManager for CubebBackend {
         self.sink_id.as_str()
     }
 
-    fn enumerate_devices_sync() -> Vec<MediaDeviceInfo>
+    fn enumerate_devices_sync() -> BackendResult<Vec<MediaDeviceInfo>>
     where
         Self: Sized,
     {
-        let context = Context::init(None, None).unwrap();
+        let context = Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?;
 
-        let inputs = context.enumerate_devices(DeviceType::INPUT).unwrap();
+        let inputs = context
+            .enumerate_devices(DeviceType::INPUT)
+            .map_err(|e| map_cubeb_error("enumerate_input_devices", e))?;
         let input_devices = inputs.iter().map(|d| (d, MediaDeviceInfoKind::AudioInput));
 
-        let outputs = context.enumerate_devices(DeviceType::OUTPUT).unwrap();
+        let outputs = context
+            .enumerate_devices(DeviceType::OUTPUT)
+            .map_err(|e| map_cubeb_error("enumerate_output_devices", e))?;
         let output_devices = outputs
             .iter()
             .map(|d| (d, MediaDeviceInfoKind::AudioOutput));
@@ -419,8 +457,21 @@ impl AudioBackendManager for CubebBackend {
                 let device_id = crate::media_devices::DeviceId::as_string(
                     kind,
                     "cubeb".to_string(),
-                    device.friendly_name().unwrap().into(),
-                    device.max_channels().try_into().unwrap(),
+                    device
+                        .friendly_name()
+                        .ok_or_else(|| {
+                            cubeb_backend_error(
+                                "device_friendly_name",
+                                "Device has no friendly name",
+                            )
+                        })?
+                        .into(),
+                    device.max_channels().try_into().map_err(|_| {
+                        cubeb_backend_error(
+                            "device_max_channels",
+                            "Device channel count overflows u16",
+                        )
+                    })?,
                     index,
                 );
 
@@ -429,7 +480,15 @@ impl AudioBackendManager for CubebBackend {
                         device_id,
                         device.group_id().map(str::to_string),
                         kind,
-                        device.friendly_name().unwrap().into(),
+                        device
+                            .friendly_name()
+                            .ok_or_else(|| {
+                                cubeb_backend_error(
+                                    "device_friendly_name",
+                                    "Device has no friendly name",
+                                )
+                            })?
+                            .into(),
                         Box::new(device.devid()),
                     );
 
@@ -441,6 +500,6 @@ impl AudioBackendManager for CubebBackend {
             }
         }
 
-        list
+        Ok(list)
     }
 }

@@ -167,20 +167,34 @@ impl AudioContext {
     /// # Panics
     ///
     /// The `AudioContext` constructor will panic when an invalid `sinkId` is provided in the
-    /// `AudioContextOptions`. In a future version, a `try_new` constructor will be introduced that
-    /// never panics.
+    /// `AudioContextOptions`, or when the selected audio backend cannot create or start the output
+    /// stream. Use [`Self::try_new`] to handle these errors without panicking.
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
+        Self::try_new(options).expect("InvalidStateError - Unable to create AudioContext")
+    }
+
+    /// Creates and returns a new `AudioContext` object.
+    ///
+    /// This will play live audio on the requested output device and returns backend errors instead
+    /// of panicking when the stream cannot be created.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the sink id is invalid or when the selected audio backend cannot
+    /// create or start the output stream.
+    pub fn try_new(options: AudioContextOptions) -> Result<Self, Box<dyn Error>> {
         // https://webaudio.github.io/web-audio-api/#validating-sink-identifier
-        assert!(
-            is_valid_sink_id(&options.sink_id),
-            "NotFoundError - Invalid sinkId: {:?}",
-            options.sink_id
-        );
+        if !is_valid_sink_id(&options.sink_id) {
+            Err(format!(
+                "NotFoundError - Invalid sinkId: {:?}",
+                options.sink_id
+            ))?;
+        }
 
         // Set up the audio output thread
         let (control_thread_init, render_thread_init) = io::thread_init();
-        let backend = io::build_output(options, render_thread_init.clone());
+        let backend = io::build_output(options, render_thread_init.clone())?;
 
         let ControlThreadInit {
             state,
@@ -222,12 +236,12 @@ impl AudioContext {
         // construction.
         event_loop.run_in_thread();
 
-        Self {
+        Ok(Self {
             base,
             backend_manager: Mutex::new(backend),
             render_capacity,
             render_thread_init,
-        }
+        })
     }
 
     /// This represents the number of seconds of processing latency incurred by
@@ -248,7 +262,17 @@ impl AudioContext {
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn output_latency(&self) -> f64 {
-        self.backend_manager.lock().unwrap().output_latency()
+        self.try_output_latency()
+            .expect("InvalidStateError - Unable to query output latency")
+    }
+
+    /// The estimation in seconds of audio output latency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the selected audio backend cannot query the output latency.
+    pub fn try_output_latency(&self) -> Result<f64, Box<dyn Error>> {
+        Ok(self.backend_manager.lock().unwrap().output_latency()?)
     }
 
     /// Identifier or the information of the current audio output device.
@@ -322,13 +346,13 @@ impl AudioContext {
             if original_state == AudioContextState::Suspended {
                 // We must wake up the render thread to be able to handle the shutdown.
                 // No new audio will be produced because it will receive the shutdown command first.
-                backend_manager_guard.resume();
+                backend_manager_guard.resume()?;
             }
             graph_recv.recv().unwrap()
         };
 
         log::debug!("SinkChange: closing audio stream");
-        backend_manager_guard.close();
+        backend_manager_guard.close()?;
 
         // hotswap the backend
         let options = AudioContextOptions {
@@ -338,12 +362,12 @@ impl AudioContext {
             render_size_hint: AudioContextRenderSizeCategory::default(), // todo reuse existing setting
         };
         log::debug!("SinkChange: starting audio stream");
-        *backend_manager_guard = io::build_output(options, self.render_thread_init.clone());
+        *backend_manager_guard = io::build_output(options, self.render_thread_init.clone())?;
 
         // if the previous backend state was suspend, suspend the new one before shipping the graph
         if original_state == AudioContextState::Suspended {
             log::debug!("SinkChange: suspending audio stream");
-            backend_manager_guard.suspend();
+            backend_manager_guard.suspend()?;
         }
 
         // send the audio graph to the new render thread
@@ -399,7 +423,7 @@ impl AudioContext {
             writeln!(
                 &mut buffer,
                 "output latency: {:.6}",
-                backend.output_latency()
+                backend.output_latency().unwrap_or(0.)
             )
             .ok();
         }
@@ -453,7 +477,11 @@ impl AudioContext {
 
         // Then ask the audio host to suspend the stream
         log::debug!("Suspended audio graph. Suspending audio stream..");
-        self.backend_manager.lock().unwrap().suspend();
+        self.backend_manager
+            .lock()
+            .unwrap()
+            .suspend()
+            .expect("InvalidStateError - Unable to suspend audio stream");
 
         log::debug!("Suspended audio stream");
     }
@@ -481,7 +509,9 @@ impl AudioContext {
             }
 
             // Ask the audio host to resume the stream
-            backend_manager_guard.resume();
+            backend_manager_guard
+                .resume()
+                .expect("InvalidStateError - Unable to resume audio stream");
 
             // Then, ask to resume rendering via a control message
             log::debug!("Resumed audio stream, waking audio graph");
@@ -532,7 +562,11 @@ impl AudioContext {
 
         // Then ask the audio host to close the stream
         log::debug!("Suspended audio graph. Closing audio stream..");
-        self.backend_manager.lock().unwrap().close();
+        self.backend_manager
+            .lock()
+            .unwrap()
+            .close()
+            .expect("InvalidStateError - Unable to close audio stream");
 
         // Stop the AudioRenderCapacity collection thread
         self.render_capacity.stop();
@@ -577,7 +611,9 @@ impl AudioContext {
 
         // Then ask the audio host to suspend the stream
         log::debug!("Suspended audio graph. Suspending audio stream..");
-        backend_manager_guard.suspend();
+        backend_manager_guard
+            .suspend()
+            .expect("InvalidStateError - Unable to suspend audio stream");
 
         log::debug!("Suspended audio stream");
     }
@@ -605,7 +641,9 @@ impl AudioContext {
         }
 
         // Ask the audio host to resume the stream
-        backend_manager_guard.resume();
+        backend_manager_guard
+            .resume()
+            .expect("InvalidStateError - Unable to resume audio stream");
 
         // Then, ask to resume rendering via a control message
         log::debug!("Resumed audio stream, waking audio graph");
@@ -658,7 +696,9 @@ impl AudioContext {
 
         // Then ask the audio host to close the stream
         log::debug!("Suspended audio graph. Closing audio stream..");
-        backend_manager_guard.close();
+        backend_manager_guard
+            .close()
+            .expect("InvalidStateError - Unable to close audio stream");
 
         // Stop the AudioRenderCapacity collection thread
         self.render_capacity.stop();
