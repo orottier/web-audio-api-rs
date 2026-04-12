@@ -74,7 +74,7 @@ mod private {
 }
 use private::ThreadSafeClosableStream;
 
-fn get_host() -> cpal::Host {
+fn get_host() -> BackendResult<cpal::Host> {
     #[cfg(feature = "cpal-jack")]
     {
         // seems to be always Some when jack is installed,
@@ -83,13 +83,13 @@ fn get_host() -> cpal::Host {
             .into_iter()
             .find(|id| *id == cpal::HostId::Jack)
         {
-            let Ok(jack_host) = cpal::host_from_id(jack_id) else {
-                return cpal::default_host();
-            };
+            let jack_host = cpal::host_from_id(jack_id).map_err(|e| {
+                map_cpal_backend_error(AudioBackendErrorKind::BackendSpecific, "jack_host", e)
+            })?;
 
             // if jack is not running, the host can't access devices
             // fallback to default host
-            return match jack_host.devices() {
+            let host = match jack_host.devices() {
                 Ok(devices) => {
                     // no jack devices found, jack is not running
                     if devices.count() == 0 {
@@ -103,10 +103,11 @@ fn get_host() -> cpal::Host {
                 // but just in case, fallback to default host
                 Err(_) => cpal::default_host(),
             };
+            return Ok(host);
         }
     }
 
-    cpal::default_host()
+    Ok(cpal::default_host())
 }
 
 fn map_cpal_backend_error(
@@ -184,7 +185,7 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let host = get_host();
+        let host = get_host()?;
 
         log::info!("Audio Output Host: cpal {:?}", host.id());
 
@@ -366,7 +367,7 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let host = get_host();
+        let host = get_host()?;
 
         log::info!("Audio Input Host: cpal {:?}", host.id());
 
@@ -530,7 +531,7 @@ impl AudioBackendManager for CpalBackend {
     where
         Self: Sized,
     {
-        let host = get_host();
+        let host = get_host()?;
 
         let input_devices = host
             .input_devices()
