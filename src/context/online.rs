@@ -29,6 +29,31 @@ fn is_valid_sink_id(sink_id: &str) -> bool {
     }
 }
 
+#[derive(Debug)]
+enum AudioContextError {
+    SinkNotFound { sink_id: String },
+    Backend { error: io::AudioBackendError },
+}
+
+impl std::fmt::Display for AudioContextError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SinkNotFound { sink_id } => {
+                write!(f, "NotFoundError - Invalid sinkId: {sink_id:?}")
+            }
+            Self::Backend { error } => write!(f, "InvalidStateError - {error}"),
+        }
+    }
+}
+
+impl Error for AudioContextError {}
+
+impl From<io::AudioBackendError> for AudioContextError {
+    fn from(error: io::AudioBackendError) -> Self {
+        Self::Backend { error }
+    }
+}
+
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
 #[derive(Copy, Clone, Debug, Default)]
@@ -171,13 +196,7 @@ impl AudioContext {
     /// stream. Use [`Self::try_new`] to handle these errors without panicking.
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
-        Self::try_new(options).unwrap_or_else(|e| {
-            let message = e.to_string();
-            if message.starts_with("NotFoundError - ") {
-                panic!("{message}");
-            }
-            panic!("InvalidStateError - {message}");
-        })
+        Self::try_new_inner(options).unwrap_or_else(|e| panic!("{e}"))
     }
 
     /// Creates and returns a new `AudioContext` object.
@@ -190,12 +209,15 @@ impl AudioContext {
     /// Returns an error when the sink id is invalid or when the selected audio backend cannot
     /// create or start the output stream.
     pub fn try_new(options: AudioContextOptions) -> Result<Self, Box<dyn Error>> {
+        Self::try_new_inner(options).map_err(Into::into)
+    }
+
+    fn try_new_inner(options: AudioContextOptions) -> Result<Self, AudioContextError> {
         // https://webaudio.github.io/web-audio-api/#validating-sink-identifier
         if !is_valid_sink_id(&options.sink_id) {
-            Err(format!(
-                "NotFoundError - Invalid sinkId: {:?}",
-                options.sink_id
-            ))?;
+            return Err(AudioContextError::SinkNotFound {
+                sink_id: options.sink_id,
+            });
         }
 
         // Set up the audio output thread
