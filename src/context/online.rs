@@ -852,4 +852,18 @@ mod tests {
         };
         let _ = AudioContext::new(options);
     }
+
+    #[test]
+    fn test_try_new_invalid_sink_id() {
+        let options = AudioContextOptions {
+            sink_id: "invalid".into(),
+            ..AudioContextOptions::default()
+        };
+
+        let error = AudioContext::try_new(options).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "NotFoundError - Invalid sinkId: \"invalid\""
+        );
+    }
 }
