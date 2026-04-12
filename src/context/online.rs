@@ -171,7 +171,7 @@ impl AudioContext {
     /// stream. Use [`Self::try_new`] to handle these errors without panicking.
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
-        Self::try_new(options).expect("InvalidStateError - Unable to create AudioContext")
+        Self::try_new(options).unwrap_or_else(|e| panic!("InvalidStateError - {e}"))
     }
 
     /// Creates and returns a new `AudioContext` object.
@@ -263,7 +263,7 @@ impl AudioContext {
     #[allow(clippy::missing_panics_doc)]
     pub fn output_latency(&self) -> f64 {
         self.try_output_latency()
-            .expect("InvalidStateError - Unable to query output latency")
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"))
     }
 
     /// The estimation in seconds of audio output latency.
@@ -481,7 +481,7 @@ impl AudioContext {
             .lock()
             .unwrap()
             .suspend()
-            .expect("InvalidStateError - Unable to suspend audio stream");
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
         log::debug!("Suspended audio stream");
     }
@@ -511,7 +511,7 @@ impl AudioContext {
             // Ask the audio host to resume the stream
             backend_manager_guard
                 .resume()
-                .expect("InvalidStateError - Unable to resume audio stream");
+                .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
             // Then, ask to resume rendering via a control message
             log::debug!("Resumed audio stream, waking audio graph");
@@ -566,7 +566,7 @@ impl AudioContext {
             .lock()
             .unwrap()
             .close()
-            .expect("InvalidStateError - Unable to close audio stream");
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
         // Stop the AudioRenderCapacity collection thread
         self.render_capacity.stop();
@@ -613,7 +613,7 @@ impl AudioContext {
         log::debug!("Suspended audio graph. Suspending audio stream..");
         backend_manager_guard
             .suspend()
-            .expect("InvalidStateError - Unable to suspend audio stream");
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
         log::debug!("Suspended audio stream");
     }
@@ -643,7 +643,7 @@ impl AudioContext {
         // Ask the audio host to resume the stream
         backend_manager_guard
             .resume()
-            .expect("InvalidStateError - Unable to resume audio stream");
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
         // Then, ask to resume rendering via a control message
         log::debug!("Resumed audio stream, waking audio graph");
@@ -698,7 +698,7 @@ impl AudioContext {
         log::debug!("Suspended audio graph. Closing audio stream..");
         backend_manager_guard
             .close()
-            .expect("InvalidStateError - Unable to close audio stream");
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
         // Stop the AudioRenderCapacity collection thread
         self.render_capacity.stop();

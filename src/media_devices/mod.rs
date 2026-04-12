@@ -227,7 +227,7 @@ fn is_valid_device_id(device_id: &str) -> bool {
 /// std::thread::sleep(std::time::Duration::from_secs(4));
 /// ```
 pub fn get_user_media_sync(constraints: MediaStreamConstraints) -> MediaStream {
-    try_get_user_media_sync(constraints).expect("InvalidStateError - Unable to open input stream")
+    try_get_user_media_sync(constraints).unwrap_or_else(|e| panic!("InvalidStateError - {e}"))
 }
 
 pub(crate) fn try_get_user_media_sync(
