@@ -205,6 +205,12 @@ fn is_valid_device_id(device_id: &str) -> bool {
 /// This function operates synchronously, which may be undesirable on the control thread. An async
 /// version is currently not implemented.
 ///
+/// # Panics
+///
+/// This function will panic when the selected audio backend cannot create or start the input
+/// stream. A public `try_get_user_media_sync` could be added in the future to handle these errors
+/// without panicking, similar to [`AudioContext::try_new`].
+///
 /// # Example
 ///
 /// ```no_run
