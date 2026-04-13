@@ -94,6 +94,8 @@ struct ConcreteBaseAudioContextInner {
     destination_channel_config: ChannelConfig,
     /// message channel from control to render thread
     render_channel: RwLock<Sender<ControlMessage>>,
+    /// control messages staged while the render thread is suspended
+    suspended_messages: Mutex<Option<Vec<ControlMessage>>>,
     /// control messages that cannot be sent immediately
     queued_messages: Mutex<Vec<ControlMessage>>,
     /// number of frames played
@@ -140,6 +142,7 @@ impl ConcreteBaseAudioContext {
             sample_rate,
             max_channel_count,
             render_channel: RwLock::new(render_channel),
+            suspended_messages: Mutex::new(None),
             queued_messages: Mutex::new(Vec::new()),
             audio_node_id_provider,
             destination_channel_config: AudioNodeOptions::default().into(),
@@ -272,10 +275,46 @@ impl ConcreteBaseAudioContext {
     /// emitted.
     pub(crate) fn send_control_msg(&self, msg: ControlMessage) {
         if self.state() != AudioContextState::Closed {
-            let result = self.inner.render_channel.read().unwrap().send(msg);
+            let sender = self.inner.render_channel.read().unwrap();
+            if let Some(queued) = self.inner.suspended_messages.lock().unwrap().as_mut() {
+                queued.push(msg);
+                return;
+            }
+
+            let result = sender.send(msg);
             if result.is_err() {
                 log::warn!("Discarding control message - render thread is closed");
             }
+        }
+    }
+
+    pub(crate) fn suspend_control_msgs(&self, msg: ControlMessage) {
+        let sender = self.inner.render_channel.write().unwrap();
+        *self.inner.suspended_messages.lock().unwrap() = Some(Vec::new());
+        if sender.send(msg).is_err() {
+            log::warn!("Discarding control message - render thread is closed");
+        }
+    }
+
+    pub(crate) fn resume_control_msgs(&self, msg: ControlMessage) {
+        let sender = self.inner.render_channel.write().unwrap();
+        let messages = self
+            .inner
+            .suspended_messages
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap_or_default();
+
+        for msg in messages {
+            if sender.send(msg).is_err() {
+                log::warn!("Discarding control message - render thread is closed");
+                return;
+            }
+        }
+
+        if sender.send(msg).is_err() {
+            log::warn!("Discarding control message - render thread is closed");
         }
     }
 
