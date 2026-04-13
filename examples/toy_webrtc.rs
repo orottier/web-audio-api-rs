@@ -72,7 +72,7 @@ fn run_server() -> std::io::Result<()> {
 
         // introduce chaos
         /*
-        use rand::Rng;
+        use rand::RngExt;
         let mut rng = rand::rng();
         match rng.random_range(0..100) {
             0 => continue, // 1% packet loss

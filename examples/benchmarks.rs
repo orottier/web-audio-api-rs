@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{stdin, stdout, BufRead, Write};

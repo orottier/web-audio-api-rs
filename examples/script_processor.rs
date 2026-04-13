@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,

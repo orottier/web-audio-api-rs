@@ -1,5 +1,5 @@
 use rand::rngs::ThreadRng;
-use rand::Rng;
+use rand::RngExt;
 use std::fs::File;
 
 use web_audio_api::context::{

@@ -407,7 +407,7 @@ mod tests {
     use std::thread;
 
     use float_eq::{assert_float_eq, float_eq};
-    use rand::Rng;
+    use rand::RngExt;
 
     use super::*;
 
