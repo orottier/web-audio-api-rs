@@ -22,7 +22,7 @@ almost = "0.2.0"
 arc-swap = "1.6"
 arrayvec = "0.7"
 fft-convolver = "0.3"
-cpal = { version = "0.16", optional = true }
+cpal = { version = "0.17", optional = true }
 creek = "1.2"
 crossbeam-channel = "0.5"
 cubeb = { version = "0.15", optional = true }

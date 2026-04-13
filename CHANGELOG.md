@@ -2,8 +2,9 @@
 
 ## Unreleased
 
+- Introduce `AudioContext::try_new` which does not panic but returns an error
 - Update cpal - raises the minimum Android API version to 26 (Android 8/Oreo).
-- Update MSRV to 1.81 (Sept 2024)
+- Update MSRV to 1.85 (Feb 2025)
 - Other dependency updates
 
 ## Version 1.2.0 (2025-01-16)
