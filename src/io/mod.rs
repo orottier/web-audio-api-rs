@@ -1,5 +1,7 @@
 //! Audio input/output interfaces
 
+use std::error::Error;
+use std::fmt;
 use std::sync::atomic::{AtomicU64, AtomicU8};
 use std::sync::Arc;
 
@@ -24,6 +26,63 @@ mod cubeb;
 
 #[cfg(any(feature = "cubeb", feature = "cpal"))]
 mod microphone;
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AudioBackendErrorKind {
+    DeviceUnavailable,
+    NotSupported,
+    InvalidArgument,
+    BackendSpecific,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AudioBackendError {
+    pub(crate) kind: AudioBackendErrorKind,
+    pub(crate) backend: &'static str,
+    pub(crate) operation: &'static str,
+    pub(crate) message: String,
+}
+
+pub(crate) type BackendResult<T> = Result<T, AudioBackendError>;
+
+impl AudioBackendError {
+    pub(crate) fn new(
+        kind: AudioBackendErrorKind,
+        backend: &'static str,
+        operation: &'static str,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            backend,
+            operation,
+            message: message.into(),
+        }
+    }
+
+    #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
+    pub(crate) fn no_backend(operation: &'static str) -> Self {
+        Self::new(
+            AudioBackendErrorKind::NotSupported,
+            "none",
+            operation,
+            "No audio backend available, enable the 'cpal' or 'cubeb' feature",
+        )
+    }
+}
+
+impl fmt::Display for AudioBackendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} backend error during {}: {:?}: {}",
+            self.backend, self.operation, self.kind, self.message
+        )
+    }
+}
+
+impl Error for AudioBackendError {}
 
 #[derive(Debug)]
 pub(crate) struct ControlThreadInit {
@@ -90,25 +149,25 @@ pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
 pub(crate) fn build_output(
     options: AudioContextOptions,
     render_thread_init: RenderThreadInit,
-) -> Box<dyn AudioBackendManager> {
+) -> BackendResult<Box<dyn AudioBackendManager>> {
     if options.sink_id == "none" {
-        let backend = NoneBackend::build_output(options, render_thread_init);
-        return Box::new(backend);
+        let backend = NoneBackend::build_output(options, render_thread_init)?;
+        return Ok(Box::new(backend));
     }
 
     #[cfg(feature = "cubeb")]
     {
-        let backend = cubeb::CubebBackend::build_output(options, render_thread_init);
-        Box::new(backend)
+        let backend = cubeb::CubebBackend::build_output(options, render_thread_init)?;
+        Ok(Box::new(backend))
     }
     #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
     {
-        let backend = cpal::CpalBackend::build_output(options, render_thread_init);
-        Box::new(backend)
+        let backend = cpal::CpalBackend::build_output(options, render_thread_init)?;
+        Ok(Box::new(backend))
     }
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
     {
-        panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
+        Err(AudioBackendError::no_backend("build_output"))
     }
 }
 
@@ -116,10 +175,10 @@ pub(crate) fn build_output(
 pub(crate) fn build_input(
     options: AudioContextOptions,
     number_of_channels: Option<u32>,
-) -> MediaStream {
+) -> BackendResult<MediaStream> {
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
     {
-        panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
+        Err(AudioBackendError::no_backend("build_input"))
     }
 
     #[cfg(any(feature = "cubeb", feature = "cpal"))]
@@ -127,18 +186,18 @@ pub(crate) fn build_input(
         let (backend, receiver) = {
             #[cfg(feature = "cubeb")]
             {
-                cubeb::CubebBackend::build_input(options, number_of_channels)
+                cubeb::CubebBackend::build_input(options, number_of_channels)?
             }
 
             #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
             {
-                cpal::CpalBackend::build_input(options, number_of_channels)
+                cpal::CpalBackend::build_input(options, number_of_channels)?
             }
         };
 
         let media_iter = microphone::MicrophoneStream::new(receiver, Box::new(backend));
         let track = MediaStreamTrack::from_iter(media_iter);
-        MediaStream::from_tracks(vec![track])
+        Ok(MediaStream::from_tracks(vec![track]))
     }
 }
 
@@ -150,7 +209,10 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     }
 
     /// Setup a new output stream (speakers)
-    fn build_output(options: AudioContextOptions, render_thread_init: RenderThreadInit) -> Self
+    fn build_output(
+        options: AudioContextOptions,
+        render_thread_init: RenderThreadInit,
+    ) -> BackendResult<Self>
     where
         Self: Sized;
 
@@ -158,18 +220,18 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     fn build_input(
         options: AudioContextOptions,
         number_of_channels: Option<u32>,
-    ) -> (Self, Receiver<AudioBuffer>)
+    ) -> BackendResult<(Self, Receiver<AudioBuffer>)>
     where
         Self: Sized;
 
     /// Resume or start the stream
-    fn resume(&self) -> bool;
+    fn resume(&self) -> BackendResult<bool>;
 
     /// Suspend the stream
-    fn suspend(&self) -> bool;
+    fn suspend(&self) -> BackendResult<bool>;
 
     /// Close the stream, freeing all resources. It cannot be started again after closing.
-    fn close(&self);
+    fn close(&self) -> BackendResult<()>;
 
     /// Sample rate of the stream
     fn sample_rate(&self) -> f32;
@@ -181,12 +243,12 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     ///
     /// This is the difference between the time the backend acquires the data in the callback and
     /// the listener can hear the sound.
-    fn output_latency(&self) -> f64;
+    fn output_latency(&self) -> BackendResult<f64>;
 
     /// The audio output device - `""` means the default device
     fn sink_id(&self) -> &str;
 
-    fn enumerate_devices_sync() -> Vec<MediaDeviceInfo>
+    fn enumerate_devices_sync() -> BackendResult<Vec<MediaDeviceInfo>>
     where
         Self: Sized;
 }
@@ -220,7 +282,7 @@ fn buffer_size_for_latency_category(
     }
 }
 
-pub(crate) fn enumerate_devices_sync() -> Vec<MediaDeviceInfo> {
+pub(crate) fn enumerate_devices_sync() -> BackendResult<Vec<MediaDeviceInfo>> {
     #[cfg(feature = "cubeb")]
     {
         cubeb::CubebBackend::enumerate_devices_sync()
@@ -232,5 +294,5 @@ pub(crate) fn enumerate_devices_sync() -> Vec<MediaDeviceInfo> {
     }
 
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
-    panic!("No audio backend available, enable the 'cpal' or 'cubeb' feature")
+    Err(AudioBackendError::no_backend("enumerate_devices_sync"))
 }

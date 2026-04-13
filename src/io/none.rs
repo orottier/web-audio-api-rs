@@ -1,7 +1,9 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::{AudioBackendManager, RenderThreadInit};
+use super::{
+    AudioBackendError, AudioBackendErrorKind, AudioBackendManager, BackendResult, RenderThreadInit,
+};
 
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
@@ -74,7 +76,10 @@ impl Callback {
 
 impl AudioBackendManager for NoneBackend {
     /// Setup a new output stream (speakers)
-    fn build_output(options: AudioContextOptions, render_thread_init: RenderThreadInit) -> Self
+    fn build_output(
+        options: AudioContextOptions,
+        render_thread_init: RenderThreadInit,
+    ) -> BackendResult<Self>
     where
         Self: Sized,
     {
@@ -114,38 +119,68 @@ impl AudioBackendManager for NoneBackend {
 
         thread::spawn(move || callback.run());
 
-        Self {
+        Ok(Self {
             sender,
             sample_rate,
-        }
+        })
     }
 
     /// Setup a new input stream (microphone capture)
     fn build_input(
         _options: AudioContextOptions,
         _number_of_channels: Option<u32>,
-    ) -> (Self, Receiver<AudioBuffer>)
+    ) -> BackendResult<(Self, Receiver<AudioBuffer>)>
     where
         Self: Sized,
     {
-        unimplemented!()
+        Err(AudioBackendError::new(
+            AudioBackendErrorKind::NotSupported,
+            "none",
+            "build_input",
+            "The none backend does not support audio input",
+        ))
     }
 
     /// Resume or start the stream
-    fn resume(&self) -> bool {
-        self.sender.send(NoneBackendMessage::Resume).unwrap();
-        true
+    fn resume(&self) -> BackendResult<bool> {
+        self.sender
+            .send(NoneBackendMessage::Resume)
+            .map(|_| true)
+            .map_err(|_| {
+                AudioBackendError::new(
+                    AudioBackendErrorKind::BackendSpecific,
+                    "none",
+                    "resume",
+                    "The render thread is no longer available",
+                )
+            })
     }
 
     /// Suspend the stream
-    fn suspend(&self) -> bool {
-        self.sender.send(NoneBackendMessage::Suspend).unwrap();
-        true
+    fn suspend(&self) -> BackendResult<bool> {
+        self.sender
+            .send(NoneBackendMessage::Suspend)
+            .map(|_| true)
+            .map_err(|_| {
+                AudioBackendError::new(
+                    AudioBackendErrorKind::BackendSpecific,
+                    "none",
+                    "suspend",
+                    "The render thread is no longer available",
+                )
+            })
     }
 
     /// Close the stream, freeing all resources. It cannot be started again after closing.
-    fn close(&self) {
-        self.sender.send(NoneBackendMessage::Close).unwrap()
+    fn close(&self) -> BackendResult<()> {
+        self.sender.send(NoneBackendMessage::Close).map_err(|_| {
+            AudioBackendError::new(
+                AudioBackendErrorKind::BackendSpecific,
+                "none",
+                "close",
+                "The render thread is no longer available",
+            )
+        })
     }
 
     /// Sample rate of the stream
@@ -162,8 +197,8 @@ impl AudioBackendManager for NoneBackend {
     ///
     /// This is the difference between the time the backend acquires the data in the callback and
     /// the listener can hear the sound.
-    fn output_latency(&self) -> f64 {
-        0.
+    fn output_latency(&self) -> BackendResult<f64> {
+        Ok(0.)
     }
 
     /// The audio output device
@@ -171,10 +206,10 @@ impl AudioBackendManager for NoneBackend {
         "none"
     }
 
-    fn enumerate_devices_sync() -> Vec<MediaDeviceInfo>
+    fn enumerate_devices_sync() -> BackendResult<Vec<MediaDeviceInfo>>
     where
         Self: Sized,
     {
-        unimplemented!()
+        Ok(vec![])
     }
 }

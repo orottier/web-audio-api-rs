@@ -29,6 +29,31 @@ fn is_valid_sink_id(sink_id: &str) -> bool {
     }
 }
 
+#[derive(Debug)]
+enum AudioContextError {
+    SinkNotFound { sink_id: String },
+    Backend { error: io::AudioBackendError },
+}
+
+impl std::fmt::Display for AudioContextError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SinkNotFound { sink_id } => {
+                write!(f, "NotFoundError - Invalid sinkId: {sink_id:?}")
+            }
+            Self::Backend { error } => write!(f, "InvalidStateError - {error}"),
+        }
+    }
+}
+
+impl Error for AudioContextError {}
+
+impl From<io::AudioBackendError> for AudioContextError {
+    fn from(error: io::AudioBackendError) -> Self {
+        Self::Backend { error }
+    }
+}
+
 /// Identify the type of playback, which affects tradeoffs
 /// between audio output latency and power consumption
 #[derive(Copy, Clone, Debug, Default)]
@@ -167,20 +192,37 @@ impl AudioContext {
     /// # Panics
     ///
     /// The `AudioContext` constructor will panic when an invalid `sinkId` is provided in the
-    /// `AudioContextOptions`. In a future version, a `try_new` constructor will be introduced that
-    /// never panics.
+    /// `AudioContextOptions`, or when the selected audio backend cannot create or start the output
+    /// stream. Use [`Self::try_new`] to handle these errors without panicking.
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
+        Self::try_new_inner(options).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Creates and returns a new `AudioContext` object.
+    ///
+    /// This will play live audio on the requested output device and returns backend errors instead
+    /// of panicking when the stream cannot be created.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the sink id is invalid or when the selected audio backend cannot
+    /// create or start the output stream.
+    pub fn try_new(options: AudioContextOptions) -> Result<Self, Box<dyn Error>> {
+        Self::try_new_inner(options).map_err(Into::into)
+    }
+
+    fn try_new_inner(options: AudioContextOptions) -> Result<Self, AudioContextError> {
         // https://webaudio.github.io/web-audio-api/#validating-sink-identifier
-        assert!(
-            is_valid_sink_id(&options.sink_id),
-            "NotFoundError - Invalid sinkId: {:?}",
-            options.sink_id
-        );
+        if !is_valid_sink_id(&options.sink_id) {
+            return Err(AudioContextError::SinkNotFound {
+                sink_id: options.sink_id,
+            });
+        }
 
         // Set up the audio output thread
         let (control_thread_init, render_thread_init) = io::thread_init();
-        let backend = io::build_output(options, render_thread_init.clone());
+        let backend = io::build_output(options, render_thread_init.clone())?;
 
         let ControlThreadInit {
             state,
@@ -222,12 +264,12 @@ impl AudioContext {
         // construction.
         event_loop.run_in_thread();
 
-        Self {
+        Ok(Self {
             base,
             backend_manager: Mutex::new(backend),
             render_capacity,
             render_thread_init,
-        }
+        })
     }
 
     /// This represents the number of seconds of processing latency incurred by
@@ -248,7 +290,17 @@ impl AudioContext {
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn output_latency(&self) -> f64 {
-        self.backend_manager.lock().unwrap().output_latency()
+        self.try_output_latency()
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"))
+    }
+
+    /// The estimation in seconds of audio output latency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the selected audio backend cannot query the output latency.
+    fn try_output_latency(&self) -> Result<f64, Box<dyn Error>> {
+        Ok(self.backend_manager.lock().unwrap().output_latency()?)
     }
 
     /// Identifier or the information of the current audio output device.
@@ -322,13 +374,13 @@ impl AudioContext {
             if original_state == AudioContextState::Suspended {
                 // We must wake up the render thread to be able to handle the shutdown.
                 // No new audio will be produced because it will receive the shutdown command first.
-                backend_manager_guard.resume();
+                backend_manager_guard.resume()?;
             }
             graph_recv.recv().unwrap()
         };
 
         log::debug!("SinkChange: closing audio stream");
-        backend_manager_guard.close();
+        backend_manager_guard.close()?;
 
         // hotswap the backend
         let options = AudioContextOptions {
@@ -338,12 +390,12 @@ impl AudioContext {
             render_size_hint: AudioContextRenderSizeCategory::default(), // todo reuse existing setting
         };
         log::debug!("SinkChange: starting audio stream");
-        *backend_manager_guard = io::build_output(options, self.render_thread_init.clone());
+        *backend_manager_guard = io::build_output(options, self.render_thread_init.clone())?;
 
         // if the previous backend state was suspend, suspend the new one before shipping the graph
         if original_state == AudioContextState::Suspended {
             log::debug!("SinkChange: suspending audio stream");
-            backend_manager_guard.suspend();
+            backend_manager_guard.suspend()?;
         }
 
         // send the audio graph to the new render thread
@@ -399,7 +451,7 @@ impl AudioContext {
             writeln!(
                 &mut buffer,
                 "output latency: {:.6}",
-                backend.output_latency()
+                backend.output_latency().unwrap_or(0.)
             )
             .ok();
         }
@@ -453,7 +505,11 @@ impl AudioContext {
 
         // Then ask the audio host to suspend the stream
         log::debug!("Suspended audio graph. Suspending audio stream..");
-        self.backend_manager.lock().unwrap().suspend();
+        self.backend_manager
+            .lock()
+            .unwrap()
+            .suspend()
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
         log::debug!("Suspended audio stream");
     }
@@ -481,7 +537,9 @@ impl AudioContext {
             }
 
             // Ask the audio host to resume the stream
-            backend_manager_guard.resume();
+            backend_manager_guard
+                .resume()
+                .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
             // Then, ask to resume rendering via a control message
             log::debug!("Resumed audio stream, waking audio graph");
@@ -532,7 +590,11 @@ impl AudioContext {
 
         // Then ask the audio host to close the stream
         log::debug!("Suspended audio graph. Closing audio stream..");
-        self.backend_manager.lock().unwrap().close();
+        self.backend_manager
+            .lock()
+            .unwrap()
+            .close()
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
         // Stop the AudioRenderCapacity collection thread
         self.render_capacity.stop();
@@ -577,7 +639,9 @@ impl AudioContext {
 
         // Then ask the audio host to suspend the stream
         log::debug!("Suspended audio graph. Suspending audio stream..");
-        backend_manager_guard.suspend();
+        backend_manager_guard
+            .suspend()
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
         log::debug!("Suspended audio stream");
     }
@@ -605,7 +669,9 @@ impl AudioContext {
         }
 
         // Ask the audio host to resume the stream
-        backend_manager_guard.resume();
+        backend_manager_guard
+            .resume()
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
         // Then, ask to resume rendering via a control message
         log::debug!("Resumed audio stream, waking audio graph");
@@ -658,7 +724,9 @@ impl AudioContext {
 
         // Then ask the audio host to close the stream
         log::debug!("Suspended audio graph. Closing audio stream..");
-        backend_manager_guard.close();
+        backend_manager_guard
+            .close()
+            .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
 
         // Stop the AudioRenderCapacity collection thread
         self.render_capacity.stop();
@@ -783,5 +851,19 @@ mod tests {
             ..AudioContextOptions::default()
         };
         let _ = AudioContext::new(options);
+    }
+
+    #[test]
+    fn test_try_new_invalid_sink_id() {
+        let options = AudioContextOptions {
+            sink_id: "invalid".into(),
+            ..AudioContextOptions::default()
+        };
+
+        let error = AudioContext::try_new(options).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "NotFoundError - Invalid sinkId: \"invalid\""
+        );
     }
 }

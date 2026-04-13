@@ -30,7 +30,7 @@ impl MicrophoneStream {
 impl Drop for MicrophoneStream {
     fn drop(&mut self) {
         log::debug!("Microphone stream has been dropped");
-        self.stream.close()
+        let _ = self.stream.close();
     }
 }
 
