@@ -806,11 +806,11 @@ mod tests {
         let (sender, receiver) = crossbeam_channel::bounded(1);
 
         thread::spawn(move || {
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             sender.send(()).unwrap(); // signal ready
 
             for _ in 0..num_loops {
-                let rand = rng.gen::<f32>();
+                let rand = rng.random::<f32>();
                 let data = [rand; RENDER_QUANTUM_SIZE];
                 ring_buffer.write(&data);
 

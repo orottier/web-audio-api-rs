@@ -73,8 +73,8 @@ fn run_server() -> std::io::Result<()> {
         // introduce chaos
         /*
         use rand::Rng;
-        let mut rng = rand::thread_rng();
-        match rng.gen_range(0..100) {
+        let mut rng = rand::rng();
+        match rng.random_range(0..100) {
             0 => continue, // 1% packet loss
             1 => std::thread::sleep(std::time::Duration::from_millis(1)), // 1% of packets has 1ms delay
             _ => (),

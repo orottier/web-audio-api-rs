@@ -101,13 +101,13 @@ impl ScrubEngine {
             grain_duration,
             position: 0.,
             incr_position: grain_period * speed, // half grain period to scrub half speed
-            rng: rand::thread_rng(),
+            rng: rand::rng(),
         }
     }
 
     fn trigger_grain(&mut self, audio_context: &AudioContext, trigger_time: f64) -> Option<f64> {
         // add some jitter to avoid some weird phase stuff
-        let start_time = trigger_time + self.rng.gen::<f64>() * 0.003;
+        let start_time = trigger_time + self.rng.random::<f64>() * 0.003;
 
         let env = audio_context.create_gain();
         env.gain().set_value(0.);

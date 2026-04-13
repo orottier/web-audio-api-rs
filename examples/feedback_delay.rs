@@ -18,7 +18,7 @@ use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
 fn trigger_sine(context: &AudioContext, delay_input: &dyn AudioNode, rng: &mut ThreadRng) {
     let now = context.current_time();
     let base_freq = 100.;
-    let num_partial = rng.gen_range(1..20) as f32;
+    let num_partial = rng.random_range(1..20) as f32;
 
     let env = context.create_gain();
     env.connect(delay_input);
@@ -48,7 +48,7 @@ fn main() {
         ..AudioContextOptions::default()
     });
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // create feedback delay graph layout
     //                           |<- feedback <-|
@@ -78,7 +78,7 @@ fn main() {
     loop {
         trigger_sine(&context, &input, &mut rng);
 
-        let period = rng.gen_range(170..1000);
+        let period = rng.random_range(170..1000);
         std::thread::sleep(std::time::Duration::from_millis(period));
     }
 }
