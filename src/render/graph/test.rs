@@ -7,8 +7,8 @@ use crate::render::{
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use rand::seq::SliceRandom;
 use rand::rng;
+use rand::seq::SliceRandom;
 
 type Label = u32;
 
