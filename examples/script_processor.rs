@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
@@ -29,12 +29,12 @@ fn main() {
 
     let node = context.create_script_processor(512, 1, 1);
     node.set_onaudioprocess(|mut e| {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         e.output_buffer
             .get_channel_data_mut(0)
             .iter_mut()
             .zip(e.input_buffer.get_channel_data(0))
-            .for_each(|(o, i)| *o = *i + rng.gen_range(-0.3..0.3));
+            .for_each(|(o, i)| *o = *i + rng.random_range(-0.3..0.3));
     });
 
     let mut src = context.create_oscillator();

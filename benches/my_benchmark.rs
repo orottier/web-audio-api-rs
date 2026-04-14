@@ -5,7 +5,10 @@ use std::sync::OnceLock;
 use iai::black_box;
 
 #[cfg(not(feature = "iai"))]
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
+
+#[cfg(not(feature = "iai"))]
+use criterion::{criterion_group, criterion_main, Criterion};
 
 use paste::paste;
 

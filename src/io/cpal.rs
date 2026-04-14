@@ -225,8 +225,9 @@ impl AudioBackendManager for CpalBackend {
         log::info!(
             "Output device: {:?}",
             device
-                .name()
+                .description()
                 .map_err(|e| map_cpal_device_name_error("output_device_name", e))?
+                .to_string()
         );
 
         let default_device_config = device
@@ -246,13 +247,13 @@ impl AudioBackendManager for CpalBackend {
         // set specific sample rate if requested
         if let Some(sample_rate) = options.sample_rate {
             crate::assert_valid_sample_rate(sample_rate);
-            preferred_config.sample_rate.0 = sample_rate as u32;
+            preferred_config.sample_rate = sample_rate as u32;
         }
 
         // always try to set a decent buffer size
         let buffer_size = super::buffer_size_for_latency_category(
             options.latency_hint,
-            preferred_config.sample_rate.0 as f32,
+            preferred_config.sample_rate as f32,
         ) as u32;
 
         let clamped_buffer_size: u32 = match default_device_config.buffer_size() {
@@ -275,7 +276,7 @@ impl AudioBackendManager for CpalBackend {
         // report the picked sample rate to the render thread, i.e. if the requested
         // sample rate is not supported by the hardware, it will fallback to the
         // default device sample rate
-        let mut sample_rate = preferred_config.sample_rate.0 as f32;
+        let mut sample_rate = preferred_config.sample_rate as f32;
 
         // shared atomic to report output latency to the control thread
         let output_latency = Arc::new(AtomicF64::new(0.));
@@ -316,7 +317,7 @@ impl AudioBackendManager for CpalBackend {
                 // make sure number of channels is clamped to MAX_CHANNELS
                 supported_config.channels = number_of_channels as u16;
                 // fallback to device default sample rate
-                sample_rate = supported_config.sample_rate.0 as f32;
+                sample_rate = supported_config.sample_rate as f32;
 
                 log::debug!(
                     "Attempt output stream with fallback config: {:?}",
@@ -399,8 +400,9 @@ impl AudioBackendManager for CpalBackend {
         log::info!(
             "Input device: {:?}",
             device
-                .name()
+                .description()
                 .map_err(|e| map_cpal_device_name_error("input_device_name", e))?
+                .to_string()
         );
 
         let supported = device
@@ -417,13 +419,13 @@ impl AudioBackendManager for CpalBackend {
         // set specific sample rate if requested
         if let Some(sample_rate) = options.sample_rate {
             crate::assert_valid_sample_rate(sample_rate);
-            preferred.sample_rate.0 = sample_rate as u32;
+            preferred.sample_rate = sample_rate as u32;
         }
 
         // always try to set a decent buffer size
         let buffer_size = super::buffer_size_for_latency_category(
             options.latency_hint,
-            preferred.sample_rate.0 as f32,
+            preferred.sample_rate as f32,
         ) as u32;
 
         let clamped_buffer_size: u32 = match supported.buffer_size() {
@@ -432,7 +434,7 @@ impl AudioBackendManager for CpalBackend {
         };
 
         preferred.buffer_size = cpal::BufferSize::Fixed(clamped_buffer_size);
-        let mut sample_rate = preferred.sample_rate.0 as f32;
+        let mut sample_rate = preferred.sample_rate as f32;
         let mut number_of_channels = preferred.channels as usize;
 
         let smoothing = 3; // todo, use buffering to smooth frame drops
@@ -459,7 +461,7 @@ impl AudioBackendManager for CpalBackend {
                 let supported_config: StreamConfig = supported.clone().into();
                 // fallback to device default sample rate and channel count
                 number_of_channels = usize::from(supported_config.channels);
-                sample_rate = supported_config.sample_rate.0 as f32;
+                sample_rate = supported_config.sample_rate as f32;
 
                 log::debug!(
                     "Attempt output stream with fallback config: {:?}",
@@ -560,8 +562,9 @@ impl AudioBackendManager for CpalBackend {
                     kind,
                     "cpal".to_string(),
                     device
-                        .name()
-                        .map_err(|e| map_cpal_device_name_error("device_name", e))?,
+                        .description()
+                        .map_err(|e| map_cpal_device_name_error("device_name", e))?
+                        .to_string(),
                     num_channels,
                     index,
                 );
@@ -572,8 +575,9 @@ impl AudioBackendManager for CpalBackend {
                         None,
                         kind,
                         device
-                            .name()
-                            .map_err(|e| map_cpal_device_name_error("device_name", e))?,
+                            .description()
+                            .map_err(|e| map_cpal_device_name_error("device_name", e))?
+                            .to_string(),
                         Box::new(device),
                     );
 

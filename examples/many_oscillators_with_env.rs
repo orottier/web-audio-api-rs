@@ -1,5 +1,5 @@
 use rand::rngs::ThreadRng;
-use rand::Rng;
+use rand::RngExt;
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
@@ -24,7 +24,7 @@ fn trigger_sine(audio_context: &AudioContext, rng: &mut ThreadRng) {
 
     let now = audio_context.current_time();
 
-    let freq = rng.gen_range(100..3000) as f32;
+    let freq = rng.random_range(100..3000) as f32;
     osc.frequency().set_value(freq);
 
     env.gain()
@@ -49,7 +49,7 @@ fn main() {
         ..AudioContextOptions::default()
     });
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let period = 50;
 
     // mimic setInterval

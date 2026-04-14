@@ -7,8 +7,8 @@ use crate::render::{
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use rand::rng;
 use rand::seq::SliceRandom;
-use rand::thread_rng;
 
 type Label = u32;
 
@@ -26,7 +26,7 @@ fn test_ordering_with_cycle_breakers(
         // shuffle inputs because graph ordering may depend on initial ordering
         let mut nodes = nodes.to_vec();
         let mut edges = edges.to_vec();
-        let mut rng = thread_rng();
+        let mut rng = rng();
         nodes.shuffle(&mut rng);
         edges.shuffle(&mut rng);
 

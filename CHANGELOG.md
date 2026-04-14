@@ -1,5 +1,12 @@
 # Version History
 
+## Unreleased
+
+- Introduce `AudioContext::try_new` which does not panic but returns an error
+- Update cpal - raises the minimum Android API version to 26 (Android 8/Oreo).
+- Update MSRV to 1.86 (April 2025)
+- Other dependency updates
+
 ## Version 1.2.0 (2025-01-16)
 
 - ConvolverNode: support multi channel configurations

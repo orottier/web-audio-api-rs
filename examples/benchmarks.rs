@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{stdin, stdout, BufRead, Write};
@@ -312,7 +312,7 @@ fn main() {
         let context = OfflineAudioContext::new(1, length, sample_rate);
         let buf = get_buffer(&sources, sample_rate, 1);
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let decay = 10.;
         let duration = 4.;
@@ -324,7 +324,7 @@ fn main() {
             .iter_mut()
             .enumerate()
             .for_each(|(i, b)| {
-                *b = (rng.gen_range(0.0..2.) - 1.) * (1. - i as f32 / len).powf(decay)
+                *b = (rng.random_range(0.0..2.) - 1.) * (1. - i as f32 / len).powf(decay)
             });
 
         buffer
@@ -332,7 +332,7 @@ fn main() {
             .iter_mut()
             .enumerate()
             .for_each(|(i, b)| {
-                *b = (rng.gen_range(0.0..2.) - 1.) * (1. - i as f32 / len).powf(decay)
+                *b = (rng.random_range(0.0..2.) - 1.) * (1. - i as f32 / len).powf(decay)
             });
 
         let mut convolver = context.create_convolver();
@@ -356,7 +356,7 @@ fn main() {
         let context = OfflineAudioContext::new(1, length, sample_rate);
         let buffer = get_buffer(&sources, sample_rate, 1);
         let mut offset = 0.;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // this ~1500 sources...
         while offset < adjusted_duration {
@@ -367,8 +367,8 @@ fn main() {
             src.connect(&env);
             src.set_buffer(buffer.clone());
 
-            let rand_start = rng.gen_range(0..1000) as f64 / 1000. * 0.5;
-            let rand_duration = rng.gen_range(0..1000) as f64 / 1000. * 0.999;
+            let rand_start = rng.random_range(0..1000) as f64 / 1000. * 0.5;
+            let rand_duration = rng.random_range(0..1000) as f64 / 1000. * 0.999;
             let start = offset * rand_start;
             let end = start + 0.005 * rand_duration;
             let start_release = (offset + end - start).max(0.);

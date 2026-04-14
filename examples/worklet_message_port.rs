@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -80,11 +80,11 @@ impl AudioWorkletProcessor for WhiteNoiseProcessor {
     ) -> bool {
         // edit the output buffer in place
         outputs[0].iter_mut().for_each(|buf| {
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let mut prev_sample = 0.; // TODO, inherit from previous render quantum
 
             buf.iter_mut().for_each(|output_sample| {
-                let mut value: f32 = rng.gen_range(-1.0..1.0);
+                let mut value: f32 = rng.random_range(-1.0..1.0);
                 if self.color == NoiseColor::Red {
                     // red noise samples correlate with their previous value
                     value = value * 0.2 + prev_sample * 0.8;
