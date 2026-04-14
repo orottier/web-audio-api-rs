@@ -111,6 +111,10 @@ impl AudioRenderCapacity {
             }
 
             let next = stats.snapshot();
+            if next.callback_count == previous.callback_count {
+                continue;
+            }
+
             let peak_load = stats.take_peak_load();
             let event = render_capacity_event(timestamp, previous, next, peak_load);
 
@@ -251,5 +255,29 @@ mod tests {
         assert!(event.underrun_ratio.is_finite());
 
         assert_eq!(event.event.type_, "AudioRenderCapacityEvent");
+    }
+
+    #[test]
+    fn test_render_capacity_stops_on_close() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+
+        let rc = context.render_capacity();
+        let (send, recv) = crossbeam_channel::unbounded();
+        rc.set_onupdate(move |e| send.send(e).unwrap());
+        rc.start(AudioRenderCapacityOptions {
+            update_interval: 0.01,
+        });
+
+        recv.recv().unwrap();
+        while recv.try_recv().is_ok() {}
+
+        context.close_sync();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        assert_eq!(recv.try_iter().count(), 0);
     }
 }

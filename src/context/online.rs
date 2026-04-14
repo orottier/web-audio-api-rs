@@ -583,6 +583,9 @@ impl AudioContext {
             return;
         }
 
+        // Stop AudioRenderCapacity before closing so no capacity events are queued during shutdown.
+        self.render_capacity.stop();
+
         if self.state() == AudioContextState::Running {
             // First, stop rendering via a control message
             let (sender, receiver) = oneshot::channel();
@@ -605,9 +608,6 @@ impl AudioContext {
             .unwrap()
             .close()
             .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
-
-        // Stop the AudioRenderCapacity collection thread
-        self.render_capacity.stop();
 
         log::debug!("Closed audio stream");
     }
@@ -717,6 +717,9 @@ impl AudioContext {
             return;
         }
 
+        // Stop AudioRenderCapacity before closing so no capacity events are queued during shutdown.
+        self.render_capacity.stop();
+
         // First, stop rendering via a control message
         if self.state() == AudioContextState::Running {
             let (sender, receiver) = crossbeam_channel::bounded(0);
@@ -737,9 +740,6 @@ impl AudioContext {
         backend_manager_guard
             .close()
             .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
-
-        // Stop the AudioRenderCapacity collection thread
-        self.render_capacity.stop();
 
         log::debug!("Closed audio stream");
     }
