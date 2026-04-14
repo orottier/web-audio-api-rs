@@ -13,10 +13,9 @@ struct AudioStatsInner {
     callback_budget_ns_total: AtomicU64,
     underrun_count: AtomicU64,
     peak_load_ppm: AtomicU64,
-    frames_total: AtomicU64,
-    fallback_frames_total: AtomicU64,
-    fallback_events_total: AtomicU64,
-    previous_fallback: AtomicBool,
+    underrun_frames_total: AtomicU64,
+    underrun_events_total: AtomicU64,
+    previous_underrun: AtomicBool,
     latest_latency_ns: AtomicU64,
     latency_sum_ns: AtomicU64,
     latency_count: AtomicU64,
@@ -30,9 +29,8 @@ pub(crate) struct AudioStatsSnapshot {
     pub render_duration_ns_total: u64,
     pub callback_budget_ns_total: u64,
     pub underrun_count: u64,
-    pub frames_total: u64,
-    pub fallback_frames_total: u64,
-    pub fallback_events_total: u64,
+    pub underrun_frames_total: u64,
+    pub underrun_events_total: u64,
     pub latency_sum_ns: u64,
     pub latency_count: u64,
     pub latency_min_ns: u64,
@@ -54,10 +52,9 @@ impl AudioStats {
                 callback_budget_ns_total: AtomicU64::new(0),
                 underrun_count: AtomicU64::new(0),
                 peak_load_ppm: AtomicU64::new(0),
-                frames_total: AtomicU64::new(0),
-                fallback_frames_total: AtomicU64::new(0),
-                fallback_events_total: AtomicU64::new(0),
-                previous_fallback: AtomicBool::new(false),
+                underrun_frames_total: AtomicU64::new(0),
+                underrun_events_total: AtomicU64::new(0),
+                previous_underrun: AtomicBool::new(false),
                 latest_latency_ns: AtomicU64::new(0),
                 latency_sum_ns: AtomicU64::new(0),
                 latency_count: AtomicU64::new(0),
@@ -80,8 +77,6 @@ impl AudioStats {
         self.inner
             .callback_budget_ns_total
             .fetch_add(callback_budget_ns, Ordering::Relaxed);
-        self.inner.frames_total.fetch_add(frames, Ordering::Relaxed);
-
         let load_ppm = if callback_budget_ns == 0 {
             0
         } else {
@@ -91,19 +86,19 @@ impl AudioStats {
             .peak_load_ppm
             .fetch_max(load_ppm, Ordering::Relaxed);
 
-        let fallback = render_duration_ns > callback_budget_ns;
-        if fallback {
+        let underrun = render_duration_ns > callback_budget_ns;
+        if underrun {
             self.inner.underrun_count.fetch_add(1, Ordering::Relaxed);
             self.inner
-                .fallback_frames_total
+                .underrun_frames_total
                 .fetch_add(frames, Ordering::Relaxed);
-            if !self.inner.previous_fallback.swap(true, Ordering::Relaxed) {
+            if !self.inner.previous_underrun.swap(true, Ordering::Relaxed) {
                 self.inner
-                    .fallback_events_total
+                    .underrun_events_total
                     .fetch_add(1, Ordering::Relaxed);
             }
         } else {
-            self.inner.previous_fallback.store(false, Ordering::Relaxed);
+            self.inner.previous_underrun.store(false, Ordering::Relaxed);
         }
     }
 
@@ -148,9 +143,8 @@ impl AudioStats {
             render_duration_ns_total: self.inner.render_duration_ns_total.load(Ordering::Relaxed),
             callback_budget_ns_total: self.inner.callback_budget_ns_total.load(Ordering::Relaxed),
             underrun_count: self.inner.underrun_count.load(Ordering::Relaxed),
-            frames_total: self.inner.frames_total.load(Ordering::Relaxed),
-            fallback_frames_total: self.inner.fallback_frames_total.load(Ordering::Relaxed),
-            fallback_events_total: self.inner.fallback_events_total.load(Ordering::Relaxed),
+            underrun_frames_total: self.inner.underrun_frames_total.load(Ordering::Relaxed),
+            underrun_events_total: self.inner.underrun_events_total.load(Ordering::Relaxed),
             latency_sum_ns: self.inner.latency_sum_ns.load(Ordering::Relaxed),
             latency_count: self.inner.latency_count.load(Ordering::Relaxed),
             latency_min_ns: if latency_min_ns == u64::MAX {
@@ -168,39 +162,35 @@ impl AudioStats {
 }
 
 impl AudioStatsSnapshot {
-    pub(crate) fn total_frames_duration_ms(&self, sample_rate: f32) -> f64 {
-        frames_to_ms(self.frames_total, sample_rate)
+    pub(crate) fn underrun_duration_seconds(&self, sample_rate: f32) -> f64 {
+        frames_to_seconds(self.underrun_frames_total, sample_rate)
     }
 
-    pub(crate) fn fallback_frames_duration_ms(&self, sample_rate: f32) -> f64 {
-        frames_to_ms(self.fallback_frames_total, sample_rate)
-    }
-
-    pub(crate) fn average_latency_ms(&self) -> f64 {
+    pub(crate) fn average_latency_seconds(&self) -> f64 {
         if self.latency_count == 0 {
             0.
         } else {
-            ns_to_ms(self.latency_sum_ns / self.latency_count)
+            ns_to_seconds(self.latency_sum_ns / self.latency_count)
         }
     }
 
-    pub(crate) fn minimum_latency_ms(&self) -> f64 {
-        ns_to_ms(self.latency_min_ns)
+    pub(crate) fn minimum_latency_seconds(&self) -> f64 {
+        ns_to_seconds(self.latency_min_ns)
     }
 
-    pub(crate) fn maximum_latency_ms(&self) -> f64 {
-        ns_to_ms(self.latency_max_ns)
+    pub(crate) fn maximum_latency_seconds(&self) -> f64 {
+        ns_to_seconds(self.latency_max_ns)
     }
 }
 
-fn frames_to_ms(frames: u64, sample_rate: f32) -> f64 {
+fn frames_to_seconds(frames: u64, sample_rate: f32) -> f64 {
     if sample_rate <= 0. {
         0.
     } else {
-        frames as f64 / sample_rate as f64 * 1000.
+        frames as f64 / sample_rate as f64
     }
 }
 
-fn ns_to_ms(ns: u64) -> f64 {
-    ns as f64 / 1_000_000.
+fn ns_to_seconds(ns: u64) -> f64 {
+    ns as f64 / 1_000_000_000.
 }

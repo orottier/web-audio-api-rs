@@ -1,47 +1,47 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
+use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::stats::AudioStats;
 
 const UPDATE_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Snapshot of [`AudioPlayoutStats`] values.
+/// Snapshot of [`AudioPlaybackStats`] values.
 #[derive(Clone, Debug, Default)]
-pub struct AudioPlayoutStatsSnapshot {
-    /// Total duration of fallback frames in milliseconds.
-    pub fallback_frames_duration: f64,
-    /// Number of fallback events.
-    pub fallback_frames_events: u64,
-    /// Total duration of all rendered output frames in milliseconds.
-    pub total_frames_duration: f64,
-    /// Average output latency in milliseconds since the last latency reset.
+pub struct AudioPlaybackStatsSnapshot {
+    /// Total duration of underrun frames in seconds.
+    pub underrun_duration: f64,
+    /// Number of underrun events.
+    pub underrun_events: u64,
+    /// Total playback duration in seconds.
+    pub total_duration: f64,
+    /// Average output latency in seconds since the last latency reset.
     pub average_latency: f64,
-    /// Minimum output latency in milliseconds since the last latency reset.
+    /// Minimum output latency in seconds since the last latency reset.
     pub minimum_latency: f64,
-    /// Maximum output latency in milliseconds since the last latency reset.
+    /// Maximum output latency in seconds since the last latency reset.
     pub maximum_latency: f64,
 }
 
 #[derive(Debug, Default)]
 struct ExposedStats {
-    values: AudioPlayoutStatsSnapshot,
+    values: AudioPlaybackStatsSnapshot,
     last_update: Option<Instant>,
 }
 
-/// Playout statistics for an [`AudioContext`](crate::context::AudioContext).
+/// Playback statistics for an [`AudioContext`](crate::context::AudioContext).
 ///
-/// The fallback-frame counters are currently based on render callbacks that miss their realtime
+/// The underrun counters are currently based on render callbacks that miss their realtime
 /// deadline. Backends that expose device-level underrun counters can feed more precise values into
 /// the shared stats layer in the future.
 #[derive(Clone, Debug)]
-pub struct AudioPlayoutStats {
+pub struct AudioPlaybackStats {
     context: ConcreteBaseAudioContext,
     stats: AudioStats,
     exposed: Arc<Mutex<ExposedStats>>,
 }
 
-impl AudioPlayoutStats {
+impl AudioPlaybackStats {
     pub(crate) fn new(context: ConcreteBaseAudioContext, stats: AudioStats) -> Self {
         let instance = Self {
             context,
@@ -52,37 +52,37 @@ impl AudioPlayoutStats {
         instance
     }
 
-    /// Total duration of fallback frames in milliseconds.
+    /// Total duration of underrun frames in seconds.
     #[must_use]
-    pub fn fallback_frames_duration(&self) -> f64 {
-        self.current().fallback_frames_duration
+    pub fn underrun_duration(&self) -> f64 {
+        self.current().underrun_duration
     }
 
-    /// Number of fallback events.
+    /// Number of underrun events.
     #[must_use]
-    pub fn fallback_frames_events(&self) -> u64 {
-        self.current().fallback_frames_events
+    pub fn underrun_events(&self) -> u64 {
+        self.current().underrun_events
     }
 
-    /// Total duration of all rendered output frames in milliseconds.
+    /// Total playback duration in seconds.
     #[must_use]
-    pub fn total_frames_duration(&self) -> f64 {
-        self.current().total_frames_duration
+    pub fn total_duration(&self) -> f64 {
+        self.current().total_duration
     }
 
-    /// Average output latency in milliseconds since the last latency reset.
+    /// Average output latency in seconds since the last latency reset.
     #[must_use]
     pub fn average_latency(&self) -> f64 {
         self.current().average_latency
     }
 
-    /// Minimum output latency in milliseconds since the last latency reset.
+    /// Minimum output latency in seconds since the last latency reset.
     #[must_use]
     pub fn minimum_latency(&self) -> f64 {
         self.current().minimum_latency
     }
 
-    /// Maximum output latency in milliseconds since the last latency reset.
+    /// Maximum output latency in seconds since the last latency reset.
     #[must_use]
     pub fn maximum_latency(&self) -> f64 {
         self.current().maximum_latency
@@ -96,15 +96,16 @@ impl AudioPlayoutStats {
 
     /// Return the currently exposed values as a plain Rust snapshot.
     #[must_use]
-    pub fn to_json(&self) -> AudioPlayoutStatsSnapshot {
+    pub fn to_json(&self) -> AudioPlaybackStatsSnapshot {
         self.current()
     }
 
-    fn current(&self) -> AudioPlayoutStatsSnapshot {
+    fn current(&self) -> AudioPlaybackStatsSnapshot {
         let mut exposed = self.exposed.lock().unwrap();
-        let should_update = exposed
-            .last_update
-            .is_none_or(|last_update| last_update.elapsed() >= UPDATE_INTERVAL);
+        let should_update = self.context.state() == AudioContextState::Running
+            && exposed
+                .last_update
+                .is_none_or(|last_update| last_update.elapsed() >= UPDATE_INTERVAL);
         if should_update {
             exposed.values = self.read_current_values();
             exposed.last_update = Some(Instant::now());
@@ -118,17 +119,18 @@ impl AudioPlayoutStats {
         exposed.last_update = Some(Instant::now());
     }
 
-    fn read_current_values(&self) -> AudioPlayoutStatsSnapshot {
+    fn read_current_values(&self) -> AudioPlaybackStatsSnapshot {
         let snapshot = self.stats.snapshot();
         let sample_rate = self.context.sample_rate();
+        let underrun_duration = snapshot.underrun_duration_seconds(sample_rate);
 
-        AudioPlayoutStatsSnapshot {
-            fallback_frames_duration: snapshot.fallback_frames_duration_ms(sample_rate),
-            fallback_frames_events: snapshot.fallback_events_total,
-            total_frames_duration: snapshot.total_frames_duration_ms(sample_rate),
-            average_latency: snapshot.average_latency_ms(),
-            minimum_latency: snapshot.minimum_latency_ms(),
-            maximum_latency: snapshot.maximum_latency_ms(),
+        AudioPlaybackStatsSnapshot {
+            underrun_duration,
+            underrun_events: snapshot.underrun_events_total,
+            total_duration: underrun_duration + self.context.current_time(),
+            average_latency: snapshot.average_latency_seconds(),
+            minimum_latency: snapshot.minimum_latency_seconds(),
+            maximum_latency: snapshot.maximum_latency_seconds(),
         }
     }
 }
@@ -147,8 +149,8 @@ mod tests {
         };
         let context = AudioContext::new(options);
 
-        let stats1 = context.playout_stats();
-        let stats2 = context.playout_stats();
+        let stats1 = context.playback_stats();
+        let stats2 = context.playback_stats();
         let stats3 = stats2.clone();
 
         assert!(Arc::ptr_eq(&stats1.exposed, &stats2.exposed));
@@ -156,23 +158,20 @@ mod tests {
     }
 
     #[test]
-    fn test_playout_stats() {
+    fn test_playback_stats() {
         let options = AudioContextOptions {
             sink_id: "none".into(),
             ..AudioContextOptions::default()
         };
         let context = AudioContext::new(options);
-        let stats = context.playout_stats();
+        let stats = context.playback_stats();
 
         std::thread::sleep(Duration::from_millis(50));
 
         let snapshot = stats.to_json();
-        assert!(snapshot.total_frames_duration > 0.);
-        assert!(snapshot.fallback_frames_duration >= 0.);
-        assert_eq!(
-            stats.fallback_frames_events(),
-            snapshot.fallback_frames_events
-        );
+        assert!(snapshot.total_duration > 0.);
+        assert!(snapshot.underrun_duration >= 0.);
+        assert_eq!(stats.underrun_events(), snapshot.underrun_events);
         assert!(stats.average_latency().is_finite());
         assert!(stats.minimum_latency().is_finite());
         assert!(stats.maximum_latency().is_finite());
@@ -181,5 +180,23 @@ mod tests {
         assert_eq!(stats.average_latency(), 0.);
         assert_eq!(stats.minimum_latency(), 0.);
         assert_eq!(stats.maximum_latency(), 0.);
+    }
+
+    #[test]
+    fn test_playback_stats_do_not_update_when_closed() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+        let stats = context.playback_stats();
+
+        std::thread::sleep(Duration::from_millis(50));
+        let running_total_duration = stats.total_duration();
+
+        context.close_sync();
+        std::thread::sleep(Duration::from_secs(2));
+
+        assert_eq!(stats.total_duration(), running_total_duration);
     }
 }

@@ -22,8 +22,8 @@ pub use buffer::*;
 mod capacity;
 pub use capacity::*;
 
-mod playout_stats;
-pub use playout_stats::*;
+mod playback_stats;
+pub use playback_stats::*;
 
 pub mod context;
 
