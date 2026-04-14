@@ -36,9 +36,6 @@ impl<F> CubebStream for Stream<F> {
     }
 }
 
-// I doubt this construct is entirely safe. Stream is not Send/Sync (probably for a good reason) so
-// it should be managed from a single thread instead.
-// <https://github.com/orottier/web-audio-api-rs/issues/357>
 mod private {
     use super::*;
     use std::sync::Mutex;
@@ -94,8 +91,8 @@ mod private {
     }
 
     // SAFETY:
-    // The cubeb `Stream` is marked !Sync and !Send because some platforms are not thread-safe
-    // Since we wrap the Stream in a Mutex, we should be fine
+    // The cubeb `Stream` is marked !Sync and !Send because some platforms are not thread-safe. TODO
+    // <https://github.com/orottier/web-audio-api-rs/issues/357>
     unsafe impl Sync for ThreadSafeClosableStream {}
     unsafe impl Send for ThreadSafeClosableStream {}
 }
