@@ -289,7 +289,7 @@ impl ConcreteBaseAudioContext {
     }
 
     pub(crate) fn suspend_control_msgs(&self, msg: ControlMessage) {
-        let sender = self.inner.render_channel.write().unwrap();
+        let sender = self.inner.render_channel.read().unwrap();
         *self.inner.suspended_messages.lock().unwrap() = Some(Vec::new());
         if sender.send(msg).is_err() {
             log::warn!("Discarding control message - render thread is closed");
@@ -297,7 +297,7 @@ impl ConcreteBaseAudioContext {
     }
 
     pub(crate) fn resume_control_msgs(&self, msg: ControlMessage) {
-        let sender = self.inner.render_channel.write().unwrap();
+        let sender = self.inner.render_channel.read().unwrap();
         let messages = self
             .inner
             .suspended_messages
