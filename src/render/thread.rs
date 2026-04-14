@@ -21,7 +21,8 @@ use crate::events::{EventDispatch, EventLoop};
 use crate::message::ControlMessage;
 use crate::node::ChannelInterpretation;
 use crate::render::AudioWorkletGlobalScope;
-use crate::{AudioRenderCapacityLoad, RENDER_QUANTUM_SIZE};
+use crate::stats::AudioStats;
+use crate::RENDER_QUANTUM_SIZE;
 
 use super::graph::Graph;
 
@@ -38,7 +39,7 @@ pub(crate) struct RenderThread {
     frames_played: Arc<AtomicU64>,
     receiver: Option<Receiver<ControlMessage>>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
-    load_value_sender: Option<Sender<AudioRenderCapacityLoad>>,
+    stats: AudioStats,
     event_sender: Sender<EventDispatch>,
     garbage_collector: Option<llq::Producer<Box<dyn Any + Send>>>,
 }
@@ -72,6 +73,7 @@ impl RenderThread {
         receiver: Receiver<ControlMessage>,
         state: Arc<AtomicU8>,
         frames_played: Arc<AtomicU64>,
+        stats: AudioStats,
         event_sender: Sender<EventDispatch>,
     ) -> Self {
         Self {
@@ -84,17 +86,10 @@ impl RenderThread {
             frames_played,
             receiver: Some(receiver),
             buffer_offset: None,
-            load_value_sender: None,
+            stats,
             event_sender,
             garbage_collector: None,
         }
-    }
-
-    pub(crate) fn set_load_value_sender(
-        &mut self,
-        load_value_sender: Sender<AudioRenderCapacityLoad>,
-    ) {
-        self.load_value_sender = Some(load_value_sender);
     }
 
     pub(crate) fn spawn_garbage_collector_thread(&mut self) {
@@ -393,6 +388,7 @@ impl RenderThread {
     pub fn render<S: FromSample<f32> + Clone>(&mut self, output_buffer: &mut [S]) {
         // Collect timing information
         let render_start = Instant::now();
+        let frames = output_buffer.len() / self.number_of_channels;
 
         // Perform actual rendering
 
@@ -407,19 +403,14 @@ impl RenderThread {
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
         self.render_inner(output_buffer);
 
-        // calculate load value and ship to control thread
-        if let Some(load_value_sender) = &self.load_value_sender {
-            let duration = render_start.elapsed().as_micros() as f64 / 1E6;
-            let max_duration = RENDER_QUANTUM_SIZE as f64 / self.sample_rate as f64;
-            let load_value = duration / max_duration;
-            let render_timestamp =
-                self.frames_played.load(Ordering::Relaxed) as f64 / self.sample_rate as f64;
-            let load_value_data = AudioRenderCapacityLoad {
-                render_timestamp,
-                load_value,
-            };
-            let _ = load_value_sender.try_send(load_value_data);
-        }
+        let render_duration_ns = render_start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        let callback_budget_ns = if self.sample_rate <= 0. {
+            0
+        } else {
+            ((frames as f64 / self.sample_rate as f64) * 1_000_000_000.).round() as u64
+        };
+        self.stats
+            .record_render_callback(frames as u64, render_duration_ns, callback_budget_ns);
     }
 
     fn render_inner<S: FromSample<f32> + Clone>(&mut self, mut output_buffer: &mut [S]) {

@@ -88,8 +88,8 @@ impl AudioBackendManager for NoneBackend {
         let RenderThreadInit {
             state,
             frames_played,
+            stats,
             ctrl_msg_recv,
-            load_value_send,
             event_send,
         } = render_thread_init;
 
@@ -99,9 +99,9 @@ impl AudioBackendManager for NoneBackend {
             ctrl_msg_recv,
             state,
             frames_played,
+            stats,
             event_send,
         );
-        render_thread.set_load_value_sender(load_value_send);
         render_thread.spawn_garbage_collector_thread();
 
         // Use a bounded channel for real-time safety. A maximum of 32 control messages (resume,

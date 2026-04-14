@@ -11,7 +11,7 @@ use crate::message::{ControlMessage, OneshotNotify};
 use crate::node::{self, AudioNodeOptions};
 use crate::render::graph::Graph;
 use crate::MediaElement;
-use crate::{AudioRenderCapacity, Event};
+use crate::{AudioPlayoutStats, AudioRenderCapacity, Event};
 
 use futures_channel::oneshot;
 
@@ -130,6 +130,8 @@ pub struct AudioContext {
     backend_manager: Mutex<Box<dyn AudioBackendManager>>,
     /// Provider for rendering performance metrics
     render_capacity: AudioRenderCapacity,
+    /// Provider for playout statistics
+    playout_stats: AudioPlayoutStats,
     /// Initializer for the render thread (when restart is required)
     render_thread_init: RenderThreadInit,
 }
@@ -227,8 +229,8 @@ impl AudioContext {
         let ControlThreadInit {
             state,
             frames_played,
+            stats,
             ctrl_msg_send,
-            load_value_recv,
             event_send,
             event_recv,
         } = control_thread_init;
@@ -257,7 +259,8 @@ impl AudioContext {
 
         // Setup AudioRenderCapacity for this context
         let base_clone = base.clone();
-        let render_capacity = AudioRenderCapacity::new(base_clone, load_value_recv);
+        let render_capacity = AudioRenderCapacity::new(base_clone, stats.clone());
+        let playout_stats = AudioPlayoutStats::new(base.clone(), stats);
 
         // As the final step, spawn a thread for the event loop. If we do this earlier we may miss
         // event handling of the initial events that are emitted right after render thread
@@ -268,6 +271,7 @@ impl AudioContext {
             base,
             backend_manager: Mutex::new(backend),
             render_capacity,
+            playout_stats,
             render_thread_init,
         })
     }
@@ -315,6 +319,12 @@ impl AudioContext {
     #[must_use]
     pub fn render_capacity(&self) -> AudioRenderCapacity {
         self.render_capacity.clone()
+    }
+
+    /// Returns an [`AudioPlayoutStats`] instance associated with this `AudioContext`.
+    #[must_use]
+    pub fn playout_stats(&self) -> AudioPlayoutStats {
+        self.playout_stats.clone()
     }
 
     /// Update the current audio output device.
