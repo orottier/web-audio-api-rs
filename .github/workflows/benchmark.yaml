@@ -90,6 +90,7 @@ jobs:
     permissions:
       actions: read
       issues: write
+      pull-requests: write
 
     steps:
       - name: Download benchmark result
