@@ -9,6 +9,7 @@ use web_audio_api::context::{
 use web_audio_api::node::AudioNode;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::thread;
 use std::time::Duration;
 use web_audio_api::MAX_CHANNELS;
 
@@ -294,4 +295,37 @@ fn test_suspend_then_close() {
     assert_eq!(context.state(), AudioContextState::Suspended);
     context.close_sync();
     assert_eq!(context.state(), AudioContextState::Closed);
+}
+
+#[test]
+fn test_control_messages_do_not_block_while_suspended() {
+    let (suspended_tx, suspended_rx) = std::sync::mpsc::channel();
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+
+    thread::spawn(move || {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+
+        context.suspend_sync();
+        assert_eq!(context.state(), AudioContextState::Suspended);
+        suspended_tx.send(()).unwrap();
+
+        // The control channel currently has a capacity of 256. Sending more messages while the
+        // backend callback is suspended must not block the control thread.
+        for i in 0..300 {
+            context.destination().set_channel_count(1 + i % 2);
+        }
+
+        done_tx.send(()).unwrap();
+    });
+
+    suspended_rx.recv().unwrap();
+
+    assert!(
+        done_rx.recv_timeout(Duration::from_millis(500)).is_ok(),
+        "control messages blocked while the render callback was suspended"
+    );
 }

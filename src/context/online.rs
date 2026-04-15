@@ -496,7 +496,7 @@ impl AudioContext {
         let (sender, receiver) = oneshot::channel();
         let notify = OneshotNotify::Async(sender);
         self.base
-            .send_control_msg(ControlMessage::Suspend { notify });
+            .suspend_control_msgs(ControlMessage::Suspend { notify });
 
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
@@ -545,7 +545,7 @@ impl AudioContext {
             log::debug!("Resumed audio stream, waking audio graph");
             let notify = OneshotNotify::Async(sender);
             self.base
-                .send_control_msg(ControlMessage::Resume { notify });
+                .resume_control_msgs(ControlMessage::Resume { notify });
 
             // Drop the Mutex guard so we won't hold it across an await point
         }
@@ -630,7 +630,7 @@ impl AudioContext {
         let (sender, receiver) = crossbeam_channel::bounded(0);
         let notify = OneshotNotify::Sync(sender);
         self.base
-            .send_control_msg(ControlMessage::Suspend { notify });
+            .suspend_control_msgs(ControlMessage::Suspend { notify });
 
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
@@ -678,7 +678,7 @@ impl AudioContext {
         let (sender, receiver) = crossbeam_channel::bounded(0);
         let notify = OneshotNotify::Sync(sender);
         self.base
-            .send_control_msg(ControlMessage::Resume { notify });
+            .resume_control_msgs(ControlMessage::Resume { notify });
 
         // Wait for the render thread to have processed the resume message
         // The AudioContextState will be updated by the render thread.
