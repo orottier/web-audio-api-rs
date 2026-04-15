@@ -8,7 +8,6 @@ use web_audio_api::context::{
 };
 use web_audio_api::node::AudioNode;
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread;
 use std::time::Duration;
 use web_audio_api::MAX_CHANNELS;
@@ -90,44 +89,49 @@ fn test_none_sink_id() {
     assert_eq!(context.sink_id(), "none");
 
     // count the number of state changes
-    let state_changes = &*Box::leak(Box::new(AtomicU32::new(0)));
+    let (state_change_tx, state_change_rx) = crossbeam_channel::bounded(4);
     context.set_onstatechange(move |_| {
-        state_changes.fetch_add(1, Ordering::Relaxed);
+        let _ = state_change_tx.send(());
     });
 
-    // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(state_changes.load(Ordering::Relaxed), 1); // started
+    assert!(
+        state_change_rx.recv_timeout(Duration::from_secs(1)).is_ok(),
+        "timed out waiting for started state change"
+    );
 
     // changing sink_id to 'none' again should make no changes
-    let sink_stable = &*Box::leak(Box::new(AtomicBool::new(true)));
+    let (sink_change_tx, sink_change_rx) = crossbeam_channel::bounded(1);
     context.set_onsinkchange(move |_| {
-        sink_stable.store(false, Ordering::SeqCst);
+        let _ = sink_change_tx.try_send(());
     });
     context.set_sink_id_sync("none".into()).unwrap();
     assert_eq!(context.sink_id(), "none");
+    assert!(sink_change_rx.try_recv().is_err());
 
     context.suspend_sync();
     assert_eq!(context.state(), AudioContextState::Suspended);
 
-    // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(state_changes.load(Ordering::Relaxed), 2); // suspended
+    assert!(
+        state_change_rx.recv_timeout(Duration::from_secs(1)).is_ok(),
+        "timed out waiting for suspended state change"
+    );
 
     context.resume_sync();
     assert_eq!(context.state(), AudioContextState::Running);
 
-    // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(state_changes.load(Ordering::Relaxed), 3); // resumed
+    assert!(
+        state_change_rx.recv_timeout(Duration::from_secs(1)).is_ok(),
+        "timed out waiting for resumed state change"
+    );
 
     context.close_sync();
     assert_eq!(context.state(), AudioContextState::Closed);
-    assert!(sink_stable.load(Ordering::SeqCst));
+    assert!(sink_change_rx.try_recv().is_err());
 
-    // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(state_changes.load(Ordering::Relaxed), 4); // closed
+    assert!(
+        state_change_rx.recv_timeout(Duration::from_secs(1)).is_ok(),
+        "timed out waiting for closed state change"
+    );
 }
 
 #[test]
