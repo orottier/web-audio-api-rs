@@ -2,14 +2,11 @@
 
 name: benchmark
 
-# read-only repo token, no access to secrets
-permissions:
-  contents: read
-
-# no access to secrets
 on:
   issue_comment:
     types: [created, edited]
+
+permissions: {}
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,22 +14,29 @@ env:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    if: contains(github.event.comment.body, '/bench')
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/bench') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    permissions:
+      contents: read
+      pull-requests: read
 
     steps:
       # the workflow is triggered from main branch
       # cf. https://github.com/actions/checkout/issues/331
       # need this first step to init the git repo
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install valgrind and hub
-        run: sudo apt-get update && sudo apt-get install hub valgrind
+      - name: Install valgrind
+        run: sudo apt-get update && sudo apt-get install valgrind
 
       - name: Checkout Pull Request
-        run: hub pr checkout ${{ github.event.issue.number }}
+        run: gh pr checkout "$PR_NUMBER"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
 
       # install dependencies
       - name: Install Rust toolchain
@@ -46,12 +50,16 @@ jobs:
           shared-key: ${{ github.workflow }}-${{ github.job }}
 
       ## Benchmarks
-      - name: Checkout main branch
-        run: git checkout main
+      - name: Checkout default branch
+        run: git checkout "$DEFAULT_BRANCH"
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       - name: Copy over benchmarks from PR branch
         run: git checkout - -- benches/my_benchmark.rs
       - name: Revert when benches do not compile on main
-        run: cargo check --benches --no-default-features || git checkout main -- benches/my_benchmark.rs
+        run: cargo check --benches --no-default-features || git checkout "$DEFAULT_BRANCH" -- benches/my_benchmark.rs
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       - name: Run benchmarks for main branch
         run: cargo bench --no-default-features --features iai
       - name: Checkout PR branch
@@ -70,7 +78,39 @@ jobs:
           mkdir -p ./pr
           echo ${{ github.event.issue.number }} > ./pr/pr_number.txt
           mv bench.txt ./pr/bench.txt
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v7
         with:
           name: pr
           path: pr/
+          retention-days: 1
+
+  post-result:
+    runs-on: ubuntu-latest
+    needs: benchmark
+    permissions:
+      actions: read
+      issues: write
+
+    steps:
+      - name: Download benchmark result
+        uses: actions/download-artifact@v8
+        with:
+          name: pr
+          path: pr
+
+      - name: Write result in PR
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const issueNumber = Number(fs.readFileSync('pr/pr_number.txt', 'utf8'));
+            const bench = fs.readFileSync('pr/bench.txt', 'utf8').replaceAll('```', '`\u200b``');
+
+            const body = '```text\nBenchmark result:\n\n' + bench + '\n```\n';
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body,
+            });
