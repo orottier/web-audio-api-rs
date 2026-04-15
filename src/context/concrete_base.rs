@@ -276,6 +276,7 @@ impl ConcreteBaseAudioContext {
     pub(crate) fn send_control_msg(&self, msg: ControlMessage) {
         if self.state() != AudioContextState::Closed {
             let sender = self.inner.render_channel.read().unwrap();
+            // if the context is suspended, buffer the message and don't send it
             if let Some(queued) = self.inner.suspended_messages.lock().unwrap().as_mut() {
                 queued.push(msg);
                 return;
