@@ -52,7 +52,7 @@ futures = { version = "0.3.30", features = ["executor"] }
 alloc_counter = "0.0.4"
 criterion = "0.8"
 env_logger = "0.11"
-iai = "0.1.1"
+iai = { git = "https://github.com/sigaloid/iai", rev = "d56a597" }
 rand = "0.10"
 paste = "1.0.14"
 
