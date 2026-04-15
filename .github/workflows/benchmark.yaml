@@ -27,7 +27,7 @@ jobs:
       # cf. https://github.com/actions/checkout/issues/331
       # need this first step to init the git repo
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install valgrind
         run: sudo apt-get update && sudo apt-get install valgrind

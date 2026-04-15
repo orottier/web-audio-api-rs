@@ -28,7 +28,7 @@ jobs:
         uses: dtolnay/rust-toolchain@1.86
 
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       - name: Generate Cargo.lock
         run: cargo generate-lockfile
