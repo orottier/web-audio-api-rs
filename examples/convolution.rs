@@ -29,12 +29,6 @@ fn main() {
         ..AudioContextOptions::default()
     });
 
-    let cap = context.render_capacity();
-    cap.set_onupdate(|e| println!("{e:?}"));
-    cap.start(AudioRenderCapacityOptions {
-        update_interval: 1.,
-    });
-
     let file = File::open("samples/vocals-dry.wav").unwrap();
     let audio_buffer = context.decode_audio_data_sync(file).unwrap();
 
@@ -53,6 +47,15 @@ fn main() {
     convolver.connect(&context.destination());
 
     src.start();
+
+    let cap = context.render_capacity();
+    cap.set_onupdate(move |e| {
+        println!("{e:?}");
+        println!("{:?}", context.playback_stats().to_json());
+    });
+    cap.start(AudioRenderCapacityOptions {
+        update_interval: 1.,
+    });
 
     println!("Dry");
     thread::sleep(time::Duration::from_millis(4_000));
