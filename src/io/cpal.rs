@@ -23,57 +23,6 @@ use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
 use crate::{AtomicF64, MAX_CHANNELS};
 
-// I doubt this construct is entirely safe. Stream is not Send/Sync (probably for a good reason) so
-// it should be managed from a single thread instead.
-// <https://github.com/orottier/web-audio-api-rs/issues/357>
-mod private {
-    use super::*;
-
-    #[derive(Clone)]
-    pub struct ThreadSafeClosableStream(Arc<Mutex<Option<Stream>>>);
-
-    impl ThreadSafeClosableStream {
-        pub fn new(stream: Stream) -> Self {
-            #[allow(clippy::arc_with_non_send_sync)]
-            Self(Arc::new(Mutex::new(Some(stream))))
-        }
-
-        pub fn close(&self) {
-            self.0.lock().unwrap().take(); // will Drop
-        }
-
-        pub fn resume(&self) -> BackendResult<bool> {
-            if let Some(s) = self.0.lock().unwrap().as_ref() {
-                s.play()
-                    .map(|_| true)
-                    .map_err(|e| map_cpal_play_error("resume", e))?;
-                return Ok(true);
-            }
-
-            Ok(false)
-        }
-
-        pub fn suspend(&self) -> BackendResult<bool> {
-            if let Some(s) = self.0.lock().unwrap().as_ref() {
-                s.pause()
-                    .map(|_| true)
-                    .map_err(|e| map_cpal_pause_error("suspend", e))?;
-                return Ok(true);
-            }
-
-            Ok(false)
-        }
-    }
-
-    // SAFETY:
-    // The cpal `Stream` is marked !Sync and !Send because some platforms are not thread-safe
-    // https://github.com/RustAudio/cpal/commit/33ddf749548d87bf54ce18eb342f954cec1465b2
-    // Since we wrap the Stream in a Mutex, we should be fine
-    unsafe impl Sync for ThreadSafeClosableStream {}
-    unsafe impl Send for ThreadSafeClosableStream {}
-}
-use private::ThreadSafeClosableStream;
-
 fn get_host() -> BackendResult<cpal::Host> {
     #[cfg(feature = "cpal-jack")]
     {
@@ -170,7 +119,7 @@ fn map_cpal_device_name_error(operation: &'static str, err: DeviceNameError) -> 
 #[derive(Clone)]
 #[allow(unused)]
 pub(crate) struct CpalBackend {
-    stream: ThreadSafeClosableStream,
+    stream: Arc<Mutex<Option<Stream>>>,
     output_latency: Arc<AtomicF64>,
     sample_rate: f32,
     number_of_channels: usize,
@@ -353,7 +302,7 @@ impl AudioBackendManager for CpalBackend {
             .map_err(|e| map_cpal_play_error("play_output_stream", e))?;
 
         Ok(CpalBackend {
-            stream: ThreadSafeClosableStream::new(stream),
+            stream: Arc::new(Mutex::new(Some(stream))),
             output_latency,
             sample_rate,
             number_of_channels,
@@ -490,7 +439,7 @@ impl AudioBackendManager for CpalBackend {
             .map_err(|e| map_cpal_play_error("play_input_stream", e))?;
 
         let backend = CpalBackend {
-            stream: ThreadSafeClosableStream::new(stream),
+            stream: Arc::new(Mutex::new(Some(stream))),
             output_latency: Arc::new(AtomicF64::new(0.)),
             sample_rate,
             number_of_channels,
@@ -501,15 +450,29 @@ impl AudioBackendManager for CpalBackend {
     }
 
     fn resume(&self) -> BackendResult<bool> {
-        self.stream.resume()
+        if let Some(s) = self.stream.lock().unwrap().as_ref() {
+            s.play()
+                .map(|_| true)
+                .map_err(|e| map_cpal_play_error("resume", e))?;
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     fn suspend(&self) -> BackendResult<bool> {
-        self.stream.suspend()
+        if let Some(s) = self.stream.lock().unwrap().as_ref() {
+            s.pause()
+                .map(|_| true)
+                .map_err(|e| map_cpal_pause_error("suspend", e))?;
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     fn close(&self) -> BackendResult<()> {
-        self.stream.close();
+        self.stream.lock().unwrap().take(); // will Drop
         Ok(())
     }
 
