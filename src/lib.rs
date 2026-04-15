@@ -126,22 +126,24 @@ impl AtomicF64 {
 /// quality audio applications and spectrum manipulation).
 /// Most common sample rates for musical applications are 44100 and 48000.
 ///
+/// The Web Audio API specification requires implementations to support every
+/// sample rate in the inclusive range `[3000, 768000]`.
+///
 /// - see <https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-samplerate>
-/// > An implementation MUST support sample rates in at least the range 8000 to 96000.
+/// - see <https://github.com/WebAudio/web-audio-api/pull/2657>
 ///
 /// # Panics
 ///
-/// This function will panic if:
-/// - the given sample rate is lower than 2000 or greater than 384000
+/// This function will panic if the given sample rate is outside the
+/// inclusive range `[3000, 768000]`.
 ///
 #[track_caller]
 #[inline(always)]
 pub(crate) fn assert_valid_sample_rate(sample_rate: f32) {
-    // Arbitrary cutoffs defined as:
-    // min_sample_rate = min_required_in_spec / 4
-    // max_sample_rate = max_required_in_spec * 4
-    let min_sample_rate = 2_000.;
-    let max_sample_rate = 384_000.;
+    // Range mandated by the Web Audio API spec
+    // (see <https://github.com/WebAudio/web-audio-api/pull/2657>).
+    let min_sample_rate = 3_000.;
+    let max_sample_rate = 768_000.;
 
     assert!(
         sample_rate >= min_sample_rate && sample_rate <= max_sample_rate,
@@ -270,6 +272,30 @@ mod tests {
     #[test]
     fn test_valid_sample_rate() {
         assert_valid_sample_rate(48000.);
+    }
+
+    #[test]
+    fn test_valid_sample_rate_min_boundary() {
+        // [3000, 768000] is inclusive on both ends per
+        // <https://github.com/WebAudio/web-audio-api/pull/2657>.
+        assert_valid_sample_rate(3000.);
+    }
+
+    #[test]
+    fn test_valid_sample_rate_max_boundary() {
+        assert_valid_sample_rate(768000.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_sample_rate_just_below_min() {
+        assert_valid_sample_rate(2999.);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_sample_rate_just_above_max() {
+        assert_valid_sample_rate(768001.);
     }
 
     #[test]
