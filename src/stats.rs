@@ -13,7 +13,7 @@ struct AudioStatsInner {
     callback_budget_ns_total: AtomicU64,
     underrun_count: AtomicU64,
     peak_load_ppm: AtomicU64,
-    underrun_frames_total: AtomicU64,
+    underrun_duration_ns_total: AtomicU64,
     underrun_events_total: AtomicU64,
     previous_underrun: AtomicBool,
     latest_latency_ns: AtomicU64,
@@ -29,7 +29,7 @@ pub(crate) struct AudioStatsSnapshot {
     pub render_duration_ns_total: u64,
     pub callback_budget_ns_total: u64,
     pub underrun_count: u64,
-    pub underrun_frames_total: u64,
+    pub underrun_duration_ns_total: u64,
     pub underrun_events_total: u64,
     pub latency_sum_ns: u64,
     pub latency_count: u64,
@@ -52,7 +52,7 @@ impl AudioStats {
                 callback_budget_ns_total: AtomicU64::new(0),
                 underrun_count: AtomicU64::new(0),
                 peak_load_ppm: AtomicU64::new(0),
-                underrun_frames_total: AtomicU64::new(0),
+                underrun_duration_ns_total: AtomicU64::new(0),
                 underrun_events_total: AtomicU64::new(0),
                 previous_underrun: AtomicBool::new(false),
                 latest_latency_ns: AtomicU64::new(0),
@@ -64,12 +64,7 @@ impl AudioStats {
         }
     }
 
-    pub(crate) fn record_render_callback(
-        &self,
-        frames: u64,
-        render_duration_ns: u64,
-        callback_budget_ns: u64,
-    ) {
+    pub(crate) fn record_render_callback(&self, render_duration_ns: u64, callback_budget_ns: u64) {
         self.inner.callback_count.fetch_add(1, Ordering::Relaxed);
         self.inner
             .render_duration_ns_total
@@ -86,12 +81,13 @@ impl AudioStats {
             .peak_load_ppm
             .fetch_max(load_ppm, Ordering::Relaxed);
 
-        let underrun = render_duration_ns > callback_budget_ns;
+        let underrun_duration_ns = render_duration_ns.saturating_sub(callback_budget_ns);
+        let underrun = underrun_duration_ns > 0;
         if underrun {
             self.inner.underrun_count.fetch_add(1, Ordering::Relaxed);
             self.inner
-                .underrun_frames_total
-                .fetch_add(frames, Ordering::Relaxed);
+                .underrun_duration_ns_total
+                .fetch_add(underrun_duration_ns, Ordering::Relaxed);
             if !self.inner.previous_underrun.swap(true, Ordering::Relaxed) {
                 self.inner
                     .underrun_events_total
@@ -143,7 +139,10 @@ impl AudioStats {
             render_duration_ns_total: self.inner.render_duration_ns_total.load(Ordering::Relaxed),
             callback_budget_ns_total: self.inner.callback_budget_ns_total.load(Ordering::Relaxed),
             underrun_count: self.inner.underrun_count.load(Ordering::Relaxed),
-            underrun_frames_total: self.inner.underrun_frames_total.load(Ordering::Relaxed),
+            underrun_duration_ns_total: self
+                .inner
+                .underrun_duration_ns_total
+                .load(Ordering::Relaxed),
             underrun_events_total: self.inner.underrun_events_total.load(Ordering::Relaxed),
             latency_sum_ns: self.inner.latency_sum_ns.load(Ordering::Relaxed),
             latency_count: self.inner.latency_count.load(Ordering::Relaxed),
@@ -162,8 +161,8 @@ impl AudioStats {
 }
 
 impl AudioStatsSnapshot {
-    pub(crate) fn underrun_duration_seconds(&self, sample_rate: f32) -> f64 {
-        frames_to_seconds(self.underrun_frames_total, sample_rate)
+    pub(crate) fn underrun_duration_seconds(&self) -> f64 {
+        ns_to_seconds(self.underrun_duration_ns_total)
     }
 
     pub(crate) fn average_latency_seconds(&self) -> f64 {
@@ -183,14 +182,39 @@ impl AudioStatsSnapshot {
     }
 }
 
-fn frames_to_seconds(frames: u64, sample_rate: f32) -> f64 {
-    if sample_rate <= 0. {
-        0.
-    } else {
-        frames as f64 / sample_rate as f64
-    }
-}
-
 fn ns_to_seconds(ns: u64) -> f64 {
     ns as f64 / 1_000_000_000.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AudioStats;
+
+    #[test]
+    fn underrun_duration_tracks_missed_deadline_time() {
+        let stats = AudioStats::new();
+
+        stats.record_render_callback(3_000_000, 2_000_000);
+        stats.record_render_callback(2_500_000, 2_000_000);
+
+        let snapshot = stats.snapshot();
+        assert_eq!(snapshot.underrun_count, 2);
+        assert_eq!(snapshot.underrun_events_total, 1);
+        assert_eq!(snapshot.underrun_duration_ns_total, 1_500_000);
+        assert_eq!(snapshot.underrun_duration_seconds(), 0.0015);
+    }
+
+    #[test]
+    fn underrun_events_count_continuous_sequences() {
+        let stats = AudioStats::new();
+
+        stats.record_render_callback(3_000_000, 2_000_000);
+        stats.record_render_callback(1_000_000, 2_000_000);
+        stats.record_render_callback(3_000_000, 2_000_000);
+
+        let snapshot = stats.snapshot();
+        assert_eq!(snapshot.underrun_count, 2);
+        assert_eq!(snapshot.underrun_events_total, 2);
+        assert_eq!(snapshot.underrun_duration_ns_total, 2_000_000);
+    }
 }

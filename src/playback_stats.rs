@@ -121,8 +121,7 @@ impl AudioPlaybackStats {
 
     fn read_current_values(&self) -> AudioPlaybackStatsSnapshot {
         let snapshot = self.stats.snapshot();
-        let sample_rate = self.context.sample_rate();
-        let underrun_duration = snapshot.underrun_duration_seconds(sample_rate);
+        let underrun_duration = snapshot.underrun_duration_seconds();
 
         AudioPlaybackStatsSnapshot {
             underrun_duration,

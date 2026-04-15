@@ -410,7 +410,7 @@ impl RenderThread {
             ((frames as f64 / self.sample_rate as f64) * 1_000_000_000.).round() as u64
         };
         self.stats
-            .record_render_callback(frames as u64, render_duration_ns, callback_budget_ns);
+            .record_render_callback(render_duration_ns, callback_budget_ns);
     }
 
     fn render_inner<S: FromSample<f32> + Clone>(&mut self, mut output_buffer: &mut [S]) {
