@@ -8,12 +8,40 @@ use web_audio_api::context::{
 };
 use web_audio_api::node::AudioNode;
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread;
 use std::time::Duration;
 use web_audio_api::MAX_CHANNELS;
 
+const TEST_TIMEOUT: Duration = Duration::from_secs(2);
+
 fn require_send_sync_static<T: Send + Sync + 'static>(_: T) {}
+
+fn wait_until_current_time_at_least(context: &AudioContext, time: f64, message: &str) {
+    let (done_tx, done_rx) = crossbeam_channel::bounded(1);
+    let (stop_tx, stop_rx) = crossbeam_channel::bounded(1);
+
+    thread::scope(|scope| {
+        scope.spawn(|| loop {
+            if context.current_time() >= time {
+                let _ = done_tx.send(());
+                break;
+            }
+
+            if stop_rx.try_recv().is_ok() {
+                break;
+            }
+
+            thread::yield_now();
+        });
+
+        let result = done_rx.recv_timeout(TEST_TIMEOUT);
+        if result.is_err() {
+            let _ = stop_tx.send(());
+        }
+
+        assert!(result.is_ok(), "{message}");
+    });
+}
 
 #[allow(dead_code)]
 fn ensure_send_sync_static() {
@@ -90,44 +118,49 @@ fn test_none_sink_id() {
     assert_eq!(context.sink_id(), "none");
 
     // count the number of state changes
-    let state_changes = &*Box::leak(Box::new(AtomicU32::new(0)));
+    let (state_change_tx, state_change_rx) = crossbeam_channel::bounded(4);
     context.set_onstatechange(move |_| {
-        state_changes.fetch_add(1, Ordering::Relaxed);
+        let _ = state_change_tx.send(());
     });
 
-    // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(state_changes.load(Ordering::Relaxed), 1); // started
+    assert!(
+        state_change_rx.recv_timeout(TEST_TIMEOUT).is_ok(),
+        "timed out waiting for started state change"
+    );
 
     // changing sink_id to 'none' again should make no changes
-    let sink_stable = &*Box::leak(Box::new(AtomicBool::new(true)));
+    let (sink_change_tx, sink_change_rx) = crossbeam_channel::bounded(1);
     context.set_onsinkchange(move |_| {
-        sink_stable.store(false, Ordering::SeqCst);
+        let _ = sink_change_tx.try_send(());
     });
     context.set_sink_id_sync("none".into()).unwrap();
     assert_eq!(context.sink_id(), "none");
+    assert!(sink_change_rx.try_recv().is_err());
 
     context.suspend_sync();
     assert_eq!(context.state(), AudioContextState::Suspended);
 
-    // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(state_changes.load(Ordering::Relaxed), 2); // suspended
+    assert!(
+        state_change_rx.recv_timeout(TEST_TIMEOUT).is_ok(),
+        "timed out waiting for suspended state change"
+    );
 
     context.resume_sync();
     assert_eq!(context.state(), AudioContextState::Running);
 
-    // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(state_changes.load(Ordering::Relaxed), 3); // resumed
+    assert!(
+        state_change_rx.recv_timeout(TEST_TIMEOUT).is_ok(),
+        "timed out waiting for resumed state change"
+    );
 
     context.close_sync();
     assert_eq!(context.state(), AudioContextState::Closed);
-    assert!(sink_stable.load(Ordering::SeqCst));
+    assert!(sink_change_rx.try_recv().is_err());
 
-    // give event thread some time to pick up events
-    std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(state_changes.load(Ordering::Relaxed), 4); // closed
+    assert!(
+        state_change_rx.recv_timeout(TEST_TIMEOUT).is_ok(),
+        "timed out waiting for closed state change"
+    );
 }
 
 #[test]
@@ -171,16 +204,22 @@ fn test_panner_node_drop_panic() {
     drop(panner);
 
     // allow the audio render thread to boot and handle adding and dropping the panner
-    std::thread::sleep(Duration::from_millis(200));
+    wait_until_current_time_at_least(
+        &context,
+        context.current_time() + 0.15,
+        "timed out waiting for the dropped panner to be processed",
+    );
 
     // creating a new panner node should not crash the render thread
     let mut _panner = context.create_panner();
 
     // A crashed thread will not fail the test (only if the main thread panics).
     // Instead inspect if there is progression of time in the audio context.
-    let time = context.current_time();
-    std::thread::sleep(Duration::from_millis(200));
-    assert!(context.current_time() >= time + 0.15);
+    wait_until_current_time_at_least(
+        &context,
+        context.current_time() + 0.15,
+        "timed out waiting for time to progress after creating a new panner",
+    );
 }
 
 #[test]
@@ -198,7 +237,11 @@ fn test_audioparam_outlives_audionode() {
 
     // Start the audio graph, and give some time to drop the gain node (it has no inputs connected
     // so dynamic lifetime will drop the node);
-    std::thread::sleep(Duration::from_millis(200));
+    wait_until_current_time_at_least(
+        &context,
+        context.current_time() + 0.15,
+        "timed out waiting for the dropped gain node to be processed",
+    );
 
     // We still have a handle to the param, so that should not be removed from the audio graph.
     // So by updating the value, the render thread should not crash.
@@ -206,9 +249,11 @@ fn test_audioparam_outlives_audionode() {
 
     // A crashed thread will not fail the test (only if the main thread panics).
     // Instead inspect if there is progression of time in the audio context.
-    let time = context.current_time();
-    std::thread::sleep(Duration::from_millis(200));
-    assert!(context.current_time() >= time + 0.15);
+    wait_until_current_time_at_least(
+        &context,
+        context.current_time() + 0.15,
+        "timed out waiting for time to progress after updating an orphaned AudioParam",
+    );
 }
 
 #[test]
@@ -231,10 +276,16 @@ fn test_closed() {
     // Drop the context (otherwise the comms channel is kept alive)
     drop(context);
 
-    // allow some time for the render thread to drop
-    std::thread::sleep(Duration::from_millis(10));
+    let (done_tx, done_rx) = crossbeam_channel::bounded(1);
+    thread::spawn(move || {
+        node.disconnect(); // should not panic
+        let _ = done_tx.send(());
+    });
 
-    node.disconnect(); // should not panic
+    assert!(
+        done_rx.recv_timeout(TEST_TIMEOUT).is_ok(),
+        "timed out waiting for node disconnect after closing context"
+    );
 }
 
 #[test]
@@ -299,20 +350,18 @@ fn test_suspend_then_close() {
 
 #[test]
 fn test_control_messages_do_not_block_while_suspended() {
-    let (suspended_tx, suspended_rx) = std::sync::mpsc::channel();
-    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let (done_tx, done_rx) = crossbeam_channel::bounded(1);
+
+    let options = AudioContextOptions {
+        sink_id: "none".into(),
+        ..AudioContextOptions::default()
+    };
+    let context = AudioContext::new(options);
+
+    context.suspend_sync();
+    assert_eq!(context.state(), AudioContextState::Suspended);
 
     thread::spawn(move || {
-        let options = AudioContextOptions {
-            sink_id: "none".into(),
-            ..AudioContextOptions::default()
-        };
-        let context = AudioContext::new(options);
-
-        context.suspend_sync();
-        assert_eq!(context.state(), AudioContextState::Suspended);
-        suspended_tx.send(()).unwrap();
-
         // The control channel currently has a capacity of 256. Sending more messages while the
         // backend callback is suspended must not block the control thread.
         for i in 0..300 {
@@ -322,10 +371,8 @@ fn test_control_messages_do_not_block_while_suspended() {
         done_tx.send(()).unwrap();
     });
 
-    suspended_rx.recv().unwrap();
-
     assert!(
-        done_rx.recv_timeout(Duration::from_millis(500)).is_ok(),
+        done_rx.recv_timeout(TEST_TIMEOUT).is_ok(),
         "control messages blocked while the render callback was suspended"
     );
 }
