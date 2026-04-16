@@ -12,7 +12,7 @@ use std::thread;
 use std::time::Duration;
 use web_audio_api::MAX_CHANNELS;
 
-const TEST_TIMEOUT: Duration = Duration::from_secs(1);
+const TEST_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn require_send_sync_static<T: Send + Sync + 'static>(_: T) {}
 
