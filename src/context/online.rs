@@ -258,8 +258,7 @@ impl AudioContext {
         );
 
         // Setup AudioRenderCapacity for this context
-        let base_clone = base.clone();
-        let render_capacity = AudioRenderCapacity::new(base_clone, stats.clone());
+        let render_capacity = AudioRenderCapacity::new(base.clone(), stats.clone());
         let playback_stats = AudioPlaybackStats::new(base.clone(), stats);
 
         // As the final step, spawn a thread for the event loop. If we do this earlier we may miss
