@@ -72,7 +72,7 @@ impl ScriptProcessorNode {
     /// # Panics
     ///
     /// This function panics if:
-    /// - `buffer_size` is not 256, 512, 1024, 2048, 4096, 8192, or 16384
+    /// - `buffer_size` is not 0, 256, 512, 1024, 2048, 4096, 8192, or 16384
     /// - the number of input and output channels are both zero
     /// - either of the channel counts exceed [`crate::MAX_CHANNELS`]
     pub fn new<C: BaseAudioContext>(context: &C, options: ScriptProcessorOptions) -> Self {
@@ -81,10 +81,11 @@ impl ScriptProcessorNode {
             number_of_input_channels,
             number_of_output_channels,
         } = options;
+        let buffer_size = if buffer_size == 0 { 256 } else { buffer_size };
 
         assert!(
             (buffer_size / 256).is_power_of_two() && buffer_size <= 16384,
-            "IndexSizeError - bufferSize must be one of: 256, 512, 1024, 2048, 4096, 8192, 16384",
+            "IndexSizeError - bufferSize must be 0 or one of: 256, 512, 1024, 2048, 4096, 8192, 16384",
         );
 
         match (number_of_input_channels, number_of_output_channels) {
