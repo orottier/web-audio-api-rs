@@ -21,6 +21,7 @@ use crate::context::AudioContextOptions;
 use crate::io::microphone::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
+use crate::stats::AudioStats;
 use crate::{AtomicF64, MAX_CHANNELS};
 
 fn get_host() -> BackendResult<cpal::Host> {
@@ -141,8 +142,8 @@ impl AudioBackendManager for CpalBackend {
         let RenderThreadInit {
             state,
             frames_played,
+            stats,
             ctrl_msg_recv,
-            load_value_send,
             event_send,
         } = render_thread_init;
 
@@ -236,9 +237,9 @@ impl AudioBackendManager for CpalBackend {
             ctrl_msg_recv.clone(),
             Arc::clone(&state),
             Arc::clone(&frames_played),
+            stats.clone(),
             event_send.clone(),
         );
-        renderer.set_load_value_sender(load_value_send.clone());
         renderer.spawn_garbage_collector_thread();
 
         log::debug!(
@@ -252,6 +253,7 @@ impl AudioBackendManager for CpalBackend {
             &preferred_config,
             renderer,
             Arc::clone(&output_latency),
+            stats.clone(),
         );
 
         let stream = match spawned {
@@ -279,9 +281,9 @@ impl AudioBackendManager for CpalBackend {
                     ctrl_msg_recv,
                     state,
                     frames_played,
+                    stats.clone(),
                     event_send,
                 );
-                renderer.set_load_value_sender(load_value_send);
                 renderer.spawn_garbage_collector_thread();
 
                 let spawned = spawn_output_stream(
@@ -290,6 +292,7 @@ impl AudioBackendManager for CpalBackend {
                     &supported_config,
                     renderer,
                     Arc::clone(&output_latency),
+                    stats.clone(),
                 );
 
                 spawned.map_err(|e| map_cpal_build_error("build_fallback_output_stream", e))?
@@ -579,6 +582,7 @@ fn spawn_output_stream(
     config: &StreamConfig,
     mut render: RenderThread,
     output_latency: Arc<AtomicF64>,
+    stats: AudioStats,
 ) -> Result<Stream, BuildStreamError> {
     let err_fn = |err| log::error!("an error occurred on the output audio stream: {}", err);
 
@@ -587,7 +591,9 @@ fn spawn_output_stream(
             config,
             move |d: &mut [f32], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
+                let latency = latency_in_seconds(i);
+                output_latency.store(latency, Ordering::Relaxed);
+                stats.record_latency_seconds(latency);
             },
             err_fn,
             None,
@@ -596,7 +602,9 @@ fn spawn_output_stream(
             config,
             move |d: &mut [f64], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
+                let latency = latency_in_seconds(i);
+                output_latency.store(latency, Ordering::Relaxed);
+                stats.record_latency_seconds(latency);
             },
             err_fn,
             None,
@@ -605,7 +613,9 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u8], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
+                let latency = latency_in_seconds(i);
+                output_latency.store(latency, Ordering::Relaxed);
+                stats.record_latency_seconds(latency);
             },
             err_fn,
             None,
@@ -614,7 +624,9 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u16], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
+                let latency = latency_in_seconds(i);
+                output_latency.store(latency, Ordering::Relaxed);
+                stats.record_latency_seconds(latency);
             },
             err_fn,
             None,
@@ -623,7 +635,9 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u32], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
+                let latency = latency_in_seconds(i);
+                output_latency.store(latency, Ordering::Relaxed);
+                stats.record_latency_seconds(latency);
             },
             err_fn,
             None,
@@ -632,7 +646,9 @@ fn spawn_output_stream(
             config,
             move |d: &mut [u64], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
+                let latency = latency_in_seconds(i);
+                output_latency.store(latency, Ordering::Relaxed);
+                stats.record_latency_seconds(latency);
             },
             err_fn,
             None,
@@ -641,7 +657,9 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i8], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
+                let latency = latency_in_seconds(i);
+                output_latency.store(latency, Ordering::Relaxed);
+                stats.record_latency_seconds(latency);
             },
             err_fn,
             None,
@@ -650,7 +668,9 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i16], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
+                let latency = latency_in_seconds(i);
+                output_latency.store(latency, Ordering::Relaxed);
+                stats.record_latency_seconds(latency);
             },
             err_fn,
             None,
@@ -659,7 +679,9 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i32], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
+                let latency = latency_in_seconds(i);
+                output_latency.store(latency, Ordering::Relaxed);
+                stats.record_latency_seconds(latency);
             },
             err_fn,
             None,
@@ -668,7 +690,9 @@ fn spawn_output_stream(
             config,
             move |d: &mut [i64], i: &OutputCallbackInfo| {
                 render.render(d);
-                output_latency.store(latency_in_seconds(i), Ordering::Relaxed);
+                let latency = latency_in_seconds(i);
+                output_latency.store(latency, Ordering::Relaxed);
+                stats.record_latency_seconds(latency);
             },
             err_fn,
             None,

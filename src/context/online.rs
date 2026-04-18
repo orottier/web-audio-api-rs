@@ -11,7 +11,7 @@ use crate::message::{ControlMessage, OneshotNotify};
 use crate::node::{self, AudioNodeOptions};
 use crate::render::graph::Graph;
 use crate::MediaElement;
-use crate::{AudioRenderCapacity, Event};
+use crate::{AudioPlaybackStats, AudioRenderCapacity, Event};
 
 use futures_channel::oneshot;
 
@@ -130,6 +130,8 @@ pub struct AudioContext {
     backend_manager: Mutex<Box<dyn AudioBackendManager>>,
     /// Provider for rendering performance metrics
     render_capacity: AudioRenderCapacity,
+    /// Provider for playback statistics
+    playback_stats: AudioPlaybackStats,
     /// Initializer for the render thread (when restart is required)
     render_thread_init: RenderThreadInit,
 }
@@ -227,8 +229,8 @@ impl AudioContext {
         let ControlThreadInit {
             state,
             frames_played,
+            stats,
             ctrl_msg_send,
-            load_value_recv,
             event_send,
             event_recv,
         } = control_thread_init;
@@ -256,8 +258,8 @@ impl AudioContext {
         );
 
         // Setup AudioRenderCapacity for this context
-        let base_clone = base.clone();
-        let render_capacity = AudioRenderCapacity::new(base_clone, load_value_recv);
+        let render_capacity = AudioRenderCapacity::new(base.clone(), stats.clone());
+        let playback_stats = AudioPlaybackStats::new(base.clone(), stats);
 
         // As the final step, spawn a thread for the event loop. If we do this earlier we may miss
         // event handling of the initial events that are emitted right after render thread
@@ -268,6 +270,7 @@ impl AudioContext {
             base,
             backend_manager: Mutex::new(backend),
             render_capacity,
+            playback_stats,
             render_thread_init,
         })
     }
@@ -315,6 +318,12 @@ impl AudioContext {
     #[must_use]
     pub fn render_capacity(&self) -> AudioRenderCapacity {
         self.render_capacity.clone()
+    }
+
+    /// Returns an [`AudioPlaybackStats`] instance associated with this `AudioContext`.
+    #[must_use]
+    pub fn playback_stats(&self) -> AudioPlaybackStats {
+        self.playback_stats.clone()
     }
 
     /// Update the current audio output device.
@@ -573,6 +582,9 @@ impl AudioContext {
             return;
         }
 
+        // Stop AudioRenderCapacity before closing so no capacity events are queued during shutdown.
+        self.render_capacity.stop();
+
         if self.state() == AudioContextState::Running {
             // First, stop rendering via a control message
             let (sender, receiver) = oneshot::channel();
@@ -595,9 +607,6 @@ impl AudioContext {
             .unwrap()
             .close()
             .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
-
-        // Stop the AudioRenderCapacity collection thread
-        self.render_capacity.stop();
 
         log::debug!("Closed audio stream");
     }
@@ -707,6 +716,9 @@ impl AudioContext {
             return;
         }
 
+        // Stop AudioRenderCapacity before closing so no capacity events are queued during shutdown.
+        self.render_capacity.stop();
+
         // First, stop rendering via a control message
         if self.state() == AudioContextState::Running {
             let (sender, receiver) = crossbeam_channel::bounded(0);
@@ -727,9 +739,6 @@ impl AudioContext {
         backend_manager_guard
             .close()
             .unwrap_or_else(|e| panic!("InvalidStateError - {e}"));
-
-        // Stop the AudioRenderCapacity collection thread
-        self.render_capacity.stop();
 
         log::debug!("Closed audio stream");
     }

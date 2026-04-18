@@ -1,15 +1,11 @@
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::Sender;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::context::{BaseAudioContext, ConcreteBaseAudioContext};
 use crate::events::{EventDispatch, EventHandler, EventPayload, EventType};
+use crate::stats::{AudioStats, AudioStatsSnapshot};
 use crate::Event;
-
-#[derive(Copy, Clone, Debug)]
-pub(crate) struct AudioRenderCapacityLoad {
-    pub render_timestamp: f64,
-    pub load_value: f64,
-}
 
 /// Options for constructing an `AudioRenderCapacity`
 #[derive(Clone, Debug)]
@@ -68,7 +64,7 @@ impl AudioRenderCapacityEvent {
 #[derive(Clone)]
 pub struct AudioRenderCapacity {
     context: ConcreteBaseAudioContext,
-    receiver: Receiver<AudioRenderCapacityLoad>,
+    stats: AudioStats,
     stop_send: Arc<Mutex<Option<Sender<()>>>>,
 }
 
@@ -84,15 +80,12 @@ impl std::fmt::Debug for AudioRenderCapacity {
 }
 
 impl AudioRenderCapacity {
-    pub(crate) fn new(
-        context: ConcreteBaseAudioContext,
-        receiver: Receiver<AudioRenderCapacityLoad>,
-    ) -> Self {
+    pub(crate) fn new(context: ConcreteBaseAudioContext, stats: AudioStats) -> Self {
         let stop_send = Arc::new(Mutex::new(None));
 
         Self {
             context,
-            receiver,
+            stats,
             stop_send,
         }
     }
@@ -103,62 +96,35 @@ impl AudioRenderCapacity {
         // stop current metric collection, if any
         self.stop();
 
-        let receiver = self.receiver.clone();
         let (stop_send, stop_recv) = crossbeam_channel::bounded(0);
         *self.stop_send.lock().unwrap() = Some(stop_send);
 
         let mut timestamp: f64 = self.context.current_time();
-        let mut load_sum: f64 = 0.;
-        let mut counter = 0;
-        let mut peak_load: f64 = 0.;
-        let mut underrun_sum = 0;
-
-        let mut next_checkpoint = timestamp + options.update_interval;
+        let update_interval = Duration::from_secs_f64(options.update_interval.max(0.001));
         let base_context = self.context.clone();
+        let stats = self.stats.clone();
+        let mut previous = stats.snapshot();
+        stats.take_peak_load();
         std::thread::spawn(move || loop {
-            let try_item = crossbeam_channel::select! {
-                recv(receiver) -> item => item,
-                recv(stop_recv) -> _ => return,
-            };
-
-            // stop thread when render thread has shut down
-            let item = match try_item {
-                Err(_) => return,
-                Ok(item) => item,
-            };
-
-            let AudioRenderCapacityLoad {
-                render_timestamp,
-                load_value,
-            } = item;
-
-            counter += 1;
-            load_sum += load_value;
-            peak_load = peak_load.max(load_value);
-            if load_value > 1. {
-                underrun_sum += 1;
+            if stop_recv.recv_timeout(update_interval).is_ok() {
+                return;
             }
 
-            if render_timestamp >= next_checkpoint {
-                let event = AudioRenderCapacityEvent::new(
-                    timestamp,
-                    load_sum / counter as f64,
-                    peak_load,
-                    underrun_sum as f64 / counter as f64,
-                );
-
-                let send_result = base_context.send_event(EventDispatch::render_capacity(event));
-                if send_result.is_err() {
-                    break;
-                }
-
-                next_checkpoint += options.update_interval;
-                timestamp = render_timestamp;
-                load_sum = 0.;
-                counter = 0;
-                peak_load = 0.;
-                underrun_sum = 0;
+            let next = stats.snapshot();
+            if next.callback_count == previous.callback_count {
+                continue;
             }
+
+            let peak_load = stats.take_peak_load();
+            let event = render_capacity_event(timestamp, previous, next, peak_load);
+
+            let send_result = base_context.send_event(EventDispatch::render_capacity(event));
+            if send_result.is_err() {
+                break;
+            };
+
+            previous = next;
+            timestamp = base_context.current_time();
         });
     }
 
@@ -194,6 +160,38 @@ impl AudioRenderCapacity {
     pub fn clear_onupdate(&self) {
         self.context.clear_event_handler(EventType::RenderCapacity);
     }
+}
+
+fn render_capacity_event(
+    timestamp: f64,
+    previous: AudioStatsSnapshot,
+    next: AudioStatsSnapshot,
+    peak_load: f64,
+) -> AudioRenderCapacityEvent {
+    let callback_count = next
+        .callback_count
+        .saturating_sub(previous.callback_count)
+        .max(1);
+    let render_duration = next
+        .render_duration_ns_total
+        .saturating_sub(previous.render_duration_ns_total);
+    let callback_budget = next
+        .callback_budget_ns_total
+        .saturating_sub(previous.callback_budget_ns_total);
+    let underruns = next.underrun_count.saturating_sub(previous.underrun_count);
+
+    let average_load = if callback_budget == 0 {
+        0.
+    } else {
+        render_duration as f64 / callback_budget as f64
+    };
+
+    AudioRenderCapacityEvent::new(
+        timestamp,
+        average_load,
+        peak_load,
+        underruns as f64 / callback_count as f64,
+    )
 }
 
 #[cfg(test)]
@@ -257,5 +255,29 @@ mod tests {
         assert!(event.underrun_ratio.is_finite());
 
         assert_eq!(event.event.type_, "AudioRenderCapacityEvent");
+    }
+
+    #[test]
+    fn test_render_capacity_stops_on_close() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+
+        let rc = context.render_capacity();
+        let (send, recv) = crossbeam_channel::unbounded();
+        rc.set_onupdate(move |e| send.send(e).unwrap());
+        rc.start(AudioRenderCapacityOptions {
+            update_interval: 0.01,
+        });
+
+        recv.recv().unwrap();
+        while recv.try_recv().is_ok() {}
+
+        context.close_sync();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        assert_eq!(recv.try_iter().count(), 0);
     }
 }

@@ -22,6 +22,9 @@ pub use buffer::*;
 mod capacity;
 pub use capacity::*;
 
+mod playback_stats;
+pub use playback_stats::*;
+
 pub mod context;
 
 pub mod media_devices;
@@ -43,6 +46,8 @@ mod periodic_wave;
 pub use periodic_wave::*;
 
 mod render;
+
+mod stats;
 
 mod spatial;
 pub use spatial::AudioListener;

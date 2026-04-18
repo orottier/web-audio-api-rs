@@ -9,6 +9,7 @@ use crate::events::{
     Event, EventDispatch, EventHandler, EventPayload, EventType, OfflineAudioCompletionEvent,
 };
 use crate::render::RenderThread;
+use crate::stats::AudioStats;
 use crate::{
     assert_valid_buffer_length, assert_valid_number_of_channels, assert_valid_sample_rate,
     RENDER_QUANTUM_SIZE,
@@ -106,6 +107,7 @@ impl OfflineAudioContext {
             receiver,
             state_clone,
             frames_played_clone,
+            AudioStats::new(),
             event_send.clone(),
         );
 
