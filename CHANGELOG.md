@@ -6,6 +6,7 @@
 - Added the AudioPlaybackStats interface (alongside AudioRenderCapacity)
 - Update cpal - raises the minimum Android API version to 26 (Android 8/Oreo).
 - Update MSRV to 1.86 (April 2025)
+- Fix: ScriptProcessorNode now accepts 0 for the buffer size - picking a decent default for you
 - Other dependency updates
 
 ## Version 1.2.0 (2025-01-16)
