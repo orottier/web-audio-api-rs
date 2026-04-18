@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Introduce `AudioContext::try_new` which does not panic but returns an error
+- Added the AudioPlaybackStats interface (alongside AudioRenderCapacity)
 - Update cpal - raises the minimum Android API version to 26 (Android 8/Oreo).
 - Update MSRV to 1.86 (April 2025)
 - Other dependency updates
