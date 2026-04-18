@@ -829,7 +829,7 @@ impl AudioParamProcessor {
 
                     match current_event.event_type {
                         AudioParamEventType::LinearRampToValueAtTime
-                        | AudioParamEventType::ExponentialRampToValueAtTime => {
+                        | AudioParamEventType::ExponentialRampToValueAtTime
                             // we are in the middle of a ramp
                             //
                             // @note - Firefox and Chrome behave differently
@@ -850,11 +850,10 @@ impl AudioParamProcessor {
                             // inserted implicitly), so if the ramp is the next
                             // event that means that at least one event has
                             // already been processed.
-                            if current_event.time >= event.time {
+                            if current_event.time >= event.time => {
                                 let last_event = self.last_event.as_ref().unwrap();
                                 self.intrinsic_value = last_event.value;
                             }
-                        }
                         _ => (),
                     }
                 }

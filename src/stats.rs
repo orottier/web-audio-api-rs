@@ -72,11 +72,10 @@ impl AudioStats {
         self.inner
             .callback_budget_ns_total
             .fetch_add(callback_budget_ns, Ordering::Relaxed);
-        let load_ppm = if callback_budget_ns == 0 {
-            0
-        } else {
-            render_duration_ns.saturating_mul(1_000_000) / callback_budget_ns
-        };
+        let load_ppm = render_duration_ns
+            .saturating_mul(1_000_000)
+            .checked_div(callback_budget_ns)
+            .unwrap_or(0);
         self.inner
             .peak_load_ppm
             .fetch_max(load_ppm, Ordering::Relaxed);
@@ -166,11 +165,9 @@ impl AudioStatsSnapshot {
     }
 
     pub(crate) fn average_latency_seconds(&self) -> f64 {
-        if self.latency_count == 0 {
-            0.
-        } else {
-            ns_to_seconds(self.latency_sum_ns / self.latency_count)
-        }
+        self.latency_sum_ns
+            .checked_div(self.latency_count)
+            .map_or(0., ns_to_seconds)
     }
 
     pub(crate) fn minimum_latency_seconds(&self) -> f64 {
