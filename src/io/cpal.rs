@@ -141,6 +141,7 @@ impl AudioBackendManager for CpalBackend {
 
         let RenderThreadInit {
             state,
+            startup_pending,
             frames_played,
             stats,
             ctrl_msg_recv,
@@ -240,6 +241,7 @@ impl AudioBackendManager for CpalBackend {
             stats.clone(),
             event_send.clone(),
         );
+        renderer.set_startup_pending(Arc::clone(&startup_pending));
         renderer.spawn_garbage_collector_thread();
 
         log::debug!(
@@ -284,6 +286,7 @@ impl AudioBackendManager for CpalBackend {
                     stats.clone(),
                     event_send,
                 );
+                renderer.set_startup_pending(startup_pending);
                 renderer.spawn_garbage_collector_thread();
 
                 let spawned = spawn_output_stream(
