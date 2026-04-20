@@ -1,7 +1,7 @@
 //! The `AudioContext` type and constructor options
 use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::events::{EventDispatch, EventHandler, EventLoop, EventPayload, EventType};
@@ -227,7 +227,7 @@ impl AudioContext {
 
         // Set up the audio output thread
         let (control_thread_init, render_thread_init) = io::thread_init();
-        let startup_pending = render_thread_init.startup_pending.clone();
+        let startup_pending = Arc::clone(&render_thread_init.startup_pending);
         let backend = io::build_output(options, render_thread_init.clone())?;
 
         let ControlThreadInit {
