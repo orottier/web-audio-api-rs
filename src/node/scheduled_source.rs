@@ -22,14 +22,14 @@ pub trait AudioScheduledSourceNode: AudioNode {
     ///
     /// # Panics
     ///
-    /// Panics if the source was already stopped
+    /// Panics if the source was not started yet
     fn stop(&mut self);
 
     /// Schedule playback stop at given timestamp
     ///
     /// # Panics
     ///
-    /// Panics if the source was already stopped
+    /// Panics if the source was not started yet
     fn stop_at(&mut self, when: f64);
 
     /// Register callback to run when the source node has stopped playing
@@ -316,6 +316,7 @@ mod tests {
     }
 
     fn run_stop_twice(f: impl FnOnce(&OfflineAudioContext) -> ConcreteAudioScheduledSourceNode) {
+        // is allowed, see https://github.com/orottier/web-audio-api-rs/issues/579
         let context = OfflineAudioContext::new(2, 1, 44_100.);
         let mut src = f(&context);
         src.start();
@@ -324,18 +325,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn test_stop_twice_constant_source() {
+    fn test_stop_twice_allowed_constant_source() {
         run_stop_twice(|c| Constant(c.create_constant_source()));
     }
     #[test]
-    #[should_panic]
-    fn test_stop_twice_buffer_source() {
+    fn test_stop_twice_allowed_buffer_source() {
         run_stop_twice(|c| Buffer(c.create_buffer_source()));
     }
     #[test]
-    #[should_panic]
-    fn test_stop_twice_oscillator() {
+    fn test_stop_twice_allowed_oscillator() {
         run_stop_twice(|c| Oscillator(c.create_oscillator()));
     }
 }

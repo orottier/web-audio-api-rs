@@ -135,8 +135,8 @@ pub struct OscillatorNode {
     detune: AudioParam,
     /// Waveform of an oscillator
     type_: OscillatorType,
-    /// Number of start/stop actions, node can only be started and stopped once
-    start_stop_count: u8,
+    /// Tracks whether `start` has been called already.
+    has_start: bool,
 }
 
 impl AudioNode for OscillatorNode {
@@ -167,12 +167,12 @@ impl AudioScheduledSourceNode for OscillatorNode {
 
     fn start_at(&mut self, when: f64) {
         assert_valid_time_value(when);
-        assert_eq!(
-            self.start_stop_count, 0,
+        assert!(
+            !self.has_start,
             "InvalidStateError - Cannot call `start` twice"
         );
 
-        self.start_stop_count += 1;
+        self.has_start = true;
         self.registration.post_message(Schedule::Start(when));
     }
 
@@ -183,12 +183,8 @@ impl AudioScheduledSourceNode for OscillatorNode {
 
     fn stop_at(&mut self, when: f64) {
         assert_valid_time_value(when);
-        assert_eq!(
-            self.start_stop_count, 1,
-            "InvalidStateError cannot stop before start"
-        );
+        assert!(self.has_start, "InvalidStateError cannot stop before start");
 
-        self.start_stop_count += 1;
         self.registration.post_message(Schedule::Stop(when));
     }
 }
@@ -255,7 +251,7 @@ impl OscillatorNode {
                 frequency: f_param,
                 detune: det_param,
                 type_,
-                start_stop_count: 0,
+                has_start: false,
             };
 
             (node, Box::new(renderer))
@@ -1155,6 +1151,23 @@ mod tests {
         }
 
         assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
+    }
+
+    #[test]
+    fn osc_stop_disarms_future_start() {
+        let sample_rate = 44_100;
+        let future_start = 2. / sample_rate as f64;
+
+        let mut context = OfflineAudioContext::new(1, 128, sample_rate as f32);
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.start_at(future_start);
+        osc.stop();
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+
+        assert_float_eq!(result[..], vec![0.; 128][..], abs_all <= 0.);
     }
 
     #[test]
