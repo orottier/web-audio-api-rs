@@ -76,7 +76,7 @@ pub struct ConstantSourceNode {
     registration: AudioContextRegistration,
     channel_config: ChannelConfig,
     offset: AudioParam,
-    start_stop_count: u8,
+    has_start: bool,
 }
 
 impl AudioNode for ConstantSourceNode {
@@ -105,12 +105,12 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 
     fn start_at(&mut self, when: f64) {
         assert_valid_time_value(when);
-        assert_eq!(
-            self.start_stop_count, 0,
+        assert!(
+            !self.has_start,
             "InvalidStateError - Cannot call `start` twice"
         );
 
-        self.start_stop_count += 1;
+        self.has_start = true;
         self.registration.post_message(Schedule::Start(when));
     }
 
@@ -121,12 +121,8 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 
     fn stop_at(&mut self, when: f64) {
         assert_valid_time_value(when);
-        assert_eq!(
-            self.start_stop_count, 1,
-            "InvalidStateError cannot stop before start"
-        );
+        assert!(self.has_start, "InvalidStateError cannot stop before start");
 
-        self.start_stop_count += 1;
         self.registration.post_message(Schedule::Stop(when));
     }
 }
@@ -157,7 +153,7 @@ impl ConstantSourceNode {
                 registration,
                 channel_config: ChannelConfig::default(),
                 offset: param,
-                start_stop_count: 0,
+                has_start: false,
             };
 
             (node, Box::new(render))

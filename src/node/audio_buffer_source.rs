@@ -113,7 +113,7 @@ pub struct AudioBufferSourceNode {
     buffer_time: Arc<AtomicF64>,
     buffer: Option<AudioBuffer>,
     loop_state: LoopState,
-    start_stop_count: u8,
+    has_start: bool,
 }
 
 impl AudioNode for AudioBufferSourceNode {
@@ -151,12 +151,8 @@ impl AudioScheduledSourceNode for AudioBufferSourceNode {
 
     fn stop_at(&mut self, when: f64) {
         assert_valid_time_value(when);
-        assert_eq!(
-            self.start_stop_count, 1,
-            "InvalidStateError cannot stop before start"
-        );
+        assert!(self.has_start, "InvalidStateError cannot stop before start");
 
-        self.start_stop_count += 1;
         self.registration.post_message(ControlMessage::Stop(when));
     }
 }
@@ -226,7 +222,7 @@ impl AudioBufferSourceNode {
                 buffer_time: Arc::clone(&renderer.render_state.buffer_time),
                 buffer: None,
                 loop_state,
-                start_stop_count: 0,
+                has_start: false,
             };
 
             (node, Box::new(renderer))
@@ -258,12 +254,12 @@ impl AudioBufferSourceNode {
         assert_valid_time_value(start);
         assert_valid_time_value(offset);
         assert_valid_time_value(duration);
-        assert_eq!(
-            self.start_stop_count, 0,
+        assert!(
+            !self.has_start,
             "InvalidStateError - Cannot call `start` twice"
         );
 
-        self.start_stop_count += 1;
+        self.has_start = true;
         let control = ControlMessage::StartWithOffsetAndDuration(start, offset, duration);
         self.registration.post_message(control);
     }
