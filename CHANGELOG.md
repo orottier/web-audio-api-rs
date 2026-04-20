@@ -7,6 +7,7 @@
 - Update cpal - raises the minimum Android API version to 26 (Android 8/Oreo).
 - Update MSRV to 1.86 (April 2025)
 - Changed: allow `[3000, 768000]` as supported sample rate range
+- Fix: Allow calling `stop()` multiple times on an AudioScheduledSourceNode
 - Fix: ScriptProcessorNode now accepts 0 for the buffer size - picking a decent default for you
 - Other dependency updates
 
