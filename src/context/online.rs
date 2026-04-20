@@ -803,8 +803,9 @@ mod tests {
         // construct with 'none' sink_id
         let context = AudioContext::new(options);
 
-        // allow some time to progress
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        // Ensure startup has been processed before testing suspend/resume transitions.
+        executor::block_on(context.resume());
+        assert_eq!(context.state(), AudioContextState::Running);
 
         executor::block_on(context.suspend());
         assert_eq!(context.state(), AudioContextState::Suspended);
