@@ -2,7 +2,7 @@
 
 use std::error::Error;
 use std::fmt;
-use std::sync::atomic::{AtomicU64, AtomicU8};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8};
 use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender};
@@ -98,6 +98,7 @@ pub(crate) struct ControlThreadInit {
 #[derive(Clone, Debug)]
 pub(crate) struct RenderThreadInit {
     pub state: Arc<AtomicU8>,
+    pub startup_pending: Arc<AtomicBool>,
     pub frames_played: Arc<AtomicU64>,
     pub stats: AudioStats,
     pub ctrl_msg_recv: Receiver<ControlMessage>,
@@ -107,6 +108,7 @@ pub(crate) struct RenderThreadInit {
 pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
     // Track audio context state - synced from render thread to control thread
     let state = Arc::new(AtomicU8::new(AudioContextState::Suspended as u8));
+    let startup_pending = Arc::new(AtomicBool::new(true));
 
     // Track number of frames - synced from render thread to control thread
     let frames_played = Arc::new(AtomicU64::new(0));
@@ -135,6 +137,7 @@ pub(crate) fn thread_init() -> (ControlThreadInit, RenderThreadInit) {
 
     let render_thread_init = RenderThreadInit {
         state,
+        startup_pending,
         frames_played,
         stats,
         ctrl_msg_recv,

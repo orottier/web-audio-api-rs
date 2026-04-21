@@ -3,7 +3,7 @@
 use std::any::Any;
 use std::cell::Cell;
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -36,6 +36,7 @@ pub(crate) struct RenderThread {
     number_of_channels: usize,
     suspended: bool,
     state: Arc<AtomicU8>,
+    startup_pending: Option<Arc<AtomicBool>>,
     frames_played: Arc<AtomicU64>,
     receiver: Option<Receiver<ControlMessage>>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
@@ -83,6 +84,7 @@ impl RenderThread {
             number_of_channels,
             suspended: false,
             state,
+            startup_pending: None,
             frames_played,
             receiver: Some(receiver),
             buffer_offset: None,
@@ -90,6 +92,10 @@ impl RenderThread {
             event_sender,
             garbage_collector: None,
         }
+    }
+
+    pub(crate) fn set_startup_pending(&mut self, startup_pending: Arc<AtomicBool>) {
+        self.startup_pending = Some(startup_pending);
     }
 
     pub(crate) fn spawn_garbage_collector_thread(&mut self) {
@@ -172,6 +178,9 @@ impl RenderThread {
             Startup { graph } => {
                 debug_assert!(self.graph.is_none());
                 self.graph = Some(graph);
+                if let Some(startup_pending) = self.startup_pending.as_ref() {
+                    startup_pending.store(false, Ordering::Release);
+                }
                 self.set_state(AudioContextState::Running);
             }
             NodeMessage { id, mut msg } => {

@@ -1,6 +1,7 @@
 //! The `AudioContext` type and constructor options
 use std::error::Error;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::events::{EventDispatch, EventHandler, EventLoop, EventPayload, EventType};
@@ -132,6 +133,8 @@ pub struct AudioContext {
     render_capacity: AudioRenderCapacity,
     /// Provider for playback statistics
     playback_stats: AudioPlaybackStats,
+    /// true while the render thread has not yet processed its initial Startup message
+    startup_pending: std::sync::Arc<AtomicBool>,
     /// Initializer for the render thread (when restart is required)
     render_thread_init: RenderThreadInit,
 }
@@ -224,6 +227,7 @@ impl AudioContext {
 
         // Set up the audio output thread
         let (control_thread_init, render_thread_init) = io::thread_init();
+        let startup_pending = Arc::clone(&render_thread_init.startup_pending);
         let backend = io::build_output(options, render_thread_init.clone())?;
 
         let ControlThreadInit {
@@ -271,6 +275,7 @@ impl AudioContext {
             backend_manager: Mutex::new(backend),
             render_capacity,
             playback_stats,
+            startup_pending,
             render_thread_init,
         })
     }
@@ -496,7 +501,13 @@ impl AudioContext {
         // Don't lock the backend manager because we can't hold is across the await point
         log::debug!("Suspend called");
 
-        if self.state() != AudioContextState::Running {
+        let state = self.state();
+        if state == AudioContextState::Closed {
+            log::debug!("Suspend no-op - context is closed");
+            return;
+        }
+
+        if state != AudioContextState::Running && !self.startup_pending.load(Ordering::Acquire) {
             log::debug!("Suspend no-op - context is not running");
             return;
         }
@@ -630,7 +641,13 @@ impl AudioContext {
         log::debug!("Suspend_sync called, locking backend manager");
         let backend_manager_guard = self.backend_manager.lock().unwrap();
 
-        if self.state() != AudioContextState::Running {
+        let state = self.state();
+        if state == AudioContextState::Closed {
+            log::debug!("Suspend_sync no-op - context is closed");
+            return;
+        }
+
+        if state != AudioContextState::Running && !self.startup_pending.load(Ordering::Acquire) {
             log::debug!("Suspend_sync no-op - context is not running");
             return;
         }
@@ -803,8 +820,9 @@ mod tests {
         // construct with 'none' sink_id
         let context = AudioContext::new(options);
 
-        // allow some time to progress
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        // Ensure startup has been processed before testing suspend/resume transitions.
+        executor::block_on(context.resume());
+        assert_eq!(context.state(), AudioContextState::Running);
 
         executor::block_on(context.suspend());
         assert_eq!(context.state(), AudioContextState::Suspended);
@@ -835,6 +853,42 @@ mod tests {
 
         let time5 = context.current_time();
         assert_eq!(time5, time4); // no progression of time
+    }
+
+    #[test]
+    fn test_suspend_during_startup() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+
+        let context = AudioContext::new(options);
+
+        executor::block_on(context.suspend());
+        assert_eq!(context.state(), AudioContextState::Suspended);
+
+        let time1 = context.current_time();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let time2 = context.current_time();
+        assert_eq!(time1, time2);
+    }
+
+    #[test]
+    fn test_suspend_sync_during_startup() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+
+        let context = AudioContext::new(options);
+
+        context.suspend_sync();
+        assert_eq!(context.state(), AudioContextState::Suspended);
+
+        let time1 = context.current_time();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let time2 = context.current_time();
+        assert_eq!(time1, time2);
     }
 
     fn require_send_sync<T: Send + Sync>(_: T) {}
