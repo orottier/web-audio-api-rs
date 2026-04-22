@@ -1,6 +1,6 @@
 # Version History
 
-## Unreleased
+## Version 1.3.0 (2026-04-22)
 
 - Introduce `AudioContext::try_new` which does not panic but returns an error
 - Added the AudioPlaybackStats interface (alongside AudioRenderCapacity)
