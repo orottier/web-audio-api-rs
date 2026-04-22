@@ -188,6 +188,16 @@ impl AudioProcessor for ConstantSourceRenderer {
 
         if self.start_time >= next_block_time {
             output.make_silent();
+
+            if self.stop_time <= next_block_time {
+                if !self.ended_triggered {
+                    scope.send_ended_event();
+                    self.ended_triggered = true;
+                }
+
+                return false;
+            }
+
             // #462 AudioScheduledSourceNodes that have not been scheduled to start can safely
             // return tail_time false in order to be collected if their control handle drops.
             return self.start_time != f64::MAX;
@@ -226,7 +236,7 @@ impl AudioProcessor for ConstantSourceRenderer {
         }
 
         // tail_time false when output has ended this quantum
-        let still_running = self.stop_time >= next_block_time;
+        let still_running = self.stop_time > next_block_time;
 
         if !still_running {
             // @note: we need this check because this is called a until the program
@@ -253,7 +263,9 @@ impl AudioProcessor for ConstantSourceRenderer {
     }
 
     fn before_drop(&mut self, scope: &AudioWorkletGlobalScope) {
-        if !self.ended_triggered && scope.current_time >= self.start_time {
+        if !self.ended_triggered
+            && (scope.current_time >= self.start_time || scope.current_time >= self.stop_time)
+        {
             scope.send_ended_event();
             self.ended_triggered = true;
         }

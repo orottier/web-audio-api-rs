@@ -368,22 +368,30 @@ impl AudioProcessor for OscillatorRenderer {
         let num_frames = RENDER_QUANTUM_SIZE;
         let next_block_time = scope.current_time + dt * num_frames as f64;
 
-        if self.start_time >= next_block_time {
-            output.make_silent();
-            // #462 AudioScheduledSourceNodes that have not been scheduled to start can safely
-            // return tail_time false in order to be collected if their control handle drops.
-            return self.start_time != f64::MAX;
-        } else if self.stop_time < scope.current_time {
+        if self.stop_time <= scope.current_time {
             output.make_silent();
 
-            // @note: we need this check because this is called a until the program
-            // ends, such as if the node was never removed from the graph
             if !self.ended_triggered {
                 scope.send_ended_event();
                 self.ended_triggered = true;
             }
 
             return false;
+        } else if self.start_time >= next_block_time {
+            output.make_silent();
+
+            if self.stop_time <= next_block_time {
+                if !self.ended_triggered {
+                    scope.send_ended_event();
+                    self.ended_triggered = true;
+                }
+
+                return false;
+            }
+
+            // #462 AudioScheduledSourceNodes that have not been scheduled to start can safely
+            // return tail_time false in order to be collected if their control handle drops.
+            return self.start_time != f64::MAX;
         }
 
         let channel_data = output.channel_data_mut(0);
@@ -415,6 +423,15 @@ impl AudioProcessor for OscillatorRenderer {
                     let phase_incr = get_phase_incr(f, d, sample_rate);
                     self.generate_sample(output, phase_incr, &mut current_time, dt)
                 });
+        }
+
+        if self.stop_time <= next_block_time {
+            if !self.ended_triggered {
+                scope.send_ended_event();
+                self.ended_triggered = true;
+            }
+
+            return false;
         }
 
         true
@@ -450,13 +467,14 @@ impl AudioProcessor for OscillatorRenderer {
     }
 
     fn before_drop(&mut self, scope: &AudioWorkletGlobalScope) {
-        if !self.ended_triggered && scope.current_time >= self.start_time {
+        if !self.ended_triggered
+            && (scope.current_time >= self.start_time || scope.current_time >= self.stop_time)
+        {
             scope.send_ended_event();
             self.ended_triggered = true;
         }
     }
 }
-
 impl OscillatorRenderer {
     #[inline]
     fn generate_sample(
@@ -609,6 +627,7 @@ mod tests {
     use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::node::{AudioNode, AudioScheduledSourceNode};
     use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
+    use crate::RENDER_QUANTUM_SIZE;
 
     use super::{OscillatorNode, OscillatorOptions, OscillatorRenderer, OscillatorType};
 
@@ -1168,6 +1187,36 @@ mod tests {
         let result = output.get_channel_data(0);
 
         assert_float_eq!(result[..], vec![0.; 128][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn osc_stop_before_start_triggers_onended_without_waiting_for_start_time() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let sample_rate = 44_100.;
+        let future_start = 2. * RENDER_QUANTUM_SIZE as f64 / sample_rate;
+        let suspend_at = RENDER_QUANTUM_SIZE as f64 / sample_rate;
+
+        let ended = Arc::new(AtomicBool::new(false));
+        let ended_in_callback = Arc::clone(&ended);
+        let ended_after_render = Arc::clone(&ended);
+
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 4, sample_rate as f32);
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.start_at(future_start);
+        osc.set_onended(move |_| {
+            ended_in_callback.store(true, Ordering::Relaxed);
+        });
+        osc.stop();
+
+        context.suspend_sync(suspend_at, move |_| {
+            assert!(ended_after_render.load(Ordering::Relaxed));
+        });
+
+        let _ = context.start_rendering_sync();
+        assert!(ended.load(Ordering::Relaxed));
     }
 
     #[test]
