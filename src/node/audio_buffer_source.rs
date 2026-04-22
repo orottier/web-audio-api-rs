@@ -443,6 +443,13 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         // Return early if start_time is beyond this block
         if self.start_time >= next_block_time {
             output.make_silent();
+
+            if self.stop_time <= next_block_time {
+                self.render_state.ended = true;
+                scope.send_ended_event();
+                return false;
+            }
+
             // #462 AudioScheduledSourceNodes that have not been scheduled to start can safely
             // return tail_time false in order to be collected if their control handle drops.
             return self.start_time != f64::MAX;
@@ -836,7 +843,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
     }
 
     fn before_drop(&mut self, scope: &AudioWorkletGlobalScope) {
-        if !self.render_state.ended && scope.current_time >= self.start_time {
+        if !self.render_state.ended
+            && (scope.current_time >= self.start_time || scope.current_time >= self.stop_time)
+        {
             scope.send_ended_event();
             self.render_state.ended = true;
         }
