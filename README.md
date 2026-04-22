@@ -122,6 +122,21 @@ Warning: experimental!
 web-audio-api-rs welcomes contribution from everyone in the form of
 suggestions, bug reports, pull requests, and feedback. 💛
 
+To mirror the CI check locally, run:
+
+```sh
+cargo fmt
+cargo build --all-targets
+cargo test --all-targets
+cargo clippy --all-targets
+```
+
+The formatting and lint checks remain separate and can be run locally with:
+
+```sh
+pre-commit run --all-files
+```
+
 If you need ideas for contribution, there are several ways to get started:
 
 - Try out some of our examples (located in the `examples/` directory) and start
