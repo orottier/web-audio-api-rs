@@ -25,11 +25,50 @@ impl Default for GainOptions {
     }
 }
 
-/// AudioNode for volume control
+/// `GainNode` applies a single gain (volume) value to its incoming audio
+/// signal. The value is exposed as an [`AudioParam`] so it can be automated
+/// over time, which makes the node the canonical building block for fades,
+/// ducking, and per-source mixing.
+///
+/// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/GainNode>
+/// - specification: <https://webaudio.github.io/web-audio-api/#GainNode>
+/// - see also: [`BaseAudioContext::create_gain`]
+///
+/// # Usage
+///
+/// ```no_run
+/// use web_audio_api::context::{BaseAudioContext, AudioContext};
+/// use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+///
+/// let context = AudioContext::default();
+///
+/// // Build an oscillator that we want to fade in.
+/// let mut osc = context.create_oscillator();
+/// osc.frequency().set_value(440.);
+///
+/// // The gain node sits between the source and the destination.
+/// let gain = context.create_gain();
+/// gain.gain().set_value(0.);
+/// gain.gain()
+///     .linear_ramp_to_value_at_time(1., context.current_time() + 1.);
+///
+/// osc.connect(&gain);
+/// gain.connect(&context.destination());
+/// osc.start();
+/// ```
+///
+/// # Examples
+///
+/// - `cargo run --release --example amplitude_modulation`
+/// - `cargo run --release --example feedback_delay`
+///
 #[derive(Debug)]
 pub struct GainNode {
+    /// Represents the node instance and its associated audio context
     registration: AudioContextRegistration,
+    /// Infos about audio node channel configuration
     channel_config: ChannelConfig,
+    /// Multiplier applied to every sample. Defaults to `1.0` (pass-through).
     gain: AudioParam,
 }
 
@@ -52,6 +91,15 @@ impl AudioNode for GainNode {
 }
 
 impl GainNode {
+    /// Constructs a new `GainNode` from explicit options.
+    ///
+    /// Most callers should prefer [`BaseAudioContext::create_gain`], which
+    /// applies the spec defaults (`gain = 1.0`).
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - audio context in which the audio node will live
+    /// * `options` - initial value of the gain parameter and channel config
     pub fn new<C: BaseAudioContext>(context: &C, options: GainOptions) -> Self {
         context.base().register(move |registration| {
             let param_opts = AudioParamDescriptor {
@@ -77,6 +125,14 @@ impl GainNode {
         })
     }
 
+    /// Returns the gain `AudioParam`.
+    ///
+    /// The default value is `1.0` (pass-through). Setting `0.0` mutes the
+    /// signal; values greater than `1.0` boost it (and may clip downstream
+    /// nodes if uncompensated). Because the parameter is `a-rate`, it can be
+    /// scheduled with the full automation API such as
+    /// [`AudioParam::linear_ramp_to_value_at_time`] for fades.
+    #[must_use]
     pub fn gain(&self) -> &AudioParam {
         &self.gain
     }

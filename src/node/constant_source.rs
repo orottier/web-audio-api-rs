@@ -128,6 +128,15 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 }
 
 impl ConstantSourceNode {
+    /// Constructs a new `ConstantSourceNode` from explicit options.
+    ///
+    /// Most callers should prefer [`BaseAudioContext::create_constant_source`],
+    /// which applies the spec defaults (`offset = 1.0`).
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - audio context in which the audio node will live
+    /// * `options` - initial value of the offset parameter
     pub fn new<C: BaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
         context.base().register(move |registration| {
             let ConstantSourceOptions { offset } = options;
@@ -160,6 +169,13 @@ impl ConstantSourceNode {
         })
     }
 
+    /// Returns the offset `AudioParam`.
+    ///
+    /// The default value is `1.0`. Treat the node as a *constructible*
+    /// `AudioParam`: connect `offset()` to one or more sink params (e.g.
+    /// the `gain` of several `GainNode`s) and automate `offset()` once to
+    /// drive every connected sink in lockstep.
+    #[must_use]
     pub fn offset(&self) -> &AudioParam {
         &self.offset
     }
