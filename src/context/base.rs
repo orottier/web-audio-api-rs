@@ -10,7 +10,7 @@ use crate::events::{Event, EventHandler, EventType};
 use crate::node::{AudioNode, AudioNodeOptions};
 use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
-use crate::{node, AudioListener};
+use crate::{node, AudioListener, RENDER_QUANTUM_SIZE};
 
 use std::future::Future;
 
@@ -331,6 +331,12 @@ pub trait BaseAudioContext {
     #[must_use]
     fn current_time(&self) -> f64 {
         self.base().current_time()
+    }
+
+    // Number of frames computed on each render block
+    #[must_use]
+    fn render_quantum_size(&self) -> usize {
+        RENDER_QUANTUM_SIZE
     }
 
     /// Create an `AudioParam`.
