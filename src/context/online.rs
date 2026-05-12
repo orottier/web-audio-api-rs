@@ -33,6 +33,7 @@ fn is_valid_sink_id(sink_id: &str) -> bool {
 #[derive(Debug)]
 enum AudioContextError {
     SinkNotFound { sink_id: String },
+    InvalidSampleRate { sample_rate: f32 },
     Backend { error: io::AudioBackendError },
 }
 
@@ -41,6 +42,12 @@ impl std::fmt::Display for AudioContextError {
         match self {
             Self::SinkNotFound { sink_id } => {
                 write!(f, "NotFoundError - Invalid sinkId: {sink_id:?}")
+            }
+            Self::InvalidSampleRate { sample_rate } => {
+                write!(
+                    f,
+                    "NotSupportedError - Invalid sample rate: {sample_rate}, should be in the range [3000.0, 768000.0]"
+                )
             }
             Self::Backend { error } => write!(f, "InvalidStateError - {error}"),
         }
@@ -223,6 +230,16 @@ impl AudioContext {
             return Err(AudioContextError::SinkNotFound {
                 sink_id: options.sink_id,
             });
+        }
+
+        // Validate sample_rate if provided
+        // https://webaudio.github.io/web-audio-api/#sample-rates
+        if let Some(sample_rate) = options.sample_rate {
+            let min_sample_rate = 3_000.;
+            let max_sample_rate = 768_000.;
+            if !(sample_rate >= min_sample_rate && sample_rate <= max_sample_rate) {
+                return Err(AudioContextError::InvalidSampleRate { sample_rate });
+            }
         }
 
         // Set up the audio output thread
@@ -904,6 +921,70 @@ mod tests {
         require_send_sync(context.suspend());
         require_send_sync(context.resume());
         require_send_sync(context.close());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_construct_bad_sample_rate_zero() {
+        let options = AudioContextOptions {
+            sample_rate: Some(0.),
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let _ = AudioContext::new(options);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_construct_bad_sample_rate_too_low() {
+        let options = AudioContextOptions {
+            sample_rate: Some(2999.),
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let _ = AudioContext::new(options);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_construct_bad_sample_rate_too_high() {
+        let options = AudioContextOptions {
+            sample_rate: Some(768001.),
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let _ = AudioContext::new(options);
+    }
+
+    #[test]
+    fn test_try_new_invalid_sample_rate() {
+        let options = AudioContextOptions {
+            sample_rate: Some(0.),
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+
+        let result = AudioContext::try_new(options);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("Invalid sample rate"));
+    }
+
+    #[test]
+    fn test_construct_valid_sample_rate_boundary() {
+        let options_min = AudioContextOptions {
+            sample_rate: Some(3000.),
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let _context = AudioContext::new(options_min);
+
+        let options_max = AudioContextOptions {
+            sample_rate: Some(768000.),
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let _context = AudioContext::new(options_max);
     }
 
     #[test]
