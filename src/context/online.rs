@@ -219,8 +219,9 @@ impl AudioContext {
     ///
     /// # Errors
     ///
-    /// Returns an error when the sink id is invalid or when the selected audio backend cannot
-    /// create or start the output stream.
+    /// Returns an error when the sink id is invalid, the sample rate is outside the valid range
+    /// [3000.0, 768000.0], or when the selected audio backend cannot create or start the output
+    /// stream.
     pub fn try_new(options: AudioContextOptions) -> Result<Self, Box<dyn Error>> {
         Self::try_new_inner(options).map_err(Into::into)
     }
