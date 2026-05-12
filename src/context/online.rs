@@ -204,8 +204,9 @@ impl AudioContext {
     /// # Panics
     ///
     /// The `AudioContext` constructor will panic when an invalid `sinkId` is provided in the
-    /// `AudioContextOptions`, or when the selected audio backend cannot create or start the output
-    /// stream. Use [`Self::try_new`] to handle these errors without panicking.
+    /// `AudioContextOptions`, when the sample rate is outside the valid range [3000.0, 768000.0],
+    /// or when the selected audio backend cannot create or start the output stream. Use
+    /// [`Self::try_new`] to handle these errors without panicking.
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
         Self::try_new_inner(options).unwrap_or_else(|e| panic!("{e}"))
@@ -985,6 +986,50 @@ mod tests {
             ..AudioContextOptions::default()
         };
         let _context = AudioContext::new(options_max);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_construct_bad_sample_rate_nan() {
+        let options = AudioContextOptions {
+            sample_rate: Some(f32::NAN),
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let _ = AudioContext::new(options);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_construct_bad_sample_rate_infinity() {
+        let options = AudioContextOptions {
+            sample_rate: Some(f32::INFINITY),
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let _ = AudioContext::new(options);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_construct_bad_sample_rate_neg_infinity() {
+        let options = AudioContextOptions {
+            sample_rate: Some(f32::NEG_INFINITY),
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let _ = AudioContext::new(options);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_construct_bad_sample_rate_negative() {
+        let options = AudioContextOptions {
+            sample_rate: Some(-44100.),
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let _ = AudioContext::new(options);
     }
 
     #[test]
