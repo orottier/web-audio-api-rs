@@ -25,10 +25,9 @@ impl Default for GainOptions {
     }
 }
 
-/// `GainNode` applies a single gain (volume) value to its incoming audio
-/// signal. The value is exposed as an [`AudioParam`] so it can be automated
-/// over time, which makes the node the canonical building block for fades,
-/// ducking, and per-source mixing.
+/// Applies a single gain (volume) value to its incoming audio signal.
+///
+/// The value is exposed as an [`AudioParam`] so it can be automated over time.
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/GainNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#GainNode>
@@ -60,7 +59,6 @@ impl Default for GainOptions {
 /// # Examples
 ///
 /// - `cargo run --release --example amplitude_modulation`
-/// - `cargo run --release --example feedback_delay`
 ///
 #[derive(Debug)]
 pub struct GainNode {
@@ -93,8 +91,8 @@ impl AudioNode for GainNode {
 impl GainNode {
     /// Constructs a new `GainNode` from explicit options.
     ///
-    /// Most callers should prefer [`BaseAudioContext::create_gain`], which
-    /// applies the spec defaults (`gain = 1.0`).
+    /// [`BaseAudioContext::create_gain`] is an alternative that applies the
+    /// spec defaults (`gain = 1.0`).
     ///
     /// # Arguments
     ///
