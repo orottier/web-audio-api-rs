@@ -1,5 +1,11 @@
 # Version History
 
+## Unreleased
+
+- Added `BaseAudioContext::render_quantum_size` (128 always for now)
+- Improved StereoPannerNode numerical accuracy
+- Validate sample_rate in AudioContext constructor
+
 ## Version 1.3.0 (2026-04-22)
 
 - Introduce `AudioContext::try_new` which does not panic but returns an error
