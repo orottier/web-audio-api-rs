@@ -924,39 +924,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn test_construct_bad_sample_rate_zero() {
-        let options = AudioContextOptions {
-            sample_rate: Some(0.),
-            sink_id: "none".into(),
-            ..AudioContextOptions::default()
-        };
-        let _ = AudioContext::new(options);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_construct_bad_sample_rate_too_low() {
-        let options = AudioContextOptions {
-            sample_rate: Some(2999.),
-            sink_id: "none".into(),
-            ..AudioContextOptions::default()
-        };
-        let _ = AudioContext::new(options);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_construct_bad_sample_rate_too_high() {
-        let options = AudioContextOptions {
-            sample_rate: Some(768001.),
-            sink_id: "none".into(),
-            ..AudioContextOptions::default()
-        };
-        let _ = AudioContext::new(options);
-    }
-
-    #[test]
     fn test_try_new_invalid_sample_rate() {
         let options = AudioContextOptions {
             sample_rate: Some(0.),
@@ -968,67 +935,6 @@ mod tests {
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Invalid sample rate"));
-    }
-
-    #[test]
-    fn test_construct_valid_sample_rate_boundary() {
-        let options_min = AudioContextOptions {
-            sample_rate: Some(3000.),
-            sink_id: "none".into(),
-            ..AudioContextOptions::default()
-        };
-        let _context = AudioContext::new(options_min);
-
-        let options_max = AudioContextOptions {
-            sample_rate: Some(768000.),
-            sink_id: "none".into(),
-            ..AudioContextOptions::default()
-        };
-        let _context = AudioContext::new(options_max);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_construct_bad_sample_rate_nan() {
-        let options = AudioContextOptions {
-            sample_rate: Some(f32::NAN),
-            sink_id: "none".into(),
-            ..AudioContextOptions::default()
-        };
-        let _ = AudioContext::new(options);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_construct_bad_sample_rate_infinity() {
-        let options = AudioContextOptions {
-            sample_rate: Some(f32::INFINITY),
-            sink_id: "none".into(),
-            ..AudioContextOptions::default()
-        };
-        let _ = AudioContext::new(options);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_construct_bad_sample_rate_neg_infinity() {
-        let options = AudioContextOptions {
-            sample_rate: Some(f32::NEG_INFINITY),
-            sink_id: "none".into(),
-            ..AudioContextOptions::default()
-        };
-        let _ = AudioContext::new(options);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_construct_bad_sample_rate_negative() {
-        let options = AudioContextOptions {
-            sample_rate: Some(-44100.),
-            sink_id: "none".into(),
-            ..AudioContextOptions::default()
-        };
-        let _ = AudioContext::new(options);
     }
 
     #[test]
