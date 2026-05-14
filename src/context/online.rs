@@ -12,7 +12,7 @@ use crate::message::{ControlMessage, OneshotNotify};
 use crate::node::{self, AudioNodeOptions};
 use crate::render::graph::Graph;
 use crate::MediaElement;
-use crate::{AudioPlaybackStats, AudioRenderCapacity, Event};
+use crate::{is_valid_sample_rate, AudioPlaybackStats, AudioRenderCapacity, Event};
 
 use futures_channel::oneshot;
 
@@ -237,9 +237,7 @@ impl AudioContext {
         // Validate sample_rate if provided
         // https://webaudio.github.io/web-audio-api/#sample-rates
         if let Some(sample_rate) = options.sample_rate {
-            let min_sample_rate = 3_000.;
-            let max_sample_rate = 768_000.;
-            if !(sample_rate >= min_sample_rate && sample_rate <= max_sample_rate) {
+            if !is_valid_sample_rate(sample_rate) {
                 return Err(AudioContextError::InvalidSampleRate { sample_rate });
             }
         }
