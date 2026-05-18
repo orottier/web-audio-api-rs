@@ -198,8 +198,9 @@ impl Graph {
             }),
         );
 
-        // void current ordering, some nodes should be processed even if not connected
-        self.ordered.clear();
+        // add to ordered list (some nodes should be processed even if not connected)
+        // if the node is connected later the ordered list will be recomputed
+        self.ordered.push(index);
     }
 
     pub fn add_edge(&mut self, source: (AudioNodeId, usize), dest: (AudioNodeId, usize)) {
