@@ -5,6 +5,7 @@
 - Added `BaseAudioContext::render_quantum_size` (128 always for now)
 - Improved StereoPannerNode numerical accuracy
 - Validate sample_rate in AudioContext constructor
+- Fix: sometimes a node would not `process` if it had no connections
 
 ## Version 1.3.0 (2026-04-22)
 
