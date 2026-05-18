@@ -37,8 +37,9 @@ enum Schedule {
     Stop(f64),
 }
 
-/// Audio source whose output is nominally a constant value. A `ConstantSourceNode`
-/// can be used as a constructible `AudioParam` by automating the value of its offset.
+/// Audio source whose output is nominally a constant value.
+///
+/// Can be used as a constructible `AudioParam` by automating the value of its offset.
 ///
 /// - MDN documentation: <https://developer.mozilla.org/en-US/docs/Web/API/ConstantSourceNode>
 /// - specification: <https://webaudio.github.io/web-audio-api/#ConstantSourceNode>
@@ -128,6 +129,15 @@ impl AudioScheduledSourceNode for ConstantSourceNode {
 }
 
 impl ConstantSourceNode {
+    /// Constructs a new `ConstantSourceNode` from explicit options.
+    ///
+    /// [`BaseAudioContext::create_constant_source`] is an alternative that
+    /// applies the spec defaults (`offset = 1.0`).
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - audio context in which the audio node will live
+    /// * `options` - initial value of the offset parameter
     pub fn new<C: BaseAudioContext>(context: &C, options: ConstantSourceOptions) -> Self {
         context.base().register(move |registration| {
             let ConstantSourceOptions { offset } = options;
@@ -160,6 +170,11 @@ impl ConstantSourceNode {
         })
     }
 
+    /// Returns the offset `AudioParam`. Default is `1.0`.
+    ///
+    /// Useful as a constructible `AudioParam`: connect this once to several
+    /// sink params and automate it to drive them all in lockstep.
+    #[must_use]
     pub fn offset(&self) -> &AudioParam {
         &self.offset
     }
