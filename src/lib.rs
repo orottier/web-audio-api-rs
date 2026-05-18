@@ -3,6 +3,9 @@
 #![warn(rust_2021_compatibility)]
 #![warn(clippy::missing_panics_doc)]
 #![warn(clippy::clone_on_ref_ptr)]
+#![warn(clippy::todo)]
+#![warn(clippy::dbg_macro)]
+#![warn(clippy::unimplemented)]
 #![deny(trivial_numeric_casts)]
 #![deny(missing_debug_implementations)]
 

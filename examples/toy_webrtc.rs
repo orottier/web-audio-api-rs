@@ -39,16 +39,6 @@ fn main() -> std::io::Result<()> {
     let mut args = std::env::args();
     args.next(); // program name
 
-    /*
-    let samples: Vec<_> = (0..128).map(|i| i as f32 / 128.).collect();
-    let buf = AudioBuffer::from(vec![samples], SampleRate(48000));
-    let mut bytes = vec![0; 512];
-    let ser = serialize(&buf, &mut bytes);
-    let deser = deserialize(&bytes[..256], SampleRate(48000));
-    dbg!(deser);
-    todo!();
-    */
-
     match args
         .next()
         .expect("Role argument is required: server or client")

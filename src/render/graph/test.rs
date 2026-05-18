@@ -52,7 +52,7 @@ fn test_ordering_with_cycle_breakers(
 
         let _ = context.start_rendering_sync();
         let results = Arc::try_unwrap(collect).unwrap().into_inner().unwrap();
-        dbg!(&results);
+
         (test)(results);
     }
 }

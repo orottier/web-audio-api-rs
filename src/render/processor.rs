@@ -247,7 +247,7 @@ mod tests {
             _params: AudioParamValues<'_>,
             _scope: &AudioWorkletGlobalScope,
         ) -> bool {
-            todo!()
+            unreachable!()
         }
     }
 
