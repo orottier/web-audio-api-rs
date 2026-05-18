@@ -197,6 +197,9 @@ impl Graph {
                 cycle_breaker: false,
             }),
         );
+
+        // void current ordering, some nodes should be processed even if not connected
+        self.ordered.clear();
     }
 
     pub fn add_edge(&mut self, source: (AudioNodeId, usize), dest: (AudioNodeId, usize)) {
