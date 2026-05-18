@@ -8,6 +8,7 @@
 #![warn(clippy::unimplemented)]
 #![deny(trivial_numeric_casts)]
 #![deny(missing_debug_implementations)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 use std::error::Error;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
