@@ -141,18 +141,30 @@ impl AtomicF64 {
 /// This function will panic if the given sample rate is outside the inclusive
 /// range `[3000, 768000]`.
 ///
+/// The minimum sample rate supported by the Web Audio API specification, in Hz.
+pub(crate) const MIN_SAMPLE_RATE: f32 = 3_000.;
+
+/// The maximum sample rate supported by the Web Audio API specification, in Hz.
+pub(crate) const MAX_SAMPLE_RATE: f32 = 768_000.;
+
+/// Returns whether the given sample rate falls in the inclusive range
+/// `[MIN_SAMPLE_RATE, MAX_SAMPLE_RATE]` defined by the Web Audio API specification.
+///
+/// - see <https://webaudio.github.io/web-audio-api/#sample-rates>
+#[inline(always)]
+pub(crate) fn is_valid_sample_rate(sample_rate: f32) -> bool {
+    (MIN_SAMPLE_RATE..=MAX_SAMPLE_RATE).contains(&sample_rate)
+}
+
 #[track_caller]
 #[inline(always)]
 pub(crate) fn assert_valid_sample_rate(sample_rate: f32) {
-    let min_sample_rate = 3_000.;
-    let max_sample_rate = 768_000.;
-
     assert!(
-        sample_rate >= min_sample_rate && sample_rate <= max_sample_rate,
+        is_valid_sample_rate(sample_rate),
         "NotSupportedError - Invalid sample rate: {:?}, should be in the range [{:?}, {:?}]",
         sample_rate,
-        min_sample_rate,
-        max_sample_rate,
+        MIN_SAMPLE_RATE,
+        MAX_SAMPLE_RATE,
     );
 }
 

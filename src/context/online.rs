@@ -12,7 +12,7 @@ use crate::message::{ControlMessage, OneshotNotify};
 use crate::node::{self, AudioNodeOptions};
 use crate::render::graph::Graph;
 use crate::MediaElement;
-use crate::{AudioPlaybackStats, AudioRenderCapacity, Event};
+use crate::{is_valid_sample_rate, AudioPlaybackStats, AudioRenderCapacity, Event};
 
 use futures_channel::oneshot;
 
@@ -33,6 +33,7 @@ fn is_valid_sink_id(sink_id: &str) -> bool {
 #[derive(Debug)]
 enum AudioContextError {
     SinkNotFound { sink_id: String },
+    InvalidSampleRate { sample_rate: f32 },
     Backend { error: io::AudioBackendError },
 }
 
@@ -41,6 +42,12 @@ impl std::fmt::Display for AudioContextError {
         match self {
             Self::SinkNotFound { sink_id } => {
                 write!(f, "NotFoundError - Invalid sinkId: {sink_id:?}")
+            }
+            Self::InvalidSampleRate { sample_rate } => {
+                write!(
+                    f,
+                    "NotSupportedError - Invalid sample rate: {sample_rate}, should be in the range [3000.0, 768000.0]"
+                )
             }
             Self::Backend { error } => write!(f, "InvalidStateError - {error}"),
         }
@@ -197,8 +204,9 @@ impl AudioContext {
     /// # Panics
     ///
     /// The `AudioContext` constructor will panic when an invalid `sinkId` is provided in the
-    /// `AudioContextOptions`, or when the selected audio backend cannot create or start the output
-    /// stream. Use [`Self::try_new`] to handle these errors without panicking.
+    /// `AudioContextOptions`, when the sample rate is outside the valid range [3000.0, 768000.0],
+    /// or when the selected audio backend cannot create or start the output stream. Use
+    /// [`Self::try_new`] to handle these errors without panicking.
     #[must_use]
     pub fn new(options: AudioContextOptions) -> Self {
         Self::try_new_inner(options).unwrap_or_else(|e| panic!("{e}"))
@@ -211,8 +219,9 @@ impl AudioContext {
     ///
     /// # Errors
     ///
-    /// Returns an error when the sink id is invalid or when the selected audio backend cannot
-    /// create or start the output stream.
+    /// Returns an error when the sink id is invalid, the sample rate is outside the valid range
+    /// [3000.0, 768000.0], or when the selected audio backend cannot create or start the output
+    /// stream.
     pub fn try_new(options: AudioContextOptions) -> Result<Self, Box<dyn Error>> {
         Self::try_new_inner(options).map_err(Into::into)
     }
@@ -223,6 +232,14 @@ impl AudioContext {
             return Err(AudioContextError::SinkNotFound {
                 sink_id: options.sink_id,
             });
+        }
+
+        // Validate sample_rate if provided
+        // https://webaudio.github.io/web-audio-api/#sample-rates
+        if let Some(sample_rate) = options.sample_rate {
+            if !is_valid_sample_rate(sample_rate) {
+                return Err(AudioContextError::InvalidSampleRate { sample_rate });
+            }
         }
 
         // Set up the audio output thread
@@ -904,6 +921,20 @@ mod tests {
         require_send_sync(context.suspend());
         require_send_sync(context.resume());
         require_send_sync(context.close());
+    }
+
+    #[test]
+    fn test_try_new_invalid_sample_rate() {
+        let options = AudioContextOptions {
+            sample_rate: Some(0.),
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+
+        let result = AudioContext::try_new(options);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("Invalid sample rate"));
     }
 
     #[test]
