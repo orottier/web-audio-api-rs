@@ -1,6 +1,6 @@
 # Version History
 
-## Unreleased
+## Version 1.4.0 (2026-05-18)
 
 - Added `BaseAudioContext::render_quantum_size` (128 always for now)
 - Improved StereoPannerNode numerical accuracy
