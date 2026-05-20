@@ -208,7 +208,7 @@ impl Iterator for MediaDecoder {
             // Decode the packet into audio samples.
             match decoder.decode(&packet) {
                 Ok(input) => {
-                    let output = convert_buf(input);
+                    let output = input.into();
                     return Some(Ok(output));
                 }
                 Err(SymphoniaError::DecodeError(err)) => {
@@ -228,15 +228,16 @@ impl Iterator for MediaDecoder {
     }
 }
 
-/// Convert a Symphonia GenericAudioBufferRef to our own AudioBuffer.
-fn convert_buf(input: GenericAudioBufferRef<'_>) -> AudioBuffer {
-    let sample_rate = input.spec().rate() as f32;
+impl From<GenericAudioBufferRef<'_>> for AudioBuffer {
+    fn from(input: GenericAudioBufferRef<'_>) -> Self {
+        let sample_rate = input.spec().rate() as f32;
 
-    let mut data = Vec::new();
-    input.copy_to_vecs_planar::<f32>(&mut data);
+        let mut data = Vec::new();
+        input.copy_to_vecs_planar::<f32>(&mut data);
 
-    let channels = data.into_iter().map(ChannelData::from).collect();
-    AudioBuffer::from_channels(channels, sample_rate)
+        let channels = data.into_iter().map(ChannelData::from).collect();
+        AudioBuffer::from_channels(channels, sample_rate)
+    }
 }
 
 #[cfg(test)]
