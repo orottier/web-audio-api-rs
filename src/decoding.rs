@@ -4,7 +4,9 @@ use std::io::{Read, Seek, SeekFrom};
 use crate::buffer::{AudioBuffer, ChannelData};
 
 use symphonia::core::audio::GenericAudioBufferRef;
-use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions, FinalizeResult};
+use symphonia::core::codecs::audio::{
+    AudioCodecId, AudioDecoder, AudioDecoderOptions, FinalizeResult,
+};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
@@ -88,7 +90,7 @@ impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
 
 /// Media stream decoder (OGG, WAV, FLAC, ..)
 ///
-/// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
+/// The current implementation can decode FLAC, PCM, Vorbis, and Wav.
 pub(crate) struct MediaDecoder {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn AudioDecoder>,
@@ -146,8 +148,20 @@ impl MediaDecoder {
             ))?;
 
         // Create a (stateful) decoder for the track.
-        let decoder =
-            symphonia::default::get_codecs().make_audio_decoder(codec_params, &decoder_opts)?;
+        let decoder = symphonia::default::get_codecs()
+            .make_audio_decoder(codec_params, &decoder_opts)
+            .map_err(|err| {
+                if matches!(
+                    err,
+                    SymphoniaError::Unsupported("core (codec): unsupported audio codec")
+                ) {
+                    Box::new(UnsupportedAudioCodecError {
+                        codec: codec_params.codec,
+                    }) as Box<dyn std::error::Error + Send + Sync>
+                } else {
+                    Box::new(err) as Box<dyn std::error::Error + Send + Sync>
+                }
+            })?;
 
         Ok(Self {
             format,
@@ -157,6 +171,19 @@ impl MediaDecoder {
         })
     }
 }
+
+#[derive(Debug)]
+struct UnsupportedAudioCodecError {
+    codec: AudioCodecId,
+}
+
+impl std::fmt::Display for UnsupportedAudioCodecError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unsupported audio codec: {}", self.codec)
+    }
+}
+
+impl std::error::Error for UnsupportedAudioCodecError {}
 
 impl Iterator for MediaDecoder {
     type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
@@ -264,5 +291,17 @@ mod tests {
         let media = MediaDecoder::try_new(input);
 
         assert!(media.is_err()); // the input was not a valid MIME type
+    }
+
+    #[test]
+    fn test_unsupported_audio_codec_error_includes_codec_id() {
+        let input = std::fs::File::open("samples/sample.webm").unwrap();
+        let media = MediaDecoder::try_new(input);
+
+        let err = match media {
+            Ok(_) => panic!("expected unsupported codec error"),
+            Err(err) => err.to_string(),
+        };
+        assert_eq!(err, "unsupported audio codec: 0x1001");
     }
 }
