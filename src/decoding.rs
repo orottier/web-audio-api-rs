@@ -185,6 +185,19 @@ impl Iterator for MediaDecoder {
                     return None;
                 }
                 Err(err) => {
+                    if let SymphoniaError::IoError(err) = &err {
+                        if err.kind() == std::io::ErrorKind::UnexpectedEof {
+                            log::debug!(
+                                "Decoding finished after {packet_count} packet(s) at unexpected EOF"
+                            );
+                            let FinalizeResult { verify_ok } = decoder.finalize();
+                            if verify_ok == Some(false) {
+                                log::warn!("Verification of decoded data failed");
+                            }
+                            return None;
+                        }
+                    }
+
                     log::warn!(
                         "Failed to fetch next packet following packet #{packet_count}: {err}"
                     );
