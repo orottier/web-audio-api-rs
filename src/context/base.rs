@@ -5,7 +5,7 @@ use crate::context::{
     AudioContextRegistration, AudioContextState, AudioParamId, ConcreteBaseAudioContext,
     DESTINATION_NODE_ID,
 };
-use crate::decoding::MediaDecoder;
+use crate::decoding::decode_media_data;
 use crate::events::{Event, EventHandler, EventType};
 use crate::node::{AudioNode, AudioNodeOptions};
 use crate::param::AudioParamDescriptor;
@@ -67,21 +67,7 @@ pub trait BaseAudioContext {
         &self,
         input: R,
     ) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
-        // Set up a media decoder, consume the stream in full and construct a single buffer out of it
-        let mut buffer = MediaDecoder::try_new(input)?
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .reduce(|mut accum, item| {
-                accum.extend(&item);
-                accum
-            })
-            // if there are no samples decoded, return an empty buffer
-            .unwrap_or_else(|| AudioBuffer::from(vec![vec![]], self.sample_rate()));
-
-        // resample to desired rate (no-op if already matching)
-        buffer.resample(self.sample_rate());
-
-        Ok(buffer)
+        decode_media_data(input, self.sample_rate())
     }
 
     /// Decode an [`AudioBuffer`] from a given input stream.
@@ -109,23 +95,7 @@ pub trait BaseAudioContext {
            + Send
            + 'static {
         let sample_rate = self.sample_rate();
-        async move {
-            // Set up a media decoder, consume the stream in full and construct a single buffer out of it
-            let mut buffer = MediaDecoder::try_new(input)?
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .reduce(|mut accum, item| {
-                    accum.extend(&item);
-                    accum
-                })
-                // if there are no samples decoded, return an empty buffer
-                .unwrap_or_else(|| AudioBuffer::from(vec![vec![]], sample_rate));
-
-            // resample to desired rate (no-op if already matching)
-            buffer.resample(sample_rate);
-
-            Ok(buffer)
-        }
+        async move { decode_media_data(input, sample_rate) }
     }
 
     /// Create an new "in-memory" `AudioBuffer` with the given number of channels,

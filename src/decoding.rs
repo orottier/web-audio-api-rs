@@ -10,6 +10,47 @@ use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::meta::MetadataOptions;
 
+pub(crate) fn decode_media_data<R: std::io::Read + Send + Sync + 'static>(
+    input: R,
+    target_sample_rate: f32,
+) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
+    let mut sample_rate = None;
+    let mut buffer: Option<AudioBuffer> = None;
+
+    for chunk in MediaDecoder::try_new(input)? {
+        let chunk = chunk?;
+
+        match sample_rate {
+            Some(rate) if rate != chunk.sample_rate() => {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "decoded audio sample rate changed midstream",
+                )));
+            }
+            Some(_) => {}
+            None => sample_rate = Some(chunk.sample_rate()),
+        }
+
+        match buffer {
+            Some(ref mut buffer) if buffer.number_of_channels() != chunk.number_of_channels() => {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "decoded audio channel count changed midstream",
+                )));
+            }
+            Some(ref mut buffer) => buffer.extend(&chunk),
+            None => buffer = Some(chunk),
+        }
+    }
+
+    let mut buffer = buffer.unwrap_or_else(|| AudioBuffer::from(vec![vec![]], target_sample_rate));
+
+    // Resample to desired rate (no-op if already matching).
+    buffer.resample(target_sample_rate);
+
+    Ok(buffer)
+}
+
 /// Wrapper for `Read` implementers to be used in Symphonia decoding
 ///
 /// Symphonia requires its input to impl `Seek` - but allows non-seekable sources. Hence we
@@ -187,7 +228,7 @@ impl Iterator for MediaDecoder {
     }
 }
 
-/// Convert a Symphonia GenericAudioBufferRef to our own AudioBuffer
+/// Convert a Symphonia GenericAudioBufferRef to our own AudioBuffer.
 fn convert_buf(input: GenericAudioBufferRef<'_>) -> AudioBuffer {
     let sample_rate = input.spec().rate() as f32;
 
