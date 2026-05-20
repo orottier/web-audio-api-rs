@@ -27,7 +27,9 @@ pub trait BaseAudioContext {
 
     /// Decode an [`AudioBuffer`] from a given input stream.
     ///
-    /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
+    /// The current implementation supports Symphonia's audio formats and codecs,
+    /// including AIFF, CAF, ISO/MP4, MKV/WebM, Ogg, WAV, AAC, ADPCM, ALAC,
+    /// FLAC, MP1/MP2/MP3, PCM, and Vorbis.
     ///
     /// In addition to the official spec, the input parameter can be any byte stream (not just an
     /// array). This means you can decode audio data from a file, network stream, or in memory
@@ -72,7 +74,9 @@ pub trait BaseAudioContext {
 
     /// Decode an [`AudioBuffer`] from a given input stream.
     ///
-    /// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
+    /// The current implementation supports Symphonia's audio formats and codecs,
+    /// including AIFF, CAF, ISO/MP4, MKV/WebM, Ogg, WAV, AAC, ADPCM, ALAC,
+    /// FLAC, MP1/MP2/MP3, PCM, and Vorbis.
     ///
     /// In addition to the official spec, the input parameter can be any byte stream (not just an
     /// array). This means you can decode audio data from a file, network stream, or in memory

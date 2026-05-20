@@ -117,6 +117,12 @@ via `cpal`'s `wasm-bindgen` backend. Check out [an example WASM
 project](https://github.com/orottier/wasm-web-audio-rs).
 Warning: experimental!
 
+## Audio decoding support
+
+Audio decoding is powered by Symphonia. The current implementation enables all
+Symphonia-supported audio formats and codecs, including AIFF, CAF, ISO/MP4,
+MKV/WebM, Ogg, WAV, AAC, ADPCM, ALAC, FLAC, MP1/MP2/MP3, PCM, and Vorbis.
+
 ## Contributing
 
 web-audio-api-rs welcomes contribution from everyone in the form of
