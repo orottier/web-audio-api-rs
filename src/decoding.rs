@@ -75,7 +75,10 @@ impl<R: Read> Read for MediaInput<R> {
 
 impl<R> Seek for MediaInput<R> {
     fn seek(&mut self, _pos: SeekFrom) -> std::io::Result<u64> {
-        panic!("NotSupportedError - MediaInput does not support seeking")
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "MediaInput does not support seeking",
+        ))
     }
 }
 
