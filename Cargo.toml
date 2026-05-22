@@ -23,7 +23,11 @@ arc-swap = "1.6"
 arrayvec = "0.7"
 fft-convolver = "0.3"
 cpal = { version = "0.17", optional = true }
-creek = "1.2"
+creek = { version = "1.2", default-features = false, features = [
+    "decode",
+    "decode-all",
+    "encode-wav",
+] }
 crossbeam-channel = "0.5"
 cubeb = { version = "0.15", optional = true }
 dasp_sample = "0.11"
@@ -41,7 +45,10 @@ num-complex = "0.4"
 realfft = "3.3"
 rubato = "0.16"
 smallvec = "1.11"
-symphonia = { version = "0.5", default-features = false }
+symphonia = { version = "0.6", default-features = false, features = [
+    "all",
+    "opt-simd",
+] }
 vecmath = "1.0"
 
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
@@ -69,24 +76,19 @@ path = "benches/my_benchmark.rs"
 harness = false
 
 [features]
-default = ["mp3", "ogg", "flac", "wav", "m4a", "alac", "cpal"]
-mp3 = ["symphonia/mp3", "creek/decode-mp3"]
-ogg = [
-    "symphonia/ogg",
-    "symphonia/vorbis",
-    "creek/decode-ogg",
-    "creek/decode-vorbis",
-]
-flac = ["symphonia/flac", "creek/decode-flac"]
-wav = ["symphonia/wav", "symphonia/pcm", "creek/decode-wav", "creek/decode-pcm"]
-aac = ["symphonia/aac", "creek/decode-aac"]
-m4a = ["aac", "symphonia/isomp4", "creek/decode-isomp4"]
-alac = [
-    "symphonia/alac",
-    "symphonia/isomp4",
-    "creek/decode-alac",
-    "creek/decode-isomp4",
-]
+default = ["cpal"]
+
+# Legacy codec feature names kept for backwards compatibility.
+# Decoding support is no longer split by file format; all supported Symphonia
+# and Creek decoders are enabled unconditionally.
+mp3 = []
+ogg = []
+flac = []
+wav = []
+aac = []
+m4a = []
+alac = []
+
 cpal = ["dep:cpal"]
 cubeb = ["dep:cubeb"]
 cpal-jack = ["cpal", "cpal/jack"]

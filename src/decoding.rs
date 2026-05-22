@@ -3,14 +3,55 @@ use std::io::{Read, Seek, SeekFrom};
 
 use crate::buffer::{AudioBuffer, ChannelData};
 
-use symphonia::core::audio::AudioBufferRef;
-use symphonia::core::audio::Signal;
-use symphonia::core::codecs::{Decoder, DecoderOptions, FinalizeResult};
-use symphonia::core::conv::FromSample;
+use symphonia::core::audio::GenericAudioBufferRef;
+use symphonia::core::codecs::audio::{
+    AudioCodecId, AudioDecoder, AudioDecoderOptions, FinalizeResult,
+};
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::{FormatOptions, FormatReader};
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
+
+pub(crate) fn decode_media_data<R: std::io::Read + Send + Sync + 'static>(
+    input: R,
+    target_sample_rate: f32,
+) -> Result<AudioBuffer, Box<dyn std::error::Error + Send + Sync>> {
+    let mut sample_rate = None;
+    let mut buffer: Option<AudioBuffer> = None;
+
+    for chunk in MediaDecoder::try_new(input)? {
+        let chunk = chunk?;
+
+        match sample_rate {
+            Some(rate) if rate != chunk.sample_rate() => {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "decoded audio sample rate changed midstream",
+                )));
+            }
+            Some(_) => {}
+            None => sample_rate = Some(chunk.sample_rate()),
+        }
+
+        match buffer {
+            Some(ref mut buffer) if buffer.number_of_channels() != chunk.number_of_channels() => {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "decoded audio channel count changed midstream",
+                )));
+            }
+            Some(ref mut buffer) => buffer.extend(&chunk),
+            None => buffer = Some(chunk),
+        }
+    }
+
+    let mut buffer = buffer.unwrap_or_else(|| AudioBuffer::from(vec![vec![]], target_sample_rate));
+
+    // Resample to desired rate (no-op if already matching).
+    buffer.resample(target_sample_rate);
+
+    Ok(buffer)
+}
 
 /// Wrapper for `Read` implementers to be used in Symphonia decoding
 ///
@@ -34,7 +75,10 @@ impl<R: Read> Read for MediaInput<R> {
 
 impl<R> Seek for MediaInput<R> {
     fn seek(&mut self, _pos: SeekFrom) -> std::io::Result<u64> {
-        panic!("NotSupportedError - MediaInput does not support seeking")
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "MediaInput does not support seeking",
+        ))
     }
 }
 
@@ -49,10 +93,10 @@ impl<R: Read + Send + Sync> symphonia::core::io::MediaSource for MediaInput<R> {
 
 /// Media stream decoder (OGG, WAV, FLAC, ..)
 ///
-/// The current implementation can decode FLAC, Opus, PCM, Vorbis, and Wav.
+/// The current implementation supports Symphonia's audio formats and codecs.
 pub(crate) struct MediaDecoder {
     format: Box<dyn FormatReader>,
-    decoder: Box<dyn Decoder>,
+    decoder: Box<dyn AudioDecoder>,
     track_index: usize,
     packet_count: usize,
 }
@@ -79,29 +123,48 @@ impl MediaDecoder {
         // TODO: Allow to customize some options.
         let format_opts: FormatOptions = Default::default();
         let metadata_opts: MetadataOptions = Default::default();
-        let decoder_opts = DecoderOptions {
-            // Opt-in to verify the decoded data against the checksums in the container.
-            verify: true,
-        };
+        // Opt-in to verify the decoded data against the checksums in the container.
+        let decoder_opts = AudioDecoderOptions::default().verify(true);
 
         // Probe the media source stream for a format.
-        let probed =
-            symphonia::default::get_probe().format(&hint, stream, &format_opts, &metadata_opts)?;
+        let format =
+            symphonia::default::get_probe().probe(&hint, stream, format_opts, metadata_opts)?;
 
-        // Get the format reader yielded by the probe operation.
-        let format = probed.format;
-
-        // Get the default track.
-        let track = format.default_track().ok_or(SymphoniaError::Unsupported(
-            "no default media track available",
-        ))?;
+        // Get the default audio track.
+        let track = format
+            .default_track(TrackType::Audio)
+            .ok_or(SymphoniaError::Unsupported(
+                "no default media track available",
+            ))?;
         let track_index = format
             .tracks()
             .iter()
             .position(|t| t.id == track.id)
             .unwrap();
+
+        let codec_params = track
+            .codec_params
+            .as_ref()
+            .and_then(|params| params.audio())
+            .ok_or(SymphoniaError::Unsupported(
+                "default media track is not an audio track",
+            ))?;
+
         // Create a (stateful) decoder for the track.
-        let decoder = symphonia::default::get_codecs().make(&track.codec_params, &decoder_opts)?;
+        let decoder = symphonia::default::get_codecs()
+            .make_audio_decoder(codec_params, &decoder_opts)
+            .map_err(|err| {
+                if matches!(
+                    err,
+                    SymphoniaError::Unsupported("core (codec): unsupported audio codec")
+                ) {
+                    Box::new(UnsupportedAudioCodecError {
+                        codec: codec_params.codec,
+                    }) as Box<dyn std::error::Error + Send + Sync>
+                } else {
+                    Box::new(err) as Box<dyn std::error::Error + Send + Sync>
+                }
+            })?;
 
         Ok(Self {
             format,
@@ -111,6 +174,19 @@ impl MediaDecoder {
         })
     }
 }
+
+#[derive(Debug)]
+struct UnsupportedAudioCodecError {
+    codec: AudioCodecId,
+}
+
+impl std::fmt::Display for UnsupportedAudioCodecError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unsupported audio codec: {}", self.codec)
+    }
+}
+
+impl std::error::Error for UnsupportedAudioCodecError {}
 
 impl Iterator for MediaDecoder {
     type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
@@ -130,11 +206,20 @@ impl Iterator for MediaDecoder {
         loop {
             // Get the next packet from the format reader.
             let packet = match format.next_packet() {
+                Ok(None) => {
+                    log::debug!("Decoding finished after {packet_count} packet(s)");
+                    let FinalizeResult { verify_ok } = decoder.finalize();
+                    if verify_ok == Some(false) {
+                        log::warn!("Verification of decoded data failed");
+                    }
+                    return None;
+                }
                 Err(err) => {
                     if let SymphoniaError::IoError(err) = &err {
                         if err.kind() == std::io::ErrorKind::UnexpectedEof {
-                            // End of stream
-                            log::debug!("Decoding finished after {packet_count} packet(s)");
+                            log::debug!(
+                                "Decoding finished after {packet_count} packet(s) at unexpected EOF"
+                            );
                             let FinalizeResult { verify_ok } = decoder.finalize();
                             if verify_ok == Some(false) {
                                 log::warn!("Verification of decoded data failed");
@@ -142,19 +227,20 @@ impl Iterator for MediaDecoder {
                             return None;
                         }
                     }
+
                     log::warn!(
                         "Failed to fetch next packet following packet #{packet_count}: {err}"
                     );
                     return Some(Err(Box::new(err)));
                 }
-                Ok(packet) => {
+                Ok(Some(packet)) => {
                     *packet_count += 1;
                     packet
                 }
             };
 
             // If the packet does not belong to the selected track, skip it.
-            let packet_track_id = packet.track_id();
+            let packet_track_id = packet.track_id;
             if packet_track_id != track_id {
                 log::debug!(
                     "Skipping packet from other track {packet_track_id} while decoding track {track_id}"
@@ -165,7 +251,7 @@ impl Iterator for MediaDecoder {
             // Decode the packet into audio samples.
             match decoder.decode(&packet) {
                 Ok(input) => {
-                    let output = convert_buf(input);
+                    let output = input.into();
                     return Some(Ok(output));
                 }
                 Err(SymphoniaError::DecodeError(err)) => {
@@ -185,50 +271,16 @@ impl Iterator for MediaDecoder {
     }
 }
 
-/// Convert a Symphonia AudioBufferRef to our own AudioBuffer
-fn convert_buf(input: AudioBufferRef<'_>) -> AudioBuffer {
-    let channels = 0..input.spec().channels.count();
-    let sample_rate = input.spec().rate as f32;
+impl From<GenericAudioBufferRef<'_>> for AudioBuffer {
+    fn from(input: GenericAudioBufferRef<'_>) -> Self {
+        let sample_rate = input.spec().rate() as f32;
 
-    // This looks a bit awkward but this may be the only way to get the f32 samples
-    // out without making double copies.
-    use symphonia::core::audio::AudioBufferRef::*;
+        let mut data = Vec::new();
+        input.copy_to_vecs_planar::<f32>(&mut data);
 
-    let data: Vec<Vec<f32>> = match input {
-        U8(buf) => channels
-            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
-            .collect(),
-        U16(buf) => channels
-            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
-            .collect(),
-        U24(buf) => channels
-            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
-            .collect(),
-        U32(buf) => channels
-            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
-            .collect(),
-        S8(buf) => channels
-            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
-            .collect(),
-        S16(buf) => channels
-            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
-            .collect(),
-        S24(buf) => channels
-            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
-            .collect(),
-        S32(buf) => channels
-            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
-            .collect(),
-        F32(buf) => channels
-            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
-            .collect(),
-        F64(buf) => channels
-            .map(|i| buf.chan(i).iter().copied().map(f32::from_sample).collect())
-            .collect(),
-    };
-
-    let channels = data.into_iter().map(ChannelData::from).collect();
-    AudioBuffer::from_channels(channels, sample_rate)
+        let channels = data.into_iter().map(ChannelData::from).collect();
+        AudioBuffer::from_channels(channels, sample_rate)
+    }
 }
 
 #[cfg(test)]
@@ -242,5 +294,17 @@ mod tests {
         let media = MediaDecoder::try_new(input);
 
         assert!(media.is_err()); // the input was not a valid MIME type
+    }
+
+    #[test]
+    fn test_unsupported_audio_codec_error_includes_codec_id() {
+        let input = std::fs::File::open("samples/sample.webm").unwrap();
+        let media = MediaDecoder::try_new(input);
+
+        let err = match media {
+            Ok(_) => panic!("expected unsupported codec error"),
+            Err(err) => err.to_string(),
+        };
+        assert_eq!(err, "unsupported audio codec: 0x1001");
     }
 }

@@ -1,5 +1,11 @@
 # Version History
 
+## Unreleased
+
+- Decoders are enabled always - the legacy cargo features mp3/ogg/flac/wav/.. are now no-op
+- Added .aiff decoder support
+- Fix: mp3 decoding would sometimes insert leading silent frames
+
 ## Version 1.4.0 (2026-05-18)
 
 - Added `BaseAudioContext::render_quantum_size` (128 always for now)
