@@ -5,6 +5,7 @@
 - Decoders are enabled always - the legacy cargo features mp3/ogg/flac/wav/.. are now no-op
 - Added .aiff decoder support
 - Fix: mp3 decoding would sometimes insert leading silent frames
+- Improved sine oscillator performance
 
 ## Version 1.4.0 (2026-05-18)
 
