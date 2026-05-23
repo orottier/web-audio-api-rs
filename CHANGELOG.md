@@ -1,6 +1,6 @@
 # Version History
 
-## Unreleased
+## Version 1.5.0 (2026-05-23)
 
 - Decoders are enabled always - the legacy cargo features mp3/ogg/flac/wav/.. are now no-op
 - Added .aiff decoder support
