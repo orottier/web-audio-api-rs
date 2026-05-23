@@ -5,8 +5,6 @@ use std::sync::Arc;
 
 use crate::context::BaseAudioContext;
 
-use crate::node::TABLE_LENGTH_USIZE;
-
 /// Options for constructing a [`PeriodicWave`]
 #[derive(Debug, Default, Clone)]
 pub struct PeriodicWaveOptions {
@@ -74,6 +72,8 @@ pub struct PeriodicWaveOptions {
 pub struct PeriodicWave {
     wavetable: Arc<Vec<f32>>,
 }
+
+const PERIODIC_WAVE_TABLE_LENGTH: usize = 8192;
 
 impl PeriodicWave {
     /// Returns a `PeriodicWave`
@@ -148,7 +148,8 @@ impl PeriodicWave {
 
         let normalize = !disable_normalization;
         // [spec] A conforming implementation MUST support PeriodicWave up to at least 8192 elements.
-        let wavetable = Self::generate_wavetable(&real, &imag, normalize, TABLE_LENGTH_USIZE);
+        let wavetable =
+            Self::generate_wavetable(&real, &imag, normalize, PERIODIC_WAVE_TABLE_LENGTH);
 
         Self {
             wavetable: Arc::new(wavetable),
@@ -213,10 +214,8 @@ mod tests {
     use float_eq::assert_float_eq;
     use std::f32::consts::PI;
 
+    use super::{PeriodicWave, PeriodicWaveOptions, PERIODIC_WAVE_TABLE_LENGTH};
     use crate::context::AudioContext;
-    use crate::node::{TABLE_LENGTH_F32, TABLE_LENGTH_USIZE};
-
-    use super::{PeriodicWave, PeriodicWaveOptions};
 
     #[test]
     #[should_panic]
@@ -279,11 +278,12 @@ mod tests {
         let reals = [0., 0.];
         let imags = [0., 1.];
 
-        let result = PeriodicWave::generate_wavetable(&reals, &imags, true, TABLE_LENGTH_USIZE);
+        let result =
+            PeriodicWave::generate_wavetable(&reals, &imags, true, PERIODIC_WAVE_TABLE_LENGTH);
         let mut expected = Vec::new();
 
-        for i in 0..TABLE_LENGTH_USIZE {
-            let sample = (i as f32 / TABLE_LENGTH_F32 * 2. * PI).sin();
+        for i in 0..PERIODIC_WAVE_TABLE_LENGTH {
+            let sample = (i as f32 / PERIODIC_WAVE_TABLE_LENGTH as f32 * 2. * PI).sin();
             expected.push(sample);
         }
 
@@ -295,15 +295,16 @@ mod tests {
         let reals = [0., 0., 0.];
         let imags = [0., 0.5, 0.5];
 
-        let result = PeriodicWave::generate_wavetable(&reals, &imags, false, TABLE_LENGTH_USIZE);
+        let result =
+            PeriodicWave::generate_wavetable(&reals, &imags, false, PERIODIC_WAVE_TABLE_LENGTH);
         let mut expected = Vec::new();
 
-        for i in 0..TABLE_LENGTH_USIZE {
+        for i in 0..PERIODIC_WAVE_TABLE_LENGTH {
             let mut sample = 0.;
             // fundamental frequency
-            sample += 0.5 * (1. * i as f32 / TABLE_LENGTH_F32 * 2. * PI).sin();
+            sample += 0.5 * (1. * i as f32 / PERIODIC_WAVE_TABLE_LENGTH as f32 * 2. * PI).sin();
             // 1rst partial
-            sample += 0.5 * (2. * i as f32 / TABLE_LENGTH_F32 * 2. * PI).sin();
+            sample += 0.5 * (2. * i as f32 / PERIODIC_WAVE_TABLE_LENGTH as f32 * 2. * PI).sin();
 
             expected.push(sample);
         }
@@ -335,15 +336,16 @@ mod tests {
         let reals = [0., 0., 0.];
         let imags = [0., 0.5, 0.5];
 
-        let result = PeriodicWave::generate_wavetable(&reals, &imags, true, TABLE_LENGTH_USIZE);
+        let result =
+            PeriodicWave::generate_wavetable(&reals, &imags, true, PERIODIC_WAVE_TABLE_LENGTH);
         let mut expected = Vec::new();
 
-        for i in 0..TABLE_LENGTH_USIZE {
+        for i in 0..PERIODIC_WAVE_TABLE_LENGTH {
             let mut sample = 0.;
             // fundamental frequency
-            sample += 0.5 * (1. * i as f32 / TABLE_LENGTH_F32 * 2. * PI).sin();
+            sample += 0.5 * (1. * i as f32 / PERIODIC_WAVE_TABLE_LENGTH as f32 * 2. * PI).sin();
             // 1rst partial
-            sample += 0.5 * (2. * i as f32 / TABLE_LENGTH_F32 * 2. * PI).sin();
+            sample += 0.5 * (2. * i as f32 / PERIODIC_WAVE_TABLE_LENGTH as f32 * 2. * PI).sin();
 
             expected.push(sample);
         }

@@ -1,5 +1,7 @@
 use std::any::Any;
+use std::f32::consts::PI;
 use std::fmt::Debug;
+use std::sync::OnceLock;
 
 use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
 use crate::param::{AudioParam, AudioParamDescriptor, AutomationRate};
@@ -9,10 +11,21 @@ use crate::render::{
 use crate::PeriodicWave;
 use crate::{assert_valid_time_value, RENDER_QUANTUM_SIZE};
 
-use super::{
-    precomputed_sine_table, AudioNode, AudioNodeOptions, AudioScheduledSourceNode, ChannelConfig,
-    TABLE_LENGTH_USIZE,
-};
+use super::{AudioNode, AudioNodeOptions, AudioScheduledSourceNode, ChannelConfig};
+
+const SINE_TABLE_LENGTH_USIZE: usize = 2048;
+const SINE_TABLE_LENGTH_F32: f32 = SINE_TABLE_LENGTH_USIZE as f32;
+
+/// Precomputed sine table
+fn precomputed_sine_table() -> &'static [f32] {
+    static INSTANCE: OnceLock<Vec<f32>> = OnceLock::new();
+    INSTANCE.get_or_init(|| {
+        // Compute one period sine wavetable of size SINE_TABLE_LENGTH.
+        (0..SINE_TABLE_LENGTH_USIZE)
+            .map(|x| ((x as f32) * 2.0 * PI * (1. / (SINE_TABLE_LENGTH_F32))).sin())
+            .collect()
+    })
+}
 
 fn get_phase_incr(freq: f32, detune: f32, sample_rate: f64) -> f64 {
     let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
@@ -522,12 +535,12 @@ impl OscillatorRenderer {
 
     #[inline]
     fn generate_sine(&mut self) -> f32 {
-        let position = self.phase * TABLE_LENGTH_USIZE as f64;
+        let position = self.phase * SINE_TABLE_LENGTH_USIZE as f64;
         let floored = position.floor();
 
         let prev_index = floored as usize;
         let mut next_index = prev_index + 1;
-        if next_index == TABLE_LENGTH_USIZE {
+        if next_index == SINE_TABLE_LENGTH_USIZE {
             next_index = 0;
         }
 
@@ -573,12 +586,13 @@ impl OscillatorRenderer {
     #[inline]
     fn generate_custom(&mut self) -> f32 {
         let periodic_wave = self.periodic_wave.as_ref().unwrap().as_slice();
-        let position = self.phase * TABLE_LENGTH_USIZE as f64;
+        let table_length = periodic_wave.len();
+        let position = self.phase * table_length as f64;
         let floored = position.floor();
 
         let prev_index = floored as usize;
         let mut next_index = prev_index + 1;
-        if next_index == TABLE_LENGTH_USIZE {
+        if next_index == table_length {
             next_index = 0;
         }
 
