@@ -671,7 +671,14 @@ impl AudioProcessor for BiquadFilterRenderer {
                     // as all coefs are normalized against 𝑎0, we get
                     // 𝑦(𝑛) = 𝑏0𝑥(𝑛) + 𝑏1𝑥(𝑛−1) + 𝑏2𝑥(𝑛−2) - 𝑎1𝑦(𝑛−1) - 𝑎2𝑦(𝑛−2)
                     let x = f64::from(i);
-                    let y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+                    let mut y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+
+                    // do not let trash values to propagate into the graph and state
+                    // flush NaN, Infinity, subnormal (and zero) to zero
+                    if !y.is_normal() {
+                        y = 0.;
+                    }
+
                     // update state
                     x2 = x1;
                     x1 = x;
