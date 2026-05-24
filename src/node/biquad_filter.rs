@@ -14,10 +14,6 @@ use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
 use super::{AudioNode, AudioNodeOptions, ChannelConfig};
 
-fn get_computed_freq(freq: f32, detune: f32, sample_rate: f32) -> f32 {
-    freq * (detune / 1200.).exp2().clamp(0., sample_rate / 2.)
-}
-
 /// Biquad filter coefficients normalized against a0
 #[derive(Clone, Copy, Debug, Default)]
 struct Coefficients {
@@ -28,8 +24,322 @@ struct Coefficients {
     a2: f64,
 }
 
-// allow non snake to better the variable names in the spec
-#[allow(non_snake_case)]
+// all coefs calculation functions adapted from `/wpt/webaudio/resources/biquad-filters.js`
+fn normalize_coefs(b0: f64, b1: f64, b2: f64, a0: f64, a1: f64, a2: f64) -> Coefficients {
+    let scale = 1. / a0;
+
+    Coefficients {
+        b0: b0 * scale,
+        b1: b1 * scale,
+        b2: b2 * scale,
+        a1: a1 * scale,
+        a2: a2 * scale,
+    }
+}
+
+fn get_lowpass_coefs(freq: f64, q: f64) -> Coefficients {
+    if freq == 1. {
+        // The formula below works, except for roundoff.  When freq = 1,
+        // the filter is just a wire, so hardwire the coefficients.
+        Coefficients {
+            b0: 1.,
+            b1: 0.,
+            b2: 0.,
+            a1: 0.,
+            a2: 0.,
+        }
+    } else {
+        let w0 = PI * freq;
+        let alpha_q_db = w0.sin() / (2. * 10_f64.powf(q / 20.));
+        let cos_w0 = w0.cos();
+        let beta = (1. - cos_w0) / 2.;
+
+        let b0 = beta;
+        let b1 = 2. * beta;
+        let b2 = beta;
+        let a0 = 1. + alpha_q_db;
+        let a1 = -2. * cos_w0;
+        let a2 = 1. - alpha_q_db;
+
+        normalize_coefs(b0, b1, b2, a0, a1, a2)
+    }
+}
+
+fn get_highpass_coefs(freq: f64, q: f64) -> Coefficients {
+    if freq == 1. {
+        // The filter is 0
+        Coefficients {
+            b0: 0.,
+            b1: 0.,
+            b2: 0.,
+            a1: 0.,
+            a2: 0.,
+        }
+    } else if freq == 0. {
+        // The filter is 1.  Computation of coefficients below is ok, but
+        // there's a pole at 1 and a zero at 1, so round-off could make
+        // the filter unstable.
+        Coefficients {
+            b0: 1.,
+            b1: 0.,
+            b2: 0.,
+            a1: 0.,
+            a2: 0.,
+        }
+    } else {
+        let w0 = PI * freq;
+        let alpha_q_db = w0.sin() / (2. * 10_f64.powf(q / 20.));
+        let cos_w0 = w0.cos();
+        let beta = (1. + cos_w0) / 2.;
+
+        let b0 = beta;
+        let b1 = -2. * beta;
+        let b2 = beta;
+        let a0 = 1. + alpha_q_db;
+        let a1 = -2. * cos_w0;
+        let a2 = 1. - alpha_q_db;
+
+        normalize_coefs(b0, b1, b2, a0, a1, a2)
+    }
+}
+
+fn get_bandpass_coefs(freq: f64, q: f64) -> Coefficients {
+    if freq > 0. && freq < 1. {
+        if q > 0. {
+            let w0 = PI * freq;
+            let alpha_q = w0.sin() / (2. * q);
+            let cos_w0 = w0.cos();
+
+            let b0 = alpha_q;
+            let b1 = 0.;
+            let b2 = -alpha_q;
+            let a0 = 1. + alpha_q;
+            let a1 = -2. * cos_w0;
+            let a2 = 1. - alpha_q;
+
+            normalize_coefs(b0, b1, b2, a0, a1, a2)
+        } else {
+            // q = 0, and frequency is not 0 or 1.  The above formula has a
+            // divide by zero problem.  The limit of the z-transform as q
+            // approaches 0 is 1, so set the filter that way.
+            Coefficients {
+                b0: 1.,
+                b1: 0.,
+                b2: 0.,
+                a1: 0.,
+                a2: 0.,
+            }
+        }
+    } else {
+        // When freq = 0 or 1, the z-transform is identically 0, independent of q.
+        Coefficients {
+            b0: 0.,
+            b1: 0.,
+            b2: 0.,
+            a1: 0.,
+            a2: 0.,
+        }
+    }
+}
+
+fn get_notch_coefs(freq: f64, q: f64) -> Coefficients {
+    if freq > 0. && freq < 1. {
+        if q > 0. {
+            let w0 = PI * freq;
+            let alpha_q = w0.sin() / (2. * q);
+            let cos_w0 = w0.cos();
+
+            let b0 = 1.;
+            let b1 = -2. * cos_w0;
+            let b2 = 1.;
+            let a0 = 1. + alpha_q;
+            let a1 = -2. * cos_w0;
+            let a2 = 1. - alpha_q;
+            normalize_coefs(b0, b1, b2, a0, a1, a2)
+        } else {
+            // When q = 0, we get a divide by zero above.  The limit of the
+            // z-transform as q approaches 0 is 0, so set the coefficients
+            // appropriately.
+            Coefficients {
+                b1: 0.,
+                b2: 0.,
+                a1: 0.,
+                a2: 0.,
+                b0: 0.,
+            }
+        }
+    } else {
+        // When freq = 0 or 1, the z-transform is 1
+        Coefficients {
+            b0: 1.,
+            b1: 0.,
+            b2: 0.,
+            a1: 0.,
+            a2: 0.,
+        }
+    }
+}
+
+fn get_allpass_coefs(freq: f64, q: f64) -> Coefficients {
+    if freq > 0. && freq < 1. {
+        if q > 0. {
+            let w0 = PI * freq;
+            let alpha_q = w0.sin() / (2. * q);
+            let cos_w0 = w0.cos();
+
+            let b0 = 1. - alpha_q;
+            let b1 = -2. * cos_w0;
+            let b2 = 1. + alpha_q;
+            let a0 = 1. + alpha_q;
+            let a1 = -2. * cos_w0;
+            let a2 = 1. - alpha_q;
+
+            normalize_coefs(b0, b1, b2, a0, a1, a2)
+        } else {
+            // q = 0
+            Coefficients {
+                b0: -1.,
+                b1: 0.,
+                b2: 0.,
+                a1: 0.,
+                a2: 0.,
+            }
+        }
+    } else {
+        Coefficients {
+            b0: 1.,
+            b1: 0.,
+            b2: 0.,
+            a1: 0.,
+            a2: 0.,
+        }
+    }
+}
+
+fn get_peaking_coefs(freq: f64, q: f64, gain: f64) -> Coefficients {
+    #[allow(non_snake_case)]
+    let A = 10_f64.powf(gain / 40.);
+
+    if freq > 0. && freq < 1. {
+        if q > 0. {
+            let w0 = PI * freq;
+            let alpha_q = w0.sin() / (2. * q);
+            let cos_w0 = w0.cos();
+
+            let b0 = 1. + alpha_q * A;
+            let b1 = -2. * cos_w0;
+            let b2 = 1. - alpha_q * A;
+            let a0 = 1. + alpha_q / A;
+            let a1 = -2. * cos_w0;
+            let a2 = 1. - alpha_q / A;
+
+            normalize_coefs(b0, b1, b2, a0, a1, a2)
+        } else {
+            // q = 0, we have a divide by zero problem in the formulas
+            // above.  But if we look at the z-transform, we see that the
+            // limit as q approaches 0 is A^2.
+            Coefficients {
+                b0: A * A,
+                b1: 0.,
+                b2: 0.,
+                a1: 0.,
+                a2: 0.,
+            }
+        }
+    } else {
+        // freq = 0 or 1, the z-transform is 1
+        Coefficients {
+            b0: 1.,
+            b1: 0.,
+            b2: 0.,
+            a1: 0.,
+            a2: 0.,
+        }
+    }
+}
+
+fn get_lowshelf_coefs(freq: f64, gain: f64) -> Coefficients {
+    #[allow(non_snake_case)]
+    let A = 10_f64.powf(gain / 40.);
+
+    if freq == 1. {
+        // The filter is just a constant gain
+        Coefficients {
+            b0: A * A,
+            b1: 0.,
+            b2: 0.,
+            a1: 0.,
+            a2: 0.,
+        }
+    } else if freq == 0. {
+        // The filter is 1
+        Coefficients {
+            b0: 1.,
+            b1: 0.,
+            b2: 0.,
+            a1: 0.,
+            a2: 0.,
+        }
+    } else {
+        let w0 = PI * freq;
+        let cos_w0 = w0.cos();
+        let alpha_s = w0.sin() / 2. * SQRT_2; // formula simplified as S is 0
+        let two_alpha_s_a_squared = 2. * alpha_s * A.sqrt();
+        let a_plus_one = A + 1.;
+        let a_minus_one = A - 1.;
+
+        let b0 = A * (a_plus_one - a_minus_one * cos_w0 + two_alpha_s_a_squared);
+        let b1 = 2. * A * (a_minus_one - a_plus_one * cos_w0);
+        let b2 = A * (a_plus_one - a_minus_one * cos_w0 - two_alpha_s_a_squared);
+        let a0 = a_plus_one + a_minus_one * cos_w0 + two_alpha_s_a_squared;
+        let a1 = -2. * (a_minus_one + a_plus_one * cos_w0);
+        let a2 = a_plus_one + a_minus_one * cos_w0 - two_alpha_s_a_squared;
+
+        normalize_coefs(b0, b1, b2, a0, a1, a2)
+    }
+}
+
+fn get_highshelf_coefs(freq: f64, gain: f64) -> Coefficients {
+    #[allow(non_snake_case)]
+    let A = 10_f64.powf(gain / 40.);
+
+    if freq == 1. {
+        // When freq = 1, the z-transform is 1
+        Coefficients {
+            b0: 1.,
+            b1: 0.,
+            b2: 0.,
+            a1: 0.,
+            a2: 0.,
+        }
+    } else if freq > 0. {
+        let w0 = PI * freq;
+        let cos_w0 = w0.cos();
+        let alpha_s = w0.sin() / 2. * SQRT_2; // formula simplified as S is 0
+        let two_alpha_s_a_squared = 2. * alpha_s * A.sqrt();
+        let a_plus_one = A + 1.;
+        let a_minus_one = A - 1.;
+
+        let b0 = A * (a_plus_one + a_minus_one * cos_w0 + two_alpha_s_a_squared);
+        let b1 = -2. * A * (a_minus_one + a_plus_one * cos_w0);
+        let b2 = A * (a_plus_one + a_minus_one * cos_w0 - two_alpha_s_a_squared);
+        let a0 = a_plus_one - a_minus_one * cos_w0 + two_alpha_s_a_squared;
+        let a1 = 2. * (a_minus_one - a_plus_one * cos_w0);
+        let a2 = a_plus_one - a_minus_one * cos_w0 - two_alpha_s_a_squared;
+
+        normalize_coefs(b0, b1, b2, a0, a1, a2)
+    } else {
+        // When freq = 0, the filter is just a gain
+        Coefficients {
+            b0: A * A,
+            b1: 0.,
+            b2: 0.,
+            a1: 0.,
+            a2: 0.,
+        }
+    }
+}
+
 fn calculate_coefs(
     filter_type: BiquadFilterType,
     sample_rate: f64,
@@ -37,135 +347,28 @@ fn calculate_coefs(
     gain: f64,
     q: f64,
 ) -> Coefficients {
-    let b0: f64;
-    let b1: f64;
-    let b2: f64;
-    let a0: f64;
-    let a1: f64;
-    let a2: f64;
+    // convert computed f0 (including detune) to normalized clamped value
+    let nyquist = sample_rate / 2.;
+    let norm_freq = (f0 / nyquist).clamp(0., 1.);
 
     match filter_type {
-        BiquadFilterType::Lowpass => {
-            let w0 = 2. * PI * f0 / sample_rate;
-            let cos_w0 = w0.cos();
-            let sin_w0 = w0.sin();
-            let alpha_q_db = sin_w0 / (2. * 10_f64.powf(q / 20.));
-
-            b0 = (1. - cos_w0) / 2.;
-            b1 = 1. - cos_w0;
-            b2 = (1. - cos_w0) / 2.;
-            a0 = 1. + alpha_q_db;
-            a1 = -2. * cos_w0;
-            a2 = 1. - alpha_q_db;
-        }
-        BiquadFilterType::Highpass => {
-            let w0 = 2. * PI * f0 / sample_rate;
-            let cos_w0 = w0.cos();
-            let sin_w0 = w0.sin();
-            let alpha_q_db = sin_w0 / (2. * 10_f64.powf(q / 20.));
-
-            b0 = (1. + cos_w0) / 2.;
-            b1 = -(1. + cos_w0);
-            b2 = (1. + cos_w0) / 2.;
-            a0 = 1. + alpha_q_db;
-            a1 = -2. * cos_w0;
-            a2 = 1. - alpha_q_db;
-        }
-        BiquadFilterType::Bandpass => {
-            let w0 = 2. * PI * f0 / sample_rate;
-            let cos_w0 = w0.cos();
-            let sin_w0 = w0.sin();
-            let alpha_q = sin_w0 / (2. * q);
-
-            b0 = alpha_q;
-            b1 = 0.;
-            b2 = -alpha_q;
-            a0 = 1. + alpha_q;
-            a1 = -2. * cos_w0;
-            a2 = 1. - alpha_q;
-        }
-        BiquadFilterType::Notch => {
-            let w0 = 2. * PI * f0 / sample_rate;
-            let cos_w0 = w0.cos();
-            let sin_w0 = w0.sin();
-            let alpha_q = sin_w0 / (2. * q);
-
-            b0 = 1.;
-            b1 = -2. * cos_w0;
-            b2 = 1.;
-            a0 = 1. + alpha_q;
-            a1 = -2. * cos_w0;
-            a2 = 1. - alpha_q;
-        }
-        BiquadFilterType::Allpass => {
-            let w0 = 2. * PI * f0 / sample_rate;
-            let cos_w0 = w0.cos();
-            let sin_w0 = w0.sin();
-            let alpha_q = sin_w0 / (2. * q);
-
-            b0 = 1. - alpha_q;
-            b1 = -2. * cos_w0;
-            b2 = 1. + alpha_q;
-            a0 = 1. + alpha_q;
-            a1 = -2. * cos_w0;
-            a2 = 1. - alpha_q;
-        }
-        BiquadFilterType::Peaking => {
-            let A = 10_f64.powf(gain / 40.);
-            let w0 = 2. * PI * f0 / sample_rate;
-            let cos_w0 = w0.cos();
-            let sin_w0 = w0.sin();
-            let alpha_q = sin_w0 / (2. * q);
-
-            b0 = 1. + alpha_q * A;
-            b1 = -2. * cos_w0;
-            b2 = 1. - alpha_q * A;
-            a0 = 1. + alpha_q / A;
-            a1 = -2. * cos_w0;
-            a2 = 1. - alpha_q / A;
-        }
-        BiquadFilterType::Lowshelf => {
-            let A = 10_f64.powf(gain / 40.);
-            let w0 = 2. * PI * f0 / sample_rate;
-            let cos_w0 = w0.cos();
-            let sin_w0 = w0.sin();
-            let alpha_s = sin_w0 / 2. * SQRT_2; // formula simplified as S is 0
-            let two_alpha_s_A_squared = 2. * alpha_s * A.sqrt();
-            let A_plus_one = A + 1.;
-            let A_minus_one = A - 1.;
-
-            b0 = A * (A_plus_one - A_minus_one * cos_w0 + two_alpha_s_A_squared);
-            b1 = 2. * A * (A_minus_one - A_plus_one * cos_w0);
-            b2 = A * (A_plus_one - A_minus_one * cos_w0 - two_alpha_s_A_squared);
-            a0 = A_plus_one + A_minus_one * cos_w0 + two_alpha_s_A_squared;
-            a1 = -2. * (A_minus_one + A_plus_one * cos_w0);
-            a2 = A_plus_one + A_minus_one * cos_w0 - two_alpha_s_A_squared;
-        }
-        BiquadFilterType::Highshelf => {
-            let A = 10_f64.powf(gain / 40.);
-            let w0 = 2. * PI * f0 / sample_rate;
-            let cos_w0 = w0.cos();
-            let sin_w0 = w0.sin();
-            let alpha_s = sin_w0 / 2. * SQRT_2; // formula simplified as S is 0
-            let two_alpha_s_A_squared = 2. * alpha_s * A.sqrt();
-            let A_plus_one = A + 1.;
-            let A_minus_one = A - 1.;
-
-            b0 = A * (A_plus_one + A_minus_one * cos_w0 + two_alpha_s_A_squared);
-            b1 = -2. * A * (A_minus_one + A_plus_one * cos_w0);
-            b2 = A * (A_plus_one + A_minus_one * cos_w0 - two_alpha_s_A_squared);
-            a0 = A_plus_one - A_minus_one * cos_w0 + two_alpha_s_A_squared;
-            a1 = 2. * (A_minus_one - A_plus_one * cos_w0);
-            a2 = A_plus_one - A_minus_one * cos_w0 - two_alpha_s_A_squared;
-        }
+        BiquadFilterType::Lowpass => get_lowpass_coefs(norm_freq, q),
+        BiquadFilterType::Highpass => get_highpass_coefs(norm_freq, q),
+        BiquadFilterType::Bandpass => get_bandpass_coefs(norm_freq, q),
+        BiquadFilterType::Notch => get_notch_coefs(norm_freq, q),
+        BiquadFilterType::Allpass => get_allpass_coefs(norm_freq, q),
+        BiquadFilterType::Peaking => get_peaking_coefs(norm_freq, q, gain),
+        BiquadFilterType::Lowshelf => get_lowshelf_coefs(norm_freq, gain),
+        BiquadFilterType::Highshelf => get_highshelf_coefs(norm_freq, gain),
     }
+}
 
-    Coefficients {
-        b0: b0 / a0,
-        b1: b1 / a0,
-        b2: b2 / a0,
-        a1: a1 / a0,
-        a2: a2 / a0,
+// frequency is clamped between 0 and nyquist later in the algorithm
+fn get_computed_freq(freq: f32, detune: f32) -> f32 {
+    if detune != 0. {
+        freq * (detune / 1200.).exp2()
+    } else {
+        freq
     }
 }
 
@@ -485,7 +688,7 @@ impl BiquadFilterNode {
         let q = self.q().value();
 
         // get coefs
-        let computed_freq = get_computed_freq(frequency, detune, sample_rate);
+        let computed_freq = get_computed_freq(frequency, detune);
 
         let Coefficients { b0, b1, b2, a1, a2 } = calculate_coefs(
             type_,
@@ -619,7 +822,7 @@ impl AudioProcessor for BiquadFilterRenderer {
         let gain = params.get(&self.gain);
         let sample_rate_f64 = f64::from(sample_rate);
         // compute first coef and fill the coef list with this value
-        let computed_freq = get_computed_freq(frequency[0], detune[0], sample_rate);
+        let computed_freq = get_computed_freq(frequency[0], detune[0]);
         let coef = calculate_coefs(
             type_,
             sample_rate_f64,
@@ -640,7 +843,7 @@ impl AudioProcessor for BiquadFilterRenderer {
                 .zip(gain.iter().cycle())
                 .skip(1)
                 .for_each(|((((coefs, &f), &d), &q), &g)| {
-                    let computed_freq = get_computed_freq(f, d, sample_rate);
+                    let computed_freq = get_computed_freq(f, d);
                     *coefs = calculate_coefs(
                         type_,
                         sample_rate_f64,
@@ -671,7 +874,14 @@ impl AudioProcessor for BiquadFilterRenderer {
                     // as all coefs are normalized against 𝑎0, we get
                     // 𝑦(𝑛) = 𝑏0𝑥(𝑛) + 𝑏1𝑥(𝑛−1) + 𝑏2𝑥(𝑛−2) - 𝑎1𝑦(𝑛−1) - 𝑎2𝑦(𝑛−2)
                     let x = f64::from(i);
-                    let y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+                    let mut y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+
+                    // do not let trash values to propagate into the graph and state
+                    // flush NaN, Infinity, subnormal (and zero) to zero
+                    if !y.is_normal() {
+                        y = 0.;
+                    }
+
                     // update state
                     x2 = x1;
                     x1 = x;
@@ -708,16 +918,15 @@ mod tests {
 
     #[test]
     fn test_computed_freq() {
-        let sample_rate = 48000.;
         let g_sharp = 415.3;
         let a = 440.;
         let b_flat = 466.16;
 
         // 100 cents is 1 semi tone up
-        let res = get_computed_freq(a, 100., sample_rate);
+        let res = get_computed_freq(a, 100.);
         assert_float_eq!(res, b_flat, abs <= 0.01);
         // -100 cents is 1 semi tone below
-        let res = get_computed_freq(a, -100., sample_rate);
+        let res = get_computed_freq(a, -100.);
         assert_float_eq!(res, g_sharp, abs <= 0.01);
     }
 
