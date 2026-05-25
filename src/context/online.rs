@@ -135,7 +135,7 @@ pub struct AudioContext {
     /// represents the underlying `BaseAudioContext`
     base: ConcreteBaseAudioContext,
     /// audio backend (play/pause functionality)
-    backend_manager: Mutex<Box<dyn AudioBackendManager>>,
+    backend_manager: Arc<Mutex<Box<dyn AudioBackendManager>>>,
     /// Provider for rendering performance metrics
     render_capacity: AudioRenderCapacity,
     /// Provider for playback statistics
@@ -162,7 +162,7 @@ impl Drop for AudioContext {
         // Continue playing the stream if the AudioContext goes out of scope
         if self.state() == AudioContextState::Running {
             let tombstone = Box::new(NoneBackend::void());
-            let original = std::mem::replace(self.backend_manager.get_mut().unwrap(), tombstone);
+            let original = std::mem::replace(&mut *self.backend_manager.lock().unwrap(), tombstone);
             Box::leak(original);
         }
     }
@@ -304,7 +304,7 @@ impl AudioContext {
 
         Ok(Self {
             base,
-            backend_manager: Mutex::new(backend),
+            backend_manager: Arc::new(Mutex::new(backend)),
             render_capacity,
             playback_stats,
             startup_pending,
