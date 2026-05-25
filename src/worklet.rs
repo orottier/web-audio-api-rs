@@ -567,8 +567,8 @@ mod tests {
 
     #[test]
     fn test_worklet_input_not_actively_processing() {
-        use crate::node::OscillatorNode;
         use crate::node::AudioScheduledSourceNode;
+        use crate::node::OscillatorNode;
 
         struct SetBoolWhenInputNotActivelyProcessing(Arc<AtomicBool>);
 
@@ -586,7 +586,7 @@ mod tests {
                 _params: AudioParamValues<'b>,
                 _scope: &'b AudioWorkletGlobalScope,
             ) -> bool {
-                if inputs[0].len() == 0 {
+                if inputs[0].is_empty() {
                     self.0.store(true, Ordering::Relaxed);
                 }
                 false
@@ -602,14 +602,55 @@ mod tests {
             processor_options: Arc::clone(&mark_empty_input),
             ..AudioWorkletNodeOptions::default()
         };
-        let worklet = AudioWorkletNode::new::<SetBoolWhenInputNotActivelyProcessing>(&context, options);
+        let worklet =
+            AudioWorkletNode::new::<SetBoolWhenInputNotActivelyProcessing>(&context, options);
         let mut osc = OscillatorNode::new(&context, Default::default());
         osc.connect(&worklet);
         osc.start();
-        // when stop the osc should output one channel of silence, which indicates
+        // when stopped the osc should output one channel of silence, which indicates
         // that it is not actively processing. Hence the inputs[0].len() of the
         // the worklet should be zero
         osc.stop_at(0.1);
+
+        let _ = context.start_rendering_sync();
+        assert!(mark_empty_input.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_worklet_no_input() {
+        struct SetBoolWhenInputNotActivelyProcessing(Arc<AtomicBool>);
+
+        impl AudioWorkletProcessor for SetBoolWhenInputNotActivelyProcessing {
+            type ProcessorOptions = Arc<AtomicBool>;
+
+            fn constructor(opts: Self::ProcessorOptions) -> Self {
+                Self(opts)
+            }
+
+            fn process<'a, 'b>(
+                &mut self,
+                inputs: &'b [&'a [&'a [f32]]],
+                _outputs: &'b mut [&'a mut [&'a mut [f32]]],
+                _params: AudioParamValues<'b>,
+                _scope: &'b AudioWorkletGlobalScope,
+            ) -> bool {
+                if inputs[0].is_empty() {
+                    self.0.store(true, Ordering::Relaxed);
+                }
+                false
+            }
+        }
+
+        let mark_empty_input = Arc::new(AtomicBool::new(false));
+
+        let mut context = OfflineAudioContext::new(1, 128, 48000.);
+        let options = AudioWorkletNodeOptions {
+            number_of_inputs: 1,
+            number_of_outputs: 0,
+            processor_options: Arc::clone(&mark_empty_input),
+            ..AudioWorkletNodeOptions::default()
+        };
+        let _ = AudioWorkletNode::new::<SetBoolWhenInputNotActivelyProcessing>(&context, options);
 
         let _ = context.start_rendering_sync();
         assert!(mark_empty_input.load(Ordering::Relaxed));
