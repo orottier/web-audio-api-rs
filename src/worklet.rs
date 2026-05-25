@@ -364,8 +364,6 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
         for input in inputs {
             let c = input.number_of_channels();
             let (left, right) = inputs_flat.split_at(c);
-            // SAFETY - see comments above
-            //
             // [spec] If there are no actively processing AudioNodes connected to
             // the 𝑛th input of the AudioWorkletNode for the current render quantum,
             // then the  content of inputs[n] is an empty array, indicating that
@@ -375,6 +373,7 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
             let left_static = if input.is_silent() {
                 &[]
             } else {
+                // SAFETY - see comments above
                 unsafe { std::mem::transmute::<&[&[f32]], &[&[f32]]>(left) }
             };
             self.inputs_grouped.push(left_static);
