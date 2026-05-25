@@ -282,6 +282,21 @@ impl AudioContext {
         let render_capacity = AudioRenderCapacity::new(base.clone(), stats.clone());
         let playback_stats = AudioPlaybackStats::new(base.clone(), stats);
 
+        let recovery_base = base.clone();
+        base.set_event_handler(
+            EventType::InternalGraphRecovery,
+            EventHandler::Multiple(Box::new(move |payload| {
+                let EventPayload::InternalGraphRecovery(graph) = payload else {
+                    unreachable!();
+                };
+                if recovery_base.state() == AudioContextState::Closed {
+                    log::info!("Ignoring recovered audio graph from closed context");
+                    return;
+                }
+                log::info!("Recovered audio graph from dropped render thread: {graph:?}");
+            })),
+        );
+
         // As the final step, spawn a thread for the event loop. If we do this earlier we may miss
         // event handling of the initial events that are emitted right after render thread
         // construction.

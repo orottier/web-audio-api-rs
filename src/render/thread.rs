@@ -525,6 +525,16 @@ impl RenderThread {
 
 impl Drop for RenderThread {
     fn drop(&mut self) {
+        if let Some(graph) = self.graph.take() {
+            if self
+                .event_sender
+                .try_send(EventDispatch::internal_graph_recovery(graph))
+                .is_err()
+            {
+                log::warn!("Unable to queue graph recovery event");
+            }
+        }
+
         if let Some(gc) = self.garbage_collector.as_mut() {
             gc.push(llq::Node::new(Box::new(TerminateGarbageCollectorThread)))
         }
