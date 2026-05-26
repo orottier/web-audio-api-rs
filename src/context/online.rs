@@ -282,7 +282,10 @@ impl AudioContext {
         let render_capacity = AudioRenderCapacity::new(base.clone(), stats.clone());
         let playback_stats = AudioPlaybackStats::new(base.clone(), stats);
 
+        let backend_manager = Arc::new(Mutex::new(backend));
         let recovery_base = base.clone();
+        let recovery_backend_manager = Arc::clone(&backend_manager);
+        let recovery_render_thread_init = render_thread_init.clone();
         base.set_event_handler(
             EventType::InternalGraphRecovery,
             EventHandler::Multiple(Box::new(move |payload| {
@@ -294,6 +297,23 @@ impl AudioContext {
                     return;
                 }
                 log::info!("Recovered audio graph from dropped render thread: {graph:?}");
+
+                let options = AudioContextOptions {
+                    sample_rate: Some(recovery_base.sample_rate()),
+                    sink_id: String::new(),
+                    ..AudioContextOptions::default()
+                };
+
+                match io::build_output(options, recovery_render_thread_init.clone()) {
+                    Ok(backend) => {
+                        *recovery_backend_manager.lock().unwrap() = backend;
+                        recovery_base.send_control_msg(ControlMessage::Startup { graph });
+                        log::info!("Rebooted audio graph on default output device");
+                    }
+                    Err(error) => {
+                        log::error!("Unable to reboot audio graph on default output device: {error}");
+                    }
+                }
             })),
         );
 
@@ -304,7 +324,7 @@ impl AudioContext {
 
         Ok(Self {
             base,
-            backend_manager: Arc::new(Mutex::new(backend)),
+            backend_manager,
             render_capacity,
             playback_stats,
             startup_pending,
