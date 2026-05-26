@@ -18,6 +18,7 @@ use super::{
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextLatencyCategory;
 use crate::context::AudioContextOptions;
+use crate::events::EventDispatch;
 use crate::io::microphone::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
@@ -332,6 +333,7 @@ impl AudioBackendManager for CpalBackend {
             renderer,
             Arc::clone(&output_latency),
             stats.clone(),
+            event_send.clone(),
         );
 
         let stream = match spawned {
@@ -360,7 +362,7 @@ impl AudioBackendManager for CpalBackend {
                     state,
                     frames_played,
                     stats.clone(),
-                    event_send,
+                    event_send.clone(),
                 );
                 renderer.set_startup_pending(startup_pending);
                 renderer.spawn_garbage_collector_thread();
@@ -372,6 +374,7 @@ impl AudioBackendManager for CpalBackend {
                     renderer,
                     Arc::clone(&output_latency),
                     stats.clone(),
+                    event_send,
                 );
 
                 spawned.map_err(|e| map_cpal_build_error("build_fallback_output_stream", e))?
@@ -658,8 +661,17 @@ fn spawn_output_stream(
     mut render: RenderThread,
     output_latency: Arc<AtomicF64>,
     stats: AudioStats,
+    event_send: crossbeam_channel::Sender<EventDispatch>,
 ) -> Result<Stream, BuildStreamError> {
-    let err_fn = |err| log::error!("an error occurred on the output audio stream: {}", err);
+    let err_fn = move |err| {
+        log::error!("an error occurred on the output audio stream: {}", err);
+        if event_send
+            .try_send(EventDispatch::internal_backend_stream_error())
+            .is_err()
+        {
+            log::warn!("Unable to queue backend stream error event");
+        }
+    };
 
     match sample_format {
         SampleFormat::F32 => device.build_output_stream(

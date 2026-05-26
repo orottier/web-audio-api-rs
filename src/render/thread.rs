@@ -526,6 +526,7 @@ impl RenderThread {
 impl Drop for RenderThread {
     fn drop(&mut self) {
         if let Some(graph) = self.graph.take() {
+	    log::info!("Recover graph");
             if self
                 .event_sender
                 .try_send(EventDispatch::internal_graph_recovery(graph))

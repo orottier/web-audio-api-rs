@@ -286,6 +286,24 @@ impl AudioContext {
         let recovery_base = base.clone();
         let recovery_backend_manager = Arc::clone(&backend_manager);
         let recovery_render_thread_init = render_thread_init.clone();
+        let error_base = base.clone();
+        let error_backend_manager = Arc::clone(&backend_manager);
+        base.set_event_handler(
+            EventType::InternalBackendStreamError,
+            EventHandler::Multiple(Box::new(move |payload| {
+                let EventPayload::InternalBackendStreamError = payload else {
+                    unreachable!();
+                };
+                if error_base.state() == AudioContextState::Closed {
+                    log::info!("Ignoring backend stream error from closed context");
+                    return;
+                }
+                log::info!("Closing backend after runtime stream error");
+                if let Err(error) = error_backend_manager.lock().unwrap().close() {
+                    log::error!("Unable to close backend after runtime stream error: {error}");
+                }
+            })),
+        );
         base.set_event_handler(
             EventType::InternalGraphRecovery,
             EventHandler::Multiple(Box::new(move |payload| {

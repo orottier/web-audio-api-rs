@@ -30,6 +30,7 @@ pub(crate) enum EventType {
     Complete,
     AudioProcessing(AudioNodeId),
     InternalGraphRecovery,
+    InternalBackendStreamError,
 }
 
 /// The Error Event interface
@@ -91,6 +92,7 @@ pub(crate) enum EventPayload {
     Complete(AudioBuffer),
     AudioProcessing(AudioProcessingEvent),
     InternalGraphRecovery(Graph),
+    InternalBackendStreamError,
 }
 
 #[derive(Debug)]
@@ -167,6 +169,13 @@ impl EventDispatch {
         EventDispatch {
             type_: EventType::InternalGraphRecovery,
             payload: EventPayload::InternalGraphRecovery(graph),
+        }
+    }
+
+    pub(crate) fn internal_backend_stream_error() -> Self {
+        EventDispatch {
+            type_: EventType::InternalBackendStreamError,
+            payload: EventPayload::InternalBackendStreamError,
         }
     }
 }
