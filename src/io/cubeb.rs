@@ -18,6 +18,12 @@ use crossbeam_channel::Receiver;
 // erase type of `Frame` in cubeb `Stream<Frame>`
 struct BoxedStream(Box<dyn CubebStream>);
 
+impl BoxedStream {
+    fn new<F: 'static>(stream: Stream<F>) -> Self {
+        Self(Box::new(stream))
+    }
+}
+
 trait CubebStream {
     fn delegate_start(&self) -> Result<(), cubeb::Error>;
     fn delegate_stop(&self) -> Result<(), cubeb::Error>;
@@ -41,22 +47,36 @@ mod private {
     use std::sync::Mutex;
 
     #[derive(Clone)]
-    pub struct ThreadSafeClosableStream(Arc<Mutex<Option<BoxedStream>>>);
+    pub struct ThreadSafeCubebState {
+        ctx: Arc<Context>,
+        stream: Arc<Mutex<Option<BoxedStream>>>,
+    }
 
-    impl ThreadSafeClosableStream {
-        pub fn new<F: 'static>(stream: Stream<F>) -> Self {
-            let boxed_stream = BoxedStream(Box::new(stream));
+    impl ThreadSafeCubebState {
+        pub fn new(ctx: Context) -> Self {
             #[allow(clippy::arc_with_non_send_sync)]
-            Self(Arc::new(Mutex::new(Some(boxed_stream))))
+            Self {
+                ctx: Arc::new(ctx),
+                stream: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        pub fn context(&self) -> &Context {
+            &self.ctx
+        }
+
+        pub fn set_stream(&self, stream: BoxedStream) {
+            self.close();
+            *self.stream.lock().unwrap() = Some(stream);
         }
 
         pub fn close(&self) {
             let _ = self.suspend();
-            self.0.lock().unwrap().take();
+            self.stream.lock().unwrap().take();
         }
 
         pub fn resume(&self) -> BackendResult<bool> {
-            if let Some(s) = self.0.lock().unwrap().as_ref() {
+            if let Some(s) = self.stream.lock().unwrap().as_ref() {
                 s.0.delegate_start()
                     .map(|_| true)
                     .map_err(|e| map_cubeb_error("resume", e))?;
@@ -67,7 +87,7 @@ mod private {
         }
 
         pub fn suspend(&self) -> BackendResult<bool> {
-            if let Some(s) = self.0.lock().unwrap().as_ref() {
+            if let Some(s) = self.stream.lock().unwrap().as_ref() {
                 s.0.delegate_stop()
                     .map(|_| true)
                     .map_err(|e| map_cubeb_error("suspend", e))?;
@@ -78,7 +98,7 @@ mod private {
         }
 
         pub fn output_latency(&self, sample_rate: f32) -> BackendResult<f64> {
-            if let Some(s) = self.0.lock().unwrap().as_ref() {
+            if let Some(s) = self.stream.lock().unwrap().as_ref() {
                 return s
                     .0
                     .delegate_latency()
@@ -90,13 +110,20 @@ mod private {
         }
     }
 
+    impl Drop for ThreadSafeCubebState {
+        fn drop(&mut self) {
+            self.close();
+        }
+    }
+
     // SAFETY:
-    // The cubeb `Stream` is marked !Sync and !Send because some platforms are not thread-safe. TODO
+    // cubeb `Context` and `Stream` are marked !Sync and !Send because some platforms are not
+    // thread-safe. This wrapper is used to satisfy this crate's backend abstraction. TODO
     // <https://github.com/orottier/web-audio-api-rs/issues/357>
-    unsafe impl Sync for ThreadSafeClosableStream {}
-    unsafe impl Send for ThreadSafeClosableStream {}
+    unsafe impl Sync for ThreadSafeCubebState {}
+    unsafe impl Send for ThreadSafeCubebState {}
 }
-use private::ThreadSafeClosableStream;
+use private::ThreadSafeCubebState;
 
 fn map_cubeb_error(operation: &'static str, err: cubeb::Error) -> AudioBackendError {
     let kind = match err {
@@ -126,7 +153,7 @@ fn init_output_backend<const N: usize>(
     buffer_size: u32,
     device: Option<DeviceId>,
     mut renderer: RenderThread,
-) -> BackendResult<ThreadSafeClosableStream> {
+) -> BackendResult<BoxedStream> {
     let mut builder = cubeb::StreamBuilder::<[f32; N]>::new();
 
     match device {
@@ -157,13 +184,13 @@ fn init_output_backend<const N: usize>(
     let stream = builder
         .init(ctx)
         .map_err(|e| map_cubeb_error("init_output_stream", e))?;
-    Ok(ThreadSafeClosableStream::new(stream))
+    Ok(BoxedStream::new(stream))
 }
 
 /// Audio backend using the `cubeb` library
 #[derive(Clone)]
 pub(crate) struct CubebBackend {
-    stream: ThreadSafeClosableStream,
+    state: ThreadSafeCubebState,
     sample_rate: f32,
     number_of_channels: usize,
     sink_id: String,
@@ -187,7 +214,10 @@ impl AudioBackendManager for CubebBackend {
         } = render_thread_init;
 
         // Set up cubeb context
-        let ctx = Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?;
+        let cubeb_state = ThreadSafeCubebState::new(
+            Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?,
+        );
+        let ctx = cubeb_state.context();
         log::info!("Audio Output Host: cubeb {:?}", ctx.backend_id());
 
         // Use user requested sample rate, or else the device preferred one
@@ -288,8 +318,10 @@ impl AudioBackendManager for CubebBackend {
             )),
         };
 
+        cubeb_state.set_stream(stream?);
+
         let backend = CubebBackend {
-            stream: stream?,
+            state: cubeb_state,
             number_of_channels,
             sample_rate,
             sink_id: options.sink_id,
@@ -315,7 +347,10 @@ impl AudioBackendManager for CubebBackend {
          */
 
         // Set up cubeb context
-        let ctx = Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?;
+        let cubeb_state = ThreadSafeCubebState::new(
+            Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?,
+        );
+        let ctx = cubeb_state.context();
         log::info!("Audio Input Host: cubeb {:?}", ctx.backend_id());
 
         // Use user requested sample rate, or else the device preferred one
@@ -390,8 +425,10 @@ impl AudioBackendManager for CubebBackend {
             .start()
             .map_err(|e| map_cubeb_error("start_input_stream", e))?;
 
+        cubeb_state.set_stream(BoxedStream::new(stream));
+
         let backend = CubebBackend {
-            stream: ThreadSafeClosableStream::new(stream),
+            state: cubeb_state,
             number_of_channels: NUMBER_OF_INPUT_CHANNELS,
             sample_rate,
             sink_id: options.sink_id,
@@ -401,15 +438,15 @@ impl AudioBackendManager for CubebBackend {
     }
 
     fn resume(&self) -> BackendResult<bool> {
-        self.stream.resume()
+        self.state.resume()
     }
 
     fn suspend(&self) -> BackendResult<bool> {
-        self.stream.suspend()
+        self.state.suspend()
     }
 
     fn close(&self) -> BackendResult<()> {
-        self.stream.close();
+        self.state.close();
         Ok(())
     }
 
@@ -422,7 +459,7 @@ impl AudioBackendManager for CubebBackend {
     }
 
     fn output_latency(&self) -> BackendResult<f64> {
-        self.stream.output_latency(self.sample_rate)
+        self.state.output_latency(self.sample_rate)
     }
 
     fn sink_id(&self) -> &str {
