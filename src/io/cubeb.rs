@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::thread;
 
 use super::{
     AudioBackendError, AudioBackendErrorKind, AudioBackendManager, BackendResult, RenderThreadInit,
@@ -13,7 +13,7 @@ use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
 use cubeb::{Context, DeviceId, DeviceType, StereoFrame, Stream, StreamParams};
 
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, Sender};
 
 // erase type of `Frame` in cubeb `Stream<Frame>`
 struct BoxedStream(Box<dyn CubebStream>);
@@ -42,88 +42,167 @@ impl<F> CubebStream for Stream<F> {
     }
 }
 
-mod private {
+mod owner_thread {
     use super::*;
-    use std::sync::Mutex;
 
-    #[derive(Clone)]
-    pub struct ThreadSafeCubebState {
-        ctx: Arc<Context>,
-        stream: Arc<Mutex<Option<BoxedStream>>>,
+    pub struct Responder<T>(Sender<BackendResult<T>>);
+
+    impl<T> Responder<T> {
+        pub fn send(self, result: BackendResult<T>) {
+            let _ = self.0.send(result);
+        }
     }
 
-    impl ThreadSafeCubebState {
-        pub fn new(ctx: Context) -> Self {
-            #[allow(clippy::arc_with_non_send_sync)]
-            Self {
-                ctx: Arc::new(ctx),
-                stream: Arc::new(Mutex::new(None)),
+    pub enum CubebCommand {
+        Resume(Responder<bool>),
+        Suspend(Responder<bool>),
+        Close(Responder<()>),
+        OutputLatency {
+            sample_rate: f32,
+            response: Responder<f64>,
+        },
+    }
+
+    pub struct CubebStreamInfo {
+        pub sample_rate: f32,
+        pub number_of_channels: usize,
+    }
+
+    pub struct CubebOwner {
+        stream: BoxedStream,
+        _ctx: Context,
+    }
+
+    impl CubebOwner {
+        pub fn new(ctx: Context, stream: BoxedStream) -> Self {
+            Self { stream, _ctx: ctx }
+        }
+
+        pub fn run(self, commands: Receiver<CubebCommand>) {
+            while let Ok(command) = commands.recv() {
+                match command {
+                    CubebCommand::Resume(response) => {
+                        response.send(self.resume());
+                    }
+                    CubebCommand::Suspend(response) => {
+                        response.send(self.suspend());
+                    }
+                    CubebCommand::Close(response) => {
+                        let result = self.close();
+                        response.send(result);
+                        break;
+                    }
+                    CubebCommand::OutputLatency {
+                        sample_rate,
+                        response,
+                    } => {
+                        response.send(self.output_latency(sample_rate));
+                    }
+                }
             }
-        }
-
-        pub fn context(&self) -> &Context {
-            &self.ctx
-        }
-
-        pub fn set_stream(&self, stream: BoxedStream) {
-            self.close();
-            *self.stream.lock().unwrap() = Some(stream);
-        }
-
-        pub fn close(&self) {
-            let _ = self.suspend();
-            self.stream.lock().unwrap().take();
         }
 
         pub fn resume(&self) -> BackendResult<bool> {
-            if let Some(s) = self.stream.lock().unwrap().as_ref() {
-                s.0.delegate_start()
-                    .map(|_| true)
-                    .map_err(|e| map_cubeb_error("resume", e))?;
-                return Ok(true);
-            }
+            self.stream
+                .0
+                .delegate_start()
+                .map(|_| true)
+                .map_err(|e| map_cubeb_error("resume", e))
+        }
 
-            Ok(false)
+        fn suspend(&self) -> BackendResult<bool> {
+            self.stream
+                .0
+                .delegate_stop()
+                .map(|_| true)
+                .map_err(|e| map_cubeb_error("suspend", e))
+        }
+
+        fn close(self) -> BackendResult<()> {
+            let _ = self.stream.0.delegate_stop();
+            drop(self);
+            Ok(())
+        }
+
+        fn output_latency(&self, sample_rate: f32) -> BackendResult<f64> {
+            self.stream
+                .0
+                .delegate_latency()
+                .map(|frames| frames as f64 / sample_rate as f64)
+                .map_err(|e| map_cubeb_error("output_latency", e))
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct CubebThreadHandle {
+        commands: Sender<CubebCommand>,
+    }
+
+    impl CubebThreadHandle {
+        pub fn new(commands: Sender<CubebCommand>) -> Self {
+            Self { commands }
+        }
+
+        fn request<T>(
+            &self,
+            operation: &'static str,
+            make_command: impl FnOnce(Responder<T>) -> CubebCommand,
+        ) -> BackendResult<T> {
+            let (response_send, response_recv) = crossbeam_channel::bounded(1);
+            self.commands
+                .send(make_command(Responder(response_send)))
+                .map_err(|_| cubeb_backend_error(operation, "Cubeb owner thread has stopped"))?;
+            response_recv
+                .recv()
+                .map_err(|_| cubeb_backend_error(operation, "Cubeb owner thread has stopped"))?
+        }
+
+        pub fn close(&self) -> BackendResult<()> {
+            self.request("close", CubebCommand::Close)
+        }
+
+        pub fn resume(&self) -> BackendResult<bool> {
+            self.request("resume", CubebCommand::Resume)
         }
 
         pub fn suspend(&self) -> BackendResult<bool> {
-            if let Some(s) = self.stream.lock().unwrap().as_ref() {
-                s.0.delegate_stop()
-                    .map(|_| true)
-                    .map_err(|e| map_cubeb_error("suspend", e))?;
-                return Ok(true);
-            }
-
-            Ok(false)
+            self.request("suspend", CubebCommand::Suspend)
         }
 
         pub fn output_latency(&self, sample_rate: f32) -> BackendResult<f64> {
-            if let Some(s) = self.stream.lock().unwrap().as_ref() {
-                return s
-                    .0
-                    .delegate_latency()
-                    .map(|frames| frames as f64 / sample_rate as f64)
-                    .map_err(|e| map_cubeb_error("output_latency", e));
-            }
-
-            Ok(0.)
+            self.request("output_latency", |response| CubebCommand::OutputLatency {
+                sample_rate,
+                response,
+            })
         }
     }
-
-    impl Drop for ThreadSafeCubebState {
-        fn drop(&mut self) {
-            self.close();
-        }
-    }
-
-    // SAFETY:
-    // cubeb `Context` and `Stream` are marked !Sync and !Send because some platforms are not
-    // thread-safe. This wrapper is used to satisfy this crate's backend abstraction. TODO
-    // <https://github.com/orottier/web-audio-api-rs/issues/357>
-    unsafe impl Sync for ThreadSafeCubebState {}
-    unsafe impl Send for ThreadSafeCubebState {}
 }
-use private::ThreadSafeCubebState;
+use owner_thread::{CubebOwner, CubebStreamInfo, CubebThreadHandle};
+
+fn spawn_cubeb_owner(
+    name: &'static str,
+    build: impl FnOnce() -> BackendResult<(CubebOwner, CubebStreamInfo)> + Send + 'static,
+) -> BackendResult<(CubebThreadHandle, CubebStreamInfo)> {
+    let (commands_send, commands_recv) = crossbeam_channel::unbounded();
+    let (ready_send, ready_recv) = crossbeam_channel::bounded(1);
+    thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || match build() {
+            Ok((owner, info)) => {
+                let _ = ready_send.send(Ok(info));
+                owner.run(commands_recv);
+            }
+            Err(e) => {
+                let _ = ready_send.send(Err(e));
+            }
+        })
+        .map_err(|e| cubeb_backend_error("spawn_thread", e.to_string()))?;
+
+    let info = ready_recv
+        .recv()
+        .map_err(|_| cubeb_backend_error("spawn_thread", "Cubeb owner thread stopped"))??;
+    Ok((CubebThreadHandle::new(commands_send), info))
+}
 
 fn map_cubeb_error(operation: &'static str, err: cubeb::Error) -> AudioBackendError {
     let kind = match err {
@@ -190,7 +269,7 @@ fn init_output_backend<const N: usize>(
 /// Audio backend using the `cubeb` library
 #[derive(Clone)]
 pub(crate) struct CubebBackend {
-    state: ThreadSafeCubebState,
+    handle: CubebThreadHandle,
     sample_rate: f32,
     number_of_channels: usize,
     sink_id: String,
@@ -213,121 +292,126 @@ impl AudioBackendManager for CubebBackend {
             event_send,
         } = render_thread_init;
 
-        // Set up cubeb context
-        let cubeb_state = ThreadSafeCubebState::new(
-            Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?,
-        );
-        let ctx = cubeb_state.context();
-        log::info!("Audio Output Host: cubeb {:?}", ctx.backend_id());
+        let sink_id = options.sink_id.clone();
+        let (handle, info) = spawn_cubeb_owner("web-audio-api cubeb output", move || {
+            let ctx = Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?;
+            log::info!("Audio Output Host: cubeb {:?}", ctx.backend_id());
 
-        // Use user requested sample rate, or else the device preferred one
-        let device_sample_rate = ctx.preferred_sample_rate().map(|v| v as f32).ok();
-        let sample_rate = options.sample_rate.or(device_sample_rate).unwrap_or(48000.);
+            // Use user requested sample rate, or else the device preferred one
+            let device_sample_rate = ctx.preferred_sample_rate().map(|v| v as f32).ok();
+            let sample_rate = options.sample_rate.or(device_sample_rate).unwrap_or(48000.);
 
-        let number_of_channels = ctx
-            .max_channel_count()
-            .map(|v| v as usize)
-            .ok()
-            .unwrap_or(2);
+            let number_of_channels = ctx
+                .max_channel_count()
+                .map(|v| v as usize)
+                .ok()
+                .unwrap_or(2);
 
-        // clamp the requested stream number of channels to MAX_CHANNELS even if
-        // the soundcard can provide more channels
-        let number_of_channels = number_of_channels.min(MAX_CHANNELS);
+            // clamp the requested stream number of channels to MAX_CHANNELS even if
+            // the soundcard can provide more channels
+            let number_of_channels = number_of_channels.min(MAX_CHANNELS);
 
-        let layout = match number_of_channels {
-            1 => cubeb::ChannelLayout::MONO,
-            2 => cubeb::ChannelLayout::STEREO,
-            4 => cubeb::ChannelLayout::QUAD,
-            _ => cubeb::ChannelLayout::UNDEFINED, // TODO, does this work?
-        };
+            let layout = match number_of_channels {
+                1 => cubeb::ChannelLayout::MONO,
+                2 => cubeb::ChannelLayout::STEREO,
+                4 => cubeb::ChannelLayout::QUAD,
+                _ => cubeb::ChannelLayout::UNDEFINED, // TODO, does this work?
+            };
 
-        let mut renderer = RenderThread::new(
-            sample_rate,
-            number_of_channels,
-            ctrl_msg_recv,
-            state,
-            frames_played,
-            stats,
-            event_send,
-        );
-        renderer.set_startup_pending(startup_pending);
-        renderer.spawn_garbage_collector_thread();
+            let mut renderer = RenderThread::new(
+                sample_rate,
+                number_of_channels,
+                ctrl_msg_recv,
+                state,
+                frames_played,
+                stats,
+                event_send,
+            );
+            renderer.set_startup_pending(startup_pending);
+            renderer.spawn_garbage_collector_thread();
 
-        let params = cubeb::StreamParamsBuilder::new()
-            .format(cubeb::SampleFormat::Float32NE) // use float (native endian)
-            .rate(sample_rate as u32)
-            .channels(number_of_channels as u32)
-            .layout(layout)
-            .take();
+            let params = cubeb::StreamParamsBuilder::new()
+                .format(cubeb::SampleFormat::Float32NE) // use float (native endian)
+                .rate(sample_rate as u32)
+                .channels(number_of_channels as u32)
+                .layout(layout)
+                .take();
 
-        // Calculate ideal latency
-        let buffer_size_req =
-            super::buffer_size_for_latency_category(options.latency_hint, sample_rate) as u32;
-        let min_latency = ctx
-            .min_latency(&params)
-            .ok()
-            .unwrap_or(RENDER_QUANTUM_SIZE as u32);
-        let buffer_size = buffer_size_req.max(min_latency);
+            // Calculate ideal latency
+            let buffer_size_req =
+                super::buffer_size_for_latency_category(options.latency_hint, sample_rate) as u32;
+            let min_latency = ctx
+                .min_latency(&params)
+                .ok()
+                .unwrap_or(RENDER_QUANTUM_SIZE as u32);
+            let buffer_size = buffer_size_req.max(min_latency);
 
-        let device = if options.sink_id.is_empty() {
-            None
-        } else {
-            Self::enumerate_devices_sync()?
-                .into_iter()
-                .find(|e| e.device_id() == options.sink_id)
-                .and_then(|e| e.device().downcast::<DeviceId>().ok().map(|e| *e))
-        };
+            let device = if options.sink_id.is_empty() {
+                None
+            } else {
+                Self::enumerate_devices_sync()?
+                    .into_iter()
+                    .find(|e| e.device_id() == options.sink_id)
+                    .and_then(|e| e.device().downcast::<DeviceId>().ok().map(|e| *e))
+            };
 
-        let stream = match number_of_channels {
-            // so sorry, but I need to constify the non-const `number_of_channels`
-            1 => init_output_backend::<1>(&ctx, params, buffer_size, device, renderer),
-            2 => init_output_backend::<2>(&ctx, params, buffer_size, device, renderer),
-            3 => init_output_backend::<3>(&ctx, params, buffer_size, device, renderer),
-            4 => init_output_backend::<4>(&ctx, params, buffer_size, device, renderer),
-            5 => init_output_backend::<5>(&ctx, params, buffer_size, device, renderer),
-            6 => init_output_backend::<6>(&ctx, params, buffer_size, device, renderer),
-            7 => init_output_backend::<7>(&ctx, params, buffer_size, device, renderer),
-            8 => init_output_backend::<8>(&ctx, params, buffer_size, device, renderer),
-            9 => init_output_backend::<9>(&ctx, params, buffer_size, device, renderer),
-            10 => init_output_backend::<10>(&ctx, params, buffer_size, device, renderer),
-            11 => init_output_backend::<11>(&ctx, params, buffer_size, device, renderer),
-            12 => init_output_backend::<12>(&ctx, params, buffer_size, device, renderer),
-            13 => init_output_backend::<13>(&ctx, params, buffer_size, device, renderer),
-            14 => init_output_backend::<14>(&ctx, params, buffer_size, device, renderer),
-            15 => init_output_backend::<15>(&ctx, params, buffer_size, device, renderer),
-            16 => init_output_backend::<16>(&ctx, params, buffer_size, device, renderer),
-            17 => init_output_backend::<17>(&ctx, params, buffer_size, device, renderer),
-            18 => init_output_backend::<18>(&ctx, params, buffer_size, device, renderer),
-            19 => init_output_backend::<19>(&ctx, params, buffer_size, device, renderer),
-            20 => init_output_backend::<20>(&ctx, params, buffer_size, device, renderer),
-            21 => init_output_backend::<21>(&ctx, params, buffer_size, device, renderer),
-            22 => init_output_backend::<22>(&ctx, params, buffer_size, device, renderer),
-            23 => init_output_backend::<23>(&ctx, params, buffer_size, device, renderer),
-            24 => init_output_backend::<24>(&ctx, params, buffer_size, device, renderer),
-            25 => init_output_backend::<25>(&ctx, params, buffer_size, device, renderer),
-            26 => init_output_backend::<26>(&ctx, params, buffer_size, device, renderer),
-            27 => init_output_backend::<27>(&ctx, params, buffer_size, device, renderer),
-            28 => init_output_backend::<28>(&ctx, params, buffer_size, device, renderer),
-            29 => init_output_backend::<29>(&ctx, params, buffer_size, device, renderer),
-            30 => init_output_backend::<30>(&ctx, params, buffer_size, device, renderer),
-            31 => init_output_backend::<31>(&ctx, params, buffer_size, device, renderer),
-            32 => init_output_backend::<32>(&ctx, params, buffer_size, device, renderer),
-            _ => Err(cubeb_backend_error(
-                "init_output_stream",
-                "Unexpected channel count",
-            )),
-        };
+            let stream = match number_of_channels {
+                // so sorry, but I need to constify the non-const `number_of_channels`
+                1 => init_output_backend::<1>(&ctx, params, buffer_size, device, renderer),
+                2 => init_output_backend::<2>(&ctx, params, buffer_size, device, renderer),
+                3 => init_output_backend::<3>(&ctx, params, buffer_size, device, renderer),
+                4 => init_output_backend::<4>(&ctx, params, buffer_size, device, renderer),
+                5 => init_output_backend::<5>(&ctx, params, buffer_size, device, renderer),
+                6 => init_output_backend::<6>(&ctx, params, buffer_size, device, renderer),
+                7 => init_output_backend::<7>(&ctx, params, buffer_size, device, renderer),
+                8 => init_output_backend::<8>(&ctx, params, buffer_size, device, renderer),
+                9 => init_output_backend::<9>(&ctx, params, buffer_size, device, renderer),
+                10 => init_output_backend::<10>(&ctx, params, buffer_size, device, renderer),
+                11 => init_output_backend::<11>(&ctx, params, buffer_size, device, renderer),
+                12 => init_output_backend::<12>(&ctx, params, buffer_size, device, renderer),
+                13 => init_output_backend::<13>(&ctx, params, buffer_size, device, renderer),
+                14 => init_output_backend::<14>(&ctx, params, buffer_size, device, renderer),
+                15 => init_output_backend::<15>(&ctx, params, buffer_size, device, renderer),
+                16 => init_output_backend::<16>(&ctx, params, buffer_size, device, renderer),
+                17 => init_output_backend::<17>(&ctx, params, buffer_size, device, renderer),
+                18 => init_output_backend::<18>(&ctx, params, buffer_size, device, renderer),
+                19 => init_output_backend::<19>(&ctx, params, buffer_size, device, renderer),
+                20 => init_output_backend::<20>(&ctx, params, buffer_size, device, renderer),
+                21 => init_output_backend::<21>(&ctx, params, buffer_size, device, renderer),
+                22 => init_output_backend::<22>(&ctx, params, buffer_size, device, renderer),
+                23 => init_output_backend::<23>(&ctx, params, buffer_size, device, renderer),
+                24 => init_output_backend::<24>(&ctx, params, buffer_size, device, renderer),
+                25 => init_output_backend::<25>(&ctx, params, buffer_size, device, renderer),
+                26 => init_output_backend::<26>(&ctx, params, buffer_size, device, renderer),
+                27 => init_output_backend::<27>(&ctx, params, buffer_size, device, renderer),
+                28 => init_output_backend::<28>(&ctx, params, buffer_size, device, renderer),
+                29 => init_output_backend::<29>(&ctx, params, buffer_size, device, renderer),
+                30 => init_output_backend::<30>(&ctx, params, buffer_size, device, renderer),
+                31 => init_output_backend::<31>(&ctx, params, buffer_size, device, renderer),
+                32 => init_output_backend::<32>(&ctx, params, buffer_size, device, renderer),
+                _ => Err(cubeb_backend_error(
+                    "init_output_stream",
+                    "Unexpected channel count",
+                )),
+            }?;
 
-        cubeb_state.set_stream(stream?);
+            let owner = CubebOwner::new(ctx, stream);
+            owner.resume()?;
+            Ok((
+                owner,
+                CubebStreamInfo {
+                    sample_rate,
+                    number_of_channels,
+                },
+            ))
+        })?;
 
         let backend = CubebBackend {
-            state: cubeb_state,
-            number_of_channels,
-            sample_rate,
-            sink_id: options.sink_id,
+            handle,
+            number_of_channels: info.number_of_channels,
+            sample_rate: info.sample_rate,
+            sink_id,
         };
-
-        backend.resume()?;
 
         Ok(backend)
     }
@@ -346,108 +430,109 @@ impl AudioBackendManager for CubebBackend {
          * capture mic input, even if the user does not want it - TODO
          */
 
-        // Set up cubeb context
-        let cubeb_state = ThreadSafeCubebState::new(
-            Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?,
-        );
-        let ctx = cubeb_state.context();
-        log::info!("Audio Input Host: cubeb {:?}", ctx.backend_id());
-
-        // Use user requested sample rate, or else the device preferred one
-        let device_sample_rate = ctx.preferred_sample_rate().map(|v| v as f32).ok();
-        let sample_rate = options.sample_rate.or(device_sample_rate).unwrap_or(48000.);
-
-        // TODO support all channel configs
-        let _max_channel_count = ctx.max_channel_count().map(|v| v as usize).ok();
-        const NUMBER_OF_INPUT_CHANNELS: usize = 2;
-        let layout = cubeb::ChannelLayout::STEREO;
-
-        let params = cubeb::StreamParamsBuilder::new()
-            .format(cubeb::SampleFormat::Float32NE) // use float (native endian)
-            .rate(sample_rate as u32)
-            .channels(NUMBER_OF_INPUT_CHANNELS as u32)
-            .layout(layout)
-            .take();
-
-        // Calculate ideal latency
-        let buffer_size_req =
-            super::buffer_size_for_latency_category(options.latency_hint, sample_rate) as u32;
-        let min_latency = ctx
-            .min_latency(&params)
-            .ok()
-            .unwrap_or(RENDER_QUANTUM_SIZE as u32);
-        let buffer_size = buffer_size_req.max(min_latency);
-
-        let device = if options.sink_id.is_empty() {
-            None
-        } else {
-            Self::enumerate_devices_sync()?
-                .into_iter()
-                .find(|e| e.device_id() == options.sink_id)
-                .and_then(|e| e.device().downcast::<DeviceId>().ok().map(|e| *e))
-        };
-
         let smoothing = 3; // todo, use buffering to smooth frame drops
         let (sender, receiver) = crossbeam_channel::bounded(smoothing);
-        let renderer = MicrophoneRender::new(NUMBER_OF_INPUT_CHANNELS, sample_rate, sender);
+        let sink_id = options.sink_id.clone();
+        let (handle, info) = spawn_cubeb_owner("web-audio-api cubeb input", move || {
+            let ctx = Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?;
+            log::info!("Audio Input Host: cubeb {:?}", ctx.backend_id());
 
-        // Microphone input is always assumed STEREO (TODO)
-        let mut builder = cubeb::StreamBuilder::<StereoFrame<f32>>::new();
+            // Use user requested sample rate, or else the device preferred one
+            let device_sample_rate = ctx.preferred_sample_rate().map(|v| v as f32).ok();
+            let sample_rate = options.sample_rate.or(device_sample_rate).unwrap_or(48000.);
 
-        match device {
-            None => builder.default_input(&params),
-            Some(devid) => builder.input(devid, &params),
-        };
+            // TODO support all channel configs
+            let _max_channel_count = ctx.max_channel_count().map(|v| v as usize).ok();
+            const NUMBER_OF_INPUT_CHANNELS: usize = 2;
+            let layout = cubeb::ChannelLayout::STEREO;
 
-        builder
-            .name("Cubeb web_audio_api (input)")
-            .latency(buffer_size)
-            .data_callback(move |input, _output| {
-                let mut tmp = vec![0.; input.len() * NUMBER_OF_INPUT_CHANNELS];
-                tmp.chunks_mut(NUMBER_OF_INPUT_CHANNELS)
-                    .zip(input)
-                    .for_each(|(t, i)| {
-                        t[0] = i.l;
-                        t[1] = i.r;
-                    });
-                renderer.render(&tmp);
-                input.len() as isize
-            })
-            .state_callback(|state| {
-                log::debug!("stream state changed: {state:?}");
-            });
+            let params = cubeb::StreamParamsBuilder::new()
+                .format(cubeb::SampleFormat::Float32NE) // use float (native endian)
+                .rate(sample_rate as u32)
+                .channels(NUMBER_OF_INPUT_CHANNELS as u32)
+                .layout(layout)
+                .take();
 
-        let stream = builder
-            .init(&ctx)
-            .map_err(|e| map_cubeb_error("init_input_stream", e))?;
+            // Calculate ideal latency
+            let buffer_size_req =
+                super::buffer_size_for_latency_category(options.latency_hint, sample_rate) as u32;
+            let min_latency = ctx
+                .min_latency(&params)
+                .ok()
+                .unwrap_or(RENDER_QUANTUM_SIZE as u32);
+            let buffer_size = buffer_size_req.max(min_latency);
 
-        stream
-            .start()
-            .map_err(|e| map_cubeb_error("start_input_stream", e))?;
+            let device = if options.sink_id.is_empty() {
+                None
+            } else {
+                Self::enumerate_devices_sync()?
+                    .into_iter()
+                    .find(|e| e.device_id() == options.sink_id)
+                    .and_then(|e| e.device().downcast::<DeviceId>().ok().map(|e| *e))
+            };
 
-        cubeb_state.set_stream(BoxedStream::new(stream));
+            let renderer = MicrophoneRender::new(NUMBER_OF_INPUT_CHANNELS, sample_rate, sender);
+
+            // Microphone input is always assumed STEREO (TODO)
+            let mut builder = cubeb::StreamBuilder::<StereoFrame<f32>>::new();
+
+            match device {
+                None => builder.default_input(&params),
+                Some(devid) => builder.input(devid, &params),
+            };
+
+            builder
+                .name("Cubeb web_audio_api (input)")
+                .latency(buffer_size)
+                .data_callback(move |input, _output| {
+                    let mut tmp = vec![0.; input.len() * NUMBER_OF_INPUT_CHANNELS];
+                    tmp.chunks_mut(NUMBER_OF_INPUT_CHANNELS)
+                        .zip(input)
+                        .for_each(|(t, i)| {
+                            t[0] = i.l;
+                            t[1] = i.r;
+                        });
+                    renderer.render(&tmp);
+                    input.len() as isize
+                })
+                .state_callback(|state| {
+                    log::debug!("stream state changed: {state:?}");
+                });
+
+            let stream = builder
+                .init(&ctx)
+                .map_err(|e| map_cubeb_error("init_input_stream", e))?;
+            let owner = CubebOwner::new(ctx, BoxedStream::new(stream));
+            owner.resume()?;
+            Ok((
+                owner,
+                CubebStreamInfo {
+                    sample_rate,
+                    number_of_channels: NUMBER_OF_INPUT_CHANNELS,
+                },
+            ))
+        })?;
 
         let backend = CubebBackend {
-            state: cubeb_state,
-            number_of_channels: NUMBER_OF_INPUT_CHANNELS,
-            sample_rate,
-            sink_id: options.sink_id,
+            handle,
+            number_of_channels: info.number_of_channels,
+            sample_rate: info.sample_rate,
+            sink_id,
         };
 
         Ok((backend, receiver))
     }
 
     fn resume(&self) -> BackendResult<bool> {
-        self.state.resume()
+        self.handle.resume()
     }
 
     fn suspend(&self) -> BackendResult<bool> {
-        self.state.suspend()
+        self.handle.suspend()
     }
 
     fn close(&self) -> BackendResult<()> {
-        self.state.close();
-        Ok(())
+        self.handle.close()
     }
 
     fn sample_rate(&self) -> f32 {
@@ -459,7 +544,7 @@ impl AudioBackendManager for CubebBackend {
     }
 
     fn output_latency(&self) -> BackendResult<f64> {
-        self.state.output_latency(self.sample_rate)
+        self.handle.output_latency(self.sample_rate)
     }
 
     fn sink_id(&self) -> &str {
