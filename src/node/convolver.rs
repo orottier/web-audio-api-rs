@@ -355,7 +355,7 @@ impl AudioProcessor for ConvolverRenderer {
         // handle tail time and active processing
         // return early if input is silent and we reached the end of the convolution
         if input.is_silent() {
-            if self.tail_count > self.impulse_length {
+            if self.tail_count >= self.impulse_length {
                 output.make_silent();
                 return false;
             }
