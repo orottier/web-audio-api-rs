@@ -99,13 +99,13 @@ mod private {
 use private::ThreadSafeClosableStream;
 
 fn map_cubeb_error(operation: &'static str, err: cubeb::Error) -> AudioBackendError {
-    let kind = match err.code() {
-        cubeb::ErrorCode::DeviceUnavailable => AudioBackendErrorKind::DeviceUnavailable,
-        cubeb::ErrorCode::InvalidFormat | cubeb::ErrorCode::NotSupported => {
+    let kind = match err {
+        cubeb::Error::DeviceUnavailable => AudioBackendErrorKind::DeviceUnavailable,
+        cubeb::Error::InvalidFormat | cubeb::Error::NotSupported => {
             AudioBackendErrorKind::NotSupported
         }
-        cubeb::ErrorCode::InvalidParameter => AudioBackendErrorKind::InvalidArgument,
-        cubeb::ErrorCode::Error => AudioBackendErrorKind::BackendSpecific,
+        cubeb::Error::InvalidParameter => AudioBackendErrorKind::InvalidArgument,
+        cubeb::Error::Error => AudioBackendErrorKind::BackendSpecific,
     };
 
     AudioBackendError::new(kind, "cubeb", operation, err.to_string())
@@ -144,14 +144,14 @@ fn init_output_backend<const N: usize>(
             {
                 let output: &mut [f32] =
                     // SAFETY: `[T]` is layout-identical to `[T; N]`
-                    unsafe { std::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), RENDER_QUANTUM_SIZE * N) };
+                    unsafe { std::slice::from_raw_parts_mut(output.as_mut_ptr().cast(), output.len() * N) };
                 renderer.render(output);
             }
 
             output.len() as isize
         })
         .state_callback(|state| {
-            println!("stream state changed: {state:?}");
+            log::debug!("stream state changed: {state:?}");
         });
 
     let stream = builder
@@ -365,10 +365,10 @@ impl AudioBackendManager for CubebBackend {
         };
 
         builder
-            .name("Cubeb web_audio_api (mono)")
+            .name("Cubeb web_audio_api (input)")
             .latency(buffer_size)
             .data_callback(move |input, _output| {
-                let mut tmp = [0.; RENDER_QUANTUM_SIZE * NUMBER_OF_INPUT_CHANNELS];
+                let mut tmp = vec![0.; input.len() * NUMBER_OF_INPUT_CHANNELS];
                 tmp.chunks_mut(NUMBER_OF_INPUT_CHANNELS)
                     .zip(input)
                     .for_each(|(t, i)| {
@@ -379,7 +379,7 @@ impl AudioBackendManager for CubebBackend {
                 input.len() as isize
             })
             .state_callback(|state| {
-                println!("stream state changed: {state:?}");
+                log::debug!("stream state changed: {state:?}");
             });
 
         let stream = builder

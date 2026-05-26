@@ -29,7 +29,7 @@ creek = { version = "1.2", default-features = false, features = [
     "encode-wav",
 ] }
 crossbeam-channel = "0.5"
-cubeb = { version = "0.15", optional = true }
+cubeb = { version = "0.34", optional = true }
 dasp_sample = "0.11"
 float_eq = "1.0"
 futures-channel = { version = "0.3.30", features = ["sink"] }
