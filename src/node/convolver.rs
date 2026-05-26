@@ -351,7 +351,19 @@ impl AudioProcessor for ConvolverRenderer {
         // single input/output node
         let input = &inputs[0];
         let output = &mut outputs[0];
-        output.force_mono();
+
+        // handle tail time and active processing, return early if input is silent
+        // and we reached the end of the convolution
+        let is_silent_input = input.is_silent();
+
+        if is_silent_input {
+            if self.tail_count > self.impulse_length {
+                output.make_silent();
+                return false;
+            }
+
+            self.tail_count += RENDER_QUANTUM_SIZE;
+        }
 
         let convolvers = match &mut self.convolvers {
             None => {
@@ -475,13 +487,9 @@ impl AudioProcessor for ConvolverRenderer {
             _ => unreachable!(),
         }
 
-        // handle tail time
-        if input.is_silent() {
-            self.tail_count += RENDER_QUANTUM_SIZE;
-            return self.tail_count < self.impulse_length;
+        if !is_silent_input {
+            self.tail_count = 0;
         }
-
-        self.tail_count = 0;
 
         true
     }
