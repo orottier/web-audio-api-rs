@@ -85,7 +85,6 @@ pub struct MediaDeviceInfo {
     group_id: Option<String>,
     kind: MediaDeviceInfoKind,
     label: String,
-    device: Box<dyn std::any::Any>,
 }
 
 impl MediaDeviceInfo {
@@ -94,14 +93,12 @@ impl MediaDeviceInfo {
         group_id: Option<String>,
         kind: MediaDeviceInfoKind,
         label: String,
-        device: Box<dyn std::any::Any>,
     ) -> Self {
         Self {
             device_id,
             group_id,
             kind,
             label,
-            device,
         }
     }
 
@@ -126,10 +123,6 @@ impl MediaDeviceInfo {
     /// Friendly label describing this device
     pub fn label(&self) -> &str {
         &self.label
-    }
-
-    pub(crate) fn device(self) -> Box<dyn std::any::Any> {
-        self.device
     }
 }
 
