@@ -12,7 +12,8 @@ use cpal::{
 use crossbeam_channel::Receiver;
 
 use super::{
-    AudioBackendError, AudioBackendErrorKind, AudioBackendManager, BackendResult, RenderThreadInit,
+    AudioBackendError, AudioBackendErrorKind, AudioBackendManager, AudioBackendStreamEvent,
+    BackendResult, RenderThreadInit,
 };
 
 use crate::buffer::AudioBuffer;
@@ -107,6 +108,17 @@ fn map_cpal_pause_error(operation: &'static str, err: PauseStreamError) -> Audio
         PauseStreamError::BackendSpecific { .. } => AudioBackendErrorKind::BackendSpecific,
     };
     map_cpal_backend_error(kind, operation, err)
+}
+
+fn map_cpal_stream_event(err: cpal::StreamError) -> AudioBackendStreamEvent {
+    match err {
+        cpal::StreamError::DeviceNotAvailable => AudioBackendStreamEvent::DeviceNotAvailable,
+        cpal::StreamError::StreamInvalidated => AudioBackendStreamEvent::StreamInvalidated,
+        cpal::StreamError::BufferUnderrun => AudioBackendStreamEvent::BufferUnderrun,
+        cpal::StreamError::BackendSpecific { err } => AudioBackendStreamEvent::BackendSpecific {
+            message: err.to_string(),
+        },
+    }
 }
 
 fn map_cpal_devices_error(operation: &'static str, err: DevicesError) -> AudioBackendError {
@@ -665,11 +677,12 @@ fn spawn_output_stream(
 ) -> Result<Stream, BuildStreamError> {
     let err_fn = move |err| {
         log::error!("an error occurred on the output audio stream: {}", err);
+        let err = map_cpal_stream_event(err);
         if event_send
-            .try_send(EventDispatch::internal_backend_stream_error())
+            .try_send(EventDispatch::internal_backend_stream_event(err))
             .is_err()
         {
-            log::warn!("Unable to queue backend stream error event");
+            log::warn!("Unable to queue backend stream event");
         }
     };
 

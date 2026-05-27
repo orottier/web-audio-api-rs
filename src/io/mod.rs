@@ -47,6 +47,14 @@ pub(crate) struct AudioBackendError {
 
 pub(crate) type BackendResult<T> = Result<T, AudioBackendError>;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum AudioBackendStreamEvent {
+    DeviceNotAvailable,
+    StreamInvalidated,
+    BufferUnderrun,
+    BackendSpecific { message: String },
+}
+
 impl AudioBackendError {
     pub(crate) fn new(
         kind: AudioBackendErrorKind,

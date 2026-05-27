@@ -5,7 +5,10 @@ use std::sync::{Arc, Mutex};
 
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::events::{EventDispatch, EventHandler, EventLoop, EventPayload, EventType};
-use crate::io::{self, AudioBackendManager, ControlThreadInit, NoneBackend, RenderThreadInit};
+use crate::io::{
+    self, AudioBackendManager, AudioBackendStreamEvent, ControlThreadInit, NoneBackend,
+    RenderThreadInit,
+};
 use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::{ControlMessage, OneshotNotify};
@@ -289,18 +292,33 @@ impl AudioContext {
         let error_base = base.clone();
         let error_backend_manager = Arc::clone(&backend_manager);
         base.set_event_handler(
-            EventType::InternalBackendStreamError,
+            EventType::InternalBackendStreamEvent,
             EventHandler::Multiple(Box::new(move |payload| {
-                let EventPayload::InternalBackendStreamError = payload else {
+                let EventPayload::InternalBackendStreamEvent(error) = payload else {
                     unreachable!();
                 };
                 if error_base.state() == AudioContextState::Closed {
-                    log::info!("Ignoring backend stream error from closed context");
+                    log::info!("Ignoring backend stream event from closed context");
                     return;
                 }
-                log::info!("Closing backend after runtime stream error");
+
+                match error {
+                    AudioBackendStreamEvent::DeviceNotAvailable
+                    | AudioBackendStreamEvent::StreamInvalidated => {
+                        log::info!("Closing backend after recoverable runtime stream event: {error:?}");
+                    }
+                    AudioBackendStreamEvent::BufferUnderrun => {
+                        log::debug!("Ignoring backend stream buffer underrun event");
+                        return;
+                    }
+                    AudioBackendStreamEvent::BackendSpecific { message } => {
+                        log::warn!("Ignoring backend-specific stream event: {message}");
+                        return;
+                    }
+                }
+
                 if let Err(error) = error_backend_manager.lock().unwrap().close() {
-                    log::error!("Unable to close backend after runtime stream error: {error}");
+                    log::error!("Unable to close backend after runtime stream event: {error}");
                 }
             })),
         );
