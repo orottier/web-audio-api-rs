@@ -232,12 +232,20 @@ fn cubeb_device_for_id(
     kind: MediaDeviceInfoKind,
     device_id: &str,
 ) -> BackendResult<Option<DeviceId>> {
-    enumerate_cubeb_devices(context, device_type, kind).map(|devices| {
-        devices
-            .into_iter()
-            .find(|e| e.device_id() == device_id)
-            .and_then(|e| e.device().downcast::<DeviceId>().ok().map(|e| *e))
-    })
+    let devices = context
+        .enumerate_devices(device_type)
+        .map_err(|e| map_cubeb_error(enumerate_operation(kind), e))?;
+    let mut seen = Vec::<String>::new();
+
+    for device in devices.iter() {
+        let stable_id = cubeb_stable_device_id(device, kind, &seen)?;
+        if stable_id == device_id {
+            return Ok(Some(device.devid()));
+        }
+        seen.push(stable_id);
+    }
+
+    Ok(None)
 }
 
 fn init_output_backend<const N: usize>(
@@ -592,14 +600,9 @@ fn enumerate_cubeb_devices(
     device_type: DeviceType,
     kind: MediaDeviceInfoKind,
 ) -> BackendResult<Vec<MediaDeviceInfo>> {
-    let operation = match kind {
-        MediaDeviceInfoKind::AudioInput => "enumerate_input_devices",
-        MediaDeviceInfoKind::AudioOutput => "enumerate_output_devices",
-        MediaDeviceInfoKind::VideoInput => "enumerate_video_devices",
-    };
     let devices = context
         .enumerate_devices(device_type)
-        .map_err(|e| map_cubeb_error(operation, e))?;
+        .map_err(|e| map_cubeb_error(enumerate_operation(kind), e))?;
     let mut list = Vec::<MediaDeviceInfo>::new();
 
     for device in devices.iter() {
@@ -629,7 +632,6 @@ fn enumerate_cubeb_devices(
                     device.group_id().map(str::to_string),
                     kind,
                     friendly_name,
-                    Box::new(device.devid()),
                 );
 
                 list.push(device);
@@ -641,4 +643,59 @@ fn enumerate_cubeb_devices(
     }
 
     Ok(list)
+}
+
+fn enumerate_operation(kind: MediaDeviceInfoKind) -> &'static str {
+    match kind {
+        MediaDeviceInfoKind::AudioInput => "enumerate_input_devices",
+        MediaDeviceInfoKind::AudioOutput => "enumerate_output_devices",
+        MediaDeviceInfoKind::VideoInput => "enumerate_video_devices",
+    }
+}
+
+fn cubeb_stable_device_id(
+    device: &cubeb::DeviceInfo,
+    kind: MediaDeviceInfoKind,
+    seen: &[String],
+) -> BackendResult<String> {
+    let friendly_name = device
+        .friendly_name()
+        .ok_or_else(|| cubeb_backend_error("device_friendly_name", "Device has no friendly name"))?
+        .into();
+    let max_channels = device.max_channels().try_into().map_err(|_| {
+        cubeb_backend_error("device_max_channels", "Device channel count overflows u16")
+    })?;
+
+    Ok(stable_device_id(
+        "cubeb",
+        kind,
+        friendly_name,
+        max_channels,
+        seen,
+    ))
+}
+
+fn stable_device_id(
+    host: &str,
+    kind: MediaDeviceInfoKind,
+    friendly_name: String,
+    max_channels: u16,
+    seen: &[String],
+) -> String {
+    let mut index = 0;
+    loop {
+        let device_id = crate::media_devices::DeviceId::as_string(
+            kind,
+            host.to_string(),
+            friendly_name.clone(),
+            max_channels,
+            index,
+        );
+
+        if !seen.iter().any(|id| id == &device_id) {
+            return device_id;
+        }
+
+        index += 1;
+    }
 }

@@ -116,6 +116,85 @@ fn map_cpal_device_name_error(operation: &'static str, err: DeviceNameError) -> 
     map_cpal_backend_error(AudioBackendErrorKind::BackendSpecific, operation, err)
 }
 
+fn cpal_device_for_id(
+    host: &cpal::Host,
+    kind: MediaDeviceInfoKind,
+    device_id: &str,
+) -> BackendResult<Option<Device>> {
+    let devices: Vec<Device> = match kind {
+        MediaDeviceInfoKind::AudioInput => host
+            .input_devices()
+            .map_err(|e| map_cpal_devices_error("enumerate_input_devices", e))?
+            .collect(),
+        MediaDeviceInfoKind::AudioOutput => host
+            .output_devices()
+            .map_err(|e| map_cpal_devices_error("enumerate_output_devices", e))?
+            .collect(),
+        MediaDeviceInfoKind::VideoInput => Vec::new(),
+    };
+    let mut seen = Vec::<String>::new();
+
+    for device in devices {
+        let Some(num_channels) = cpal_device_channels(&device, kind) else {
+            continue;
+        };
+        let stable_id = cpal_stable_device_id(&device, kind, num_channels, &seen)?;
+        if stable_id == device_id {
+            return Ok(Some(device));
+        }
+        seen.push(stable_id);
+    }
+
+    Ok(None)
+}
+
+fn cpal_device_channels(device: &Device, kind: MediaDeviceInfoKind) -> Option<u16> {
+    Some(match kind {
+        MediaDeviceInfoKind::AudioInput => device.default_input_config().ok()?.channels(),
+        MediaDeviceInfoKind::AudioOutput => device.default_output_config().ok()?.channels(),
+        MediaDeviceInfoKind::VideoInput => return None,
+    })
+}
+
+fn cpal_stable_device_id(
+    device: &Device,
+    kind: MediaDeviceInfoKind,
+    num_channels: u16,
+    seen: &[String],
+) -> BackendResult<String> {
+    let name = device
+        .description()
+        .map_err(|e| map_cpal_device_name_error("device_name", e))?
+        .to_string();
+
+    Ok(stable_device_id("cpal", kind, name, num_channels, seen))
+}
+
+fn stable_device_id(
+    host: &str,
+    kind: MediaDeviceInfoKind,
+    friendly_name: String,
+    num_channels: u16,
+    seen: &[String],
+) -> String {
+    let mut index = 0;
+    loop {
+        let device_id = crate::media_devices::DeviceId::as_string(
+            kind,
+            host.to_string(),
+            friendly_name.clone(),
+            num_channels,
+            index,
+        );
+
+        if !seen.iter().any(|id| id == &device_id) {
+            return device_id;
+        }
+
+        index += 1;
+    }
+}
+
 /// Audio backend using the `cpal` library
 #[derive(Clone)]
 #[allow(unused)]
@@ -158,10 +237,7 @@ impl AudioBackendManager for CpalBackend {
                 )
             })?
         } else {
-            Self::enumerate_devices_sync()?
-                .into_iter()
-                .find(|e| e.device_id() == options.sink_id)
-                .and_then(|e| e.device().downcast::<cpal::Device>().ok().map(|e| *e))
+            cpal_device_for_id(&host, MediaDeviceInfoKind::AudioOutput, &options.sink_id)?
                 .or_else(|| host.default_output_device())
                 .ok_or_else(|| {
                     AudioBackendError::new(
@@ -337,10 +413,7 @@ impl AudioBackendManager for CpalBackend {
                 )
             })?
         } else {
-            Self::enumerate_devices_sync()?
-                .into_iter()
-                .find(|e| e.device_id() == options.sink_id)
-                .and_then(|e| e.device().downcast::<cpal::Device>().ok().map(|e| *e))
+            cpal_device_for_id(&host, MediaDeviceInfoKind::AudioInput, &options.sink_id)?
                 .or_else(|| host.default_input_device())
                 .ok_or_else(|| {
                     AudioBackendError::new(
@@ -547,7 +620,6 @@ impl AudioBackendManager for CpalBackend {
                             .description()
                             .map_err(|e| map_cpal_device_name_error("device_name", e))?
                             .to_string(),
-                        Box::new(device),
                     );
 
                     list.push(device);
