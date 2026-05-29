@@ -440,10 +440,20 @@ impl AudioProcessor for AudioBufferSourceRenderer {
         let block_duration = dt * RENDER_QUANTUM_SIZE as f64;
         let next_block_time = scope.current_time + block_duration;
 
+        // if start called and buffer is null, should fire ended event and ignore
+        // any subsequent buffer assignment.
+        // cf. wpt/webaudio/the-audio-api/the-audiobuffersourcenode-interface/audiobuffersource-start-null-buffer.html
+        if self.buffer.is_none() && self.start_time != f64::MAX {
+            output.make_silent();
+            self.render_state.ended = true;
+            scope.send_ended_event();
+            return false;
+        }
+
         // Return early if start_time is beyond this block
         if self.start_time >= next_block_time {
             output.make_silent();
-
+            // stop before start
             if self.stop_time <= next_block_time {
                 self.render_state.ended = true;
                 scope.send_ended_event();
@@ -478,12 +488,12 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
         // compute compound parameter at k-rate, these parameters have constraints
         // https://webaudio.github.io/web-audio-api/#audioparam-automation-rate-constraints
-        let detune = params.get(&self.detune)[0];
-        let playback_rate = params.get(&self.playback_rate)[0];
-        let computed_playback_rate = (playback_rate * (detune / 1200.).exp2()) as f64;
+        let detune = params.get(&self.detune)[0] as f64;
+        let playback_rate = params.get(&self.playback_rate)[0] as f64;
+        let computed_playback_rate = playback_rate * (detune / 1200.).exp2();
 
-        let buffer_duration = buffer.duration();
         let buffer_length = buffer.length();
+        let buffer_duration = buffer.duration();
         // multiplier to be applied on `position` to tackle possible difference
         // between the context and buffer sample rates. As this is an edge case,
         // we just linearly interpolate, thus favoring performance vs quality
@@ -663,9 +673,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     let delta = current_time - self.start_time;
                     // handle that start time may be between last sample and this one
                     self.offset += delta * computed_playback_rate;
+                    // clamp offset to buffer boundaries
+                    self.offset = self.offset.max(0.).min(buffer_duration);
 
-                    if is_looping && computed_playback_rate >= 0. && self.offset >= actual_loop_end
-                    {
+                    if is_looping && computed_playback_rate >= 0. && self.offset > actual_loop_end {
                         self.offset = actual_loop_end;
                     }
 
@@ -680,6 +691,14 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                 }
 
                 if is_looping {
+                    if almost::equal(buffer_time, actual_loop_end) {
+                        buffer_time = actual_loop_end;
+                    }
+
+                    if almost::equal(buffer_time, actual_loop_start) {
+                        buffer_time = actual_loop_start;
+                    }
+
                     if !self.render_state.entered_loop {
                         // playback began before or within loop, and playhead is now past loop start
                         if self.offset < actual_loop_end && buffer_time >= actual_loop_start {
@@ -702,6 +721,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                             buffer_time += actual_loop_end - actual_loop_start;
                         }
                     }
+                }
+
+                if almost::zero(buffer_time) {
+                    buffer_time = 0.
                 }
 
                 if buffer_time >= 0. && buffer_time < buffer_duration {
