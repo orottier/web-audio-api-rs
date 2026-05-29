@@ -642,6 +642,10 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     self.start_time = current_time;
                 }
 
+                if almost::equal(self.render_state.buffer_time_elapsed, self.duration) {
+                    self.render_state.buffer_time_elapsed = self.duration;
+                }
+
                 // Handle following cases:
                 // - we are before start time
                 // - we are after stop time
