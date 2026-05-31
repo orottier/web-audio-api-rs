@@ -1,11 +1,13 @@
 use std::thread;
 
 use super::{
-    AudioBackendError, AudioBackendErrorKind, AudioBackendManager, BackendResult, RenderThreadInit,
+    AudioBackendError, AudioBackendErrorKind, AudioBackendManager, AudioBackendStreamEvent,
+    BackendResult, RenderThreadInit,
 };
 
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
+use crate::events::EventDispatch;
 use crate::io::microphone::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
@@ -226,6 +228,15 @@ fn cubeb_backend_error(operation: &'static str, message: impl Into<String>) -> A
     )
 }
 
+fn queue_cubeb_stream_event(event_send: &Sender<EventDispatch>, event: AudioBackendStreamEvent) {
+    if event_send
+        .try_send(EventDispatch::internal_backend_stream_event(event))
+        .is_err()
+    {
+        log::warn!("Unable to queue backend stream event");
+    }
+}
+
 fn cubeb_device_for_id(
     context: &Context,
     device_type: DeviceType,
@@ -254,6 +265,7 @@ fn init_output_backend<const N: usize>(
     buffer_size: u32,
     device: Option<DeviceId>,
     mut renderer: RenderThread,
+    event_send: Sender<EventDispatch>,
 ) -> BackendResult<BoxedStream> {
     let mut builder = cubeb::StreamBuilder::<[f32; N]>::new();
 
@@ -278,8 +290,16 @@ fn init_output_backend<const N: usize>(
 
             output.len() as isize
         })
-        .state_callback(|state| {
-            log::debug!("stream state changed: {state:?}");
+        .state_callback(move |state| {
+            log::debug!("output stream state changed: {state:?}");
+
+            if state == cubeb::State::Error {
+                log::error!("cubeb output stream entered error state");
+                queue_cubeb_stream_event(
+                    &event_send,
+                    AudioBackendStreamEvent::StreamInvalidated,
+                );
+            }
         });
 
     let stream = builder
@@ -340,6 +360,7 @@ impl AudioBackendManager for CubebBackend {
                 _ => cubeb::ChannelLayout::UNDEFINED, // TODO, does this work?
             };
 
+            let stream_event_send = event_send.clone();
             let mut renderer = RenderThread::new(
                 sample_rate,
                 number_of_channels,
@@ -379,40 +400,53 @@ impl AudioBackendManager for CubebBackend {
                 )?
             };
 
+            macro_rules! init_output {
+                ($channels:literal) => {
+                    init_output_backend::<$channels>(
+                        &ctx,
+                        params,
+                        buffer_size,
+                        device,
+                        renderer,
+                        stream_event_send,
+                    )
+                };
+            }
+
             let stream = match number_of_channels {
                 // so sorry, but I need to constify the non-const `number_of_channels`
-                1 => init_output_backend::<1>(&ctx, params, buffer_size, device, renderer),
-                2 => init_output_backend::<2>(&ctx, params, buffer_size, device, renderer),
-                3 => init_output_backend::<3>(&ctx, params, buffer_size, device, renderer),
-                4 => init_output_backend::<4>(&ctx, params, buffer_size, device, renderer),
-                5 => init_output_backend::<5>(&ctx, params, buffer_size, device, renderer),
-                6 => init_output_backend::<6>(&ctx, params, buffer_size, device, renderer),
-                7 => init_output_backend::<7>(&ctx, params, buffer_size, device, renderer),
-                8 => init_output_backend::<8>(&ctx, params, buffer_size, device, renderer),
-                9 => init_output_backend::<9>(&ctx, params, buffer_size, device, renderer),
-                10 => init_output_backend::<10>(&ctx, params, buffer_size, device, renderer),
-                11 => init_output_backend::<11>(&ctx, params, buffer_size, device, renderer),
-                12 => init_output_backend::<12>(&ctx, params, buffer_size, device, renderer),
-                13 => init_output_backend::<13>(&ctx, params, buffer_size, device, renderer),
-                14 => init_output_backend::<14>(&ctx, params, buffer_size, device, renderer),
-                15 => init_output_backend::<15>(&ctx, params, buffer_size, device, renderer),
-                16 => init_output_backend::<16>(&ctx, params, buffer_size, device, renderer),
-                17 => init_output_backend::<17>(&ctx, params, buffer_size, device, renderer),
-                18 => init_output_backend::<18>(&ctx, params, buffer_size, device, renderer),
-                19 => init_output_backend::<19>(&ctx, params, buffer_size, device, renderer),
-                20 => init_output_backend::<20>(&ctx, params, buffer_size, device, renderer),
-                21 => init_output_backend::<21>(&ctx, params, buffer_size, device, renderer),
-                22 => init_output_backend::<22>(&ctx, params, buffer_size, device, renderer),
-                23 => init_output_backend::<23>(&ctx, params, buffer_size, device, renderer),
-                24 => init_output_backend::<24>(&ctx, params, buffer_size, device, renderer),
-                25 => init_output_backend::<25>(&ctx, params, buffer_size, device, renderer),
-                26 => init_output_backend::<26>(&ctx, params, buffer_size, device, renderer),
-                27 => init_output_backend::<27>(&ctx, params, buffer_size, device, renderer),
-                28 => init_output_backend::<28>(&ctx, params, buffer_size, device, renderer),
-                29 => init_output_backend::<29>(&ctx, params, buffer_size, device, renderer),
-                30 => init_output_backend::<30>(&ctx, params, buffer_size, device, renderer),
-                31 => init_output_backend::<31>(&ctx, params, buffer_size, device, renderer),
-                32 => init_output_backend::<32>(&ctx, params, buffer_size, device, renderer),
+                1 => init_output!(1),
+                2 => init_output!(2),
+                3 => init_output!(3),
+                4 => init_output!(4),
+                5 => init_output!(5),
+                6 => init_output!(6),
+                7 => init_output!(7),
+                8 => init_output!(8),
+                9 => init_output!(9),
+                10 => init_output!(10),
+                11 => init_output!(11),
+                12 => init_output!(12),
+                13 => init_output!(13),
+                14 => init_output!(14),
+                15 => init_output!(15),
+                16 => init_output!(16),
+                17 => init_output!(17),
+                18 => init_output!(18),
+                19 => init_output!(19),
+                20 => init_output!(20),
+                21 => init_output!(21),
+                22 => init_output!(22),
+                23 => init_output!(23),
+                24 => init_output!(24),
+                25 => init_output!(25),
+                26 => init_output!(26),
+                27 => init_output!(27),
+                28 => init_output!(28),
+                29 => init_output!(29),
+                30 => init_output!(30),
+                31 => init_output!(31),
+                32 => init_output!(32),
                 _ => Err(cubeb_backend_error(
                     "init_output_stream",
                     "Unexpected channel count",
