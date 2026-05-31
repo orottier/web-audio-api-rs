@@ -686,7 +686,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     }
 
                     buffer_time = self.offset;
-                    self.render_state.buffer_time_elapsed = delta * computed_playback_rate;
+                    self.render_state.buffer_time_elapsed = (delta * computed_playback_rate).abs();
                     self.render_state.started = true;
                 }
 
@@ -747,7 +747,7 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
                 let time_incr = dt * computed_playback_rate;
                 buffer_time += time_incr;
-                self.render_state.buffer_time_elapsed += time_incr;
+                self.render_state.buffer_time_elapsed += time_incr.abs();
             }
 
             // fill output according to computed positions
@@ -1506,6 +1506,55 @@ mod tests {
     }
 
     #[test]
+    fn test_null_buffer_start_ends_before_start_time() {
+        let sample_rate = 48_000.;
+        let mut context = OfflineAudioContext::new(1, sample_rate as usize, sample_rate);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+
+        let ended = Arc::new(AtomicBool::new(false));
+        let ended_clone = Arc::clone(&ended);
+        src.set_onended(move |_| {
+            ended_clone.store(true, Ordering::Relaxed);
+        });
+
+        src.start_at(0.75);
+        context.suspend_sync(0.5, move |context| {
+            assert!(ended.load(Ordering::Relaxed));
+            src.set_buffer(context.create_buffer(1, 1, sample_rate));
+        });
+
+        let result = context.start_rendering_sync();
+        assert_float_eq!(
+            result.get_channel_data(0)[..],
+            vec![0.; sample_rate as usize][..],
+            abs_all <= 0.
+        );
+    }
+
+    #[test]
+    fn test_reverse_playback_with_duration() {
+        let sample_rate = 48_000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+
+        let mut buffer = context.create_buffer(1, 5, sample_rate);
+        buffer.copy_to_channel(&[1., 2., 3., 4., 5.], 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer.clone());
+        src.playback_rate().set_value(-1.);
+        src.start_at_with_offset_and_duration(0., buffer.duration(), 2. / sample_rate as f64);
+
+        let result = context.start_rendering_sync();
+        let mut expected = vec![0.; RENDER_QUANTUM_SIZE];
+        expected[1] = 5.;
+
+        assert_float_eq!(result.get_channel_data(0)[..], expected[..], abs_all <= 0.);
+    }
+
+    #[test]
     fn test_offset_larger_than_buffer_duration() {
         let sample_rate = 48_000.;
         let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
@@ -1703,6 +1752,28 @@ mod tests {
                 abs_all <= 1e-9
             );
         }
+    }
+
+    #[test]
+    fn test_reverse_loop_boundaries() {
+        let sample_rate = 48_000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE, sample_rate);
+
+        let mut buffer = context.create_buffer(1, 5, sample_rate);
+        buffer.copy_to_channel(&[1., 2., 3., 4., 5.], 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        src.set_loop(true);
+        src.set_loop_start(1. / sample_rate as f64);
+        src.set_loop_end(4. / sample_rate as f64);
+        src.playback_rate().set_value(-1.);
+        src.start_at_with_offset(0., 3. / sample_rate as f64);
+
+        let result = context.start_rendering_sync();
+        let expected = [4., 3., 2., 4., 3., 2., 4., 3.];
+        assert_float_eq!(result.get_channel_data(0)[..8], expected[..], abs_all <= 0.);
     }
 
     #[test]
