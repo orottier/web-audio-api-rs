@@ -13,7 +13,7 @@ use crate::spatial::AudioListenerParams;
 
 use crate::AudioListener;
 
-use crossbeam_channel::{SendError, Sender};
+use crossbeam_channel::Sender;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
@@ -60,6 +60,9 @@ impl AudioNodeIdProvider {
 pub struct ConcreteBaseAudioContext {
     inner: Arc<ConcreteBaseAudioContextInner>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct EventSendError;
 
 impl PartialEq for ConcreteBaseAudioContext {
     fn eq(&self, other: &Self) -> bool {
@@ -319,8 +322,8 @@ impl ConcreteBaseAudioContext {
         }
     }
 
-    pub(crate) fn send_event(&self, msg: EventDispatch) -> Result<(), SendError<EventDispatch>> {
-        self.inner.event_send.send(msg)
+    pub(crate) fn send_event(&self, msg: EventDispatch) -> Result<(), EventSendError> {
+        self.inner.event_send.send(msg).map_err(|_| EventSendError)
     }
 
     pub(crate) fn lock_control_msg_sender(&self) -> RwLockWriteGuard<'_, Sender<ControlMessage>> {
