@@ -305,7 +305,9 @@ impl AudioContext {
                 match error {
                     AudioBackendStreamEvent::DeviceNotAvailable
                     | AudioBackendStreamEvent::StreamInvalidated => {
-                        log::info!("Closing backend after recoverable runtime stream event: {error:?}");
+                        log::info!(
+                            "Closing backend after recoverable runtime stream event: {error:?}"
+                        );
                     }
                     AudioBackendStreamEvent::BufferUnderrun => {
                         log::debug!("Ignoring backend stream buffer underrun event");
@@ -347,7 +349,9 @@ impl AudioContext {
                         log::info!("Rebooted audio graph on default output device");
                     }
                     Err(error) => {
-                        log::error!("Unable to reboot audio graph on default output device: {error}");
+                        log::error!(
+                            "Unable to reboot audio graph on default output device: {error}"
+                        );
                     }
                 }
             })),
