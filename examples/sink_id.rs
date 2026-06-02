@@ -57,10 +57,16 @@ fn main() {
     osc.start();
 
     loop {
-	println!();
-        loop {
-		println!("Current time is now {:<3}\r", context.current_time());
-                std::thread::sleep(std::time::Duration::from_millis(100));
+        let sink_id = ask_sink_id();
+        let result = context.set_sink_id_sync(sink_id);
+
+        if let Err(err) = result {
+            println!("Error setting sink id {}", err);
         }
+
+        println!("Playing beep for sink {:?}", context.sink_id());
+
+        // with this info we can ensure the progression of time with any backend
+        println!("Current time is now {:<3}", context.current_time());
     }
 }
