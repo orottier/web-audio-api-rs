@@ -282,14 +282,14 @@ impl IirFilterRenderer {
     fn new(mut feedforward: Vec<f64>, mut feedback: Vec<f64>) -> Self {
         // make sure feedback and feedforward have same length, fill with 0. to match
         match (feedforward.len(), feedback.len()) {
-            (feedforward_len, feedback_len) if feedforward_len > feedback_len => {
+            (feedforward_len, feedback_len) if feedforward_len < feedback_len => {
                 feedforward = feedforward
                     .into_iter()
                     .chain(std::iter::repeat(0.))
                     .take(feedback_len)
                     .collect();
             }
-            (feedforward_len, feedback_len) if feedforward_len < feedback_len => {
+            (feedforward_len, feedback_len) if feedforward_len > feedback_len => {
                 feedback = feedback
                     .into_iter()
                     .chain(std::iter::repeat(0.))
@@ -386,7 +386,7 @@ impl AudioProcessor for IirFilterRenderer {
                 let input = f64::from(i);
                 let b0 = self.norm_coeffs[0].0;
                 let last_state = channel_state[0];
-                let output = b0.mul_add(input, last_state);
+                let mut output = b0.mul_add(input, last_state);
 
                 // update states for next call
                 for (i, (b, a)) in self.norm_coeffs.iter().skip(1).enumerate() {
@@ -518,6 +518,32 @@ mod tests {
         let mut phase_response = [0., 1.0];
 
         iir.get_frequency_response(&frequency_hz, &mut mag_response, &mut phase_response);
+    }
+
+    #[test]
+    fn test_one_zero_with_feedback_feedforward_different_length() {
+        // cf. the-audio-api/the-iirfilternode-interface/iirfilter.html
+        let sample_rate = 24000.;
+        let mut context = OfflineAudioContext::new(1, 8000, sample_rate);
+        let buffer = AudioBuffer::from(vec![vec![1.]], sample_rate);
+        let mut source = context.create_buffer_source();
+        source.set_buffer(buffer);
+
+        let iir = context.create_iir_filter(vec![0.5, 0.5], vec![1.]);
+        source.connect(&iir).connect(&context.destination());
+        source.start();
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+        let mut expected = [0.; 8000];
+        expected[0] = 0.5;
+        expected[1] = 0.5;
+
+        assert_float_eq!(
+            result[..],
+            expected,
+            abs_all <= 0.
+        );
     }
 
     #[test]
