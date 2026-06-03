@@ -39,6 +39,7 @@ pub(crate) struct RenderThread {
     startup_pending: Option<Arc<AtomicBool>>,
     frames_played: Arc<AtomicU64>,
     receiver: Option<Receiver<ControlMessage>>,
+    pending_startup_messages: Vec<ControlMessage>,
     buffer_offset: Option<(usize, AudioRenderQuantum)>,
     stats: AudioStats,
     event_sender: Sender<EventDispatch>,
@@ -87,6 +88,7 @@ impl RenderThread {
             startup_pending: None,
             frames_played,
             receiver: Some(receiver),
+            pending_startup_messages: Vec::new(),
             buffer_offset: None,
             stats,
             event_sender,
@@ -122,6 +124,12 @@ impl RenderThread {
 
     fn handle_control_message(&mut self, msg: ControlMessage) -> ControlFlow<()> {
         use ControlMessage::*;
+
+        if self.graph.is_none() && !matches!(msg, Startup { .. }) {
+            // TODO: not realtime safe
+            self.pending_startup_messages.push(msg);
+            return ControlFlow::Continue(());
+        }
 
         match msg {
             RegisterNode {
@@ -182,6 +190,12 @@ impl RenderThread {
                     startup_pending.store(false, Ordering::Release);
                 }
                 self.set_state(AudioContextState::Running);
+                let pending_startup_messages = std::mem::take(&mut self.pending_startup_messages);
+                for msg in pending_startup_messages {
+                    if self.handle_control_message(msg).is_break() {
+                        return ControlFlow::Break(());
+                    }
+                }
             }
             NodeMessage { id, mut msg } => {
                 self.graph.as_mut().unwrap().route_message(id, msg.as_mut());
