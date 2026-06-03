@@ -315,27 +315,12 @@ impl AudioRenderQuantum {
                     // output.R = input;
                     self.channels.push(self.channels[0].clone());
                 }
-                (1, 3) => {
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence);
-                }
                 (1, 4) => {
                     // output.L = input;
                     // output.R = input;
                     // output.SL = 0;
                     // output.SR = 0;
                     self.channels.push(self.channels[0].clone());
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence);
-                }
-                (1, 5) => {
-                    // output.C = input;
-                    // output.L = 0;
-                    // output.R = 0;
-                    // output.SL = 0;
-                    // output.SR = 0;
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence.clone());
                     self.channels.push(silence.clone());
                     self.channels.push(silence);
                 }
@@ -353,26 +338,11 @@ impl AudioRenderQuantum {
                     self.channels.push(silence.clone());
                     self.channels.push(silence);
                 }
-                (2, 3) => {
-                    let left = std::mem::replace(&mut self.channels[0], silence);
-                    let right = std::mem::replace(&mut self.channels[1], left);
-                    self.channels.push(right);
-                }
                 (2, 4) => {
                     // output.L = input.L;
                     // output.R = input.R;
                     // output.SL = 0;
                     // output.SR = 0;
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence);
-                }
-                (2, 5) => {
-                    // output.L = input.L;
-                    // output.R = input.R;
-                    // output.C = 0;
-                    // output.SL = 0;
-                    // output.SR = 0;
-                    self.channels.push(silence.clone());
                     self.channels.push(silence.clone());
                     self.channels.push(silence);
                 }
@@ -384,18 +354,6 @@ impl AudioRenderQuantum {
                     // output.SL = 0;
                     // output.SR = 0;
                     self.channels.push(silence.clone());
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence);
-                }
-                (3, 4) => {
-                    self.channels.push(silence);
-                }
-                (3, 5) => {
-                    self.channels.push(silence.clone());
-                    self.channels.push(silence);
-                }
-                (3, 6) => {
                     self.channels.push(silence.clone());
                     self.channels.push(silence.clone());
                     self.channels.push(silence);
@@ -422,15 +380,6 @@ impl AudioRenderQuantum {
                     self.channels.push(sl);
                     self.channels.push(sr);
                 }
-                (5, 6) => {
-                    // output.L = input.L;
-                    // output.R = input.R;
-                    // output.C = 0;
-                    // output.LFE = 0;
-                    // output.SL = input.SL;
-                    // output.SR = input.SR;
-                    self.channels.push(silence);
-                }
                 // ------------------------------------------
                 // DOWN MIX
                 // https://www.w3.org/TR/webaudio/#down-mix
@@ -446,10 +395,6 @@ impl AudioRenderQuantum {
 
                     self.channels.truncate(1);
                 }
-                (3, 1) => {
-                    // M = C;
-                    self.channels.truncate(1);
-                }
                 (4, 1) => {
                     // M = 0.25 * (input.L + input.R + input.SL + input.SR);
                     let right = self.channels[1].clone();
@@ -463,12 +408,6 @@ impl AudioRenderQuantum {
                         .zip(s_right.iter())
                         .for_each(|(((l, r), sl), sr)| *l = 0.25 * (*l + *r + *sl + *sr));
 
-                    self.channels.truncate(1);
-                }
-                (5, 1) => {
-                    // M = C;
-                    let c = std::mem::replace(&mut self.channels[2], silence);
-                    self.channels[0] = c;
                     self.channels.truncate(1);
                 }
                 (6, 1) => {
@@ -491,9 +430,6 @@ impl AudioRenderQuantum {
 
                     self.channels.truncate(1);
                 }
-                (3, 2) => {
-                    self.channels.truncate(2);
-                }
                 (4, 2) => {
                     // output.L = 0.5 * (input.L + input.SL);
                     // output.R = 0.5 * (input.R + input.SR);
@@ -510,9 +446,6 @@ impl AudioRenderQuantum {
                         .zip(s_right.iter())
                         .for_each(|(r, sr)| *r = 0.5 * (*r + *sr));
 
-                    self.channels.truncate(2);
-                }
-                (5, 2) => {
                     self.channels.truncate(2);
                 }
                 (6, 2) => {
@@ -537,18 +470,6 @@ impl AudioRenderQuantum {
 
                     self.channels.truncate(2)
                 }
-                (4, 3) => {
-                    self.channels.truncate(3);
-                }
-                (5, 3) => {
-                    self.channels.truncate(3);
-                }
-                (6, 3) => {
-                    self.channels.truncate(3);
-                }
-                (5, 4) => {
-                    self.channels.truncate(4);
-                }
                 (6, 4) => {
                     // output.L = L + sqrt(0.5) * input.C
                     // output.R = R + sqrt(0.5) * input.C
@@ -568,10 +489,16 @@ impl AudioRenderQuantum {
                         .zip(center.iter())
                         .for_each(|(r, c)| *r += sqrt05 * c);
                 }
-                (6, 5) => {
-                    self.channels.truncate(5);
+                // In all other cases we fill with silence or truncate
+                _ => {
+                    // upmix by filling with silence
+                    for _ in self.number_of_channels()..computed_number_of_channels {
+                        self.channels.push(silence.clone());
+                    }
+
+                    // downmix by truncating
+                    self.channels.truncate(computed_number_of_channels);
                 }
-                _ => unreachable!(),
             }
         }
         debug_assert_eq!(self.number_of_channels(), computed_number_of_channels);
