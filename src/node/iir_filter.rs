@@ -386,7 +386,11 @@ impl AudioProcessor for IirFilterRenderer {
                 let input = f64::from(i);
                 let b0 = self.norm_coeffs[0].0;
                 let last_state = channel_state[0];
-                let mut output = b0.mul_add(input, last_state);
+                let mut output = b0.mul_add(input, last_state);// do not propagate denormals into graph and state
+
+                if !output.is_normal() {
+                    output = 0.;
+                }
 
                 // update states for next call
                 for (i, (b, a)) in self.norm_coeffs.iter().skip(1).enumerate() {
