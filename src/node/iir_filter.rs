@@ -386,8 +386,8 @@ impl AudioProcessor for IirFilterRenderer {
                 let input = f64::from(i);
                 let b0 = self.norm_coeffs[0].0;
                 let last_state = channel_state[0];
-                let mut output = b0.mul_add(input, last_state);// do not propagate denormals into graph and state
-
+                let mut output = b0.mul_add(input, last_state);
+                // do not propagate denormals into graph and state
                 if !output.is_normal() {
                     output = 0.;
                 }
@@ -543,11 +543,7 @@ mod tests {
         expected[0] = 0.5;
         expected[1] = 0.5;
 
-        assert_float_eq!(
-            result[..],
-            expected,
-            abs_all <= 0.
-        );
+        assert_float_eq!(result[..], expected, abs_all <= 0.);
     }
 
     #[test]
