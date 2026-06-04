@@ -416,13 +416,16 @@ impl AudioProcessor for OscillatorRenderer {
             self.start_time = current_time;
         }
 
+        let nyquist = sample_rate / 2.;
+
         if frequency_values.len() == 1 && detune_values.len() == 1 {
             let freq = frequency_values[0];
             let detune = detune_values[0];
             let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
+            let phase_incr = computed_freq / sample_rate;
 
             channel_data.iter_mut().for_each(|output| {
-                self.generate_sample(output, computed_freq, sample_rate, &mut current_time, dt)
+                self.generate_sample(output, computed_freq, phase_incr, nyquist, &mut current_time, dt)
             });
         } else {
             channel_data
@@ -431,7 +434,8 @@ impl AudioProcessor for OscillatorRenderer {
                 .zip(detune_values.iter().cycle())
                 .for_each(|((output, &freq), &detune)| {
                     let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
-                    self.generate_sample(output, computed_freq, sample_rate, &mut current_time, dt)
+                    let phase_incr = computed_freq / sample_rate;
+                    self.generate_sample(output, computed_freq, phase_incr, nyquist, &mut current_time, dt)
                 });
         }
 
@@ -491,7 +495,8 @@ impl OscillatorRenderer {
         &mut self,
         output: &mut f32,
         computed_freq: f64,
-        sample_rate: f64,
+        phase_incr: f64,
+        nyquist: f64,
         current_time: &mut f64,
         dt: f64,
     ) {
@@ -501,8 +506,6 @@ impl OscillatorRenderer {
 
             return;
         }
-
-        let phase_incr = computed_freq / sample_rate;
 
         // first sample to render
         if !self.started {
@@ -519,7 +522,7 @@ impl OscillatorRenderer {
         // output zero if computed_freq is above nyquist but continue to compute
         // timing and phase information as normal. Doesn't seems neither specified
         // nor tested, but looks like a sensible thing to do.
-        match computed_freq >= sample_rate / 2. {
+        match computed_freq >= nyquist {
             true => *output = 0.,
             false => {
                 *output = match self.type_ {
