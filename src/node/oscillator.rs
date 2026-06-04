@@ -425,7 +425,14 @@ impl AudioProcessor for OscillatorRenderer {
             let phase_incr = computed_freq / sample_rate;
 
             channel_data.iter_mut().for_each(|output| {
-                self.generate_sample(output, computed_freq, phase_incr, nyquist, &mut current_time, dt)
+                current_time = self.generate_sample(
+                    output,
+                    computed_freq,
+                    phase_incr,
+                    nyquist,
+                    current_time,
+                    dt,
+                );
             });
         } else {
             channel_data
@@ -435,7 +442,14 @@ impl AudioProcessor for OscillatorRenderer {
                 .for_each(|((output, &freq), &detune)| {
                     let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
                     let phase_incr = computed_freq / sample_rate;
-                    self.generate_sample(output, computed_freq, phase_incr, nyquist, &mut current_time, dt)
+                    current_time = self.generate_sample(
+                        output,
+                        computed_freq,
+                        phase_incr,
+                        nyquist,
+                        current_time,
+                        dt,
+                    )
                 });
         }
 
@@ -497,22 +511,20 @@ impl OscillatorRenderer {
         computed_freq: f64,
         phase_incr: f64,
         nyquist: f64,
-        current_time: &mut f64,
+        current_time: f64,
         dt: f64,
-    ) {
-        if *current_time < self.start_time || *current_time >= self.stop_time {
+    ) -> f64 {
+        if current_time < self.start_time || current_time >= self.stop_time {
             *output = 0.;
-            *current_time += dt;
-
-            return;
+            return current_time + dt;
         }
 
         // first sample to render
         if !self.started {
             // if start time was between last frame and current frame
             // we need to adjust the phase first
-            if *current_time > self.start_time {
-                let ratio = (*current_time - self.start_time) / dt;
+            if current_time > self.start_time {
+                let ratio = (current_time - self.start_time) / dt;
                 self.phase = Self::unroll_phase(phase_incr * ratio);
             }
 
@@ -535,9 +547,9 @@ impl OscillatorRenderer {
             }
         }
 
-        *current_time += dt;
-
         self.phase = Self::unroll_phase(self.phase + phase_incr);
+
+        current_time + dt
     }
 
     #[inline]
