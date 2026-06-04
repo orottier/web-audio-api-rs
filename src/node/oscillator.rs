@@ -27,12 +27,6 @@ fn precomputed_sine_table() -> &'static [f32] {
     })
 }
 
-// fn get_phase_incr(freq: f32, detune: f32, sample_rate: f64) -> f64 {
-//     let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
-//     let clamped = computed_freq.clamp(-sample_rate / 2., sample_rate / 2.);
-//     clamped / sample_rate
-// }
-
 /// Options for constructing an [`OscillatorNode`]
 // dictionary OscillatorOptions : AudioNodeOptions {
 //   OscillatorType type = "sine";
