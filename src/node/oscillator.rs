@@ -427,11 +427,9 @@ impl AudioProcessor for OscillatorRenderer {
             let detune = detune_values[0];
             let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
 
-            channel_data
-                .iter_mut()
-                .for_each(|output| {
-                    self.generate_sample(output, computed_freq, sample_rate, &mut current_time, dt)
-                });
+            channel_data.iter_mut().for_each(|output| {
+                self.generate_sample(output, computed_freq, sample_rate, &mut current_time, dt)
+            });
         } else {
             channel_data
                 .iter_mut()
@@ -1316,11 +1314,30 @@ mod tests {
     }
 
     #[test]
+    fn compute_freq_above_nyquist_outputs_zero() {
+        let freq = 20000.;
+        let detune = 1200.; // one octava upper, then computer feq is 40000Hz
+        let sample_rate = 44_100;
+
+        let mut context = OfflineAudioContext::new(1, 128, sample_rate as f32);
+
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(freq);
+        osc.detune().set_value(detune);
+        osc.start_at(0.);
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+
+        assert_float_eq!(result[..], [0.; 128], abs_all <= 1e-5);
+    }
+
+    #[test]
     fn sine_negative_frequency() {
         let freq = -100.;
         let sample_rate = 44_100;
         let length = sample_rate as usize;
-
 
         let mut context = OfflineAudioContext::new(1, length, sample_rate as f32);
 
