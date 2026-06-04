@@ -534,18 +534,26 @@ impl OscillatorRenderer {
         // output zero if computed_freq is above nyquist but continue to compute
         // timing and phase information as normal. Doesn't seems neither specified
         // nor tested, but looks like a sensible thing to do.
-        match computed_freq >= nyquist {
-            true => *output = 0.,
-            false => {
-                *output = match self.type_ {
-                    OscillatorType::Sine => self.generate_sine(),
-                    OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
-                    OscillatorType::Square => self.generate_square(phase_incr),
-                    OscillatorType::Triangle => self.generate_triangle(),
-                    OscillatorType::Custom => self.generate_custom(),
-                };
-            }
-        }
+        *output = match (computed_freq >= nyquist, self.type_) {
+            (true, _) => 0.,
+            (false, OscillatorType::Sine) => self.generate_sine(),
+            (false, OscillatorType::Sawtooth) => self.generate_sawtooth(phase_incr),
+            (false, OscillatorType::Square) => self.generate_square(phase_incr),
+            (false, OscillatorType::Triangle) => self.generate_triangle(),
+            (false, OscillatorType::Custom) => self.generate_custom(),
+        };
+        // match computed_freq >= nyquist {
+        //     true => *output = 0.,
+        //     false => {
+        //         *output = match self.type_ {
+        //             OscillatorType::Sine => self.generate_sine(),
+        //             OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
+        //             OscillatorType::Square => self.generate_square(phase_incr),
+        //             OscillatorType::Triangle => self.generate_triangle(),
+        //             OscillatorType::Custom => self.generate_custom(),
+        //         };
+        //     }
+        // }
 
         self.phase = Self::unroll_phase(self.phase + phase_incr);
 
