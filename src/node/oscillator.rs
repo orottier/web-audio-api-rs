@@ -27,11 +27,11 @@ fn precomputed_sine_table() -> &'static [f32] {
     })
 }
 
-fn get_phase_incr(freq: f32, detune: f32, sample_rate: f64) -> f64 {
-    let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
-    let clamped = computed_freq.clamp(-sample_rate / 2., sample_rate / 2.);
-    clamped / sample_rate
-}
+// fn get_phase_incr(freq: f32, detune: f32, sample_rate: f64) -> f64 {
+//     let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
+//     let clamped = computed_freq.clamp(-sample_rate / 2., sample_rate / 2.);
+//     clamped / sample_rate
+// }
 
 /// Options for constructing an [`OscillatorNode`]
 // dictionary OscillatorOptions : AudioNodeOptions {
@@ -423,18 +423,20 @@ impl AudioProcessor for OscillatorRenderer {
         }
 
         if frequency_values.len() == 1 && detune_values.len() == 1 {
-            let phase_incr = get_phase_incr(frequency_values[0], detune_values[0], sample_rate);
+            // let phase_incr = get_phase_incr(frequency_values[0], detune_values[0], sample_rate);
+            let freq = frequency_values[0];
+            let detune = detune_values[0];
+
             channel_data
                 .iter_mut()
-                .for_each(|output| self.generate_sample(output, phase_incr, &mut current_time, dt));
+                .for_each(|output| self.generate_sample(output, freq, detune, sample_rate, &mut current_time, dt));
         } else {
             channel_data
                 .iter_mut()
                 .zip(frequency_values.iter().cycle())
                 .zip(detune_values.iter().cycle())
-                .for_each(|((output, &f), &d)| {
-                    let phase_incr = get_phase_incr(f, d, sample_rate);
-                    self.generate_sample(output, phase_incr, &mut current_time, dt)
+                .for_each(|((output, &freq), &detune)| {
+                    self.generate_sample(output, freq, detune, sample_rate, &mut current_time, dt)
                 });
         }
 
@@ -493,7 +495,9 @@ impl OscillatorRenderer {
     fn generate_sample(
         &mut self,
         output: &mut f32,
-        phase_incr: f64,
+        freq: f32,
+        detune: f32,
+        sample_rate: f64,
         current_time: &mut f64,
         dt: f64,
     ) {
@@ -503,6 +507,9 @@ impl OscillatorRenderer {
 
             return;
         }
+
+        let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
+        let phase_incr = computed_freq / sample_rate;
 
         // first sample to render
         if !self.started {
@@ -516,17 +523,24 @@ impl OscillatorRenderer {
             self.started = true;
         }
 
-        // @note: per spec all default oscillators should be rendered from a
-        // wavetable, define if it worth the assle...
-        // e.g. for now `generate_sine` and `generate_custom` are almost the sames
-        // cf. https://webaudio.github.io/web-audio-api/#oscillator-coefficients
-        *output = match self.type_ {
-            OscillatorType::Sine => self.generate_sine(),
-            OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
-            OscillatorType::Square => self.generate_square(phase_incr),
-            OscillatorType::Triangle => self.generate_triangle(),
-            OscillatorType::Custom => self.generate_custom(),
-        };
+        // output zero if computed_freq is above nyquist but continue to compute
+        // timing and phase information as if there was sound. Doesn't seems neither
+        // specified nor tested, but looks like the logical thing to do.
+        if computed_freq >= sample_rate / 2. {
+            *output = 0.;
+        } else {
+            // @note: per spec all default oscillators should be rendered from a
+            // wavetable, define if it worth the hassle...
+            // e.g. for now `generate_sine` and `generate_custom` are almost the sames
+            // cf. https://webaudio.github.io/web-audio-api/#oscillator-coefficients
+            *output = match self.type_ {
+                OscillatorType::Sine => self.generate_sine(),
+                OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
+                OscillatorType::Square => self.generate_square(phase_incr),
+                OscillatorType::Triangle => self.generate_triangle(),
+                OscillatorType::Custom => self.generate_custom(),
+            };
+        }
 
         *current_time += dt;
 
