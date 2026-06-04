@@ -423,20 +423,23 @@ impl AudioProcessor for OscillatorRenderer {
         }
 
         if frequency_values.len() == 1 && detune_values.len() == 1 {
-            // let phase_incr = get_phase_incr(frequency_values[0], detune_values[0], sample_rate);
             let freq = frequency_values[0];
             let detune = detune_values[0];
+            let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
 
             channel_data
                 .iter_mut()
-                .for_each(|output| self.generate_sample(output, freq, detune, sample_rate, &mut current_time, dt));
+                .for_each(|output| {
+                    self.generate_sample(output, computed_freq, sample_rate, &mut current_time, dt)
+                });
         } else {
             channel_data
                 .iter_mut()
                 .zip(frequency_values.iter().cycle())
                 .zip(detune_values.iter().cycle())
                 .for_each(|((output, &freq), &detune)| {
-                    self.generate_sample(output, freq, detune, sample_rate, &mut current_time, dt)
+                    let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
+                    self.generate_sample(output, computed_freq, sample_rate, &mut current_time, dt)
                 });
         }
 
@@ -495,8 +498,7 @@ impl OscillatorRenderer {
     fn generate_sample(
         &mut self,
         output: &mut f32,
-        freq: f32,
-        detune: f32,
+        computed_freq: f64,
         sample_rate: f64,
         current_time: &mut f64,
         dt: f64,
@@ -508,7 +510,6 @@ impl OscillatorRenderer {
             return;
         }
 
-        let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
         let phase_incr = computed_freq / sample_rate;
 
         // first sample to render
@@ -524,22 +525,19 @@ impl OscillatorRenderer {
         }
 
         // output zero if computed_freq is above nyquist but continue to compute
-        // timing and phase information as if there was sound. Doesn't seems neither
-        // specified nor tested, but looks like the logical thing to do.
-        if computed_freq >= sample_rate / 2. {
-            *output = 0.;
-        } else {
-            // @note: per spec all default oscillators should be rendered from a
-            // wavetable, define if it worth the hassle...
-            // e.g. for now `generate_sine` and `generate_custom` are almost the sames
-            // cf. https://webaudio.github.io/web-audio-api/#oscillator-coefficients
-            *output = match self.type_ {
-                OscillatorType::Sine => self.generate_sine(),
-                OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
-                OscillatorType::Square => self.generate_square(phase_incr),
-                OscillatorType::Triangle => self.generate_triangle(),
-                OscillatorType::Custom => self.generate_custom(),
-            };
+        // timing and phase information as normal. Doesn't seems neither specified
+        // nor tested, but looks like a sensible thing to do.
+        match computed_freq >= sample_rate / 2. {
+            true => *output = 0.,
+            false => {
+                *output = match self.type_ {
+                    OscillatorType::Sine => self.generate_sine(),
+                    OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
+                    OscillatorType::Square => self.generate_square(phase_incr),
+                    OscillatorType::Triangle => self.generate_triangle(),
+                    OscillatorType::Custom => self.generate_custom(),
+                };
+            }
         }
 
         *current_time += dt;
@@ -641,6 +639,10 @@ impl OscillatorRenderer {
     fn unroll_phase(mut phase: f64) -> f64 {
         if phase >= 1. {
             phase -= 1.
+        }
+
+        if phase < 0. {
+            phase += 1.
         }
 
         phase
@@ -1308,6 +1310,34 @@ mod tests {
                 expected.push(sample as f32);
                 phase += phase_incr;
             }
+        }
+
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
+    }
+
+    #[test]
+    fn sine_negative_frequency() {
+        let freq = -100.;
+        let sample_rate = 44_100;
+        let length = sample_rate as usize;
+
+
+        let mut context = OfflineAudioContext::new(1, length, sample_rate as f32);
+
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(freq);
+        osc.start_at(0.);
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+        let mut expected = Vec::<f32>::with_capacity(length);
+
+        for i in 0..length {
+            let phase = freq as f64 * i as f64 / sample_rate as f64;
+            let sample = (phase * 2. * PI).sin();
+            // phase += phase_incr;
+            expected.push(sample as f32);
         }
 
         assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
