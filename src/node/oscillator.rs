@@ -535,10 +535,10 @@ impl OscillatorRenderer {
             self.started = true;
         }
 
-        // output zero if computed_freq is above nyquist but continue to compute
+        // output zero if computed_freq is beyond nyquist but continue to compute
         // timing and phase information as normal. Doesn't seems neither specified
         // nor tested, but looks like a sensible thing to do.
-        *output = match (computed_freq >= nyquist, self.type_) {
+        *output = match (computed_freq.abs() >= nyquist, self.type_) {
             (true, _) => 0.,
             (false, OscillatorType::Sine) => self.generate_sine(),
             (false, OscillatorType::Sawtooth) => self.generate_sawtooth(phase_incr),
@@ -1325,7 +1325,27 @@ mod tests {
     #[test]
     fn compute_freq_above_nyquist_outputs_zero() {
         let freq = 20000.;
-        let detune = 1200.; // one octava upper, then computer feq is 40000Hz
+        let detune = 1200.; // one octave upper, then computed feq is 40000Hz
+        let sample_rate = 44_100;
+
+        let mut context = OfflineAudioContext::new(1, 128, sample_rate as f32);
+
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(freq);
+        osc.detune().set_value(detune);
+        osc.start_at(0.);
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+
+        assert_float_eq!(result[..], [0.; 128], abs_all <= 1e-5);
+    }
+
+    #[test]
+    fn compute_freq_below_negative_nyquist_outputs_zero() {
+        let freq = -20000.;
+        let detune = 1200.; // one octave lower, then computed feq is -40000Hz
         let sample_rate = 44_100;
 
         let mut context = OfflineAudioContext::new(1, 128, sample_rate as f32);
