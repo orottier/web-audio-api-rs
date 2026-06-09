@@ -644,16 +644,14 @@ impl OscillatorRenderer {
     }
 
     #[inline]
-    fn unroll_phase(mut phase: f64) -> f64 {
+    fn unroll_phase(phase: f64) -> f64 {
         if phase >= 1. {
-            phase -= 1.
+            phase - 1.
+        } else if phase < 0. {
+            phase + 1.
+        } else {
+            phase
         }
-
-        if phase < 0. {
-            phase += 1.
-        }
-
-        phase
     }
 
     #[inline]
