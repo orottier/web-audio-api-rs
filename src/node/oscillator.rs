@@ -519,7 +519,11 @@ impl OscillatorRenderer {
             // we need to adjust the phase first
             if current_time > self.start_time {
                 let ratio = (current_time - self.start_time) / dt;
-                self.phase = Self::unroll_phase(phase_incr * ratio);
+                self.phase = if outside_nyquist {
+                    Self::unroll_phase_unbounded(phase_incr * ratio)
+                } else {
+                    Self::unroll_phase(phase_incr * ratio)
+                };
             }
 
             self.started = true;
@@ -540,7 +544,11 @@ impl OscillatorRenderer {
             }
         };
 
-        self.phase = Self::unroll_phase(self.phase + phase_incr);
+        self.phase = if outside_nyquist {
+            Self::unroll_phase_unbounded(self.phase + phase_incr)
+        } else {
+            Self::unroll_phase(self.phase + phase_incr)
+        };
 
         current_time + dt
     }
@@ -646,6 +654,11 @@ impl OscillatorRenderer {
         }
 
         phase
+    }
+
+    #[inline]
+    fn unroll_phase_unbounded(phase: f64) -> f64 {
+        phase.rem_euclid(1.)
     }
 }
 
@@ -1353,6 +1366,31 @@ mod tests {
         let result = output.get_channel_data(0);
 
         assert_float_eq!(result[..], [0.; 128], abs_all <= 1e-5);
+    }
+
+    #[test]
+    fn oscillator_can_reenter_audible_range_after_large_phase_increments() {
+        let sample_rate = 44_100;
+        let mut context = OfflineAudioContext::new(1, 256, sample_rate as f32);
+
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(20_000.);
+        osc.detune().set_value(2400.); // computed frequency is 80_000Hz
+        osc.detune()
+            .set_value_at_time(0., RENDER_QUANTUM_SIZE as f64 / sample_rate as f64);
+        osc.start_at(0.);
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+
+        assert_float_eq!(
+            result[..RENDER_QUANTUM_SIZE],
+            [0.; RENDER_QUANTUM_SIZE],
+            abs_all <= 1e-5
+        );
+        assert!(result[RENDER_QUANTUM_SIZE..].iter().all(|v| v.is_finite()));
+        assert!(result[RENDER_QUANTUM_SIZE..].iter().any(|&v| v != 0.));
     }
 
     #[test]
