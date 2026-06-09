@@ -269,8 +269,8 @@ impl IIRFilterNode {
 struct IirFilterRenderer {
     /// Normalized filter's coeffs -- `(b[n], a[n])`
     norm_coeffs: Vec<(f64, f64)>,
-    /// filter's states
-    states: ArrayVec<Vec<f64>, MAX_CHANNELS>,
+    /// Per-channel filter state. Only the first `norm_coeffs.len()` entries are active.
+    states: ArrayVec<[f64; MAX_IIR_COEFFS_LEN], MAX_CHANNELS>,
 }
 
 impl IirFilterRenderer {
@@ -307,12 +307,10 @@ impl IirFilterRenderer {
             *a /= a0;
         });
 
-        let coeffs_len = norm_coeffs.len();
-
         // eagerly assume stereo input, will adjust during rendering if needed
         let mut states = ArrayVec::new();
-        states.push(vec![0.; coeffs_len]);
-        states.push(vec![0.; coeffs_len]);
+        states.push([0.; MAX_IIR_COEFFS_LEN]);
+        states.push([0.; MAX_IIR_COEFFS_LEN]);
 
         Self {
             norm_coeffs,
@@ -339,7 +337,10 @@ impl AudioProcessor for IirFilterRenderer {
 
             // if all values in states are 0., we have nothing left to process
             self.states.iter().all(|state| {
-                if state.iter().any(|&v| v.is_normal()) {
+                if state[..self.norm_coeffs.len()]
+                    .iter()
+                    .any(|&v| v.is_normal())
+                {
                     ended = false;
                 }
                 // if ended is false, `iter().all` will stop early
@@ -363,7 +364,7 @@ impl AudioProcessor for IirFilterRenderer {
             if num_channels != self.states.len() {
                 self.states.truncate(num_channels);
                 for _ in self.states.len()..num_channels {
-                    self.states.push(vec![0.; self.norm_coeffs.len()]);
+                    self.states.push([0.; MAX_IIR_COEFFS_LEN]);
                 }
             }
 
