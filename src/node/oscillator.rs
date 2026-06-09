@@ -525,16 +525,19 @@ impl OscillatorRenderer {
             self.started = true;
         }
 
-        // Output silence when the computed oscillator frequency is outside the
-        // nominal [-nyquist, nyquist] range. Timing and phase still advance so
-        // automation can re-enter the audible range without resetting phase.
-        *output = match (outside_nyquist, self.type_) {
-            (true, _) => 0.,
-            (false, OscillatorType::Sine) => self.generate_sine(),
-            (false, OscillatorType::Sawtooth) => self.generate_sawtooth(phase_incr),
-            (false, OscillatorType::Square) => self.generate_square(phase_incr),
-            (false, OscillatorType::Triangle) => self.generate_triangle(),
-            (false, OscillatorType::Custom) => self.generate_custom(),
+        *output = if outside_nyquist {
+            // Output silence when the computed oscillator frequency is outside the
+            // nominal [-nyquist, nyquist] range. Timing and phase still advance so
+            // automation can re-enter the audible range without resetting phase.
+            0.
+        } else {
+            match self.type_ {
+                OscillatorType::Sine => self.generate_sine(),
+                OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
+                OscillatorType::Square => self.generate_square(phase_incr),
+                OscillatorType::Triangle => self.generate_triangle(),
+                OscillatorType::Custom => self.generate_custom(),
+            }
         };
 
         self.phase = Self::unroll_phase(self.phase + phase_incr);
