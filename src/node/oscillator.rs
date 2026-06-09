@@ -27,6 +27,10 @@ fn precomputed_sine_table() -> &'static [f32] {
     })
 }
 
+fn get_computed_freq(freq: f32, detune: f32) -> f64 {
+    freq as f64 * (detune as f64 / 1200.).exp2()
+}
+
 /// Options for constructing an [`OscillatorNode`]
 // dictionary OscillatorOptions : AudioNodeOptions {
 //   OscillatorType type = "sine";
@@ -421,7 +425,7 @@ impl AudioProcessor for OscillatorRenderer {
         if frequency_values.len() == 1 && detune_values.len() == 1 {
             let freq = frequency_values[0];
             let detune = detune_values[0];
-            let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
+            let computed_freq = get_computed_freq(freq, detune);
             let phase_incr = computed_freq / sample_rate;
 
             channel_data.iter_mut().for_each(|output| {
@@ -440,7 +444,7 @@ impl AudioProcessor for OscillatorRenderer {
                 .zip(frequency_values.iter().cycle())
                 .zip(detune_values.iter().cycle())
                 .for_each(|((output, &freq), &detune)| {
-                    let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
+                    let computed_freq = get_computed_freq(freq, detune);
                     let phase_incr = computed_freq / sample_rate;
                     current_time = self.generate_sample(
                         output,
@@ -542,18 +546,6 @@ impl OscillatorRenderer {
             (false, OscillatorType::Triangle) => self.generate_triangle(),
             (false, OscillatorType::Custom) => self.generate_custom(),
         };
-        // match computed_freq >= nyquist {
-        //     true => *output = 0.,
-        //     false => {
-        //         *output = match self.type_ {
-        //             OscillatorType::Sine => self.generate_sine(),
-        //             OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
-        //             OscillatorType::Square => self.generate_square(phase_incr),
-        //             OscillatorType::Triangle => self.generate_triangle(),
-        //             OscillatorType::Custom => self.generate_custom(),
-        //         };
-        //     }
-        // }
 
         self.phase = Self::unroll_phase(self.phase + phase_incr);
 
