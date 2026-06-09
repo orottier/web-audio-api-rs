@@ -422,21 +422,17 @@ impl AudioProcessor for OscillatorRenderer {
 
         let nyquist = sample_rate / 2.;
 
+        // fast path for scalar AudioParam values
         if frequency_values.len() == 1 && detune_values.len() == 1 {
             let freq = frequency_values[0];
             let detune = detune_values[0];
             let computed_freq = get_computed_freq(freq, detune);
             let phase_incr = computed_freq / sample_rate;
+            let outside_nyquist = computed_freq.abs() >= nyquist;
 
             channel_data.iter_mut().for_each(|output| {
-                current_time = self.generate_sample(
-                    output,
-                    computed_freq,
-                    phase_incr,
-                    nyquist,
-                    current_time,
-                    dt,
-                );
+                current_time =
+                    self.generate_sample(output, outside_nyquist, phase_incr, current_time, dt);
             });
         } else {
             channel_data
@@ -446,14 +442,9 @@ impl AudioProcessor for OscillatorRenderer {
                 .for_each(|((output, &freq), &detune)| {
                     let computed_freq = get_computed_freq(freq, detune);
                     let phase_incr = computed_freq / sample_rate;
-                    current_time = self.generate_sample(
-                        output,
-                        computed_freq,
-                        phase_incr,
-                        nyquist,
-                        current_time,
-                        dt,
-                    )
+                    let outside_nyquist = computed_freq.abs() >= nyquist;
+                    current_time =
+                        self.generate_sample(output, outside_nyquist, phase_incr, current_time, dt)
                 });
         }
 
@@ -512,9 +503,8 @@ impl OscillatorRenderer {
     fn generate_sample(
         &mut self,
         output: &mut f32,
-        computed_freq: f64,
+        outside_nyquist: bool,
         phase_incr: f64,
-        nyquist: f64,
         current_time: f64,
         dt: f64,
     ) -> f64 {
@@ -535,10 +525,10 @@ impl OscillatorRenderer {
             self.started = true;
         }
 
-        // output zero if computed_freq is beyond nyquist but continue to compute
-        // timing and phase information as normal. Doesn't seems neither specified
-        // nor tested, but looks like a sensible thing to do.
-        *output = match (computed_freq.abs() >= nyquist, self.type_) {
+        // Output silence when the computed oscillator frequency is outside the
+        // nominal [-nyquist, nyquist] range. Timing and phase still advance so
+        // automation can re-enter the audible range without resetting phase.
+        *output = match (outside_nyquist, self.type_) {
             (true, _) => 0.,
             (false, OscillatorType::Sine) => self.generate_sine(),
             (false, OscillatorType::Sawtooth) => self.generate_sawtooth(phase_incr),
