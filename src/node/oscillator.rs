@@ -429,11 +429,21 @@ impl AudioProcessor for OscillatorRenderer {
             let computed_freq = get_computed_freq(freq, detune);
             let phase_incr = computed_freq / sample_rate;
             let outside_nyquist = computed_freq.abs() >= nyquist;
+            let fully_active = self.started
+                && self.start_time <= scope.current_time
+                && self.stop_time >= next_block_time;
 
-            channel_data.iter_mut().for_each(|output| {
-                current_time =
-                    self.generate_sample(output, outside_nyquist, phase_incr, current_time, dt);
-            });
+            if fully_active && !outside_nyquist {
+                channel_data.iter_mut().for_each(|output| {
+                    *output = self.generate_waveform_sample(phase_incr);
+                    self.phase = Self::unroll_phase(self.phase + phase_incr);
+                });
+            } else {
+                channel_data.iter_mut().for_each(|output| {
+                    current_time =
+                        self.generate_sample(output, outside_nyquist, phase_incr, current_time, dt);
+                });
+            }
         } else {
             channel_data
                 .iter_mut()
@@ -535,13 +545,7 @@ impl OscillatorRenderer {
             // automation can re-enter the audible range without resetting phase.
             0.
         } else {
-            match self.type_ {
-                OscillatorType::Sine => self.generate_sine(),
-                OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
-                OscillatorType::Square => self.generate_square(phase_incr),
-                OscillatorType::Triangle => self.generate_triangle(),
-                OscillatorType::Custom => self.generate_custom(),
-            }
+            self.generate_waveform_sample(phase_incr)
         };
 
         self.phase = if outside_nyquist {
@@ -551,6 +555,17 @@ impl OscillatorRenderer {
         };
 
         current_time + dt
+    }
+
+    #[inline]
+    fn generate_waveform_sample(&mut self, phase_incr: f64) -> f32 {
+        match self.type_ {
+            OscillatorType::Sine => self.generate_sine(),
+            OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
+            OscillatorType::Square => self.generate_square(phase_incr),
+            OscillatorType::Triangle => self.generate_triangle(),
+            OscillatorType::Custom => self.generate_custom(),
+        }
     }
 
     #[inline]
@@ -1388,6 +1403,27 @@ mod tests {
             abs_all <= 1e-5
         );
         assert!(result[RENDER_QUANTUM_SIZE..].iter().all(|v| v.is_finite()));
+        assert!(result[RENDER_QUANTUM_SIZE..].iter().any(|&v| v != 0.));
+    }
+
+    #[test]
+    fn oscillator_delayed_start_renders_first_fully_active_block() {
+        let sample_rate = 44_100;
+        let start_time = RENDER_QUANTUM_SIZE as f64 / sample_rate as f64;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 2, sample_rate as f32);
+
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.start_at(start_time);
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+
+        assert_float_eq!(
+            result[..RENDER_QUANTUM_SIZE],
+            [0.; RENDER_QUANTUM_SIZE],
+            abs_all <= 1e-5
+        );
         assert!(result[RENDER_QUANTUM_SIZE..].iter().any(|&v| v != 0.));
     }
 
