@@ -74,6 +74,18 @@ pub fn bench_sine() {
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
+pub fn bench_detuned_sine() {
+    let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
+    let mut osc = ctx.create_oscillator();
+    osc.detune()
+        .linear_ramp_to_value_at_time(1000., DURATION as f64);
+
+    osc.connect(&ctx.destination());
+    osc.start();
+
+    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
+}
+
 pub fn bench_sine_gain() {
     let mut ctx = OfflineAudioContext::new(2, black_box(SAMPLES), SAMPLE_RATE);
     let mut osc = ctx.create_oscillator();
@@ -319,6 +331,7 @@ iai_or_criterion!(
     bench_sine,
     bench_sine_gain,
     bench_sine_gain_delay,
+    bench_detuned_sine,
     bench_buffer_src,
     bench_buffer_src_delay,
     bench_buffer_src_iir,

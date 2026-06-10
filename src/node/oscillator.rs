@@ -27,10 +27,8 @@ fn precomputed_sine_table() -> &'static [f32] {
     })
 }
 
-fn get_phase_incr(freq: f32, detune: f32, sample_rate: f64) -> f64 {
-    let computed_freq = freq as f64 * (detune as f64 / 1200.).exp2();
-    let clamped = computed_freq.clamp(-sample_rate / 2., sample_rate / 2.);
-    clamped / sample_rate
+fn get_computed_freq(freq: f32, detune: f32) -> f64 {
+    freq as f64 * (detune as f64 / 1200.).exp2()
 }
 
 /// Options for constructing an [`OscillatorNode`]
@@ -422,19 +420,41 @@ impl AudioProcessor for OscillatorRenderer {
             self.start_time = current_time;
         }
 
+        let nyquist = sample_rate / 2.;
+
+        // fast path for scalar AudioParam values
         if frequency_values.len() == 1 && detune_values.len() == 1 {
-            let phase_incr = get_phase_incr(frequency_values[0], detune_values[0], sample_rate);
-            channel_data
-                .iter_mut()
-                .for_each(|output| self.generate_sample(output, phase_incr, &mut current_time, dt));
+            let freq = frequency_values[0];
+            let detune = detune_values[0];
+            let computed_freq = get_computed_freq(freq, detune);
+            let phase_incr = computed_freq / sample_rate;
+            let outside_nyquist = computed_freq.abs() >= nyquist;
+            let fully_active = self.started
+                && self.start_time <= scope.current_time
+                && self.stop_time >= next_block_time;
+
+            if fully_active && !outside_nyquist {
+                channel_data.iter_mut().for_each(|output| {
+                    *output = self.generate_waveform_sample(phase_incr);
+                    self.phase = Self::unroll_phase(self.phase + phase_incr);
+                });
+            } else {
+                channel_data.iter_mut().for_each(|output| {
+                    current_time =
+                        self.generate_sample(output, outside_nyquist, phase_incr, current_time, dt);
+                });
+            }
         } else {
             channel_data
                 .iter_mut()
                 .zip(frequency_values.iter().cycle())
                 .zip(detune_values.iter().cycle())
-                .for_each(|((output, &f), &d)| {
-                    let phase_incr = get_phase_incr(f, d, sample_rate);
-                    self.generate_sample(output, phase_incr, &mut current_time, dt)
+                .for_each(|((output, &freq), &detune)| {
+                    let computed_freq = get_computed_freq(freq, detune);
+                    let phase_incr = computed_freq / sample_rate;
+                    let outside_nyquist = computed_freq.abs() >= nyquist;
+                    current_time =
+                        self.generate_sample(output, outside_nyquist, phase_incr, current_time, dt)
                 });
         }
 
@@ -493,44 +513,59 @@ impl OscillatorRenderer {
     fn generate_sample(
         &mut self,
         output: &mut f32,
+        outside_nyquist: bool,
         phase_incr: f64,
-        current_time: &mut f64,
+        current_time: f64,
         dt: f64,
-    ) {
-        if *current_time < self.start_time || *current_time >= self.stop_time {
+    ) -> f64 {
+        if current_time < self.start_time || current_time >= self.stop_time {
             *output = 0.;
-            *current_time += dt;
-
-            return;
+            return current_time + dt;
         }
 
         // first sample to render
         if !self.started {
             // if start time was between last frame and current frame
             // we need to adjust the phase first
-            if *current_time > self.start_time {
-                let ratio = (*current_time - self.start_time) / dt;
-                self.phase = Self::unroll_phase(phase_incr * ratio);
+            if current_time > self.start_time {
+                let ratio = (current_time - self.start_time) / dt;
+                self.phase = if outside_nyquist {
+                    Self::unroll_phase_unbounded(phase_incr * ratio)
+                } else {
+                    Self::unroll_phase(phase_incr * ratio)
+                };
             }
 
             self.started = true;
         }
 
-        // @note: per spec all default oscillators should be rendered from a
-        // wavetable, define if it worth the assle...
-        // e.g. for now `generate_sine` and `generate_custom` are almost the sames
-        // cf. https://webaudio.github.io/web-audio-api/#oscillator-coefficients
-        *output = match self.type_ {
+        *output = if outside_nyquist {
+            // Output silence when the computed oscillator frequency is outside the
+            // nominal [-nyquist, nyquist] range. Timing and phase still advance so
+            // automation can re-enter the audible range without resetting phase.
+            0.
+        } else {
+            self.generate_waveform_sample(phase_incr)
+        };
+
+        self.phase = if outside_nyquist {
+            Self::unroll_phase_unbounded(self.phase + phase_incr)
+        } else {
+            Self::unroll_phase(self.phase + phase_incr)
+        };
+
+        current_time + dt
+    }
+
+    #[inline]
+    fn generate_waveform_sample(&mut self, phase_incr: f64) -> f32 {
+        match self.type_ {
             OscillatorType::Sine => self.generate_sine(),
             OscillatorType::Sawtooth => self.generate_sawtooth(phase_incr),
             OscillatorType::Square => self.generate_square(phase_incr),
             OscillatorType::Triangle => self.generate_triangle(),
             OscillatorType::Custom => self.generate_custom(),
-        };
-
-        *current_time += dt;
-
-        self.phase = Self::unroll_phase(self.phase + phase_incr);
+        }
     }
 
     #[inline]
@@ -624,12 +659,19 @@ impl OscillatorRenderer {
     }
 
     #[inline]
-    fn unroll_phase(mut phase: f64) -> f64 {
+    fn unroll_phase(phase: f64) -> f64 {
         if phase >= 1. {
-            phase -= 1.
+            phase - 1.
+        } else if phase < 0. {
+            phase + 1.
+        } else {
+            phase
         }
+    }
 
-        phase
+    #[inline]
+    fn unroll_phase_unbounded(phase: f64) -> f64 {
+        phase.rem_euclid(1.)
     }
 }
 
@@ -1294,6 +1336,119 @@ mod tests {
                 expected.push(sample as f32);
                 phase += phase_incr;
             }
+        }
+
+        assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
+    }
+
+    #[test]
+    fn compute_freq_above_nyquist_outputs_zero() {
+        let freq = 20000.;
+        let detune = 1200.; // one octave upper, then computed feq is 40000Hz
+        let sample_rate = 44_100;
+
+        let mut context = OfflineAudioContext::new(1, 128, sample_rate as f32);
+
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(freq);
+        osc.detune().set_value(detune);
+        osc.start_at(0.);
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+
+        assert_float_eq!(result[..], [0.; 128], abs_all <= 1e-5);
+    }
+
+    #[test]
+    fn compute_freq_below_negative_nyquist_outputs_zero() {
+        let freq = -20000.;
+        let detune = 1200.; // one octave lower, then computed feq is -40000Hz
+        let sample_rate = 44_100;
+
+        let mut context = OfflineAudioContext::new(1, 128, sample_rate as f32);
+
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(freq);
+        osc.detune().set_value(detune);
+        osc.start_at(0.);
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+
+        assert_float_eq!(result[..], [0.; 128], abs_all <= 1e-5);
+    }
+
+    #[test]
+    fn oscillator_can_reenter_audible_range_after_large_phase_increments() {
+        let sample_rate = 44_100;
+        let mut context = OfflineAudioContext::new(1, 256, sample_rate as f32);
+
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(20_000.);
+        osc.detune().set_value(2400.); // computed frequency is 80_000Hz
+        osc.detune()
+            .set_value_at_time(0., RENDER_QUANTUM_SIZE as f64 / sample_rate as f64);
+        osc.start_at(0.);
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+
+        assert_float_eq!(
+            result[..RENDER_QUANTUM_SIZE],
+            [0.; RENDER_QUANTUM_SIZE],
+            abs_all <= 1e-5
+        );
+        assert!(result[RENDER_QUANTUM_SIZE..].iter().all(|v| v.is_finite()));
+        assert!(result[RENDER_QUANTUM_SIZE..].iter().any(|&v| v != 0.));
+    }
+
+    #[test]
+    fn oscillator_delayed_start_renders_first_fully_active_block() {
+        let sample_rate = 44_100;
+        let start_time = RENDER_QUANTUM_SIZE as f64 / sample_rate as f64;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 2, sample_rate as f32);
+
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.start_at(start_time);
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+
+        assert_float_eq!(
+            result[..RENDER_QUANTUM_SIZE],
+            [0.; RENDER_QUANTUM_SIZE],
+            abs_all <= 1e-5
+        );
+        assert!(result[RENDER_QUANTUM_SIZE..].iter().any(|&v| v != 0.));
+    }
+
+    #[test]
+    fn sine_negative_frequency() {
+        let freq = -100.;
+        let sample_rate = 44_100;
+        let length = sample_rate as usize;
+
+        let mut context = OfflineAudioContext::new(1, length, sample_rate as f32);
+
+        let mut osc = context.create_oscillator();
+        osc.connect(&context.destination());
+        osc.frequency().set_value(freq);
+        osc.start_at(0.);
+
+        let output = context.start_rendering_sync();
+        let result = output.get_channel_data(0);
+        let mut expected = Vec::<f32>::with_capacity(length);
+
+        for i in 0..length {
+            let phase = freq as f64 * i as f64 / sample_rate as f64;
+            let sample = (phase * 2. * PI).sin();
+            // phase += phase_incr;
+            expected.push(sample as f32);
         }
 
         assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
