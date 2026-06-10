@@ -268,7 +268,7 @@ impl IIRFilterNode {
 /// Renderer associated with the `IirFilterNode`
 struct IirFilterRenderer {
     /// Normalized filter's coeffs -- `(b[n], a[n])`
-    norm_coeffs: Vec<(f64, f64)>,
+    norm_coeffs: ArrayVec<(f64, f64), MAX_IIR_COEFFS_LEN>,
     /// Per-channel filter state. Only the first `norm_coeffs.len()` entries are active.
     states: ArrayVec<[f64; MAX_IIR_COEFFS_LEN], MAX_CHANNELS>,
 }
@@ -300,7 +300,8 @@ impl IirFilterRenderer {
         };
 
         let a0 = feedback[0];
-        let mut norm_coeffs: Vec<(f64, f64)> = feedforward.into_iter().zip(feedback).collect();
+        let mut norm_coeffs: ArrayVec<(f64, f64), MAX_IIR_COEFFS_LEN> =
+            feedforward.into_iter().zip(feedback).collect();
 
         norm_coeffs.iter_mut().for_each(|(b, a)| {
             *b /= a0;
