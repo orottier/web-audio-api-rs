@@ -33,6 +33,41 @@ fn is_valid_sink_id(sink_id: &str) -> bool {
     }
 }
 
+fn spawn_default_output_watcher(
+    base: ConcreteBaseAudioContext,
+    backend_manager: Arc<Mutex<Box<dyn AudioBackendManager>>>,
+) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        match base.state() {
+            AudioContextState::Closed => return,
+            AudioContextState::Running => {}
+            AudioContextState::Suspended => continue,
+        }
+
+        let backend = backend_manager.lock().unwrap();
+        if !backend.sink_id().is_empty() {
+            continue;
+        }
+
+        match backend.default_output_changed() {
+            Ok(true) => {
+                log::info!("Closing backend after default output device changed");
+                if let Err(error) = backend.close() {
+                    log::error!(
+                        "Unable to close backend after default output device changed: {error}"
+                    );
+                }
+            }
+            Ok(false) => {}
+            Err(error) => {
+                log::warn!("Unable to check default output device: {error}");
+            }
+        }
+    });
+}
+
 #[derive(Debug)]
 enum AudioContextError {
     SinkNotFound { sink_id: String },
@@ -248,6 +283,7 @@ impl AudioContext {
         // Set up the audio output thread
         let (control_thread_init, render_thread_init) = io::thread_init();
         let startup_pending = Arc::clone(&render_thread_init.startup_pending);
+        let watch_default_output = options.sink_id.is_empty();
         let backend = io::build_output(options, render_thread_init.clone())?;
 
         let ControlThreadInit {
@@ -356,6 +392,10 @@ impl AudioContext {
                 }
             })),
         );
+
+        if watch_default_output {
+            spawn_default_output_watcher(base.clone(), Arc::clone(&backend_manager));
+        }
 
         // As the final step, spawn a thread for the event loop. If we do this earlier we may miss
         // event handling of the initial events that are emitted right after render thread
