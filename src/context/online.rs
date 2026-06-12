@@ -5,7 +5,10 @@ use std::sync::{Arc, Mutex};
 
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
 use crate::events::{EventDispatch, EventHandler, EventLoop, EventPayload, EventType};
-use crate::io::{self, AudioBackendManager, ControlThreadInit, NoneBackend, RenderThreadInit};
+use crate::io::{
+    self, AudioBackendManager, AudioBackendStreamEvent, ControlThreadInit, NoneBackend,
+    RenderThreadInit,
+};
 use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::{ControlMessage, OneshotNotify};
@@ -28,6 +31,41 @@ fn is_valid_sink_id(sink_id: &str) -> bool {
             .filter(|d| d.kind() == MediaDeviceInfoKind::AudioOutput)
             .any(|d| d.device_id() == sink_id)
     }
+}
+
+fn spawn_default_output_watcher(
+    base: ConcreteBaseAudioContext,
+    backend_manager: Arc<Mutex<Box<dyn AudioBackendManager>>>,
+) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        match base.state() {
+            AudioContextState::Closed => return,
+            AudioContextState::Running => {}
+            AudioContextState::Suspended => continue,
+        }
+
+        let backend = backend_manager.lock().unwrap();
+        if !backend.sink_id().is_empty() {
+            continue;
+        }
+
+        match backend.default_output_changed() {
+            Ok(true) => {
+                log::info!("Closing backend after default output device changed");
+                if let Err(error) = backend.close() {
+                    log::error!(
+                        "Unable to close backend after default output device changed: {error}"
+                    );
+                }
+            }
+            Ok(false) => {}
+            Err(error) => {
+                log::warn!("Unable to check default output device: {error}");
+            }
+        }
+    });
 }
 
 #[derive(Debug)]
@@ -135,7 +173,7 @@ pub struct AudioContext {
     /// represents the underlying `BaseAudioContext`
     base: ConcreteBaseAudioContext,
     /// audio backend (play/pause functionality)
-    backend_manager: Mutex<Box<dyn AudioBackendManager>>,
+    backend_manager: Arc<Mutex<Box<dyn AudioBackendManager>>>,
     /// Provider for rendering performance metrics
     render_capacity: AudioRenderCapacity,
     /// Provider for playback statistics
@@ -162,7 +200,7 @@ impl Drop for AudioContext {
         // Continue playing the stream if the AudioContext goes out of scope
         if self.state() == AudioContextState::Running {
             let tombstone = Box::new(NoneBackend::void());
-            let original = std::mem::replace(self.backend_manager.get_mut().unwrap(), tombstone);
+            let original = std::mem::replace(&mut *self.backend_manager.lock().unwrap(), tombstone);
             Box::leak(original);
         }
     }
@@ -245,6 +283,7 @@ impl AudioContext {
         // Set up the audio output thread
         let (control_thread_init, render_thread_init) = io::thread_init();
         let startup_pending = Arc::clone(&render_thread_init.startup_pending);
+        let watch_default_output = options.sink_id.is_empty();
         let backend = io::build_output(options, render_thread_init.clone())?;
 
         let ControlThreadInit {
@@ -282,6 +321,82 @@ impl AudioContext {
         let render_capacity = AudioRenderCapacity::new(base.clone(), stats.clone());
         let playback_stats = AudioPlaybackStats::new(base.clone(), stats);
 
+        let backend_manager = Arc::new(Mutex::new(backend));
+        let recovery_base = base.clone();
+        let recovery_backend_manager = Arc::clone(&backend_manager);
+        let recovery_render_thread_init = render_thread_init.clone();
+        let error_base = base.clone();
+        let error_backend_manager = Arc::clone(&backend_manager);
+        base.set_event_handler(
+            EventType::InternalBackendStreamEvent,
+            EventHandler::Multiple(Box::new(move |payload| {
+                let EventPayload::InternalBackendStreamEvent(error) = payload else {
+                    unreachable!();
+                };
+                if error_base.state() == AudioContextState::Closed {
+                    log::info!("Ignoring backend stream event from closed context");
+                    return;
+                }
+
+                match error {
+                    AudioBackendStreamEvent::DeviceNotAvailable
+                    | AudioBackendStreamEvent::StreamInvalidated => {
+                        log::info!(
+                            "Closing backend after recoverable runtime stream event: {error:?}"
+                        );
+                    }
+                    AudioBackendStreamEvent::BufferUnderrun => {
+                        log::debug!("Ignoring backend stream buffer underrun event");
+                        return;
+                    }
+                    AudioBackendStreamEvent::BackendSpecific { message } => {
+                        log::warn!("Ignoring backend-specific stream event: {message}");
+                        return;
+                    }
+                }
+
+                if let Err(error) = error_backend_manager.lock().unwrap().close() {
+                    log::error!("Unable to close backend after runtime stream event: {error}");
+                }
+            })),
+        );
+        base.set_event_handler(
+            EventType::InternalGraphRecovery,
+            EventHandler::Multiple(Box::new(move |payload| {
+                let EventPayload::InternalGraphRecovery(graph) = payload else {
+                    unreachable!();
+                };
+                if recovery_base.state() == AudioContextState::Closed {
+                    log::info!("Ignoring recovered audio graph from closed context");
+                    return;
+                }
+                log::info!("Recovered audio graph from dropped render thread: {graph:?}");
+
+                let options = AudioContextOptions {
+                    sample_rate: Some(recovery_base.sample_rate()),
+                    sink_id: String::new(),
+                    ..AudioContextOptions::default()
+                };
+
+                match io::build_output(options, recovery_render_thread_init.clone()) {
+                    Ok(backend) => {
+                        *recovery_backend_manager.lock().unwrap() = backend;
+                        recovery_base.send_control_msg(ControlMessage::Startup { graph });
+                        log::info!("Rebooted audio graph on default output device");
+                    }
+                    Err(error) => {
+                        log::error!(
+                            "Unable to reboot audio graph on default output device: {error}"
+                        );
+                    }
+                }
+            })),
+        );
+
+        if watch_default_output {
+            spawn_default_output_watcher(base.clone(), Arc::clone(&backend_manager));
+        }
+
         // As the final step, spawn a thread for the event loop. If we do this earlier we may miss
         // event handling of the initial events that are emitted right after render thread
         // construction.
@@ -289,7 +404,7 @@ impl AudioContext {
 
         Ok(Self {
             base,
-            backend_manager: Mutex::new(backend),
+            backend_manager,
             render_capacity,
             playback_stats,
             startup_pending,

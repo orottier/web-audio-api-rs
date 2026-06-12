@@ -1,5 +1,7 @@
 use crate::context::ConcreteBaseAudioContext;
 use crate::context::{AudioContextState, AudioNodeId};
+use crate::io::AudioBackendStreamEvent;
+use crate::render::graph::Graph;
 use crate::{AudioBuffer, AudioRenderCapacityEvent};
 
 use std::any::Any;
@@ -28,6 +30,8 @@ pub(crate) enum EventType {
     Message(AudioNodeId),
     Complete,
     AudioProcessing(AudioNodeId),
+    InternalGraphRecovery,
+    InternalBackendStreamEvent,
 }
 
 /// The Error Event interface
@@ -88,6 +92,8 @@ pub(crate) enum EventPayload {
     AudioContextState(AudioContextState),
     Complete(AudioBuffer),
     AudioProcessing(AudioProcessingEvent),
+    InternalGraphRecovery(Graph),
+    InternalBackendStreamEvent(AudioBackendStreamEvent),
 }
 
 #[derive(Debug)]
@@ -157,6 +163,20 @@ impl EventDispatch {
         EventDispatch {
             type_: EventType::AudioProcessing(id),
             payload: EventPayload::AudioProcessing(value),
+        }
+    }
+
+    pub(crate) fn internal_graph_recovery(graph: Graph) -> Self {
+        EventDispatch {
+            type_: EventType::InternalGraphRecovery,
+            payload: EventPayload::InternalGraphRecovery(graph),
+        }
+    }
+
+    pub(crate) fn internal_backend_stream_event(error: AudioBackendStreamEvent) -> Self {
+        EventDispatch {
+            type_: EventType::InternalBackendStreamEvent,
+            payload: EventPayload::InternalBackendStreamEvent(error),
         }
     }
 }

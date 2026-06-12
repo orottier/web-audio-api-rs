@@ -12,12 +12,14 @@ use cpal::{
 use crossbeam_channel::Receiver;
 
 use super::{
-    AudioBackendError, AudioBackendErrorKind, AudioBackendManager, BackendResult, RenderThreadInit,
+    AudioBackendError, AudioBackendErrorKind, AudioBackendManager, AudioBackendStreamEvent,
+    BackendResult, RenderThreadInit,
 };
 
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextLatencyCategory;
 use crate::context::AudioContextOptions;
+use crate::events::EventDispatch;
 use crate::io::microphone::MicrophoneRender;
 use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
@@ -108,6 +110,17 @@ fn map_cpal_pause_error(operation: &'static str, err: PauseStreamError) -> Audio
     map_cpal_backend_error(kind, operation, err)
 }
 
+fn map_cpal_stream_event(err: cpal::StreamError) -> AudioBackendStreamEvent {
+    match err {
+        cpal::StreamError::DeviceNotAvailable => AudioBackendStreamEvent::DeviceNotAvailable,
+        cpal::StreamError::StreamInvalidated => AudioBackendStreamEvent::StreamInvalidated,
+        cpal::StreamError::BufferUnderrun => AudioBackendStreamEvent::BufferUnderrun,
+        cpal::StreamError::BackendSpecific { err } => AudioBackendStreamEvent::BackendSpecific {
+            message: err.to_string(),
+        },
+    }
+}
+
 fn map_cpal_devices_error(operation: &'static str, err: DevicesError) -> AudioBackendError {
     map_cpal_backend_error(AudioBackendErrorKind::BackendSpecific, operation, err)
 }
@@ -154,6 +167,10 @@ fn cpal_device_channels(device: &Device, kind: MediaDeviceInfoKind) -> Option<u1
         MediaDeviceInfoKind::AudioOutput => device.default_output_config().ok()?.channels(),
         MediaDeviceInfoKind::VideoInput => return None,
     })
+}
+
+fn cpal_device_id(device: &Device) -> Option<String> {
+    device.id().ok().map(|id| id.to_string())
 }
 
 fn cpal_stable_device_id(
@@ -204,6 +221,8 @@ pub(crate) struct CpalBackend {
     sample_rate: f32,
     number_of_channels: usize,
     sink_id: String,
+    device_id: Option<String>,
+    default_output_sample_rate: Option<u32>,
 }
 
 impl AudioBackendManager for CpalBackend {
@@ -260,6 +279,7 @@ impl AudioBackendManager for CpalBackend {
         let default_device_config = device
             .default_output_config()
             .map_err(|e| map_cpal_default_config_error("default_output_config", e))?;
+        let default_output_sample_rate = default_device_config.sample_rate();
 
         // we grab the largest number of channels provided by the soundcard
         // clamped to MAX_CHANNELS, this value cannot be changed by the user
@@ -332,6 +352,7 @@ impl AudioBackendManager for CpalBackend {
             renderer,
             Arc::clone(&output_latency),
             stats.clone(),
+            event_send.clone(),
         );
 
         let stream = match spawned {
@@ -360,7 +381,7 @@ impl AudioBackendManager for CpalBackend {
                     state,
                     frames_played,
                     stats.clone(),
-                    event_send,
+                    event_send.clone(),
                 );
                 renderer.set_startup_pending(startup_pending);
                 renderer.spawn_garbage_collector_thread();
@@ -372,6 +393,7 @@ impl AudioBackendManager for CpalBackend {
                     renderer,
                     Arc::clone(&output_latency),
                     stats.clone(),
+                    event_send,
                 );
 
                 spawned.map_err(|e| map_cpal_build_error("build_fallback_output_stream", e))?
@@ -389,6 +411,8 @@ impl AudioBackendManager for CpalBackend {
             sample_rate,
             number_of_channels,
             sink_id: options.sink_id,
+            device_id: cpal_device_id(&device),
+            default_output_sample_rate: Some(default_output_sample_rate),
         })
     }
 
@@ -523,6 +547,8 @@ impl AudioBackendManager for CpalBackend {
             sample_rate,
             number_of_channels,
             sink_id: options.sink_id,
+            device_id: cpal_device_id(&device),
+            default_output_sample_rate: None,
         };
 
         Ok((backend, receiver))
@@ -569,6 +595,34 @@ impl AudioBackendManager for CpalBackend {
 
     fn sink_id(&self) -> &str {
         self.sink_id.as_str()
+    }
+
+    fn default_output_changed(&self) -> BackendResult<bool> {
+        if !self.sink_id.is_empty() || self.stream.lock().unwrap().is_none() {
+            return Ok(false);
+        }
+
+        let Some(device_id) = self.device_id.as_ref() else {
+            return Ok(false);
+        };
+
+        let host = get_host()?;
+        let Some(default_device) = host.default_output_device() else {
+            return Ok(false);
+        };
+        let Some(default_device_id) = cpal_device_id(&default_device) else {
+            return Ok(false);
+        };
+
+        let default_sample_rate = default_device
+            .default_output_config()
+            .map_err(|e| map_cpal_default_config_error("default_output_config", e))?
+            .sample_rate();
+
+        Ok(default_device_id != *device_id
+            || self
+                .default_output_sample_rate
+                .is_some_and(|sample_rate| sample_rate != default_sample_rate))
     }
 
     fn enumerate_devices_sync() -> BackendResult<Vec<MediaDeviceInfo>>
@@ -658,8 +712,18 @@ fn spawn_output_stream(
     mut render: RenderThread,
     output_latency: Arc<AtomicF64>,
     stats: AudioStats,
+    event_send: crossbeam_channel::Sender<EventDispatch>,
 ) -> Result<Stream, BuildStreamError> {
-    let err_fn = |err| log::error!("an error occurred on the output audio stream: {}", err);
+    let err_fn = move |err| {
+        log::error!("an error occurred on the output audio stream: {}", err);
+        let err = map_cpal_stream_event(err);
+        if event_send
+            .try_send(EventDispatch::internal_backend_stream_event(err))
+            .is_err()
+        {
+            log::warn!("Unable to queue backend stream event");
+        }
+    };
 
     match sample_format {
         SampleFormat::F32 => device.build_output_stream(

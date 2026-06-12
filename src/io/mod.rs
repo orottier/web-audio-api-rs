@@ -47,6 +47,14 @@ pub(crate) struct AudioBackendError {
 
 pub(crate) type BackendResult<T> = Result<T, AudioBackendError>;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum AudioBackendStreamEvent {
+    DeviceNotAvailable,
+    StreamInvalidated,
+    BufferUnderrun,
+    BackendSpecific { message: String },
+}
+
 impl AudioBackendError {
     pub(crate) fn new(
         kind: AudioBackendErrorKind,
@@ -249,6 +257,12 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
 
     /// The audio output device - `""` means the default device
     fn sink_id(&self) -> &str;
+
+    /// Whether the current system default output no longer matches this stream.
+    #[allow(dead_code)]
+    fn default_output_changed(&self) -> BackendResult<bool> {
+        Ok(false)
+    }
 
     fn enumerate_devices_sync() -> BackendResult<Vec<MediaDeviceInfo>>
     where
