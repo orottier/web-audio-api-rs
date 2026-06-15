@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Install ALSA and Jack dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev cmake
+          sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev libpipewire-0.3-dev cmake clang
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
