@@ -1099,54 +1099,6 @@ impl AudioParamProcessor {
             return; // cancel_and_hold events are not inserted timeline
         }
 
-        // handle SetValueCurveAtTime
-        // @note - These rules argue in favor of having events inserted in
-        // the control thread, let's panic for now
-        //
-        // [spec] If setValueCurveAtTime() is called for time 𝑇 and duration 𝐷
-        // and there are any events having a time strictly greater than 𝑇, but
-        // strictly less than 𝑇+𝐷, then a NotSupportedError exception MUST be thrown.
-        // In other words, it’s not ok to schedule a value curve during a time period
-        // containing other events, but it’s ok to schedule a value curve exactly
-        // at the time of another event.
-        if event.event_type == AudioParamEventType::SetValueCurveAtTime {
-            // check if we don't try to insert at the time of another event
-            let start_time = event.time;
-            let end_time = start_time + event.duration.unwrap();
-
-            for queued in self.event_timeline.iter() {
-                assert!(
-                    queued.time <= start_time || queued.time >= end_time,
-                    "NotSupportedError - scheduling SetValueCurveAtTime ({:?}) at time of another automation event ({:?})",
-                    event, queued,
-                );
-            }
-        }
-
-        // [spec] Similarly a NotSupportedError exception MUST be thrown if any
-        // automation method is called at a time which is contained in [𝑇,𝑇+𝐷), 𝑇
-        // being the time of the curve and 𝐷 its duration.
-        // @note - Cancel methods are not automation methods
-        if event.event_type == AudioParamEventType::SetValueAtTime
-            || event.event_type == AudioParamEventType::SetValue
-            || event.event_type == AudioParamEventType::LinearRampToValueAtTime
-            || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime
-            || event.event_type == AudioParamEventType::SetTargetAtTime
-        {
-            for queued in self.event_timeline.iter() {
-                if queued.event_type == AudioParamEventType::SetValueCurveAtTime {
-                    let start_time = queued.time;
-                    let end_time = start_time + queued.duration.unwrap();
-
-                    assert!(
-                        event.time <= start_time || event.time >= end_time,
-                        "NotSupportedError - scheduling automation event ({:?}) during SetValueCurveAtTime ({:?})",
-                        event, queued,
-                    );
-                }
-            }
-        }
-
         // handle SetValue - param intrinsic value must be updated from event value
         if event.event_type == AudioParamEventType::SetValue {
             self.intrinsic_value = event.value;
@@ -3531,7 +3483,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_set_value_curve_at_time_insert_while_another_event() {
         let context = OfflineAudioContext::new(1, 1, 48000.);
 
@@ -3542,19 +3493,19 @@ mod tests {
             min_value: 0.,
             max_value: 1.,
         };
-        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
 
-        render.handle_incoming_event(param.set_value_at_time_raw(0.0, 5.));
+        param.set_value_at_time(0.0, 5.);
 
         let curve = [0., 0.5, 1., 0.5, 0.];
-        render.handle_incoming_event(param.set_value_curve_at_time_raw(&curve[..], 0., 10.));
-        // this is necessary as the panic is triggered in the audio thread
-        // @note - argues in favor of maintaining the queue in control thread
-        let _vs = render.compute_intrinsic_values(0., 1., 10);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            param.set_value_curve_at_time(&curve[..], 0., 10.);
+        }));
+
+        assert!(result.is_err());
     }
 
     #[test]
-    #[should_panic]
     fn test_set_value_curve_at_time_insert_another_event_inside() {
         let context = OfflineAudioContext::new(1, 1, 48000.);
 
@@ -3565,14 +3516,15 @@ mod tests {
             min_value: 0.,
             max_value: 1.,
         };
-        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
 
         let curve = [0., 0.5, 1., 0.5, 0.];
-        render.handle_incoming_event(param.set_value_curve_at_time_raw(&curve[..], 0., 10.));
-        render.handle_incoming_event(param.set_value_at_time_raw(0.0, 5.));
-        // this is necessary as the panic is triggered in the audio thread
-        // @note - argues in favor of maintaining the queue in control thread
-        let _vs = render.compute_intrinsic_values(0., 1., 10);
+        param.set_value_curve_at_time(&curve[..], 0., 10.);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            param.set_value_at_time(0.0, 5.);
+        }));
+
+        assert!(result.is_err());
     }
 
     #[test]
