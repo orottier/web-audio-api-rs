@@ -216,6 +216,51 @@ impl AudioParamEventTimeline {
         self.inner.retain(func);
     }
 
+    fn cancel_and_hold_at_time(&mut self, cancel_time: f64) {
+        // 1. Let E1 be the event (if any) at time t1 where t1 is the
+        // largest number satisfying t1 <= tc.
+        // 2. Let E2 be the event (if any) at time t2 where t2 is the
+        // smallest number satisfying tc < t2.
+        let mut e1: Option<&mut AudioParamEvent> = None;
+        let mut e2: Option<&mut AudioParamEvent> = None;
+        let mut t1 = f64::MIN;
+        let mut t2 = f64::MAX;
+
+        self.sort();
+
+        for queued in self.iter_mut() {
+            if queued.time >= t1 && queued.time <= cancel_time {
+                t1 = queued.time;
+                e1 = Some(queued);
+            } else if queued.time < t2 && queued.time > cancel_time {
+                t2 = queued.time;
+                e2 = Some(queued);
+            }
+        }
+
+        if let Some(matched) = e2 {
+            if matched.event_type == AudioParamEventType::LinearRampToValueAtTime
+                || matched.event_type == AudioParamEventType::ExponentialRampToValueAtTime
+            {
+                matched.cancel_time = Some(cancel_time);
+            }
+        } else if let Some(matched) = e1 {
+            if matched.event_type == AudioParamEventType::SetTargetAtTime {
+                matched.cancel_time = Some(cancel_time);
+            } else if matched.event_type == AudioParamEventType::SetValueCurveAtTime {
+                let start_time = matched.time;
+                let duration = matched.duration.unwrap();
+
+                if cancel_time <= start_time + duration {
+                    matched.cancel_time = Some(cancel_time);
+                }
+            }
+        }
+
+        // [spec] Remove all events with time greater than tc.
+        self.retain(|queued| queued.cancel_time.unwrap_or(queued.time) <= cancel_time);
+    }
+
     // Only used to handle special cases in `ExponentialRampToValueAtTime`:
     // as the replaced item has the same time, order is preserved.
     // If the method turned out to be used elsewhere, this could maybe
@@ -732,44 +777,7 @@ impl AudioParam {
                 control_timeline.retain(|queued| queued.time < event.time);
             }
             AudioParamEventType::CancelAndHoldAtTime => {
-                control_timeline.sort();
-
-                let mut e1: Option<&mut AudioParamEvent> = None;
-                let mut e2: Option<&mut AudioParamEvent> = None;
-                let mut t1 = f64::MIN;
-                let mut t2 = f64::MAX;
-
-                for queued in control_timeline.iter_mut() {
-                    if queued.time >= t1 && queued.time <= event.time {
-                        t1 = queued.time;
-                        e1 = Some(queued);
-                    } else if queued.time < t2 && queued.time > event.time {
-                        t2 = queued.time;
-                        e2 = Some(queued);
-                    }
-                }
-
-                if let Some(matched) = e2 {
-                    if matched.event_type == AudioParamEventType::LinearRampToValueAtTime
-                        || matched.event_type == AudioParamEventType::ExponentialRampToValueAtTime
-                    {
-                        matched.cancel_time = Some(event.time);
-                    }
-                } else if let Some(matched) = e1 {
-                    if matched.event_type == AudioParamEventType::SetTargetAtTime {
-                        matched.cancel_time = Some(event.time);
-                    } else if matched.event_type == AudioParamEventType::SetValueCurveAtTime {
-                        let start_time = matched.time;
-                        let duration = matched.duration.unwrap();
-
-                        if event.time <= start_time + duration {
-                            matched.cancel_time = Some(event.time);
-                        }
-                    }
-                }
-
-                control_timeline
-                    .retain(|queued| queued.cancel_time.unwrap_or(queued.time) <= event.time);
+                control_timeline.cancel_and_hold_at_time(event.time);
             }
             _ => {
                 control_timeline.push(event.clone());
@@ -1023,79 +1031,7 @@ impl AudioParamProcessor {
         }
 
         if event.event_type == AudioParamEventType::CancelAndHoldAtTime {
-            // 1. Let 𝐸1 be the event (if any) at time 𝑡1 where 𝑡1 is the
-            // largest number satisfying 𝑡1 ≤ 𝑡𝑐.
-            // 2. Let 𝐸2 be the event (if any) at time 𝑡2 where 𝑡2 is the
-            // smallest number satisfying 𝑡𝑐 < 𝑡2.
-            let mut e1: Option<&mut AudioParamEvent> = None;
-            let mut e2: Option<&mut AudioParamEvent> = None;
-            let mut t1 = f64::MIN;
-            let mut t2 = f64::MAX;
-            // we need a sorted timeline here to find siblings
-            self.event_timeline.sort();
-
-            for queued in self.event_timeline.iter_mut() {
-                // closest before cancel time: if several events at same time,
-                // we want the last one
-                if queued.time >= t1 && queued.time <= event.time {
-                    t1 = queued.time;
-                    e1 = Some(queued);
-                    // closest after cancel time: if several events at same time,
-                    // we want the first one
-                } else if queued.time < t2 && queued.time > event.time {
-                    t2 = queued.time;
-                    e2 = Some(queued);
-                }
-            }
-
-            // If 𝐸2 exists:
-            if let Some(matched) = e2 {
-                // If 𝐸2 is a linear or exponential ramp,
-                // Effectively rewrite 𝐸2 to be the same kind of ramp ending
-                // at time 𝑡𝑐 with an end value that would be the value of the
-                // original ramp at time 𝑡𝑐.
-                // @note - this is done during the actual computation of the
-                //  ramp using the cancel_time
-                if matched.event_type == AudioParamEventType::LinearRampToValueAtTime
-                    || matched.event_type == AudioParamEventType::ExponentialRampToValueAtTime
-                {
-                    matched.cancel_time = Some(event.time);
-                }
-            } else if let Some(matched) = e1 {
-                if matched.event_type == AudioParamEventType::SetTargetAtTime {
-                    // Implicitly insert a setValueAtTime event at time 𝑡𝑐 with
-                    // the value that the setTarget would
-                    // @note - same strategy as for ramps
-                    matched.cancel_time = Some(event.time);
-                } else if matched.event_type == AudioParamEventType::SetValueCurveAtTime {
-                    // If 𝐸1 is a setValueCurve with a start time of 𝑡3 and a duration of 𝑑
-                    // If 𝑡𝑐 <= 𝑡3 + 𝑑 :
-                    // Effectively replace this event with a setValueCurve event
-                    // with a start time of 𝑡3 and a new duration of 𝑡𝑐−𝑡3. However,
-                    // this is not a true replacement; this automation MUST take
-                    // care to produce the same output as the original, and not
-                    // one computed using a different duration. (That would cause
-                    // sampling of the value curve in a slightly different way,
-                    // producing different results.)
-                    let start_time = matched.time;
-                    let duration = matched.duration.unwrap();
-
-                    if event.time <= start_time + duration {
-                        matched.cancel_time = Some(event.time);
-                    }
-                }
-            }
-
-            // [spec] Remove all events with time greater than 𝑡𝑐.
-            self.event_timeline.retain(|queued| {
-                let mut time = queued.time;
-                // if the event has a `cancel_time` we use it instead of `time`
-                if let Some(cancel_time) = queued.cancel_time {
-                    time = cancel_time;
-                }
-
-                time <= event.time
-            });
+            self.event_timeline.cancel_and_hold_at_time(event.time);
             return; // cancel_and_hold events are not inserted timeline
         }
 
