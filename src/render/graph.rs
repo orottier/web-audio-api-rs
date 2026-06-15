@@ -8,6 +8,8 @@ use std::cell::RefCell;
 use std::panic::{self, AssertUnwindSafe};
 
 use crate::context::AudioNodeId;
+#[cfg(feature = "diagnostics")]
+use crate::context::{AudioGraphDiagnostics, AudioGraphEdgeDiagnostics, AudioNodeDiagnostics};
 use smallvec::{smallvec, SmallVec};
 
 use super::{Alloc, AudioParamValues, AudioProcessor, AudioRenderQuantum, NodeCollection};
@@ -158,6 +160,67 @@ impl Graph {
             marked_temp: vec![],
             in_cycle: vec![],
             cycle_breakers: vec![],
+        }
+    }
+
+    #[cfg(feature = "diagnostics")]
+    pub fn diagnostics(&self) -> AudioGraphDiagnostics {
+        let mut edge_count = 0;
+        let mut cycle_breakers = Vec::new();
+        let mut nodes = Vec::new();
+
+        for id in self.nodes.keys() {
+            let node = self.nodes.get_unchecked(id).borrow();
+            let outgoing_edges: Vec<_> = node
+                .outgoing_edges
+                .iter()
+                .map(|edge| AudioGraphEdgeDiagnostics {
+                    output: edge.self_index,
+                    destination: edge.other_id.0,
+                    input: (edge.other_index != usize::MAX).then_some(edge.other_index),
+                })
+                .collect();
+
+            edge_count += outgoing_edges.len();
+
+            if node.cycle_breaker {
+                cycle_breakers.push(id.0);
+            }
+
+            nodes.push(AudioNodeDiagnostics {
+                id: id.0,
+                processor: node.processor.name().to_string(),
+                inputs: node.inputs.len(),
+                outputs: node.outputs.len(),
+                input_channels: node
+                    .inputs
+                    .iter()
+                    .map(AudioRenderQuantum::number_of_channels)
+                    .collect(),
+                output_channels: node
+                    .outputs
+                    .iter()
+                    .map(AudioRenderQuantum::number_of_channels)
+                    .collect(),
+                channel_config: format!("{:?}", node.channel_config),
+                outgoing_edges,
+                control_handle_dropped: node.control_handle_dropped,
+                has_inputs_connected: node.has_inputs_connected,
+                cycle_breaker: node.cycle_breaker,
+                has_side_effects: node.processor.has_side_effects(),
+            });
+        }
+
+        let node_count = nodes.len();
+
+        AudioGraphDiagnostics {
+            active: self.is_active(),
+            node_count,
+            edge_count,
+            ordered: self.ordered.iter().map(|id| id.0).collect(),
+            in_cycle: self.in_cycle.iter().map(|id| id.0).collect(),
+            cycle_breakers,
+            nodes,
         }
     }
 

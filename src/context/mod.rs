@@ -8,6 +8,11 @@ pub use base::*;
 mod concrete_base;
 pub use concrete_base::*;
 
+#[cfg(feature = "diagnostics")]
+mod diagnostics;
+#[cfg(feature = "diagnostics")]
+pub use diagnostics::*;
+
 mod offline;
 pub use offline::*;
 
