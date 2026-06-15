@@ -56,6 +56,36 @@ fn get_host() -> BackendResult<cpal::Host> {
         }
     }
 
+    #[cfg(feature = "cpal-pipewire")]
+    {
+        if let Some(pipewire_id) = cpal::available_hosts()
+            .into_iter()
+            .find(|id| *id == cpal::HostId::PipeWire)
+        {
+            let pipewire_host = cpal::host_from_id(pipewire_id).map_err(|e| {
+                map_cpal_backend_error(AudioBackendErrorKind::BackendSpecific, "pipewire_host", e)
+            })?;
+
+            // if pipewire is not running, the host can't access devices
+            // fallback to default host
+            let host = match pipewire_host.devices() {
+                Ok(devices) => {
+                    // no pipewire devices found, pipewire is not running
+                    if devices.count() == 0 {
+                        log::warn!("No pipewire devices found, fallback to default host");
+                        cpal::default_host()
+                    } else {
+                        pipewire_host
+                    }
+                }
+                // cpal does not seems to return Err at this point
+                // but just in case, fallback to default host
+                Err(_) => cpal::default_host(),
+            };
+            return Ok(host);
+        }
+    }
+
     Ok(cpal::default_host())
 }
 

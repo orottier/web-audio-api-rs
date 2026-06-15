@@ -80,6 +80,12 @@ default = ["cpal"]
 
 # Expose structured runtime diagnostics for AudioContext and the render graph.
 diagnostics = []
+cpal = ["dep:cpal"]
+cubeb = ["dep:cubeb"]
+cpal-jack = ["cpal", "cpal/jack"]
+cpal-pipewire = ["cpal", "cpal/pipewire"]
+cpal-asio = ["cpal", "cpal/asio"]
+iai = []
 
 # Legacy codec feature names kept for backwards compatibility.
 # Decoding support is no longer split by file format; all supported Symphonia
@@ -91,9 +97,3 @@ wav = []
 aac = []
 m4a = []
 alac = []
-
-cpal = ["dep:cpal"]
-cubeb = ["dep:cubeb"]
-cpal-jack = ["cpal", "cpal/jack"]
-cpal-asio = ["cpal", "cpal/asio"]
-iai = []
