@@ -2,7 +2,7 @@
 
 use std::any::Any;
 use std::slice::{Iter, IterMut};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use arrayvec::ArrayVec;
@@ -162,6 +162,7 @@ enum AudioParamEventType {
 
 #[derive(Debug)]
 pub(crate) struct AudioParamEvent {
+    id: u64,
     event_type: AudioParamEventType,
     value: f32,
     time: f64,
@@ -295,6 +296,7 @@ pub(crate) struct AudioParamInner {
     automation_rate_constrained: bool,           // effectively immutable
     automation_rate: Arc<Mutex<AutomationRate>>, // shared with clones
     current_value: Arc<AtomicF32>,               // shared with clones and with render thread
+    next_event_id: Arc<AtomicU64>,               // shared with clones
 }
 
 impl AudioNode for AudioParam {
@@ -415,6 +417,7 @@ impl AudioParam {
         // this event is meant to update param intrinsic value before any calculation
         // is done, will behave as SetValueAtTime with `time == block_timestamp`
         AudioParamEvent {
+            id: 0,
             event_type: AudioParamEventType::SetValue,
             value,
             time: 0.,
@@ -439,6 +442,7 @@ impl AudioParam {
         assert_valid_time_value(start_time);
 
         AudioParamEvent {
+            id: 0,
             event_type: AudioParamEventType::SetValueAtTime,
             value,
             time: start_time,
@@ -464,6 +468,7 @@ impl AudioParam {
         assert_valid_time_value(end_time);
 
         AudioParamEvent {
+            id: 0,
             event_type: AudioParamEventType::LinearRampToValueAtTime,
             value,
             time: end_time,
@@ -491,6 +496,7 @@ impl AudioParam {
         assert_valid_time_value(end_time);
 
         AudioParamEvent {
+            id: 0,
             event_type: AudioParamEventType::ExponentialRampToValueAtTime,
             value,
             time: end_time,
@@ -526,6 +532,7 @@ impl AudioParam {
         // [spec] If timeConstant is zero, the output value jumps immediately to the final value.
         if time_constant == 0. {
             AudioParamEvent {
+                id: 0,
                 event_type: AudioParamEventType::SetValueAtTime,
                 value,
                 time: start_time,
@@ -536,6 +543,7 @@ impl AudioParam {
             }
         } else {
             AudioParamEvent {
+                id: 0,
                 event_type: AudioParamEventType::SetTargetAtTime,
                 value,
                 time: start_time,
@@ -561,6 +569,7 @@ impl AudioParam {
         assert_valid_time_value(cancel_time);
 
         AudioParamEvent {
+            id: 0,
             event_type: AudioParamEventType::CancelScheduledValues,
             value: 0., // no value
             time: cancel_time,
@@ -586,6 +595,7 @@ impl AudioParam {
         assert_valid_time_value(cancel_time);
 
         AudioParamEvent {
+            id: 0,
             event_type: AudioParamEventType::CancelAndHoldAtTime,
             value: 0., // value will be defined by cancel event
             time: cancel_time,
@@ -625,6 +635,7 @@ impl AudioParam {
         let boxed_copy = copy.into_boxed_slice();
 
         AudioParamEvent {
+            id: 0,
             event_type: AudioParamEventType::SetValueCurveAtTime,
             value: 0., // value will be defined at the end of the event
             time: start_time,
@@ -655,7 +666,8 @@ impl AudioParam {
         }
     }
 
-    fn send_event(&self, event: AudioParamEvent) -> &Self {
+    fn send_event(&self, mut event: AudioParamEvent) -> &Self {
+        event.id = self.raw_parts.next_event_id.fetch_add(1, Ordering::Relaxed);
         self.registration().post_message(event);
         self
     }
@@ -710,6 +722,7 @@ impl AudioProcessor for AudioParamProcessor {
         if let Some(event) = msg.downcast_mut::<AudioParamEvent>() {
             // Avoid deallocation of the event by replacing it with a tombstone.
             let tombstone_event = AudioParamEvent {
+                id: 0,
                 event_type: AudioParamEventType::SetValue,
                 value: Default::default(),
                 time: Default::default(),
@@ -1007,6 +1020,7 @@ impl AudioParamProcessor {
                 || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime)
         {
             let set_value_event = AudioParamEvent {
+                id: 0,
                 event_type: AudioParamEventType::SetValue,
                 value: self.intrinsic_value,
                 // make sure the event is applied before any other event, time
@@ -1028,6 +1042,7 @@ impl AudioParamProcessor {
             && event.event_type == AudioParamEventType::SetTargetAtTime
         {
             let set_value_event = AudioParamEvent {
+                id: 0,
                 event_type: AudioParamEventType::SetValue,
                 value: self.intrinsic_value,
                 // make sure the event is applied before any other event, time
@@ -1199,6 +1214,7 @@ impl AudioParamProcessor {
         // this should thus behave as a SetValue
         if start_value == 0. || start_value * end_value < 0. {
             let event = AudioParamEvent {
+                id: 0,
                 event_type: AudioParamEventType::SetValueAtTime,
                 time: end_time,
                 value: end_value,
@@ -1393,6 +1409,7 @@ impl AudioParamProcessor {
                 }
 
                 let event = AudioParamEvent {
+                    id: 0,
                     event_type: AudioParamEventType::SetValueAtTime,
                     time: infos.next_block_time,
                     value: end_value,
@@ -1635,6 +1652,7 @@ pub(crate) fn audio_param_pair(
             automation_rate_constrained: false,
             automation_rate: Arc::new(Mutex::new(automation_rate)),
             current_value: Arc::clone(&current_value),
+            next_event_id: Arc::new(AtomicU64::new(1)),
         },
     };
 
@@ -1760,6 +1778,28 @@ mod tests {
         render.handle_incoming_event(param2.set_value_raw(3.));
         assert_float_eq!(param1.value(), 3., abs_all <= 0.);
         assert_float_eq!(param2.value(), 3., abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_audioparam_event_ids_are_shared_between_clones() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -10.,
+            max_value: 10.,
+        };
+        let (param1, _render) = audio_param_pair(opts, context.mock_registration());
+        let param2 = param1.clone();
+
+        param1.set_value_at_time(1., 0.);
+        assert_eq!(param1.raw_parts.next_event_id.load(Ordering::Relaxed), 2);
+
+        param2.set_value_at_time(2., 1.);
+        assert_eq!(param1.raw_parts.next_event_id.load(Ordering::Relaxed), 3);
+        assert_eq!(param2.raw_parts.next_event_id.load(Ordering::Relaxed), 3);
     }
 
     #[test]
