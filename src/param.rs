@@ -739,7 +739,22 @@ impl AudioParam {
         }
     }
 
+    fn prune_processed_control_events(&self) {
+        let last_processed_event_id = self
+            .raw_parts
+            .last_processed_event_id
+            .load(Ordering::Acquire);
+
+        if last_processed_event_id == 0 {
+            return;
+        }
+
+        let mut control_timeline = self.raw_parts.control_timeline.lock().unwrap();
+        control_timeline.retain(|event| event.id > last_processed_event_id);
+    }
+
     fn send_event(&self, mut event: AudioParamEvent) -> &Self {
+        self.prune_processed_control_events();
         self.preflight_event(&event);
         event.id = self.raw_parts.next_event_id.fetch_add(1, Ordering::Relaxed);
         self.store_control_event(&event);
@@ -1982,6 +1997,35 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(param.raw_parts.next_event_id.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn test_control_timeline_prunes_processed_events_before_preflight() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 1.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(0., 5.);
+        param
+            .raw_parts
+            .last_processed_event_id
+            .store(1, Ordering::Release);
+
+        let curve = [0., 0.5, 1., 0.5, 0.];
+        param.set_value_curve_at_time(&curve[..], 0., 10.);
+
+        assert_eq!(param.raw_parts.next_event_id.load(Ordering::Relaxed), 3);
+        assert_eq!(
+            param.raw_parts.control_timeline.lock().unwrap().inner.len(),
+            1
+        );
     }
 
     #[test]
