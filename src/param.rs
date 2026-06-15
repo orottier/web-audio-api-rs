@@ -710,7 +710,9 @@ impl AudioParam {
             for queued in control_timeline.iter() {
                 if queued.event_type == AudioParamEventType::SetValueCurveAtTime {
                     let start_time = queued.time;
-                    let end_time = start_time + queued.duration.unwrap();
+                    let end_time = queued
+                        .cancel_time
+                        .unwrap_or_else(|| start_time + queued.duration.unwrap());
 
                     assert!(
                         event.time <= start_time || event.time >= end_time,
@@ -730,7 +732,44 @@ impl AudioParam {
                 control_timeline.retain(|queued| queued.time < event.time);
             }
             AudioParamEventType::CancelAndHoldAtTime => {
-                control_timeline.retain(|queued| queued.time <= event.time);
+                control_timeline.sort();
+
+                let mut e1: Option<&mut AudioParamEvent> = None;
+                let mut e2: Option<&mut AudioParamEvent> = None;
+                let mut t1 = f64::MIN;
+                let mut t2 = f64::MAX;
+
+                for queued in control_timeline.iter_mut() {
+                    if queued.time >= t1 && queued.time <= event.time {
+                        t1 = queued.time;
+                        e1 = Some(queued);
+                    } else if queued.time < t2 && queued.time > event.time {
+                        t2 = queued.time;
+                        e2 = Some(queued);
+                    }
+                }
+
+                if let Some(matched) = e2 {
+                    if matched.event_type == AudioParamEventType::LinearRampToValueAtTime
+                        || matched.event_type == AudioParamEventType::ExponentialRampToValueAtTime
+                    {
+                        matched.cancel_time = Some(event.time);
+                    }
+                } else if let Some(matched) = e1 {
+                    if matched.event_type == AudioParamEventType::SetTargetAtTime {
+                        matched.cancel_time = Some(event.time);
+                    } else if matched.event_type == AudioParamEventType::SetValueCurveAtTime {
+                        let start_time = matched.time;
+                        let duration = matched.duration.unwrap();
+
+                        if event.time <= start_time + duration {
+                            matched.cancel_time = Some(event.time);
+                        }
+                    }
+                }
+
+                control_timeline
+                    .retain(|queued| queued.cancel_time.unwrap_or(queued.time) <= event.time);
             }
             _ => {
                 control_timeline.push(event.clone());
@@ -2026,6 +2065,27 @@ mod tests {
             param.raw_parts.control_timeline.lock().unwrap().inner.len(),
             1
         );
+    }
+
+    #[test]
+    fn test_control_timeline_mirrors_cancel_and_hold_during_curve() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 1.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
+
+        let curve = [0., 0.5, 1., 0.5, 0.];
+        param.set_value_curve_at_time(&curve[..], 0., 10.);
+        param.cancel_and_hold_at_time(5.);
+        param.set_value_at_time(0., 7.);
+
+        assert_eq!(param.raw_parts.next_event_id.load(Ordering::Relaxed), 4);
     }
 
     #[test]
