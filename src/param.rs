@@ -696,6 +696,30 @@ impl AudioParam {
                 );
             }
         }
+
+        if matches!(
+            event.event_type,
+            AudioParamEventType::SetValue
+                | AudioParamEventType::SetValueAtTime
+                | AudioParamEventType::LinearRampToValueAtTime
+                | AudioParamEventType::ExponentialRampToValueAtTime
+                | AudioParamEventType::SetTargetAtTime
+        ) {
+            let mut control_timeline = self.raw_parts.control_timeline.lock().unwrap();
+
+            for queued in control_timeline.iter() {
+                if queued.event_type == AudioParamEventType::SetValueCurveAtTime {
+                    let start_time = queued.time;
+                    let end_time = start_time + queued.duration.unwrap();
+
+                    assert!(
+                        event.time <= start_time || event.time >= end_time,
+                        "NotSupportedError - scheduling automation event ({:?}) during SetValueCurveAtTime ({:?})",
+                        event, queued,
+                    );
+                }
+            }
+        }
     }
 
     fn store_control_event(&self, event: &AudioParamEvent) {
@@ -1929,6 +1953,31 @@ mod tests {
         let curve = [0., 0.5, 1., 0.5, 0.];
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             param_clone.set_value_curve_at_time(&curve[..], 0., 10.);
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(param.raw_parts.next_event_id.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn test_automation_event_preflights_existing_curve_on_control_thread() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 1.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
+        let param_clone = param.clone();
+
+        let curve = [0., 0.5, 1., 0.5, 0.];
+        param.set_value_curve_at_time(&curve[..], 0., 10.);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            param_clone.set_value_at_time(0., 5.);
         }));
 
         assert!(result.is_err());
