@@ -14,6 +14,8 @@ use futures_util::StreamExt as _;
 
 use super::AudioRenderQuantum;
 use crate::buffer::AudioBuffer;
+#[cfg(feature = "diagnostics")]
+use crate::context::{AudioContextDiagnostics, AudioRenderThreadDiagnostics};
 use crate::context::{
     AudioContextState, AudioNodeId, OfflineAudioContext, OfflineAudioContextCallback,
 };
@@ -68,6 +70,17 @@ impl std::fmt::Debug for RenderThread {
 }
 
 impl RenderThread {
+    #[cfg(feature = "diagnostics")]
+    fn diagnostics(&self) -> AudioRenderThreadDiagnostics {
+        AudioRenderThreadDiagnostics {
+            sample_rate: self.sample_rate,
+            buffer_size: self.buffer_size,
+            frames_played: self.frames_played.load(Ordering::Relaxed),
+            number_of_channels: self.number_of_channels,
+            suspended: self.suspended,
+        }
+    }
+
     pub fn new(
         sample_rate: f32,
         number_of_channels: usize,
@@ -189,12 +202,15 @@ impl RenderThread {
                     gc.push(msg)
                 }
             }
-            RunDiagnostics { mut buffer } => {
-                use std::io::Write;
-                writeln!(&mut buffer, "{:#?}", &self).ok();
-                writeln!(&mut buffer, "{:?}", &self.graph).ok();
+            #[cfg(feature = "diagnostics")]
+            RunDiagnostics { backend } => {
+                let diagnostics = AudioContextDiagnostics {
+                    backend,
+                    render_thread: self.diagnostics(),
+                    graph: self.graph.as_ref().unwrap().diagnostics(),
+                };
                 self.event_sender
-                    .try_send(EventDispatch::diagnostics(buffer))
+                    .try_send(EventDispatch::diagnostics(diagnostics))
                     .expect("Unable to send diagnostics - channel is full");
             }
             Suspend { notify } => {

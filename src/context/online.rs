@@ -3,8 +3,12 @@ use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "diagnostics")]
+use crate::context::{AudioBackendDiagnostics, AudioContextDiagnostics};
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::events::{EventDispatch, EventHandler, EventLoop, EventPayload, EventType};
+#[cfg(feature = "diagnostics")]
+use crate::events::EventPayload;
+use crate::events::{EventDispatch, EventHandler, EventLoop, EventType};
 use crate::io::{self, AudioBackendManager, ControlThreadInit, NoneBackend, RenderThreadInit};
 use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
@@ -470,26 +474,28 @@ impl AudioContext {
         self.base().clear_event_handler(EventType::SinkChange);
     }
 
+    /// Request a structured diagnostic report of the audio context.
+    ///
+    /// The report is collected asynchronously: backend details are captured on the control thread,
+    /// while render thread and graph details are captured in the realtime render thread. The
+    /// callback is invoked once on the event loop thread.
+    ///
+    /// This API is available with the `diagnostics` crate feature.
+    #[cfg(feature = "diagnostics")]
     #[allow(clippy::missing_panics_doc)]
-    #[doc(hidden)] // Method signature might change in the future
-    pub fn run_diagnostics<F: Fn(String) + Send + 'static>(&self, callback: F) {
-        let mut buffer = Vec::with_capacity(32 * 1024);
-        {
+    pub fn run_diagnostics<F: Fn(AudioContextDiagnostics) + Send + 'static>(&self, callback: F) {
+        let backend = {
             let backend = self.backend_manager.lock().unwrap();
-            use std::io::Write;
-            writeln!(&mut buffer, "backend: {}", backend.name()).ok();
-            writeln!(&mut buffer, "sink id: {}", backend.sink_id()).ok();
-            writeln!(
-                &mut buffer,
-                "output latency: {:.6}",
-                backend.output_latency().unwrap_or(0.)
-            )
-            .ok();
-        }
+            AudioBackendDiagnostics {
+                name: backend.name().to_string(),
+                sink_id: backend.sink_id().to_string(),
+                output_latency: backend.output_latency().ok(),
+            }
+        };
+
         let callback = move |v| match v {
             EventPayload::Diagnostics(v) => {
-                let s = String::from_utf8(v).unwrap();
-                callback(s);
+                callback(v);
             }
             _ => unreachable!(),
         };
@@ -500,7 +506,7 @@ impl AudioContext {
         );
 
         self.base()
-            .send_control_msg(ControlMessage::RunDiagnostics { buffer });
+            .send_control_msg(ControlMessage::RunDiagnostics { backend });
     }
 
     /// Suspends the progression of time in the audio context.
@@ -825,6 +831,8 @@ impl AudioContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "diagnostics")]
+    use crate::context::DESTINATION_NODE_ID;
     use futures::executor;
 
     #[test]
@@ -959,5 +967,45 @@ mod tests {
             error.to_string(),
             "NotFoundError - Invalid sinkId: \"invalid\""
         );
+    }
+
+    #[cfg(feature = "diagnostics")]
+    #[test]
+    fn test_run_diagnostics_returns_structured_output() {
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+        let (sender, receiver) = std::sync::mpsc::channel();
+
+        context.run_diagnostics(move |diagnostics| {
+            sender.send(diagnostics).unwrap();
+        });
+
+        let diagnostics = receiver
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .unwrap();
+
+        assert!(diagnostics.backend.name.contains("NoneBackend"));
+        assert_eq!(diagnostics.backend.sink_id, "none");
+        assert_eq!(diagnostics.backend.output_latency, Some(0.));
+        assert_eq!(diagnostics.render_thread.sample_rate, context.sample_rate());
+        assert_eq!(
+            diagnostics.render_thread.number_of_channels,
+            crate::MAX_CHANNELS
+        );
+        assert!(diagnostics.graph.active);
+        assert_eq!(diagnostics.graph.node_count, diagnostics.graph.nodes.len());
+        assert_eq!(diagnostics.graph.edge_count, 0);
+        assert!(diagnostics.graph.in_cycle.is_empty());
+        assert!(diagnostics.graph.cycle_breakers.is_empty());
+        assert!(diagnostics
+            .graph
+            .nodes
+            .iter()
+            .any(|node| node.id == DESTINATION_NODE_ID.0
+                && node.inputs == node.input_channels.len()
+                && node.outputs == node.output_channels.len()));
     }
 }

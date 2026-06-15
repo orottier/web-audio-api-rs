@@ -78,6 +78,9 @@ harness = false
 [features]
 default = ["cpal"]
 
+# Expose structured runtime diagnostics for AudioContext and the render graph.
+diagnostics = []
+
 # Legacy codec feature names kept for backwards compatibility.
 # Decoding support is no longer split by file format; all supported Symphonia
 # and Creek decoders are enabled unconditionally.

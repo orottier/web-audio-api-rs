@@ -2,6 +2,8 @@
 
 use std::any::Any;
 
+#[cfg(feature = "diagnostics")]
+use crate::context::AudioBackendDiagnostics;
 use crate::context::AudioNodeId;
 use crate::node::{ChannelConfigInner, ChannelCountMode, ChannelInterpretation};
 use crate::render::graph::Graph;
@@ -65,7 +67,8 @@ pub(crate) enum ControlMessage {
     },
 
     /// Request a diagnostic report of the audio graph
-    RunDiagnostics { buffer: Vec<u8> },
+    #[cfg(feature = "diagnostics")]
+    RunDiagnostics { backend: AudioBackendDiagnostics },
 
     /// Update the channel count of a node
     SetChannelCount { id: AudioNodeId, count: usize },

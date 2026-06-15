@@ -1,3 +1,5 @@
+#[cfg(feature = "diagnostics")]
+use crate::context::AudioContextDiagnostics;
 use crate::context::ConcreteBaseAudioContext;
 use crate::context::{AudioContextState, AudioNodeId};
 use crate::{AudioBuffer, AudioRenderCapacityEvent};
@@ -24,6 +26,7 @@ pub(crate) enum EventType {
     StateChange,
     RenderCapacity,
     ProcessorError(AudioNodeId),
+    #[cfg(feature = "diagnostics")]
     Diagnostics,
     Message(AudioNodeId),
     Complete,
@@ -83,7 +86,8 @@ pub(crate) enum EventPayload {
     None,
     RenderCapacity(AudioRenderCapacityEvent),
     ProcessorError(ErrorEvent),
-    Diagnostics(Vec<u8>),
+    #[cfg(feature = "diagnostics")]
+    Diagnostics(AudioContextDiagnostics),
     Message(Box<dyn Any + Send + 'static>),
     AudioContextState(AudioContextState),
     Complete(AudioBuffer),
@@ -132,7 +136,8 @@ impl EventDispatch {
         }
     }
 
-    pub fn diagnostics(value: Vec<u8>) -> Self {
+    #[cfg(feature = "diagnostics")]
+    pub fn diagnostics(value: AudioContextDiagnostics) -> Self {
         EventDispatch {
             type_: EventType::Diagnostics,
             payload: EventPayload::Diagnostics(value),

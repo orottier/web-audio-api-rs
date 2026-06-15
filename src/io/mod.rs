@@ -206,6 +206,7 @@ pub(crate) fn build_input(
 /// Interface for audio backends
 pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     /// Name of the concrete implementation - for debug purposes
+    #[cfg_attr(not(feature = "diagnostics"), allow(dead_code))]
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }
