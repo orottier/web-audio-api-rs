@@ -283,6 +283,13 @@ impl std::fmt::Debug for AudioParam {
             .field("default_value", &self.default_value())
             .field("min_value", &self.min_value())
             .field("max_value", &self.max_value())
+            .field(
+                "last_processed_event_id",
+                &self
+                    .raw_parts
+                    .last_processed_event_id
+                    .load(Ordering::Acquire),
+            )
             .finish()
     }
 }
@@ -297,6 +304,7 @@ pub(crate) struct AudioParamInner {
     automation_rate: Arc<Mutex<AutomationRate>>, // shared with clones
     current_value: Arc<AtomicF32>,               // shared with clones and with render thread
     next_event_id: Arc<AtomicU64>,               // shared with clones
+    last_processed_event_id: Arc<AtomicU64>,     // shared with clones and with render thread
 }
 
 impl AudioNode for AudioParam {
@@ -689,6 +697,7 @@ pub(crate) struct AudioParamProcessor {
     intrinsic_value: f32,
     automation_rate: AutomationRate,
     current_value: Arc<AtomicF32>,
+    last_processed_event_id: Arc<AtomicU64>,
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
     buffer: ArrayVec<f32, RENDER_QUANTUM_SIZE>,
@@ -741,6 +750,19 @@ impl AudioProcessor for AudioParamProcessor {
 }
 
 impl AudioParamProcessor {
+    fn set_last_event(&mut self, event: Option<AudioParamEvent>) {
+        if let Some(event) = event {
+            if event.id != 0 {
+                self.last_processed_event_id
+                    .store(event.id, Ordering::Release);
+            }
+
+            self.last_event = Some(event);
+        } else {
+            self.last_event = None;
+        }
+    }
+
     // Warning: compute_intrinsic_values in called directly in the unit tests so
     // everything important for the tests should be done here
     // The returned value is only used in tests
@@ -1099,9 +1121,10 @@ impl AudioParamProcessor {
         if time != event.time {
             let mut event = self.event_timeline.pop().unwrap();
             event.time = time;
-            self.last_event = Some(event);
+            self.set_last_event(Some(event));
         } else {
-            self.last_event = self.event_timeline.pop();
+            let event = self.event_timeline.pop();
+            self.set_last_event(event);
         }
 
         false
@@ -1176,11 +1199,12 @@ impl AudioParamProcessor {
             let mut last_event = self.event_timeline.pop().unwrap();
             last_event.time = end_time;
             last_event.value = value;
-            self.last_event = Some(last_event);
+            self.set_last_event(Some(last_event));
         // Event ended during this block
         } else {
             self.intrinsic_value = end_value;
-            self.last_event = self.event_timeline.pop();
+            let event = self.event_timeline.pop();
+            self.set_last_event(event);
         }
 
         false
@@ -1214,7 +1238,7 @@ impl AudioParamProcessor {
         // this should thus behave as a SetValue
         if start_value == 0. || start_value * end_value < 0. {
             let event = AudioParamEvent {
-                id: 0,
+                id: event.id,
                 event_type: AudioParamEventType::SetValueAtTime,
                 time: end_time,
                 value: end_value,
@@ -1283,12 +1307,13 @@ impl AudioParamProcessor {
             let mut last_event = self.event_timeline.pop().unwrap();
             last_event.time = end_time;
             last_event.value = value;
-            self.last_event = Some(last_event);
+            self.set_last_event(Some(last_event));
 
         // Event ended during this block
         } else {
             self.intrinsic_value = end_value;
-            self.last_event = self.event_timeline.pop();
+            let event = self.event_timeline.pop();
+            self.set_last_event(event);
         }
 
         false
@@ -1409,7 +1434,7 @@ impl AudioParamProcessor {
                 }
 
                 let event = AudioParamEvent {
-                    id: 0,
+                    id: event.id,
                     event_type: AudioParamEventType::SetValueAtTime,
                     time: infos.next_block_time,
                     value: end_value,
@@ -1437,7 +1462,7 @@ impl AudioParamProcessor {
         let mut event = self.event_timeline.pop().unwrap();
         event.time = end_time;
         event.value = value;
-        self.last_event = Some(event);
+        self.set_last_event(Some(event));
 
         false
     }
@@ -1504,7 +1529,7 @@ impl AudioParamProcessor {
             let mut last_event = self.event_timeline.pop().unwrap();
             last_event.time = end_time;
             last_event.value = value;
-            self.last_event = Some(last_event);
+            self.set_last_event(Some(last_event));
         // event has ended
         } else {
             let value = values[values.len() - 1];
@@ -1514,7 +1539,7 @@ impl AudioParamProcessor {
             last_event.value = value;
 
             self.intrinsic_value = value;
-            self.last_event = Some(last_event);
+            self.set_last_event(Some(last_event));
         }
 
         false
@@ -1642,6 +1667,7 @@ pub(crate) fn audio_param_pair(
     );
 
     let current_value = Arc::new(AtomicF32::new(default_value));
+    let last_processed_event_id = Arc::new(AtomicU64::new(0));
 
     let param = AudioParam {
         registration: registration.into(),
@@ -1653,12 +1679,14 @@ pub(crate) fn audio_param_pair(
             automation_rate: Arc::new(Mutex::new(automation_rate)),
             current_value: Arc::clone(&current_value),
             next_event_id: Arc::new(AtomicU64::new(1)),
+            last_processed_event_id: Arc::clone(&last_processed_event_id),
         },
     };
 
     let processor = AudioParamProcessor {
         intrinsic_value: default_value,
         current_value,
+        last_processed_event_id,
         default_value,
         min_value,
         max_value,
@@ -1800,6 +1828,42 @@ mod tests {
         param2.set_value_at_time(2., 1.);
         assert_eq!(param1.raw_parts.next_event_id.load(Ordering::Relaxed), 3);
         assert_eq!(param2.raw_parts.next_event_id.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn test_processed_audioparam_event_id_is_shared_with_control_thread() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -10.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        let mut event = param.set_value_at_time_raw(5., 0.);
+        event.id = 1;
+        render.handle_incoming_event(event);
+
+        assert_eq!(
+            param
+                .raw_parts
+                .last_processed_event_id
+                .load(Ordering::Acquire),
+            0
+        );
+
+        render.compute_intrinsic_values(0., 1., 10);
+
+        assert_eq!(
+            param
+                .raw_parts
+                .last_processed_event_id
+                .load(Ordering::Acquire),
+            1
+        );
     }
 
     #[test]
