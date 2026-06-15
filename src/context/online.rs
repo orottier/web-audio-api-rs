@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex};
 #[cfg(feature = "diagnostics")]
 use crate::context::{AudioBackendDiagnostics, AudioContextDiagnostics};
 use crate::context::{AudioContextState, BaseAudioContext, ConcreteBaseAudioContext};
-use crate::events::{EventDispatch, EventHandler, EventLoop, EventPayload, EventType};
+#[cfg(feature = "diagnostics")]
+use crate::events::EventPayload;
+use crate::events::{EventDispatch, EventHandler, EventLoop, EventType};
 use crate::io::{self, AudioBackendManager, ControlThreadInit, NoneBackend, RenderThreadInit};
 use crate::media_devices::{enumerate_devices_sync, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
