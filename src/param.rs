@@ -160,7 +160,7 @@ enum AudioParamEventType {
     SetValueCurveAtTime,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct AudioParamEvent {
     id: u64,
     event_type: AudioParamEventType,
@@ -297,14 +297,19 @@ impl std::fmt::Debug for AudioParam {
 // helper struct to attach / detach to context (for borrow reasons)
 #[derive(Debug, Clone)]
 pub(crate) struct AudioParamInner {
-    default_value: f32,                          // immutable
-    min_value: f32,                              // immutable
-    max_value: f32,                              // immutable
-    automation_rate_constrained: bool,           // effectively immutable
-    automation_rate: Arc<Mutex<AutomationRate>>, // shared with clones
-    current_value: Arc<AtomicF32>,               // shared with clones and with render thread
-    next_event_id: Arc<AtomicU64>,               // shared with clones
-    last_processed_event_id: Arc<AtomicU64>,     // shared with clones and with render thread
+    // Immutable.
+    default_value: f32,
+    min_value: f32,
+    max_value: f32,
+    // Effectively immutable.
+    automation_rate_constrained: bool,
+    // Shared with clones.
+    automation_rate: Arc<Mutex<AutomationRate>>,
+    control_timeline: Arc<Mutex<AudioParamEventTimeline>>,
+    next_event_id: Arc<AtomicU64>,
+    // Shared with clones and with render thread.
+    current_value: Arc<AtomicF32>,
+    last_processed_event_id: Arc<AtomicU64>,
 }
 
 impl AudioNode for AudioParam {
@@ -674,8 +679,46 @@ impl AudioParam {
         }
     }
 
+    fn preflight_event(&self, event: &AudioParamEvent) {
+        // [spec] If setValueCurveAtTime() is called for time T and duration D
+        // and there are any events having a time strictly greater than T, but
+        // strictly less than T+D, then a NotSupportedError exception MUST be thrown.
+        if event.event_type == AudioParamEventType::SetValueCurveAtTime {
+            let start_time = event.time;
+            let end_time = start_time + event.duration.unwrap();
+            let mut control_timeline = self.raw_parts.control_timeline.lock().unwrap();
+
+            for queued in control_timeline.iter() {
+                assert!(
+                    queued.time <= start_time || queued.time >= end_time,
+                    "NotSupportedError - scheduling SetValueCurveAtTime ({:?}) at time of another automation event ({:?})",
+                    event, queued,
+                );
+            }
+        }
+    }
+
+    fn store_control_event(&self, event: &AudioParamEvent) {
+        let mut control_timeline = self.raw_parts.control_timeline.lock().unwrap();
+
+        match event.event_type {
+            AudioParamEventType::CancelScheduledValues => {
+                control_timeline.retain(|queued| queued.time < event.time);
+            }
+            AudioParamEventType::CancelAndHoldAtTime => {
+                control_timeline.retain(|queued| queued.time <= event.time);
+            }
+            _ => {
+                control_timeline.push(event.clone());
+                control_timeline.sort();
+            }
+        }
+    }
+
     fn send_event(&self, mut event: AudioParamEvent) -> &Self {
+        self.preflight_event(&event);
         event.id = self.raw_parts.next_event_id.fetch_add(1, Ordering::Relaxed);
+        self.store_control_event(&event);
         self.registration().post_message(event);
         self
     }
@@ -1678,6 +1721,7 @@ pub(crate) fn audio_param_pair(
             automation_rate_constrained: false,
             automation_rate: Arc::new(Mutex::new(automation_rate)),
             current_value: Arc::clone(&current_value),
+            control_timeline: Arc::new(Mutex::new(AudioParamEventTimeline::new())),
             next_event_id: Arc::new(AtomicU64::new(1)),
             last_processed_event_id: Arc::clone(&last_processed_event_id),
         },
@@ -1864,6 +1908,31 @@ mod tests {
                 .load(Ordering::Acquire),
             1
         );
+    }
+
+    #[test]
+    fn test_set_value_curve_at_time_preflights_existing_event_on_control_thread() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 1.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
+        let param_clone = param.clone();
+
+        param.set_value_at_time(0., 5.);
+
+        let curve = [0., 0.5, 1., 0.5, 0.];
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            param_clone.set_value_curve_at_time(&curve[..], 0., 10.);
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(param.raw_parts.next_event_id.load(Ordering::Relaxed), 2);
     }
 
     #[test]
