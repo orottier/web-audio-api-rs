@@ -66,10 +66,7 @@ fn main() {
             .set_target_at_time(target, now, 0.1);
 
         target = if target == 0. { 1. } else { 0. };
-	context.run_diagnostics(|d| {
-			dbg!(d);
-	});
 
-        thread::sleep(time::Duration::from_millis(10000));
+        thread::sleep(time::Duration::from_millis(1000));
     }
 }
