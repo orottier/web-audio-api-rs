@@ -5,9 +5,8 @@ use std::sync::Mutex;
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    BuildStreamError, DefaultStreamConfigError, Device, DeviceNameError, DevicesError,
-    OutputCallbackInfo, PauseStreamError, PlayStreamError, SampleFormat, Stream, StreamConfig,
-    SupportedBufferSize,
+    Device, Error as CpalError, ErrorKind as CpalErrorKind, OutputCallbackInfo, SampleFormat,
+    Stream, StreamConfig, SupportedBufferSize,
 };
 use crossbeam_channel::Receiver;
 
@@ -68,52 +67,26 @@ fn map_cpal_backend_error(
     AudioBackendError::new(kind, "cpal", operation, err.to_string())
 }
 
-fn map_cpal_build_error(operation: &'static str, err: BuildStreamError) -> AudioBackendError {
-    let kind = match err {
-        BuildStreamError::DeviceNotAvailable => AudioBackendErrorKind::DeviceUnavailable,
-        BuildStreamError::StreamConfigNotSupported => AudioBackendErrorKind::NotSupported,
-        BuildStreamError::InvalidArgument => AudioBackendErrorKind::InvalidArgument,
-        BuildStreamError::StreamIdOverflow | BuildStreamError::BackendSpecific { .. } => {
-            AudioBackendErrorKind::BackendSpecific
+fn map_cpal_error(operation: &'static str, err: CpalError) -> AudioBackendError {
+    let kind = match err.kind() {
+        CpalErrorKind::DeviceNotAvailable => AudioBackendErrorKind::DeviceUnavailable,
+        CpalErrorKind::UnsupportedConfig | CpalErrorKind::UnsupportedOperation => {
+            AudioBackendErrorKind::NotSupported
         }
+        CpalErrorKind::InvalidInput => AudioBackendErrorKind::InvalidArgument,
+        CpalErrorKind::DeviceBusy
+        | CpalErrorKind::DeviceChanged
+        | CpalErrorKind::HostUnavailable
+        | CpalErrorKind::PermissionDenied
+        | CpalErrorKind::RealtimeDenied
+        | CpalErrorKind::ResourceExhausted
+        | CpalErrorKind::StreamInvalidated
+        | CpalErrorKind::Xrun
+        | CpalErrorKind::BackendError
+        | CpalErrorKind::Other
+        | _ => AudioBackendErrorKind::BackendSpecific,
     };
     map_cpal_backend_error(kind, operation, err)
-}
-
-fn map_cpal_default_config_error(
-    operation: &'static str,
-    err: DefaultStreamConfigError,
-) -> AudioBackendError {
-    let kind = match err {
-        DefaultStreamConfigError::DeviceNotAvailable => AudioBackendErrorKind::DeviceUnavailable,
-        DefaultStreamConfigError::StreamTypeNotSupported => AudioBackendErrorKind::NotSupported,
-        DefaultStreamConfigError::BackendSpecific { .. } => AudioBackendErrorKind::BackendSpecific,
-    };
-    map_cpal_backend_error(kind, operation, err)
-}
-
-fn map_cpal_play_error(operation: &'static str, err: PlayStreamError) -> AudioBackendError {
-    let kind = match err {
-        PlayStreamError::DeviceNotAvailable => AudioBackendErrorKind::DeviceUnavailable,
-        PlayStreamError::BackendSpecific { .. } => AudioBackendErrorKind::BackendSpecific,
-    };
-    map_cpal_backend_error(kind, operation, err)
-}
-
-fn map_cpal_pause_error(operation: &'static str, err: PauseStreamError) -> AudioBackendError {
-    let kind = match err {
-        PauseStreamError::DeviceNotAvailable => AudioBackendErrorKind::DeviceUnavailable,
-        PauseStreamError::BackendSpecific { .. } => AudioBackendErrorKind::BackendSpecific,
-    };
-    map_cpal_backend_error(kind, operation, err)
-}
-
-fn map_cpal_devices_error(operation: &'static str, err: DevicesError) -> AudioBackendError {
-    map_cpal_backend_error(AudioBackendErrorKind::BackendSpecific, operation, err)
-}
-
-fn map_cpal_device_name_error(operation: &'static str, err: DeviceNameError) -> AudioBackendError {
-    map_cpal_backend_error(AudioBackendErrorKind::BackendSpecific, operation, err)
 }
 
 fn cpal_device_for_id(
@@ -124,11 +97,11 @@ fn cpal_device_for_id(
     let devices: Vec<Device> = match kind {
         MediaDeviceInfoKind::AudioInput => host
             .input_devices()
-            .map_err(|e| map_cpal_devices_error("enumerate_input_devices", e))?
+            .map_err(|e| map_cpal_error("enumerate_input_devices", e))?
             .collect(),
         MediaDeviceInfoKind::AudioOutput => host
             .output_devices()
-            .map_err(|e| map_cpal_devices_error("enumerate_output_devices", e))?
+            .map_err(|e| map_cpal_error("enumerate_output_devices", e))?
             .collect(),
         MediaDeviceInfoKind::VideoInput => Vec::new(),
     };
@@ -164,7 +137,7 @@ fn cpal_stable_device_id(
 ) -> BackendResult<String> {
     let name = device
         .description()
-        .map_err(|e| map_cpal_device_name_error("device_name", e))?
+        .map_err(|e| map_cpal_error("device_name", e))?
         .to_string();
 
     Ok(stable_device_id("cpal", kind, name, num_channels, seen))
@@ -253,13 +226,13 @@ impl AudioBackendManager for CpalBackend {
             "Output device: {:?}",
             device
                 .description()
-                .map_err(|e| map_cpal_device_name_error("output_device_name", e))?
+                .map_err(|e| map_cpal_error("output_device_name", e))?
                 .to_string()
         );
 
         let default_device_config = device
             .default_output_config()
-            .map_err(|e| map_cpal_default_config_error("default_output_config", e))?;
+            .map_err(|e| map_cpal_error("default_output_config", e))?;
 
         // we grab the largest number of channels provided by the soundcard
         // clamped to MAX_CHANNELS, this value cannot be changed by the user
@@ -267,7 +240,7 @@ impl AudioBackendManager for CpalBackend {
 
         // override default device configuration with the options provided by
         // the user when creating the `AudioContext`
-        let mut preferred_config: StreamConfig = default_device_config.clone().into();
+        let mut preferred_config: StreamConfig = default_device_config.into();
         // make sure the number of channels is clamped to MAX_CHANNELS
         preferred_config.channels = number_of_channels as u16;
 
@@ -328,7 +301,7 @@ impl AudioBackendManager for CpalBackend {
         let spawned = spawn_output_stream(
             &device,
             default_device_config.sample_format(),
-            &preferred_config,
+            preferred_config,
             renderer,
             Arc::clone(&output_latency),
             stats.clone(),
@@ -342,7 +315,7 @@ impl AudioBackendManager for CpalBackend {
             Err(e) => {
                 log::warn!("Output stream build failed with preferred config: {}", e);
 
-                let mut supported_config: StreamConfig = default_device_config.clone().into();
+                let mut supported_config: StreamConfig = default_device_config.into();
                 // make sure number of channels is clamped to MAX_CHANNELS
                 supported_config.channels = number_of_channels as u16;
                 // fallback to device default sample rate
@@ -368,20 +341,20 @@ impl AudioBackendManager for CpalBackend {
                 let spawned = spawn_output_stream(
                     &device,
                     default_device_config.sample_format(),
-                    &supported_config,
+                    supported_config,
                     renderer,
                     Arc::clone(&output_latency),
                     stats.clone(),
                 );
 
-                spawned.map_err(|e| map_cpal_build_error("build_fallback_output_stream", e))?
+                spawned.map_err(|e| map_cpal_error("build_fallback_output_stream", e))?
             }
         };
 
         // Required because some hosts don't play the stream automatically
         stream
             .play()
-            .map_err(|e| map_cpal_play_error("play_output_stream", e))?;
+            .map_err(|e| map_cpal_error("play_output_stream", e))?;
 
         Ok(CpalBackend {
             stream: Arc::new(Mutex::new(Some(stream))),
@@ -429,16 +402,16 @@ impl AudioBackendManager for CpalBackend {
             "Input device: {:?}",
             device
                 .description()
-                .map_err(|e| map_cpal_device_name_error("input_device_name", e))?
+                .map_err(|e| map_cpal_error("input_device_name", e))?
                 .to_string()
         );
 
         let supported = device
             .default_input_config()
-            .map_err(|e| map_cpal_default_config_error("default_input_config", e))?;
+            .map_err(|e| map_cpal_error("default_input_config", e))?;
 
         // clone the config, we may need to fall back on it later
-        let mut preferred: StreamConfig = supported.clone().into();
+        let mut preferred: StreamConfig = supported.into();
 
         if let Some(number_of_channels) = number_of_channels {
             preferred.channels = number_of_channels as u16;
@@ -474,7 +447,7 @@ impl AudioBackendManager for CpalBackend {
             &preferred
         );
 
-        let spawned = spawn_input_stream(&device, supported.sample_format(), &preferred, renderer);
+        let spawned = spawn_input_stream(&device, supported.sample_format(), preferred, renderer);
 
         // the required block size preferred config may not be supported, in that
         // case, fallback the supported config
@@ -486,7 +459,7 @@ impl AudioBackendManager for CpalBackend {
             Err(e) => {
                 log::warn!("Output stream build failed with preferred config: {}", e);
 
-                let supported_config: StreamConfig = supported.clone().into();
+                let supported_config: StreamConfig = supported.into();
                 // fallback to device default sample rate and channel count
                 number_of_channels = usize::from(supported_config.channels);
                 sample_rate = supported_config.sample_rate as f32;
@@ -505,17 +478,17 @@ impl AudioBackendManager for CpalBackend {
                 let spawned = spawn_input_stream(
                     &device,
                     supported.sample_format(),
-                    &supported_config,
+                    supported_config,
                     renderer,
                 );
-                spawned.map_err(|e| map_cpal_build_error("build_fallback_input_stream", e))?
+                spawned.map_err(|e| map_cpal_error("build_fallback_input_stream", e))?
             }
         };
 
         // Required because some hosts don't play the stream automatically
         stream
             .play()
-            .map_err(|e| map_cpal_play_error("play_input_stream", e))?;
+            .map_err(|e| map_cpal_error("play_input_stream", e))?;
 
         let backend = CpalBackend {
             stream: Arc::new(Mutex::new(Some(stream))),
@@ -532,7 +505,7 @@ impl AudioBackendManager for CpalBackend {
         if let Some(s) = self.stream.lock().unwrap().as_ref() {
             s.play()
                 .map(|_| true)
-                .map_err(|e| map_cpal_play_error("resume", e))?;
+                .map_err(|e| map_cpal_error("resume", e))?;
             return Ok(true);
         }
 
@@ -543,7 +516,7 @@ impl AudioBackendManager for CpalBackend {
         if let Some(s) = self.stream.lock().unwrap().as_ref() {
             s.pause()
                 .map(|_| true)
-                .map_err(|e| map_cpal_pause_error("suspend", e))?;
+                .map_err(|e| map_cpal_error("suspend", e))?;
             return Ok(true);
         }
 
@@ -579,7 +552,7 @@ impl AudioBackendManager for CpalBackend {
 
         let input_devices = host
             .input_devices()
-            .map_err(|e| map_cpal_devices_error("enumerate_input_devices", e))?
+            .map_err(|e| map_cpal_error("enumerate_input_devices", e))?
             .filter_map(|d| {
                 let num_channels = d.default_input_config().ok()?.channels();
                 Some((d, MediaDeviceInfoKind::AudioInput, num_channels))
@@ -587,7 +560,7 @@ impl AudioBackendManager for CpalBackend {
 
         let output_devices = host
             .output_devices()
-            .map_err(|e| map_cpal_devices_error("enumerate_output_devices", e))?
+            .map_err(|e| map_cpal_error("enumerate_output_devices", e))?
             .filter_map(|d| {
                 let num_channels = d.default_output_config().ok()?.channels();
                 Some((d, MediaDeviceInfoKind::AudioOutput, num_channels))
@@ -605,7 +578,7 @@ impl AudioBackendManager for CpalBackend {
                     "cpal".to_string(),
                     device
                         .description()
-                        .map_err(|e| map_cpal_device_name_error("device_name", e))?
+                        .map_err(|e| map_cpal_error("device_name", e))?
                         .to_string(),
                     num_channels,
                     index,
@@ -618,7 +591,7 @@ impl AudioBackendManager for CpalBackend {
                         kind,
                         device
                             .description()
-                            .map_err(|e| map_cpal_device_name_error("device_name", e))?
+                            .map_err(|e| map_cpal_error("device_name", e))?
                             .to_string(),
                     );
 
@@ -636,11 +609,8 @@ impl AudioBackendManager for CpalBackend {
 
 fn latency_in_seconds(infos: &OutputCallbackInfo) -> f64 {
     let timestamp = infos.timestamp();
-    timestamp
-        .playback
-        .duration_since(&timestamp.callback)
-        .map(|delta| delta.as_secs() as f64 + delta.subsec_nanos() as f64 * 1e-9)
-        .unwrap_or(0.0)
+    let delta = timestamp.playback.duration_since(timestamp.callback);
+    delta.as_secs() as f64 + delta.subsec_nanos() as f64 * 1e-9
 }
 
 /// Creates an output stream
@@ -654,11 +624,11 @@ fn latency_in_seconds(infos: &OutputCallbackInfo) -> f64 {
 fn spawn_output_stream(
     device: &Device,
     sample_format: SampleFormat,
-    config: &StreamConfig,
+    config: StreamConfig,
     mut render: RenderThread,
     output_latency: Arc<AtomicF64>,
     stats: AudioStats,
-) -> Result<Stream, BuildStreamError> {
+) -> Result<Stream, CpalError> {
     let err_fn = |err| log::error!("an error occurred on the output audio stream: {}", err);
 
     match sample_format {
@@ -772,7 +742,7 @@ fn spawn_output_stream(
             err_fn,
             None,
         ),
-        _ => Err(BuildStreamError::StreamConfigNotSupported),
+        _ => Err(CpalErrorKind::UnsupportedConfig.into()),
     }
 }
 
@@ -787,9 +757,9 @@ fn spawn_output_stream(
 fn spawn_input_stream(
     device: &Device,
     sample_format: SampleFormat,
-    config: &StreamConfig,
+    config: StreamConfig,
     render: MicrophoneRender,
-) -> Result<Stream, BuildStreamError> {
+) -> Result<Stream, CpalError> {
     let err_fn = |err| log::error!("an error occurred on the input audio stream: {}", err);
 
     match sample_format {
@@ -823,6 +793,6 @@ fn spawn_input_stream(
         SampleFormat::I64 => {
             device.build_input_stream(config, move |d: &[i64], _c| render.render(d), err_fn, None)
         }
-        _ => Err(BuildStreamError::StreamConfigNotSupported),
+        _ => Err(CpalErrorKind::UnsupportedConfig.into()),
     }
 }
