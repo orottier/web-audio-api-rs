@@ -14,7 +14,7 @@ use crate::node::{
 use crate::render::{
     AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
 };
-use crate::{assert_valid_time_value, AtomicF32, RENDER_QUANTUM_SIZE};
+use crate::{assert_valid_time_value, AtomicF32, AtomicF64, RENDER_QUANTUM_SIZE};
 
 /// For SetTargetAtTime event, that theoretically cannot end, if the diff between
 /// the current value and the target is below this threshold, the value is set
@@ -170,6 +170,20 @@ pub(crate) struct AudioParamEvent {
     cancel_time: Option<f64>,   // populated by `CancelAndHoldAtTime` events
     duration: Option<f64>,      // populated by `SetValueCurveAtTime` events
     values: Option<Box<[f32]>>, // populated by `SetValueCurveAtTime` events
+}
+
+impl AudioParamEvent {
+    fn control_prune_time(&self) -> f64 {
+        match self.event_type {
+            AudioParamEventType::LinearRampToValueAtTime
+            | AudioParamEventType::ExponentialRampToValueAtTime
+            | AudioParamEventType::SetTargetAtTime => self.cancel_time.unwrap_or(self.time),
+            AudioParamEventType::SetValueCurveAtTime => self
+                .cancel_time
+                .unwrap_or_else(|| self.time + self.duration.unwrap()),
+            _ => self.time,
+        }
+    }
 }
 
 // Event queue that contains `AudioParamEvent`s, most of the time, events must be
@@ -329,11 +343,15 @@ impl std::fmt::Debug for AudioParam {
             .field("min_value", &self.min_value())
             .field("max_value", &self.max_value())
             .field(
-                "last_processed_event_id",
-                &self
-                    .raw_parts
-                    .last_processed_event_id
-                    .load(Ordering::Acquire),
+                "last_processed_event",
+                &(
+                    self.raw_parts
+                        .last_processed_event_time
+                        .load(Ordering::Acquire),
+                    self.raw_parts
+                        .last_processed_event_id
+                        .load(Ordering::Acquire),
+                ),
             )
             .finish()
     }
@@ -354,6 +372,7 @@ pub(crate) struct AudioParamInner {
     next_event_id: Arc<AtomicU64>,
     // Shared with clones and with render thread.
     current_value: Arc<AtomicF32>,
+    last_processed_event_time: Arc<AtomicF64>,
     last_processed_event_id: Arc<AtomicU64>,
 }
 
@@ -787,17 +806,25 @@ impl AudioParam {
     }
 
     fn prune_processed_control_events(&self) {
+        let last_processed_event_time = self
+            .raw_parts
+            .last_processed_event_time
+            .load(Ordering::Acquire);
         let last_processed_event_id = self
             .raw_parts
             .last_processed_event_id
             .load(Ordering::Acquire);
 
-        if last_processed_event_id == 0 {
+        if last_processed_event_time == f64::NEG_INFINITY {
             return;
         }
 
         let mut control_timeline = self.raw_parts.control_timeline.lock().unwrap();
-        control_timeline.retain(|event| event.id > last_processed_event_id);
+        control_timeline.retain(|event| {
+            let event_time = event.control_prune_time();
+            event_time > last_processed_event_time
+                || (event_time == last_processed_event_time && event.id > last_processed_event_id)
+        });
     }
 
     fn send_event(&self, mut event: AudioParamEvent) -> &Self {
@@ -826,6 +853,7 @@ pub(crate) struct AudioParamProcessor {
     intrinsic_value: f32,
     automation_rate: AutomationRate,
     current_value: Arc<AtomicF32>,
+    last_processed_event_time: Arc<AtomicF64>,
     last_processed_event_id: Arc<AtomicU64>,
     event_timeline: AudioParamEventTimeline,
     last_event: Option<AudioParamEvent>,
@@ -882,8 +910,12 @@ impl AudioParamProcessor {
     fn set_last_event(&mut self, event: Option<AudioParamEvent>) {
         if let Some(event) = event {
             if event.id != 0 {
+                // Publish id before time so control-side pruning can use the
+                // time load as the chronological acknowledgement barrier.
                 self.last_processed_event_id
                     .store(event.id, Ordering::Release);
+                self.last_processed_event_time
+                    .store(event.time, Ordering::Release);
             }
 
             self.last_event = Some(event);
@@ -1676,6 +1708,7 @@ pub(crate) fn audio_param_pair(
     );
 
     let current_value = Arc::new(AtomicF32::new(default_value));
+    let last_processed_event_time = Arc::new(AtomicF64::new(f64::NEG_INFINITY));
     let last_processed_event_id = Arc::new(AtomicU64::new(0));
 
     let param = AudioParam {
@@ -1689,6 +1722,7 @@ pub(crate) fn audio_param_pair(
             current_value: Arc::clone(&current_value),
             control_timeline: Arc::new(Mutex::new(AudioParamEventTimeline::new())),
             next_event_id: Arc::new(AtomicU64::new(1)),
+            last_processed_event_time: Arc::clone(&last_processed_event_time),
             last_processed_event_id: Arc::clone(&last_processed_event_id),
         },
     };
@@ -1696,6 +1730,7 @@ pub(crate) fn audio_param_pair(
     let processor = AudioParamProcessor {
         intrinsic_value: default_value,
         current_value,
+        last_processed_event_time,
         last_processed_event_id,
         default_value,
         min_value,
@@ -1841,7 +1876,7 @@ mod tests {
     }
 
     #[test]
-    fn test_processed_audioparam_event_id_is_shared_with_control_thread() {
+    fn test_processed_audioparam_event_position_is_shared_with_control_thread() {
         let context = OfflineAudioContext::new(1, 1, 48000.);
 
         let opts = AudioParamDescriptor {
@@ -1860,6 +1895,13 @@ mod tests {
         assert_eq!(
             param
                 .raw_parts
+                .last_processed_event_time
+                .load(Ordering::Acquire),
+            f64::NEG_INFINITY
+        );
+        assert_eq!(
+            param
+                .raw_parts
                 .last_processed_event_id
                 .load(Ordering::Acquire),
             0
@@ -1867,6 +1909,14 @@ mod tests {
 
         render.compute_intrinsic_values(0., 1., 10);
 
+        assert_float_eq!(
+            param
+                .raw_parts
+                .last_processed_event_time
+                .load(Ordering::Acquire),
+            0.,
+            abs_all <= 0.
+        );
         assert_eq!(
             param
                 .raw_parts
@@ -1927,7 +1977,7 @@ mod tests {
     }
 
     #[test]
-    fn test_control_timeline_prunes_processed_events_before_preflight() {
+    fn test_control_timeline_prunes_chronologically_before_preflight() {
         let context = OfflineAudioContext::new(1, 1, 48000.);
 
         let opts = AudioParamDescriptor {
@@ -1942,6 +1992,10 @@ mod tests {
         param.set_value_at_time(0., 5.);
         param
             .raw_parts
+            .last_processed_event_time
+            .store(5., Ordering::Release);
+        param
+            .raw_parts
             .last_processed_event_id
             .store(1, Ordering::Release);
 
@@ -1953,6 +2007,104 @@ mod tests {
             param.raw_parts.control_timeline.lock().unwrap().inner.len(),
             1
         );
+    }
+
+    #[test]
+    fn test_control_timeline_retains_future_events_scheduled_before_processed_events() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 1.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(0., 100.);
+        param.set_value_at_time(0.5, 1.);
+        param
+            .raw_parts
+            .last_processed_event_time
+            .store(1., Ordering::Release);
+        param
+            .raw_parts
+            .last_processed_event_id
+            .store(2, Ordering::Release);
+
+        let curve = [0., 0.5, 1., 0.5, 0.];
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            param.set_value_curve_at_time(&curve[..], 90., 20.);
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(param.raw_parts.next_event_id.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn test_control_timeline_uses_id_as_same_time_tiebreaker() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 1.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
+
+        param.set_value_at_time(0., 5.);
+        param.set_value_at_time(0.5, 5.);
+        param
+            .raw_parts
+            .last_processed_event_time
+            .store(5., Ordering::Release);
+        param
+            .raw_parts
+            .last_processed_event_id
+            .store(1, Ordering::Release);
+
+        let curve = [0., 0.5, 1., 0.5, 0.];
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            param.set_value_curve_at_time(&curve[..], 0., 10.);
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(param.raw_parts.next_event_id.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn test_control_timeline_retains_curve_until_end_time() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 1.,
+            min_value: 0.,
+            max_value: 1.,
+        };
+        let (param, _render) = audio_param_pair(opts, context.mock_registration());
+
+        let curve = [0., 0.5, 1., 0.5, 0.];
+        param.set_value_curve_at_time(&curve[..], 0., 10.);
+        param
+            .raw_parts
+            .last_processed_event_time
+            .store(0., Ordering::Release);
+        param
+            .raw_parts
+            .last_processed_event_id
+            .store(1, Ordering::Release);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            param.set_value_at_time(0., 5.);
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(param.raw_parts.next_event_id.load(Ordering::Relaxed), 2);
     }
 
     #[test]
