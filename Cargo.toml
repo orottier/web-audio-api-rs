@@ -80,6 +80,12 @@ default = ["cpal"]
 
 # Expose structured runtime diagnostics for AudioContext and the render graph.
 diagnostics = []
+
+# Make AudioWorklet inputs follow the Web Audio spec for inactive inputs:
+# inputs[n] is an empty slice when no connected source is actively processing.
+# This is opt-in for v1 because existing processors may assume a stable channel count.
+spec-compliant-worklet-inputs = []
+
 cpal = ["dep:cpal"]
 cubeb = ["dep:cubeb"]
 cpal-jack = ["cpal", "cpal/jack"]
