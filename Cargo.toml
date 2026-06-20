@@ -21,7 +21,7 @@ rust-version = "1.86"
 almost = "0.2.0"
 arc-swap = "1.6"
 arrayvec = "0.7"
-fft-convolver = "0.3"
+fft-convolver = "0.4"
 cpal = { version = "0.18", optional = true }
 creek = { version = "1.2", default-features = false, features = [
     "decode",
