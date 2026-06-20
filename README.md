@@ -86,6 +86,7 @@ flag. Please note that `cmake` must be installed locally in order to run
 | -------------- | -------------------------------------------------------------- |
 | cpal (default) | ALSA, WASAPI, CoreAudio, Oboe (Android)                        |
 | cpal-jack      | JACK                                                           |
+| cpal-pipewire  | PipeWire                                                       |
 | cpal-asio      | ASIO see <https://github.com/rustaudio/cpal#asio-on-windows>   |
 | cubeb          | PulseAudio, AudioUnit, WASAPI, OpenSL, AAudio, sndio, Sun, OSS |
 

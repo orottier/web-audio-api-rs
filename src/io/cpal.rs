@@ -24,39 +24,56 @@ use crate::stats::AudioStats;
 use crate::{AtomicF64, MAX_CHANNELS};
 
 fn get_host() -> BackendResult<cpal::Host> {
+    #[cfg(all(feature = "cpal-pipewire", target_os = "linux"))]
+    {
+        if let Some(host) = preferred_host(cpal::HostId::PipeWire, "PipeWire") {
+            return Ok(host);
+        }
+    }
+
     #[cfg(feature = "cpal-jack")]
     {
-        // seems to be always Some when jack is installed,
-        // even if it's not running
-        if let Some(jack_id) = cpal::available_hosts()
-            .into_iter()
-            .find(|id| *id == cpal::HostId::Jack)
-        {
-            let jack_host = cpal::host_from_id(jack_id).map_err(|e| {
-                map_cpal_backend_error(AudioBackendErrorKind::BackendSpecific, "jack_host", e)
-            })?;
-
-            // if jack is not running, the host can't access devices
-            // fallback to default host
-            let host = match jack_host.devices() {
-                Ok(devices) => {
-                    // no jack devices found, jack is not running
-                    if devices.count() == 0 {
-                        log::warn!("No jack devices found, fallback to default host");
-                        cpal::default_host()
-                    } else {
-                        jack_host
-                    }
-                }
-                // cpal does not seems to return Err at this point
-                // but just in case, fallback to default host
-                Err(_) => cpal::default_host(),
-            };
+        if let Some(host) = preferred_host(cpal::HostId::Jack, "JACK") {
             return Ok(host);
         }
     }
 
     Ok(cpal::default_host())
+}
+
+#[cfg(any(
+    feature = "cpal-jack",
+    all(feature = "cpal-pipewire", target_os = "linux")
+))]
+fn preferred_host(host_id: cpal::HostId, host_name: &str) -> Option<cpal::Host> {
+    let host_id = cpal::available_hosts()
+        .into_iter()
+        .find(|id| *id == host_id)?;
+
+    let host = match cpal::host_from_id(host_id) {
+        Ok(host) => host,
+        Err(err) => {
+            log::warn!("{host_name} host is unavailable, falling back to default host: {err}");
+            return None;
+        }
+    };
+
+    match host.devices() {
+        Ok(devices) => {
+            if devices.count() > 0 {
+                Some(host)
+            } else {
+                log::warn!("No {host_name} devices found, falling back to default host");
+                None
+            }
+        }
+        Err(err) => {
+            log::warn!(
+                "Could not enumerate {host_name} devices, falling back to default host: {err}"
+            );
+            None
+        }
+    }
 }
 
 fn map_cpal_backend_error(
