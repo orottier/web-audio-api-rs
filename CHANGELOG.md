@@ -2,10 +2,9 @@
 
 ## Version 1.6.0 (2026-06-20)
 
-- Added `diagnostics` feature with structured AudioContext diagnostics
-- Added native PipeWire support via the `cpal-pipewire` cargo feature
+- Updated cpal to 0.18 for improved device disconnect/reconnect behaviour
+- Added native PipeWire support via `cpal-pipewire` cargo feature
 - Added `spec-compliant-worklet-inputs` feature for spec compliant AudioWorklet inactive input behavior
-- Update cpal to 0.18 for improved device disconnect/reconnect behaviour
 - Fix: AudioBufferSourceNode reverse playback, loops and start without buffer
 - Fix: BiquadFilterNode coefficient calculations and prevent invalid values from propagating into the graph
 - Fix: OscillatorNode handling of negative frequencies and computed frequencies outside the Nyquist range
@@ -13,6 +12,7 @@
 - Fix: IIRFilterNode handling of feedback/feedforward coefficient arrays with different sizes
 - Fix: mixing rules for some speaker layouts
 - Improved OscillatorNode and IIRFilterNode performance
+- Added `diagnostics` feature with structured AudioContext diagnostics
 
 ## Version 1.5.0 (2026-05-23)
 
