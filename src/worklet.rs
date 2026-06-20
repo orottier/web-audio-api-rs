@@ -364,18 +364,26 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
         for input in inputs {
             let c = input.number_of_channels();
             let (left, right) = inputs_flat.split_at(c);
-            // [spec] If there are no actively processing AudioNodes connected to
-            // the 𝑛th input of the AudioWorkletNode for the current render quantum,
-            // then the  content of inputs[n] is an empty array, indicating that
-            // zero channels of input are available. This is the only circumstance
-            // under which the number of elements of inputs[n] can be zero.
-            // cf. https://webaudio.github.io/web-audio-api/#audioworkletprocess-callback-parameters
-            let left_static = if input.is_silent() {
-                &[]
-            } else {
-                // SAFETY - see comments above
-                unsafe { std::mem::transmute::<&[&[f32]], &[&[f32]]>(left) }
+            #[cfg(feature = "spec-compliant-worklet-inputs")]
+            let left_static = {
+                // [spec] If there are no actively processing AudioNodes connected to
+                // the 𝑛th input of the AudioWorkletNode for the current render quantum,
+                // then the content of inputs[n] is an empty array, indicating that
+                // zero channels of input are available. This is the only circumstance
+                // under which the number of elements of inputs[n] can be zero.
+                // cf. https://webaudio.github.io/web-audio-api/#audioworkletprocess-callback-parameters
+                if input.is_silent() {
+                    &[]
+                } else {
+                    // SAFETY - see comments above
+                    unsafe { std::mem::transmute::<&[&[f32]], &[&[f32]]>(left) }
+                }
             };
+
+            #[cfg(not(feature = "spec-compliant-worklet-inputs"))]
+            // SAFETY - see comments above
+            let left_static = unsafe { std::mem::transmute::<&[&[f32]], &[&[f32]]>(left) };
+
             self.inputs_grouped.push(left_static);
             inputs_flat = right;
         }
@@ -564,6 +572,7 @@ mod tests {
         assert!(has_run.load(Ordering::Relaxed));
     }
 
+    #[cfg(feature = "spec-compliant-worklet-inputs")]
     #[test]
     fn test_worklet_input_not_actively_processing() {
         use crate::node::AudioScheduledSourceNode;
@@ -615,6 +624,7 @@ mod tests {
         assert!(mark_empty_input.load(Ordering::Relaxed));
     }
 
+    #[cfg(feature = "spec-compliant-worklet-inputs")]
     #[test]
     fn test_worklet_no_input() {
         struct SetBoolWhenInputNotActivelyProcessing(Arc<AtomicBool>);

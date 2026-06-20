@@ -1,6 +1,6 @@
 [package]
 name = "web-audio-api"
-version = "1.5.0"
+version = "1.6.0"
 authors = ["Otto <otto@ot-to.nl>"]
 edition = "2021"
 description = "A pure Rust implementation of the Web Audio API, for use in non-browser contexts"
@@ -80,6 +80,12 @@ default = ["cpal"]
 
 # Expose structured runtime diagnostics for AudioContext and the render graph.
 diagnostics = []
+
+# Make AudioWorklet inputs follow the Web Audio spec for inactive inputs:
+# inputs[n] is an empty slice when no connected source is actively processing.
+# This is opt-in for v1 because existing processors may assume a stable channel count.
+spec-compliant-worklet-inputs = []
+
 cpal = ["dep:cpal"]
 cubeb = ["dep:cubeb"]
 cpal-jack = ["cpal", "cpal/jack"]
