@@ -1456,4 +1456,15 @@ mod tests {
 
         assert_float_eq!(result[..], expected[..], abs_all <= 1e-5);
     }
+
+    #[test]
+    #[should_panic(expected = "InvalidStateError - cannot stop before start")]
+    fn stop_before_start_panics_with_parseable_message() {
+        // Embedders map panic messages of the form "<DOMException name> - <detail>"
+        // back to the corresponding DOMException. This message lacked the " - "
+        // separator and would be misclassified as a generic error.
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let mut src = context.create_oscillator();
+        src.stop();
+    }
 }
