@@ -1542,6 +1542,117 @@ impl AudioParamProcessor {
         false
     }
 
+    /// Catch-up pass for the k-rate first-frame value.
+    ///
+    /// Applies queued head events whose *actual* time is <= block_time to
+    /// intrinsic_value (strict comparison, no sample quantization): they may
+    /// have just arrived from the control thread without any previous block
+    /// having consumed them. Handling:
+    ///   - SetValue / SetValueAtTime (time == 0 treated as block_time, same
+    ///     rule as the main loop) take effect immediately;
+    ///   - completed Linear/Exponential ramps (end <= block_time, including a
+    ///     cancel truncation) jump to their end/truncation value;
+    ///   - completed SetValueCurve events jump to their final sample;
+    ///   - in-progress ramps/curves and SetTargetAtTime stop the pass (the
+    ///     a-rate machinery evaluates them at block_time into buffer[0]).
+    /// last_event bookkeeping mirrors the corresponding main-loop branches
+    /// (subsequent ramps depend on it for their start point).
+    fn krate_catch_up(&mut self, block_time: f64) {
+        loop {
+            let Some(event) = self.event_timeline.peek() else {
+                return;
+            };
+            match event.event_type {
+                AudioParamEventType::SetValue | AudioParamEventType::SetValueAtTime => {
+                    let mut time = event.time;
+                    if time == 0. {
+                        time = block_time;
+                    }
+                    if time > block_time {
+                        return;
+                    }
+                    self.intrinsic_value = event.value;
+                    let mut ev = self.event_timeline.pop().unwrap();
+                    ev.time = time;
+                    self.last_event = Some(ev);
+                }
+                AudioParamEventType::LinearRampToValueAtTime
+                | AudioParamEventType::ExponentialRampToValueAtTime => {
+                    let end_time = event.cancel_time.unwrap_or(event.time);
+                    if end_time > block_time {
+                        return; // in progress or future: the machinery fills buffer[0]
+                    }
+                    let cancelled = event.cancel_time.is_some();
+                    let is_linear =
+                        event.event_type == AudioParamEventType::LinearRampToValueAtTime;
+                    // Ramps always have a predecessor (an implicit SetValueAtTime
+                    // is inserted as a fallback), same unwrap precondition as the
+                    // main loop.
+                    let last = self.last_event.as_ref().unwrap();
+                    let start_time = last.time;
+                    let start_value = last.value;
+                    let end_value = event.value;
+                    let duration = event.time - start_time; // slope uses the declared end, as in the main loop
+                    let value = if is_linear {
+                        if cancelled {
+                            compute_linear_ramp_sample(
+                                start_time,
+                                duration,
+                                start_value,
+                                end_value - start_value,
+                                end_time,
+                            )
+                        } else {
+                            end_value
+                        }
+                    } else if start_value == 0. || start_value * end_value < 0. {
+                        // Degenerate exponential ramp (same as the main loop):
+                        // v(t) = V0 until the end time, then jumps to V1.
+                        end_value
+                    } else if cancelled {
+                        compute_exponential_ramp_sample(
+                            start_time,
+                            duration,
+                            start_value,
+                            end_value / start_value,
+                            end_time,
+                        )
+                    } else {
+                        end_value
+                    };
+                    self.intrinsic_value = value;
+                    let mut ev = self.event_timeline.pop().unwrap();
+                    ev.time = end_time;
+                    ev.value = value;
+                    self.last_event = Some(ev);
+                }
+                AudioParamEventType::SetValueCurveAtTime => {
+                    let start_time = event.time;
+                    let duration = event.duration.unwrap();
+                    let mut end_time = start_time + duration;
+                    if let Some(cancel_time) = event.cancel_time {
+                        end_time = cancel_time;
+                    }
+                    if end_time > block_time {
+                        return; // in progress or future: the machinery fills buffer[0]
+                    }
+                    let values = event.values.as_ref().unwrap();
+                    let value =
+                        compute_set_value_curve_sample(start_time, duration, values, end_time);
+                    self.intrinsic_value = value;
+                    let mut ev = self.event_timeline.pop().unwrap();
+                    ev.time = end_time;
+                    ev.value = value;
+                    self.last_event = Some(ev);
+                }
+                // SetTargetAtTime has no completion of its own (replacement and
+                // cancellation are handled by the main loop). Stop the pass; its
+                // value at block_time is produced by the machinery into buffer[0].
+                _ => return,
+            }
+        }
+    }
+
     fn compute_buffer(&mut self, block_time: f64, dt: f64, count: usize) {
         // Set [[current value]] to the value of paramIntrinsicValue at the
         // beginning of this render quantum.
@@ -1571,20 +1682,52 @@ impl AudioParamProcessor {
             .peek()
             .is_none_or(|event| !event.event_type.is_ramp() && event.time >= next_block_time);
 
-        if !is_a_rate || is_constant_block {
-            self.buffer.push(self.intrinsic_value);
+        if is_constant_block {
             // nothing to compute in timeline, for both k-rate and a-rate
-            if is_constant_block {
-                return;
-            }
+            self.buffer.push(self.intrinsic_value);
+            return;
         }
 
-        // pack block infos for automation methods
+        // The previous k-rate implementation snapshotted intrinsic_value
+        // *before* the timeline loop. For the first block after scheduling
+        // (events not yet consumed by any earlier block) the snapshot predates
+        // the events: after setValueAtTime(v, 0) the first quantum still reads
+        // the default value and only the second block self-heals. WPT's
+        // k-rate-*-connections catch this - the reference path is wrong for the
+        // whole first block and the oscillator phase drifts for the rest of the
+        // render.
+        //
+        // Per the spec (computation of value), the k-rate value is the value at
+        // the time of the *first frame* of the quantum: events at or before the
+        // first frame count, strictly later ones do not - even when they are
+        // less than half a sample late and the a-rate rounding would quantize
+        // them onto sample 0.
+        //
+        // Two steps:
+        //   1. Catch-up (krate_catch_up): apply queued head events whose actual
+        //      time is <= block_time to intrinsic_value (root fix for the
+        //      first-block problem); strictly later events stay queued.
+        //   2. Run the full a-rate machinery and keep only buffer[0] (the
+        //      first-frame value). In-progress ramps/curves/setTargets are then
+        //      evaluated by the same code at the same instant as an a-rate
+        //      signal driving the same param - bit-identical reference/test
+        //      paths - and intrinsic advances across blocks exactly like
+        //      a-rate. When the machinery fills no samples (all consumed events
+        //      quantized onto sample 0), fall back to the post-catch-up
+        //      snapshot; the post-loop intrinsic would wrongly fold
+        //      "less-than-half-a-sample late" future events into this block
+        //      (see test_update_automation_rate_to_k).
+        let k_first_frame = if is_a_rate {
+            0.0 // unused
+        } else {
+            self.krate_catch_up(block_time);
+            self.intrinsic_value
+        };
         let block_infos = BlockInfos {
             block_time,
             dt,
             count,
-            is_a_rate,
+            is_a_rate: true,
             next_block_time,
         };
 
@@ -1628,6 +1771,20 @@ impl AudioParamProcessor {
 
             if exit_loop {
                 break;
+            }
+        }
+
+        // k-rate: keep only the first-frame value (a length-1 buffer is the
+        // k-rate contract). Non-empty means some event pre-fill ran, so
+        // buffer[0] is the first-frame value (the post-catch-up intrinsic or an
+        // in-progress event evaluated at block_time). Empty means every applied
+        // event quantized onto sample 0 - use the post-catch-up snapshot for
+        // strict first-frame semantics.
+        if !is_a_rate {
+            if self.buffer.is_empty() {
+                self.buffer.push(k_first_frame);
+            } else {
+                self.buffer.truncate(1);
             }
         }
     }
@@ -1902,6 +2059,39 @@ mod tests {
                 abs_all <= 0.
             );
         }
+    }
+
+    #[test]
+    fn test_k_rate_first_block_includes_block_start_events() {
+        // After setValueAtTime(v, 0) the k-rate value of the *first* quantum
+        // must already be v (spec: k-rate is the value at the time of the first
+        // frame; events at or before the first frame count). The previous
+        // implementation snapshotted intrinsic_value before applying events, so
+        // the first block read the default value and only the second block
+        // self-healed - WPT's k-rate-*-connections fail across the board
+        // because the reference oscillator drifts in phase from block one.
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::K,
+            default_value: 0.,
+            min_value: -20.,
+            max_value: 20.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+        render.handle_incoming_event(param.set_value_at_time_raw(5., 0.));
+        render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(15., 20.));
+
+        // First block at t = 0: setValue(5, 0) already applies (previously 0).
+        let vs = render.compute_intrinsic_values(0., 1., 10);
+        assert_float_eq!(vs, &[5.; 1][..], abs_all <= 0.);
+        // Second block at t = 10: ramp 5 -> 15 over [0, 20], value(10) = 10.
+        let vs = render.compute_intrinsic_values(10., 1., 10);
+        assert_float_eq!(vs, &[10.; 1][..], abs_all <= 0.);
+        // Events inside a block (past its first frame) do not affect it: at
+        // t = 20 the block starts at 15 (the ramp just completed).
+        let vs = render.compute_intrinsic_values(20., 1., 10);
+        assert_float_eq!(vs, &[15.; 1][..], abs_all <= 0.);
     }
 
     #[test]
