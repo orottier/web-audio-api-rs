@@ -9,7 +9,7 @@ use web_audio_api::context::{
 use web_audio_api::node::AudioNode;
 
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use web_audio_api::MAX_CHANNELS;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(3);
@@ -123,10 +123,19 @@ fn test_none_sink_id() {
         let _ = state_change_tx.send(());
     });
 
-    assert!(
-        state_change_rx.recv_timeout(TEST_TIMEOUT).is_ok(),
-        "timed out waiting for started state change"
-    );
+    // The suspended -> running transition is emitted by the render thread the
+    // moment it adopts the initial graph, which may happen before the handler
+    // above is installed. When it does, the event is dropped and never
+    // delivered, so waiting for it directly is racy and times out under load.
+    // Wait for the observable running state instead.
+    let deadline = Instant::now() + TEST_TIMEOUT;
+    while context.state() != AudioContextState::Running {
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for started state change"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
 
     // changing sink_id to 'none' again should make no changes
     let (sink_change_tx, sink_change_rx) = crossbeam_channel::bounded(1);
