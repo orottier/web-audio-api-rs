@@ -9,6 +9,9 @@
 - Fix: The built-in square and sawtooth oscillators were 1.43 dB louder than the spec's normalized `PeriodicWave`
 - Fix: Adding a node after connecting an edge in the same quantum no longer breaks graph sorting
 - Fix: `AudioParam cancelAndHoldAtTime()` discontinuities
+- Fix: `PannerNode` HRTF tail time no longer gets silently exhausted by earlier sounds -
+  `tail_time_counter` is now reset whenever the panner has active input, so every sound gets its
+  full ~12 ms HRTF ring-out instead of only the first one played on a given `PannerNode`
 
 ## Version 1.7.0 (2026-08-06)
 
