@@ -4,6 +4,9 @@
 
 - `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`,
   so an audio source that borrows from the stack can be decoded
+- Fix: `PannerNode` HRTF tail time no longer gets silently exhausted by earlier sounds -
+  `tail_time_counter` is now reset whenever the panner has active input, so every sound gets its
+  full ~12 ms HRTF ring-out instead of only the first one played on a given `PannerNode`
 
 ## Version 1.7.0 (2026-08-06)
 
