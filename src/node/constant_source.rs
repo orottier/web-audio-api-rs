@@ -224,19 +224,23 @@ impl AudioProcessor for ConstantSourceRenderer {
         output.force_mono();
 
         let offset = params.get(&self.offset);
-        let output_channel = output.channel_data_mut(0);
 
         // fast path
         if offset.len() == 1
             && self.start_time <= scope.current_time
             && self.stop_time >= next_block_time
         {
-            output_channel.fill(offset[0]);
+            if offset[0].abs() <= crate::SILENCE_THRESHOLD {
+                output.make_silent();
+            } else {
+                output.channel_data_mut(0).fill(offset[0]);
+            }
         } else {
             // sample accurate path
             let mut current_time = scope.current_time;
 
-            output_channel
+            output
+                .channel_data_mut(0)
                 .iter_mut()
                 .zip(offset.iter().cycle())
                 .for_each(|(o, &value)| {
@@ -305,6 +309,57 @@ mod tests {
         let options = ConstantSourceOptions { offset: 12. };
         let src = ConstantSourceNode::new(&context, options);
         assert_float_eq!(src.offset.value(), 12., abs_all <= 0.);
+    }
+
+    #[cfg(feature = "spec-compliant-worklet-inputs")]
+    #[test]
+    fn test_zero_offset_output_is_silent() {
+        use crate::worklet::AudioParamValues as WorkletParamValues;
+        use crate::worklet::{AudioWorkletNode, AudioWorkletNodeOptions, AudioWorkletProcessor};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        struct SetBoolWhenInputSilent(Arc<AtomicBool>);
+
+        impl AudioWorkletProcessor for SetBoolWhenInputSilent {
+            type ProcessorOptions = Arc<AtomicBool>;
+
+            fn constructor(opts: Self::ProcessorOptions) -> Self {
+                Self(opts)
+            }
+
+            fn process<'a, 'b>(
+                &mut self,
+                inputs: &'b [&'a [&'a [f32]]],
+                _outputs: &'b mut [&'a mut [&'a mut [f32]]],
+                _params: WorkletParamValues<'b>,
+                _scope: &'b AudioWorkletGlobalScope,
+            ) -> bool {
+                if inputs[0].is_empty() {
+                    self.0.store(true, Ordering::Relaxed);
+                }
+                false
+            }
+        }
+
+        let mark_silent = Arc::new(AtomicBool::new(false));
+
+        let mut context = OfflineAudioContext::new(1, 256, 48000.);
+        let options = AudioWorkletNodeOptions {
+            number_of_inputs: 1,
+            number_of_outputs: 0,
+            processor_options: Arc::clone(&mark_silent),
+            ..AudioWorkletNodeOptions::default()
+        };
+        let worklet = AudioWorkletNode::new::<SetBoolWhenInputSilent>(&context, options);
+
+        let mut src = context.create_constant_source();
+        src.offset().set_value(0.);
+        src.connect(&worklet);
+        src.start();
+
+        let _ = context.start_rendering_sync();
+        assert!(mark_silent.load(Ordering::Relaxed));
     }
 
     #[test]

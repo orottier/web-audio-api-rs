@@ -163,16 +163,14 @@ impl AudioProcessor for GainRenderer {
         if gain.len() == 1 {
             // 1e-6 is -120 dB when close to 0 and ±8.283506e-6 dB when close to 1
             // very probably small enough to not be audible
-            let threshold = 1e-6;
-
             let diff_to_zero = gain[0].abs();
-            if diff_to_zero <= threshold {
+            if diff_to_zero <= crate::SILENCE_THRESHOLD {
                 output.make_silent();
                 return false;
             }
 
             let diff_to_one = (1. - gain[0]).abs();
-            if diff_to_one <= threshold {
+            if diff_to_one <= crate::SILENCE_THRESHOLD {
                 *output = input.clone();
                 return false;
             }

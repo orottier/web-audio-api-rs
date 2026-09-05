@@ -20,6 +20,10 @@ pub(crate) const RENDER_QUANTUM_SIZE: usize = 128;
 /// Maximum number of channels for audio processing
 pub const MAX_CHANNELS: usize = 32;
 
+/// Amplitude below which a signal is treated as inaudible silence (-120 dB). Used to fast-path
+/// near-zero values instead of processing/materializing a buffer that is effectively zero.
+pub(crate) const SILENCE_THRESHOLD: f32 = 1e-6;
+
 mod buffer;
 pub use buffer::*;
 
