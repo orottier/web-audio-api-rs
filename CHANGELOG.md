@@ -4,6 +4,9 @@
 
 - `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`,
   so an audio source that borrows from the stack can be decoded
+- Fix: an `AudioParam` automation event whose start time is still beyond the current block is no
+  longer evaluated early (its curve sampled before its own start time), which could produce a `NaN`
+  from a `set_target` `exp()` overflow or a wrong value from a `set_value_curve`
 
 ## Version 1.7.0 (2026-08-06)
 

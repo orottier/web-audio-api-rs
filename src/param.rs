@@ -1558,10 +1558,19 @@ impl AudioParamProcessor {
         };
 
         loop {
-            let next_event_type = self.event_timeline.peek().map(|e| e.event_type);
+            let next_event = self.event_timeline.peek();
 
-            let exit_loop = match next_event_type {
-                None => {
+            let exit_loop = match next_event.map(|e| e.event_type) {
+                None | Some(_)
+                    if next_event.is_none_or(|e| {
+                        next_block_time < e.time
+                            && !matches!(
+                                e.event_type,
+                                AudioParamEventType::LinearRampToValueAtTime
+                                    | AudioParamEventType::ExponentialRampToValueAtTime
+                            )
+                    }) =>
+                {
                     if is_a_rate {
                         // we use `count` rather then `buffer.remaining_capacity`
                         // to correctly handle unit tests where `count` is lower than
@@ -1587,10 +1596,9 @@ impl AudioParamProcessor {
                 Some(AudioParamEventType::SetValueCurveAtTime) => {
                     self.compute_set_value_curve_automation(&block_infos)
                 }
-                _ => panic!(
-                    "AudioParamEvent {:?} should not appear in AudioParamEventTimeline",
-                    next_event_type.unwrap()
-                ),
+                other => {
+                    panic!("AudioParamEvent {other:?} should not appear in AudioParamEventTimeline")
+                }
             };
 
             if exit_loop {
@@ -2640,6 +2648,82 @@ mod tests {
         assert_float_eq!(vs[3], 1., abs <= 0.);
         assert_float_eq!(vs[4], 1., abs <= 0.);
         assert_float_eq!(vs[5], 1., abs <= 0.);
+    }
+
+    /// Regression test: a cancelled `set_target` followed by another `set_target` whose
+    /// start time was still in the future left both queued. When the first ended, the
+    /// loop sampled the future one before its own start time, overflowing `exp()` to
+    /// `+inf` and (with `diff == 0.0`) yielding `NaN` that poisoned the buffer the next
+    /// block.
+    #[test]
+    fn test_set_target_at_time_future_start_does_not_produce_nan() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 1.,
+            min_value: 0.,
+            max_value: 2.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        let v = 1.0_f32;
+        let tau = 0.001_f64;
+
+        render.handle_incoming_event(param.set_value_at_time_raw(v, 0.));
+        render.handle_incoming_event(param.set_target_at_time_raw(v, 5., tau));
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(6.));
+        // second set_target, its start time still far in the future
+        render.handle_incoming_event(param.set_target_at_time_raw(v, 25., tau));
+
+        // block ending at t = 20: the cancelled set_target(5) ends at t = 6, the loop
+        // then reaches set_target(25) whose start is still beyond next_block_time
+        let vs = render.compute_intrinsic_values(10., 1., 10);
+        assert!(
+            vs.iter().all(|s| s.is_finite()),
+            "block 1 produced non-finite values: {vs:?}"
+        );
+
+        // next block: a poisoned intrinsic_value would leak into the buffer here
+        let vs = render.compute_intrinsic_values(20., 1., 10);
+        assert!(
+            vs.iter().all(|s| s.is_finite()),
+            "block 2 produced non-finite values: {vs:?}"
+        );
+    }
+
+    /// Regression test: same shape as the `set_target` case, but for `set_value_curve`.
+    /// Reaching a not-yet-started curve made the loop sample it at a negative position;
+    /// the `f64 as usize` cast saturated to index 0, silently returning a wrong value
+    /// that then leaked into the buffer on the following block.
+    #[test]
+    fn test_set_value_curve_future_start_holds_previous_value() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 2.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        // settle the param at 0.5
+        render.handle_incoming_event(param.set_value_at_time_raw(0.5, 0.));
+        // a first curve in the past, then cancel it so it ends this block
+        render.handle_incoming_event(param.set_value_curve_at_time_raw(&[0.5, 0.5], 5., 1.));
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(6.));
+        // a second curve whose start is still beyond the block being rendered
+        render.handle_incoming_event(param.set_value_curve_at_time_raw(&[1., 1., 1.], 25., 4.));
+
+        // block ending at t = 20: the first curve ends at t = 6, the loop then reaches
+        // the second curve, which has not started - the param must still read 0.5
+        let vs = render.compute_intrinsic_values(10., 1., 10);
+        assert_float_eq!(vs, &[0.5; 10][..], abs_all <= 0.);
+
+        // next block, still before the second curve starts
+        let vs = render.compute_intrinsic_values(20., 1., 10);
+        assert_float_eq!(vs[..5], [0.5; 5][..], abs_all <= 0.);
     }
 
     #[test]
