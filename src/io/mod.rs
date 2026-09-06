@@ -10,7 +10,7 @@ use crossbeam_channel::{Receiver, Sender};
 use crate::buffer::AudioBuffer;
 use crate::context::{AudioContextLatencyCategory, AudioContextOptions, AudioContextState};
 use crate::events::EventDispatch;
-use crate::media_devices::MediaDeviceInfo;
+use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::media_streams::{MediaStream, MediaStreamTrack};
 use crate::message::ControlMessage;
 use crate::stats::AudioStats;
@@ -254,6 +254,12 @@ pub(crate) trait AudioBackendManager: Send + Sync + 'static {
     fn enumerate_devices_sync() -> BackendResult<Vec<MediaDeviceInfo>>
     where
         Self: Sized;
+
+    /// Returns the stable `device_id` of the system default device for the given kind, or `None`
+    /// when it cannot be determined (for example when there is no such device).
+    fn default_device_id(kind: MediaDeviceInfoKind) -> BackendResult<Option<String>>
+    where
+        Self: Sized;
 }
 
 /// Calculate buffer size in frames for a given latency category
@@ -298,4 +304,23 @@ pub(crate) fn enumerate_devices_sync() -> BackendResult<Vec<MediaDeviceInfo>> {
 
     #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
     Err(AudioBackendError::no_backend("enumerate_devices_sync"))
+}
+
+/// Resolves the default device id for the given kind using the selected backend (cubeb/cpal/none).
+pub(crate) fn default_device_id(kind: MediaDeviceInfoKind) -> BackendResult<Option<String>> {
+    #[cfg(feature = "cubeb")]
+    {
+        cubeb::CubebBackend::default_device_id(kind)
+    }
+
+    #[cfg(all(not(feature = "cubeb"), feature = "cpal"))]
+    {
+        cpal::CpalBackend::default_device_id(kind)
+    }
+
+    #[cfg(all(not(feature = "cubeb"), not(feature = "cpal")))]
+    {
+        let _ = kind;
+        Err(AudioBackendError::no_backend("default_device_id"))
+    }
 }

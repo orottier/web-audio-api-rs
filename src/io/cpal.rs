@@ -638,6 +638,58 @@ impl AudioBackendManager for CpalBackend {
 
         Ok(list)
     }
+
+    fn default_device_id(kind: MediaDeviceInfoKind) -> BackendResult<Option<String>>
+    where
+        Self: Sized,
+    {
+        let host = get_host()?;
+
+        let default_device = match kind {
+            MediaDeviceInfoKind::AudioInput => host.default_input_device(),
+            MediaDeviceInfoKind::AudioOutput => host.default_output_device(),
+            MediaDeviceInfoKind::VideoInput => None,
+        };
+        let Some(default_device) = default_device else {
+            return Ok(None);
+        };
+        let default_description = default_device
+            .description()
+            .map_err(|e| map_cpal_error("device_name", e))?
+            .to_string();
+
+        let devices: Vec<Device> = match kind {
+            MediaDeviceInfoKind::AudioInput => host
+                .input_devices()
+                .map_err(|e| map_cpal_error("enumerate_input_devices", e))?
+                .collect(),
+            MediaDeviceInfoKind::AudioOutput => host
+                .output_devices()
+                .map_err(|e| map_cpal_error("enumerate_output_devices", e))?
+                .collect(),
+            MediaDeviceInfoKind::VideoInput => Vec::new(),
+        };
+
+        // Walk the device list in the same order and with the same collision handling as
+        // `enumerate_devices_sync` so the returned id matches one of its entries.
+        let mut seen = Vec::<String>::new();
+        for device in devices {
+            let Some(num_channels) = cpal_device_channels(&device, kind) else {
+                continue;
+            };
+            let stable_id = cpal_stable_device_id(&device, kind, num_channels, &seen)?;
+            let description = device
+                .description()
+                .map_err(|e| map_cpal_error("device_name", e))?
+                .to_string();
+            if description == default_description {
+                return Ok(Some(stable_id));
+            }
+            seen.push(stable_id);
+        }
+
+        Ok(None)
+    }
 }
 
 fn latency_in_seconds(infos: &OutputCallbackInfo) -> f64 {

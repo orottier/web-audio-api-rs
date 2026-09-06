@@ -593,6 +593,38 @@ impl AudioBackendManager for CubebBackend {
 
         Ok(list)
     }
+
+    fn default_device_id(kind: MediaDeviceInfoKind) -> BackendResult<Option<String>>
+    where
+        Self: Sized,
+    {
+        let device_type = match kind {
+            MediaDeviceInfoKind::AudioInput => DeviceType::INPUT,
+            MediaDeviceInfoKind::AudioOutput => DeviceType::OUTPUT,
+            MediaDeviceInfoKind::VideoInput => return Ok(None),
+        };
+
+        let context = Context::init(None, None).map_err(|e| map_cubeb_error("init_context", e))?;
+        let devices = context
+            .enumerate_devices(device_type)
+            .map_err(|e| map_cubeb_error(enumerate_operation(kind), e))?;
+
+        // Walk the device list in the same order and with the same collision handling as
+        // `enumerate_devices_sync` so the returned id matches one of its entries. The default
+        // device for general playback/capture is the one flagged `MULTIMEDIA`.
+        let mut seen = Vec::<String>::new();
+        for device in devices.iter() {
+            let stable_id = cubeb_stable_device_id(device, kind, &seen)?;
+            let is_default =
+                device.preferred().bits() & cubeb::ffi::CUBEB_DEVICE_PREF_MULTIMEDIA != 0;
+            if is_default {
+                return Ok(Some(stable_id));
+            }
+            seen.push(stable_id);
+        }
+
+        Ok(None)
+    }
 }
 
 fn enumerate_cubeb_devices(

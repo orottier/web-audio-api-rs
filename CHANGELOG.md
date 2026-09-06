@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added `media_devices::default_output_device` and `media_devices::default_input_device`, returning
+  the `device_id` of the system default device
 - `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`,
   so an audio source that borrows from the stack can be decoded
 

@@ -35,6 +35,59 @@ pub(crate) fn try_enumerate_devices_sync() -> BackendResult<Vec<MediaDeviceInfo>
     crate::io::enumerate_devices_sync()
 }
 
+/// Returns the `device_id` of the system default audio output device (speakers), if one can be
+/// determined.
+///
+/// The returned id matches the corresponding entry from [`enumerate_devices_sync`] and can be used
+/// as the [`sink_id`](crate::context::AudioContextOptions::sink_id) of an `AudioContext`.
+///
+/// Returns `None` if there is no output device or the default cannot be determined.
+///
+/// ```no_run
+/// use web_audio_api::media_devices::{default_output_device, enumerate_devices_sync};
+///
+/// let default = default_output_device();
+/// for device in enumerate_devices_sync() {
+///     let marker = if Some(device.device_id().to_string()) == default { " (default)" } else { "" };
+///     println!("{}{}", device.label(), marker);
+/// }
+/// ```
+pub fn default_output_device() -> Option<String> {
+    default_device_id(MediaDeviceInfoKind::AudioOutput)
+}
+
+/// Returns the `device_id` of the system default audio input device (microphone), if one can be
+/// determined.
+///
+/// The returned id matches the corresponding entry from [`enumerate_devices_sync`].
+///
+/// Returns `None` if there is no input device or the default cannot be determined.
+///
+/// ```no_run
+/// use web_audio_api::media_devices::{default_input_device, enumerate_devices_sync, MediaDeviceInfoKind};
+///
+/// let default = default_input_device();
+/// for device in enumerate_devices_sync() {
+///     if device.kind() != MediaDeviceInfoKind::AudioInput {
+///         continue;
+///     }
+///     let marker = if Some(device.device_id().to_string()) == default { " (default)" } else { "" };
+///     println!("{}{}", device.label(), marker);
+/// }
+/// ```
+pub fn default_input_device() -> Option<String> {
+    default_device_id(MediaDeviceInfoKind::AudioInput)
+}
+
+/// Resolves the default device id for the given kind through the active audio backend, logging and
+/// returning `None` on error.
+fn default_device_id(kind: MediaDeviceInfoKind) -> Option<String> {
+    crate::io::default_device_id(kind).unwrap_or_else(|e| {
+        log::error!("Unable to determine default media device: {e}");
+        None
+    })
+}
+
 // Internal struct to derive a stable id for a given input / output device
 // cf. https://github.com/orottier/web-audio-api-rs/issues/356
 #[derive(Hash)]
@@ -247,4 +300,28 @@ pub(crate) fn try_get_user_media_sync(
     }
 
     crate::io::build_input(options, channel_count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A resolved default device id must be one of the enumerated devices of the matching kind.
+    /// In environments without an audio backend or devices both accessors return `None` and the
+    /// assertions are skipped.
+    #[test]
+    fn test_default_device_ids_are_enumerated() {
+        let devices = enumerate_devices_sync();
+
+        if let Some(id) = default_output_device() {
+            assert!(devices
+                .iter()
+                .any(|d| d.device_id() == id && d.kind() == MediaDeviceInfoKind::AudioOutput));
+        }
+        if let Some(id) = default_input_device() {
+            assert!(devices
+                .iter()
+                .any(|d| d.device_id() == id && d.kind() == MediaDeviceInfoKind::AudioInput));
+        }
+    }
 }

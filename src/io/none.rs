@@ -7,7 +7,7 @@ use super::{
 
 use crate::buffer::AudioBuffer;
 use crate::context::AudioContextOptions;
-use crate::media_devices::MediaDeviceInfo;
+use crate::media_devices::{MediaDeviceInfo, MediaDeviceInfoKind};
 use crate::render::RenderThread;
 use crate::{MAX_CHANNELS, RENDER_QUANTUM_SIZE};
 
@@ -213,5 +213,12 @@ impl AudioBackendManager for NoneBackend {
         Self: Sized,
     {
         Ok(vec![])
+    }
+
+    fn default_device_id(_kind: MediaDeviceInfoKind) -> BackendResult<Option<String>>
+    where
+        Self: Sized,
+    {
+        Ok(None)
     }
 }
