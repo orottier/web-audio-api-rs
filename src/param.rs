@@ -61,7 +61,19 @@ fn assert_sequence_length(values: &[f32]) {
     );
 }
 
-// 𝑣(𝑡) = 𝑉0 + (𝑉1−𝑉0) * ((𝑡−𝑇0) / (𝑇1−𝑇0))
+// v(t) = V0 + (V1 - V0) * ((t - T0) / (T1 - T0))
+//
+// Deliberately NOT mul_add: an FMA rounds once, while the natural
+// multiply-then-add rounds twice. WPT's k-rate connection suites (e.g.
+// k-rate-dynamics-compressor-connections) assert *bit-equality* between a
+// param automated with ramp(min -> max) and a param whose intrinsic value is
+// min with an audio-rate input ramping 0 -> max - min. With FMA the automated
+// path computes fma(diff, phase, min) while the input path computes
+// min + round(diff * phase), which differ by 1 ulp whenever min != 0 (the
+// compressor's ratio has min = 1 and threshold has min = -100). Browsers
+// evaluate the plain expression, so both paths share one expression tree and
+// compare equal. Rust never re-fuses a spelled-out a * b + c, so writing it
+// out guarantees the two-rounding form.
 #[inline(always)]
 fn compute_linear_ramp_sample(
     start_time: f64,
@@ -71,7 +83,7 @@ fn compute_linear_ramp_sample(
     time: f64,
 ) -> f32 {
     let phase = (time - start_time) / duration;
-    diff.mul_add(phase as f32, start_value)
+    diff * (phase as f32) + start_value
 }
 
 // v(t) = v1 * (v2/v1)^((t-t1) / (t2-t1))
@@ -3541,5 +3553,48 @@ mod tests {
         expected[0] = 2.;
 
         assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
+    }
+}
+
+#[cfg(test)]
+mod linear_ramp_rounding_tests {
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+
+    use super::*;
+
+    #[test]
+    fn test_linear_ramp_matches_offset_composition_bitwise() {
+        // A ramp from base to base+span must produce bit-identical samples to
+        // base + (a ramp from 0 to span). With mul_add in the sample formula
+        // the left side rounds once - fma(span, phase, base) - while any
+        // composed path rounds twice, and the two differ by 1 ulp for many
+        // phases whenever base != 0. WPT's k-rate connection suites assert
+        // exact equality between exactly such paths.
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+
+        let make = |base: f32, span: f32| {
+            let opts = AudioParamDescriptor {
+                name: String::new(),
+                automation_rate: AutomationRate::A,
+                default_value: 0.,
+                min_value: -200.,
+                max_value: 200.,
+            };
+            let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+            render.handle_incoming_event(param.set_value_at_time_raw(base, 0.));
+            render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(base + span, 1.));
+            let dt = 1. / 128.;
+            render.compute_intrinsic_values(0., dt, 128).to_vec()
+        };
+
+        let automated = make(-100., 119.); // e.g. a compressor threshold sweep
+        let composed = make(0., 119.);
+        for (i, (a, c)) in automated.iter().zip(composed.iter()).enumerate() {
+            let expected = -100. + c;
+            assert!(
+                a.to_bits() == expected.to_bits(),
+                "sample {i}: {a:?} != -100 + {c:?} (= {expected:?})"
+            );
+        }
     }
 }
