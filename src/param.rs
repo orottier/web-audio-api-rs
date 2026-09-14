@@ -171,6 +171,35 @@ pub(crate) struct AudioParamEvent {
     values: Option<Box<[f32]>>, // populated by `SetValueCurveAtTime` events
 }
 
+impl AudioParamEvent {
+    /// Effective position of the event on the timeline (used as the sort key and
+    /// as the E1/E2 selection criterion in `CancelAndHoldAtTime`).
+    ///
+    /// `cancel_time` has *opposite* meanings for the two families of events, so a
+    /// plain `cancel_time.unwrap_or(time)` would be wrong for one of them:
+    ///   - A ramp truncated by cancelAndHoldAtTime keeps its original end time in
+    ///     `time` while `cancel_time = tc < time`. Ramps are positioned on the
+    ///     timeline by their end time, so after truncation the effective position
+    ///     is `cancel_time`. Sorting by the raw `time` pushes the truncated ramp
+    ///     *after* events that were scheduled after tc, and the renderer processes
+    ///     them out of order.
+    ///   - A truncated setTarget / setValueCurve keeps its *start* time t3 in
+    ///     `time` while `cancel_time = tc >= time` (tc is where it gets held, not
+    ///     where it is positioned). The key must remain `time`; using
+    ///     `cancel_time` would push the event after anything scheduled inside
+    ///     (t3, tc) - the same ordering inversion in the other direction.
+    ///
+    /// Both collapse into one rule: take the smaller of the two. For ramps
+    /// min(endTime, tc) = tc, for setTarget/curves min(t3, tc) = t3. Truncation
+    /// can only make an event end earlier, never move it later.
+    fn effective_time(&self) -> f64 {
+        match self.cancel_time {
+            Some(cancel_time) => cancel_time.min(self.time),
+            None => self.time,
+        }
+    }
+}
+
 // Event queue that contains `AudioParamEvent`s, most of the time, events must be
 // ordered (using stable sort), some operation may break this ordering (e.g. `push`)
 // in which cases `sort` must be called explicitly.
@@ -249,8 +278,14 @@ impl AudioParamEventTimeline {
     }
 
     fn sort(&mut self) {
+        // Sort by the *effective* position of each event (see
+        // `AudioParamEvent::effective_time` for why `cancel_time.unwrap_or(time)`
+        // would be wrong). Sorting by the raw `time` places a ramp truncated by
+        // cancelAndHoldAtTime (whose `time` still holds the original end time)
+        // after events scheduled later than the cancel time, and the renderer
+        // then processes the timeline out of order.
         self.inner
-            .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+            .sort_by(|a, b| a.effective_time().partial_cmp(&b.effective_time()).unwrap());
         self.dirty = false;
     }
 
@@ -879,15 +914,30 @@ impl AudioParamProcessor {
             self.event_timeline.sort();
 
             for queued in self.event_timeline.iter_mut() {
+                // The E1/E2 selection must use the same effective position as the
+                // sort above, otherwise the sorted order and the selection
+                // criterion disagree. See `AudioParamEvent::effective_time`:
+                //   - a ramp truncated by a previous cancelAndHoldAtTime (whose
+                //     `time` still holds the original end time) has an effective
+                //     position of the old tc and is correctly picked as an E1
+                //     candidate instead of E2;
+                //   - a truncated setTarget (`time` = start t3, `cancel_time` =
+                //     old tc >= t3) has an effective position of t3. Using
+                //     `cancel_time` instead would misclassify it as E2 whenever a
+                //     second cancel comes in with tc' < old tc (the E2 branch does
+                //     nothing for non-ramps), after which the retain below drops
+                //     the whole event because old tc > tc' - an already-started
+                //     setTarget silently disappears.
+                let qt = queued.effective_time();
                 // closest before cancel time: if several events at same time,
                 // we want the last one
-                if queued.time >= t1 && queued.time <= event.time {
-                    t1 = queued.time;
+                if qt >= t1 && qt <= event.time {
+                    t1 = qt;
                     e1 = Some(queued);
                     // closest after cancel time: if several events at same time,
                     // we want the first one
-                } else if queued.time < t2 && queued.time > event.time {
-                    t2 = queued.time;
+                } else if qt < t2 && qt > event.time {
+                    t2 = qt;
                     e2 = Some(queued);
                 }
             }
@@ -910,7 +960,16 @@ impl AudioParamProcessor {
                     // Implicitly insert a setValueAtTime event at time 𝑡𝑐 with
                     // the value that the setTarget would
                     // @note - same strategy as for ramps
-                    matched.cancel_time = Some(event.time);
+                    // Only truncate-and-hold events that have actually started
+                    // (t3 < tc). An event starting exactly at tc has not begun:
+                    // per the spec ("cancels all scheduled parameter changes with
+                    // times greater than or equal to cancelTime") it must be
+                    // removed entirely, which the retain below takes care of.
+                    // This matches Chromium's strict `Time() < cancel_time` check
+                    // in AudioParamHandler::CancelAndHoldAtTime.
+                    if matched.time < event.time {
+                        matched.cancel_time = Some(event.time);
+                    }
                 } else if matched.event_type == AudioParamEventType::SetValueCurveAtTime {
                     // If 𝐸1 is a setValueCurve with a start time of 𝑡3 and a duration of 𝑑
                     // If 𝑡𝑐 <= 𝑡3 + 𝑑 :
@@ -924,7 +983,10 @@ impl AudioParamProcessor {
                     let start_time = matched.time;
                     let duration = matched.duration.unwrap();
 
-                    if event.time <= start_time + duration {
+                    // Same strictness as the setTarget branch above: a curve
+                    // starting exactly at tc has not begun and must be removed
+                    // entirely rather than truncated.
+                    if start_time < event.time && event.time <= start_time + duration {
                         matched.cancel_time = Some(event.time);
                     }
                 }
@@ -936,6 +998,19 @@ impl AudioParamProcessor {
                 // if the event has a `cancel_time` we use it instead of `time`
                 if let Some(cancel_time) = queued.cancel_time {
                     time = cancel_time;
+                }
+
+                // A SetTarget/SetValueCurve starting exactly at tc has not
+                // started (it was deliberately not marked with a cancel_time
+                // above) and must be removed per the spec wording "times greater
+                // than or equal to cancelTime". In-progress events of the same
+                // kind carry a cancel_time and are unaffected.
+                if queued.cancel_time.is_none()
+                    && time == event.time
+                    && (queued.event_type == AudioParamEventType::SetTargetAtTime
+                        || queued.event_type == AudioParamEventType::SetValueCurveAtTime)
+                {
+                    return false;
                 }
 
                 time <= event.time
@@ -1365,6 +1440,16 @@ impl AudioParamProcessor {
         }
 
         if !ended {
+            // Do not extrapolate an event that has not started yet
+            // (next_block_time < start_time). The SetTarget formula evaluates to
+            // e^(positive) for t < T0, which explodes; once written into
+            // intrinsic_value it becomes the output of every following block via
+            // the is_constant_block early return in compute_buffer. The a-rate
+            // sampling loop already guards against this (`time - start_time <
+            // 0.`); only this end-of-block evaluation was missing the guard.
+            if infos.next_block_time < start_time {
+                return true;
+            }
             // compute value for `next_block_time` so that `param.value()`
             // stays coherent (see. comment in `AudioParam`)
             // allows to properly fill k-rate within next block too
@@ -1468,6 +1553,12 @@ impl AudioParamProcessor {
 
         // event will continue in next tick
         if end_time >= infos.next_block_time {
+            // Same guard as for SetTarget above: do not extrapolate a curve
+            // that has not started yet. A negative position saturates to 0 via
+            // `position as usize` and yields a bogus phase in [0, 1).
+            if infos.next_block_time < start_time {
+                return true;
+            }
             // compute value for `next_block_time` so that `param.value()`
             // stays coherent (see. comment in `AudioParam`)
             // allows to properly fill k-rate within next block too
@@ -3541,5 +3632,123 @@ mod tests {
         expected[0] = 2.;
 
         assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
+    }
+}
+
+#[cfg(test)]
+mod cancel_and_hold_regression_tests {
+    use float_eq::assert_float_eq;
+
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+
+    use super::*;
+
+    fn test_param(max: f32) -> (AudioParam, AudioParamProcessor) {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -10.,
+            max_value: max,
+        };
+        audio_param_pair(opts, context.mock_registration())
+    }
+
+    #[test]
+    fn test_set_target_not_started_is_not_extrapolated() {
+        // Evaluating a SetTargetAtTime event before its start time plugs a
+        // positive exponent into the formula (e^((T0 - t) / tau) with t < T0),
+        // which explodes. The bogus value used to be written into
+        // intrinsic_value at the end of the block and then became the output of
+        // every following block through the is_constant_block early return.
+        let (param, mut render) = test_param(10.);
+        render.handle_incoming_event(param.set_value_at_time_raw(0.5, 0.));
+        render.handle_incoming_event(param.set_target_at_time_raw(0., 20., 5.));
+
+        // The buffer may legitimately be a single-element constant block, so
+        // assert on the values rather than on the length.
+        let vs = render.compute_intrinsic_values(0., 1., 10);
+        assert!(vs.iter().all(|v| *v == 0.5), "block [0, 10): {vs:?}");
+        // The block right before the event starts must still hold the previous
+        // value; without the guard it reads the extrapolated garbage instead.
+        let vs = render.compute_intrinsic_values(10., 1., 10);
+        assert!(vs.iter().all(|v| *v == 0.5), "block [10, 20): {vs:?}");
+    }
+
+    #[test]
+    fn test_set_value_curve_not_started_is_not_extrapolated() {
+        // Same guard for SetValueCurveAtTime: a negative position saturates to
+        // index 0 via `position as usize` and produces a bogus phase in [0, 1).
+        let (param, mut render) = test_param(10.);
+        render.handle_incoming_event(param.set_value_at_time_raw(0.5, 0.));
+        render.handle_incoming_event(param.set_value_curve_at_time_raw(&[0., 1.], 20., 5.));
+
+        let vs = render.compute_intrinsic_values(0., 1., 10);
+        assert!(vs.iter().all(|v| *v == 0.5), "block [0, 10): {vs:?}");
+        let vs = render.compute_intrinsic_values(10., 1., 10);
+        assert!(vs.iter().all(|v| *v == 0.5), "block [10, 20): {vs:?}");
+    }
+
+    #[test]
+    fn test_cancel_and_hold_truncated_ramp_ordering() {
+        // A ramp truncated by cancelAndHoldAtTime keeps its original end time in
+        // `time`. Sorting the timeline by the raw `time` pushes the truncated
+        // ramp after events that were scheduled later than the cancel time, and
+        // the renderer replays the timeline out of order (the freshly scheduled
+        // event is processed first, then the old ramp rewinds the value).
+        let (param, mut render) = test_param(10.);
+        render.handle_incoming_event(param.set_value_at_time_raw(0., 0.));
+        render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(10., 10.));
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(2.));
+        render.handle_incoming_event(param.set_value_at_time_raw(5., 3.));
+
+        let vs = render.compute_intrinsic_values(0., 1., 10);
+        assert_float_eq!(
+            vs,
+            &[0., 1., 2., 5., 5., 5., 5., 5., 5., 5.][..],
+            abs_all <= 0.
+        );
+    }
+
+    #[test]
+    fn test_cancel_and_hold_removes_event_starting_at_cancel_time() {
+        // Per the spec, cancelAndHoldAtTime "cancels all scheduled parameter
+        // changes with times greater than or equal to cancelTime". An event
+        // starting exactly at the cancel time has not begun and must be removed
+        // entirely instead of being truncated into a held no-op.
+        let (param, mut render) = test_param(10.);
+        render.handle_incoming_event(param.set_value_at_time_raw(1., 0.));
+        render.handle_incoming_event(param.set_target_at_time_raw(9., 5., 1.));
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(5.));
+
+        let vs = render.compute_intrinsic_values(0., 1., 10);
+        assert_float_eq!(vs, &[1.; 10][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_double_cancel_and_hold_keeps_truncated_set_target() {
+        // A setTarget already truncated by a first cancelAndHoldAtTime carries
+        // `time` = its start t3 and `cancel_time` = the first tc. When a second
+        // cancel comes in with tc' < tc, selecting E1/E2 by `cancel_time` (or by
+        // cancel_time.unwrap_or(time)) misclassifies the event as E2, after
+        // which the retain pass drops it entirely because cancel_time > tc' -
+        // an automation that already started silently disappears and the output
+        // collapses to the pre-automation value.
+        let (param, mut render) = test_param(20.);
+        render.handle_incoming_event(param.set_value_at_time_raw(0., 0.));
+        render.handle_incoming_event(param.set_target_at_time_raw(10., 1., 2.));
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(8.));
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(4.));
+
+        let vs = render.compute_intrinsic_values(0., 1., 10);
+        // v(t) = 10 - 10 * e^(-(t - 1) / 2) for t in [1, 4], held afterwards.
+        let held = 10. - 10. * (-1.5f32).exp();
+        assert_float_eq!(vs[4], held, abs <= 1e-4);
+        assert_float_eq!(vs[9], held, abs <= 1e-4);
+        assert!(
+            vs[9] > 1.,
+            "the truncated setTarget must survive the second cancel"
+        );
     }
 }
