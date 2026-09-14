@@ -861,8 +861,26 @@ impl AudioParamProcessor {
 
             // remove all events in queue where event.time >= cancel_time
             // i.e. keep all events where event.time < cancel_time
-            self.event_timeline
-                .retain(|queued| queued.time < event.time);
+            //
+            // For SetValueCurveAtTime `time` is the *start* T0. Per the spec,
+            // cancelScheduledValues removes the whole curve when the cancel time
+            // falls inside its interval [T0, T0 + D). Keeping it merely because
+            // T0 < cancelTime leaves the curve on the timeline, and any
+            // automation event later scheduled inside [T0, T0 + D) then trips
+            // the exclusivity assert above - on the render thread.
+            self.event_timeline.retain(|queued| {
+                if queued.time >= event.time {
+                    return false;
+                }
+                if queued.event_type == AudioParamEventType::SetValueCurveAtTime {
+                    if let Some(duration) = queued.duration {
+                        // T0 < cancelTime < T0 + D: cancel the whole curve;
+                        // cancelTime >= T0 + D: the curve has ended, keep it.
+                        return event.time >= queued.time + duration;
+                    }
+                }
+                true
+            });
             return; // cancel_values events are not inserted in queue
         }
 
@@ -2772,6 +2790,64 @@ mod tests {
         // then this block should be [0.; 10]
         let vs = render.compute_intrinsic_values(30., 1., 10);
         assert_float_eq!(vs, &[0.; 10][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_cancel_scheduled_values_mid_curve() {
+        // Mirrors WPT the-audioparam-interface/cancel-scheduled-values.html
+        // (subtest "cancel1"). When the cancel time falls inside a
+        // SetValueCurve's interval [T0, T0 + D), the spec requires the whole
+        // curve to be cancelled. Retaining events merely by `time <
+        // cancel_time` (the curve's `time` is its start T0) leaves the curve on
+        // the timeline, and scheduling any automation event inside [T0, T0 + D)
+        // afterwards trips the "scheduling automation event during
+        // SetValueCurveAtTime" assert on the render thread.
+        let context = OfflineAudioContext::new(1, 1, 8000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+        render.handle_incoming_event(param.set_value_at_time_raw(0.5, 0.));
+        render.handle_incoming_event(param.set_value_at_time_raw(1.5, 0.25));
+        render.handle_incoming_event(param.set_value_curve_at_time_raw(&[1., -1.], 0.25, 0.25));
+        render.handle_incoming_event(param.set_value_at_time_raw(9., 0.5));
+        // The cancel lands inside the curve (0.25 < 0.3 < 0.5): the curve and
+        // the event at 0.5 are cancelled, the setValue at 0.25 survives.
+        render.handle_incoming_event(param.cancel_scheduled_values_raw(0.3));
+        // Without the fix this insertion panics against the leftover curve.
+        render.handle_incoming_event(param.set_value_at_time_raw(3., 0.375));
+
+        let vs = render.compute_intrinsic_values(0., 0.05, 12);
+        assert_float_eq!(vs[..5], &[0.5; 5][..], abs_all <= 0.); // t in [0, 0.25)
+        assert_float_eq!(vs[5..7], &[1.5; 2][..], abs_all <= 0.); // t = 0.25, 0.30
+        assert_float_eq!(vs[8..], &[3.; 4][..], abs_all <= 0.); // t >= 0.40
+    }
+
+    #[test]
+    fn test_cancel_scheduled_values_curve_boundary() {
+        // Boundary: cancelTime == T0 + D (the curve ends exactly at the cancel
+        // time) keeps the curve - the interval is half-open on the right.
+        let context = OfflineAudioContext::new(1, 1, 8000.);
+
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 10.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+        render.handle_incoming_event(param.set_value_curve_at_time_raw(&[0., 4.], 0., 0.5));
+        render.handle_incoming_event(param.cancel_scheduled_values_raw(0.5));
+
+        let vs = render.compute_intrinsic_values(0., 0.125, 8);
+        // The curve ramps 0 to 4 over [0, 0.5); its end value holds afterwards.
+        assert_float_eq!(vs, &[0., 1., 2., 3., 4., 4., 4., 4.][..], abs_all <= 0.);
     }
 
     #[test]
