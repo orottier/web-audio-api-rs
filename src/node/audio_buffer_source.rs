@@ -716,12 +716,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
 
                     // check loop boundaries
                     if self.render_state.entered_loop {
-                        while buffer_time >= actual_loop_end {
-                            buffer_time -= actual_loop_end - actual_loop_start;
-                        }
+                        let loop_duration = actual_loop_end - actual_loop_start;
 
-                        while buffer_time < actual_loop_start {
-                            buffer_time += actual_loop_end - actual_loop_start;
+                        if buffer_time >= actual_loop_end || buffer_time < actual_loop_start {
+                            buffer_time = actual_loop_start
+                                + (buffer_time - actual_loop_start).rem_euclid(loop_duration);
                         }
                     }
                 }
@@ -789,11 +788,15 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                                         start_playhead as usize + 1
                                                     };
 
+                                                    let start_index =
+                                                        start_index.min(buffer_channel.len() - 1);
+
                                                     buffer_channel[start_index] as f64
                                                 } else {
                                                     let end_playhead =
                                                         actual_loop_end * sample_rate;
-                                                    let end_index = end_playhead as usize;
+                                                    let end_index = (end_playhead as usize)
+                                                        .min(buffer_channel.len() - 1);
                                                     buffer_channel[end_index] as f64
                                                 }
                                             } else {
@@ -1831,6 +1834,64 @@ mod tests {
 
             assert_float_eq!(channel[..], expected[..], abs_all <= error);
         });
+    }
+
+    #[test]
+    // Regression test: a valid but one-ULP-wide loop region must not hang the render
+    // thread. Naively wrapping `buffer_time` via repeated +=/-= would take billions of
+    // iterations to converge on a region this narrow.
+    fn test_loop_degenerate_width_does_not_hang() {
+        let sample_rate = 48_000.;
+        let length = RENDER_QUANTUM_SIZE * 4;
+        let mut context = OfflineAudioContext::new(1, length, sample_rate);
+
+        let buffer_size = 5;
+        let mut buffer = context.create_buffer(1, buffer_size, sample_rate);
+        buffer.copy_to_channel(&[1., 2., 3., 4., 5.], 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+
+        let loop_end = buffer_size as f64 / sample_rate as f64;
+        let loop_start = loop_end.next_down();
+
+        src.set_loop(true);
+        src.set_loop_start(loop_start);
+        src.set_loop_end(loop_end);
+        src.start();
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        assert!(channel.iter().all(|s| s.is_finite()));
+    }
+
+    #[test]
+    // Regression test: loopEnd at the buffer duration but loopStart inside the last
+    // (fractional) sample period must not panic when splicing across the loop seam.
+    fn test_loop_seam_splice_within_last_sample() {
+        let sample_rate = 48_000.;
+        let length = RENDER_QUANTUM_SIZE * 4;
+        let mut context = OfflineAudioContext::new(1, length, sample_rate);
+
+        let buffer_size = 5;
+        let mut buffer = context.create_buffer(1, buffer_size, sample_rate);
+        buffer.copy_to_channel(&[1., 2., 3., 4., 5.], 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+
+        src.set_loop(true);
+        src.set_loop_start(4.5 / sample_rate as f64);
+        src.set_loop_end(buffer_size as f64 / sample_rate as f64);
+        src.start();
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        assert!(channel.iter().all(|s| s.is_finite()));
     }
 
     #[test]
