@@ -305,13 +305,16 @@ impl DelayNode {
         let shared_ring_buffer_clone = Rc::clone(&shared_ring_buffer);
 
         // shared value set by the writer when it is dropped
-        let last_written_index = Rc::new(Cell::<Option<usize>>::new(None));
-        let last_written_index_clone = Rc::clone(&last_written_index);
+        let dropped_quantum_index = Rc::new(Cell::<Option<u64>>::new(None));
+        let dropped_quantum_index_clone = Rc::clone(&dropped_quantum_index);
 
         // shared value for reader/writer to determine who was rendered first,
         // this will indicate if the delay node acts as a cycle breaker
         let latest_frame_written = Rc::new(Cell::new(u64::MAX));
         let latest_frame_written_clone = Rc::clone(&latest_frame_written);
+
+        let in_cycle = Rc::new(Cell::new(false));
+        let in_cycle_clone = Rc::clone(&in_cycle);
 
         let node = context.base().register(move |writer_registration| {
             let node = context.base().register(move |reader_registration| {
@@ -330,9 +333,9 @@ impl DelayNode {
                     delay_time: proc,
                     ring_buffer: shared_ring_buffer_clone,
                     index: 0,
-                    last_written_index: last_written_index_clone,
-                    in_cycle: false,
-                    last_written_index_checked: None,
+                    dropped_quantum_index: dropped_quantum_index_clone,
+                    in_cycle: in_cycle_clone,
+                    flush_quanta: None,
                     latest_frame_written: latest_frame_written_clone,
                 };
 
@@ -349,8 +352,9 @@ impl DelayNode {
             let writer_render = DelayWriter {
                 ring_buffer: shared_ring_buffer,
                 index: 0,
-                last_written_index,
+                dropped_quantum_index,
                 latest_frame_written,
+                in_cycle,
             };
 
             (node, Box::new(writer_render))
@@ -375,9 +379,10 @@ impl DelayNode {
 
 struct DelayWriter {
     ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
-    index: usize,
+    index: u64,
     latest_frame_written: Rc<Cell<u64>>,
-    last_written_index: Rc<Cell<Option<usize>>>,
+    dropped_quantum_index: Rc<Cell<Option<u64>>>,
+    in_cycle: Rc<Cell<bool>>,
 }
 
 // SAFETY:
@@ -408,13 +413,7 @@ trait RingBufferChecker {
 
 impl Drop for DelayWriter {
     fn drop(&mut self) {
-        let last_written_index = if self.index == 0 {
-            self.ring_buffer.borrow().capacity() - 1
-        } else {
-            self.index - 1
-        };
-
-        self.last_written_index.set(Some(last_written_index));
+        self.dropped_quantum_index.set(Some(self.index));
     }
 }
 
@@ -446,10 +445,11 @@ impl AudioProcessor for DelayWriter {
 
         // populate ring buffer
         let mut buffer = self.ring_buffer.borrow_mut();
-        buffer[self.index] = input;
+        let wrapped_index = (self.index % (buffer.capacity() as u64)) as usize;
+        buffer[wrapped_index] = input;
 
         // increment cursor and last written frame
-        self.index = (self.index + 1) % buffer.capacity();
+        self.index += 1;
         self.latest_frame_written.set(scope.current_frame);
 
         // The writer end does not produce output,
@@ -461,7 +461,11 @@ impl AudioProcessor for DelayWriter {
     }
 
     fn has_side_effects(&self) -> bool {
-        true // message passing
+        // The writer produces no output; it only mutates the shared ring buffer. It must stay in
+        // the graph when it is breaking a feedback cycle (its reader feeds back into it), otherwise
+        // the loop would go silent. When it is not in a cycle it can be reclaimed once nothing
+        // reads from it any more. The reader reports cycle membership through this shared flag.
+        self.in_cycle.get()
     }
 }
 
@@ -491,12 +495,13 @@ impl DelayWriter {
 struct DelayReader {
     delay_time: AudioParamId,
     ring_buffer: Rc<RefCell<Vec<AudioRenderQuantum>>>,
-    index: usize,
+    index: u64,
     latest_frame_written: Rc<Cell<u64>>,
-    in_cycle: bool,
-    last_written_index: Rc<Cell<Option<usize>>>,
-    // local copy of shared `last_written_index` so as to avoid render ordering issues
-    last_written_index_checked: Option<usize>,
+    in_cycle: Rc<Cell<bool>>,
+    dropped_quantum_index: Rc<Cell<Option<u64>>>,
+    // number of render quanta the reader may still emit after the writer was decommissioned,
+    // to flush the audio that is already buffered; `None` while the writer is still alive
+    flush_quanta: Option<usize>,
 }
 
 // SAFETY:
@@ -526,17 +531,26 @@ impl AudioProcessor for DelayReader {
         // and Reader as the order of processing between them is not guaranteed.
         self.check_ring_buffer_size(output);
 
+        let last_written_index = self.dropped_quantum_index.get();
+        if matches!(last_written_index, Some(index) if index <= self.index) {
+            // We are reading beyond the dropped writer's quanta, so clear the buffers to silence.
+            let mut ring_buffer_mut = self.ring_buffer.borrow_mut();
+            let ring_index = (self.index % (ring_buffer_mut.capacity() as u64)) as usize;
+            ring_buffer_mut[ring_index].make_silent();
+        }
+
         let ring_buffer = self.ring_buffer.borrow();
 
         // we need to rely on ring buffer to know the actual number of output channels
         let number_of_channels = ring_buffer[0].number_of_channels();
         output.set_number_of_channels(number_of_channels);
 
-        if !self.in_cycle {
+        if !self.in_cycle.get() && self.dropped_quantum_index.get().is_none() {
             // check the latest written frame by the delay writer
             let latest_frame_written = self.latest_frame_written.get();
             // if the delay writer has not rendered before us, the cycle breaker has been applied
-            self.in_cycle = latest_frame_written != scope.current_frame;
+            self.in_cycle
+                .set(latest_frame_written != scope.current_frame);
             // once we store in_cycle = true, we do not want to go back to false
             // https://github.com/orottier/web-audio-api-rs/pull/198#discussion_r945326200
         }
@@ -547,13 +561,13 @@ impl AudioProcessor for DelayReader {
         let dt = 1. / sample_rate;
         let quantum_duration = RENDER_QUANTUM_SIZE as f64 * dt;
         let ring_size = ring_buffer.len() as i32;
-        let ring_index = self.index as i32;
+        let ring_index = (self.index % (ring_size as u64)) as i32;
         let mut playback_infos = [PlaybackInfo::default(); RENDER_QUANTUM_SIZE];
 
         if delay.len() == 1 {
             playback_infos[0] = Self::get_playback_infos(
                 f64::from(delay[0]),
-                self.in_cycle,
+                self.in_cycle.get(),
                 0.,
                 quantum_duration,
                 sample_rate,
@@ -590,7 +604,7 @@ impl AudioProcessor for DelayReader {
                 .for_each(|(index, (&d, infos))| {
                     *infos = Self::get_playback_infos(
                         f64::from(d),
-                        self.in_cycle,
+                        self.in_cycle.get(),
                         index as f64,
                         quantum_duration,
                         sample_rate,
@@ -663,23 +677,18 @@ impl AudioProcessor for DelayReader {
             output.make_silent();
         }
 
-        if matches!(self.last_written_index_checked, Some(index) if index == self.index) {
-            return false;
-        }
-
-        // check if the writer has been decommissioned
-        // we need this local copy because if the writer has been processed
-        // before the reader, the direct check against `self.last_written_index`
-        // would be true earlier than we want
-        let last_written_index = self.last_written_index.get();
-
-        if last_written_index.is_some() && self.last_written_index_checked.is_none() {
-            self.last_written_index_checked = last_written_index;
-        }
         // increment ring buffer cursor
-        self.index = (self.index + 1) % ring_buffer.capacity();
+        self.index += 1;
 
-        true
+        if last_written_index.is_some() {
+            if let Some(remaining) = &mut self.flush_quanta {
+                *remaining = remaining.saturating_sub(1);
+            } else {
+                self.flush_quanta = Some(ring_buffer.capacity());
+            }
+        }
+
+        self.flush_quanta.is_none_or(|x| 0 < x)
     }
 }
 
