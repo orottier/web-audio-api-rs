@@ -4,6 +4,9 @@
 
 - `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`,
   so an audio source that borrows from the stack can be decoded
+- Fix: AudioParam automation events are now sorted by their effective (`cancel_time`-aware) time,
+  preventing discontinuities when a ramp scheduled after a `cancelAndHoldAtTime()` call had a
+  smaller declared end time than the event it truncated
 
 ## Version 1.7.0 (2026-08-06)
 
