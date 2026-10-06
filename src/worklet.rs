@@ -111,6 +111,24 @@ pub trait AudioWorkletProcessor {
     fn onmessage(&mut self, _msg: &mut dyn Any) {
         log::warn!("AudioWorkletProcessor: Ignoring incoming message");
     }
+
+    /// Whether this processor's output may be assumed silent when its input is silent
+    ///
+    /// Override this method to return `true` to opt out of the spec-mandated behavior of always
+    /// invoking [`process`](Self::process), and allow it to be skipped altogether once the
+    /// processor has settled into silence. Concretely, `process` is skipped for a render quantum
+    /// and the node's output is treated as silent when all of the following hold:
+    ///
+    /// - every input of the node is silent for the current render quantum
+    /// - the previous call to `process` returned `false` (i.e. the processor itself reported it
+    ///   has no more tail/output to produce)
+    /// - this method returns `true`
+    ///
+    /// The default implementation returns `false`, matching spec behavior (`process` is always
+    /// called).
+    fn suspend_on_silent_input(&self) -> bool {
+        false
+    }
 }
 
 /// Options for constructing an [`AudioWorkletNode`]
@@ -268,6 +286,7 @@ impl AudioWorkletNode {
                 processor: Processor::new(processor_options),
                 audio_param_map: processor_param_map,
                 output_channel_count,
+                previous_tail_time: true,
                 inputs_flat: Vec::with_capacity(number_of_inputs * MAX_CHANNELS),
                 inputs_grouped: Vec::with_capacity(number_of_inputs),
                 outputs_flat: Vec::with_capacity(number_of_output_channels),
@@ -324,6 +343,10 @@ struct AudioWorkletRenderer<P: AudioWorkletProcessor> {
     processor: Processor<P>,
     audio_param_map: HashMap<String, AudioParamId>,
     output_channel_count: Vec<usize>,
+    // Result of the previous call to `AudioWorkletProcessor::process`, used together with
+    // `AudioWorkletProcessor::suspend_on_silent_input` to decide whether `process` can be
+    // skipped for this render quantum. Starts out `true` so the first quantum is never skipped.
+    previous_tail_time: bool,
 
     // Preallocated, reusable containers for channel data
     inputs_flat: Vec<&'static [f32]>,
@@ -346,6 +369,14 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
         scope: &AudioWorkletGlobalScope,
     ) -> bool {
         let processor = self.processor.load();
+
+        if !self.previous_tail_time
+            && inputs.iter().all(AudioRenderQuantum::is_silent)
+            && processor.suspend_on_silent_input()
+        {
+            outputs.iter_mut().for_each(AudioRenderQuantum::make_silent);
+            return false;
+        }
 
         // Bear with me, to construct a &[&[&[f32]]] we first build a backing vector of all the
         // individual sample slices. Then we chop it up to get to the right sub-slice structure.
@@ -451,6 +482,8 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
         self.outputs_grouped.clear();
         self.outputs_flat.clear();
 
+        self.previous_tail_time = tail_time;
+
         tail_time
     }
 
@@ -468,7 +501,7 @@ mod tests {
     use super::*;
     use crate::context::OfflineAudioContext;
     use float_eq::assert_float_eq;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
 
     struct TestProcessor;
@@ -727,5 +760,86 @@ mod tests {
         let context = OfflineAudioContext::new(1, 128, 48000.);
         let options = AudioWorkletNodeOptions::default();
         let _worklet = AudioWorkletNode::new::<RcProcessor>(&context, options);
+    }
+
+    /// Counts its `process` invocations and reports no tail time. Whether it opts into
+    /// `suspend_on_silent_input` is controlled by the `suspend` field.
+    struct CountCallsProcessor {
+        call_count: Arc<AtomicUsize>,
+        suspend: bool,
+    }
+
+    impl AudioWorkletProcessor for CountCallsProcessor {
+        type ProcessorOptions = (Arc<AtomicUsize>, bool);
+
+        fn constructor((call_count, suspend): Self::ProcessorOptions) -> Self {
+            Self {
+                call_count,
+                suspend,
+            }
+        }
+
+        fn process<'a, 'b>(
+            &mut self,
+            _inputs: &'b [&'a [&'a [f32]]],
+            _outputs: &'b mut [&'a mut [&'a mut [f32]]],
+            _params: AudioParamValues<'b>,
+            _scope: &'b AudioWorkletGlobalScope,
+        ) -> bool {
+            self.call_count.fetch_add(1, Ordering::Relaxed);
+            false
+        }
+
+        fn suspend_on_silent_input(&self) -> bool {
+            self.suspend
+        }
+    }
+
+    /// A worklet that opts into `suspend_on_silent_input` and has a permanently silent input
+    /// (nothing connected) should only have `process` invoked for the first render quantum.
+    /// Its output should read as silence for the whole render, including the skipped quanta.
+    #[test]
+    fn test_worklet_suspend_on_silent_input() {
+        let call_count = Arc::new(AtomicUsize::new(0));
+
+        let mut context = OfflineAudioContext::new(1, 128 * 4, 48000.);
+        let options = AudioWorkletNodeOptions {
+            number_of_inputs: 1,
+            number_of_outputs: 1,
+            processor_options: (Arc::clone(&call_count), true),
+            ..AudioWorkletNodeOptions::default()
+        };
+        let worklet = AudioWorkletNode::new::<CountCallsProcessor>(&context, options);
+        worklet.connect(&context.destination());
+
+        let buffer = context.start_rendering_sync();
+
+        assert_eq!(call_count.load(Ordering::Relaxed), 1);
+        assert_float_eq!(
+            buffer.get_channel_data(0)[..],
+            &[0.; 128 * 4][..],
+            abs_all <= 0.
+        );
+    }
+
+    /// A worklet that does not opt into `suspend_on_silent_input` must have `process` invoked
+    /// for every render quantum, even with a permanently silent input, per spec.
+    #[test]
+    fn test_worklet_no_suspend_on_silent_input() {
+        let call_count = Arc::new(AtomicUsize::new(0));
+
+        let mut context = OfflineAudioContext::new(1, 128 * 4, 48000.);
+        let options = AudioWorkletNodeOptions {
+            number_of_inputs: 1,
+            number_of_outputs: 1,
+            processor_options: (Arc::clone(&call_count), false),
+            ..AudioWorkletNodeOptions::default()
+        };
+        let worklet = AudioWorkletNode::new::<CountCallsProcessor>(&context, options);
+        worklet.connect(&context.destination());
+
+        let _ = context.start_rendering_sync();
+
+        assert_eq!(call_count.load(Ordering::Relaxed), 4);
     }
 }

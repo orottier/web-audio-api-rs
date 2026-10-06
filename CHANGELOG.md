@@ -5,6 +5,8 @@
 - Update MSRV to 1.88 (June 2025)
 - `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`,
   so an audio source that borrows from the stack can be decoded
+- Added `AudioWorkletProcessor::suspend_on_silent_input` to let a worklet opt out of being called
+  for render quanta where its input is silent and it has already reported no tail time
 
 ## Version 1.7.0 (2026-08-06)
 
