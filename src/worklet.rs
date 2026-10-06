@@ -111,6 +111,17 @@ pub trait AudioWorkletProcessor {
     fn onmessage(&mut self, _msg: &mut dyn Any) {
         log::warn!("AudioWorkletProcessor: Ignoring incoming message");
     }
+
+    /// Whether this processor does observable work beyond producing its audio output. If `true`,
+    /// the node will be kept alive when its inputs are active, even if it is disconnected from the
+    /// rest of the graph (this is the behavior mandated by the WebAudio spec). If `false`, the node
+    /// may be eagerly discarded if all the nodes in its subgraph are dropped.
+    ///
+    /// This is polled between render quanta; a processor may vary the answer over its lifetime
+    /// (e.g. flip to `false` once it has flushed its buffers).
+    fn has_side_effects(&self) -> bool {
+        true
+    }
 }
 
 /// Options for constructing an [`AudioWorkletNode`]
@@ -459,7 +470,10 @@ impl<P: AudioWorkletProcessor> AudioProcessor for AudioWorkletRenderer<P> {
     }
 
     fn has_side_effects(&self) -> bool {
-        true // could be IO, message passing, ..
+        match &self.processor {
+            Processor::Init(p) => p.has_side_effects(),
+            Processor::Uninit(_) => true,
+        }
     }
 }
 
@@ -727,5 +741,97 @@ mod tests {
         let context = OfflineAudioContext::new(1, 128, 48000.);
         let options = AudioWorkletNodeOptions::default();
         let _worklet = AudioWorkletNode::new::<RcProcessor>(&context, options);
+    }
+
+    /// `AudioWorkletProcessor::has_side_effects` decides whether a disconnected worklet stays in
+    /// the render graph after its handle is dropped.
+    ///
+    /// Both cases use the same graph: a `ConstantSource` feeds an `AudioWorkletNode` that has no
+    /// outputs (a dead end) whose `process` always returns `false` (a pure transform). Every handle
+    /// is dropped, then 20 render quanta are produced. A processor that reports side effects is
+    /// rendered every quantum; one that does not is reclaimed almost immediately.
+    #[test]
+    fn test_has_side_effects_controls_orphaned_worklet_disposal() {
+        use crate::node::AudioScheduledSourceNode;
+        use std::sync::atomic::AtomicUsize;
+
+        /// A pure-transform processor (`process` always returns `false`) that counts its own
+        /// invocations and reports a fixed `has_side_effects` answer chosen at construction.
+        struct CountingProcessor {
+            /// Incremented once per `process` call, so the test can tell whether the node is still
+            /// being rendered.
+            calls: Arc<AtomicUsize>,
+            /// The value returned from `has_side_effects`.
+            side_effects: bool,
+        }
+
+        impl AudioWorkletProcessor for CountingProcessor {
+            type ProcessorOptions = (Arc<AtomicUsize>, bool);
+
+            fn constructor((calls, side_effects): Self::ProcessorOptions) -> Self {
+                Self {
+                    calls,
+                    side_effects,
+                }
+            }
+
+            fn process<'a, 'b>(
+                &mut self,
+                _inputs: &'b [&'a [&'a [f32]]],
+                _outputs: &'b mut [&'a mut [&'a mut [f32]]],
+                _params: AudioParamValues<'b>,
+                _scope: &'b AudioWorkletGlobalScope,
+            ) -> bool {
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                false
+            }
+
+            fn has_side_effects(&self) -> bool {
+                self.side_effects
+            }
+        }
+
+        /// Render 20 quanta of `ConstantSource -> AudioWorkletNode(0 outputs)` with both handles
+        /// dropped, and return how many times the worklet's `process` ran.
+        fn count_process_calls(side_effects: bool) -> usize {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let quanta = 20;
+            let mut context = OfflineAudioContext::new(1, 128 * quanta, 48000.);
+            let options = AudioWorkletNodeOptions {
+                number_of_inputs: 1,
+                number_of_outputs: 0, // dead end: nothing consumes the worklet's output
+                processor_options: (Arc::clone(&calls), side_effects),
+                ..AudioWorkletNodeOptions::default()
+            };
+
+            {
+                let mut src = context.create_constant_source();
+                src.offset().set_value(1.0);
+                let worklet = AudioWorkletNode::new::<CountingProcessor>(&context, options);
+                src.connect(&worklet);
+                src.start();
+                // fire and forget: the source and worklet handles are dropped here
+            }
+
+            let _ = context.start_rendering_sync();
+            calls.load(Ordering::Relaxed)
+        }
+
+        // With side effects (the default): the worklet is retained and processed on every quantum
+        // for as long as its input is active, even with no outputs and no handle.
+        let with_side_effects = count_process_calls(true);
+        assert!(
+            with_side_effects >= 18,
+            "expected the worklet to keep processing, got only {with_side_effects} process() calls"
+        );
+
+        // Without side effects: the worklet is a disposable pure transform, so it is reclaimed
+        // shortly after its handle is dropped instead of being rendered for all 20 quanta.
+        let without_side_effects = count_process_calls(false);
+        assert!(
+            without_side_effects <= 2,
+            "expected the worklet to be collected quickly, \
+             got {without_side_effects} process() calls"
+        );
     }
 }
