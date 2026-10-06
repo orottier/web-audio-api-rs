@@ -94,7 +94,9 @@ fn serialize(audio_buf: &AudioBuffer, byte_buf: &mut [u8]) -> usize {
 
 fn deserialize(byte_buf: &[u8], sample_rate: f32) -> AudioBuffer {
     let samples: Vec<f32> = byte_buf
-        .as_chunks::<2>().0.iter()
+        .as_chunks::<2>()
+        .0
+        .iter()
         .take(128)
         .map(|&bs| i16::from_be_bytes(bs))
         .map(|i| i as f32 / i16::MAX as f32)
