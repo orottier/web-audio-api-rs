@@ -94,7 +94,7 @@ impl AudioWorkletProcessor for WhiteNoiseProcessor {
             })
         });
 
-        if scope.current_frame % 12800 == 0 {
+        if scope.current_frame.is_multiple_of(12800) {
             scope.post_message(Box::new(scope.current_frame));
         }
 

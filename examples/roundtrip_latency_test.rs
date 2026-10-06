@@ -99,7 +99,7 @@ impl AudioWorkletProcessor for LatencyTesterProcessor {
         // 48000 / 128 = 375
         let output = &mut outputs[0];
 
-        if (scope.current_frame / 128) % 375 == 0 {
+        if (scope.current_frame / 128).is_multiple_of(375) {
             output.iter_mut().for_each(|channel| channel[0] = 1.);
 
             self.send_time = scope.current_time;
