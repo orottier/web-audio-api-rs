@@ -1,6 +1,5 @@
 const DATA_SIZE: usize = 512;
 
-use std::convert::TryInto;
 use std::error::Error;
 use std::iter::IntoIterator;
 use std::net::UdpSocket;
@@ -95,9 +94,9 @@ fn serialize(audio_buf: &AudioBuffer, byte_buf: &mut [u8]) -> usize {
 
 fn deserialize(byte_buf: &[u8], sample_rate: f32) -> AudioBuffer {
     let samples: Vec<f32> = byte_buf
-        .chunks_exact(2)
+        .as_chunks::<2>().0.iter()
         .take(128)
-        .map(|bs| i16::from_be_bytes(bs.try_into().unwrap()))
+        .map(|&bs| i16::from_be_bytes(bs))
         .map(|i| i as f32 / i16::MAX as f32)
         .collect();
     AudioBuffer::from(vec![samples], sample_rate)
