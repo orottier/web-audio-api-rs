@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Update MSRV to 1.88 (June 2025)
 - `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`,
   so an audio source that borrows from the stack can be decoded
 
