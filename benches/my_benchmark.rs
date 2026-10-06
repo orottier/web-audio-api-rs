@@ -297,32 +297,6 @@ pub fn bench_sine_gain_with_worklet() {
     assert_eq!(ctx.start_rendering_sync().length(), SAMPLES);
 }
 
-/// Worklet with a 64-entry parameter table, every parameter read once per
-/// render quantum through `get(name)` - the per-quantum name hashing this
-/// pair of benchmarks quantifies. Heavy per iteration, so SAMPLES_SHORT.
-pub fn bench_worklet_many_params_by_name() {
-    let mut ctx = OfflineAudioContext::new(1, black_box(SAMPLES_SHORT), SAMPLE_RATE);
-
-    let options = AudioWorkletNodeOptions::default();
-    let node = AudioWorkletNode::new::<worklet::ManyParamsByNameProcessor>(&ctx, options);
-    node.connect(&ctx.destination());
-
-    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES_SHORT);
-}
-
-/// Same graph and workload, but the processor resolves its parameter ids once
-/// (AudioParamValues::id) and reads through get_by_id - no hashing on the
-/// audio thread.
-pub fn bench_worklet_many_params_by_id() {
-    let mut ctx = OfflineAudioContext::new(1, black_box(SAMPLES_SHORT), SAMPLE_RATE);
-
-    let options = AudioWorkletNodeOptions::default();
-    let node = AudioWorkletNode::new::<worklet::ManyParamsByIdProcessor>(&ctx, options);
-    node.connect(&ctx.destination());
-
-    assert_eq!(ctx.start_rendering_sync().length(), SAMPLES_SHORT);
-}
-
 pub fn bench_graph_reordering() {
     const RENDER_QUANTUM_SIZE: usize = 128;
     const CHAIN_COUNT: usize = 600;
@@ -416,7 +390,5 @@ iai_or_criterion!(
     bench_analyser_node,
     bench_hrtf_panners,
     bench_sine_gain_with_worklet,
-    bench_worklet_many_params_by_name,
-    bench_worklet_many_params_by_id,
     bench_graph_reordering,
 );

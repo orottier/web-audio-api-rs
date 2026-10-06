@@ -54,11 +54,7 @@ impl std::fmt::Debug for AudioNodeId {
 /// Unique identifier for audio params.
 ///
 /// Store these in your `AudioProcessor` to get access to `AudioParam` values.
-///
-/// `Copy` lets `AudioWorkletProcessor`s resolve a parameter name to an id once
-/// (via [`crate::worklet::AudioParamValues::id`]) and reuse it on every render
-/// quantum; the inner value stays private to the context module.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct AudioParamId(u64);
 
 // bit contrived, but for type safety only the context mod can access the inner u64
