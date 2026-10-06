@@ -41,6 +41,38 @@ impl<'a> AudioParamValues<'a> {
         self.values.get(id)
     }
 
+    /// Resolve a parameter name to its [`AudioParamId`], or `None` when no
+    /// parameter with that name exists.
+    ///
+    /// [`Self::get`] hashes the name string on every call. That is fine for a
+    /// handful of parameters, but processors with large parameter tables
+    /// (synth instruments, plugin hosts) pay that hash for every parameter on
+    /// every render quantum. Resolve each name once - for example on the
+    /// first `process` call - store the ids, and read through
+    /// [`Self::get_by_id`] instead:
+    ///
+    /// ```ignore
+    /// // In process():
+    /// let id = *self
+    ///     .cached_gain_id
+    ///     .get_or_insert_with(|| params.id("gain").unwrap());
+    /// let gain = params.get_by_id(id);
+    /// ```
+    ///
+    /// Ids are stable for the lifetime of the node the processor belongs to.
+    pub fn id(&self, name: &str) -> Option<AudioParamId> {
+        self.map.get(name).copied()
+    }
+
+    /// Get the computed values for the given [`AudioParam`], addressed by a
+    /// pre-resolved [`AudioParamId`] (see [`Self::id`]).
+    ///
+    /// Equivalent to [`Self::get`] - same slice-length semantics - but
+    /// without any string hashing on the hot path.
+    pub fn get_by_id(&'a self, id: AudioParamId) -> impl Deref<Target = [f32]> + 'a {
+        self.values.get(&id)
+    }
+
     pub fn keys(&self) -> impl Iterator<Item = &str> {
         self.map.keys().map(|s| s.as_ref())
     }
@@ -727,5 +759,99 @@ mod tests {
         let context = OfflineAudioContext::new(1, 128, 48000.);
         let options = AudioWorkletNodeOptions::default();
         let _worklet = AudioWorkletNode::new::<RcProcessor>(&context, options);
+    }
+
+    /// Writes the "gain" param values to channel 0 via `get(name)` and to
+    /// channel 1 via `get_by_id` with an id cached on the first quantum, so a
+    /// rendering asserts the two access paths are sample-identical across
+    /// both slice shapes (len-1 constant blocks and full a-rate blocks).
+    struct ParamIdCompareProcessor {
+        gain_id: Option<AudioParamId>,
+    }
+
+    impl AudioWorkletProcessor for ParamIdCompareProcessor {
+        type ProcessorOptions = ();
+
+        fn constructor(_opts: Self::ProcessorOptions) -> Self {
+            Self { gain_id: None }
+        }
+
+        fn parameter_descriptors() -> Vec<AudioParamDescriptor>
+        where
+            Self: Sized,
+        {
+            vec![AudioParamDescriptor {
+                name: String::from("gain"),
+                min_value: 0.,
+                max_value: 1.,
+                default_value: 0.,
+                automation_rate: crate::AutomationRate::A,
+            }]
+        }
+
+        fn process<'a, 'b>(
+            &mut self,
+            _inputs: &'b [&'a [&'a [f32]]],
+            outputs: &'b mut [&'a mut [&'a mut [f32]]],
+            params: AudioParamValues<'b>,
+            _scope: &'b AudioWorkletGlobalScope,
+        ) -> bool {
+            // Unknown names resolve to None instead of panicking.
+            assert!(params.id("no-such-param").is_none());
+
+            let id = *self
+                .gain_id
+                .get_or_insert_with(|| params.id("gain").unwrap());
+
+            let by_name = params.get("gain");
+            let by_id = params.get_by_id(id);
+            assert_eq!(by_name.len(), by_id.len());
+
+            let output = &mut outputs[0];
+            for (i, sample) in output[0].iter_mut().enumerate() {
+                *sample = by_name[i % by_name.len()];
+            }
+            for (i, sample) in output[1].iter_mut().enumerate() {
+                *sample = by_id[i % by_id.len()];
+            }
+            true
+        }
+    }
+
+    #[test]
+    fn test_worklet_param_values_by_id() {
+        use crate::node::AudioScheduledSourceNode;
+
+        // 3 quanta: a linear ramp over the first two (full-length a-rate
+        // slices), then a constant hold (len-1 slices) - get_by_id must stay
+        // identical to get(name) through both shapes and across quantum
+        // boundaries (the cached id is resolved once on the first quantum).
+        let mut context = OfflineAudioContext::new(2, 384, 48000.);
+        let options = AudioWorkletNodeOptions {
+            // Two comparison channels regardless of the mono source input.
+            output_channel_count: vec![2],
+            ..AudioWorkletNodeOptions::default()
+        };
+        let worklet = AudioWorkletNode::new::<ParamIdCompareProcessor>(&context, options);
+        worklet.connect(&context.destination());
+
+        // A running source keeps the worklet processing.
+        let mut src = context.create_constant_source();
+        src.connect(&worklet);
+        src.start();
+
+        let gain = worklet.parameters().get("gain").unwrap();
+        gain.set_value_at_time(0., 0.);
+        gain.linear_ramp_to_value_at_time(1., 256. / 48000.);
+
+        let buffer = context.start_rendering_sync();
+        let by_name = buffer.get_channel_data(0);
+        let by_id = buffer.get_channel_data(1);
+
+        assert_float_eq!(by_name[..], by_id[..], abs_all <= 0.);
+        // Sanity: the ramp actually produced non-constant a-rate data.
+        assert_float_eq!(by_name[0], 0., abs <= 0.);
+        assert_float_eq!(by_name[256], 1., abs <= 1e-6);
+        assert!(by_name[128] > 0.4 && by_name[128] < 0.6);
     }
 }
