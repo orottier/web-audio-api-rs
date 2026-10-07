@@ -29,20 +29,6 @@ pub use capacity::*;
 mod playback_stats;
 pub use playback_stats::*;
 
-// Expose selected existing methods without changing their implementation or duplicating bodies.
-macro_rules! plumbing_visibility {
-    ($(#[$attr:meta])* fn $name:ident $($rest:tt)*) => {
-        $(#[$attr])*
-        #[cfg(feature = "unstable_plumbing")]
-        #[doc = "\nAvailable with `unstable_plumbing`; may change in minor releases."]
-        pub fn $name $($rest)*
-
-        $(#[$attr])*
-        #[cfg(not(feature = "unstable_plumbing"))]
-        pub(crate) fn $name $($rest)*
-    };
-}
-
 pub mod context;
 
 pub mod media_devices;
@@ -72,10 +58,38 @@ mod render;
 /// See `showcase/raw_processor` for an external example.
 #[cfg(feature = "unstable_plumbing")]
 pub mod unstable_plumbing {
+    use std::any::Any;
+
+    use crate::context::{AudioContextRegistration, BaseAudioContext};
+    use crate::node::AudioNode;
+
     pub use crate::render::{
         AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioRenderQuantumChannel,
         AudioWorkletGlobalScope,
     };
+
+    /// Construct a custom audio node and its processor in the given context.
+    ///
+    /// Store the supplied registration in the node. Parameters can be created inside `build`
+    /// using [`BaseAudioContext::create_audio_param`].
+    pub fn register<C, N, F>(context: &C, build: F) -> N
+    where
+        C: BaseAudioContext,
+        N: AudioNode,
+        F: FnOnce(AudioContextRegistration) -> (N, Box<dyn AudioProcessor>),
+    {
+        context.base().register(build)
+    }
+
+    /// Send a message to the processor associated with a node's registration.
+    ///
+    /// The message is handled by [`AudioProcessor::onmessage`].
+    pub fn post_message<M: Any + Send + 'static>(
+        registration: &AudioContextRegistration,
+        message: M,
+    ) {
+        registration.post_message(message);
+    }
 }
 
 mod stats;

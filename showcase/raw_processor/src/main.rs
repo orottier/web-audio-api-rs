@@ -6,7 +6,7 @@ use web_audio_api::context::{
 };
 use web_audio_api::node::{AudioNode, AudioNodeOptions, AudioScheduledSourceNode, ChannelConfig};
 use web_audio_api::unstable_plumbing::{
-    AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
+    self, AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioWorkletGlobalScope,
 };
 use web_audio_api::{AudioParam, AudioParamDescriptor, AutomationRate};
 
@@ -37,7 +37,7 @@ impl AudioNode for RawGainNode {
 
 impl RawGainNode {
     fn new(context: &impl BaseAudioContext) -> Self {
-        context.base().register(|registration| {
+        unstable_plumbing::register(context, |registration| {
             let (gain, gain_id) = context.create_audio_param(
                 AudioParamDescriptor {
                     name: "gain".into(),
@@ -62,7 +62,7 @@ impl RawGainNode {
     }
 
     fn set_invert(&self, invert: bool) {
-        self.registration.post_message(invert);
+        unstable_plumbing::post_message(&self.registration, invert);
     }
 }
 

@@ -107,7 +107,7 @@ impl AudioWorkletGlobalScope {
 ///
 /// Note that the AudioProcessor is typically constructed together with an
 /// [`AudioNode`](crate::node::AudioNode) (the user facing object that lives in the control
-/// thread). See [`ConcreteBaseAudioContext::register`](crate::context::ConcreteBaseAudioContext::register).
+/// thread). See [`unstable_plumbing::register`](crate::unstable_plumbing::register).
 ///
 /// Check `showcase/raw_processor` for example usage of this trait.
 pub trait AudioProcessor: Send {
@@ -142,7 +142,7 @@ pub trait AudioProcessor: Send {
     ///
     /// By overriding this method you can add a handler for messages sent from the control thread
     /// via
-    /// [`AudioContextRegistration::post_message`](crate::context::AudioContextRegistration::post_message).
+    /// [`unstable_plumbing::post_message`](crate::unstable_plumbing::post_message).
     /// This will not be necessary for most processors.
     ///
     /// Receivers are supposed to consume the content of `msg`. The content of `msg` might
