@@ -127,16 +127,18 @@ impl AudioContextRegistration {
         &self.context
     }
 
-    /// Send a message to the corresponding audio processor of this node
-    ///
-    /// The message will be handled by
-    /// [`AudioProcessor::onmessage`](crate::render::AudioProcessor::onmessage).
-    pub(crate) fn post_message<M: Any + Send + 'static>(&self, msg: M) {
-        let wrapped = crate::message::ControlMessage::NodeMessage {
-            id: self.id,
-            msg: llq::Node::new(Box::new(msg)),
-        };
-        self.context.send_control_msg(wrapped);
+    plumbing_visibility! {
+        /// Send a message to the corresponding audio processor of this node
+        ///
+        /// The message will be handled by
+        /// [`AudioProcessor::onmessage`](crate::render::AudioProcessor::onmessage).
+        fn post_message<M: Any + Send + 'static>(&self, msg: M) {
+            let wrapped = crate::message::ControlMessage::NodeMessage {
+                id: self.id,
+                msg: llq::Node::new(Box::new(msg)),
+            };
+            self.context.send_control_msg(wrapped);
+        }
     }
 }
 

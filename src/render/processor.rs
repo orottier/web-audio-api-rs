@@ -109,7 +109,7 @@ impl AudioWorkletGlobalScope {
 /// [`AudioNode`](crate::node::AudioNode) (the user facing object that lives in the control
 /// thread). See [`ConcreteBaseAudioContext::register`](crate::context::ConcreteBaseAudioContext::register).
 ///
-/// Check the `examples/worklet.rs` file for example usage of this trait.
+/// Check `showcase/raw_processor` for example usage of this trait.
 pub trait AudioProcessor: Send {
     /// Audio processing function
     ///
@@ -164,7 +164,7 @@ pub trait AudioProcessor: Send {
 
     /// Indicates if this processor has 'side effects' other than producing output
     ///
-    /// Processors without side effects can not be dropped when there are no outputs connected, and
+    /// Processors without side effects can be dropped when there are no outputs connected, and
     /// when the control side handle no longer exists
     ///
     /// Side effects could include

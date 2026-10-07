@@ -228,45 +228,47 @@ impl ConcreteBaseAudioContext {
         Arc::as_ptr(&self.inner) as usize
     }
 
-    /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]
-    pub(crate) fn register<
-        T: AudioNode,
-        F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
-    >(
-        &self,
-        f: F,
-    ) -> T {
-        // create a unique id for this node
-        let id = self.inner.audio_node_id_provider.get();
-        let registration = AudioContextRegistration {
-            id,
-            context: self.clone(),
-        };
+    plumbing_visibility! {
+        /// Construct a new pair of [`AudioNode`] and [`AudioProcessor`]
+        fn register<
+            T: AudioNode,
+            F: FnOnce(AudioContextRegistration) -> (T, Box<dyn AudioProcessor>),
+        >(
+            &self,
+            f: F,
+        ) -> T {
+            // create a unique id for this node
+            let id = self.inner.audio_node_id_provider.get();
+            let registration = AudioContextRegistration {
+                id,
+                context: self.clone(),
+            };
 
-        // create the node and its renderer
-        let (node, render) = (f)(registration);
+            // create the node and its renderer
+            let (node, render) = (f)(registration);
 
-        // pass the renderer to the audio graph
-        let message = ControlMessage::RegisterNode {
-            id,
-            reclaim_id: llq::Node::new(id),
-            node: render,
-            inputs: node.number_of_inputs(),
-            outputs: node.number_of_outputs(),
-            channel_config: node.channel_config().inner(),
-        };
+            // pass the renderer to the audio graph
+            let message = ControlMessage::RegisterNode {
+                id,
+                reclaim_id: llq::Node::new(id),
+                node: render,
+                inputs: node.number_of_inputs(),
+                outputs: node.number_of_outputs(),
+                channel_config: node.channel_config().inner(),
+            };
 
-        // if this is the AudioListener or its params, do not add it to the graph just yet
-        if id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id.0) {
-            let mut queued_audio_listener_msgs =
-                self.inner.queued_audio_listener_msgs.lock().unwrap();
-            queued_audio_listener_msgs.push(message);
-        } else {
-            self.send_control_msg(message);
-            self.resolve_queued_control_msgs(id);
+            // if this is the AudioListener or its params, do not add it to the graph just yet
+            if id == LISTENER_NODE_ID || LISTENER_PARAM_IDS.contains(&id.0) {
+                let mut queued_audio_listener_msgs =
+                    self.inner.queued_audio_listener_msgs.lock().unwrap();
+                queued_audio_listener_msgs.push(message);
+            } else {
+                self.send_control_msg(message);
+                self.resolve_queued_control_msgs(id);
+            }
+
+            node
         }
-
-        node
     }
 
     /// Send a control message to the render thread

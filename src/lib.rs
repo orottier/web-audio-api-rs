@@ -29,6 +29,20 @@ pub use capacity::*;
 mod playback_stats;
 pub use playback_stats::*;
 
+// Expose selected existing methods without changing their implementation or duplicating bodies.
+macro_rules! plumbing_visibility {
+    ($(#[$attr:meta])* fn $name:ident $($rest:tt)*) => {
+        $(#[$attr])*
+        #[cfg(feature = "unstable_plumbing")]
+        #[doc = "\nAvailable with `unstable_plumbing`; may change in minor releases."]
+        pub fn $name $($rest)*
+
+        $(#[$attr])*
+        #[cfg(not(feature = "unstable_plumbing"))]
+        pub(crate) fn $name $($rest)*
+    };
+}
+
 pub mod context;
 
 pub mod media_devices;
@@ -50,6 +64,19 @@ mod periodic_wave;
 pub use periodic_wave::*;
 
 mod render;
+
+/// Low-level primitives for constructing custom audio nodes and processors.
+///
+/// Available with the `unstable_plumbing` feature. These APIs expose implementation details and
+/// may change in minor releases. Enabling the feature does not change existing node behavior.
+/// See `showcase/raw_processor` for an external example.
+#[cfg(feature = "unstable_plumbing")]
+pub mod unstable_plumbing {
+    pub use crate::render::{
+        AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioRenderQuantumChannel,
+        AudioWorkletGlobalScope,
+    };
+}
 
 mod stats;
 
