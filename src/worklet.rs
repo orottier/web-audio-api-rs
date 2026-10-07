@@ -20,7 +20,7 @@ use std::ops::{Deref, DerefMut};
 /// Accessor for current [`AudioParam`] values
 pub struct AudioParamValues<'a> {
     values: crate::render::AudioParamValues<'a>,
-    map: &'a HashMap<String, AudioParamId>,
+    map: &'a HashMap<String, AudioParamId, rustc_hash::FxBuildHasher>,
 }
 
 impl std::fmt::Debug for AudioParamValues<'_> {
@@ -245,7 +245,8 @@ impl AudioWorkletNode {
         let node = context.base().register(move |registration| {
             // Setup audio params, set initial values when supplied via parameter_data
             let mut node_param_map = HashMap::new();
-            let mut processor_param_map = HashMap::new();
+            // Parameter names come from the processor; favor fast lookups on the render thread.
+            let mut processor_param_map = HashMap::with_hasher(rustc_hash::FxBuildHasher);
             for mut param_descriptor in P::parameter_descriptors() {
                 let name = std::mem::take(&mut param_descriptor.name);
                 let (param, proc) = context.create_audio_param(param_descriptor, &registration);
@@ -322,7 +323,7 @@ impl<P: AudioWorkletProcessor> Processor<P> {
 
 struct AudioWorkletRenderer<P: AudioWorkletProcessor> {
     processor: Processor<P>,
-    audio_param_map: HashMap<String, AudioParamId>,
+    audio_param_map: HashMap<String, AudioParamId, rustc_hash::FxBuildHasher>,
     output_channel_count: Vec<usize>,
 
     // Preallocated, reusable containers for channel data
