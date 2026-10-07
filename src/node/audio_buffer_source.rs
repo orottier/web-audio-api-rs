@@ -715,14 +715,12 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     }
 
                     // check loop boundaries
-                    if self.render_state.entered_loop {
-                        while buffer_time >= actual_loop_end {
-                            buffer_time -= actual_loop_end - actual_loop_start;
-                        }
-
-                        while buffer_time < actual_loop_start {
-                            buffer_time += actual_loop_end - actual_loop_start;
-                        }
+                    if self.render_state.entered_loop
+                        && (buffer_time >= actual_loop_end || buffer_time < actual_loop_start)
+                    {
+                        buffer_time = actual_loop_start
+                            + (buffer_time - actual_loop_start)
+                                .rem_euclid(actual_loop_end - actual_loop_start);
                     }
                 }
 
@@ -789,12 +787,15 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                                                         start_playhead as usize + 1
                                                     };
 
-                                                    buffer_channel[start_index] as f64
+                                                    buffer_channel
+                                                        [start_index.min(buffer_length - 1)]
+                                                        as f64
                                                 } else {
                                                     let end_playhead =
                                                         actual_loop_end * sample_rate;
                                                     let end_index = end_playhead as usize;
-                                                    buffer_channel[end_index] as f64
+                                                    buffer_channel[end_index.min(buffer_length - 1)]
+                                                        as f64
                                                 }
                                             } else {
                                                 // Handle 2 edge cases:
@@ -1831,6 +1832,88 @@ mod tests {
 
             assert_float_eq!(channel[..], expected[..], abs_all <= error);
         });
+    }
+
+    #[test]
+    // Regression test: a valid but one-ULP-wide loop region must not hang the render
+    // thread. Naively wrapping `buffer_time` via repeated +=/-= would take billions of
+    // iterations to converge on a region this narrow.
+    fn test_loop_degenerate_width_does_not_hang() {
+        let sample_rate = 48_000.;
+        let length = RENDER_QUANTUM_SIZE * 4;
+        let mut context = OfflineAudioContext::new(1, length, sample_rate);
+
+        let buffer_size = 5;
+        let mut buffer = context.create_buffer(1, buffer_size, sample_rate);
+        buffer.copy_to_channel(&[1., 2., 3., 4., 5.], 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+
+        let loop_end = buffer_size as f64 / sample_rate as f64;
+        let loop_start = loop_end.next_down();
+
+        src.set_loop(true);
+        src.set_loop_start(loop_start);
+        src.set_loop_end(loop_end);
+        src.start();
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        assert!(channel.iter().all(|s| s.is_finite()));
+        assert_float_eq!(channel[..5], [1., 2., 3., 4., 5.][..], abs_all <= 0.);
+    }
+
+    #[test]
+    // Regression test: loopEnd at the buffer duration but loopStart inside the last
+    // (fractional) sample period must not panic when splicing across the loop seam.
+    fn test_loop_seam_splice_within_last_sample() {
+        let sample_rate = 48_000.;
+        let length = RENDER_QUANTUM_SIZE * 4;
+        let mut context = OfflineAudioContext::new(1, length, sample_rate);
+
+        let buffer_size = 5;
+        let mut buffer = context.create_buffer(1, buffer_size, sample_rate);
+        buffer.copy_to_channel(&[1., 2., 3., 4., 5.], 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+
+        src.set_loop(true);
+        src.set_loop_start(4.5 / sample_rate as f64);
+        src.set_loop_end(buffer_size as f64 / sample_rate as f64);
+        src.start();
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        assert!(channel.iter().all(|s| s.is_finite()));
+        assert_float_eq!(channel[..5], [1., 2., 3., 4., 5.][..], abs_all <= 0.);
+    }
+
+    #[test]
+    fn test_reverse_loop_seam_at_buffer_end() {
+        let sample_rate = 48_000.;
+        let mut context = OfflineAudioContext::new(1, RENDER_QUANTUM_SIZE * 4, sample_rate);
+
+        let mut buffer = context.create_buffer(1, 5, sample_rate);
+        buffer.copy_to_channel(&[1., 2., 3., 4., 5.], 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        src.set_loop(true);
+        src.playback_rate().set_value(-1.);
+        src.start_at_with_offset(0., 4. / sample_rate as f64);
+
+        let result = context.start_rendering_sync();
+        // loop_end is the buffer duration, so its frame index is one past the end.
+        for (i, &sample) in result.get_channel_data(0).iter().enumerate() {
+            assert_float_eq!(sample, (5 - i % 5) as f32, abs <= 1e-6);
+        }
     }
 
     #[test]

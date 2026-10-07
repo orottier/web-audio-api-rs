@@ -3,8 +3,9 @@
 ## Unreleased
 
 - Update MSRV to 1.88 (June 2025)
-- `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`,
-  so an audio source that borrows from the stack can be decoded
+- `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`
+- Fix: `AudioBufferSourceNode` could hang the render thread when wrapping extremely narrow loops
+- Fix: `AudioBufferSourceNode` could panic at the loop boundary
 
 ## Version 1.7.0 (2026-08-06)
 
