@@ -104,6 +104,13 @@ pub mod unstable_plumbing {
         registration.post_message(message);
     }
 
+    /// Access a node's message port to send messages and receive processor replies.
+    ///
+    /// The processor handles incoming messages in [`AudioProcessor::onmessage`] and sends
+    /// replies with [`AudioWorkletGlobalScope::post_message`].
+    pub fn message_port(node: &dyn AudioNode) -> crate::MessagePort<'_> {
+        crate::MessagePort::from_node(node)
+    }
 }
 
 mod stats;
