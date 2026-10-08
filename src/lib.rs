@@ -60,7 +60,7 @@ mod render;
 pub mod unstable_plumbing {
     use std::any::Any;
 
-    use crate::context::{AudioContextRegistration, BaseAudioContext};
+    use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
     use crate::node::AudioNode;
 
     pub use crate::render::{
@@ -71,7 +71,7 @@ pub mod unstable_plumbing {
     /// Construct a custom audio node and its processor in the given context.
     ///
     /// Store the supplied registration in the node. Parameters can be created inside `build`
-    /// using [`BaseAudioContext::create_audio_param`].
+    /// using [`create_audio_param`].
     pub fn register<C, N, F>(context: &C, build: F) -> N
     where
         C: BaseAudioContext,
@@ -79,6 +79,19 @@ pub mod unstable_plumbing {
         F: FnOnce(AudioContextRegistration) -> (N, Box<dyn AudioProcessor>),
     {
         context.base().register(build)
+    }
+
+    /// Create a parameter for a custom node inside the [`register`] closure.
+    ///
+    /// Pass the node's registration and retain the returned ID in its processor to read
+    /// parameter values through [`AudioParamValues::get`].
+    #[must_use]
+    pub fn create_audio_param<C: BaseAudioContext>(
+        context: &C,
+        descriptor: crate::AudioParamDescriptor,
+        registration: &AudioContextRegistration,
+    ) -> (crate::AudioParam, AudioParamId) {
+        context.base().create_audio_param(descriptor, registration)
     }
 
     /// Send a message to the processor associated with a node's registration.
@@ -90,6 +103,7 @@ pub mod unstable_plumbing {
     ) {
         registration.post_message(message);
     }
+
 }
 
 mod stats;

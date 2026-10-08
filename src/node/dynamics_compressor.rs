@@ -193,8 +193,9 @@ impl DynamicsCompressorNode {
                 default_value: 0.003,
                 automation_rate: crate::param::AutomationRate::K,
             };
-            let (mut attack_param, attack_proc) =
-                context.create_audio_param(attack_param_opts, &registration);
+            let (mut attack_param, attack_proc) = context
+                .base()
+                .create_audio_param(attack_param_opts, &registration);
             attack_param.set_automation_rate_constrained(true);
             attack_param.set_value(options.attack);
 
@@ -205,8 +206,9 @@ impl DynamicsCompressorNode {
                 default_value: 30.,
                 automation_rate: crate::param::AutomationRate::K,
             };
-            let (mut knee_param, knee_proc) =
-                context.create_audio_param(knee_param_opts, &registration);
+            let (mut knee_param, knee_proc) = context
+                .base()
+                .create_audio_param(knee_param_opts, &registration);
             knee_param.set_automation_rate_constrained(true);
             knee_param.set_value(options.knee);
 
@@ -217,8 +219,9 @@ impl DynamicsCompressorNode {
                 default_value: 12.,
                 automation_rate: crate::param::AutomationRate::K,
             };
-            let (mut ratio_param, ratio_proc) =
-                context.create_audio_param(ratio_param_opts, &registration);
+            let (mut ratio_param, ratio_proc) = context
+                .base()
+                .create_audio_param(ratio_param_opts, &registration);
             ratio_param.set_automation_rate_constrained(true);
             ratio_param.set_value(options.ratio);
 
@@ -229,8 +232,9 @@ impl DynamicsCompressorNode {
                 default_value: 0.25,
                 automation_rate: crate::param::AutomationRate::K,
             };
-            let (mut release_param, release_proc) =
-                context.create_audio_param(release_param_opts, &registration);
+            let (mut release_param, release_proc) = context
+                .base()
+                .create_audio_param(release_param_opts, &registration);
             release_param.set_automation_rate_constrained(true);
             release_param.set_value(options.release);
 
@@ -241,8 +245,9 @@ impl DynamicsCompressorNode {
                 default_value: -24.,
                 automation_rate: crate::param::AutomationRate::K,
             };
-            let (mut threshold_param, threshold_proc) =
-                context.create_audio_param(threshold_param_opts, &registration);
+            let (mut threshold_param, threshold_proc) = context
+                .base()
+                .create_audio_param(threshold_param_opts, &registration);
             threshold_param.set_automation_rate_constrained(true);
             threshold_param.set_value(options.threshold);
 

@@ -7,7 +7,7 @@ use crate::context::{
 };
 use crate::decoding::decode_media_data;
 use crate::events::{Event, EventHandler, EventType};
-use crate::node::{AudioNode, AudioNodeOptions};
+use crate::node::AudioNodeOptions;
 use crate::param::AudioParamDescriptor;
 use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
 use crate::{node, AudioListener, RENDER_QUANTUM_SIZE};
@@ -315,23 +315,17 @@ pub trait BaseAudioContext {
     /// Create an `AudioParam`.
     ///
     /// Call this inside the `register` closure when setting up your `AudioNode`
+    #[doc(hidden)]
+    #[deprecated(
+        note = "Use unstable_plumbing::create_audio_param with the unstable_plumbing feature"
+    )]
     #[must_use]
     fn create_audio_param(
         &self,
         opts: AudioParamDescriptor,
         dest: &AudioContextRegistration,
     ) -> (crate::param::AudioParam, AudioParamId) {
-        let param = self.base().register(move |registration| {
-            let (node, proc) = crate::param::audio_param_pair(opts, registration);
-
-            (node, Box::new(proc))
-        });
-
-        // Connect the param to the node, once the node is registered inside the audio graph.
-        self.base().queue_audio_param_connect(&param, dest.id());
-
-        let proc_id = AudioParamId(param.registration().id().0);
-        (param, proc_id)
+        self.base().create_audio_param(opts, dest)
     }
 
     /// Register callback to run when the state of the AudioContext has changed

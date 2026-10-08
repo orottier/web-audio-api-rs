@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Deprecate and hide `BaseAudioContext::create_audio_param`; use `unstable_plumbing::create_audio_param` for custom nodes
+
 - Add `unstable_plumbing` to expose existing raw node/processor construction primitives
 
 - Update MSRV to 1.88 (June 2025)

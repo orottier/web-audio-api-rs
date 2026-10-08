@@ -179,7 +179,9 @@ impl StereoPannerNode {
                 default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (pan_param, pan_proc) = context.create_audio_param(pan_options, &registration);
+            let (pan_param, pan_proc) = context
+                .base()
+                .create_audio_param(pan_options, &registration);
 
             pan_param.set_value(options.pan);
 

@@ -38,7 +38,8 @@ impl AudioNode for RawGainNode {
 impl RawGainNode {
     fn new(context: &impl BaseAudioContext) -> Self {
         unstable_plumbing::register(context, |registration| {
-            let (gain, gain_id) = context.create_audio_param(
+            let (gain, gain_id) = unstable_plumbing::create_audio_param(
+                context,
                 AudioParamDescriptor {
                     name: "gain".into(),
                     min_value: f32::MIN,

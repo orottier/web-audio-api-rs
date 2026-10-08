@@ -152,7 +152,9 @@ impl ConstantSourceNode {
                 default_value: 1.,
                 automation_rate: AutomationRate::A,
             };
-            let (param, proc) = context.create_audio_param(param_options, &registration);
+            let (param, proc) = context
+                .base()
+                .create_audio_param(param_options, &registration);
             param.set_value(offset);
 
             let render = ConstantSourceRenderer {

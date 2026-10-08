@@ -182,8 +182,9 @@ impl AudioBufferSourceNode {
                 default_value: 0.,
                 automation_rate: AutomationRate::K,
             };
-            let (mut d_param, d_proc) =
-                context.create_audio_param(detune_param_options, &registration);
+            let (mut d_param, d_proc) = context
+                .base()
+                .create_audio_param(detune_param_options, &registration);
             d_param.set_automation_rate_constrained(true);
             d_param.set_value(detune);
 
@@ -194,8 +195,9 @@ impl AudioBufferSourceNode {
                 default_value: 1.,
                 automation_rate: AutomationRate::K,
             };
-            let (mut pr_param, pr_proc) =
-                context.create_audio_param(playback_rate_param_options, &registration);
+            let (mut pr_param, pr_proc) = context
+                .base()
+                .create_audio_param(playback_rate_param_options, &registration);
             pr_param.set_automation_rate_constrained(true);
             pr_param.set_value(playback_rate);
 
