@@ -559,7 +559,9 @@ impl BiquadFilterNode {
                 default_value: 1.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (q_param, q_proc) = context.create_audio_param(q_param_options, &registration);
+            let (q_param, q_proc) = context
+                .base()
+                .create_audio_param(q_param_options, &registration);
             q_param.set_value(q);
 
             let detune_param_options = AudioParamDescriptor {
@@ -569,7 +571,9 @@ impl BiquadFilterNode {
                 default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (d_param, d_proc) = context.create_audio_param(detune_param_options, &registration);
+            let (d_param, d_proc) = context
+                .base()
+                .create_audio_param(detune_param_options, &registration);
             d_param.set_value(detune);
 
             let freq_options = AudioParamDescriptor {
@@ -579,7 +583,9 @@ impl BiquadFilterNode {
                 default_value: 350.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (f_param, f_proc) = context.create_audio_param(freq_options, &registration);
+            let (f_param, f_proc) = context
+                .base()
+                .create_audio_param(freq_options, &registration);
             f_param.set_value(frequency);
 
             let gain_options = AudioParamDescriptor {
@@ -589,7 +595,9 @@ impl BiquadFilterNode {
                 default_value: 0.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (g_param, g_proc) = context.create_audio_param(gain_options, &registration);
+            let (g_param, g_proc) = context
+                .base()
+                .create_audio_param(gain_options, &registration);
             g_param.set_value(gain);
 
             let renderer = BiquadFilterRenderer {

@@ -1,0 +1,8 @@
+[package]
+name = "raw_processor"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+web-audio-api = { path = "../..", default-features = false, features = ["unstable_plumbing"] }

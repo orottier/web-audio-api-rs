@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Deprecate and hide `BaseAudioContext::create_audio_param`; use `unstable_plumbing::create_audio_param` for custom nodes
+
+- Add `unstable_plumbing` to expose existing raw node/processor construction primitives
+
 - Update MSRV to 1.88 (June 2025)
 - `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`
 - Fix: `AudioBufferSourceNode` could hang the render thread when wrapping extremely narrow loops

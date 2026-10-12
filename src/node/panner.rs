@@ -423,9 +423,12 @@ impl PannerNode {
             assert_valid_channel_count_mode(channel_config.channel_count_mode);
 
             // position params
-            let (param_px, render_px) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (param_py, render_py) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (param_pz, render_pz) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (param_px, render_px) =
+                context.base().create_audio_param(PARAM_OPTS, &registration);
+            let (param_py, render_py) =
+                context.base().create_audio_param(PARAM_OPTS, &registration);
+            let (param_pz, render_pz) =
+                context.base().create_audio_param(PARAM_OPTS, &registration);
             param_px.set_value(position_x);
             param_py.set_value(position_y);
             param_pz.set_value(position_z);
@@ -435,10 +438,13 @@ impl PannerNode {
                 default_value: 1.0,
                 ..PARAM_OPTS
             };
-            let (param_ox, render_ox) =
-                context.create_audio_param(orientation_x_opts, &registration);
-            let (param_oy, render_oy) = context.create_audio_param(PARAM_OPTS, &registration);
-            let (param_oz, render_oz) = context.create_audio_param(PARAM_OPTS, &registration);
+            let (param_ox, render_ox) = context
+                .base()
+                .create_audio_param(orientation_x_opts, &registration);
+            let (param_oy, render_oy) =
+                context.base().create_audio_param(PARAM_OPTS, &registration);
+            let (param_oz, render_oz) =
+                context.base().create_audio_param(PARAM_OPTS, &registration);
             param_ox.set_value(orientation_x);
             param_oy.set_value(orientation_y);
             param_oz.set_value(orientation_z);
