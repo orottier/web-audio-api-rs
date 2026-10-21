@@ -1,5 +1,5 @@
 //! Audio IO management API
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -190,6 +190,12 @@ fn stable_device_id(
 #[allow(unused)]
 pub(crate) struct CpalBackend {
     stream: Arc<Mutex<Option<Stream>>>,
+    // ALSA's snd_pcm_pause is an optional hardware feature (dmix, the null
+    // device and many plug devices report errno 77). When the native pause
+    // fails, suspension falls back to this flag: the output callback emits
+    // silence and does not invoke the renderer, so the rendering clock stops -
+    // semantically equivalent to a paused stream. resume() clears the flag.
+    suspended: Arc<AtomicBool>,
     output_latency: Arc<AtomicF64>,
     sample_rate: f32,
     number_of_channels: usize,
@@ -315,6 +321,7 @@ impl AudioBackendManager for CpalBackend {
             preferred_config
         );
 
+        let suspended = Arc::new(AtomicBool::new(false));
         let spawned = spawn_output_stream(
             &device,
             default_device_config.sample_format(),
@@ -322,6 +329,7 @@ impl AudioBackendManager for CpalBackend {
             renderer,
             Arc::clone(&output_latency),
             stats.clone(),
+            Arc::clone(&suspended),
         );
 
         let stream = match spawned {
@@ -362,6 +370,7 @@ impl AudioBackendManager for CpalBackend {
                     renderer,
                     Arc::clone(&output_latency),
                     stats.clone(),
+                    Arc::clone(&suspended),
                 );
 
                 spawned.map_err(|e| map_cpal_error("build_fallback_output_stream", e))?
@@ -379,6 +388,7 @@ impl AudioBackendManager for CpalBackend {
             sample_rate,
             number_of_channels,
             sink_id: options.sink_id,
+            suspended,
         })
     }
 
@@ -529,17 +539,30 @@ impl AudioBackendManager for CpalBackend {
             sample_rate,
             number_of_channels,
             sink_id: options.sink_id,
+            // Input streams do not use flag suspension.
+            suspended: Arc::new(AtomicBool::new(false)),
         };
 
         Ok((backend, receiver))
     }
 
     fn resume(&self) -> BackendResult<bool> {
+        // Clear the silence flag first (devices without native pause support
+        // are suspended through it), then try to play() for devices that were
+        // natively paused.
+        let was_flag = self.suspended.swap(false, Ordering::Relaxed);
         if let Some(s) = self.stream.lock().unwrap().as_ref() {
-            s.play()
-                .map(|_| true)
-                .map_err(|e| map_cpal_error("resume", e))?;
-            return Ok(true);
+            match s.play() {
+                Ok(()) => return Ok(true),
+                Err(e) => {
+                    if was_flag {
+                        // Flag-suspended device: the stream never stopped, a
+                        // play() failure is inconsequential.
+                        return Ok(true);
+                    }
+                    return Err(map_cpal_error("resume", e));
+                }
+            }
         }
 
         Ok(false)
@@ -547,10 +570,16 @@ impl AudioBackendManager for CpalBackend {
 
     fn suspend(&self) -> BackendResult<bool> {
         if let Some(s) = self.stream.lock().unwrap().as_ref() {
-            s.pause()
-                .map(|_| true)
-                .map_err(|e| map_cpal_error("suspend", e))?;
-            return Ok(true);
+            match s.pause() {
+                Ok(()) => return Ok(true),
+                Err(_) => {
+                    // Native pause unavailable (ALSA errno 77 and friends):
+                    // fall back to the silence flag, which stops the output
+                    // callback from advancing the rendering clock.
+                    self.suspended.store(true, Ordering::Relaxed);
+                    return Ok(true);
+                }
+            }
         }
 
         Ok(false)
@@ -661,6 +690,9 @@ fn spawn_output_stream(
     mut render: RenderThread,
     output_latency: Arc<AtomicF64>,
     stats: AudioStats,
+    // Silence-flag suspension for devices without native pause support (see
+    // CpalBackend::suspend).
+    suspended: Arc<AtomicBool>,
 ) -> Result<Stream, CpalError> {
     let err_fn = |err| log::error!("an error occurred on the output audio stream: {}", err);
 
@@ -668,6 +700,11 @@ fn spawn_output_stream(
         SampleFormat::F32 => device.build_output_stream(
             config,
             move |d: &mut [f32], i: &OutputCallbackInfo| {
+                if suspended.load(Ordering::Relaxed) {
+                    // Suspended: emit silence without advancing the renderer.
+                    d.fill(cpal::Sample::EQUILIBRIUM);
+                    return;
+                }
                 render.render(d);
                 let latency = latency_in_seconds(i);
                 output_latency.store(latency, Ordering::Relaxed);
@@ -679,6 +716,11 @@ fn spawn_output_stream(
         SampleFormat::F64 => device.build_output_stream(
             config,
             move |d: &mut [f64], i: &OutputCallbackInfo| {
+                if suspended.load(Ordering::Relaxed) {
+                    // Suspended: emit silence without advancing the renderer.
+                    d.fill(cpal::Sample::EQUILIBRIUM);
+                    return;
+                }
                 render.render(d);
                 let latency = latency_in_seconds(i);
                 output_latency.store(latency, Ordering::Relaxed);
@@ -690,6 +732,11 @@ fn spawn_output_stream(
         SampleFormat::U8 => device.build_output_stream(
             config,
             move |d: &mut [u8], i: &OutputCallbackInfo| {
+                if suspended.load(Ordering::Relaxed) {
+                    // Suspended: emit silence without advancing the renderer.
+                    d.fill(cpal::Sample::EQUILIBRIUM);
+                    return;
+                }
                 render.render(d);
                 let latency = latency_in_seconds(i);
                 output_latency.store(latency, Ordering::Relaxed);
@@ -701,6 +748,11 @@ fn spawn_output_stream(
         SampleFormat::U16 => device.build_output_stream(
             config,
             move |d: &mut [u16], i: &OutputCallbackInfo| {
+                if suspended.load(Ordering::Relaxed) {
+                    // Suspended: emit silence without advancing the renderer.
+                    d.fill(cpal::Sample::EQUILIBRIUM);
+                    return;
+                }
                 render.render(d);
                 let latency = latency_in_seconds(i);
                 output_latency.store(latency, Ordering::Relaxed);
@@ -712,6 +764,11 @@ fn spawn_output_stream(
         SampleFormat::U32 => device.build_output_stream(
             config,
             move |d: &mut [u32], i: &OutputCallbackInfo| {
+                if suspended.load(Ordering::Relaxed) {
+                    // Suspended: emit silence without advancing the renderer.
+                    d.fill(cpal::Sample::EQUILIBRIUM);
+                    return;
+                }
                 render.render(d);
                 let latency = latency_in_seconds(i);
                 output_latency.store(latency, Ordering::Relaxed);
@@ -723,6 +780,11 @@ fn spawn_output_stream(
         SampleFormat::U64 => device.build_output_stream(
             config,
             move |d: &mut [u64], i: &OutputCallbackInfo| {
+                if suspended.load(Ordering::Relaxed) {
+                    // Suspended: emit silence without advancing the renderer.
+                    d.fill(cpal::Sample::EQUILIBRIUM);
+                    return;
+                }
                 render.render(d);
                 let latency = latency_in_seconds(i);
                 output_latency.store(latency, Ordering::Relaxed);
@@ -734,6 +796,11 @@ fn spawn_output_stream(
         SampleFormat::I8 => device.build_output_stream(
             config,
             move |d: &mut [i8], i: &OutputCallbackInfo| {
+                if suspended.load(Ordering::Relaxed) {
+                    // Suspended: emit silence without advancing the renderer.
+                    d.fill(cpal::Sample::EQUILIBRIUM);
+                    return;
+                }
                 render.render(d);
                 let latency = latency_in_seconds(i);
                 output_latency.store(latency, Ordering::Relaxed);
@@ -745,6 +812,11 @@ fn spawn_output_stream(
         SampleFormat::I16 => device.build_output_stream(
             config,
             move |d: &mut [i16], i: &OutputCallbackInfo| {
+                if suspended.load(Ordering::Relaxed) {
+                    // Suspended: emit silence without advancing the renderer.
+                    d.fill(cpal::Sample::EQUILIBRIUM);
+                    return;
+                }
                 render.render(d);
                 let latency = latency_in_seconds(i);
                 output_latency.store(latency, Ordering::Relaxed);
@@ -756,6 +828,11 @@ fn spawn_output_stream(
         SampleFormat::I32 => device.build_output_stream(
             config,
             move |d: &mut [i32], i: &OutputCallbackInfo| {
+                if suspended.load(Ordering::Relaxed) {
+                    // Suspended: emit silence without advancing the renderer.
+                    d.fill(cpal::Sample::EQUILIBRIUM);
+                    return;
+                }
                 render.render(d);
                 let latency = latency_in_seconds(i);
                 output_latency.store(latency, Ordering::Relaxed);
@@ -767,6 +844,11 @@ fn spawn_output_stream(
         SampleFormat::I64 => device.build_output_stream(
             config,
             move |d: &mut [i64], i: &OutputCallbackInfo| {
+                if suspended.load(Ordering::Relaxed) {
+                    // Suspended: emit silence without advancing the renderer.
+                    d.fill(cpal::Sample::EQUILIBRIUM);
+                    return;
+                }
                 render.render(d);
                 let latency = latency_in_seconds(i);
                 output_latency.store(latency, Ordering::Relaxed);
@@ -827,5 +909,44 @@ fn spawn_input_stream(
             device.build_input_stream(config, move |d: &[i64], _c| render.render(d), err_fn, None)
         }
         _ => Err(CpalErrorKind::UnsupportedConfig.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+
+    #[test]
+    fn test_suspend_resume_on_real_device() {
+        // suspend()/resume() must work on the default output device even when
+        // it does not support native pausing (ALSA's snd_pcm_pause is an
+        // optional feature; dmix, the null device and many plug devices return
+        // errno 77). Before the silence-flag fallback this errored out, and -
+        // worse - the failure path inside set_sink_id_sync() poisoned the
+        // backend manager mutex, bricking the context.
+        //
+        // The test needs an actual output device; skip silently when none is
+        // available (e.g. headless CI).
+        let context = match AudioContext::try_new(AudioContextOptions::default()) {
+            Ok(context) => context,
+            Err(_) => return,
+        };
+
+        context.suspend_sync();
+        let t1 = context.current_time();
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let t2 = context.current_time();
+        // The rendering clock must stop while suspended.
+        assert!(
+            (t2 - t1).abs() < 1e-9,
+            "clock advanced while suspended: {t1} -> {t2}"
+        );
+
+        context.resume_sync();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let t3 = context.current_time();
+        assert!(t3 > t2, "clock did not resume: {t2} -> {t3}");
+
+        let _ = context.close_sync();
     }
 }
