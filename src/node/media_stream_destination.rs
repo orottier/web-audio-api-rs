@@ -83,11 +83,15 @@ impl AudioNode for MediaStreamAudioDestinationNode {
 impl MediaStreamAudioDestinationNode {
     /// Create a new MediaStreamAudioDestinationNode
     pub fn new<C: BaseAudioContext>(context: &C, options: AudioNodeOptions) -> Self {
+        let sample_rate = context.sample_rate();
+        let silence_channels = options.channel_count;
         context.base().register(move |registration| {
             let (send, recv) = crossbeam_channel::bounded(1);
 
             let iter = AudioDestinationNodeStream {
                 receiver: recv.clone(),
+                sample_rate,
+                channels: silence_channels,
             };
             let track = MediaStreamTrack::from_iter(iter);
             let stream = MediaStream::from_tracks(vec![track]);
@@ -145,14 +149,38 @@ impl AudioProcessor for DestinationRenderer {
 
 struct AudioDestinationNodeStream {
     receiver: Receiver<AudioBuffer>,
+    sample_rate: f32,
+    /// Channel count for underrun silence: starts at the node's channel_count
+    /// and then follows the most recent real buffer. Consumers (the Resampler
+    /// on cross-sample-rate paths) stitch buffers with AudioBuffer::extend,
+    /// whose assert requires adjacent chunks to have equal channel counts - a
+    /// drifting silence channel count panics the render thread.
+    channels: usize,
 }
 
 impl Iterator for AudioDestinationNodeStream {
     type Item = Result<AudioBuffer, Box<dyn Error + Send + Sync>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.receiver.recv() {
-            Ok(buf) => Some(Ok(buf)),
+        // This iterator must never block. When the stream is consumed by a
+        // MediaStreamAudioSourceNode living in the *same* context (a loopback:
+        // dest.stream -> createMediaStreamSource), it is pulled from the render
+        // thread itself. A blocking recv() then deadlocks the render thread in
+        // any quantum where the source node is ordered before the destination
+        // node - the thread waits for data that only it can produce, and
+        // currentTime freezes. try_recv instead: on Empty emit one quantum of
+        // silence (initial block / underrun; a source ordered first simply sees
+        // one quantum of latency), on data pass it through, and a disconnected
+        // channel still reports the error so the source node stops.
+        match self.receiver.try_recv() {
+            Ok(buf) => {
+                self.channels = buf.number_of_channels();
+                Some(Ok(buf))
+            }
+            Err(crossbeam_channel::TryRecvError::Empty) => Some(Ok(AudioBuffer::from(
+                vec![vec![0.; crate::RENDER_QUANTUM_SIZE]; self.channels.max(1)],
+                self.sample_rate,
+            ))),
             Err(e) => Some(Err(Box::new(e))),
         }
     }
