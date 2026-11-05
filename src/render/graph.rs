@@ -692,7 +692,7 @@ mod tests {
         let node = Box::new(TestNode { tail_time: false });
 
         add_node(&mut graph, 0, node.clone());
-        add_node(&mut graph, 1, Box::new(CountNode(calls.clone())));
+        add_node(&mut graph, 1, Box::new(CountNode(Arc::clone(&calls))));
         add_edge(&mut graph, 1, 0);
         add_node(&mut graph, 2, node);
 
