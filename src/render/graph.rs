@@ -131,6 +131,8 @@ pub(crate) struct Graph {
     reclaim_id_channel: llq::Producer<AudioNodeId>,
     /// Topological ordering of the nodes
     ordered: Vec<AudioNodeId>,
+    /// Whether the graph topology changed since `ordered` was computed
+    ordered_dirty: bool,
     /// Topological sorting helper
     marked: AudioNodeIdSet,
     /// Topological sorting helper
@@ -157,6 +159,7 @@ impl Graph {
             alloc: Alloc::with_capacity(64),
             reclaim_id_channel,
             ordered: vec![],
+            ordered_dirty: false,
             marked: AudioNodeIdSet::default(),
             marked_temp: vec![],
             in_cycle: AudioNodeIdSet::default(),
@@ -264,7 +267,9 @@ impl Graph {
 
         // add to ordered list (some nodes should be processed even if not connected)
         // if the node is connected later the ordered list will be recomputed
-        self.ordered.push(index);
+        if !self.ordered_dirty {
+            self.ordered.push(index);
+        }
     }
 
     pub fn add_edge(&mut self, source: (AudioNodeId, usize), dest: (AudioNodeId, usize)) {
@@ -277,7 +282,7 @@ impl Graph {
                 other_index: dest.1,
             });
 
-        self.ordered.clear(); // void current ordering
+        self.ordered_dirty = true; // void current ordering
     }
 
     pub fn remove_edge(&mut self, source: (AudioNodeId, usize), dest: (AudioNodeId, usize)) {
@@ -291,7 +296,7 @@ impl Graph {
         // Removing an edge cannot invalidate an existing topological order. Re-sort only when
         // this removal may release nodes that were omitted because they are part of a cycle.
         if !self.in_cycle.is_empty() {
-            self.ordered.clear();
+            self.ordered_dirty = true;
         }
     }
 
@@ -485,6 +490,7 @@ impl Graph {
 
         // Re-instate Vecs
         self.ordered = ordered;
+        self.ordered_dirty = false;
         self.marked = marked;
         self.marked_temp = marked_temp;
         self.in_cycle = in_cycle;
@@ -494,7 +500,7 @@ impl Graph {
     /// Render a single audio quantum by traversing the node list
     pub fn render(&mut self, scope: &AudioWorkletGlobalScope) -> &AudioRenderQuantum {
         // if the audio graph was changed, determine the new ordering
-        if self.ordered.is_empty() {
+        if self.ordered_dirty {
             self.order_nodes();
         }
 
@@ -659,6 +665,49 @@ mod tests {
         assert!(graph.is_active());
     }
 
+    /// Registering a node after connecting an edge (e.g. both in the same batch of control
+    /// messages) must not hide that the ordering is stale: all nodes must still be rendered.
+    #[test]
+    fn test_add_node_after_add_edge_renders_all_nodes() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        struct CountNode(Arc<AtomicUsize>);
+
+        impl AudioProcessor for CountNode {
+            fn process(
+                &mut self,
+                _inputs: &[AudioRenderQuantum],
+                _outputs: &mut [AudioRenderQuantum],
+                _params: AudioParamValues<'_>,
+                _scope: &AudioWorkletGlobalScope,
+            ) -> bool {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                false
+            }
+        }
+
+        let mut graph = Graph::new(llq::Queue::new().split().0);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let node = Box::new(TestNode { tail_time: false });
+
+        add_node(&mut graph, 0, node.clone());
+        add_node(&mut graph, 1, Box::new(CountNode(calls.clone())));
+        add_edge(&mut graph, 1, 0);
+        add_node(&mut graph, 2, node);
+
+        let scope = AudioWorkletGlobalScope {
+            current_frame: 0,
+            current_time: 0.,
+            sample_rate: 48000.,
+            node_id: std::cell::Cell::new(AudioNodeId(0)),
+            event_sender: crossbeam_channel::unbounded().0,
+        };
+        graph.render(&scope);
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
     #[test]
     fn test_add_remove() {
         let mut graph = Graph::new(llq::Queue::new().split().0);
@@ -740,7 +789,7 @@ mod tests {
         assert!(graph.in_cycle.contains(&AudioNodeId(2)));
 
         graph.remove_edge((AudioNodeId(2), 0), (AudioNodeId(1), 0));
-        assert!(graph.ordered.is_empty());
+        assert!(graph.ordered_dirty);
 
         graph.order_nodes();
         assert!(graph.ordered.contains(&AudioNodeId(1)));
