@@ -340,6 +340,16 @@ impl OscillatorNode {
     }
 }
 
+/// Level of the built-in square and sawtooth waves.
+///
+/// The spec defines the built-in types as normalized `PeriodicWave`s (1.26.5, 1.28.5-1.28.6): the band-limited
+/// Fourier series is scaled so that its peak, Gibbs overshoot included, is 1. As the number of partials grows that
+/// overshoot tends to the Wilbraham-Gibbs constant (2/pi) Si(pi) = 1.178979744..., so a square or sawtooth that
+/// matches the spec (and the browsers) has 1 / 1.1789... times the amplitude of the ideal wave. The PolyBLEP waves
+/// below have unit amplitude and no overshoot, so they are scaled by that factor (-1.43 dB). The triangle's Fourier
+/// series doesn't overshoot, so it needs no scaling.
+const BUILTIN_NORMALIZATION: f64 = 1. / 1.178_979_744_472_167;
+
 /// Rendering component of the oscillator node
 struct OscillatorRenderer {
     /// The shape of the periodic waveform
@@ -594,7 +604,7 @@ impl OscillatorRenderer {
         let mut sample = 2.0 * phase - 1.0;
         sample -= Self::poly_blep(phase, phase_incr, cfg!(test));
 
-        sample as f32
+        (sample * BUILTIN_NORMALIZATION) as f32
     }
 
     #[inline]
@@ -605,7 +615,7 @@ impl OscillatorRenderer {
         let shift_phase = Self::unroll_phase(self.phase + 0.5);
         sample -= Self::poly_blep(shift_phase, phase_incr, cfg!(test));
 
-        sample as f32
+        (sample * BUILTIN_NORMALIZATION) as f32
     }
 
     #[inline]
@@ -688,7 +698,10 @@ mod tests {
     use crate::periodic_wave::{PeriodicWave, PeriodicWaveOptions};
     use crate::RENDER_QUANTUM_SIZE;
 
-    use super::{OscillatorNode, OscillatorOptions, OscillatorRenderer, OscillatorType};
+    use super::{
+        OscillatorNode, OscillatorOptions, OscillatorRenderer, OscillatorType,
+        BUILTIN_NORMALIZATION,
+    };
 
     #[test]
     fn assert_osc_default_build_with_factory_func() {
@@ -895,7 +908,7 @@ mod tests {
 
             for _i in 0..sample_rate {
                 // 0.5 belongs to the second half of the waveform
-                let sample = if phase < 0.5 { 1. } else { -1. };
+                let sample = if phase < 0.5 { 1. } else { -1. } * BUILTIN_NORMALIZATION;
 
                 expected.push(sample as f32);
 
@@ -986,7 +999,7 @@ mod tests {
                 if offset_phase >= 1. {
                     offset_phase -= 1.;
                 }
-                let sample = 2. * offset_phase - 1.;
+                let sample = (2. * offset_phase - 1.) * BUILTIN_NORMALIZATION;
 
                 expected.push(sample as f32);
 
@@ -997,6 +1010,58 @@ mod tests {
             }
 
             assert_float_eq!(result[..], expected[..], abs_all <= 1e-10);
+        }
+    }
+
+    /// RMS of one second of `osc` at `freq`, skipping the first 0.1 s.
+    fn rms(freq: f32, set: impl Fn(&OfflineAudioContext, &mut OscillatorNode)) -> f64 {
+        let sample_rate = 48_000;
+        let mut context = OfflineAudioContext::new(1, sample_rate, sample_rate as f32);
+        let mut osc = context.create_oscillator();
+        set(&context, &mut osc);
+        osc.frequency().set_value(freq);
+        osc.connect(&context.destination());
+        osc.start();
+        let output = context.start_rendering_sync();
+        let data = &output.get_channel_data(0)[sample_rate / 10..];
+        (data.iter().map(|&v| v as f64 * v as f64).sum::<f64>() / data.len() as f64).sqrt()
+    }
+
+    #[test]
+    // The built-in types MUST produce the same result as a normalized PeriodicWave with the
+    // spec's coefficients (1.26.5, 1.28.6). Compare their levels: the waveforms themselves differ
+    // (PolyBLEP against a wavetable), the loudness must not.
+    fn builtin_level_matches_normalized_periodic_wave() {
+        let partials = 512;
+        let square =
+            |n: usize| 2. / (n as f32 * std::f32::consts::PI) * (1. - (-1f32).powi(n as i32));
+        let sawtooth =
+            |n: usize| (-1f32).powi(n as i32 + 1) * 2. / (n as f32 * std::f32::consts::PI);
+
+        for (type_, coef) in [
+            (OscillatorType::Square, &square as &dyn Fn(usize) -> f32),
+            (OscillatorType::Sawtooth, &sawtooth),
+        ] {
+            for freq in [55., 110., 440.] {
+                let builtin = rms(freq, |_, osc| osc.set_type(type_));
+                let custom = rms(freq, |context, osc| {
+                    let mut imag = vec![0.; partials];
+                    for (n, b) in imag.iter_mut().enumerate().skip(1) {
+                        *b = coef(n);
+                    }
+                    let wave = context.create_periodic_wave(PeriodicWaveOptions {
+                        real: Some(vec![0.; partials]),
+                        imag: Some(imag),
+                        disable_normalization: false,
+                    });
+                    osc.set_periodic_wave(wave);
+                });
+                let db = 20. * (builtin / custom).log10();
+                assert!(
+                    db.abs() < 0.1,
+                    "{type_:?} at {freq} Hz: {db:.3} dB from the PeriodicWave"
+                );
+            }
         }
     }
 

@@ -73,8 +73,10 @@ fn test_start_stop() {
     let channel_data = output.get_channel_data(0);
 
     // one chunk of silence, two chunks of signal, one chunk of silence
+    // (the built-in square's level is normalized like a PeriodicWave, 1 / 1.1789...)
+    let level = (1. / 1.178_979_744_472_167_f64) as f32;
     let mut expected = vec![0.; RENDER_QUANTUM_SIZE];
-    expected.append(&mut vec![1.; 2 * RENDER_QUANTUM_SIZE]);
+    expected.append(&mut vec![level; 2 * RENDER_QUANTUM_SIZE]);
     expected.append(&mut vec![0.; RENDER_QUANTUM_SIZE]);
 
     assert_float_eq!(channel_data, expected.as_slice(), abs_all <= 0.);
