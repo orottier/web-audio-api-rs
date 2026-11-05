@@ -7,6 +7,7 @@
 - Fix: `AudioBufferSourceNode` could hang the render thread when wrapping extremely narrow loops
 - Fix: `AudioBufferSourceNode` could panic at the loop boundary
 - Fix: The built-in square and sawtooth oscillators were 1.43 dB louder than the spec's normalized `PeriodicWave` (and the browsers)
+- Fix: adding a node after connecting an edge no longer breaks graph sorting
 
 ## Version 1.7.0 (2026-08-06)
 
