@@ -51,6 +51,68 @@ pub use periodic_wave::*;
 
 mod render;
 
+/// Low-level primitives for constructing custom audio nodes and processors.
+///
+/// Available with the `unstable_plumbing` feature. These APIs expose implementation details and
+/// may change in minor releases. Enabling the feature does not change existing node behavior.
+/// See `showcase/raw_processor` for an external example.
+#[cfg(feature = "unstable_plumbing")]
+pub mod unstable_plumbing {
+    use std::any::Any;
+
+    use crate::context::{AudioContextRegistration, AudioParamId, BaseAudioContext};
+    use crate::node::AudioNode;
+
+    pub use crate::render::{
+        AudioParamValues, AudioProcessor, AudioRenderQuantum, AudioRenderQuantumChannel,
+        AudioWorkletGlobalScope,
+    };
+
+    /// Construct a custom audio node and its processor in the given context.
+    ///
+    /// Store the supplied registration in the node. Parameters can be created inside `build`
+    /// using [`create_audio_param`].
+    pub fn register<C, N, F>(context: &C, build: F) -> N
+    where
+        C: BaseAudioContext,
+        N: AudioNode,
+        F: FnOnce(AudioContextRegistration) -> (N, Box<dyn AudioProcessor>),
+    {
+        context.base().register(build)
+    }
+
+    /// Create a parameter for a custom node inside the [`register`] closure.
+    ///
+    /// Pass the node's registration and retain the returned ID in its processor to read
+    /// parameter values through [`AudioParamValues::get`].
+    #[must_use]
+    pub fn create_audio_param<C: BaseAudioContext>(
+        context: &C,
+        descriptor: crate::AudioParamDescriptor,
+        registration: &AudioContextRegistration,
+    ) -> (crate::AudioParam, AudioParamId) {
+        context.base().create_audio_param(descriptor, registration)
+    }
+
+    /// Send a message to the processor associated with a node's registration.
+    ///
+    /// The message is handled by [`AudioProcessor::onmessage`].
+    pub fn post_message<M: Any + Send + 'static>(
+        registration: &AudioContextRegistration,
+        message: M,
+    ) {
+        registration.post_message(message);
+    }
+
+    /// Access a node's message port to send messages and receive processor replies.
+    ///
+    /// The processor handles incoming messages in [`AudioProcessor::onmessage`] and sends
+    /// replies with [`AudioWorkletGlobalScope::post_message`].
+    pub fn message_port(node: &dyn AudioNode) -> crate::MessagePort<'_> {
+        crate::MessagePort::from_node(node)
+    }
+}
+
 mod stats;
 
 mod spatial;

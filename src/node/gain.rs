@@ -107,7 +107,7 @@ impl GainNode {
                 default_value: 1.,
                 automation_rate: crate::param::AutomationRate::A,
             };
-            let (param, proc) = context.create_audio_param(param_opts, &registration);
+            let (param, proc) = context.base().create_audio_param(param_opts, &registration);
 
             param.set_value(options.gain);
 

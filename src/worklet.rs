@@ -249,7 +249,9 @@ impl AudioWorkletNode {
             let mut processor_param_map = HashMap::with_hasher(rustc_hash::FxBuildHasher);
             for mut param_descriptor in P::parameter_descriptors() {
                 let name = std::mem::take(&mut param_descriptor.name);
-                let (param, proc) = context.create_audio_param(param_descriptor, &registration);
+                let (param, proc) = context
+                    .base()
+                    .create_audio_param(param_descriptor, &registration);
                 if let Some(value) = parameter_data.get(&name) {
                     param.set_value(*value as f32); // mismatch in spec f32 vs f64
                 }
