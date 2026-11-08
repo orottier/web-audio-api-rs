@@ -316,6 +316,17 @@ impl ConvolverNode {
         self.buffer = Some(buffer);
     }
 
+    /// Clear the impulse response and discard any pending convolution tail.
+    /// Without an impulse response, the node outputs silence.
+    pub fn clear_buffer(&mut self) {
+        self.buffer = None;
+        self.registration.post_message(ConvolverInfosMessage {
+            convolvers: None,
+            impulse_length: 0,
+            impulse_number_of_channels: 0,
+        });
+    }
+
     /// Denotes if the response buffer will be scaled with an equal-power normalization
     pub fn normalize(&self) -> bool {
         self.normalize
@@ -367,9 +378,9 @@ impl AudioProcessor for ConvolverRenderer {
 
         let convolvers = match &mut self.convolvers {
             None => {
-                // no convolution buffer set, passthrough
-                *output = input.clone();
-                return !input.is_silent();
+                // Match browser behavior: a null response produces silence.
+                output.make_silent();
+                return false;
             }
             Some(convolvers) => convolvers,
         };
@@ -511,11 +522,55 @@ impl AudioProcessor for ConvolverRenderer {
 #[cfg(test)]
 mod tests {
     use float_eq::assert_float_eq;
+    use std::sync::{Arc, Mutex};
 
     use crate::context::{BaseAudioContext, OfflineAudioContext};
     use crate::node::{AudioBufferSourceNode, AudioBufferSourceOptions, AudioScheduledSourceNode};
 
     use super::*;
+
+    #[test]
+    fn cleared_response_renders_silence() {
+        let mut context = OfflineAudioContext::new(1, 257, 8192.);
+        let mut source = context.create_constant_source();
+        let mut convolver = context.create_convolver();
+        convolver.set_normalize(false);
+        convolver.set_buffer(AudioBuffer::from(vec![vec![0.25]], 8192.));
+        convolver.clear_buffer();
+        assert!(convolver.buffer().is_none());
+        source.connect(&convolver);
+        convolver.connect(&context.destination());
+        source.start();
+        let output = context.start_rendering_sync();
+        assert_eq!(output.get_channel_data(0), &[0.; 257]);
+    }
+
+    #[test]
+    fn clearing_response_during_rendering_matches_chrome() {
+        let mut context = OfflineAudioContext::new(1, 4096, 8192.);
+        let mut source = context.create_constant_source();
+        let convolver = Arc::new(Mutex::new(context.create_convolver()));
+        {
+            let mut node = convolver.lock().unwrap();
+            node.set_normalize(false);
+            node.set_buffer(AudioBuffer::from(vec![vec![0.25, 0.]], 8192.));
+            source.connect(&*node);
+            node.connect(&context.destination());
+        }
+        let clearing = Arc::clone(&convolver);
+        context.suspend_sync(2048. / 8192., move |_| {
+            clearing.lock().unwrap().clear_buffer();
+        });
+        source.start();
+        let output = context.start_rendering_sync();
+        assert_float_eq!(
+            &output.get_channel_data(0)[..2048],
+            &[0.25; 2048][..],
+            abs_all <= 1E-6
+        );
+        assert_eq!(&output.get_channel_data(0)[2048..], &[0.; 2048]);
+        assert!(convolver.lock().unwrap().buffer().is_none());
+    }
 
     #[test]
     #[should_panic]
@@ -598,9 +653,9 @@ mod tests {
     }
 
     #[test]
-    fn test_passthrough() {
+    fn test_null_response_is_silent() {
         let output = test_convolve(&[0., 1., 0., -1., 0.], None, 10);
-        let expected = [0., 1., 0., -1., 0., 0., 0., 0., 0., 0.];
+        let expected = [0.; 10];
         assert_float_eq!(output.get_channel_data(0), &expected[..], abs_all <= 1E-6);
     }
 
