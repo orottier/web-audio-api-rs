@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `AudioBufferSourceNode::clear_buffer`, preserving the single non-null buffer assignment rule
 - Update MSRV to 1.88 (June 2025)
 - `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`
 - Fix: `AudioBufferSourceNode` could hang the render thread when wrapping extremely narrow loops
