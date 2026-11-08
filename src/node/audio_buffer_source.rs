@@ -112,6 +112,7 @@ pub struct AudioBufferSourceNode {
     playback_rate: AudioParam, // has constraints, no a-rate
     buffer_time: Arc<AtomicF64>,
     buffer: Option<AudioBuffer>,
+    buffer_set: bool,
     loop_state: LoopState,
     has_start: bool,
 }
@@ -225,6 +226,7 @@ impl AudioBufferSourceNode {
                 buffer_time: Arc::clone(&renderer.render_state.buffer_time),
                 buffer: None,
                 loop_state,
+                buffer_set: false,
                 has_start: false,
             };
 
@@ -282,12 +284,22 @@ impl AudioBufferSourceNode {
         let clone = audio_buffer.clone();
 
         assert!(
-            self.buffer.is_none(),
+            !self.buffer_set,
             "InvalidStateError - cannot assign buffer twice",
         );
         self.buffer = Some(audio_buffer);
+        self.buffer_set = true;
 
         self.registration.post_message(clone);
+    }
+
+    /// Clear the nullable buffer without permitting a second non-null assignment.
+    ///
+    /// This is useful for browser bindings implementing the nullable `buffer`
+    /// attribute. Any previous render buffer is reclaimed off the render thread.
+    pub fn clear_buffer(&mut self) {
+        self.buffer = None;
+        self.registration.post_message(None::<AudioBuffer>);
     }
 
     /// K-rate [`AudioParam`] that defines the speed at which the [`AudioBuffer`]
@@ -854,6 +866,11 @@ impl AudioProcessor for AudioBufferSourceRenderer {
             return;
         };
 
+        if let Some(buffer) = msg.downcast_mut::<Option<AudioBuffer>>() {
+            std::mem::swap(&mut self.buffer, buffer);
+            return;
+        }
+
         if let Some(buffer) = msg.downcast_mut::<AudioBuffer>() {
             if let Some(current_buffer) = &mut self.buffer {
                 // Avoid deallocation in the render thread by swapping the buffers.
@@ -895,6 +912,70 @@ mod tests {
     use crate::RENDER_QUANTUM_SIZE;
 
     use super::*;
+
+    #[test]
+    fn cleared_buffer_renders_silence() {
+        let mut context = OfflineAudioContext::new(1, 257, 8192.);
+        let mut source = AudioBufferSourceNode::new(
+            &context,
+            AudioBufferSourceOptions {
+                buffer: Some(AudioBuffer::from(vec![vec![1.; 257]], 8192.)),
+                ..Default::default()
+            },
+        );
+        source.clear_buffer();
+        assert!(source.buffer().is_none());
+        source.connect(&context.destination());
+        source.start();
+        let output = context.start_rendering_sync();
+        assert_eq!(output.get_channel_data(0), &[0.; 257]);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot assign buffer twice")]
+    fn clearing_buffer_preserves_single_assignment() {
+        let context = OfflineAudioContext::new(1, 128, 8192.);
+        let mut source = context.create_buffer_source();
+        source.set_buffer(AudioBuffer::from(vec![vec![1.; 128]], 8192.));
+        source.clear_buffer();
+        source.set_buffer(AudioBuffer::from(vec![vec![2.; 128]], 8192.));
+    }
+
+    #[test]
+    fn clearing_unset_buffer_allows_first_assignment() {
+        let mut context = OfflineAudioContext::new(1, 257, 8192.);
+        let mut source = context.create_buffer_source();
+        source.clear_buffer();
+        source.clear_buffer();
+        assert!(source.buffer().is_none());
+        source.set_buffer(AudioBuffer::from(vec![vec![1.; 257]], 8192.));
+        source.connect(&context.destination());
+        source.start();
+        let output = context.start_rendering_sync();
+        assert_eq!(output.get_channel_data(0), &[1.; 257]);
+    }
+
+    #[test]
+    fn clearing_buffer_during_rendering_outputs_silence() {
+        let mut context = OfflineAudioContext::new(1, 4096, 8192.);
+        let source = Arc::new(Mutex::new(context.create_buffer_source()));
+        {
+            let mut node = source.lock().unwrap();
+            node.set_buffer(AudioBuffer::from(vec![vec![1.; 4096]], 8192.));
+            node.connect(&context.destination());
+            node.start();
+        }
+        let clearing = Arc::clone(&source);
+        context.suspend_sync(2048. / 8192., move |_| {
+            let mut node = clearing.lock().unwrap();
+            node.clear_buffer();
+            node.clear_buffer();
+        });
+        let output = context.start_rendering_sync();
+        assert_eq!(&output.get_channel_data(0)[..2048], &[1.; 2048]);
+        assert_eq!(&output.get_channel_data(0)[2048..], &[0.; 2048]);
+        assert!(source.lock().unwrap().buffer().is_none());
+    }
 
     #[test]
     fn test_construct_with_options_and_run() {
