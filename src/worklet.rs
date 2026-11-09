@@ -70,6 +70,18 @@ pub trait AudioWorkletProcessor {
         vec![] // empty by default
     }
 
+    /// List of [`AudioParam`]s for the audio processor made with `options`
+    ///
+    /// Defaults to [`Self::parameter_descriptors`]. A processor whose parameters are only known
+    /// at runtime (for example one defined by a script, as `registerProcessor` allows) overrides
+    /// this one instead.
+    fn parameter_descriptors_with(_options: &Self::ProcessorOptions) -> Vec<AudioParamDescriptor>
+    where
+        Self: Sized,
+    {
+        Self::parameter_descriptors()
+    }
+
     /// Audio processing function
     ///
     /// # Arguments
@@ -242,12 +254,14 @@ impl AudioWorkletNode {
             output_channel_count.iter().sum::<usize>()
         };
 
+        let parameter_descriptors = P::parameter_descriptors_with(&processor_options);
+
         let node = context.base().register(move |registration| {
             // Setup audio params, set initial values when supplied via parameter_data
             let mut node_param_map = HashMap::new();
             // Parameter names come from the processor; favor fast lookups on the render thread.
             let mut processor_param_map = HashMap::with_hasher(rustc_hash::FxBuildHasher);
-            for mut param_descriptor in P::parameter_descriptors() {
+            for mut param_descriptor in parameter_descriptors {
                 let name = std::mem::take(&mut param_descriptor.name);
                 let (param, proc) = context.create_audio_param(param_descriptor, &registration);
                 if let Some(value) = parameter_data.get(&name) {
@@ -533,6 +547,63 @@ mod tests {
             &[0.; 128][..],
             abs_all <= 0.
         );
+    }
+
+    #[test]
+    fn test_worklet_parameter_descriptors_with_options() {
+        use crate::param::AutomationRate;
+
+        // A processor whose parameters come from its options, as a script-defined processor's do.
+        struct NamedParams;
+
+        impl AudioWorkletProcessor for NamedParams {
+            type ProcessorOptions = Vec<String>;
+
+            fn constructor(_opts: Self::ProcessorOptions) -> Self {
+                Self
+            }
+
+            fn parameter_descriptors_with(
+                names: &Self::ProcessorOptions,
+            ) -> Vec<AudioParamDescriptor> {
+                names
+                    .iter()
+                    .map(|name| AudioParamDescriptor {
+                        name: name.clone(),
+                        automation_rate: AutomationRate::A,
+                        default_value: 0.,
+                        min_value: f32::MIN,
+                        max_value: f32::MAX,
+                    })
+                    .collect()
+            }
+
+            fn process<'a, 'b>(
+                &mut self,
+                _inputs: &'b [&'a [&'a [f32]]],
+                _outputs: &'b mut [&'a mut [&'a mut [f32]]],
+                _params: AudioParamValues<'b>,
+                _scope: &'b AudioWorkletGlobalScope,
+            ) -> bool {
+                false
+            }
+        }
+
+        let context = OfflineAudioContext::new(1, 128, 48000.);
+        let node = |names: &[&str]| {
+            let options = AudioWorkletNodeOptions {
+                processor_options: names.iter().map(|n| n.to_string()).collect(),
+                ..AudioWorkletNodeOptions::default()
+            };
+            AudioWorkletNode::new::<NamedParams>(&context, options)
+        };
+        let gain = node(&["gain"]);
+        let both = node(&["pan", "depth"]);
+
+        assert_eq!(gain.parameters().len(), 1);
+        assert!(gain.parameters().contains_key("gain"));
+        assert_eq!(both.parameters().len(), 2);
+        assert!(both.parameters().contains_key("pan") && both.parameters().contains_key("depth"));
     }
 
     #[test]
