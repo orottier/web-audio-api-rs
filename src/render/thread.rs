@@ -485,6 +485,14 @@ impl RenderThread {
         let chunk_size = RENDER_QUANTUM_SIZE * self.number_of_channels;
 
         for data in output_buffer.chunks_mut(chunk_size) {
+            // A suspend (or close) handled after the previous quantum stops the rendering now,
+            // not at the next callback: the time must not advance once the control thread was
+            // told the rendering stopped (Web Audio §1.2.3 "running a control message to suspend").
+            if self.suspended {
+                data.fill(S::from_sample_(0.));
+                continue;
+            }
+
             // update time
             let current_frame = self
                 .frames_played
