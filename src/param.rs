@@ -160,6 +160,15 @@ enum AudioParamEventType {
     SetValueCurveAtTime,
 }
 
+impl AudioParamEventType {
+    fn is_ramp(self) -> bool {
+        matches!(
+            self,
+            Self::LinearRampToValueAtTime | Self::ExponentialRampToValueAtTime
+        )
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct AudioParamEvent {
     event_type: AudioParamEventType,
@@ -169,6 +178,12 @@ pub(crate) struct AudioParamEvent {
     cancel_time: Option<f64>,   // populated by `CancelAndHoldAtTime` events
     duration: Option<f64>,      // populated by `SetValueCurveAtTime` events
     values: Option<Box<[f32]>>, // populated by `SetValueCurveAtTime` events
+}
+
+impl AudioParamEvent {
+    fn effective_time(&self) -> f64 {
+        self.cancel_time.unwrap_or(self.time)
+    }
 }
 
 // Event queue that contains `AudioParamEvent`s, most of the time, events must be
@@ -250,7 +265,7 @@ impl AudioParamEventTimeline {
 
     fn sort(&mut self) {
         self.inner
-            .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+            .sort_by(|a, b| a.effective_time().partial_cmp(&b.effective_time()).unwrap());
         self.dirty = false;
     }
 
@@ -818,8 +833,9 @@ impl AudioParamProcessor {
             let some_current_event = self.event_timeline.unsorted_peek();
 
             match some_current_event {
-                None => (),
-                Some(current_event) => {
+                Some(current_event)
+                    if current_event.event_type.is_ramp() && current_event.time >= event.time =>
+                {
                     // @note - The spec is not particularly clear about what to do
                     // with on-going SetTarget events, but both Chrome and Firefox
                     // ignore the Cancel event if at same time nor if startTime is
@@ -827,36 +843,30 @@ impl AudioParamProcessor {
                     // (which is a `startTime` for `SetTarget`) is before the `cancelTime`
                     // (maybe this should be clarified w/ spec editors)
 
-                    match current_event.event_type {
-                        AudioParamEventType::LinearRampToValueAtTime
-                        | AudioParamEventType::ExponentialRampToValueAtTime
-                            // we are in the middle of a ramp
-                            //
-                            // @note - Firefox and Chrome behave differently
-                            // on this: Firefox actually restore intrinsic_value
-                            // from the value at the beginning of the vent, while
-                            // Chrome just keeps the current intrinsic_value
-                            // The spec is not very clear there, but Firefox
-                            // seems to be more compliant:
-                            // "Any active automations whose automation event
-                            // time is less than cancelTime are also cancelled,
-                            // and such cancellations may cause discontinuities
-                            // because the original value (**from before such
-                            // automation**) is restored immediately."
-                            //
-                            // @note - last_event cannot be `None` here, because
-                            // linear or exponential ramps are always preceded
-                            // by another event (even a set_value_at_time
-                            // inserted implicitly), so if the ramp is the next
-                            // event that means that at least one event has
-                            // already been processed.
-                            if current_event.time >= event.time => {
-                                let last_event = self.last_event.as_ref().unwrap();
-                                self.intrinsic_value = last_event.value;
-                            }
-                        _ => (),
-                    }
+                    // we are in the middle of a ramp
+                    //
+                    // @note - Firefox and Chrome behave differently
+                    // on this: Firefox actually restore intrinsic_value
+                    // from the value at the beginning of the vent, while
+                    // Chrome just keeps the current intrinsic_value
+                    // The spec is not very clear there, but Firefox
+                    // seems to be more compliant:
+                    // "Any active automations whose automation event
+                    // time is less than cancelTime are also cancelled,
+                    // and such cancellations may cause discontinuities
+                    // because the original value (**from before such
+                    // automation**) is restored immediately."
+                    //
+                    // @note - last_event cannot be `None` here, because
+                    // linear or exponential ramps are always preceded
+                    // by another event (even a set_value_at_time
+                    // inserted implicitly), so if the ramp is the next
+                    // event that means that at least one event has
+                    // already been processed.
+                    let last_event = self.last_event.as_ref().unwrap();
+                    self.intrinsic_value = last_event.value;
                 }
+                _ => (),
             }
 
             // remove all events in queue where event.time >= cancel_time
@@ -873,22 +883,19 @@ impl AudioParamProcessor {
             // smallest number satisfying 𝑡𝑐 < 𝑡2.
             let mut e1: Option<&mut AudioParamEvent> = None;
             let mut e2: Option<&mut AudioParamEvent> = None;
-            let mut t1 = f64::MIN;
-            let mut t2 = f64::MAX;
             // we need a sorted timeline here to find siblings
             self.event_timeline.sort();
 
             for queued in self.event_timeline.iter_mut() {
                 // closest before cancel time: if several events at same time,
                 // we want the last one
-                if queued.time >= t1 && queued.time <= event.time {
-                    t1 = queued.time;
+                if queued.effective_time() <= event.time {
                     e1 = Some(queued);
+                } else {
                     // closest after cancel time: if several events at same time,
                     // we want the first one
-                } else if queued.time < t2 && queued.time > event.time {
-                    t2 = queued.time;
                     e2 = Some(queued);
+                    break;
                 }
             }
 
@@ -900,46 +907,48 @@ impl AudioParamProcessor {
                 // original ramp at time 𝑡𝑐.
                 // @note - this is done during the actual computation of the
                 //  ramp using the cancel_time
-                if matched.event_type == AudioParamEventType::LinearRampToValueAtTime
-                    || matched.event_type == AudioParamEventType::ExponentialRampToValueAtTime
-                {
+                if matched.event_type.is_ramp() {
                     matched.cancel_time = Some(event.time);
                 }
             } else if let Some(matched) = e1 {
-                if matched.event_type == AudioParamEventType::SetTargetAtTime {
-                    // Implicitly insert a setValueAtTime event at time 𝑡𝑐 with
-                    // the value that the setTarget would
-                    // @note - same strategy as for ramps
-                    matched.cancel_time = Some(event.time);
-                } else if matched.event_type == AudioParamEventType::SetValueCurveAtTime {
-                    // If 𝐸1 is a setValueCurve with a start time of 𝑡3 and a duration of 𝑑
-                    // If 𝑡𝑐 <= 𝑡3 + 𝑑 :
-                    // Effectively replace this event with a setValueCurve event
-                    // with a start time of 𝑡3 and a new duration of 𝑡𝑐−𝑡3. However,
-                    // this is not a true replacement; this automation MUST take
-                    // care to produce the same output as the original, and not
-                    // one computed using a different duration. (That would cause
-                    // sampling of the value curve in a slightly different way,
-                    // producing different results.)
-                    let start_time = matched.time;
-                    let duration = matched.duration.unwrap();
-
-                    if event.time <= start_time + duration {
+                match matched.event_type {
+                    AudioParamEventType::SetTargetAtTime => {
+                        // Implicitly insert a setValueAtTime event at time 𝑡𝑐 with
+                        // the value that the setTarget would
+                        // @note - same strategy as for ramps
                         matched.cancel_time = Some(event.time);
                     }
+                    AudioParamEventType::SetValueCurveAtTime => {
+                        // If 𝐸1 is a setValueCurve with a start time of 𝑡3 and a duration of 𝑑
+                        // If 𝑡𝑐 <= 𝑡3 + 𝑑 :
+                        // Effectively replace this event with a setValueCurve event
+                        // with a start time of 𝑡3 and a new duration of 𝑡𝑐−𝑡3. However,
+                        // this is not a true replacement; this automation MUST take
+                        // care to produce the same output as the original, and not
+                        // one computed using a different duration. (That would cause
+                        // sampling of the value curve in a slightly different way,
+                        // producing different results.)
+                        let start_time = matched.time;
+                        let duration = matched.duration.unwrap();
+
+                        if event.time <= start_time + duration {
+                            matched.cancel_time = Some(event.time);
+                        }
+                    }
+                    AudioParamEventType::SetValue | AudioParamEventType::SetValueAtTime => {
+                        matched.cancel_time = Some(event.time);
+                    }
+                    _ => {}
+                }
+            } else if let Some(last) = self.last_event.as_mut() {
+                if last.effective_time() < event.time {
+                    last.cancel_time = Some(event.time);
                 }
             }
 
             // [spec] Remove all events with time greater than 𝑡𝑐.
-            self.event_timeline.retain(|queued| {
-                let mut time = queued.time;
-                // if the event has a `cancel_time` we use it instead of `time`
-                if let Some(cancel_time) = queued.cancel_time {
-                    time = cancel_time;
-                }
-
-                time <= event.time
-            });
+            self.event_timeline
+                .retain(|queued| queued.effective_time() <= event.time);
             return; // cancel_and_hold events are not inserted timeline
         }
 
@@ -973,8 +982,7 @@ impl AudioParamProcessor {
         // @note - Cancel methods are not automation methods
         if event.event_type == AudioParamEventType::SetValueAtTime
             || event.event_type == AudioParamEventType::SetValue
-            || event.event_type == AudioParamEventType::LinearRampToValueAtTime
-            || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime
+            || event.event_type.is_ramp()
             || event.event_type == AudioParamEventType::SetTargetAtTime
         {
             for queued in self.event_timeline.iter() {
@@ -1001,10 +1009,7 @@ impl AudioParamProcessor {
         // with intrinsic value and calling time.
         // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
         // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
-        if self.event_timeline.is_empty()
-            && self.last_event.is_none()
-            && (event.event_type == AudioParamEventType::LinearRampToValueAtTime
-                || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime)
+        if self.event_timeline.is_empty() && self.last_event.is_none() && event.event_type.is_ramp()
         {
             let set_value_event = AudioParamEvent {
                 event_type: AudioParamEventType::SetValue,
@@ -1098,7 +1103,7 @@ impl AudioParamProcessor {
         let event = self.event_timeline.peek().unwrap();
         let last_event = self.last_event.as_ref().unwrap();
 
-        let start_time = last_event.time;
+        let start_time = last_event.effective_time();
         let mut end_time = event.time;
         // compute duration before clapping `end_time` to`cancel_time`, to keep
         // declared slope of the ramp consistent
@@ -1125,8 +1130,11 @@ impl AudioParamProcessor {
 
                 let mut value = 0.;
                 for _ in start_index..end_index_clipped {
-                    value =
-                        compute_linear_ramp_sample(start_time, duration, start_value, diff, time);
+                    value = if time < start_time {
+                        self.intrinsic_value
+                    } else {
+                        compute_linear_ramp_sample(start_time, duration, start_value, diff, time)
+                    };
                     self.buffer.push(value);
                     time += infos.dt;
                 }
@@ -1139,13 +1147,17 @@ impl AudioParamProcessor {
         // stays coherent, also allows to properly fill k-rate
         // within next block too
         if end_time >= infos.next_block_time {
-            let value = compute_linear_ramp_sample(
-                start_time,
-                duration,
-                start_value,
-                diff,
-                infos.next_block_time,
-            );
+            let value = if infos.next_block_time < start_time {
+                self.intrinsic_value
+            } else {
+                compute_linear_ramp_sample(
+                    start_time,
+                    duration,
+                    start_value,
+                    diff,
+                    infos.next_block_time,
+                )
+            };
             self.intrinsic_value = value;
 
             return true;
@@ -1177,7 +1189,7 @@ impl AudioParamProcessor {
         let event = self.event_timeline.peek().unwrap();
         let last_event = self.last_event.as_ref().unwrap();
 
-        let start_time = last_event.time;
+        let start_time = last_event.effective_time();
         let mut end_time = event.time;
         // compute duration before clapping `end_time` to `cancel_time`, to keep
         // declared slope of the ramp consistent
@@ -1224,13 +1236,17 @@ impl AudioParamProcessor {
 
                 let mut value = 0.;
                 for _ in start_index..end_index_clipped {
-                    value = compute_exponential_ramp_sample(
-                        start_time,
-                        duration,
-                        start_value,
-                        ratio,
-                        time,
-                    );
+                    value = if time < start_time {
+                        self.intrinsic_value
+                    } else {
+                        compute_exponential_ramp_sample(
+                            start_time,
+                            duration,
+                            start_value,
+                            ratio,
+                            time,
+                        )
+                    };
 
                     self.buffer.push(value);
 
@@ -1245,13 +1261,17 @@ impl AudioParamProcessor {
         // stays coherent, also allows to properly fill k-rate
         // within next block too
         if end_time >= infos.next_block_time {
-            let value = compute_exponential_ramp_sample(
-                start_time,
-                duration,
-                start_value,
-                ratio,
-                infos.next_block_time,
-            );
+            let value = if infos.next_block_time < start_time {
+                self.intrinsic_value
+            } else {
+                compute_exponential_ramp_sample(
+                    start_time,
+                    duration,
+                    start_value,
+                    ratio,
+                    infos.next_block_time,
+                )
+            };
             self.intrinsic_value = value;
 
             return true;
@@ -1292,32 +1312,26 @@ impl AudioParamProcessor {
         let some_next_event = self.event_timeline.next();
 
         if let Some(next_event) = some_next_event {
-            match next_event.event_type {
-                AudioParamEventType::LinearRampToValueAtTime
-                | AudioParamEventType::ExponentialRampToValueAtTime => {
-                    // [spec] If the preceding event is a SetTarget
-                    // event, 𝑇0 and 𝑉0 are chosen from the current
-                    // time and value of SetTarget automation. That
-                    // is, if the SetTarget event has not started,
-                    // 𝑇0 is the start time of the event, and 𝑉0
-                    // is the value just before the SetTarget event
-                    // starts. In this case, the LinearRampToValue
-                    // event effectively replaces the SetTarget event.
-                    // If the SetTarget event has already started,
-                    // 𝑇0 is the current context time, and 𝑉0 is
-                    // the current SetTarget automation value at time 𝑇0.
-                    // In both cases, the automation curve is continuous.
-                    end_time = infos.block_time;
-                    ended = true;
-                }
-                _ => {
-                    // For all other events, the SetTarget
-                    // event ends at the time of the next event.
-                    if next_event.time < infos.next_block_time {
-                        end_time = next_event.time;
-                        ended = true;
-                    }
-                }
+            if next_event.event_type.is_ramp() {
+                // [spec] If the preceding event is a SetTarget
+                // event, 𝑇0 and 𝑉0 are chosen from the current
+                // time and value of SetTarget automation. That
+                // is, if the SetTarget event has not started,
+                // 𝑇0 is the start time of the event, and 𝑉0
+                // is the value just before the SetTarget event
+                // starts. In this case, the LinearRampToValue
+                // event effectively replaces the SetTarget event.
+                // If the SetTarget event has already started,
+                // 𝑇0 is the current context time, and 𝑉0 is
+                // the current SetTarget automation value at time 𝑇0.
+                // In both cases, the automation curve is continuous.
+                end_time = infos.block_time;
+                ended = true;
+            } else if next_event.time < infos.next_block_time {
+                // For all other events, the SetTarget
+                // event ends at the time of the next event.
+                end_time = next_event.time;
+                ended = true;
             }
         }
 
@@ -1527,18 +1541,10 @@ impl AudioParamProcessor {
         //   + For all other event, `event.time` is their start time.
         //   (@note - `SetTargetAtTime` events also uses `last_event` but only for
         //   its value, not for its timing information, so no problem there)
-        let is_constant_block = match self.event_timeline.peek() {
-            None => true,
-            Some(event) => {
-                if event.event_type != AudioParamEventType::LinearRampToValueAtTime
-                    && event.event_type != AudioParamEventType::ExponentialRampToValueAtTime
-                {
-                    event.time >= next_block_time
-                } else {
-                    false
-                }
-            }
-        };
+        let is_constant_block = self
+            .event_timeline
+            .peek()
+            .is_none_or(|event| !event.event_type.is_ramp() && event.time >= next_block_time);
 
         if !is_a_rate || is_constant_block {
             self.buffer.push(self.intrinsic_value);
@@ -1558,20 +1564,23 @@ impl AudioParamProcessor {
         };
 
         loop {
-            let next_event_type = self.event_timeline.peek().map(|e| e.event_type);
+            let next_event = self.event_timeline.peek();
 
-            let exit_loop = match next_event_type {
-                None => {
-                    if is_a_rate {
-                        // we use `count` rather then `buffer.remaining_capacity`
-                        // to correctly handle unit tests where `count` is lower than
-                        // RENDER_QUANTUM_SIZE
-                        for _ in self.buffer.len()..count {
-                            self.buffer.push(self.intrinsic_value);
-                        }
+            if next_event
+                .is_none_or(|event| !event.event_type.is_ramp() && event.time > next_block_time)
+            {
+                if is_a_rate {
+                    // we use `count` rather then `buffer.remaining_capacity`
+                    // to correctly handle unit tests where `count` is lower than
+                    // RENDER_QUANTUM_SIZE
+                    for _ in self.buffer.len()..count {
+                        self.buffer.push(self.intrinsic_value);
                     }
-                    true
                 }
+                break;
+            }
+
+            let exit_loop = match next_event.map(|e| e.event_type) {
                 Some(AudioParamEventType::SetValue) | Some(AudioParamEventType::SetValueAtTime) => {
                     self.compute_set_value_automation(&block_infos)
                 }
@@ -1587,10 +1596,9 @@ impl AudioParamProcessor {
                 Some(AudioParamEventType::SetValueCurveAtTime) => {
                     self.compute_set_value_curve_automation(&block_infos)
                 }
-                _ => panic!(
-                    "AudioParamEvent {:?} should not appear in AudioParamEventTimeline",
-                    next_event_type.unwrap()
-                ),
+                other => {
+                    panic!("AudioParamEvent {other:?} should not appear in AudioParamEventTimeline")
+                }
             };
 
             if exit_loop {
@@ -2642,6 +2650,82 @@ mod tests {
         assert_float_eq!(vs[5], 1., abs <= 0.);
     }
 
+    /// Regression test: a cancelled `set_target` followed by another `set_target` whose
+    /// start time was still in the future left both queued. When the first ended, the
+    /// loop sampled the future one before its own start time, overflowing `exp()` to
+    /// `+inf` and (with `diff == 0.0`) yielding `NaN` that poisoned the buffer the next
+    /// block.
+    #[test]
+    fn test_set_target_at_time_future_start_does_not_produce_nan() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 1.,
+            min_value: 0.,
+            max_value: 2.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        let v = 1.0_f32;
+        let tau = 0.001_f64;
+
+        render.handle_incoming_event(param.set_value_at_time_raw(v, 0.));
+        render.handle_incoming_event(param.set_target_at_time_raw(v, 5., tau));
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(6.));
+        // second set_target, its start time still far in the future
+        render.handle_incoming_event(param.set_target_at_time_raw(v, 25., tau));
+
+        // block ending at t = 20: the cancelled set_target(5) ends at t = 6, the loop
+        // then reaches set_target(25) whose start is still beyond next_block_time
+        let vs = render.compute_intrinsic_values(10., 1., 10);
+        assert!(
+            vs.iter().all(|s| s.is_finite()),
+            "block 1 produced non-finite values: {vs:?}"
+        );
+
+        // next block: a poisoned intrinsic_value would leak into the buffer here
+        let vs = render.compute_intrinsic_values(20., 1., 10);
+        assert!(
+            vs.iter().all(|s| s.is_finite()),
+            "block 2 produced non-finite values: {vs:?}"
+        );
+    }
+
+    /// Regression test: same shape as the `set_target` case, but for `set_value_curve`.
+    /// Reaching a not-yet-started curve made the loop sample it at a negative position;
+    /// the `f64 as usize` cast saturated to index 0, silently returning a wrong value
+    /// that then leaked into the buffer on the following block.
+    #[test]
+    fn test_set_value_curve_future_start_holds_previous_value() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 2.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        // settle the param at 0.5
+        render.handle_incoming_event(param.set_value_at_time_raw(0.5, 0.));
+        // a first curve in the past, then cancel it so it ends this block
+        render.handle_incoming_event(param.set_value_curve_at_time_raw(&[0.5, 0.5], 5., 1.));
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(6.));
+        // a second curve whose start is still beyond the block being rendered
+        render.handle_incoming_event(param.set_value_curve_at_time_raw(&[1., 1., 1.], 25., 4.));
+
+        // block ending at t = 20: the first curve ends at t = 6, the loop then reaches
+        // the second curve, which has not started - the param must still read 0.5
+        let vs = render.compute_intrinsic_values(10., 1., 10);
+        assert_float_eq!(vs, &[0.5; 10][..], abs_all <= 0.);
+
+        // next block, still before the second curve starts
+        let vs = render.compute_intrinsic_values(20., 1., 10);
+        assert_float_eq!(vs[..5], [0.5; 5][..], abs_all <= 0.);
+    }
+
     #[test]
     fn test_set_target_at_time_a_rate_followed_by_ramp() {
         let context = OfflineAudioContext::new(1, 1, 48000.);
@@ -3541,5 +3625,182 @@ mod tests {
         expected[0] = 2.;
 
         assert_float_eq!(output.channel_data(0)[..], &expected[..], abs_all <= 0.);
+    }
+
+    // Regression test: a ramp scheduled right after a cancel_and_hold_at_time
+    // call can have a smaller raw `.time` than the ramp it truncated, which
+    // must not affect timeline ordering.
+    #[test]
+    fn test_cancel_and_hold_then_ramp_keeps_timeline_order() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 200.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        // ramp1: 0 -> 10 over [0, 10] (raw `.time` = 10)
+        render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(10., 10.));
+        // cancel ramp1 at t=5 -> holds at value 5, ramp1.cancel_time = Some(5),
+        // but ramp1.time is still 10
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(5.));
+        // ramp2: from (5, 5) to (7, 100) -- raw `.time` = 7, which is SMALLER
+        // than ramp1's raw `.time` (10) but must still be sorted AFTER ramp1's
+        // effective end (5)
+        render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(100., 7.));
+
+        let vs = render.compute_intrinsic_values(0., 1., 10);
+        // t=0..5: original ramp1, linear 0 -> 5
+        // t=5..7: ramp2, linear 5 -> 100 (slope 47.5/s)
+        // t=7..: held at 100
+        assert_float_eq!(
+            vs,
+            &[0., 1., 2., 3., 4., 5., 52.5, 100., 100., 100.][..],
+            abs_all <= 0.
+        );
+    }
+
+    // Regression test: same timeline-ordering scenario as above, with
+    // different values, to rule out a coincidental pass.
+    #[test]
+    fn test_cancel_and_hold_chained_ramps_keep_timeline_order() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 200.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        // ramp1: 0 -> 20 over [0, 20] (raw `.time` = 20)
+        render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(20., 20.));
+        // cancel at t=2 -> holds at value 2
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(2.));
+        // ramp2: from (2, 2) to (4, 50) -- raw `.time` = 4
+        render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(50., 4.));
+
+        let vs = render.compute_intrinsic_values(0., 1., 5);
+        // t=0,1: ramp1, linear 0 -> 2
+        // t=2..4: ramp2, linear 2 -> 50 (slope 24/s)
+        // t=4..: held at 50
+        assert_float_eq!(vs, &[0., 1., 2., 26., 50.][..], abs_all <= 0.);
+    }
+
+    // Regression test: a second cancel_and_hold_at_time call must truncate
+    // the currently active ramp, not a stale one an earlier call already
+    // truncated.
+    #[test]
+    fn test_repeated_cancel_and_hold_matches_active_ramp_not_stale_one() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 200.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        // ramp1: 0 -> 10 originally ending at t=5 (raw `.time` = 5)
+        render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(10., 5.));
+        // cancel ramp1 early at t=2 -> holds at 2*10/5 = 4;
+        // ramp1.cancel_time = Some(2), ramp1.time is still 5
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(2.));
+        // ramp2: from (2, 4) to (10, 100) -- raw `.time` = 10, LARGER than
+        // ramp1's raw `.time` (5), with a very different slope than ramp1's
+        // so the two hypotheses (ramp1 vs ramp2 matched as neighbor) are
+        // numerically distinguishable
+        render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(100., 10.));
+        // cancel again at t=3: this must truncate the ACTIVE ramp2 (slope 12/s,
+        // value 4 + 12*1 = 16 at t=3), not the already-finished (clipped-at-2)
+        // ramp1 (which would incorrectly give 3 * 10/5 = 6).
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(3.));
+
+        let vs = render.compute_intrinsic_values(0., 1., 10);
+        assert_float_eq!(
+            vs,
+            &[0., 2., 4., 16., 16., 16., 16., 16., 16., 16.][..],
+            abs_all <= 0.
+        );
+    }
+
+    // Regression test: cancel_and_hold_at_time called after the previous
+    // automation event has already finished (and moved into `last_event`,
+    // out of the timeline) must still anchor subsequent automations at the
+    // cancel point, not at the stale, long-past `last_event.time`.
+    #[test]
+    fn test_cancel_and_hold_after_ramp_already_finished() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 200.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        // ramp1: 0 -> 10 over [0, 2]
+        render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(10., 2.));
+
+        // render through t=2 so ramp1 fully finishes and is popped into `last_event`
+        let vs1 = render.compute_intrinsic_values(0., 1., 3);
+        assert_float_eq!(vs1, &[0., 5., 10.][..], abs_all <= 0.);
+
+        // time passes with nothing scheduled -- the timeline is empty here,
+        // ramp1 has already been consumed into `last_event`
+        // cancel_and_hold at t=8, well after ramp1 already finished at t=2
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(8.));
+        // ramp2: target 20 shortly after the cancel point, at t=8.5
+        render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(20., 8.5));
+
+        let vs2 = render.compute_intrinsic_values(3., 1., 7);
+        // t=3..8: still held at 10 (nothing scheduled until the cancel point)
+        // t=8..8.5: ramp2, linear 10 -> 20
+        // t=8.5..: held at 20
+        assert_float_eq!(vs2, &[10., 10., 10., 10., 10., 10., 20.][..], abs_all <= 0.);
+    }
+
+    // Regression test: same bug as above, but the event still "in effect" at
+    // the cancel point is a `SetValueAtTime` sitting unrendered in the
+    // timeline (not yet consumed into `last_event`) rather than an
+    // already-finished ramp. cancel_and_hold_at_time must still anchor
+    // subsequent automations at the cancel point, not at the SetValueAtTime's
+    // own (earlier) time.
+    #[test]
+    fn test_cancel_and_hold_after_pending_set_value_at_time() {
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: 0.,
+            max_value: 200.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+
+        // schedule a plain value change at t=2, not yet rendered
+        render.handle_incoming_event(param.set_value_at_time_raw(10., 2.));
+        // cancel_and_hold at t=8, while the SetValueAtTime above is still
+        // sitting unprocessed in the timeline
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(8.));
+        // ramp2: target 20 shortly after the cancel point, at t=8.5
+        render.handle_incoming_event(param.linear_ramp_to_value_at_time_raw(20., 8.5));
+
+        let vs = render.compute_intrinsic_values(0., 1., 10);
+        // t=0,1: still at default (0), SetValueAtTime hasn't fired yet
+        // t=2..8: held at 10 (from the SetValueAtTime, until the cancel point)
+        // t=8: ramp2 starts, value 10
+        // t=8.5..9: ramp2 has ended, held at 20
+        assert_float_eq!(
+            vs,
+            &[0., 0., 10., 10., 10., 10., 10., 10., 10., 20.][..],
+            abs_all <= 0.
+        );
     }
 }
