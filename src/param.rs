@@ -181,6 +181,13 @@ pub(crate) struct AudioParamEvent {
 }
 
 impl AudioParamEvent {
+    // Cancellation shortens a ramp's end time, but does not move a target or
+    // curve's start time. Keep timeline ordering separate from the hold time.
+    fn timeline_time(&self) -> f64 {
+        self.effective_time().min(self.time)
+    }
+
+    // The hold time is used for retention and as the start of subsequent ramps.
     fn effective_time(&self) -> f64 {
         self.cancel_time.unwrap_or(self.time)
     }
@@ -265,7 +272,7 @@ impl AudioParamEventTimeline {
 
     fn sort(&mut self) {
         self.inner
-            .sort_by(|a, b| a.effective_time().partial_cmp(&b.effective_time()).unwrap());
+            .sort_by(|a, b| a.timeline_time().partial_cmp(&b.timeline_time()).unwrap());
         self.dirty = false;
     }
 
@@ -889,7 +896,7 @@ impl AudioParamProcessor {
             for queued in self.event_timeline.iter_mut() {
                 // closest before cancel time: if several events at same time,
                 // we want the last one
-                if queued.effective_time() <= event.time {
+                if queued.timeline_time() <= event.time {
                     e1 = Some(queued);
                 } else {
                     // closest after cancel time: if several events at same time,
@@ -3801,6 +3808,40 @@ mod tests {
             vs,
             &[0., 0., 10., 10., 10., 10., 10., 10., 10., 20.][..],
             abs_all <= 0.
+        );
+    }
+
+    #[test]
+    fn test_double_cancel_and_hold_keeps_truncated_set_target() {
+        // A setTarget already truncated by a first cancelAndHoldAtTime carries
+        // `time` = its start t3 and `cancel_time` = the first tc. When a second
+        // cancel comes in with tc' < tc, selecting E1/E2 by `cancel_time` (or by
+        // cancel_time.unwrap_or(time)) misclassifies the event as E2, after
+        // which the retain pass drops it entirely because cancel_time > tc' -
+        // an automation that already started silently disappears and the output
+        // collapses to the pre-automation value.
+        let context = OfflineAudioContext::new(1, 1, 48000.);
+        let opts = AudioParamDescriptor {
+            name: String::new(),
+            automation_rate: AutomationRate::A,
+            default_value: 0.,
+            min_value: -10.,
+            max_value: 20.,
+        };
+        let (param, mut render) = audio_param_pair(opts, context.mock_registration());
+        render.handle_incoming_event(param.set_value_at_time_raw(0., 0.));
+        render.handle_incoming_event(param.set_target_at_time_raw(10., 1., 2.));
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(8.));
+        render.handle_incoming_event(param.cancel_and_hold_at_time_raw(4.));
+
+        let vs = render.compute_intrinsic_values(0., 1., 10);
+        // v(t) = 10 - 10 * e^(-(t - 1) / 2) for t in [1, 4], held afterwards.
+        let held = 10. - 10. * (-1.5f32).exp();
+        assert_float_eq!(vs[4], held, abs <= 1e-4);
+        assert_float_eq!(vs[9], held, abs <= 1e-4);
+        assert!(
+            vs[9] > 1.,
+            "the truncated setTarget must survive the second cancel"
         );
     }
 }
