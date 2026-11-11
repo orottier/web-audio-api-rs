@@ -2,17 +2,18 @@
 
 ## Unreleased
 
-- Add `AudioBufferSourceNode::clear_buffer`, preserving the single non-null buffer assignment rule
-- Add `ConvolverNode::clear_buffer` to discard the impulse response and its remaining tail
-- Fix: `ConvolverNode` outputs silence instead of passthrough when no impulse response is set
 - Update MSRV to 1.88 (June 2025)
-- `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`
+- Add `AudioBufferSourceNode::clear_buffer`
+- Add `ConvolverNode::clear_buffer`
+- Relaxed: `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`
+- Fix: `ConvolverNode` outputs silence instead of passthrough when no impulse response is set
 - Fix: `AudioBufferSourceNode` could hang the render thread when wrapping extremely narrow loops
 - Fix: `AudioBufferSourceNode` could panic at the loop boundary
 - Fix: The built-in square and sawtooth oscillators were 1.43 dB louder than the spec's normalized `PeriodicWave`
 - Fix: Adding a node after connecting an edge in the same quantum no longer breaks graph sorting
 - Fix: `AudioParam cancelAndHoldAtTime()` discontinuities, setValueCurve/cancelScheduledValues
 - Fix: `PannerNode` HRTF tail time
+- Fix: k-rate AudioParams now include automation events at the render quantum’s first frame
 
 ## Version 1.7.0 (2026-08-06)
 
