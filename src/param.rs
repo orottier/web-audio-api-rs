@@ -842,34 +842,29 @@ impl AudioParamProcessor {
                     // (which is a `startTime` for `SetTarget`) is before the `cancelTime`
                     // (maybe this should be clarified w/ spec editors)
 
-                    match current_event.event_type {
-                        AudioParamEventType::LinearRampToValueAtTime
-                        | AudioParamEventType::ExponentialRampToValueAtTime
-                            // we are in the middle of a ramp
-                            //
-                            // @note - Firefox and Chrome behave differently
-                            // on this: Firefox actually restore intrinsic_value
-                            // from the value at the beginning of the vent, while
-                            // Chrome just keeps the current intrinsic_value
-                            // The spec is not very clear there, but Firefox
-                            // seems to be more compliant:
-                            // "Any active automations whose automation event
-                            // time is less than cancelTime are also cancelled,
-                            // and such cancellations may cause discontinuities
-                            // because the original value (**from before such
-                            // automation**) is restored immediately."
-                            //
-                            // @note - last_event cannot be `None` here, because
-                            // linear or exponential ramps are always preceded
-                            // by another event (even a set_value_at_time
-                            // inserted implicitly), so if the ramp is the next
-                            // event that means that at least one event has
-                            // already been processed.
-                            if current_event.time >= event.time => {
-                                let last_event = self.last_event.as_ref().unwrap();
-                                self.intrinsic_value = last_event.value;
-                            }
-                        _ => (),
+                    if current_event.event_type.is_ramp() && current_event.time >= event.time {
+                        // we are in the middle of a ramp
+                        //
+                        // @note - Firefox and Chrome behave differently
+                        // on this: Firefox actually restore intrinsic_value
+                        // from the value at the beginning of the vent, while
+                        // Chrome just keeps the current intrinsic_value
+                        // The spec is not very clear there, but Firefox
+                        // seems to be more compliant:
+                        // "Any active automations whose automation event
+                        // time is less than cancelTime are also cancelled,
+                        // and such cancellations may cause discontinuities
+                        // because the original value (**from before such
+                        // automation**) is restored immediately."
+                        //
+                        // @note - last_event cannot be `None` here, because
+                        // linear or exponential ramps are always preceded
+                        // by another event (even a set_value_at_time
+                        // inserted implicitly), so if the ramp is the next
+                        // event that means that at least one event has
+                        // already been processed.
+                        let last_event = self.last_event.as_ref().unwrap();
+                        self.intrinsic_value = last_event.value;
                     }
                 }
             }
@@ -912,9 +907,7 @@ impl AudioParamProcessor {
                 // original ramp at time 𝑡𝑐.
                 // @note - this is done during the actual computation of the
                 //  ramp using the cancel_time
-                if matched.event_type == AudioParamEventType::LinearRampToValueAtTime
-                    || matched.event_type == AudioParamEventType::ExponentialRampToValueAtTime
-                {
+                if matched.event_type.is_ramp() {
                     matched.cancel_time = Some(event.time);
                 }
             } else if let Some(matched) = e1 {
@@ -989,8 +982,7 @@ impl AudioParamProcessor {
         // @note - Cancel methods are not automation methods
         if event.event_type == AudioParamEventType::SetValueAtTime
             || event.event_type == AudioParamEventType::SetValue
-            || event.event_type == AudioParamEventType::LinearRampToValueAtTime
-            || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime
+            || event.event_type.is_ramp()
             || event.event_type == AudioParamEventType::SetTargetAtTime
         {
             for queued in self.event_timeline.iter() {
@@ -1017,10 +1009,7 @@ impl AudioParamProcessor {
         // with intrinsic value and calling time.
         // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-linearramptovalueattime
         // cf. https://www.w3.org/TR/webaudio/#dom-audioparam-exponentialramptovalueattime
-        if self.event_timeline.is_empty()
-            && self.last_event.is_none()
-            && (event.event_type == AudioParamEventType::LinearRampToValueAtTime
-                || event.event_type == AudioParamEventType::ExponentialRampToValueAtTime)
+        if self.event_timeline.is_empty() && self.last_event.is_none() && event.event_type.is_ramp()
         {
             let set_value_event = AudioParamEvent {
                 event_type: AudioParamEventType::SetValue,
@@ -1323,32 +1312,26 @@ impl AudioParamProcessor {
         let some_next_event = self.event_timeline.next();
 
         if let Some(next_event) = some_next_event {
-            match next_event.event_type {
-                AudioParamEventType::LinearRampToValueAtTime
-                | AudioParamEventType::ExponentialRampToValueAtTime => {
-                    // [spec] If the preceding event is a SetTarget
-                    // event, 𝑇0 and 𝑉0 are chosen from the current
-                    // time and value of SetTarget automation. That
-                    // is, if the SetTarget event has not started,
-                    // 𝑇0 is the start time of the event, and 𝑉0
-                    // is the value just before the SetTarget event
-                    // starts. In this case, the LinearRampToValue
-                    // event effectively replaces the SetTarget event.
-                    // If the SetTarget event has already started,
-                    // 𝑇0 is the current context time, and 𝑉0 is
-                    // the current SetTarget automation value at time 𝑇0.
-                    // In both cases, the automation curve is continuous.
-                    end_time = infos.block_time;
-                    ended = true;
-                }
-                _ => {
-                    // For all other events, the SetTarget
-                    // event ends at the time of the next event.
-                    if next_event.time < infos.next_block_time {
-                        end_time = next_event.time;
-                        ended = true;
-                    }
-                }
+            if next_event.event_type.is_ramp() {
+                // [spec] If the preceding event is a SetTarget
+                // event, 𝑇0 and 𝑉0 are chosen from the current
+                // time and value of SetTarget automation. That
+                // is, if the SetTarget event has not started,
+                // 𝑇0 is the start time of the event, and 𝑉0
+                // is the value just before the SetTarget event
+                // starts. In this case, the LinearRampToValue
+                // event effectively replaces the SetTarget event.
+                // If the SetTarget event has already started,
+                // 𝑇0 is the current context time, and 𝑉0 is
+                // the current SetTarget automation value at time 𝑇0.
+                // In both cases, the automation curve is continuous.
+                end_time = infos.block_time;
+                ended = true;
+            } else if next_event.time < infos.next_block_time {
+                // For all other events, the SetTarget
+                // event ends at the time of the next event.
+                end_time = next_event.time;
+                ended = true;
             }
         }
 
