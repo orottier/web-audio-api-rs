@@ -160,6 +160,15 @@ enum AudioParamEventType {
     SetValueCurveAtTime,
 }
 
+impl AudioParamEventType {
+    fn is_ramp(self) -> bool {
+        matches!(
+            self,
+            Self::LinearRampToValueAtTime | Self::ExponentialRampToValueAtTime
+        )
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct AudioParamEvent {
     event_type: AudioParamEventType,
@@ -1549,18 +1558,10 @@ impl AudioParamProcessor {
         //   + For all other event, `event.time` is their start time.
         //   (@note - `SetTargetAtTime` events also uses `last_event` but only for
         //   its value, not for its timing information, so no problem there)
-        let is_constant_block = match self.event_timeline.peek() {
-            None => true,
-            Some(event) => {
-                if event.event_type != AudioParamEventType::LinearRampToValueAtTime
-                    && event.event_type != AudioParamEventType::ExponentialRampToValueAtTime
-                {
-                    event.time >= next_block_time
-                } else {
-                    false
-                }
-            }
-        };
+        let is_constant_block = self
+            .event_timeline
+            .peek()
+            .is_none_or(|event| !event.event_type.is_ramp() && event.time >= next_block_time);
 
         if !is_a_rate || is_constant_block {
             self.buffer.push(self.intrinsic_value);
@@ -1582,27 +1583,21 @@ impl AudioParamProcessor {
         loop {
             let next_event = self.event_timeline.peek();
 
-            let exit_loop = match next_event.map(|e| e.event_type) {
-                None | Some(_)
-                    if next_event.is_none_or(|e| {
-                        next_block_time < e.time
-                            && !matches!(
-                                e.event_type,
-                                AudioParamEventType::LinearRampToValueAtTime
-                                    | AudioParamEventType::ExponentialRampToValueAtTime
-                            )
-                    }) =>
-                {
-                    if is_a_rate {
-                        // we use `count` rather then `buffer.remaining_capacity`
-                        // to correctly handle unit tests where `count` is lower than
-                        // RENDER_QUANTUM_SIZE
-                        for _ in self.buffer.len()..count {
-                            self.buffer.push(self.intrinsic_value);
-                        }
+            if next_event
+                .is_none_or(|event| !event.event_type.is_ramp() && event.time > next_block_time)
+            {
+                if is_a_rate {
+                    // we use `count` rather then `buffer.remaining_capacity`
+                    // to correctly handle unit tests where `count` is lower than
+                    // RENDER_QUANTUM_SIZE
+                    for _ in self.buffer.len()..count {
+                        self.buffer.push(self.intrinsic_value);
                     }
-                    true
                 }
+                break;
+            }
+
+            let exit_loop = match next_event.map(|e| e.event_type) {
                 Some(AudioParamEventType::SetValue) | Some(AudioParamEventType::SetValueAtTime) => {
                     self.compute_set_value_automation(&block_infos)
                 }
