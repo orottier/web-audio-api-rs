@@ -171,6 +171,12 @@ pub(crate) struct AudioParamEvent {
     values: Option<Box<[f32]>>, // populated by `SetValueCurveAtTime` events
 }
 
+impl AudioParamEvent {
+    fn effective_time(&self) -> f64 {
+        self.cancel_time.unwrap_or(self.time)
+    }
+}
+
 // Event queue that contains `AudioParamEvent`s, most of the time, events must be
 // ordered (using stable sort), some operation may break this ordering (e.g. `push`)
 // in which cases `sort` must be called explicitly.
@@ -249,12 +255,8 @@ impl AudioParamEventTimeline {
     }
 
     fn sort(&mut self) {
-        self.inner.sort_by(|a, b| {
-            a.cancel_time
-                .unwrap_or(a.time)
-                .partial_cmp(&b.cancel_time.unwrap_or(b.time))
-                .unwrap()
-        });
+        self.inner
+            .sort_by(|a, b| a.effective_time().partial_cmp(&b.effective_time()).unwrap());
         self.dirty = false;
     }
 
@@ -883,7 +885,7 @@ impl AudioParamProcessor {
             self.event_timeline.sort();
 
             for queued in self.event_timeline.iter_mut() {
-                let queued_time = queued.cancel_time.unwrap_or(queued.time);
+                let queued_time = queued.effective_time();
                 // closest before cancel time: if several events at same time,
                 // we want the last one
                 if queued_time >= t1 && queued_time <= event.time {
@@ -941,21 +943,14 @@ impl AudioParamProcessor {
                     _ => {}
                 }
             } else if let Some(last) = self.last_event.as_mut() {
-                if last.cancel_time.unwrap_or(last.time) < event.time {
+                if last.effective_time() < event.time {
                     last.cancel_time = Some(event.time);
                 }
             }
 
             // [spec] Remove all events with time greater than 𝑡𝑐.
-            self.event_timeline.retain(|queued| {
-                let mut time = queued.time;
-                // if the event has a `cancel_time` we use it instead of `time`
-                if let Some(cancel_time) = queued.cancel_time {
-                    time = cancel_time;
-                }
-
-                time <= event.time
-            });
+            self.event_timeline
+                .retain(|queued| queued.effective_time() <= event.time);
             return; // cancel_and_hold events are not inserted timeline
         }
 
@@ -1114,7 +1109,7 @@ impl AudioParamProcessor {
         let event = self.event_timeline.peek().unwrap();
         let last_event = self.last_event.as_ref().unwrap();
 
-        let start_time = last_event.cancel_time.unwrap_or(last_event.time);
+        let start_time = last_event.effective_time();
         let mut end_time = event.time;
         // compute duration before clapping `end_time` to`cancel_time`, to keep
         // declared slope of the ramp consistent
@@ -1200,7 +1195,7 @@ impl AudioParamProcessor {
         let event = self.event_timeline.peek().unwrap();
         let last_event = self.last_event.as_ref().unwrap();
 
-        let start_time = last_event.cancel_time.unwrap_or(last_event.time);
+        let start_time = last_event.effective_time();
         let mut end_time = event.time;
         // compute duration before clapping `end_time` to `cancel_time`, to keep
         // declared slope of the ramp consistent
