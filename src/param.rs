@@ -833,8 +833,9 @@ impl AudioParamProcessor {
             let some_current_event = self.event_timeline.unsorted_peek();
 
             match some_current_event {
-                None => (),
-                Some(current_event) => {
+                Some(current_event)
+                    if current_event.event_type.is_ramp() && current_event.time >= event.time =>
+                {
                     // @note - The spec is not particularly clear about what to do
                     // with on-going SetTarget events, but both Chrome and Firefox
                     // ignore the Cancel event if at same time nor if startTime is
@@ -842,31 +843,30 @@ impl AudioParamProcessor {
                     // (which is a `startTime` for `SetTarget`) is before the `cancelTime`
                     // (maybe this should be clarified w/ spec editors)
 
-                    if current_event.event_type.is_ramp() && current_event.time >= event.time {
-                        // we are in the middle of a ramp
-                        //
-                        // @note - Firefox and Chrome behave differently
-                        // on this: Firefox actually restore intrinsic_value
-                        // from the value at the beginning of the vent, while
-                        // Chrome just keeps the current intrinsic_value
-                        // The spec is not very clear there, but Firefox
-                        // seems to be more compliant:
-                        // "Any active automations whose automation event
-                        // time is less than cancelTime are also cancelled,
-                        // and such cancellations may cause discontinuities
-                        // because the original value (**from before such
-                        // automation**) is restored immediately."
-                        //
-                        // @note - last_event cannot be `None` here, because
-                        // linear or exponential ramps are always preceded
-                        // by another event (even a set_value_at_time
-                        // inserted implicitly), so if the ramp is the next
-                        // event that means that at least one event has
-                        // already been processed.
-                        let last_event = self.last_event.as_ref().unwrap();
-                        self.intrinsic_value = last_event.value;
-                    }
+                    // we are in the middle of a ramp
+                    //
+                    // @note - Firefox and Chrome behave differently
+                    // on this: Firefox actually restore intrinsic_value
+                    // from the value at the beginning of the vent, while
+                    // Chrome just keeps the current intrinsic_value
+                    // The spec is not very clear there, but Firefox
+                    // seems to be more compliant:
+                    // "Any active automations whose automation event
+                    // time is less than cancelTime are also cancelled,
+                    // and such cancellations may cause discontinuities
+                    // because the original value (**from before such
+                    // automation**) is restored immediately."
+                    //
+                    // @note - last_event cannot be `None` here, because
+                    // linear or exponential ramps are always preceded
+                    // by another event (even a set_value_at_time
+                    // inserted implicitly), so if the ramp is the next
+                    // event that means that at least one event has
+                    // already been processed.
+                    let last_event = self.last_event.as_ref().unwrap();
+                    self.intrinsic_value = last_event.value;
                 }
+                _ => (),
             }
 
             // remove all events in queue where event.time >= cancel_time
