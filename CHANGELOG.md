@@ -9,6 +9,7 @@
 - Fix: The built-in square and sawtooth oscillators were 1.43 dB louder than the spec's normalized `PeriodicWave`
 - Fix: Adding a node after connecting an edge in the same quantum no longer breaks graph sorting
 - Fix: `AudioParam cancelAndHoldAtTime()` discontinuities
+- Fix: `PannerNode` HRTF tail time
 
 ## Version 1.7.0 (2026-08-06)
 

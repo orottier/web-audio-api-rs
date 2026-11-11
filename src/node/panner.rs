@@ -703,6 +703,8 @@ impl AudioProcessor for PannerRenderer {
             }
 
             self.tail_time_counter += RENDER_QUANTUM_SIZE;
+        } else {
+            self.tail_time_counter = 0;
         }
 
         // for borrow reasons, take the hrtf_state out of self
@@ -914,7 +916,10 @@ impl AudioProcessor for PannerRenderer {
                 ControlMessage::ConeInnerAngle(value) => self.cone_inner_angle = *value,
                 ControlMessage::ConeOuterAngle(value) => self.cone_outer_angle = *value,
                 ControlMessage::ConeOuterGain(value) => self.cone_outer_gain = *value,
-                ControlMessage::PanningModel(value) => self.hrtf_state = value.take(),
+                ControlMessage::PanningModel(value) => {
+                    self.hrtf_state = value.take();
+                    self.tail_time_counter = 0;
+                }
             }
 
             return;
@@ -1267,6 +1272,52 @@ mod tests {
 
         let right = output.channel_data(1).as_slice();
         assert!(right[128..256].iter().any(|v| *v >= 1E-6));
+    }
+
+    #[test]
+    fn test_hrtf_tail_time_resets_between_sounds() {
+        let sample_rate = 44100.;
+        let (_processor, len) = load_hrtf_processor(sample_rate as u32);
+
+        // enough silent quanta to fully exhaust the tail time counter after the first burst
+        let gap_quanta = len.div_ceil(RENDER_QUANTUM_SIZE) + 4;
+        let length = RENDER_QUANTUM_SIZE * (gap_quanta + 8);
+        let mut context = OfflineAudioContext::new(2, length, sample_rate);
+
+        let options = PannerOptions {
+            panning_model: PanningModelType::HRTF,
+            ..PannerOptions::default()
+        };
+        let panner = PannerNode::new(&context, options);
+        panner.position_x().set_value(1.);
+        panner.connect(&context.destination());
+
+        let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
+
+        let mut src1 = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        src1.set_buffer(input.clone());
+        src1.connect(&panner);
+        src1.start_at(0.);
+
+        // second, unrelated burst, scheduled well after the first tail should have died out
+        let second_burst_start =
+            (1 + gap_quanta) as f64 * RENDER_QUANTUM_SIZE as f64 / sample_rate as f64;
+        let mut src2 = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        src2.set_buffer(input);
+        src2.connect(&panner);
+        src2.start_at(second_burst_start);
+
+        let output = context.start_rendering_sync();
+
+        let second_burst_end =
+            (second_burst_start * sample_rate as f64) as usize + RENDER_QUANTUM_SIZE;
+        let tail_window = &output.channel_data(0).as_slice()
+            [second_burst_end..second_burst_end + RENDER_QUANTUM_SIZE];
+
+        assert!(
+            tail_window.iter().any(|v| v.abs() >= 1E-6),
+            "expected an HRTF tail after the second burst"
+        );
     }
 
     #[test]
