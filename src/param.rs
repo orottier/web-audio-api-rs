@@ -879,23 +879,19 @@ impl AudioParamProcessor {
             // smallest number satisfying 𝑡𝑐 < 𝑡2.
             let mut e1: Option<&mut AudioParamEvent> = None;
             let mut e2: Option<&mut AudioParamEvent> = None;
-            let mut t1 = f64::MIN;
-            let mut t2 = f64::MAX;
             // we need a sorted timeline here to find siblings
             self.event_timeline.sort();
 
             for queued in self.event_timeline.iter_mut() {
-                let queued_time = queued.effective_time();
                 // closest before cancel time: if several events at same time,
                 // we want the last one
-                if queued_time >= t1 && queued_time <= event.time {
-                    t1 = queued_time;
+                if queued.effective_time() <= event.time {
                     e1 = Some(queued);
+                } else {
                     // closest after cancel time: if several events at same time,
                     // we want the first one
-                } else if queued_time < t2 && queued_time > event.time {
-                    t2 = queued_time;
                     e2 = Some(queued);
+                    break;
                 }
             }
 
