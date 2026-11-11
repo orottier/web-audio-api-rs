@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `AudioBufferSourceNode::clear_buffer`, preserving the single non-null buffer assignment rule
+- Add `ConvolverNode::clear_buffer` to discard the impulse response and its remaining tail
+- Fix: `ConvolverNode` outputs silence instead of passthrough when no impulse response is set
 - Update MSRV to 1.88 (June 2025)
 - `decode_audio_data` and `decode_audio_data_sync` no longer require the reader to be `'static`
 - Fix: `AudioBufferSourceNode` could hang the render thread when wrapping extremely narrow loops
