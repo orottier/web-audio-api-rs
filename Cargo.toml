@@ -1,7 +1,7 @@
 [package]
 name = "web-audio-api"
-version = "1.7.0"
-authors = ["Otto <otto@ot-to.nl>"]
+version = "1.8.0"
+authors = ["Otto <ottorottier@gmail.com>"]
 edition = "2021"
 description = "A pure Rust implementation of the Web Audio API, for use in non-browser contexts"
 readme = "README.md"

@@ -1,6 +1,6 @@
 # Version History
 
-## Unreleased
+## Version 1.8.0 (2026-11-12)
 
 - Update MSRV to 1.88 (June 2025)
 - Add `AudioBufferSourceNode::clear_buffer`
