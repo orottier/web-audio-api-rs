@@ -231,7 +231,9 @@ impl OscillatorNode {
                 default_value: 440.,
                 automation_rate: AutomationRate::A,
             };
-            let (f_param, f_proc) = context.create_audio_param(freq_param_options, &registration);
+            let (f_param, f_proc) = context
+                .base()
+                .create_audio_param(freq_param_options, &registration);
             f_param.set_value(frequency);
 
             // detune audio parameter
@@ -242,8 +244,9 @@ impl OscillatorNode {
                 default_value: 0.,
                 automation_rate: AutomationRate::A,
             };
-            let (det_param, det_proc) =
-                context.create_audio_param(det_param_options, &registration);
+            let (det_param, det_proc) = context
+                .base()
+                .create_audio_param(det_param_options, &registration);
             det_param.set_value(detune);
 
             let renderer = OscillatorRenderer {

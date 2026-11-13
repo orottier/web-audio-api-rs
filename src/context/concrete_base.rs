@@ -1,13 +1,13 @@
 //! The `ConcreteBaseAudioContext` type
 
 use crate::context::{
-    AudioContextRegistration, AudioContextState, AudioNodeId, BaseAudioContext,
+    AudioContextRegistration, AudioContextState, AudioNodeId, AudioParamId, BaseAudioContext,
     DESTINATION_NODE_ID, LISTENER_NODE_ID, LISTENER_PARAM_IDS,
 };
 use crate::events::{EventDispatch, EventHandler, EventLoop, EventType};
 use crate::message::ControlMessage;
 use crate::node::{AudioDestinationNode, AudioNode, AudioNodeOptions, ChannelConfig};
-use crate::param::AudioParam;
+use crate::param::{AudioParam, AudioParamDescriptor};
 use crate::render::AudioProcessor;
 use crate::spatial::AudioListenerParams;
 
@@ -267,6 +267,25 @@ impl ConcreteBaseAudioContext {
         }
 
         node
+    }
+
+    /// Create a parameter for a node being constructed inside `register`.
+    pub(crate) fn create_audio_param(
+        &self,
+        opts: AudioParamDescriptor,
+        dest: &AudioContextRegistration,
+    ) -> (AudioParam, AudioParamId) {
+        let param = self.register(move |registration| {
+            let (node, proc) = crate::param::audio_param_pair(opts, registration);
+
+            (node, Box::new(proc))
+        });
+
+        // Connect the param to the node, once the node is registered inside the audio graph.
+        self.queue_audio_param_connect(&param, dest.id());
+
+        let proc_id = AudioParamId(param.registration().id().0);
+        (param, proc_id)
     }
 
     /// Send a control message to the render thread

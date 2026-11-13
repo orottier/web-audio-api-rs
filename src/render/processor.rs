@@ -107,9 +107,9 @@ impl AudioWorkletGlobalScope {
 ///
 /// Note that the AudioProcessor is typically constructed together with an
 /// [`AudioNode`](crate::node::AudioNode) (the user facing object that lives in the control
-/// thread). See [`ConcreteBaseAudioContext::register`](crate::context::ConcreteBaseAudioContext::register).
+/// thread). See [`unstable_plumbing::register`](crate::unstable_plumbing::register).
 ///
-/// Check the `examples/worklet.rs` file for example usage of this trait.
+/// Check `showcase/raw_processor` for example usage of this trait.
 pub trait AudioProcessor: Send {
     /// Audio processing function
     ///
@@ -142,7 +142,7 @@ pub trait AudioProcessor: Send {
     ///
     /// By overriding this method you can add a handler for messages sent from the control thread
     /// via
-    /// [`AudioContextRegistration::post_message`](crate::context::AudioContextRegistration::post_message).
+    /// [`unstable_plumbing::post_message`](crate::unstable_plumbing::post_message).
     /// This will not be necessary for most processors.
     ///
     /// Receivers are supposed to consume the content of `msg`. The content of `msg` might
@@ -164,7 +164,7 @@ pub trait AudioProcessor: Send {
 
     /// Indicates if this processor has 'side effects' other than producing output
     ///
-    /// Processors without side effects can not be dropped when there are no outputs connected, and
+    /// Processors without side effects can be dropped when there are no outputs connected, and
     /// when the control side handle no longer exists
     ///
     /// Side effects could include
