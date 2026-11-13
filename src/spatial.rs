@@ -286,7 +286,7 @@ pub fn angle(
     }
     let normalized_source_orientation = vec3_normalized(source_orientation);
 
-    let relative_pos = vec3_sub(source_position, listener_position);
+    let relative_pos = vec3_sub(listener_position, source_position);
     // Handle degenerate case if source and listener are at the same point.
     if vec3_square_len(relative_pos) <= f32::MIN_POSITIVE {
         return 0.;
