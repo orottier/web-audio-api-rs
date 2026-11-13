@@ -207,6 +207,15 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
     );
 }
 
+/// Map a source direction in listener space to the coordinate axes of the HRTF sphere.
+fn hrtf_sample_vector(projected_source: [f32; 3]) -> Vec3 {
+    Vec3 {
+        x: projected_source[0],
+        z: projected_source[1],
+        y: projected_source[2],
+    }
+}
+
 /// Internal state of the HRTF renderer
 struct HrtfState {
     len: usize,
@@ -240,11 +249,7 @@ impl HrtfState {
         // reset state of output buffer
         self.output_interleaved.fill((0., 0.));
 
-        let new_sample_vector = Vec3 {
-            x: projected_source[0],
-            z: projected_source[1],
-            y: projected_source[2],
-        };
+        let new_sample_vector = hrtf_sample_vector(projected_source);
 
         let context = HrtfContext {
             source,
