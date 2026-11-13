@@ -208,11 +208,13 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
 }
 
 /// Map a source direction in listener space to the coordinate axes of the HRTF sphere.
+///
+/// The panner builds the direction with forward on +z. The sphere uses -z for front.
 fn hrtf_sample_vector(projected_source: [f32; 3]) -> Vec3 {
     Vec3 {
         x: projected_source[0],
-        z: projected_source[1],
-        y: projected_source[2],
+        y: projected_source[1],
+        z: -projected_source[2],
     }
 }
 
