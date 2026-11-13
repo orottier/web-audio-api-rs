@@ -391,4 +391,14 @@ mod tests {
 
         assert_float_eq!(angle, 90., abs <= 0.);
     }
+
+    #[test]
+    fn angle_source_facing_listener() {
+        // the orientation points from the source back to the listener at the origin
+        let pos = [1., 0., 0.];
+        let orientation = [-1., 0., 0.];
+        let angle = angle(pos, orientation, LP);
+
+        assert_float_eq!(angle, 0., abs <= 0.);
+    }
 }
