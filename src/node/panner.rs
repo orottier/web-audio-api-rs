@@ -1234,6 +1234,27 @@ mod tests {
     }
 
     #[test]
+    fn test_hrtf_sample_vector_axes() {
+        // right stays right
+        let right = hrtf_sample_vector([1., 0., 0.]);
+        assert_float_eq!(right.x, 1., abs <= 0.);
+        assert_float_eq!(right.y, 0., abs <= 0.);
+        assert_float_eq!(right.z, 0., abs <= 0.);
+
+        // up stays up
+        let up = hrtf_sample_vector([0., 1., 0.]);
+        assert_float_eq!(up.x, 0., abs <= 0.);
+        assert_float_eq!(up.y, 1., abs <= 0.);
+        assert_float_eq!(up.z, 0., abs <= 0.);
+
+        // a source straight ahead maps to the front of the sphere, which is -z
+        let front = hrtf_sample_vector([0., 0., 1.]);
+        assert_float_eq!(front.x, 0., abs <= 0.);
+        assert_float_eq!(front.y, 0., abs <= 0.);
+        assert_float_eq!(front.z, -1., abs <= 0.);
+    }
+
+    #[test]
     fn test_hrtf() {
         let sample_rate = 44100.;
         let length = RENDER_QUANTUM_SIZE * 4;
