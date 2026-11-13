@@ -207,6 +207,17 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
     );
 }
 
+/// Map a source direction in listener space to the coordinate axes of the HRTF sphere.
+///
+/// The panner builds the direction with forward on +z. The sphere uses -z for front.
+fn hrtf_sample_vector(projected_source: [f32; 3]) -> Vec3 {
+    Vec3 {
+        x: projected_source[0],
+        y: projected_source[1],
+        z: -projected_source[2],
+    }
+}
+
 /// Internal state of the HRTF renderer
 struct HrtfState {
     len: usize,
@@ -240,11 +251,7 @@ impl HrtfState {
         // reset state of output buffer
         self.output_interleaved.fill((0., 0.));
 
-        let new_sample_vector = Vec3 {
-            x: projected_source[0],
-            z: projected_source[1],
-            y: projected_source[2],
-        };
+        let new_sample_vector = hrtf_sample_vector(projected_source);
 
         let context = HrtfContext {
             source,
@@ -1226,6 +1233,27 @@ mod tests {
             &[0.; RENDER_QUANTUM_SIZE][..],
             abs_all <= 0.001
         );
+    }
+
+    #[test]
+    fn test_hrtf_sample_vector_axes() {
+        // right stays right
+        let right = hrtf_sample_vector([1., 0., 0.]);
+        assert_float_eq!(right.x, 1., abs <= 0.);
+        assert_float_eq!(right.y, 0., abs <= 0.);
+        assert_float_eq!(right.z, 0., abs <= 0.);
+
+        // up stays up
+        let up = hrtf_sample_vector([0., 1., 0.]);
+        assert_float_eq!(up.x, 0., abs <= 0.);
+        assert_float_eq!(up.y, 1., abs <= 0.);
+        assert_float_eq!(up.z, 0., abs <= 0.);
+
+        // a source straight ahead maps to the front of the sphere, which is -z
+        let front = hrtf_sample_vector([0., 0., 1.]);
+        assert_float_eq!(front.x, 0., abs <= 0.);
+        assert_float_eq!(front.y, 0., abs <= 0.);
+        assert_float_eq!(front.z, -1., abs <= 0.);
     }
 
     #[test]
