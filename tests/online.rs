@@ -385,3 +385,29 @@ fn test_control_messages_do_not_block_while_suspended() {
         "control messages blocked while the render callback was suspended"
     );
 }
+
+#[test]
+fn test_invalid_sink_id_is_rejected_without_closing_the_context() {
+    // An unknown sinkId is rejected before any teardown of the current
+    // backend, so it must leave the context fully operational. This guards
+    // the sink-change failure ordering: once the old backend has been closed
+    // and the graph taken out of the render thread, a failure to build the
+    // *new* backend closes the context (nothing can produce audio anymore) -
+    // but a mere validation error must never take that path.
+    let options = AudioContextOptions {
+        sink_id: "none".to_string(),
+        ..AudioContextOptions::default()
+    };
+    let context = AudioContext::new(options);
+    assert_eq!(context.state(), AudioContextState::Running);
+
+    let result = context.set_sink_id_sync("no-such-device".to_string());
+    assert!(result.is_err());
+
+    // the context is still alive and usable
+    assert_eq!(context.state(), AudioContextState::Running);
+    assert_eq!(context.sink_id(), "none");
+
+    context.close_sync();
+    assert_eq!(context.state(), AudioContextState::Closed);
+}

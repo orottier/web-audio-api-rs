@@ -411,7 +411,20 @@ impl AudioContext {
                 // No new audio will be produced because it will receive the shutdown command first.
                 backend_manager_guard.resume()?;
             }
-            graph_recv.recv().unwrap()
+            // Do not block indefinitely: with the render thread stalled (device
+            // unplugged / driver dead) the graph never comes back and a bare
+            // recv() hangs the control thread forever. The liveness wait marks
+            // the context Closed when the render side is deemed gone.
+            match self.base.recv_from_render_thread(&graph_recv) {
+                Some(graph) => graph,
+                None => {
+                    return Err(
+                        "InvalidStateError - the render thread is unresponsive, the AudioContext \
+                         has been closed"
+                            .into(),
+                    );
+                }
+            }
         };
 
         log::debug!("SinkChange: closing audio stream");
@@ -684,7 +697,15 @@ impl AudioContext {
         // Wait for the render thread to have processed the suspend message.
         // The AudioContextState will be updated by the render thread.
         log::debug!("Suspending audio graph, waiting for signal..");
-        receiver.recv().ok();
+        // Liveness wait (see ConcreteBaseAudioContext::wait_for_render_thread):
+        // with the render thread stalled the notify never arrives and a bare
+        // recv() would block the control thread forever.
+        if !self.base.wait_for_render_thread(&receiver) {
+            // The render side is dead and the context has been marked Closed;
+            // do not touch a device that no longer exists (backend.suspend()
+            // would fail).
+            return;
+        }
 
         // Then ask the audio host to suspend the stream
         log::debug!("Suspended audio graph. Suspending audio stream..");
@@ -731,7 +752,11 @@ impl AudioContext {
 
         // Wait for the render thread to have processed the resume message
         // The AudioContextState will be updated by the render thread.
-        receiver.recv().ok();
+        // Liveness wait - same reasoning as in suspend_sync (a stalled render
+        // thread never sends the notify and a bare recv() hangs).
+        if !self.base.wait_for_render_thread(&receiver) {
+            return; // render side is dead - the context is Closed now
+        }
         log::debug!("Resumed audio graph");
     }
 
@@ -768,7 +793,12 @@ impl AudioContext {
             // Wait for the render thread to have processed the suspend message.
             // The AudioContextState will be updated by the render thread.
             log::debug!("Suspending audio graph, waiting for signal..");
-            receiver.recv().ok();
+            // Liveness wait - the notify never arrives when the render thread
+            // is stalled, and close() is exactly the API an application calls
+            // right after a device disappears. On a stall the wait marks the
+            // context Closed; execution then continues below to shut down the
+            // audio stream and release device resources (no early return).
+            self.base.wait_for_render_thread(&receiver);
         } else {
             // if the context is not running, change the state manually
             self.base.set_state(AudioContextState::Closed);
@@ -1007,5 +1037,39 @@ mod tests {
             .any(|node| node.id == DESTINATION_NODE_ID.0
                 && node.inputs == node.input_channels.len()
                 && node.outputs == node.output_channels.len()));
+    }
+}
+
+#[cfg(test)]
+mod render_stall_tests {
+    use super::*;
+    use crate::node::AudioNode;
+
+    #[test]
+    fn test_stall_detector_does_not_misfire_on_suspended_context() {
+        // Guard against false positives of the liveness-based stall detection:
+        // a suspended context keeps draining its control channel even though
+        // the playhead does not advance, so flooding it with far more messages
+        // than the channel capacity (256) must neither block the control
+        // thread nor close the context. (The stall direction itself - a device
+        // that disappeared, taking the draining render callback with it -
+        // cannot be simulated deterministically without hardware; see the
+        // commit message for the manual reproduction.)
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+        context.suspend_sync();
+
+        let gain = context.create_gain();
+        for i in 0..2000 {
+            gain.gain().set_value(i as f32);
+        }
+
+        assert_eq!(context.state(), AudioContextState::Suspended);
+        context.resume_sync();
+        assert_eq!(context.state(), AudioContextState::Running);
+        let _ = context.close_sync();
     }
 }
