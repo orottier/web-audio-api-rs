@@ -1862,6 +1862,37 @@ mod tests {
     }
 
     #[test]
+    fn test_start_offset_past_loop_end_enters_loop() {
+        let sample_rate = 48_000.;
+        let buffer_len = 12_000;
+        let length = 24_000;
+        let mut context = OfflineAudioContext::new(1, length, sample_rate);
+
+        let mut buffer = context.create_buffer(1, buffer_len, sample_rate);
+        let data: Vec<f32> = (0..buffer_len).map(|i| i as f32).collect();
+        buffer.copy_to_channel(&data, 0);
+
+        let mut src = context.create_buffer_source();
+        src.connect(&context.destination());
+        src.set_buffer(buffer);
+        src.set_loop(true);
+        src.set_loop_start(2400. / sample_rate as f64);
+        src.set_loop_end(5760. / sample_rate as f64);
+        // start at frame 9600, well past loopEnd
+        src.start_at_with_offset(0., 9600. / sample_rate as f64);
+
+        let result = context.start_rendering_sync();
+        let channel = result.get_channel_data(0);
+
+        // the playhead starts at loopStart and repeats the loop region
+        let loop_len = 5760 - 2400;
+        for (i, sample) in channel.iter().enumerate() {
+            let expected = (2400 + i % loop_len) as f32;
+            assert_float_eq!(*sample, expected, abs <= 1e-3);
+        }
+    }
+
+    #[test]
     fn test_loop_out_of_bounds() {
         [
             // these will go in fast track
