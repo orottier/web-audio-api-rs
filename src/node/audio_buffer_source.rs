@@ -691,8 +691,9 @@ impl AudioProcessor for AudioBufferSourceRenderer {
                     // clamp offset to buffer boundaries
                     self.offset = self.offset.max(0.).min(buffer_duration);
 
-                    if is_looping && computed_playback_rate >= 0. && self.offset > actual_loop_end {
-                        self.offset = actual_loop_end;
+                    if is_looping && computed_playback_rate >= 0. && self.offset >= actual_loop_end
+                    {
+                        self.offset = actual_loop_start;
                     }
 
                     if is_looping && computed_playback_rate < 0. && self.offset < actual_loop_start
