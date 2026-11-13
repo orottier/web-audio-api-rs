@@ -1229,6 +1229,45 @@ mod tests {
     }
 
     #[test]
+    fn test_cone_gain_source_points_at_listener() {
+        let sample_rate = 48000.;
+        let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, sample_rate);
+
+        let input = AudioBuffer::from(vec![vec![1.; RENDER_QUANTUM_SIZE]], sample_rate);
+        let mut src = AudioBufferSourceNode::new(&context, AudioBufferSourceOptions::default());
+        src.set_buffer(input);
+        src.start();
+
+        let options = PannerOptions {
+            panning_model: PanningModelType::EqualPower,
+            cone_inner_angle: 60.,
+            cone_outer_angle: 180.,
+            cone_outer_gain: 0.2,
+            ..PannerOptions::default()
+        };
+        let mut panner = PannerNode::new(&context, options);
+        panner.position_x().set_value(1.);
+        panner.position_z().set_value(-2.);
+        panner.orientation_x().set_value(1.);
+        // keep the distance gain at 1 so the output power shows the cone gain
+        panner.set_ref_distance(5f64.sqrt());
+
+        src.connect(&panner);
+        panner.connect(&context.destination());
+
+        let output = context.start_rendering_sync();
+        let left = output.get_channel_data(0);
+        let right = output.get_channel_data(1);
+
+        // the source points away from the listener, so the angle is outside the cone
+        // and equal-power panning keeps the left and right power sum at the gain squared
+        for i in 0..RENDER_QUANTUM_SIZE {
+            let power = left[i] * left[i] + right[i] * right[i];
+            assert_float_eq!(power, 0.2f32 * 0.2, abs <= 1e-6);
+        }
+    }
+
+    #[test]
     fn test_hrtf() {
         let sample_rate = 44100.;
         let length = RENDER_QUANTUM_SIZE * 4;
