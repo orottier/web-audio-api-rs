@@ -249,3 +249,78 @@ mod tests {
         assert!(iter.next().is_none());
     }
 }
+
+#[cfg(test)]
+mod loopback_tests {
+    use crate::context::{AudioContext, AudioContextOptions, BaseAudioContext};
+    use crate::node::AudioNode;
+    use crate::node::AudioScheduledSourceNode;
+
+    #[test]
+    fn test_same_context_loopback_does_not_deadlock() {
+        // Loopback within one context: dest.stream -> create_media_stream_source.
+        // AudioDestinationNodeStream::next used a blocking recv(); in any
+        // quantum where the source node is ordered before the destination node
+        // the render thread waits for data that only it can produce, and
+        // rendering deadlocks (currentTime freezes). With try_recv plus
+        // underrun silence the iterator never blocks.
+        let options = AudioContextOptions {
+            sink_id: "none".into(),
+            ..AudioContextOptions::default()
+        };
+        let context = AudioContext::new(options);
+
+        let dest = context.create_media_stream_destination();
+        let mut osc = context.create_oscillator();
+        osc.connect(&dest);
+        osc.start();
+        let src = context.create_media_stream_source(dest.stream());
+        src.connect(&context.destination());
+
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let t = context.current_time();
+        assert!(
+            t > 0.2,
+            "render thread deadlocked: currentTime = {t} after 500ms"
+        );
+    }
+
+    #[test]
+    fn test_cross_rate_stream_consumption_does_not_panic() {
+        // Consuming a MediaStream in a context running at a different sample
+        // rate sends the chunks through the Resampler, which stitches adjacent
+        // chunks with AudioBuffer::extend. extend() asserts equal channel
+        // counts, so underrun silence emitted with a channel count different
+        // from the real data panics the consumer's render thread (its clock
+        // then freezes while the producer keeps running).
+        let mk = |rate: f32| {
+            AudioContext::new(AudioContextOptions {
+                sink_id: "none".into(),
+                sample_rate: Some(rate),
+                ..AudioContextOptions::default()
+            })
+        };
+        let producer = mk(48000.);
+        let consumer = mk(44100.);
+
+        let dest = producer.create_media_stream_destination();
+        let mut osc = producer.create_oscillator();
+        osc.connect(&dest);
+        osc.start();
+
+        let src = consumer.create_media_stream_source(dest.stream());
+        src.connect(&consumer.destination());
+
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert!(
+            producer.current_time() > 0.2,
+            "producer stalled: {}",
+            producer.current_time()
+        );
+        assert!(
+            consumer.current_time() > 0.2,
+            "consumer render thread died (channel count mismatch panic): {}",
+            consumer.current_time()
+        );
+    }
+}
