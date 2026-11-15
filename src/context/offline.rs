@@ -432,8 +432,32 @@ mod tests {
     use float_eq::assert_float_eq;
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use crate::media_streams::MediaStreamTrack;
+    use crate::message::{ControlMessage::Suspend, OneshotNotify::Async};
     use crate::node::AudioNode;
     use crate::node::AudioScheduledSourceNode;
+    use crate::node::{MediaStreamTrackAudioSourceNode, MediaStreamTrackAudioSourceOptions};
+
+    #[test]
+    fn test_suspend_between_render_quanta() {
+        let context = OfflineAudioContext::new(1, 256, 48000.);
+        let base = context.base.clone();
+        let track = MediaStreamTrack::from_iter(std::iter::once_with(move || {
+            let notify = Async(oneshot::channel().0);
+            base.send_control_msg(Suspend { notify });
+            Ok(AudioBuffer::from(vec![vec![1.; 128]], 48000.))
+        }));
+        let source = MediaStreamTrackAudioSourceNode::new(
+            &context,
+            MediaStreamTrackAudioSourceOptions {
+                media_stream_track: &track,
+            },
+        );
+        source.connect(&context.destination());
+        let mut renderer = context.renderer.lock().unwrap().take().unwrap().renderer;
+        renderer.render(&mut [0.; 256]);
+        assert_eq!(context.current_time(), 128. / 48000.);
+    }
 
     #[test]
     fn test_sample_rate_length() {
