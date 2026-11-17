@@ -1,4 +1,7 @@
+use std::f32::consts::TAU;
 use std::io::BufRead;
+use std::sync::mpsc;
+use std::time::Duration;
 use web_audio_api::context::{
     AudioContext, AudioContextLatencyCategory, AudioContextOptions, BaseAudioContext,
 };
@@ -28,18 +31,12 @@ fn main() {
         ..AudioContextOptions::default()
     });
 
-    // Move listener slightly out of cartesian center to prevent numerical artefacts
-    context.listener().position_x().set_value(0.01);
-    context.listener().position_y().set_value(0.01);
-    context.listener().position_z().set_value(0.01);
-
     // Create looping 'siren' sound
     let file = std::fs::File::open("samples/siren.mp3").unwrap();
     let buffer = context.decode_audio_data_sync(file).unwrap();
     let mut tone = context.create_buffer_source();
     tone.set_buffer(buffer);
     tone.set_loop(true);
-    tone.start();
 
     // Set up a panner with HRTF panning
     let opts = PannerOptions {
@@ -51,46 +48,101 @@ fn main() {
     tone.connect(&panner);
     panner.connect(&context.destination());
 
-    // Panner will move in circles around the listener, in the horizontal plane (x-z).
-    // A frequency of 0.25 means the circle takes 4 seconds to complete.
-    // Amplify with a value of 10. so the radius of the circle is 10. This means the distance gain
-    // will be audible (ref distance = 1.)
-    //
-    // Make x-value a periodic wave
-    let mut moving = context.create_oscillator();
-    moving.frequency().set_value_at_time(0.25, 0.);
-    let gain = context.create_gain();
-    gain.gain().set_value_at_time(10., 0.);
-    moving.connect(&gain);
-    gain.connect(panner.position_x());
-    moving.start();
+    // Wind around a sphere, rising and falling twice per revolution. Viewed from
+    // the front, this traces a figure eight. Normalize to keep distance gain steady.
+    const PERIOD: f64 = 16.;
+    const CURVE_STEPS: usize = 1024;
+    const ANCHORS: [&str; 8] = [
+        "Front",
+        "Top front-right",
+        "Full right",
+        "Bottom back-right",
+        "Behind",
+        "Top back-left",
+        "Full left",
+        "Bottom front-left",
+    ];
+    let mut curves = [Vec::new(), Vec::new(), Vec::new()];
+    for i in 0..=CURVE_STEPS {
+        // Make the closing point identical to the first for a seamless repeat.
+        let phase = TAU * (i % CURVE_STEPS) as f32 / CURVE_STEPS as f32;
+        let position = orbit_position(phase);
+        for (curve, value) in curves.iter_mut().zip(position) {
+            curve.push(value);
+        }
+    }
 
-    // Make z-value a periodic wave, delayed by a quarter period (1 s at 0.25 Hz)
-    // so it forms a circle with the x-value.
-    let mut moving = context.create_oscillator();
-    moving.frequency().set_value_at_time(0.25, 0.);
-    let delay = context.create_delay(1.);
-    delay.delay_time().set_value_at_time(1., 0.);
-    let gain = context.create_gain();
-    gain.gain().set_value_at_time(10., 0.);
-    moving.connect(&delay);
-    delay.connect(&gain);
-    gain.connect(panner.position_z());
-    moving.start();
+    println!("Siren follows a 3D figure eight around you: one lap every {PERIOD} seconds.");
+    println!("Use headphones. HRTF enabled; press <Enter> to toggle, or q then <Enter> to quit.");
 
-    // enjoy listening
-    println!("Siren is circling in the horizontal plane around the listener");
-    println!("HRTF enabled, press <Enter> to toggle");
-
-    let mut hrtf = true;
-    std::io::stdin().lock().lines().for_each(|_| {
-        hrtf = !hrtf;
-        let p = if hrtf {
-            PanningModelType::HRTF
-        } else {
-            PanningModelType::EqualPower
-        };
-        panner.set_panning_model(p);
-        println!("PanningMode: {:?}", panner.panning_model());
+    // Keep keyboard input from blocking motion scheduling and direction announcements.
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lock().lines() {
+            let Ok(line) = line else { break };
+            if sender.send(line).is_err() {
+                break;
+            }
+        }
     });
+
+    let start_time = context.current_time() + 0.1;
+    let mut next_cycle = start_time;
+    let mut next_anchor = 0;
+    let mut hrtf = true;
+    tone.start_at(start_time);
+
+    loop {
+        let now = context.current_time();
+        // Schedule on the audio clock, a full lap ahead, so movement remains smooth
+        // even if the terminal thread wakes up late. Curves meet without overlap.
+        while next_cycle < now + PERIOD {
+            for (param, curve) in [
+                panner.position_x(),
+                panner.position_y(),
+                panner.position_z(),
+            ]
+            .iter()
+            .zip(&curves)
+            {
+                param.set_value_curve_at_time(curve, next_cycle, PERIOD);
+            }
+            next_cycle += PERIOD;
+        }
+
+        while now >= start_time + next_anchor as f64 * PERIOD / ANCHORS.len() as f64 {
+            let index = next_anchor % ANCHORS.len();
+            let [x, y, z] = orbit_position(TAU * index as f32 / ANCHORS.len() as f32);
+            println!(
+                "Lap {} | {:<18} | x={x:5.1}, y={y:5.1}, z={z:5.1}",
+                next_anchor / ANCHORS.len() + 1,
+                ANCHORS[index]
+            );
+            next_anchor += 1;
+        }
+
+        match receiver.try_recv() {
+            Ok(line) if line.trim().eq_ignore_ascii_case("q") => break,
+            Ok(_) => {
+                hrtf = !hrtf;
+                panner.set_panning_model(if hrtf {
+                    PanningModelType::HRTF
+                } else {
+                    PanningModelType::EqualPower
+                });
+                println!("PanningMode: {:?}", panner.panning_model());
+            }
+            Err(mpsc::TryRecvError::Disconnected) => break,
+            Err(mpsc::TryRecvError::Empty) => {}
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn orbit_position(phase: f32) -> [f32; 3] {
+    let x = phase.sin();
+    let y = 0.8 * (2. * phase).sin();
+    let z = -phase.cos(); // Web Audio's default listener faces -Z.
+    let scale = 10. / (x * x + y * y + z * z).sqrt();
+    [x * scale, y * scale, z * scale]
 }
