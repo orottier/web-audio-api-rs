@@ -1,5 +1,11 @@
 # Version History
 
+## Unreleased
+
+- Fix: AudioBufferSourceNode looping playback starting >= loopEnd
+- Fix: PannerNode cone gain was reversed for listener orientation
+- Fix: PannerNode HRTF direction mapping of front/back and above/below
+
 ## Version 1.8.0 (2026-11-12)
 
 - Update MSRV to 1.88 (June 2025)
