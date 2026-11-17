@@ -65,13 +65,12 @@ fn main() {
     gain.connect(panner.position_x());
     moving.start();
 
-    // Make y-value a periodic wave, delayed so it forms a circle with the x-value
+    // Make z-value a periodic wave, delayed by a quarter period (1 s at 0.25 Hz)
+    // so it forms a circle with the x-value.
     let mut moving = context.create_oscillator();
     moving.frequency().set_value_at_time(0.25, 0.);
     let delay = context.create_delay(1.);
-    delay
-        .delay_time()
-        .set_value_at_time(std::f32::consts::PI / 4., 0.);
+    delay.delay_time().set_value_at_time(1., 0.);
     let gain = context.create_gain();
     gain.gain().set_value_at_time(10., 0.);
     moving.connect(&delay);
