@@ -1229,7 +1229,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cone_gain_source_points_at_listener() {
+    fn test_cone_gain_source_points_away_from_listener() {
         let sample_rate = 48000.;
         let mut context = OfflineAudioContext::new(2, RENDER_QUANTUM_SIZE, sample_rate);
 

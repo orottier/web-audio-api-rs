@@ -377,10 +377,13 @@ mod tests {
     #[test]
     fn test_angle() {
         let pos = [1., 0., 0.];
-        let orientation = [0., 1., 0.];
-        let angle = angle(pos, orientation, LP);
-
-        assert_float_eq!(angle, 90., abs <= 0.);
+        for (orientation, expected) in [
+            ([-1., 0., 0.], 0.),  // facing the listener
+            ([0., 1., 0.], 90.),  // perpendicular to the listener
+            ([1., 0., 0.], 180.), // facing away from the listener
+        ] {
+            assert_float_eq!(angle(pos, orientation, LP), expected, abs <= 0.001);
+        }
     }
 
     #[test]
@@ -390,15 +393,5 @@ mod tests {
         let angle = angle(pos, orientation, LP);
 
         assert_float_eq!(angle, 90., abs <= 0.);
-    }
-
-    #[test]
-    fn angle_source_facing_listener() {
-        // the orientation points from the source back to the listener at the origin
-        let pos = [1., 0., 0.];
-        let orientation = [-1., 0., 0.];
-        let angle = angle(pos, orientation, LP);
-
-        assert_float_eq!(angle, 0., abs <= 0.);
     }
 }
