@@ -207,6 +207,17 @@ fn assert_valid_channel_count_mode(mode: ChannelCountMode) {
     );
 }
 
+/// Map a source direction in listener space to the coordinate axes of the HRTF sphere.
+///
+/// The panner builds the direction with forward on +z. The sphere uses -z for front.
+fn hrtf_sample_vector(projected_source: [f32; 3]) -> Vec3 {
+    Vec3 {
+        x: projected_source[0],
+        y: projected_source[1],
+        z: -projected_source[2],
+    }
+}
+
 /// Internal state of the HRTF renderer
 struct HrtfState {
     len: usize,
@@ -240,11 +251,7 @@ impl HrtfState {
         // reset state of output buffer
         self.output_interleaved.fill((0., 0.));
 
-        let new_sample_vector = Vec3 {
-            x: projected_source[0],
-            z: projected_source[1],
-            y: projected_source[2],
-        };
+        let new_sample_vector = hrtf_sample_vector(projected_source);
 
         let context = HrtfContext {
             source,
@@ -1264,6 +1271,95 @@ mod tests {
         for i in 0..RENDER_QUANTUM_SIZE {
             let power = left[i] * left[i] + right[i] * right[i];
             assert_float_eq!(power, 0.2f32 * 0.2, abs <= 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_hrtf_sample_vector_axes() {
+        // right stays right
+        let right = hrtf_sample_vector([1., 0., 0.]);
+        assert_float_eq!(right.x, 1., abs <= 0.);
+        assert_float_eq!(right.y, 0., abs <= 0.);
+        assert_float_eq!(right.z, 0., abs <= 0.);
+
+        // up stays up
+        let up = hrtf_sample_vector([0., 1., 0.]);
+        assert_float_eq!(up.x, 0., abs <= 0.);
+        assert_float_eq!(up.y, 1., abs <= 0.);
+        assert_float_eq!(up.z, 0., abs <= 0.);
+
+        // a source straight ahead maps to the front of the sphere, which is -z
+        let front = hrtf_sample_vector([0., 0., 1.]);
+        assert_float_eq!(front.x, 0., abs <= 0.);
+        assert_float_eq!(front.y, 0., abs <= 0.);
+        assert_float_eq!(front.z, -1., abs <= 0.);
+    }
+
+    #[test]
+    fn test_hrtf_front_and_up_impulse_responses() {
+        let sample_rate = 44100.;
+        let resource = include_bytes!("../../resources/IRC_1003_C.bin");
+        let sphere = HrirSphere::new(&resource[..], sample_rate as u32).unwrap();
+        // Allow the panner's initial direction and gain to settle before the impulse.
+        let impulse_frame = 2 * RENDER_QUANTUM_SIZE;
+        let length = impulse_frame + sphere.len() + RENDER_QUANTUM_SIZE;
+
+        // The sphere builder maps IRCAM T000/P000 (front) to -Z and
+        // T000/P090 (up) to +Y. Use those measured responses as the oracle,
+        // independently of hrtf_sample_vector and the panner's azimuth/elevation math.
+        // https://github.com/mrDIMAS/hrir_sphere_builder/blob/master/src/hrtf_builder.cpp
+        for (name, position) in [("front", [0., 0., -1.]), ("up", [0., 1., 0.])] {
+            let point = sphere
+                .points()
+                .iter()
+                .find(|point| {
+                    float_eq!(
+                        [point.pos.x, point.pos.y, point.pos.z],
+                        position,
+                        abs_all <= 1e-6
+                    )
+                })
+                .expect("the bundled sphere contains the measured direction");
+
+            let mut context = OfflineAudioContext::new(2, length, sample_rate);
+            let mut data = vec![0.; length];
+            data[impulse_frame] = 1.;
+            let mut src = context.create_buffer_source();
+            src.set_buffer(AudioBuffer::from(vec![data], sample_rate));
+
+            let panner = PannerNode::new(
+                &context,
+                PannerOptions {
+                    panning_model: PanningModelType::HRTF,
+                    position_x: position[0],
+                    position_y: position[1],
+                    position_z: position[2],
+                    rolloff_factor: 0.,
+                    ..PannerOptions::default()
+                },
+            );
+            src.connect(&panner);
+            panner.connect(&context.destination());
+            src.start();
+
+            let output = context.start_rendering_sync();
+            for (channel, response) in [point.left_hrir(), point.right_hrir()].iter().enumerate() {
+                let mut expected = vec![0.; length];
+                expected[impulse_frame..impulse_frame + response.len()].copy_from_slice(response);
+                for (frame, (&actual, &expected)) in output
+                    .get_channel_data(channel)
+                    .iter()
+                    .zip(&expected)
+                    .enumerate()
+                {
+                    assert_float_eq!(
+                        actual,
+                        expected,
+                        abs <= 1e-5,
+                        "{name}, channel {channel}, frame {frame}"
+                    );
+                }
+            }
         }
     }
 
