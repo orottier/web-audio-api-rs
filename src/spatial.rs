@@ -286,7 +286,7 @@ pub fn angle(
     }
     let normalized_source_orientation = vec3_normalized(source_orientation);
 
-    let relative_pos = vec3_sub(source_position, listener_position);
+    let relative_pos = vec3_sub(listener_position, source_position);
     // Handle degenerate case if source and listener are at the same point.
     if vec3_square_len(relative_pos) <= f32::MIN_POSITIVE {
         return 0.;
@@ -377,10 +377,13 @@ mod tests {
     #[test]
     fn test_angle() {
         let pos = [1., 0., 0.];
-        let orientation = [0., 1., 0.];
-        let angle = angle(pos, orientation, LP);
-
-        assert_float_eq!(angle, 90., abs <= 0.);
+        for (orientation, expected) in [
+            ([-1., 0., 0.], 0.),  // facing the listener
+            ([0., 1., 0.], 90.),  // perpendicular to the listener
+            ([1., 0., 0.], 180.), // facing away from the listener
+        ] {
+            assert_float_eq!(angle(pos, orientation, LP), expected, abs <= 0.001);
+        }
     }
 
     #[test]
