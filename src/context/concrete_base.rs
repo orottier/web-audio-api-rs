@@ -13,10 +13,11 @@ use crate::spatial::AudioListenerParams;
 
 use crate::AudioListener;
 
-use crossbeam_channel::{SendError, Sender};
+use crossbeam_channel::{Receiver, RecvTimeoutError, SendError, SendTimeoutError, Sender};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
+use std::time::Duration;
 
 /// This struct assigns new [`AudioNodeId`]s for [`AudioNode`]s
 ///
@@ -282,9 +283,194 @@ impl ConcreteBaseAudioContext {
                 return;
             }
 
-            let result = sender.send(msg);
-            if result.is_err() {
-                log::warn!("Discarding control message - render thread is closed");
+            self.send_to_render_thread(&sender, msg);
+        }
+    }
+
+    /// Hands one control message to the render thread without ever blocking
+    /// the control thread indefinitely.
+    ///
+    /// Previously this was a bare `sender.send(msg)`. The control channel is
+    /// bounded(256) (the receiving end lives on the render thread; a bounded
+    /// channel is allocation-free and therefore realtime-safe). Once the render
+    /// thread stops draining - the device was unplugged or the driver died,
+    /// and cpal's err_fn only logs - the 257th message blocks the control
+    /// thread forever. Hosts running script on the control thread hang wholesale.
+    ///
+    /// The fix keeps the channel semantics and only changes *how long* to wait:
+    ///   - the channel stays bounded (render-side realtime safety untouched);
+    ///   - back-pressure stays blocking, so messages are neither dropped nor
+    ///     reordered (single FIFO channel, one-for-one with the old behavior);
+    ///   - the indefinite wait becomes a wait on render-thread *liveness*:
+    ///     while the channel is full, wake every `POLL` and check whether
+    ///     `frames_played` advanced (the render thread bumps it by 128 per
+    ///     rendered quantum).
+    ///       - progress: the render thread is alive, we are merely producing
+    ///         faster than it consumes - keep waiting (same as upstream);
+    ///       - zero progress across the whole `STALL_GRACE` window: the render
+    ///         side is gone - mark the context Closed and drop this message.
+    ///         The `state() != Closed` check at the top of send_control_msg
+    ///         then short-circuits every later message, so the control thread
+    ///         never touches this channel again.
+    ///
+    /// Liveness (frames_played) instead of a fixed send timeout: a fixed
+    /// timeout misfires on healthy-but-busy devices or during device startup.
+    /// One quantum is ~2.9 ms (128 frames at 44.1 kHz); zero progress across
+    /// the grace window means the render thread has skipped hundreds of quanta
+    /// - that is not busyness.
+    ///
+    /// Dropping is safe here: it only happens once the context is deemed
+    /// Closed, and a Closed context discards all control messages anyway (same
+    /// log line upstream) - with the device dead there is no render thread
+    /// left to execute the message regardless.
+    ///
+    /// Offline contexts are unaffected: their control channel is unbounded, so
+    /// send_timeout always succeeds immediately.
+    fn send_to_render_thread(&self, sender: &Sender<ControlMessage>, msg: ControlMessage) {
+        // Poll interval while the channel is full (much coarser than a quantum
+        // to keep wakeups cheap).
+        const POLL: Duration = Duration::from_millis(50);
+        // Zero playhead progress for this long means the render side stalled
+        // (~700 quanta; also comfortably covers device startup jitter).
+        const STALL_GRACE: Duration = Duration::from_secs(2);
+
+        let mut msg = msg;
+        let mut last_frames = self.inner.frames_played.load(Ordering::Relaxed);
+        let mut stalled = Duration::ZERO;
+
+        loop {
+            match sender.send_timeout(msg, POLL) {
+                Ok(()) => return,
+                Err(SendTimeoutError::Disconnected(_)) => {
+                    log::warn!("Discarding control message - render thread is closed");
+                    return;
+                }
+                Err(SendTimeoutError::Timeout(returned)) => {
+                    msg = returned; // send_timeout hands the message back - nothing is lost
+                    let frames = self.inner.frames_played.load(Ordering::Relaxed);
+                    if frames != last_frames {
+                        last_frames = frames;
+                        stalled = Duration::ZERO; // the render thread is progressing - plain back-pressure
+                        continue;
+                    }
+                    stalled += POLL;
+                    if stalled < STALL_GRACE {
+                        continue;
+                    }
+                    log::error!(
+                        "Render thread did not consume any control message for {:?} and did not \
+                         advance the playhead - assuming the audio device is gone, closing the \
+                         AudioContext",
+                        STALL_GRACE
+                    );
+                    self.set_state(AudioContextState::Closed);
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Waits until the render thread acknowledges a *synchronous* control
+    /// message (the oneshot notify used by Suspend / Resume / Close).
+    ///
+    /// online.rs used a bare `receiver.recv().ok()` - the same hang surface as
+    /// the send side: with the render thread stalled the notify never arrives
+    /// and close_sync()/suspend_sync() block the control thread forever.
+    /// "Device unplugged, app calls ctx.close()" is precisely the most likely
+    /// call sequence in that situation. The wait uses the same frames_played
+    /// liveness rule: zero progress across `STALL_GRACE` deems the device dead,
+    /// marks the context Closed and returns `false` so the caller can skip
+    /// further operations against a device that no longer exists.
+    ///
+    /// On a healthy device the behavior is identical to upstream: the notify
+    /// arrives within one quantum (the render thread drains control messages on
+    /// every callback).
+    pub(crate) fn wait_for_render_thread(&self, receiver: &Receiver<()>) -> bool {
+        const POLL: Duration = Duration::from_millis(50);
+        const STALL_GRACE: Duration = Duration::from_secs(2);
+
+        let mut last_frames = self.inner.frames_played.load(Ordering::Relaxed);
+        let mut stalled = Duration::ZERO;
+
+        loop {
+            match receiver.recv_timeout(POLL) {
+                Ok(()) => return true,
+                Err(RecvTimeoutError::Disconnected) => return true, // render thread is gone - nothing to wait for
+                Err(RecvTimeoutError::Timeout) => {
+                    let frames = self.inner.frames_played.load(Ordering::Relaxed);
+                    if frames != last_frames {
+                        last_frames = frames;
+                        stalled = Duration::ZERO;
+                        continue;
+                    }
+                    stalled += POLL;
+                    if stalled < STALL_GRACE {
+                        continue;
+                    }
+                    log::error!(
+                        "Render thread did not respond within {:?} - assuming the audio device is \
+                         gone, closing the AudioContext",
+                        STALL_GRACE
+                    );
+                    self.set_state(AudioContextState::Closed);
+                    return false;
+                }
+            }
+        }
+    }
+
+    /// Same liveness rule as `wait_for_render_thread`, for protocol steps that
+    /// expect a payload back from the render thread - currently the audio
+    /// graph handed back during a sink change (`CloseAndRecycle`).
+    ///
+    /// `set_sink_id_sync` used a bare `graph_recv.recv().unwrap()`. With the
+    /// render thread stalled (device unplugged, driver dead - cpal only calls
+    /// err_fn and stops issuing callbacks) the graph never arrives and the
+    /// control thread blocks forever; "output device disappeared, application
+    /// switches to another sink" is precisely the sequence that hits this.
+    ///
+    /// Returns `None` when the render thread is deemed gone: zero playhead
+    /// progress across `STALL_GRACE`, or the reply channel disconnected
+    /// without a payload. The context is marked Closed in both cases - the
+    /// graph is unrecoverable at that point, so no later operation could
+    /// succeed anyway.
+    pub(crate) fn recv_from_render_thread<T>(&self, receiver: &Receiver<T>) -> Option<T> {
+        const POLL: Duration = Duration::from_millis(50);
+        const STALL_GRACE: Duration = Duration::from_secs(2);
+
+        let mut last_frames = self.inner.frames_played.load(Ordering::Relaxed);
+        let mut stalled = Duration::ZERO;
+
+        loop {
+            match receiver.recv_timeout(POLL) {
+                Ok(v) => return Some(v),
+                Err(RecvTimeoutError::Disconnected) => {
+                    log::error!(
+                        "Render thread dropped the reply channel without responding - closing \
+                         the AudioContext"
+                    );
+                    self.set_state(AudioContextState::Closed);
+                    return None;
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    let frames = self.inner.frames_played.load(Ordering::Relaxed);
+                    if frames != last_frames {
+                        last_frames = frames;
+                        stalled = Duration::ZERO;
+                        continue;
+                    }
+                    stalled += POLL;
+                    if stalled < STALL_GRACE {
+                        continue;
+                    }
+                    log::error!(
+                        "Render thread did not respond within {:?} - assuming the audio device \
+                         is gone, closing the AudioContext",
+                        STALL_GRACE
+                    );
+                    self.set_state(AudioContextState::Closed);
+                    return None;
+                }
             }
         }
     }
@@ -292,9 +478,10 @@ impl ConcreteBaseAudioContext {
     pub(crate) fn suspend_control_msgs(&self, msg: ControlMessage) {
         let sender = self.inner.render_channel.read().unwrap();
         *self.inner.suspended_messages.lock().unwrap() = Some(Vec::new());
-        if sender.send(msg).is_err() {
-            log::warn!("Discarding control message - render thread is closed");
-        }
+        // Same as send_control_msg: this path must not hang either. Routing
+        // through the same function keeps a single FIFO, which preserves
+        // ordering with any messages already queued.
+        self.send_to_render_thread(&sender, msg);
     }
 
     pub(crate) fn resume_control_msgs(&self, msg: ControlMessage) {
@@ -308,15 +495,10 @@ impl ConcreteBaseAudioContext {
             .unwrap_or_default();
 
         for msg in messages {
-            if sender.send(msg).is_err() {
-                log::warn!("Discarding control message - render thread is closed");
-                return;
-            }
+            self.send_to_render_thread(&sender, msg);
         }
 
-        if sender.send(msg).is_err() {
-            log::warn!("Discarding control message - render thread is closed");
-        }
+        self.send_to_render_thread(&sender, msg);
     }
 
     pub(crate) fn send_event(&self, msg: EventDispatch) -> Result<(), SendError<EventDispatch>> {
