@@ -215,9 +215,133 @@ impl Iterator for RTSStream {
 
                 Ok(buf)
             }
+            // Reaching the end of a non-looping file is normal end-of-stream, not an
+            // error: yield `None` so downstream resampling can flush its tail.
+            Err(creek::read::ReadError::EndOfFile) => return None,
             Err(e) => Err(Box::new(e) as _),
         };
 
         Some(next)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{File, OpenOptions};
+    use std::io::{BufWriter, ErrorKind};
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::Mutex;
+
+    use super::*;
+    use crate::context::{BaseAudioContext, OfflineAudioContext};
+    use crate::node::{AudioNode, MediaElementAudioSourceNode, MediaElementAudioSourceOptions};
+
+    struct TempWav(PathBuf);
+
+    impl TempWav {
+        fn create_exclusive(prefix: &str) -> (Self, File) {
+            static COUNTER: AtomicUsize = AtomicUsize::new(0);
+            let dir = std::env::temp_dir();
+            let pid = std::process::id();
+            loop {
+                let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+                let path = dir.join(format!("{prefix}_{pid}_{seq}.wav"));
+                match OpenOptions::new().write(true).create_new(true).open(&path) {
+                    Ok(file) => return (Self(path), file),
+                    Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+                    Err(e) => panic!("failed to create temporary WAV fixture: {e}"),
+                }
+            }
+        }
+    }
+
+    impl Drop for TempWav {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn test_media_element_non_looping_eof_flushes_and_replays_after_seek() {
+        let (wav, file) = TempWav::create_exclusive("web_audio_api_media_element_eof");
+
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::new(BufWriter::new(file), spec).unwrap();
+        for _ in 0..138 {
+            writer.write_sample(16_384_i16).unwrap();
+        }
+        writer.finalize().unwrap();
+
+        // Direct RTSStream check: non-looping EOF yields None rather than Err.
+        let mut direct_media = MediaElement::new(&wav.0).unwrap();
+        direct_media.play();
+        let mut stream = direct_media.take_stream().unwrap();
+        let first = stream.next().unwrap().unwrap();
+        let second = stream.next().unwrap().unwrap();
+        assert_eq!(first.length(), 128);
+        assert_eq!(second.length(), 10);
+        assert!(stream.next().is_none());
+
+        // End-to-end mismatched-rate render (138 frames @ 48 -> 44.1 kHz =>
+        // ceil((138 + 32) * 44,100 / 48,000) = 157 valid frames including the
+        // 32-input-frame causal startup delay) followed by a post-EOF seek to
+        // 0.0 on the retained source node to confirm control messages continue
+        // draining and playback resumes cleanly.
+        let mut media = MediaElement::new(&wav.0).unwrap();
+        media.play();
+        let mut context = OfflineAudioContext::new(1, 768, 44_100.);
+        let src = MediaElementAudioSourceNode::new(
+            &context,
+            MediaElementAudioSourceOptions {
+                media_element: &mut media,
+            },
+        );
+        src.connect(&context.destination());
+
+        let media_ctl = Mutex::new(media);
+        context.suspend_sync(384. / 44_100., move |_| {
+            media_ctl.lock().unwrap().set_current_time(0.0);
+        });
+
+        let rendered = context.start_rendering_sync();
+        drop(src);
+        let out = rendered.get_channel_data(0);
+
+        // First playback (frames 0..256): 157 valid frames + zero padding through frame 384.
+        assert!(
+            out[64..128].iter().all(|&v| (v - 0.5).abs() < 0.05),
+            "expected resampled non-looping clip body near 0.5"
+        );
+        assert!(
+            out[155] > 0.25 && out[156] > 0.05,
+            "expected valid resampled tail at frames 155..=156, got {}, {}",
+            out[155],
+            out[156]
+        );
+        assert!(
+            out[157..384].iter().all(|&v| v == 0.0),
+            "expected silence after EOF before seek"
+        );
+
+        // Replayed playback after seek at frame 384 (frames 384..640).
+        assert!(
+            out[448..512].iter().all(|&v| (v - 0.5).abs() < 0.05),
+            "expected post-EOF seek replay body near 0.5"
+        );
+        assert!(
+            out[539] > 0.25 && out[540] > 0.05,
+            "expected valid resampled tail at replayed frames 539..=540, got {}, {}",
+            out[539],
+            out[540]
+        );
+        assert!(
+            out[541..].iter().all(|&v| v == 0.0),
+            "expected zero padding after replayed EOF"
+        );
     }
 }
