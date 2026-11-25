@@ -301,6 +301,40 @@ impl RenderThread {
         AudioBuffer::from(buffer, sample_rate)
     }
 
+    /// Number of output channels (used by incremental rendering to size its
+    /// buffer; the field is private across modules, hence the accessor).
+    pub(crate) fn output_channels(&self) -> usize {
+        self.number_of_channels
+    }
+
+    /// Incremental offline rendering: renders `n` quanta into `buffer` without
+    /// consuming self, so it can be called repeatedly to continue.
+    /// render_audiobuffer_sync takes `self` and renders everything in one go -
+    /// embedders need to render a segment, hand control back to the control
+    /// side to mutate the graph, and then continue, hence this split.
+    pub fn render_offline_quanta(
+        &mut self,
+        buffer: &mut [Vec<f32>],
+        n: usize,
+        event_loop: &EventLoop,
+    ) {
+        self.handle_control_messages();
+        for _ in 0..n {
+            self.render_offline_quantum(buffer);
+            if event_loop.handle_pending_events() {
+                self.handle_control_messages();
+            }
+        }
+    }
+
+    /// Finalizes an incremental render: runs node destructors and drains
+    /// pending events (mirrors the tail of render_audiobuffer_sync). Consumes
+    /// self - unload_graph already takes `self` by value.
+    pub fn finish_offline_render(self, event_loop: &EventLoop) {
+        self.unload_graph();
+        event_loop.handle_pending_events();
+    }
+
     // Render method of the `OfflineAudioContext::start_rendering`
     //
     // This is the async interface, as compared to render_audiobuffer_sync
@@ -311,6 +345,7 @@ impl RenderThread {
         length: usize,
         mut suspend_callbacks: Vec<(usize, oneshot::Sender<()>)>,
         mut resume_receiver: mpsc::Receiver<()>,
+        mut suspend_injection: mpsc::UnboundedReceiver<(usize, oneshot::Sender<()>)>,
         event_loop: &EventLoop,
     ) -> AudioBuffer {
         let sample_rate = self.sample_rate;
@@ -325,6 +360,15 @@ impl RenderThread {
         self.handle_control_messages();
 
         for quantum in 0..num_frames {
+            // Merge any suspend points scheduled after rendering started (e.g. from
+            // inside a previous suspend point's callback) into the pending list.
+            while let Ok((q, sender)) = suspend_injection.try_recv() {
+                let pos = suspend_callbacks
+                    .binary_search_by_key(&q, |&(qq, _)| qq)
+                    .unwrap_or_else(|e| e);
+                suspend_callbacks.insert(pos, (q, sender));
+            }
+
             // Suspend at given times and run callbacks
             if suspend_callbacks.first().map(|&(q, _)| q) == Some(quantum) {
                 let sender = suspend_callbacks.remove(0).1;
